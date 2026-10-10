@@ -162,10 +162,12 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("requireNonNull"));
   }
 
-  // CQ-0052: when an unimported simple name matches several classpath types (here two unrelated
-  // `Objects` classes), member completion must aggregate static members across all candidates —
-  // each with its own auto-import — instead of surfacing only the first candidate's members.
-  // `requireNonNull` is unique to java.util.Objects; `equal` is unique to Guava's Objects.
+  // When an unimported simple name matches several classpath types (here the JDK's unrelated
+  // `List` types), member completion must aggregate static members across all candidates — each
+  // with its own auto-import — instead of surfacing only the first candidate's members. `of` is
+  // unique to java.util.List and `TOP_ALIGNMENT` to java.awt.List (from Component); neither type
+  // extends the other, and both ship with the JDK, so the test does not depend on which libraries
+  // happen to be on the test classpath.
   @Test
   void memberAccess_unimportedAmbiguousSimpleName_suggestsMembersFromAllCandidates()
       throws IOException {
@@ -173,19 +175,18 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
         new CompletionFixture(
             CompletionFixture.typeIndex(
                 tmp.resolve("index.json"),
-                CompletionFixture.typeEntry("Objects", "java.util.Objects", TypeKind.CLASS),
-                CompletionFixture.typeEntry(
-                    "Objects", "com.google.common.base.Objects", TypeKind.CLASS)));
+                CompletionFixture.typeEntry("List", "java.util.List", TypeKind.INTERFACE),
+                CompletionFixture.typeEntry("List", "java.awt.List", TypeKind.CLASS)));
     assertThat(
             labels(
                 localFixture.complete(
                     """
                     class Test {
                         void m() {
-                            Objects.§
+                            List.§
                         }
                     }""")))
-        .contains("requireNonNull", "equal");
+        .contains("of", "TOP_ALIGNMENT");
   }
 
   // ── FQN navigation: JPMS visibility ──────────────────────────────────────────

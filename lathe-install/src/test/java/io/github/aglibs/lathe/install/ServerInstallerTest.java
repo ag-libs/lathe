@@ -16,13 +16,13 @@ class ServerInstallerTest {
     assertLaunchContract(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"));
   }
 
-  // Only the classpath MCP launcher needs javac internals for ALL-UNNAMED (google-java-format is
-  // unnamed there); the editor launcher leaves plugin grants to the workspace's jvm.args.
+  // Only the classpath MCP launcher grants javac internals itself; the editor launcher leaves all
+  // grants (javac plugins, the pinned formatter) to the workspace's jvm.args.
   @Test
   void renderLaunchers_allUnnamedAccess_onlyInMcpLauncher() {
     assertThat(ServerInstaller.renderLauncherScript("/abs/module-path"))
         .doesNotContain("=ALL-UNNAMED")
-        .contains("jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
+        .doesNotContain("com.google.googlejavaformat");
     assertThat(ServerInstaller.renderMcpLauncherScript("/abs/classpath.jar"))
         .contains("jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED");
   }

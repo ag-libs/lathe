@@ -65,7 +65,8 @@ class MultiModuleTest {
     assertThat(content).contains("--add-modules java.net.http");
     assertThat(content).contains("@.lathe/jvm.args");
     assertThat(content).doesNotContain("=ALL-UNNAMED");
-    assertThat(content).contains("--add-exports jdk.compiler/com.sun.tools.javac.api=com.google.googlejavaformat");
+    // A pinned formatter runs from an isolated classloader; nothing targets a formatter module.
+    assertThat(content).doesNotContain("com.google.googlejavaformat");
     assertThat(content).contains("--module-path");
     assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
   }

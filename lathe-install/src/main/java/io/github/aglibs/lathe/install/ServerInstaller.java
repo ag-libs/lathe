@@ -258,34 +258,17 @@ public final class ServerInstaller {
     //
     // Classpath javac plugins (e.g. Error Prone) run in the unnamed module and need javac
     // internals exported to ALL-UNNAMED. Those grants are per workspace, in .lathe/jvm.args, copied
-    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none.
-    //
-    // google-java-format is a named module on the module path and uses module-qualified exports.
+    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none. A project's
+    // pinned formatter also runs in the unnamed module (an isolated classloader), so lathe:sync
+    // adds the grants it needs to the same file.
     return """
         #!/bin/sh
         %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
-        %s%s  --module-path %s \\
+          --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
-        .formatted(
-            javaResolvePrologue(),
-            jvmArgsPrologue(),
-            STDOUT_GUARD_JVM_OPTS,
-            javacAccessLines(
-                "--add-exports",
-                "com.google.googlejavaformat",
-                "api",
-                "code",
-                "comp",
-                "file",
-                "main",
-                "model",
-                "parser",
-                "tree",
-                "util"),
-            javacAccessLines("--add-opens", "com.google.googlejavaformat", JAVAC_OPEN_PACKAGES),
-            modulePath);
+        .formatted(javaResolvePrologue(), jvmArgsPrologue(), STDOUT_GUARD_JVM_OPTS, modulePath);
   }
 
   static String renderMcpLauncherScript(final String classpath) {
@@ -294,7 +277,7 @@ public final class ServerInstaller {
     // the in-process javac it drives run in the unnamed module. That javac needs the same
     // jdk.compiler
     // internals the editor launcher grants, but targeted at ALL-UNNAMED — there is no named module
-    // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
+    // here.
     return """
         #!/bin/sh
         %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\

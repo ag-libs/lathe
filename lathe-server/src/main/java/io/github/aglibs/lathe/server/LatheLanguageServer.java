@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -13,12 +12,14 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.DocumentRangeFormattingOptions;
 import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -74,7 +75,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
-    final var capabilities = createCapabilities(formattingEnabled);
+    final var capabilities = createCapabilities(formatEngine);
     final var result = new InitializeResult(capabilities);
     result.setServerInfo(serverInfo());
     return CompletableFuture.completedFuture(result);
@@ -88,7 +89,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return new ServerInfo(SERVER_NAME, version);
   }
 
-  static ServerCapabilities createCapabilities(final boolean formattingEnabled) {
+  static ServerCapabilities createCapabilities(final FormatEngine formatEngine) {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -99,8 +100,14 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     final var semanticTokensOptions = new SemanticTokensWithRegistrationOptions(legend);
     semanticTokensOptions.setFull(true);
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
-    if (formattingEnabled) {
+    if (formatEngine != null) {
       capabilities.setDocumentFormattingProvider(true);
+    }
+
+    if (formatEngine instanceof GoogleFormatEngine) {
+      final var rangeFormatting = new DocumentRangeFormattingOptions();
+      rangeFormatting.setRangesSupport(true);
+      capabilities.setDocumentRangeFormattingProvider(rangeFormatting);
     }
 
     capabilities.setDefinitionProvider(true);
@@ -222,12 +229,25 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
-      case LatheFlags.FORMATTER_GOOGLE -> new GoogleFormatEngine(Style.GOOGLE);
-      case LatheFlags.FORMATTER_AOSP -> new GoogleFormatEngine(Style.AOSP);
+      case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP -> googleEngine(spec);
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
       case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
+  }
+
+  // The project's pinned google-java-format; unavailable until lathe:sync has resolved its jars.
+  private static FormatEngine googleEngine(final FormatterSpec spec) {
+    if (spec.classpath().isEmpty()) {
+      LOG.warning(
+          () ->
+              "[initialize] %s formatter has no resolved classpath; run lathe:sync"
+                  .formatted(spec.engine()));
+      return null;
+    }
+
+    return new GoogleFormatEngine(
+        spec.engine().toUpperCase(Locale.ROOT), spec.options(), spec.classpath());
   }
 
   private static FormatEngine commandEngine(final List<String> command, final Path workingDir) {

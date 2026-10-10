@@ -155,7 +155,10 @@ reused):
   server formatter and the client indent profile.
 - [Delegated Formatting via Maven (Spotless)](done/lathe-delegated-maven-formatting.md) — **shipped
   (mvn only).** Non-google Spotless formatters are applied via `mvn spotless:apply` on the file in
-  place (mvnd → `./mvnw` → mvn); in-process google/aosp kept for speed.
+  place (mvnd → `./mvnw` → mvn); in-process google/aosp kept for speed. To be superseded by the next entry.
+- [Pinned Formatters In-Process](planned/lathe-pinned-formatters.md) — **planned.** Run the project's own
+  pinned Spotless formatter (google-java-format, palantir, Eclipse) in-process from an isolated classloader,
+  with its configured options and range formatting; drop Maven delegation and the bundled GJF.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 

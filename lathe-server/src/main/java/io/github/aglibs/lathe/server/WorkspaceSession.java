@@ -2802,11 +2802,22 @@ final class WorkspaceSession {
   }
 
   List<? extends TextEdit> format(final String uri, final FormatEngine engine) {
+    return formatDocument(
+        uri, content -> JavaFormatter.format(engine, content, LatheUri.toPath(uri)));
+  }
+
+  List<? extends TextEdit> formatRanges(
+      final String uri, final List<Range> ranges, final GoogleFormatEngine engine) {
+    return formatDocument(uri, content -> JavaFormatter.formatRanges(engine, content, ranges));
+  }
+
+  // Formats the open document's text, reporting the outcome once and swallowing failures.
+  private List<? extends TextEdit> formatDocument(final String uri, final DocumentFormat format) {
     final var t = Stopwatch.start();
     final OpenDocument openFile = docs.get(uri);
     final String content = openFile != null ? openFile.content() : null;
     try {
-      final List<TextEdit> result = JavaFormatter.format(engine, content, LatheUri.toPath(uri));
+      final List<TextEdit> result = format.apply(content);
       LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
       // Formatting is a synchronous request (format-on-save blocks the editor), so a progress
       // spinner would only paint after the edit; report the outcome once it is done instead. Stay
@@ -2828,6 +2839,11 @@ final class WorkspaceSession {
           new MessageParams(MessageType.Warning, "Lathe: formatting failed — see the server log."));
       return List.of();
     }
+  }
+
+  @FunctionalInterface
+  private interface DocumentFormat {
+    List<TextEdit> apply(String content) throws Exception;
   }
 
   List<SymbolInformation> workspaceSymbol(final String query) {

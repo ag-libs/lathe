@@ -510,10 +510,25 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
-    // Capability is never advertised; delegating to the whole-document formatter would ignore the
-    // requested range and reformat — and reorder/remove imports across — the entire file, so a
-    // client that calls this anyway gets no edits regardless of profile.
-    return CompletableFuture.completedFuture(List.of());
+    return formatRanges(params.getTextDocument().getUri(), List.of(params.getRange()));
+  }
+
+  @Override
+  public CompletableFuture<List<? extends TextEdit>> rangesFormatting(
+      final DocumentRangesFormattingParams params) {
+    return formatRanges(params.getTextDocument().getUri(), params.getRanges());
+  }
+
+  // Only the in-process google-java-format formats ranges; other engines are whole-file only and
+  // the capability is not advertised for them, so a stray request gets no edits.
+  private CompletableFuture<List<? extends TextEdit>> formatRanges(
+      final String uri, final List<Range> ranges) {
+    if (!(formatEngine instanceof final GoogleFormatEngine engine)
+        || ignoreNonFile(uri, "rangeFormatting")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return worker.submit(() -> session.formatRanges(uri, ranges, engine));
   }
 
   @Override

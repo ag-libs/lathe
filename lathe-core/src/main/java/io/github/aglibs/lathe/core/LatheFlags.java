@@ -26,6 +26,14 @@ public final class LatheFlags {
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";
 
+  // Spotless step options carried in FormatterSpec.options, with Spotless's own defaults.
+  public static final String FORMAT_REFLOW_LONG_STRINGS = "reflowLongStrings";
+  public static final String FORMAT_REORDER_IMPORTS = "reorderImports";
+  public static final String FORMAT_JAVADOC = "formatJavadoc";
+  public static final boolean FORMAT_REFLOW_LONG_STRINGS_DEFAULT = false;
+  public static final boolean FORMAT_REORDER_IMPORTS_DEFAULT = false;
+  public static final boolean FORMAT_JAVADOC_DEFAULT = true;
+
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own
   // (lua/lathe/version.lua) at on_init and warns on a mismatch, since a git-installed client and a
