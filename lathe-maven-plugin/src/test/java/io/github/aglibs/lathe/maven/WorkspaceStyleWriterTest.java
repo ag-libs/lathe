@@ -20,15 +20,10 @@ class WorkspaceStyleWriterTest {
     return Xpp3DomBuilder.build(new StringReader(xml));
   }
 
-  // The style sync derives from a Spotless <java> section, with delegation on.
+  // The style sync derives from a Spotless <java> section.
   private static WorkspaceStyleData javaStyle(final String java) throws Exception {
-    return javaStyle(java, true);
-  }
-
-  private static WorkspaceStyleData javaStyle(final String java, final boolean delegate)
-      throws Exception {
     return WorkspaceStyleWriter.fromConfig(
-        config("<configuration><java>%s</java></configuration>".formatted(java)), delegate);
+        config("<configuration><java>%s</java></configuration>".formatted(java)));
   }
 
   @Test
@@ -118,23 +113,20 @@ class WorkspaceStyleWriterTest {
     assertThat(bare.formatter().options()).isEmpty();
   }
 
+  // A formatter with no in-process engine is disabled, not delegated to Maven.
   @Test
-  void fromConfig_otherFormatter_delegatesOrDisables() throws Exception {
-    final String prettier = "<prettier/>";
-    final WorkspaceStyleData delegated = javaStyle(prettier, true);
+  void fromConfig_otherFormatter_disablesFormatting() throws Exception {
+    final WorkspaceStyleData style = javaStyle("<prettier/>");
 
-    assertThat(delegated.formatter().engine()).isEqualTo("command-file");
-    assertThat(delegated.formatter().command())
-        .containsExactly(
-            "%MVN%", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E");
-    assertThat(delegated.indent().profile()).isEqualTo("editorconfig");
-    assertThat(javaStyle(prettier, false).formatter().engine()).isEqualTo("none");
+    assertThat(style.formatter().engine()).isEqualTo("none");
+    assertThat(style.formatter().command()).isEmpty();
+    assertThat(style.indent().profile()).isEqualTo("editorconfig");
   }
 
   @Test
   void fromConfig_noJavaSection_returnsNull() throws Exception {
-    assertThat(WorkspaceStyleWriter.fromConfig(config("<configuration/>"), true)).isNull();
-    assertThat(WorkspaceStyleWriter.fromConfig(null, true)).isNull();
+    assertThat(WorkspaceStyleWriter.fromConfig(config("<configuration/>"))).isNull();
+    assertThat(WorkspaceStyleWriter.fromConfig(null)).isNull();
   }
 
   @Test

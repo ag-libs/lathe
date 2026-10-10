@@ -54,9 +54,18 @@ Drop Maven delegation entirely; keep the user-supplied `command` engine for anyt
 | `palantir` | palantir-java-format (style `PALANTIR`/`GOOGLE`/`AOSP`) | `Formatter.getFormatReplacements` | yes |
 | `eclipse` | Eclipse JDT `CodeFormatter` with the project's profile | native (`format(kind, source, offset, length, …)`) | no |
 | `command` | user-supplied stdin/stdout tool (unchanged) | no | — |
+| `command-file` | user-supplied tool that formats the file in place (unchanged) | no | — |
 | `none` | formatting disabled | — | — |
 
-`command-file` (Maven delegation) is **removed**.
+Sync no longer writes `command-file` (automatic Maven delegation is removed): a Spotless formatter with no
+in-process engine becomes `none`, with a warning.
+`command-file` stays as an opt-in engine for tools that rewrite a file in place, including a project's full
+`spotless:apply` for teams that want every Spotless step (import order, license header, `spotless:off` regions,
+includes/excludes) applied on save.
+
+Style sources merge **per section**: a committed `lathe-style.json` wins over the generated `.lathe/style.json`
+for each of `formatter` and `indent` it defines, so committing only an indent keeps the formatter sync derives.
+The server and the Neovim client read it the same way.
 
 ### Style schema
 
@@ -137,13 +146,15 @@ those grants).
   format and cached for the workspace's lifetime; closed on workspace reload.
 - **Adapters** — `GoogleJavaFormatAdapter`, `PalantirAdapter`, `EclipseAdapter`, each a few dozen lines of
   reflection that implement `format(source)` and `formatRanges(source, ranges)`:
-  - google/aosp and palantir run **Spotless's pipeline**: format → remove unused imports → reorder imports
-    (only if `reorderImports`) → reflow long strings (only if `reflowLongStrings`; GJF only);
-  - eclipse builds `DefaultCodeFormatterConstants` settings overlaid with the profile XML (parsed with the JDK's XML
-    API) and applies the returned `TextEdit`.
-- `FormatEngine` keeps its shape; `GjfFormatEngine` (google-java-format and its fork palantir, one reflective
-  engine over their shared API) replaces the bundled-GJF `GoogleFormatEngine`, and
-  `FileCommandFormatEngine` is deleted.
+  - google/aosp run **Spotless's pipeline**: format → remove unused imports → reorder imports (only if
+    `reorderImports`) → reflow long strings (only if `reflowLongStrings`); palantir runs Spotless's palantir
+    order: reorder imports → remove unused imports → format;
+  - eclipse calls `ToolFactory.createCodeFormatter` with the profile's settings (an Eclipse XML export, properties
+    XML, or `.prefs`, read with the JDK) and applies the returned `TextEdit`, as Spotless's eclipse step does;
+    member sorting is not applied.
+- `FormatEngine` gains an optional range operation; `GjfFormatEngine` (google-java-format and its fork palantir,
+  one reflective engine over their shared API) replaces the bundled-GJF `GoogleFormatEngine`,
+  `EclipseFormatEngine` runs JDT, and `FileCommandFormatEngine` stays.
 - **Range formatting** — `rangeFormatting` and `rangesFormatting` are implemented (today a stub) and advertised,
   with `rangesSupport`, for the in-process engines; `command` stays whole-file.
 - **Failure policy** — a formatter that cannot run (its jars missing, or it fails on this JDK — e.g. palantir
@@ -154,9 +165,8 @@ those grants).
 
 ### Removed
 
-- `FileCommandFormatEngine` and its test; `LatheFlags.FORMATTER_COMMAND_FILE`, `FORMAT_MVN_TOKEN`,
-  `FORMAT_MODULE_TOKEN`, `FORMAT_FILE_TOKEN`, the `lathe.spotless` property and `isSpotlessDelegationEnabled()`;
-  `WorkspaceStyleWriter.mavenSpotlessCommand()`.
+- Automatic delegation: sync no longer writes `command-file`; the `lathe.spotless` property,
+  `isSpotlessDelegationEnabled()`, and `WorkspaceStyleWriter.mavenSpotlessCommand()` are removed.
 - lathe-server's `google-java-format` dependency, its `requires com.google.googlejavaformat`, and the editor
   launcher's module-qualified `com.google.googlejavaformat` grants (and the matching Surefire flags).
 - `docs/done/lathe-delegated-maven-formatting.md` is marked superseded.

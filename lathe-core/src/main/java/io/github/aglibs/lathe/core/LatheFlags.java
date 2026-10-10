@@ -9,9 +9,6 @@ public final class LatheFlags {
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
-  // Opt out of delegating non-google Spotless formatters to `mvn spotless:apply` (sync writes
-  // `none`).
-  public static final String SPOTLESS = "lathe.spotless";
 
   // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
   // the global-default style, same shape as the workspace style file; a project file overrides it.
@@ -87,10 +84,5 @@ public final class LatheFlags {
 
   public static boolean isCaptureOnly() {
     return "true".equals(System.getProperty(CAPTURE_ONLY));
-  }
-
-  // Delegating non-google Spotless to `mvn spotless:apply` is on unless explicitly disabled.
-  public static boolean isSpotlessDelegationEnabled() {
-    return !"false".equals(System.getProperty(SPOTLESS));
   }
 }
