@@ -71,15 +71,19 @@ bindings.
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as configured in Maven, plus unused private members and locals | `textDocument/publishDiagnostics` |
 | Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
-| Formatting (per-workspace) | whole-document google-java-format / AOSP, **or the project's own Spotless formatter via `mvn spotless:apply`**, **or** a custom external command — auto-detected per project | `textDocument/formatting`         |
+| Formatting (per-workspace) | the project's own Spotless formatter — google-java-format / AOSP, palantir-java-format, or Eclipse JDT at the exact version Spotless pins — run in-process, **or** a custom external command — auto-detected per project | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` |
 
 Formatting follows a **per-workspace style**, auto-detected from the project's `spotless-maven-plugin`
-by `lathe:sync` (a committed `lathe-style.json` or the editor's global default otherwise). It is
-advertised only when a formatter resolves: the built-in `google`/`aosp` engine (fast, in-process); a
-non-google Spotless formatter (eclipse, palantir, …) **delegated to `mvn spotless:apply`** on the edited
-file (preferring mvnd → `./mvnw` → mvn), so the editor applies the project's own formatter; or a custom
-stdin/stdout command. Opt out with `-Dlathe.spotless=false` or a committed `lathe-style.json`. Live-edit
-indentation follows the same style file and is otherwise a separate client concern.
+by `lathe:sync`.
+For `googleJavaFormat`, `palantirJavaFormat`, and `eclipse`, sync resolves the exact formatter release
+the project's Spotless pins (with its configured options and Eclipse profile), and the server runs it
+in-process from those jars: a format takes milliseconds, and selections can be formatted on their own.
+Lathe runs the formatter step only — other Spotless steps (`importOrder`, `licenseHeader`,
+`spotless:off` regions, includes/excludes) are not applied on save.
+A committed `lathe-style.json` overrides the detected formatter, selects an external command for any
+other tool (including the project's full `mvn spotless:apply`), or turns formatting off; see
+[Choosing, overriding, or opting out of the formatter](docs/guide/installation.md#choosing-overriding-or-opting-out-of-the-formatter).
+Live-edit indentation follows the same style file and is otherwise a separate client concern.
 
 ### Run, test & debug
 

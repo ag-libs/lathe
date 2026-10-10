@@ -2,8 +2,21 @@
 
 ## Status
 
-Planned (design for approval).
+**Shipped** for Maven; Gradle remains future work.
 A spike validated the approach; see [Spike results](#spike-results).
+Where the build differs from the plan below:
+
+- **Eclipse runs JDT's public API directly.** `ToolFactory.createCodeFormatter` with the profile's
+  settings, read with the JDK; no Spotless code runs in the server.
+  Spotless's optional member sorting is not applied.
+- **`command-file` is kept** as an opt-in engine (for in-place tools, including a project's full
+  `spotless:apply`); only the automatic delegation is removed.
+- **Style files merge per section**: a committed `lathe-style.json` overrides the generated file only for
+  the sections it defines.
+- **The formatter is warmed up at startup**: a representative snippet is formatted on the server's
+  worker, so the first format-on-save does not pay for loading it (~550 ms → ~30–60 ms for Eclipse).
+- **A failure notifies once per session** with its reason; a formatter release that does not support
+  the running JDK is reported as such (palantir 2.98.0 fails on JDK 27 for most code).
 
 ## Problem
 

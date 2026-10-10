@@ -1,6 +1,11 @@
 # Lathe — Delegated Formatting via Maven (Spotless)
 
-**Status: shipped (mvn only).**
+**Status: superseded** by [Pinned Formatters In-Process](lathe-pinned-formatters.md): Spotless's
+google-java-format, palantir, and Eclipse formatters now run in-process, and sync no longer delegates
+to Maven. The `command-file` engine described here remains as an opt-in for in-place tools.
+The text below describes the design as originally shipped.
+
+**Originally: shipped (mvn only).**
 The in-process google-java-format engine (`google`/`aosp`) is kept for speed; non-google Spotless
 formatters (eclipse, palantir, …) are delegated to `mvn spotless:apply` run on a throwaway scratch copy
 of the file, preferring mvnd → `./mvnw` → mvn. Verified on equalsverifier (eclipse): formatting applied

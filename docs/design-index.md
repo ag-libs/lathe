@@ -153,12 +153,12 @@ reused):
 - [Workspace-Scoped Style](done/lathe-workspace-style.md) — **shipped.** Per-workspace `style.json`
   (committed `lathe-style.json` / generated `.lathe/style.json`, Spotless-detected) drives both the
   server formatter and the client indent profile.
-- [Delegated Formatting via Maven (Spotless)](done/lathe-delegated-maven-formatting.md) — **shipped
-  (mvn only).** Non-google Spotless formatters are applied via `mvn spotless:apply` on the file in
-  place (mvnd → `./mvnw` → mvn); in-process google/aosp kept for speed. To be superseded by the next entry.
-- [Pinned Formatters In-Process](planned/lathe-pinned-formatters.md) — **planned.** Run the project's own
-  pinned Spotless formatter (google-java-format, palantir, Eclipse) in-process from an isolated classloader,
-  with its configured options and range formatting; drop Maven delegation and the bundled GJF.
+- [Delegated Formatting via Maven (Spotless)](done/lathe-delegated-maven-formatting.md) — **superseded**
+  by the next entry; its `command-file` engine remains as an opt-in for in-place tools.
+- [Pinned Formatters In-Process](done/lathe-pinned-formatters.md) — **shipped (Maven).** Runs the
+  project's own pinned Spotless formatter (google-java-format, palantir, Eclipse JDT) in-process from an
+  isolated classloader, with its configured options and range formatting; no automatic Maven
+  delegation, no bundled google-java-format.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
