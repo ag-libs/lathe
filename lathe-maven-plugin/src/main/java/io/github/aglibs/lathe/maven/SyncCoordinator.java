@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.install.ArtifactResolver;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
@@ -92,12 +94,20 @@ final class SyncCoordinator {
               runnerClasspath,
               pomPaths,
               ModuleResourcesReader.read(workspaceRoot, projects));
-      new WorkspaceStyleWriter(log).write(workspaceRoot, session.getTopLevelProject());
+      final MavenProject rootProject = session.getTopLevelProject();
+      final var formatterResolver =
+          new FormatterResolver(
+              new ArtifactResolver(repositorySystem, session.getRepositorySession()),
+              rootProject,
+              log);
+      final WorkspaceStyleData style =
+          new WorkspaceStyleWriter(formatterResolver, log).write(workspaceRoot, rootProject);
       new JvmArgsWriter(log)
           .write(
               workspaceRoot,
               projects,
-              session.getSystemProperties().getProperty(LatheLayout.MAVEN_OPTS_PROPERTY, ""));
+              session.getSystemProperties().getProperty(LatheLayout.MAVEN_OPTS_PROPERTY, ""),
+              style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
       new SyncScriptWriter(log).write(workspaceRoot);
     }
   }

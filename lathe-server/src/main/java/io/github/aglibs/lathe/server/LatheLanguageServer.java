@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -13,12 +12,15 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
 import org.eclipse.lsp4j.CompletionOptions;
+import org.eclipse.lsp4j.DocumentRangeFormattingOptions;
 import org.eclipse.lsp4j.ExecuteCommandOptions;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -74,7 +76,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
     }
 
-    final var capabilities = createCapabilities(formattingEnabled);
+    final var capabilities = createCapabilities(formatEngine);
     final var result = new InitializeResult(capabilities);
     result.setServerInfo(serverInfo());
     return CompletableFuture.completedFuture(result);
@@ -88,7 +90,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return new ServerInfo(SERVER_NAME, version);
   }
 
-  static ServerCapabilities createCapabilities(final boolean formattingEnabled) {
+  static ServerCapabilities createCapabilities(final FormatEngine formatEngine) {
     final var capabilities = new ServerCapabilities();
     capabilities.setTextDocumentSync(TextDocumentSyncKind.Full);
     capabilities.setCompletionProvider(new CompletionOptions(false, List.of(".")));
@@ -99,8 +101,14 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     final var semanticTokensOptions = new SemanticTokensWithRegistrationOptions(legend);
     semanticTokensOptions.setFull(true);
     capabilities.setSemanticTokensProvider(semanticTokensOptions);
-    if (formattingEnabled) {
+    if (formatEngine != null) {
       capabilities.setDocumentFormattingProvider(true);
+    }
+
+    if (formatEngine != null && formatEngine.formatsRanges()) {
+      final var rangeFormatting = new DocumentRangeFormattingOptions();
+      rangeFormatting.setRangesSupport(true);
+      capabilities.setDocumentRangeFormattingProvider(rangeFormatting);
     }
 
     capabilities.setDefinitionProvider(true);
@@ -222,12 +230,53 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
-      case LatheFlags.FORMATTER_GOOGLE -> new GoogleFormatEngine(Style.GOOGLE);
-      case LatheFlags.FORMATTER_AOSP -> new GoogleFormatEngine(Style.AOSP);
+      case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
+          pinned(
+              spec,
+              () ->
+                  gjfEngine(
+                      spec, GjfFormatEngine.Family.GOOGLE, spec.engine().toUpperCase(Locale.ROOT)));
+      case LatheFlags.FORMATTER_PALANTIR ->
+          pinned(
+              spec,
+              () ->
+                  gjfEngine(
+                      spec, GjfFormatEngine.Family.PALANTIR, LatheFlags.FORMAT_STYLE_PALANTIR));
+      case LatheFlags.FORMATTER_ECLIPSE ->
+          pinned(
+              spec,
+              () ->
+                  new EclipseFormatEngine(
+                      spec.options().getOrDefault(LatheFlags.FORMAT_FILE, ""), spec.classpath()));
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
       case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
+  }
+
+  // The project's pinned formatter is unavailable until lathe:sync has resolved its jars.
+  private static FormatEngine pinned(
+      final FormatterSpec spec, final Supplier<FormatEngine> engine) {
+    if (spec.classpath().isEmpty()) {
+      LOG.warning(
+          () ->
+              "[initialize] %s formatter has no resolved classpath; run lathe:sync"
+                  .formatted(spec.engine()));
+      return null;
+    }
+
+    return engine.get();
+  }
+
+  // The style is the Spotless step's, else the engine's own (a hand-written style file may omit
+  // it).
+  private static FormatEngine gjfEngine(
+      final FormatterSpec spec, final GjfFormatEngine.Family family, final String defaultStyle) {
+    return new GjfFormatEngine(
+        family,
+        spec.options().getOrDefault(LatheFlags.FORMAT_STYLE, defaultStyle),
+        spec.options(),
+        spec.classpath());
   }
 
   private static FormatEngine commandEngine(final List<String> command, final Path workingDir) {

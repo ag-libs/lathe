@@ -940,17 +940,22 @@ Token coverage is tracked in the roadmap and the feature-specific semantic-token
 
 ### Formatting
 
-Formatting is resolved per workspace from a style file (`lathe-style.json` / `.lathe/style.json`,
-auto-detected from `spotless-maven-plugin` by `lathe:sync`). The in-process engine is
-`google-java-format` (GOOGLE/AOSP); a non-google Spotless formatter is delegated to `mvn spotless:apply`
-on the edited file (the `command-file` engine, preferring mvnd → `./mvnw` → mvn), and an arbitrary
-stdin/stdout tool via `command`. `FormatterException` and command failures are caught gracefully,
-leaving the buffer unchanged. Whole file only; range and on-type formatting are deferred. See
-[workspace-scoped style](done/lathe-workspace-style.md) and
-[delegated Maven formatting](done/lathe-delegated-maven-formatting.md).
-
-Import optimization uses google-java-format's import-fixing formatter (the in-process google/aosp
-path), keeping format-on-save and organize-import in the same backend.
+Formatting is resolved per workspace from a style file (a committed `lathe-style.json` over the
+generated `.lathe/style.json`, merged per section), auto-detected from `spotless-maven-plugin` by
+`lathe:sync`.
+For Spotless `googleJavaFormat`, `palantirJavaFormat`, and `eclipse`, sync resolves the formatter
+release the project's Spotless pins and the server runs it in-process from an isolated classloader,
+reflectively, so no formatter is a dependency of Lathe; these engines also format ranges and are warmed
+up at startup.
+google-java-format and palantir also remove unused imports (and reorder them where the project enables
+it), as their Spotless steps do; Eclipse leaves imports alone.
+Only the formatter step runs, not the rest of the Spotless `<java>` section.
+An arbitrary tool can be selected instead: `command` (stdin/stdout) or `command-file` (formats a file in
+place, e.g. the project's full `spotless:apply`).
+Failures leave the buffer unchanged; the first one notifies the user with its reason.
+On-type formatting is not supported.
+See [pinned formatters](done/lathe-pinned-formatters.md) and
+[workspace-scoped style](done/lathe-workspace-style.md).
 
 ### Code action dispatch
 

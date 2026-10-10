@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
@@ -69,6 +71,29 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   void setFormatEngine(final FormatEngine engine) {
     formatEngine = engine;
+    if (engine != null) {
+      worker.execute(() -> warmUp(engine));
+    }
+  }
+
+  // Fire and forget on the worker, where format requests run: a failure is only logged, and the
+  // first real format reports it to the user.
+  private static void warmUp(final FormatEngine engine) {
+    final var t = Stopwatch.start();
+    final String engineType = engine.getClass().getSimpleName();
+    try {
+      engine.warmUp();
+      LOG.fine(() -> "[format] warm-up %s %dms".formatted(engineType, t.elapsedMs()));
+    } catch (final Exception e) {
+      if (e instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
+      }
+
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[format] warm-up %s failed %dms".formatted(engineType, t.elapsedMs()));
+    }
   }
 
   void setFileRenameSupported(final boolean supported) {
@@ -510,10 +535,25 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
-    // Capability is never advertised; delegating to the whole-document formatter would ignore the
-    // requested range and reformat — and reorder/remove imports across — the entire file, so a
-    // client that calls this anyway gets no edits regardless of profile.
-    return CompletableFuture.completedFuture(List.of());
+    return formatRanges(params.getTextDocument().getUri(), List.of(params.getRange()));
+  }
+
+  @Override
+  public CompletableFuture<List<? extends TextEdit>> rangesFormatting(
+      final DocumentRangesFormattingParams params) {
+    return formatRanges(params.getTextDocument().getUri(), params.getRanges());
+  }
+
+  // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
+  // stray request gets no edits.
+  private CompletableFuture<List<? extends TextEdit>> formatRanges(
+      final String uri, final List<Range> ranges) {
+    final FormatEngine engine = formatEngine;
+    if (engine == null || !engine.formatsRanges() || ignoreNonFile(uri, "rangeFormatting")) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return worker.submit(() -> session.formatRanges(uri, ranges, engine));
   }
 
   @Override

@@ -178,12 +178,14 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   editor client and the MCP agent launch; being version-pinned per workspace, two projects on
   different Lathe versions each resolve the right server.
 - `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
-  `spotless-maven-plugin` — `googleJavaFormat` becomes the in-process formatter; any other Spotless
-  formatter (eclipse, palantir) is delegated to `mvn spotless:apply` on the edited file (preferring
-  mvnd → `./mvnw` → mvn), so the editor applies the project's own formatter. Commit a `lathe-style.json`
-  at the repo root to override it, or opt out of mvn delegation entirely (see below). See
-  [lathe-workspace-style.md](../done/lathe-workspace-style.md) and
-  [lathe-delegated-maven-formatting.md](../done/lathe-delegated-maven-formatting.md).
+  `spotless-maven-plugin`.
+  For `googleJavaFormat`, `palantirJavaFormat`, and `eclipse` it records the formatter release the
+  project's Spotless pins, its options, and the resolved jars (`classpath`, paths into the local Maven
+  repository), which the server loads in-process.
+  For google-java-format and palantir it also adds the javac grants they need to `jvm.args`.
+  Any other Spotless formatter writes `none`.
+  See [Choosing, overriding, or opting out of the formatter](#choosing-overriding-or-opting-out-of-the-formatter)
+  and [lathe-pinned-formatters.md](../done/lathe-pinned-formatters.md).
 - `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
   phase — so test run/debug needs a build that reaches `test` (see the table above and
   [test-capture.md](test-capture.md)).
@@ -261,32 +263,81 @@ set to the workspace root so the launcher can find `.lathe/java-home`.)
 
 ## Choosing, overriding, or opting out of the formatter
 
-`lathe:sync` derives the formatter from your `spotless-maven-plugin` config (above): `googleJavaFormat`
-runs in-process; any other Spotless formatter is **delegated to `mvn spotless:apply`** on the edited
-file. You control it at three levels, in precedence order:
+### What runs automatically
 
-1. **Per project (highest): a committed `lathe-style.json`** at the repo root — overrides the generated
-   `.lathe/style.json`. This is both the override and the per-project opt-out:
+`lathe:sync` derives the formatter from your `spotless-maven-plugin` `<java>` config:
 
-   ```jsonc
-   // disable Lathe formatting for this project entirely:
-   { "formatter": { "engine": "none" } }
+| Spotless step | Lathe engine | Range formatting | Notes |
+|---|---|---|---|
+| `googleJavaFormat` | `google` / `aosp` (by `<style>`) | yes | honours `version`, `groupArtifact`, `reorderImports`, `reflowLongStrings`, `formatJavadoc` |
+| `palantirJavaFormat` | `palantir` | yes | honours `version`, `style`, `formatJavadoc`; does not run on JDK 27 (see below) |
+| `eclipse` | `eclipse` | yes | honours `version` and the `<file>` profile (Eclipse XML export or `.prefs`); member sorting is not applied |
+| anything else | `none` | — | sync warns; select an external command below |
 
-   // or force a specific engine instead of what sync detected:
-   { "formatter": { "engine": "google" } }
-   ```
+palantir-java-format has no release that runs on JDK 27 yet (2.102.0 is the latest as of October
+2026): it reads a javac field JDK 27 removed.
+Lathe runs the formatter on your build's JDK (`.lathe/java-home`, unless `LATHE_JAVA_HOME` overrides
+it), so it fails exactly where `spotless:apply` itself fails; the buffer is left unchanged and the
+first failure names the cause.
 
-   Edit the **committed** `lathe-style.json`, not `.lathe/style.json` — the latter is regenerated (and
-   gitignored) on every sync. Setting `engine` to `"none"` is an authoritative off; *omitting* the
-   `formatter` section instead falls back to the editor's global default.
+The formatter is the exact release the project's Spotless pins (its `<version>`, else that Spotless
+version's default), resolved by sync and run in-process from an isolated classloader — no Maven at
+format time, so a format takes milliseconds.
+The server warms it up at startup, so the first format-on-save is fast too.
 
-2. **Globally, opt out of mvn delegation: `-Dlathe.spotless=false`** on the build. Sync then writes
-   `none` for non-google formatters (google/aosp still run in-process), so Lathe never shells out to
-   Maven to format. Set it on the sync build, e.g. `mvn -Dlathe.spotless=false process-test-classes`
-   (or in the Maven extension/CI config).
+Lathe runs the **formatter step only**.
+Other steps in the same `<java>` section — `importOrder`, `removeUnusedImports` (beyond what
+google-java-format and palantir already do), `licenseHeader`, `formatAnnotations`, `toggleOffOn`
+(`spotless:off` regions), whitespace steps — and Spotless `<includes>`/`<excludes>` are **not** applied,
+so a saved file can still differ from `spotless:apply`.
+If you need every step on save, use the `command-file` recipe below.
 
-3. **Editor global default** — the `style` you pass to the client `setup()` applies only to projects
-   with no style file (see the [Neovim cheatsheet](editors/neovim.md)).
+Other limits:
+
+- Only the root project's Spotless configuration is read; per-module Spotless configs are ignored.
+- An Eclipse profile must be a local file (Spotless also accepts URLs and classpath resources), and only
+  Eclipse releases Spotless pins with a lockfile are supported.
+- After editing an Eclipse profile, restart the language server.
+- If the formatter cannot run (a missing jar, an unsupported JDK), the first failure shows a message with
+  the reason; later ones are only logged.
+
+### Overriding it
+
+Two places select the formatter, in precedence order:
+
+1. **Per project: a committed `lathe-style.json`** at the repo root.
+   It overrides the generated `.lathe/style.json` **section by section**: a `formatter` section here
+   replaces the detected formatter, and an `indent` section replaces the detected indent, while a
+   section you leave out still comes from sync.
+   Edit the committed `lathe-style.json`, not `.lathe/style.json`, which every sync regenerates.
+2. **Editor global default** — the `style` you pass to the client (for example the Neovim `setup()`; see
+   the [Neovim cheatsheet](editors/neovim.md)) applies when neither file defines a formatter.
+
+Engines you can select there:
+
+```jsonc
+// turn Lathe formatting off for this project:
+{ "formatter": { "engine": "none" } }
+
+// a tool that reads Java on stdin and writes formatted Java to stdout (here prettier-java):
+{ "formatter": { "engine": "command", "command": ["npx", "prettier", "--parser", "java"] } }
+
+// a tool that formats a file in place — here the project's full Spotless, every step included:
+{ "formatter": { "engine": "command-file",
+                 "command": ["%MVN%", "-pl", "%MODULE%", "spotless:apply", "-DspotlessFiles=\\Q%FILE%\\E"] } }
+```
+
+- `command` pipes the buffer through the command (10 s timeout).
+- `command-file` writes the buffer to a hidden temporary file beside the edited one (so Spotless's
+  includes still match it), runs the command, and reads the result back (60 s timeout).
+  Its tokens: `%MVN%` → `mvnd` if on the `PATH`, else `./mvnw`, else `mvn`; `%MODULE%` → the edited
+  file's module directory; `%FILE%` → the temporary file.
+  Running Maven per save takes seconds; with `mvnd` it is well under a second.
+- Both run from the workspace root, format whole files only, and pay process startup on every format.
+
+`google`, `aosp`, `palantir`, and `eclipse` need the jars sync resolves, so they come from the
+Spotless configuration; naming one in `lathe-style.json` or the editor default without a `classpath`
+leaves formatting off (the server logs `run lathe:sync`).
 
 ## Coexisting with another Java language server (jdtls)
 

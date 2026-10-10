@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.ServerCapabilities;
@@ -30,7 +31,7 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_supportedFeatures_advertisesProviders() {
-    final var capabilities = LatheLanguageServer.createCapabilities(false);
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getTextDocumentSync().getLeft()).isEqualTo(TextDocumentSyncKind.Full);
     assertThat(capabilities.getCompletionProvider()).isNotNull();
@@ -49,28 +50,42 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_formattingDisabled_omitsFormattingProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(false);
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getDocumentFormattingProvider()).isNull();
   }
 
   @Test
-  void createCapabilities_formattingEnabled_advertisesFormattingProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(true);
+  void createCapabilities_inProcessEngine_advertisesWholeAndRangeFormatting() {
+    final var capabilities =
+        LatheLanguageServer.createCapabilities(FormatterFixtures.googleJavaFormat());
 
     assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+    assertThat(capabilities.getDocumentRangeFormattingProvider().getRight().getRangesSupport())
+        .isTrue();
+  }
+
+  @Test
+  void createCapabilities_wholeFileEngine_omitsRangeFormatting() {
+    final var capabilities =
+        LatheLanguageServer.createCapabilities(
+            new ExternalCommandFormatEngine(
+                List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, root));
+
+    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
+    assertThat(capabilities.getDocumentRangeFormattingProvider()).isNull();
   }
 
   @Test
   void createCapabilities_includesCallHierarchyProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(false);
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getCallHierarchyProvider().getLeft()).isTrue();
   }
 
   @Test
   void createCapabilities_includesExecuteCommandProvider() {
-    final var capabilities = LatheLanguageServer.createCapabilities(false);
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
         .containsExactlyInAnyOrder(
@@ -97,26 +112,11 @@ class LatheLanguageServerTest {
 
   @Test
   void createCapabilities_always_advertisesLatheProtocol() {
-    final var capabilities = LatheLanguageServer.createCapabilities(false);
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getExperimental())
         .asInstanceOf(map(String.class, Object.class))
         .containsEntry(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL);
-  }
-
-  @Test
-  void initialize_optionFormatterGoogle_advertisesFormatting() throws Exception {
-    final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
-    final var params = new InitializeParams();
-    params.setInitializationOptions(
-        JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"google\"}}}}")
-            .getAsJsonObject());
-
-    final var capabilities = server.initialize(params).get().getCapabilities();
-
-    assertThat(capabilities.getDocumentFormattingProvider().getLeft()).isTrue();
-    server.shutdown().join();
   }
 
   @Test
@@ -147,6 +147,11 @@ class LatheLanguageServerTest {
                 .getAsJsonObject()),
         Arguments.of(
             JsonParser.parseString("{\"lathe\":{\"style\":{\"formatter\":{}}}}").getAsJsonObject()),
+        // google without a resolved classpath: no formatter is bundled, so nothing can run it.
+        Arguments.of(
+            JsonParser.parseString(
+                    "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"google\"}}}}")
+                .getAsJsonObject()),
         Arguments.of(
             JsonParser.parseString(
                     "{\"lathe\":{\"style\":{\"formatter\":{\"engine\":\"command\",\"command\":[]}}}}")
@@ -169,12 +174,21 @@ class LatheLanguageServerTest {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"google", "aosp"})
+  @ValueSource(strings = {"google", "aosp", "palantir", "eclipse"})
   void initialize_styleFileInProcessEngine_advertisesFormatting(final String engine)
       throws Exception {
-    writeStyle("{\"formatter\":{\"engine\":\"%s\"}}".formatted(engine));
+    writeStyle(
+        "{\"formatter\":{\"engine\":\"%s\",\"classpath\":[\"/pinned/formatter.jar\"]}}"
+            .formatted(engine));
 
     assertThat(initializeWithRoot(null).getDocumentFormattingProvider().getLeft()).isTrue();
+  }
+
+  @Test
+  void initialize_styleFileWithoutClasspath_omitsFormatting() throws Exception {
+    writeStyle("{\"formatter\":{\"engine\":\"google\"}}");
+
+    assertThat(initializeWithRoot(null).getDocumentFormattingProvider()).isNull();
   }
 
   @Test

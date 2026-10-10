@@ -1,0 +1,225 @@
+# Lathe — Pinned Formatters In-Process
+
+## Status
+
+**Shipped** for Maven; Gradle remains future work.
+A spike validated the approach; see [Spike results](#spike-results).
+Where the build differs from the plan below:
+
+- **Eclipse runs JDT's public API directly.** `ToolFactory.createCodeFormatter` with the profile's
+  settings, read with the JDK; no Spotless code runs in the server.
+  Spotless's optional member sorting is not applied.
+- **`command-file` is kept** as an opt-in engine (for in-place tools, including a project's full
+  `spotless:apply`); only the automatic delegation is removed.
+- **Style files merge per section**: a committed `lathe-style.json` overrides the generated file only for
+  the sections it defines.
+- **The formatter is warmed up at startup**: a representative snippet is formatted on the server's
+  worker, so the first format-on-save does not pay for loading it (~550 ms → ~30–60 ms for Eclipse).
+- **A failure notifies once per session** with its reason; a formatter release that does not support
+  the running JDK is reported as such (palantir 2.98.0 fails on JDK 27 for most code).
+
+## Problem
+
+Lathe formats a workspace with one of:
+
+- the **bundled** google-java-format (`google`/`aosp`), a fixed version that can differ from the version the
+  project's Spotless pins;
+- **delegation** to `mvn spotless:apply` on the edited file (`command-file`) for any other Spotless formatter
+  (palantir, eclipse, …);
+- a user-supplied stdin/stdout **command**.
+
+Both of the first two fall short:
+
+- **Version drift.** The bundled GJF is not the project's version, so format-on-save can differ from what CI's
+  `spotless:check` enforces.
+- **Ignored options.** Sync reads only `<style>` from Spotless's `<googleJavaFormat>`; it ignores
+  `reflowLongStrings`, `reorderImports`, and `formatJavadoc`, whose Spotless defaults (`false`, `false`, `true`)
+  differ from what the bundled path does (it always reflows long strings and reorders imports).
+- **Delegation is slow.** One `mvn spotless:apply` takes about **3 s** per format with plain Maven (about 0.2 s
+  only with a warm mvnd), and format-on-save blocks the editor for that long.
+
+## Goal
+
+Run **the project's own pinned formatter, with its configured options, in-process** — exact parity with
+`spotless:apply`, at in-process speed — **without adding formatter dependencies to Lathe's build or code**.
+Support google-java-format (Google/AOSP), palantir-java-format, and the Eclipse JDT formatter.
+Drop Maven delegation entirely; keep the user-supplied `command` engine for anything else.
+
+## Design
+
+### Overview
+
+1. `lathe:sync` reads the project's Spotless Java configuration, resolves the pinned formatter's jars with Maven's
+   resolver (normally already in `~/.m2`, because the project's own Spotless downloaded them), and records engine,
+   version, options, and the jar paths in `.lathe/style.json`.
+2. lathe-server loads those jars in an **isolated classloader** (parent: the platform loader, so the JDK's
+   modules are visible but none of Lathe's own libraries) and calls the formatter **reflectively** through a small
+   per-family adapter. No formatter type appears in Lathe's code or build.
+3. Formatters that use javac internals (GJF, palantir) need `--add-exports`/`--add-opens` to `ALL-UNNAMED`.
+   Sync adds those grants to `.lathe/jvm.args`, the mechanism the launcher already uses for javac plugins.
+
+### Engines
+
+| `engine` | Formatter | Range formatting | javac-internals grants |
+|---|---|---|---|
+| `google` | google-java-format, Google style | `Formatter.getFormatReplacements` | yes |
+| `aosp` | google-java-format, AOSP style | same | yes |
+| `palantir` | palantir-java-format (style `PALANTIR`/`GOOGLE`/`AOSP`) | `Formatter.getFormatReplacements` | yes |
+| `eclipse` | Eclipse JDT `CodeFormatter` with the project's profile | native (`format(kind, source, offset, length, …)`) | no |
+| `command` | user-supplied stdin/stdout tool (unchanged) | no | — |
+| `command-file` | user-supplied tool that formats the file in place (unchanged) | no | — |
+| `none` | formatting disabled | — | — |
+
+Sync no longer writes `command-file` (automatic Maven delegation is removed): a Spotless formatter with no
+in-process engine becomes `none`, with a warning.
+`command-file` stays as an opt-in engine for tools that rewrite a file in place, including a project's full
+`spotless:apply` for teams that want every Spotless step (import order, license header, `spotless:off` regions,
+includes/excludes) applied on save.
+
+Style sources merge **per section**: a committed `lathe-style.json` wins over the generated `.lathe/style.json`
+for each of `formatter` and `indent` it defines, so committing only an indent keeps the formatter sync derives.
+The server and the Neovim client read it the same way.
+
+### Style schema
+
+`FormatterSpec` grows from `(engine, command)` to:
+
+```json
+{
+  "formatter": {
+    "engine": "palantir",
+    "version": "2.98.0",
+    "options": { "style": "PALANTIR", "formatJavadoc": "false" },
+    "classpath": ["/home/u/.m2/repository/com/palantir/javaformat/palantir-java-format/2.98.0/....jar", "..."],
+    "command": []
+  },
+  "indent": { "profile": "palantir", "block": 4, "continuation": 8 }
+}
+```
+
+- `options` carries the Spotless step options verbatim as strings (GJF: `style`, `reflowLongStrings`,
+  `reorderImports`, `formatJavadoc`; palantir: `style`, `formatJavadoc`; eclipse: `profile` = absolute path of the
+  profile XML), each defaulted to **Spotless's own default** when the project leaves it unset.
+- `classpath` is the resolved runtime closure of the formatter artifact, as absolute paths.
+- No backward compatibility: an old `style.json` is regenerated by the next sync.
+- A committed `lathe-style.json` keeps working for `command`/`none`; for an in-process engine it may omit
+  `classpath`, in which case the server reports the engine as unavailable until a sync resolves it.
+
+### `lathe:sync`
+
+`WorkspaceStyleWriter` (today: GJF → in-process, anything else → delegation) becomes:
+
+1. Read the root project's Spotless `<java>` configuration, as today.
+2. Map the first Java formatter step:
+   - `<googleJavaFormat>` → `google`/`aosp` by `<style>`; `groupArtifact` (a custom GJF build) is honoured;
+   - `<palantirJavaFormat>` → `palantir`;
+   - `<eclipse>` → `eclipse`, with `<file>` resolved to an absolute profile path;
+   - anything else, or no Spotless at all → `none` (the user may still commit a `command` style).
+3. Detect the version and classpath **from the project's own Spotless**, so Lathe uses exactly what
+   `spotless:apply` would (see [Version and classpath detection](#version-and-classpath-detection)).
+4. For `google`/`aosp`/`palantir`, pass the formatter's required grants to `JvmArgsWriter` as one more input
+   next to the build's own sources (`-J` compiler args, `<compilerArgument>`, `.mvn/jvm.config`, and `MAVEN_OPTS` as the
+   build environment exposes it).
+   They go through the same `accessFlags` normalization, so they dedupe with grants the project already declares
+   for running Spotless.
+   Sync keeps the formatter grants explicit rather than relying on the build's: a project that runs Spotless only
+   in CI may declare none locally.
+5. If resolution fails (offline, unknown version), write the engine with an empty `classpath` and log a warning;
+   the server reports it once.
+
+#### Version and classpath detection
+
+No mapping table is maintained in Lathe; Spotless's own library is the source of truth.
+
+1. Read the project's `spotless-maven-plugin` version from its POM and resolve that version's
+   `spotless-lib` and `spotless-lib-extra`. Sync loads them in an isolated classloader too, so they are not
+   dependencies of `lathe-maven-plugin` either.
+2. **Version** — the one configured in the step (`<version>`), else the Spotless library's own
+   `GoogleJavaFormatStep.defaultVersion()` / `PalantirJavaFormatStep.defaultVersion()` /
+   `EclipseJdtFormatterStep.defaultVersion()`. GJF's default is JDK-aware; sync runs in the project's Maven JVM,
+   so it picks what the project's own Spotless would.
+3. **Classpath**
+   - google/aosp and palantir: the artifact (`groupArtifact` for custom GJF builds) with its runtime
+     dependencies, as Spotless's provisioner resolves it;
+   - eclipse: exactly the Maven coordinates listed in Spotless's lockfile for that release,
+     `com/diffplug/spotless/extra/eclipse_jdt_formatter/v<version>.lockfile` inside `spotless-lib-extra`
+     (Spotless 3.10.3 ships 4.10–4.40; e.g. `v4.40` pins `org.eclipse.jdt.core:3.46.0`, `ecj:3.46.0`, and
+     16 Eclipse platform jars), resolved without transitives.
+4. A version Spotless has no lockfile for (newer Eclipse releases are fetched from p2 update sites instead) is
+   reported as unsupported: engine `eclipse` with an empty `classpath` and a warning.
+
+The grants a GJF/palantir engine needs are the documented ones:
+`--add-exports jdk.compiler/com.sun.tools.javac.{api,code,file,parser,tree,util}=ALL-UNNAMED`
+(the exact set is fixed in `LatheLayout`/`LatheFlags` and covered by a test that loads both formatters with only
+those grants).
+
+### lathe-server
+
+- **`FormatterHost`** — one isolated `URLClassLoader` per distinct `classpath`, created lazily on the first
+  format and cached for the workspace's lifetime; closed on workspace reload.
+- **Adapters** — `GoogleJavaFormatAdapter`, `PalantirAdapter`, `EclipseAdapter`, each a few dozen lines of
+  reflection that implement `format(source)` and `formatRanges(source, ranges)`:
+  - google/aosp run **Spotless's pipeline**: format → remove unused imports → reorder imports (only if
+    `reorderImports`) → reflow long strings (only if `reflowLongStrings`); palantir runs Spotless's palantir
+    order: reorder imports → remove unused imports → format;
+  - eclipse calls `ToolFactory.createCodeFormatter` with the profile's settings (an Eclipse XML export, properties
+    XML, or `.prefs`, read with the JDK) and applies the returned `TextEdit`, as Spotless's eclipse step does;
+    member sorting is not applied.
+- `FormatEngine` gains an optional range operation; `GjfFormatEngine` (google-java-format and its fork palantir,
+  one reflective engine over their shared API) replaces the bundled-GJF `GoogleFormatEngine`,
+  `EclipseFormatEngine` runs JDT, and `FileCommandFormatEngine` stays.
+- **Range formatting** — `rangeFormatting` and `rangesFormatting` are implemented (today a stub) and advertised,
+  with `rangesSupport`, for the in-process engines; `command` stays whole-file.
+- **Failure policy** — a formatter that cannot run (its jars missing, or it fails on this JDK — e.g. palantir
+  2.98.0 on JDK 27 reads a javac field JDK 27 removed) yields no edits and **one** notification per session naming
+  the engine, version, and reason. There is no fallback to Maven.
+- **stdout** — the server already redirects `System.out` to stderr at startup, so a formatter that prints cannot
+  corrupt the LSP channel.
+
+### Removed
+
+- Automatic delegation: sync no longer writes `command-file`; the `lathe.spotless` property,
+  `isSpotlessDelegationEnabled()`, and `WorkspaceStyleWriter.mavenSpotlessCommand()` are removed.
+- lathe-server's `google-java-format` dependency, its `requires com.google.googlejavaformat`, and the editor
+  launcher's module-qualified `com.google.googlejavaformat` grants (and the matching Surefire flags).
+- `docs/done/lathe-delegated-maven-formatting.md` is marked superseded.
+
+## Spike results
+
+A JDK-only host program (no formatter, Guava, or Eclipse type on its class path; reflection only) loaded
+google-java-format 1.35.0, palantir-java-format 2.98.0 (Spotless 3.10.3's default), and Eclipse JDT core 3.47.0
+from isolated classloaders, with only `ALL-UNNAMED` javac grants:
+
+| Check | Result |
+|---|---|
+| Host isolation | host cannot see any formatter class; GJF's Guava 32.1.3 and palantir's Guava 33.7.1 coexist |
+| First load + first format | GJF 80–94 ms, palantir 80–130 ms, eclipse 350–525 ms (once per workspace) |
+| Warm format | 5–13 ms per file |
+| GJF parity | 0 of 219 Spotless-clean lathe-server files changed |
+| Range formatting | a mangled method restored exactly, nothing outside touched: 43/43 GJF, 43/43 palantir, 45/45 eclipse |
+| JDK 21, 26, 27 | all pass, except palantir 2.98.0 on JDK 27 (`NoSuchFieldError: JCCompilationUnit.endPositions`) |
+| No grants at all | GJF fails (`IllegalAccessError`), confirming the grants are required |
+
+## Tests
+
+- `WorkspaceStyleWriterTest`: each Spotless step maps to the right engine and options, with Spotless's defaults;
+  unknown steps map to `none`.
+- Sync: resolution writes `classpath`; the engine's grants land in `.lathe/jvm.args` and dedupe with build grants;
+  resolution failure writes an empty `classpath`.
+- Adapters: real GJF, palantir, and eclipse jars (test-scope downloads into `target/`, never on Lathe's runtime
+  class path) — whole-file format of messy input, a fixpoint on formatted input, range formatting touching only the
+  range, Spotless option semantics (`reorderImports`, `reflowLongStrings`).
+- Server: range and multi-range requests; capability advertised only for in-process engines; the one-time failure
+  notification.
+- Invoker: `multi-module` keeps GJF, so its `jvm.args` now holds exactly the formatter grants
+  (`sync_noBuildGrants_noJvmArgsFile` becomes a test of that); new fixtures for palantir and eclipse Spotless configs, asserting
+  `.lathe/style.json`, `.lathe/jvm.args`, and an end-to-end format.
+
+## Decisions
+
+1. **Eclipse version mapping** — none in Lathe: the version and its exact jars come from the project's Spotless
+   library (default version and lockfiles); see [Version and classpath detection](#version-and-classpath-detection).
+2. **No Spotless Java formatter** — the engine is `none`; there is no bundled default formatter.
+3. **Per-module Spotless configs** — style stays reactor-wide (the root project's configuration), as today.
+4. **Gradle** — the same engines and schema apply; detection reads Gradle's Spotless (and palantir plugin)
+   configuration when Gradle support lands.

@@ -42,6 +42,23 @@ final class WorkspaceStyleTest {
     assertThat(WorkspaceStyle.read(root).formatter().engine()).isEqualTo("none");
   }
 
+  // A committed file that sets only the indent keeps the formatter sync generated, and vice versa.
+  @Test
+  void read_committedSetsOneSection_otherSectionComesFromGenerated() throws IOException {
+    writeGenerated(new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4));
+    final Path committed = root.resolve(LatheLayout.STYLE_SHARED_FILE);
+
+    Json.write(new WorkspaceStyleData(null, new IndentSpec("google", 4, 8)), committed);
+    final WorkspaceStyleData indentOnly = WorkspaceStyle.read(root);
+    Json.write(new WorkspaceStyleData(new FormatterSpec("none", List.of()), null), committed);
+    final WorkspaceStyleData formatterOnly = WorkspaceStyle.read(root);
+
+    assertThat(indentOnly.formatter().engine()).isEqualTo("google");
+    assertThat(indentOnly.indent().block()).isEqualTo(4);
+    assertThat(formatterOnly.formatter().engine()).isEqualTo("none");
+    assertThat(formatterOnly.indent().block()).isEqualTo(2);
+  }
+
   @Test
   void read_malformedFile_throws() throws IOException {
     Files.writeString(root.resolve(LatheLayout.STYLE_SHARED_FILE), "{ not json");

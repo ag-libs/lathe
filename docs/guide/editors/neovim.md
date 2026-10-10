@@ -63,7 +63,7 @@ require("lathe").setup()
 
 | Option | Default | Meaning |
 |---|---|---|
-| `style.formatter` | none | global-default full-document formatter: `{ engine = "google" }` (or `"aosp"`), `{ engine = "none" }`, or `{ engine = "command", command = { … } }` for an external tool (see below) |
+| `style.formatter` | none | global-default formatter for projects whose Spotless config does not provide one: `{ engine = "command", command = { … } }` or `{ engine = "command-file", command = { … } }` for an external tool (see below), or `{ engine = "none" }` |
 | `style.indent` | `{ profile = "editorconfig" }` | global-default live-editing indent: `profile` `"editorconfig"` (follow `.editorconfig`, else a 4-space Java baseline) or `"google"` (2-space block, 4-space continuation); optional `block` / `continuation` widths override the profile |
 | `format_on_save` | `false` | wire format-on-save (takes effect whenever the server advertises a formatter) |
 | `capabilities` | `make_client_capabilities()` | LSP capabilities table |
@@ -194,28 +194,28 @@ Both follow a per-workspace **style** — a project's committed `lathe-style.jso
   `style.indent.continuation` (or override the block with `style.indent.block`).
 - `google` — 2-space block, 4-space continuation.
 
-**Formatting** — usually you set nothing: `lathe:sync` writes the project's formatter into
-`.lathe/style.json` from its Spotless config. `style.formatter.engine` is `"google"`/`"aosp"`
-(in-process google-java-format, with import cleanup), `"command-file"` (a non-google Spotless formatter
-run via `mvn spotless:apply` on the edited file — the project's own eclipse/palantir/etc.), `"command"`
-(a stdin/stdout tool), or `"none"`. It runs on demand via `require('lathe').format()` (or
-`:LatheFormat`); add `format_on_save = true` to also format on write (wired whenever the server
-advertises a formatter). To disable or override per project, commit a `lathe-style.json`
-(`{ "formatter": { "engine": "none" } }`) or globally opt out of mvn delegation with
-`-Dlathe.spotless=false` — see [installation](../installation.md#choosing-overriding-or-opting-out-of-the-formatter).
-Range and on-type formatting are intentionally disabled, so a stray client request can't trigger a
-whole-document rewrite. A format that changes the buffer shows a brief `formatted in Xms` notification
-(handy for the slower mvn-delegated formatters); any formatter failure shows a warning notification,
-with the detail in `lsp.log`.
+**Formatting** — usually you set nothing: `lathe:sync` detects the project's Spotless formatter
+(`googleJavaFormat`, `palantirJavaFormat`, or `eclipse`) and the server runs that exact release
+in-process, so formatting takes milliseconds.
+It runs on demand via `require('lathe').format()` (or `:LatheFormat`); in visual mode it formats just
+the selection.
+Add `format_on_save = true` to also format on write (wired whenever the server advertises a formatter).
+To turn it off, override it, or run another tool, commit a `lathe-style.json` — see
+[installation](../installation.md#choosing-overriding-or-opting-out-of-the-formatter), which also lists
+what Lathe does not apply compared with `spotless:apply`.
+A format that changes the buffer shows a brief `formatted in Xms` notification; the first formatter
+failure shows a warning with the reason, and the detail is in `lsp.log`.
 
-For an external tool, set `style.formatter = { engine = "command", command = { "jfmt", "print", "-" } }`.
+For an external tool, set `style.formatter = { engine = "command", command = { "jfmt", "print", "-" } }`
+(a tool that formats a file in place uses `engine = "command-file"` instead; see
+[installation](../installation.md#overriding-it)).
 The server runs that command per format, piping the buffer to its stdin and taking stdout as the result
 — any tool that reads Java on stdin and writes formatted Java to stdout works. The command runs with
 the workspace root as its working directory, so it finds project config and a repo-relative command
 (e.g. `{ "./tools/fmt" }`) resolves; a bare command is looked up on the server's `PATH`. The tool's
 stderr flows to `lsp.log`, and on a non-zero exit, timeout, or missing command the buffer is left
 unchanged. Note that a JVM-based formatter pays full process startup on every call, so expect it to be
-noticeably slower than the in-process engine. Set `style.indent` to match your tool so live typing does
+noticeably slower than the in-process engines. Set `style.indent` to match your tool so live typing does
 not fight format-on-save.
 
 Prefer `require('lathe').format()` over a bare `vim.lsp.buf.format()`: a format edit that touches the
@@ -228,12 +228,12 @@ vim.keymap.set({ "n", "x" }, "<leader>f", function()
 end, { desc = "Lathe: format buffer" })
 ```
 
-A global "Google format + indent on save" default (projects with their own style file still win):
+A global "Google indent, format on save" default (a project's Spotless-detected formatter and its own
+style file still win):
 
 ```lua
 require("lathe").setup({
   style = {
-    formatter = { engine = "google" },
     indent = { profile = "google" },
   },
   format_on_save = true,

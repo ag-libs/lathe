@@ -14,7 +14,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
-import com.google.googlejavaformat.java.JavaFormatterOptions.Style;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
@@ -213,7 +212,7 @@ class LatheTextDocumentServiceTest {
   @Test
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
-    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
+    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
@@ -229,33 +228,60 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void formatting_engineFails_notifiesClientAndReturnsEmpty() throws Exception {
+  void formatting_engineFailsRepeatedly_notifiesClientOnceWithReason() throws Exception {
     service.initialize(tmp);
-    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
+    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
 
-    final List<? extends TextEdit> edits =
+    final List<? extends TextEdit> first =
+        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+    final List<? extends TextEdit> second =
         service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
 
-    assertThat(edits).isEmpty();
-    verify(client, timeout(2000))
+    assertThat(first).isEmpty();
+    assertThat(second).isEmpty();
+    verify(client, timeout(2000).times(1))
         .showMessage(
             argThat(
                 m ->
                     m.getType() == MessageType.Warning
-                        && m.getMessage().contains("formatting failed")));
+                        && m.getMessage().startsWith("Lathe: formatting failed: ")
+                        && m.getMessage().endsWith("(further failures are only logged)")));
   }
 
   @Test
-  void rangeFormatting_anyProfile_returnsEmptyEdits() throws Exception {
-    service.setFormatEngine(new GoogleFormatEngine(Style.GOOGLE));
+  void rangeFormatting_inProcessEngine_formatsOnlyTheRange() throws Exception {
+    service.initialize(tmp);
+    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\nint   y;\n}\n")));
+
+    final List<? extends TextEdit> edits =
+        service.rangeFormatting(rangeFormattingParams(1)).get(5, TimeUnit.SECONDS);
+
+    assertThat(edits).hasSize(1);
+    assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
+    assertThat(edits.getFirst().getRange().getEnd().getLine()).isEqualTo(1);
+  }
+
+  @Test
+  void rangeFormatting_wholeFileEngine_returnsEmptyEdits() throws Exception {
+    service.setFormatEngine(
+        new ExternalCommandFormatEngine(
+            List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, tmp));
+
+    assertThat(service.rangeFormatting(rangeFormattingParams(0)).get(5, TimeUnit.SECONDS))
+        .isEmpty();
+  }
+
+  private static DocumentRangeFormattingParams rangeFormattingParams(final int line) {
     final var params = new DocumentRangeFormattingParams();
     params.setTextDocument(new TextDocumentIdentifier(URI));
-    params.setRange(new Range(new Position(0, 0), new Position(0, 0)));
+    params.setRange(new Range(new Position(line, 0), new Position(line + 1, 0)));
     params.setOptions(new FormattingOptions(2, true));
-
-    assertThat(service.rangeFormatting(params).get(5, TimeUnit.SECONDS)).isEmpty();
+    return params;
   }
 
   @Test

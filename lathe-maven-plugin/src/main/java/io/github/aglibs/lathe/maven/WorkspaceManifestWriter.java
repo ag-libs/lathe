@@ -9,7 +9,6 @@ import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -47,19 +46,13 @@ final class WorkspaceManifestWriter {
     final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
     final var newContent = Json.toJson(data);
     try {
-      Files.createDirectories(latheDir);
       writeJavaHome(latheDir, jdkSource);
-      if (Files.exists(manifestPath)
-          && newContent.equals(Files.readString(manifestPath, StandardCharsets.UTF_8))) {
+      if (!FileUtil.writeIfChanged(latheDir, manifestPath, newContent, false)) {
         // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
-        // the
-        // server's watcher re-scans the mirror even though the manifest itself did not change.
+        // the server's watcher re-scans the mirror even though the manifest itself did not change.
         Files.setLastModifiedTime(manifestPath, FileTime.from(Instant.now()));
         log.info("[sync] workspace unchanged — touched manifest for mirror refresh");
-        return;
       }
-
-      FileUtil.writeAtomically(latheDir, manifestPath, newContent, false);
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
     }
@@ -73,12 +66,6 @@ final class WorkspaceManifestWriter {
     }
 
     final var javaHomePath = latheDir.resolve(LatheLayout.JAVA_HOME_FILE);
-    final String home = jdkSource.home().toString();
-    if (Files.exists(javaHomePath)
-        && home.equals(Files.readString(javaHomePath, StandardCharsets.UTF_8))) {
-      return;
-    }
-
-    FileUtil.writeAtomically(latheDir, javaHomePath, home, false);
+    FileUtil.writeIfChanged(latheDir, javaHomePath, jdkSource.home().toString(), false);
   }
 }

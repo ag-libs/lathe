@@ -7,7 +7,6 @@ import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -164,13 +163,10 @@ final class MainLaunchWriter {
     final Path launchFile = moduleDir.resolve(LatheLayout.MAIN_LAUNCH_FILE);
     final String newContent = Json.toJson(data);
     try {
-      Files.createDirectories(moduleDir);
-      if (Files.exists(launchFile)
-          && newContent.equals(Files.readString(launchFile, StandardCharsets.UTF_8))) {
+      if (!FileUtil.writeIfChanged(moduleDir, launchFile, newContent, false)) {
         return;
       }
 
-      FileUtil.writeAtomically(moduleDir, launchFile, newContent, false);
       log.debug("[sync] main-launch %s written".formatted(moduleRel));
     } catch (final IOException e) {
       throw new SyncException(

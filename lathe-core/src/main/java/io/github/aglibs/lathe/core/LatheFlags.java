@@ -1,14 +1,14 @@
 package io.github.aglibs.lathe.core;
 
+import java.util.List;
+import java.util.stream.Stream;
+
 public final class LatheFlags {
 
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String RESULTS_SINK = "lathe.results.sink";
-  // Opt out of delegating non-google Spotless formatters to `mvn spotless:apply` (sync writes
-  // `none`).
-  public static final String SPOTLESS = "lathe.spotless";
 
   // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
   // the global-default style, same shape as the workspace style file; a project file overrides it.
@@ -19,12 +19,38 @@ public final class LatheFlags {
   public static final String FORMATTER_COMMAND_OPTION = "command";
   public static final String FORMATTER_GOOGLE = "google";
   public static final String FORMATTER_AOSP = "aosp";
+  public static final String FORMATTER_PALANTIR = "palantir";
+  public static final String FORMATTER_ECLIPSE = "eclipse";
   public static final String FORMATTER_NONE = "none";
   public static final String FORMATTER_COMMAND = "command";
   public static final String FORMATTER_COMMAND_FILE = "command-file";
   public static final String FORMAT_FILE_TOKEN = "%FILE%";
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";
+
+  // Spotless step options carried in FormatterSpec.options, named as in the Spotless POM config.
+  // Sync fills unset ones from the step's own default<Option>() (a step without one does not
+  // support the option).
+  public static final String FORMAT_STYLE = "style";
+  public static final String FORMAT_STYLE_GOOGLE = "GOOGLE";
+  public static final String FORMAT_STYLE_AOSP = "AOSP";
+  public static final String FORMAT_STYLE_PALANTIR = "PALANTIR";
+  public static final String FORMAT_REFLOW_LONG_STRINGS = "reflowLongStrings";
+  public static final String FORMAT_REORDER_IMPORTS = "reorderImports";
+  public static final String FORMAT_JAVADOC = "formatJavadoc";
+  public static final List<String> FORMAT_STEP_OPTIONS =
+      List.of(FORMAT_STYLE, FORMAT_REFLOW_LONG_STRINGS, FORMAT_REORDER_IMPORTS, FORMAT_JAVADOC);
+  // The Eclipse formatter profile (Spotless <file>), as an absolute path.
+  public static final String FORMAT_FILE = "file";
+  // A custom build of the formatter (Spotless <groupArtifact>), groupId:artifactId.
+  public static final String FORMAT_GROUP_ARTIFACT = "groupArtifact";
+
+  // The javac internals google-java-format and palantir reach into. A pinned formatter runs in the
+  // unnamed module (an isolated classloader), so sync grants them to ALL-UNNAMED in jvm.args.
+  public static final List<String> FORMATTER_JAVAC_GRANTS =
+      Stream.of("api", "code", "file", "parser", "tree", "util")
+          .map("--add-exports=jdk.compiler/com.sun.tools.javac.%s=ALL-UNNAMED"::formatted)
+          .toList();
 
   // Coarse client<->server contract version. The server advertises it via
   // capabilities.experimental.latheProtocol; the standalone client compares it against its own
@@ -58,10 +84,5 @@ public final class LatheFlags {
 
   public static boolean isCaptureOnly() {
     return "true".equals(System.getProperty(CAPTURE_ONLY));
-  }
-
-  // Delegating non-google Spotless to `mvn spotless:apply` is on unless explicitly disabled.
-  public static boolean isSpotlessDelegationEnabled() {
-    return !"false".equals(System.getProperty(SPOTLESS));
   }
 }

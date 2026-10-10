@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.install;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -16,16 +15,7 @@ import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.artifact.DefaultArtifact;
-import org.eclipse.aether.collection.CollectRequest;
-import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.repository.RemoteRepository;
-import org.eclipse.aether.resolution.ArtifactRequest;
-import org.eclipse.aether.resolution.ArtifactResolutionException;
-import org.eclipse.aether.resolution.ArtifactResult;
-import org.eclipse.aether.resolution.DependencyRequest;
-import org.eclipse.aether.resolution.DependencyResolutionException;
-import org.eclipse.aether.util.artifact.JavaScopes;
 
 public final class ServerInstaller {
 
@@ -41,8 +31,7 @@ public final class ServerInstaller {
   private static final String STDOUT_GUARD_JVM_OPTS =
       "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr";
 
-  private final RepositorySystem repositorySystem;
-  private final RepositorySystemSession repoSession;
+  private final ArtifactResolver artifactResolver;
   private final List<RemoteRepository> remoteRepositories;
   private final Log log;
 
@@ -51,8 +40,7 @@ public final class ServerInstaller {
       final RepositorySystemSession repoSession,
       final List<RemoteRepository> remoteRepositories,
       final Log log) {
-    this.repositorySystem = repositorySystem;
-    this.repoSession = repoSession;
+    this.artifactResolver = new ArtifactResolver(repositorySystem, repoSession);
     this.remoteRepositories = remoteRepositories;
     this.log = log;
   }
@@ -131,15 +119,12 @@ public final class ServerInstaller {
   private void writeLauncher(final Path versionDir, final String scriptName, final String script)
       throws IOException {
     final var launcherScript = versionDir.resolve(scriptName);
-    if (Files.exists(launcherScript)
-        && Files.isExecutable(launcherScript)
-        && script.equals(Files.readString(launcherScript, StandardCharsets.UTF_8))) {
+    final boolean isUpdate = Files.exists(launcherScript);
+    if (!FileUtil.writeIfChanged(versionDir, launcherScript, script, true)) {
       log.debug("[server] %s unchanged — skipping write".formatted(scriptName));
       return;
     }
 
-    final boolean isUpdate = Files.exists(launcherScript);
-    FileUtil.writeAtomically(versionDir, launcherScript, script, true);
     log.info(
         "[server] %s %s at %s"
             .formatted(isUpdate ? "updated" : "installed", scriptName, launcherScript));
@@ -150,25 +135,11 @@ public final class ServerInstaller {
   }
 
   Path resolveRunnerJar() throws SyncException {
-    final var artifact =
-        new DefaultArtifact(
-            PluginProps.groupId(),
-            PluginProps.TEST_RUNNER_ARTIFACT_ID,
-            "jar",
-            PluginProps.version());
-    final var request = new ArtifactRequest(artifact, remoteRepositories, null);
-    try {
-      return repositorySystem
-          .resolveArtifact(repoSession, request)
-          .getArtifact()
-          .getFile()
-          .toPath();
-    } catch (final ArtifactResolutionException e) {
-      throw new SyncException(
-          "lathe:sync failed to resolve lathe-test-runner artifact for version %s"
-              .formatted(PluginProps.version()),
-          e);
-    }
+    return artifactResolver.resolve(
+        "%s:%s:%s"
+            .formatted(
+                PluginProps.groupId(), PluginProps.TEST_RUNNER_ARTIFACT_ID, PluginProps.version()),
+        remoteRepositories);
   }
 
   private List<Path> resolveServerJars() throws SyncException {
@@ -231,22 +202,8 @@ public final class ServerInstaller {
 
   private List<Path> resolveTransitiveJars(
       final String groupId, final String artifactId, final String version) throws SyncException {
-    final var artifact = new DefaultArtifact(groupId, artifactId, "jar", version);
-    final var dep = new Dependency(artifact, JavaScopes.RUNTIME);
-    final var collectRequest = new CollectRequest(dep, remoteRepositories);
-    final var depRequest = new DependencyRequest(collectRequest, null);
-    try {
-      return repositorySystem
-          .resolveDependencies(repoSession, depRequest)
-          .getArtifactResults()
-          .stream()
-          .filter(ArtifactResult::isResolved)
-          .map(r -> r.getArtifact().getFile().toPath())
-          .toList();
-    } catch (final DependencyResolutionException e) {
-      throw new SyncException(
-          "lathe:sync failed to resolve %s:%s:%s".formatted(groupId, artifactId, version), e);
-    }
+    return artifactResolver.resolveTransitive(
+        "%s:%s:%s".formatted(groupId, artifactId, version), remoteRepositories);
   }
 
   static String renderLauncherScript(final String modulePath) {
@@ -258,34 +215,17 @@ public final class ServerInstaller {
     //
     // Classpath javac plugins (e.g. Error Prone) run in the unnamed module and need javac
     // internals exported to ALL-UNNAMED. Those grants are per workspace, in .lathe/jvm.args, copied
-    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none.
-    //
-    // google-java-format is a named module on the module path and uses module-qualified exports.
+    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none. A project's
+    // pinned formatter also runs in the unnamed module (an isolated classloader), so lathe:sync
+    // adds the grants it needs to the same file.
     return """
         #!/bin/sh
         %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
-        %s%s  --module-path %s \\
+          --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
-        .formatted(
-            javaResolvePrologue(),
-            jvmArgsPrologue(),
-            STDOUT_GUARD_JVM_OPTS,
-            javacAccessLines(
-                "--add-exports",
-                "com.google.googlejavaformat",
-                "api",
-                "code",
-                "comp",
-                "file",
-                "main",
-                "model",
-                "parser",
-                "tree",
-                "util"),
-            javacAccessLines("--add-opens", "com.google.googlejavaformat", JAVAC_OPEN_PACKAGES),
-            modulePath);
+        .formatted(javaResolvePrologue(), jvmArgsPrologue(), STDOUT_GUARD_JVM_OPTS, modulePath);
   }
 
   static String renderMcpLauncherScript(final String classpath) {
@@ -294,7 +234,7 @@ public final class ServerInstaller {
     // the in-process javac it drives run in the unnamed module. That javac needs the same
     // jdk.compiler
     // internals the editor launcher grants, but targeted at ALL-UNNAMED — there is no named module
-    // here (google-java-format is unnamed on the classpath too, so the same exports cover it).
+    // here.
     return """
         #!/bin/sh
         %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\

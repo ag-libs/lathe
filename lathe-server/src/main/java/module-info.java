@@ -10,7 +10,8 @@ module io.github.aglibs.lathe.server {
   // UnsafeAllocator. LSP4J types such as TypeHierarchyItem and CallHierarchyItem have no no-arg
   // constructor, so Gson must use Unsafe to instantiate them; without it deserialization throws.
   requires jdk.unsupported;
-  requires com.google.googlejavaformat;
+  // Reads an Eclipse formatter profile (an XML export) for the pinned Eclipse formatter.
+  requires java.xml;
   requires io.github.aglibs.lathe.core;
   requires io.github.aglibs.validcheck;
 

@@ -29,7 +29,13 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.WorkspaceEditCapabilities;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
+import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
+import org.eclipse.lsp4j.DocumentRangeFormattingParams;
+import org.eclipse.lsp4j.FormattingOptions;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
@@ -84,6 +90,8 @@ class LspSmokeTest {
     originalManifest = Files.readString(MANIFEST);
     client = new CapturingClient();
     final var pb = new ProcessBuilder(LAUNCHER.toString());
+    // Editors start the launcher from the workspace root, where it finds .lathe/jvm.args.
+    pb.directory(ROOT.toFile());
     pb.environment().put("LATHE_DEBUG", "1");
     serverProcess = pb.start();
 
@@ -155,7 +163,49 @@ class LspSmokeTest {
     // Formatting is per-workspace: this fixture's spotless googleJavaFormat config makes lathe:sync
     // write .lathe/style.json with the google engine, so the server advertises formatting here.
     assertThat(caps.getDocumentFormattingProvider()).isNotNull();
+    // The pinned google-java-format runs in-process, so it formats ranges too.
+    assertThat(caps.getDocumentRangeFormattingProvider()).isNotNull();
     assertThat(caps.getSemanticTokensProvider()).isNotNull();
+  }
+
+  // End to end through what sync wrote: style.json's resolved google-java-format jars, loaded in
+  // an isolated classloader, with jvm.args granting the javac internals it needs.
+  @Test
+  void formatting_pinnedGoogleJavaFormat_formatsDocumentAndRange() throws Exception {
+    final Path stringUtilsJava =
+        ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
+    final var uri = stringUtilsJava.toUri().toString();
+    final var mangled =
+        Files.readString(stringUtilsJava)
+            .replace("public static String upper", "public   static String   upper");
+    openDoc(uri, mangled);
+    final var document = new TextDocumentIdentifier(uri);
+    final var options = new FormattingOptions(2, true);
+    final int line = findToken(mangled, "public   static String   upper", "upper").getLine();
+
+    try {
+      final List<? extends TextEdit> whole =
+          server
+              .getTextDocumentService()
+              .formatting(new DocumentFormattingParams(document, options))
+              .get(30, SECONDS);
+      final List<? extends TextEdit> ranged =
+          server
+              .getTextDocumentService()
+              .rangeFormatting(
+                  new DocumentRangeFormattingParams(
+                      document,
+                      options,
+                      new Range(new Position(line, 0), new Position(line + 1, 0))))
+              .get(30, SECONDS);
+
+      assertThat(whole).isNotEmpty();
+      assertThat(ranged)
+          .singleElement()
+          .satisfies(edit -> assertThat(edit.getRange().getStart().getLine()).isEqualTo(line));
+    } finally {
+      server.getTextDocumentService().didClose(new DidCloseTextDocumentParams(document));
+    }
   }
 
   @Test

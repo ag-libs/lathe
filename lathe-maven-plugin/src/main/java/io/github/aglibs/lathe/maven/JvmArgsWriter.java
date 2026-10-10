@@ -46,13 +46,20 @@ final class JvmArgsWriter {
 
   // mavenOpts is MAVEN_OPTS as the build sees it (empty when unset). Only its jdk.compiler grants
   // are taken: it often carries unrelated JVM tuning or java.base opens meant for Maven itself.
-  void write(final Path workspaceRoot, final List<MavenProject> projects, final String mavenOpts) {
+  // formatterGrants are what the project's pinned formatter needs, granted even when the build
+  // declares none (a project may run Spotless only in CI).
+  void write(
+      final Path workspaceRoot,
+      final List<MavenProject> projects,
+      final String mavenOpts,
+      final List<String> formatterGrants) {
     final var args = new LinkedHashSet<String>();
     args.addAll(accessFlags(forkedJvmArgs(projects)));
     args.addAll(accessFlags(jvmConfigTokens(workspaceRoot)));
     accessFlags(tokens(mavenOpts)).stream()
         .filter(flag -> flag.contains(JAVAC_MODULE_TARGET))
         .forEach(args::add);
+    args.addAll(accessFlags(formatterGrants));
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var argsPath = latheDir.resolve(LatheLayout.JVM_ARGS_FILE);
     try {
@@ -62,13 +69,10 @@ final class JvmArgsWriter {
       }
 
       final var content = String.join("\n", args).concat("\n");
-      Files.createDirectories(latheDir);
-      if (Files.exists(argsPath)
-          && content.equals(Files.readString(argsPath, StandardCharsets.UTF_8))) {
+      if (!FileUtil.writeIfChanged(latheDir, argsPath, content, false)) {
         return;
       }
 
-      FileUtil.writeAtomically(latheDir, argsPath, content, false);
       log.info("[sync] jvm.args %d module-access flag(s)".formatted(args.size()));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write jvm.args", e);

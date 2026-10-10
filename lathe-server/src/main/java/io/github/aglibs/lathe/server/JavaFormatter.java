@@ -4,7 +4,9 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.Callable;
 import java.util.logging.Logger;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
@@ -18,13 +20,30 @@ final class JavaFormatter {
   // WorkspaceSession.format catches it to log and notify the client.
   static List<TextEdit> format(final FormatEngine engine, final String content, final Path file)
       throws Exception {
+    return edits(engine, content, () -> engine.format(content, file));
+  }
+
+  // Formats only the given ranges (LSP positions) of content; text outside them is not touched.
+  static List<TextEdit> formatRanges(
+      final FormatEngine engine, final String content, final List<Range> ranges) throws Exception {
+    return edits(
+        engine,
+        content,
+        () ->
+            engine.formatRanges(
+                content, ranges.stream().map(range -> toTextRange(content, range)).toList()));
+  }
+
+  private static List<TextEdit> edits(
+      final FormatEngine engine, final String content, final Callable<String> formatting)
+      throws Exception {
     if (content == null) {
       return List.of();
     }
 
-    final String engineType = engine.getClass().getSimpleName();
     final var t = Stopwatch.start();
-    final String formatted = engine.format(content, file);
+    final String formatted = formatting.call();
+    final String engineType = engine.getClass().getSimpleName();
     if (formatted.equals(content)) {
       LOG.fine(() -> "[format] %s no changes %dms".formatted(engineType, t.elapsedMs()));
       return List.of();
@@ -32,6 +51,14 @@ final class JavaFormatter {
 
     LOG.fine(() -> "[format] %s applied %dms".formatted(engineType, t.elapsedMs()));
     return List.of(minimalEdit(content, formatted));
+  }
+
+  private static TextRange toTextRange(final String content, final Range range) {
+    return new TextRange(offsetOf(content, range.getStart()), offsetOf(content, range.getEnd()));
+  }
+
+  private static int offsetOf(final String content, final Position position) {
+    return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
   }
 
   // Replaces only the region that actually changed (between the common leading and trailing text),
