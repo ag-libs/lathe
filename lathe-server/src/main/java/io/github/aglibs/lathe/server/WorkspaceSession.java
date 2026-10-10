@@ -3638,6 +3638,7 @@ final class WorkspaceSession {
   private static final int BULK_CHANGE_THRESHOLD = 50;
   static final long ACTIVE_WINDOW_MS = 30_000L;
   static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
+  static final long DEPENDENT_REFRESH_DEBOUNCE_MS = 500L;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -4044,9 +4045,12 @@ final class WorkspaceSession {
         .forEach(this::scheduleDependent);
   }
 
+  // Debounced, unlike the editor's own file: the event loop coalesces per uri, so a burst of saves
+  // (`:wa` after a reactor-wide rename) refreshes each open dependent once after the burst, instead
+  // of every save queuing a compile of every other open file on the module worker.
   private void scheduleDependent(final String uri) {
     LOG.fine(() -> "[dependents] recompiling %s".formatted(uri));
-    scheduleOpenFile(uri);
+    scheduleOpenFile(uri, DEPENDENT_REFRESH_DEBOUNCE_MS);
   }
 
   private boolean inDownstreamScope(final String uri, final Set<Path> scope) {
@@ -4057,13 +4061,13 @@ final class WorkspaceSession {
   }
 
   private void scheduleAllOpenFiles() {
-    docs.all().stream().map(OpenDocument::uri).toList().forEach(this::scheduleOpenFile);
+    docs.all().stream().map(OpenDocument::uri).toList().forEach(uri -> scheduleOpenFile(uri, 0L));
   }
 
-  private void scheduleOpenFile(final String uri) {
+  private void scheduleOpenFile(final String uri, final long delayMs) {
     worker.schedule(
         uri,
-        0L,
+        delayMs,
         () -> {
           final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {

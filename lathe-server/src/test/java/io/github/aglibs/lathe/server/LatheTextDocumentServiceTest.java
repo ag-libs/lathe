@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -21,15 +22,23 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -41,6 +50,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
@@ -714,41 +724,62 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path dep = sourceRoot.resolve("com/example/Dep.java");
-    final Path user = sourceRoot.resolve("com/example/User.java");
-    Files.createDirectories(dep.getParent());
-    Files.writeString(
-        dep, "package com.example;\npublic class Dep { public int v() { return 1; } }\n");
-    Files.writeString(
-        user, "package com.example;\npublic class User { int u() { return new Dep().v(); } }\n");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), dep, user);
-    CompiledStamps.writeAll(
-        tmp.resolve(".lathe/module"),
-        "classes",
-        Map.of(
-            "com/example/Dep.java", Files.getLastModifiedTime(dep).toMillis(),
-            "com/example/User.java", Files.getLastModifiedTime(user).toMillis()));
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+  void didSave_burstOfSavesAcrossFiles_recompilesEachOpenDependentAtMostOnce() throws Exception {
+    final DepFixture fx = depWithUsers(3);
     service.initialize(tmp);
+    awaitStartup();
+    openDoc(fx.dep(), Files.readString(fx.dep()));
+    for (final Path user : fx.users()) {
+      openDoc(user, Files.readString(user));
+      verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
+    }
 
-    final String userUri = user.toUri().toString();
-    service.didOpen(
-        new DidOpenTextDocumentParams(
-            new TextDocumentItem(userUri, "java", 1, Files.readString(user))));
+    awaitWorkerIdle();
+    clearInvocations(client);
+    // Count compiles, not publishes: a stale result is dropped unpublished, so a pile-up of
+    // redundant compiles only shows in the compile log.
+    final var compiles = new ConcurrentLinkedQueue<String>();
+    final var handler = new MessageCollector(compiles);
+    final var logger = Logger.getLogger(SourceAnalysisSession.class.getName());
+    logger.addHandler(handler);
+    try {
+      // `:wa` after a rename saves every touched file back to back, and each save refreshes the
+      // other open files; repeated saves of one file supersede each other, so they never pile up.
+      final var all = new ArrayList<Path>(fx.users());
+      all.addFirst(fx.dep());
+      for (final Path file : all) {
+        service.didSave(
+            new DidSaveTextDocumentParams(
+                new TextDocumentIdentifier(file.toUri().toString()), Files.readString(file)));
+      }
+
+      for (final Path user : fx.users()) {
+        verify(client, after(1_500).atLeastOnce()).publishDiagnostics(argThat(p -> isFor(p, user)));
+        final String openCompile = "[compile:open] %s ".formatted(user.toUri());
+        assertThat(compiles).filteredOn(m -> m.startsWith(openCompile)).hasSizeLessThanOrEqualTo(1);
+      }
+    } finally {
+      logger.removeHandler(handler);
+    }
+  }
+
+  @Test
+  void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    service.initialize(tmp);
+    final Path user = fx.users().getFirst();
+    openDoc(user, Files.readString(user));
     verify(client, timeout(5_000))
-        .publishDiagnostics(
-            argThat(p -> p.getUri().equals(userUri) && p.getDiagnostics().isEmpty()));
+        .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
 
-    Files.delete(dep);
+    Files.delete(fx.dep());
     service.reconcileNow().get(5, TimeUnit.SECONDS);
 
     verify(client, timeout(5_000))
         .publishDiagnostics(
             argThat(
                 p ->
-                    p.getUri().equals(userUri)
+                    isFor(p, user)
                         && p.getDiagnostics().stream()
                             .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error)));
   }
@@ -869,6 +900,69 @@ class LatheTextDocumentServiceTest {
         tmp.resolve("module/src/main/java/com/example/Foo.java"),
         "package com.example; class Foo {}",
         mtime);
+  }
+
+  // Dep plus userCount callers of Dep.v(), compiled into the mirror and stamped, so the workspace
+  // starts fresh and the callers are exactly what a change to Dep must refresh.
+  private DepFixture depWithUsers(final int userCount) throws Exception {
+    final Path dep =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Dep.java",
+            "package com.example;\npublic class Dep { public int v() { return 1; } }\n");
+    final var users = new ArrayList<Path>();
+    for (int i = 0; i < userCount; i++) {
+      users.add(
+          TestCompiler.writeModuleSource(
+              tmp,
+              "com/example/User%d.java".formatted(i),
+              "package com.example;\nclass User%d { int u() { return new Dep().v(); } }\n"
+                  .formatted(i)));
+    }
+
+    final var sources = new ArrayList<Path>(users);
+    sources.add(dep);
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), sources.toArray(Path[]::new));
+    final var stamps = new HashMap<String, Long>();
+    for (final Path source : sources) {
+      stamps.put(
+          sourceRoot.relativize(source).toString(), Files.getLastModifiedTime(source).toMillis());
+    }
+
+    CompiledStamps.writeAll(tmp.resolve(".lathe/module"), "classes", stamps);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    return new DepFixture(dep, users);
+  }
+
+  private record DepFixture(Path dep, List<Path> users) {
+    private DepFixture {
+      users = List.copyOf(users);
+    }
+  }
+
+  private static boolean isFor(final PublishDiagnosticsParams params, final Path file) {
+    return params.getUri().equals(file.toUri().toString());
+  }
+
+  // Collects log messages, so a test can count operations that leave no other observable trace.
+  private static final class MessageCollector extends Handler {
+    private final Queue<String> messages;
+
+    MessageCollector(final Queue<String> messages) {
+      this.messages = messages;
+    }
+
+    @Override
+    public void publish(final LogRecord record) {
+      messages.add(record.getMessage());
+    }
+
+    @Override
+    public void flush() {}
+
+    @Override
+    public void close() {}
   }
 
   private void openDoc(final Path file, final String content) {
