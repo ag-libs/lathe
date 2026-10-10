@@ -1,6 +1,8 @@
--- Verifies lathe.sync: run_maven picks the right goal/cwd, a concurrent sync for the same root is a
--- no-op, an empty root does nothing, and the lathe/sync handler dispatches to run_maven. Stubs
--- vim.system so no Maven is spawned.
+-- Verifies lathe.sync: run executes the workspace's .lathe/lathe-sync.sh with --tests and module
+-- arguments, at the workspace root; a missing script (a workspace synced by an older Lathe) is
+-- reported instead of run; the toast shows the full build command the script prints first; a
+-- concurrent sync for the same root is a no-op; an empty root does nothing; and the lathe/sync
+-- handler dispatches to run. Stubs vim.system so no build is spawned.
 --
 -- Run via run-specs.sh, or headless:
 --   nvim --headless --clean -u NONE \
@@ -10,7 +12,7 @@
 
 local spec = require("spec_helper").new()
 
--- Capture vim.system calls instead of spawning Maven; retain the completion callback so the
+-- Capture vim.system calls instead of spawning the script; retain the completion callback so the
 -- running-guard can be released on demand.
 local calls = {}
 local pending_cb
@@ -19,7 +21,10 @@ vim.system = function(cmd, opts, on_exit)
   pending_cb = on_exit
   return { pid = 1 }
 end
-vim.notify = function() end
+local notes = {}
+vim.notify = function(msg)
+  table.insert(notes, msg)
+end
 vim.schedule = function(fn) fn() end
 
 -- Capture the reactor-lock pre-touch and release instead of touching a real file, so the path and
@@ -35,72 +40,82 @@ vim.loop.fs_unlink = function(path)
   return true
 end
 
--- Control which maven executables "exist" so the mvnd/mvnw/mvn preference is deterministic. Empty =
--- only plain `mvn`.
-local available = {}
-vim.fn.executable = function(name)
-  return available[name] and 1 or 0
+-- Every root has a sync script unless listed here (a workspace synced by an older Lathe).
+local missing = {}
+vim.fn.executable = function(path)
+  return missing[path] and 0 or 1
+end
+
+local function last_args()
+  return vim.list_slice(calls[#calls].cmd, 2)
 end
 
 local sync = require("lathe.sync")
 
-sync.run_maven("/ws/a", false)
-spec.check("invokes mvn", calls[1].cmd[1], "mvn")
-spec.check("pre-touches the reactor lock before spawning", writes[1], "/ws/a/.lathe/lathe.lock")
-spec.check("passes --no-transfer-progress", calls[1].cmd[2], "--no-transfer-progress")
-spec.check("disables the build cache", calls[1].cmd[3], "-Dmaven.build.cache.enabled=false")
-spec.check("default goal is process-test-classes", calls[1].cmd[4], "process-test-classes")
+sync.run("/ws/a", false)
+spec.check("runs the workspace sync script", calls[1].cmd[1], "/ws/a/.lathe/lathe-sync.sh")
+spec.check("full sync passes no arguments", #last_args(), 0)
 spec.check("runs at the workspace root", calls[1].opts.cwd, "/ws/a")
+spec.check("pre-touches the reactor lock before spawning", writes[1], "/ws/a/.lathe/lathe.lock")
 
-pending_cb({ code = 0 }) -- finish the first job so the guard for /ws/a clears
+-- The script prints the exact build command first; the toast and console show it from then on.
+calls[1].opts.stderr(nil, "lathe-sync: mvnd -pl core -am -amd process-test-classes\n[INFO] x\n")
+pending_cb({ code = 0, stdout = "" })
 spec.check("releases the reactor lock when the build ends", unlinks[1], "/ws/a/.lathe/lathe.lock")
+spec.check(
+  "success toast shows the full command the script printed",
+  notes[#notes]:find("mvnd -pl core -am -amd process-test-classes", 1, true) ~= nil,
+  true
+)
 
-sync.run_maven("/ws/a", true)
-spec.check("capture selects the test goal", calls[2].cmd[4], "test")
-
+sync.run("/ws/a", true)
+spec.check("capture passes --tests", table.concat(last_args(), " "), "--tests")
 pending_cb({ code = 0 })
 
--- Targeted sync: a module list narrows the build to `-pl <modules> -am` before the goal.
-sync.run_maven("/ws/e", false, { "app", "core" })
-local targeted = calls[#calls].cmd
-spec.check("targeted sync inserts -pl", targeted[4], "-pl")
-spec.check("targeted sync joins modules with comma", targeted[5], "app,core")
-spec.check("targeted sync adds -am", targeted[6], "-am")
-spec.check("targeted goal follows -pl -am", targeted[7], "process-test-classes")
-
+sync.run("/ws/e", false, { "app", "core" })
+spec.check("scoped sync passes the modules", table.concat(last_args(), " "), "app core")
 pending_cb({ code = 0 })
+
+sync.run("/ws/e", true, { "app" })
+spec.check("capture and scope combine", table.concat(last_args(), " "), "--tests app")
+calls[#calls].opts.stderr(nil, "boom\n")
+pending_cb({ code = 1, stdout = "out\n" })
+spec.check(
+  "failure toast keeps the script invocation when no command was printed",
+  notes[#notes]:find(".lathe/lathe-sync.sh --tests app", 1, true) ~= nil,
+  true
+)
+
+-- A workspace synced by an older Lathe has no script: say so and run nothing.
+missing["/ws/old/.lathe/lathe-sync.sh"] = true
+local before_old = #calls
+sync.run("/ws/old", false)
+spec.check("missing script runs nothing", #calls, before_old)
+spec.check(
+  "missing script names the older Lathe",
+  notes[#notes]:find("older Lathe", 1, true) ~= nil,
+  true
+)
 
 -- Running-guard: a second sync for the same root while one is in flight is a no-op.
-sync.run_maven("/ws/b", false)
+sync.run("/ws/b", false)
 local before = #calls
-sync.run_maven("/ws/b", false)
+sync.run("/ws/b", false)
 spec.check("concurrent sync for the same root is a no-op", #calls, before)
 
 -- An empty/nil root does nothing.
 local n = #calls
-sync.run_maven(nil, false)
-sync.run_maven("", false)
+sync.run(nil, false)
+sync.run("", false)
 spec.check("nil/empty root does nothing", #calls, n)
 
--- The lathe/sync notification handler dispatches to run_maven.
+-- The lathe/sync notification handler dispatches to run, forwarding capture and modules.
 sync.setup()
-vim.lsp.handlers["lathe/sync"](nil, { workspaceRoot = "/ws/c", captureTests = false })
-spec.check("lathe/sync handler runs Maven at the given root", calls[#calls].opts.cwd, "/ws/c")
+vim.lsp.handlers["lathe/sync"](nil, { workspaceRoot = "/ws/c", captureTests = true, modules = { "m" } })
+spec.check("lathe/sync handler runs at the given root", calls[#calls].opts.cwd, "/ws/c")
+spec.check("lathe/sync handler forwards capture and modules", table.concat(last_args(), " "), "--tests m")
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
-
--- Maven executable preference: mvnd (daemon) wins, else the project ./mvnw wrapper, else mvn.
-available = { mvnd = true }
-sync.run_maven("/ws/mvnd", false)
-spec.check("prefers mvnd when available", calls[#calls].cmd[1], "mvnd")
-
-available = { ["/ws/wrap/mvnw"] = true }
-sync.run_maven("/ws/wrap", false)
-spec.check("falls back to the project mvnw wrapper", calls[#calls].cmd[1], "/ws/wrap/mvnw")
-
-available = {}
-sync.run_maven("/ws/plain", false)
-spec.check("falls back to plain mvn", calls[#calls].cmd[1], "mvn")
 
 spec.finish("lathe.sync")

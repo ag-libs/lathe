@@ -101,7 +101,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Build-tool front-ends** (new front-ends onto the existing `.lathe/` contract; everything downstream
 reused):
 
-- [Sync Launcher](planned/lathe-sync-launcher.md) — **proposed.** The build integration writes
+- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven writes it, Neovim runs it). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
   of composing Maven commands; runs the build on the recorded JDK, scopes with `-am -amd`. Prepares Gradle.
 - [Gradle Support](planned/lathe-gradle-support.md) — **proposed.** A `lathe-gradle-plugin` (settings +

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** No code yet.
+**In progress.** Slices 1 (Maven writes the script) and 2 (the Neovim client runs it) are done; slice 3 (server and MCP texts) is next.
 Prepares Lathe for [Gradle support](lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
 
 ## Problem
@@ -132,12 +132,18 @@ This replaces both of today's halves (the client's `-am`, the server text's `-am
 
 - **Gradle** (`latheSync`, see [Gradle support](lathe-gradle-support.md)) writes a script running `./gradlew --no-build-cache latheSync`; `--tests` and modules map to whatever that design settles on.
   `--no-build-cache` is the Gradle side of the cache rule: without it, a build-cache hit on `compileJava` or `test` skips the task and its capture.
-- **OpenJDK** (`lathe-openjdk-maven-plugin:sync`) writes a script running its sync goal; it does not scope, so module arguments fall back to a full sync with a stderr note.
+- **OpenJDK** (`lathe-openjdk-maven-plugin:sync`) writes a script that re-runs its own sync goal, pinned: `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:<version>:sync -Dlathe.buildDir=<build dir>`, with the version and build directory recorded when the script is written, so a re-sync never switches Lathe versions or JDK configurations.
+  - It **never runs `make`**: building the JDK is the user's call and can take hours, so the script refreshes `.lathe/` from the latest build only.
+  - It **skips the JDK prologue**: in OpenJDK mode `.lathe/java-home` is the freshly built JDK, right for the server but not for running Maven, so Maven runs on the inherited environment.
+  - `--tests` and modules are accepted and ignored with a stderr note: jtreg capture is not supported, and the whole-JDK descriptor re-read is cheap.
+  - Today's client-composed `mvn process-test-classes` fails in a JDK checkout (there is no POM), so this also fixes the sync prompt there.
+
+The JDK prologue is therefore a per-front-end choice, not part of the contract: a front-end uses it when the script runs the project's real build (Maven, Gradle), and skips it when the build tool only hosts Lathe's own goal (OpenJDK).
 
 ### Callers
 
 - **Neovim client.**
-  `lathe/sync` and `:LatheSync` / `:LatheSync!` run `.lathe/lathe-sync.sh` with `--tests` and the modules from the notification, `cwd` = root.
+  `lathe/sync` and `:LatheSync` / `:LatheSyncCaptureTest` run `.lathe/lathe-sync.sh` with `--tests` and the modules from the notification, `cwd` = root.
   The Maven-specific code (`maven_executable`, the goal and flag assembly) is deleted.
   The "syncing…" toast starts with the script invocation and switches to the full build command once the script's first stderr line arrives; the failure buffer shows it as part of the output.
   If the script is missing, the workspace was synced by an older Lathe: the client shows the existing "older Lathe" notice instead of falling back to Maven.
