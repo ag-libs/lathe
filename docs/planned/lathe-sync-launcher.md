@@ -55,7 +55,7 @@ The build integration writes one executable script on every sync:
 ```
 
 - **No arguments** — refresh the whole workspace (Maven: `process-test-classes`).
-- **`--tests`** — also re-capture test launches (Maven: `test`), the mode behind "Sync + capture tests".
+- **`--tests`** — also re-capture test launches, without running the tests (Maven: `test -Dlathe.capture.only=true -DfailIfNoTests=false`: the test fork starts and writes `test-launch.json`, but the capture-only filter excludes every test), the mode behind "Sync + capture tests".
 - **`module ...`** — a scoped sync of these workspace-relative module paths and what they need (see Scoped sync).
   A build that cannot scope runs a full sync and says so on stderr.
 - **`--tests module ...`** — both: a scoped sync that also re-captures test launches for those modules (and, through `-amd`, their dependents).
@@ -65,9 +65,9 @@ For Maven:
 | Invocation | Runs |
 |---|---|
 | `.lathe/lathe-sync.sh` | `mvn … process-test-classes` |
-| `.lathe/lathe-sync.sh --tests` | `mvn … test` |
+| `.lathe/lathe-sync.sh --tests` | `mvn … test -Dlathe.capture.only=true -DfailIfNoTests=false` |
 | `.lathe/lathe-sync.sh app core` | `mvn … -pl app,core -am -amd process-test-classes` |
-| `.lathe/lathe-sync.sh --tests app` | `mvn … -pl app -am -amd test` |
+| `.lathe/lathe-sync.sh --tests app` | `mvn … -pl app -am -amd test -Dlathe.capture.only=true -DfailIfNoTests=false` |
 
 - **Visible command.**
   Before running the build, the script prints the exact command it is about to run on stderr, as its first line (`lathe-sync: mvnd --no-transfer-progress … process-test-classes`).
@@ -103,7 +103,7 @@ Written by `lathe:sync` (`SyncCoordinator`, next to the workspace manifest and `
 cd "$(dirname "$0")/.." || exit 1
 <JDK prologue: export JAVA_HOME>
 goal=process-test-classes
-if [ "$1" = "--tests" ]; then goal=test; shift; fi
+if [ "$1" = "--tests" ]; then goal="test -Dlathe.capture.only=true -DfailIfNoTests=false"; shift; fi
 if command -v mvnd >/dev/null 2>&1; then mvn=mvnd
 elif [ -x ./mvnw ]; then mvn=./mvnw
 else mvn=mvn

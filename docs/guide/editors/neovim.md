@@ -105,7 +105,7 @@ freely.
 | Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>f` |
-| Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches) | — | — |
+| Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
 | Type hierarchy (super / sub, one level) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |

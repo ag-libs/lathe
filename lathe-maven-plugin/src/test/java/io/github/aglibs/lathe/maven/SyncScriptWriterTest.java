@@ -21,6 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 class SyncScriptWriterTest {
 
   private static final String CACHE_OFF = "-Dmaven.build.cache.enabled=false";
+  // --tests captures test launches without running the tests.
+  private static final String CAPTURE = "test -Dlathe.capture.only=true -DfailIfNoTests=false";
 
   @TempDir Path tmp;
   private Path root;
@@ -45,11 +47,11 @@ class SyncScriptWriterTest {
         .isEqualTo(
             "lathe-sync: mvn --no-transfer-progress %s process-test-classes".formatted(CACHE_OFF));
 
-    assertThat(run(Map.of(), "--tests").stdout()).endsWith("%s test".formatted(CACHE_OFF));
+    assertThat(run(Map.of(), "--tests").stdout()).endsWith("%s %s".formatted(CACHE_OFF, CAPTURE));
     assertThat(run(Map.of(), "app", "core").stdout())
         .endsWith("%s -pl app,core -am -amd process-test-classes".formatted(CACHE_OFF));
     assertThat(run(Map.of(), "--tests", "app").stdout())
-        .endsWith("%s -pl app -am -amd test".formatted(CACHE_OFF));
+        .endsWith("%s -pl app -am -amd %s".formatted(CACHE_OFF, CAPTURE));
   }
 
   @Test

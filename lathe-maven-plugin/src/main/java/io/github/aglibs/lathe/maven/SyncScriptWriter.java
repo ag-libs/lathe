@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
@@ -40,6 +41,8 @@ final class SyncScriptWriter {
     }
   }
 
+  // --tests captures each module's test launch without running the tests: the capture-only filter
+  // excludes them all, and failIfNoTests=false keeps a build that requires tests green.
   // A scoped sync needs both directions: -am builds the modules' upstream so they resolve against
   // fresh classes, and -amd rebuilds the downstream whose classpath a POM change alters. The build
   // cache stays off, since a cache hit skips javac and the test fork, where Lathe captures.
@@ -53,7 +56,7 @@ final class SyncScriptWriter {
         fi
         goal=%s
         if [ "$1" = "--tests" ]; then
-          goal=test
+          goal="test -D%s=true -DfailIfNoTests=false"
           shift
         fi
         if command -v mvnd >/dev/null 2>&1; then
@@ -67,13 +70,14 @@ final class SyncScriptWriter {
         if [ $# -gt 0 ]; then
           scope="-pl $(echo "$@" | tr ' ' ',') -am -amd"
         fi
-        set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope "$goal"
+        set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope $goal
         echo "lathe-sync: $*" >&2
         exec "$@"
         """
         .formatted(
             LatheLayout.SYNC_SCRIPT_COMMAND,
             ServerInstaller.javaResolvePrologue(),
-            LatheLayout.SYNC_PHASE);
+            LatheLayout.SYNC_PHASE,
+            LatheFlags.CAPTURE_ONLY);
   }
 }
