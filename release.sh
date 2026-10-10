@@ -12,9 +12,11 @@
 #
 # Validates the version and preconditions (on main, clean tree, tag unused),
 # bumps ONLY Lathe's version in the install docs, shows the diff to confirm,
-# then commits and tags v<version>. It does NOT push. Pushing the tag triggers
-# .github/workflows/release.yml, which builds, signs, and publishes to Maven
-# Central — no Maven Central or GPG credentials are needed locally.
+# then commits and tags v<version>. On a second confirmation it pushes the commit
+# and tag, then runs publish-nvim.sh to publish the Neovim client mirror. Pushing
+# the tag triggers .github/workflows/release.yml, which builds, signs, and
+# publishes to Maven Central — no Maven Central or GPG credentials are needed
+# locally.
 set -euo pipefail
 
 die() {
@@ -119,14 +121,21 @@ git add "${files[@]}"
 git commit -m "release: ${version}"
 git tag "${tag}"
 
-echo
-echo "Tagged ${tag}. Push to trigger the release workflow:"
-echo "  git push origin HEAD ${tag}"
-
 # The Neovim client mirror is published on every release, even when the client did
-# not change, so its tags always match the server versions on Maven Central. This
-# is a reminder only — publish-nvim.sh runs separately, after the tag is pushed,
-# and pushes to a different repo with your own credentials.
+# not change, so its tags always match the server versions on Maven Central. It
+# needs the tag on origin first, so it runs right after the push.
 echo
-echo "After pushing, publish the Neovim client mirror:"
-echo "  ./publish-nvim.sh ${version}"
+printf 'Tagged %s. Push it and publish the Neovim client mirror now? [y/N] ' "${tag}"
+read -r reply || reply=""
+case "$reply" in
+  y | Y | yes | YES) ;;
+  *)
+    echo "Not pushed. When ready, push to trigger the release workflow, then publish the mirror:"
+    echo "  git push --atomic origin HEAD ${tag}"
+    echo "  ./publish-nvim.sh ${version}"
+    exit 0
+    ;;
+esac
+
+git push --atomic origin HEAD "${tag}"
+./publish-nvim.sh "${version}"

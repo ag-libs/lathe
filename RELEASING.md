@@ -30,15 +30,14 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    This validates the version, checks preconditions (on `main`, clean tree, tag unused), updates the
    install-snippet version in `README.md` and `docs/guide/installation.md`, shows the diff for you to
    confirm, then commits and creates the tag `v0.1.1`. Use `--dry-run` to preview without committing.
+   It then asks whether to push and publish now; answering yes runs steps 3 and 4 for you.
 3. Push the commit and tag:
    ```bash
-   git push origin HEAD v0.1.1
+   git push --atomic origin HEAD v0.1.1
    ```
-4. The **Release to Maven Central** workflow runs: it stamps the version, builds, signs, and publishes
+   The **Release to Maven Central** workflow runs: it stamps the version, builds, signs, and publishes
    all modules. If the `release` environment requires approval, approve the run.
-5. Verify the artifacts at
-   [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
-6. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
+4. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
    ```
@@ -47,6 +46,8 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    diff, and — on your `[y/N]` confirmation — pushes a `release vX.Y.Z` commit + tag to
    `ag-libs/lathe.nvim`. Preview first with `./publish-nvim.sh --dry-run`.
    Publish even when the client did not change, so every server version has a matching client tag.
+5. Verify the artifacts at
+   [central.sonatype.com/namespace/io.github.ag-libs](https://central.sonatype.com/namespace/io.github.ag-libs).
 
 ## How it works
 
