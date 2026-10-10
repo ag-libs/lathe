@@ -3042,9 +3042,10 @@ final class WorkspaceSession {
     return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
   }
 
-  // verify_change's freshen step: recompile the change set, but never prompt. If the in-process
-  // recompile can't be trusted (POM sync pending, bulk change, or a running build) it returns a
-  // DeferReason so the caller falls back to Maven. Runs on the worker.
+  // The engine's freshen step, before every MCP query and verify_change: recompile the change set,
+  // but never prompt. If the in-process recompile can't be trusted (POM sync pending, bulk change,
+  // or a running build) it returns a DeferReason so the caller falls back to Maven. A source that
+  // failed unchanged since is still reported but not recompiled again. Runs on the worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     if (reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
@@ -3065,7 +3066,9 @@ final class WorkspaceSession {
     }
 
     final List<CompletableFuture<Void>> reactions =
-        compileChangedInOrder(scan.staleByModule(), Set.copyOf(updated));
+        compileChangedInOrder(
+            scan.staleByModule(),
+            withoutFailedCompiles(staleMtimes(scan), failedCompiles).keySet());
     return CompletableFuture.allOf(reactions.toArray(CompletableFuture[]::new))
         .thenApply(done -> new ReconcileOutcome(updated, ReconcileOutcome.DeferReason.NONE));
   }

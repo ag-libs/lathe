@@ -484,7 +484,12 @@ public final class LatheEngine {
         List.copyOf(relevantTests));
   }
 
+  // An agent edits files with its own tools, outside the editor's change events, and queries right
+  // after, before the idle reconcile tick has caught up: freshen the mirror first so cross-file
+  // answers see those edits. A deferral (POM sync, bulk change, running build) answers from the
+  // current mirror, which staleModules reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
+    await(service.reconcileForVerify());
     final var uri = file.toUri().toString();
     final String content = IOUtil.unchecked(() -> Files.readString(file));
     return await(service.diagnosticsFuture(uri, content, VERSION));

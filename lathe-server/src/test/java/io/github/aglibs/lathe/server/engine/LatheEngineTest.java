@@ -290,6 +290,20 @@ class LatheEngineTest {
   }
 
   @Test
+  void diagnostics_rightAfterExternalEditOfDependency_seesTheEdit() throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller()); // the session is warm and idle before the agent's edit
+
+    // An agent renames greet() with its own file tool, then queries the caller at once.
+    writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
+
+    assertThat(engine.diagnostics(fx.caller()))
+        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+  }
+
+  @Test
   void verifyChange_noExternalChange_reportsNoDiagnostics() throws Exception {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
