@@ -36,20 +36,11 @@ public final class LatheLayout {
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
   public static final String JVM_ARGS_FILE = "jvm.args";
-  public static final String MVN_DIR = ".mvn";
-  public static final String MVN_JVM_CONFIG_FILE = "jvm.config";
-  // MAVEN_OPTS as the build sees it: Maven exposes the environment as env.* session properties,
-  // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
-  // daemon JVM), so this reads the same under mvn and mvnd.
-  public static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";
   public static final String MODULE_LOCK_FILE = "module.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
-  public static final String POM_XML = "pom.xml";
-  public static final String POM_PACKAGING = "pom";
-  public static final String TEST_JAR_CLASSIFIER = "tests";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -66,28 +57,6 @@ public final class LatheLayout {
   public static final String STYLE_SHARED_FILE = "lathe-style.json";
   public static final String TEST_RUNNER_MAIN_CLASS =
       "io.github.aglibs.lathe.runner.LatheTestRunner";
-
-  // Maven coordinates and keys for the in-memory model injection performed by
-  // lathe-maven-extension.
-  public static final String LATHE_GROUP_ID = "io.github.ag-libs";
-  public static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
-  public static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
-  public static final String OPENJDK_PLUGIN_ARTIFACT_ID = "lathe-openjdk-maven-plugin";
-  public static final String JUNIT_ARTIFACT_ID = "lathe-junit";
-  public static final String COMPILER_ID = "lathe";
-  public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
-  public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
-  public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
-  public static final String INIT_GOAL = "init";
-  public static final String SYNC_GOAL = "sync";
-  public static final String INIT_EXECUTION_ID = "lathe-init";
-  public static final String SYNC_EXECUTION_ID = "lathe-sync";
-
-  // The Maven phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES), and the
-  // build command for the first sync, before the build has written the sync script.
-  private static final String MVN = "mvn";
-  public static final String SYNC_PHASE = "process-test-classes";
-  public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
 
   // What users and agents run to refresh an already-synced workspace: the script the build wrote,
   // which knows the build tool. Every remediation below and the MCP instructions compose it.
@@ -110,7 +79,12 @@ public final class LatheLayout {
   public static final String SETUP_REMEDIATION =
       "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Either generates %s."
           .formatted(
-              SYNC_COMMAND, MVN, LATHE_GROUP_ID, OPENJDK_PLUGIN_ARTIFACT_ID, SYNC_GOAL, LATHE_DIR);
+              Maven.SYNC_COMMAND,
+              Maven.MVN,
+              Maven.LATHE_GROUP_ID,
+              Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
+              Maven.SYNC_GOAL,
+              LATHE_DIR);
 
   // A non-editor client (the MCP agent) gets no interactive sync prompt, so a tool result carries
   // this instead. The remaining %s is the stale-module list, filled at use.
@@ -124,6 +98,45 @@ public final class LatheLayout {
           .formatted(SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}
+
+  // Names only the Maven front-end uses (lathe-compiler, lathe-maven-extension, lathe-maven-plugin,
+  // lathe-install, lathe-openjdk-maven-plugin). Build-neutral modules must not reference them;
+  // LatheLayoutTest guards that.
+  public static final class Maven {
+
+    public static final String POM_XML = "pom.xml";
+    public static final String POM_PACKAGING = "pom";
+    public static final String TEST_JAR_CLASSIFIER = "tests";
+    public static final String MVN_DIR = ".mvn";
+    public static final String MVN_JVM_CONFIG_FILE = "jvm.config";
+    // MAVEN_OPTS as the build sees it: Maven exposes the environment as env.* session properties,
+    // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
+    // daemon JVM), so this reads the same under mvn and mvnd.
+    public static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
+
+    // Coordinates and keys for the in-memory model injection performed by lathe-maven-extension.
+    public static final String LATHE_GROUP_ID = "io.github.ag-libs";
+    public static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
+    public static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
+    public static final String OPENJDK_PLUGIN_ARTIFACT_ID = "lathe-openjdk-maven-plugin";
+    public static final String JUNIT_ARTIFACT_ID = "lathe-junit";
+    public static final String COMPILER_ID = "lathe";
+    public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
+    public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
+    public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
+    public static final String INIT_GOAL = "init";
+    public static final String SYNC_GOAL = "sync";
+    public static final String INIT_EXECUTION_ID = "lathe-init";
+    public static final String SYNC_EXECUTION_ID = "lathe-sync";
+
+    // The phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES), and the build
+    // command for the first sync, before the build has written the sync script.
+    static final String MVN = "mvn";
+    public static final String SYNC_PHASE = "process-test-classes";
+    public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+
+    private Maven() {}
+  }
 
   public static Path userCacheRoot() {
     final var override = System.getProperty("lathe.cache");

@@ -133,7 +133,7 @@ class ReactorProjectsTest {
     final MavenProject app = projectWithOutput("com.example", "app", "2", tmp.resolve("app"));
     final MavenProject parent =
         projectWithOutput("com.example", "parent", "1", tmp.resolve("parent"));
-    parent.setPackaging(LatheLayout.POM_PACKAGING);
+    parent.setPackaging(LatheLayout.Maven.POM_PACKAGING);
 
     final List<OutputData> outputs = ReactorProjects.outputs(tmp, List.of(root, app, parent));
 

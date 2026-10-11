@@ -104,17 +104,17 @@ class JvmArgsWriterTest {
   }
 
   private void writeJvmConfig(final String content) throws Exception {
-    final var mvnDir = workspaceRoot.resolve(LatheLayout.MVN_DIR);
+    final var mvnDir = workspaceRoot.resolve(LatheLayout.Maven.MVN_DIR);
     Files.createDirectories(mvnDir);
-    Files.writeString(mvnDir.resolve(LatheLayout.MVN_JVM_CONFIG_FILE), content);
+    Files.writeString(mvnDir.resolve(LatheLayout.Maven.MVN_JVM_CONFIG_FILE), content);
   }
 
   // The first configuration is plugin-level; any further ones become executions.
   private static MavenProject projectWithCompilerArgs(
       final Xpp3Dom pluginConfig, final Xpp3Dom... executionConfigs) {
     final var compiler = new Plugin();
-    compiler.setGroupId(LatheLayout.MAVEN_COMPILER_PLUGIN_GROUP_ID);
-    compiler.setArtifactId(LatheLayout.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
+    compiler.setGroupId(LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID);
+    compiler.setArtifactId(LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
     compiler.setConfiguration(pluginConfig);
     for (int i = 0; i < executionConfigs.length; i++) {
       final var execution = new PluginExecution();

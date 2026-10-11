@@ -76,7 +76,7 @@ public final class ReactorProjects {
   // *under*
   // a module (e.g. an IT fixture under lathe-maven-plugin/target) is not itself that module.
   private static boolean aggregates(final Path dir, final Path candidate) {
-    final var pom = dir.resolve(LatheLayout.POM_XML);
+    final var pom = dir.resolve(LatheLayout.Maven.POM_XML);
     if (!Files.isRegularFile(pom)) {
       return false;
     }
@@ -158,7 +158,7 @@ public final class ReactorProjects {
   public static List<OutputData> outputs(
       final Path workspaceRoot, final List<MavenProject> projects) {
     return projects.stream()
-        .filter(project -> !LatheLayout.POM_PACKAGING.equals(project.getPackaging()))
+        .filter(project -> !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging()))
         .filter(project -> !escapesReactorRoot(workspaceRoot, project))
         .flatMap(project -> outputs(workspaceRoot, project))
         .toList();
@@ -174,7 +174,8 @@ public final class ReactorProjects {
             Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR),
             Map.entry(buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR),
             Map.entry(
-                buildDir.resolve("%s-%s.jar".formatted(finalName, LatheLayout.TEST_JAR_CLASSIFIER)),
+                buildDir.resolve(
+                    "%s-%s.jar".formatted(finalName, LatheLayout.Maven.TEST_JAR_CLASSIFIER)),
                 LatheLayout.TEST_CLASSES_DIR))
         .map(
             output ->

@@ -33,7 +33,7 @@ public final class SyncMojo extends AbstractMojo {
       getLog()
           .warn(
               "[sync] direct invocation is not supported — run %s instead"
-                  .formatted(LatheLayout.SYNC_COMMAND));
+                  .formatted(LatheLayout.Maven.SYNC_COMMAND));
       return;
     }
 

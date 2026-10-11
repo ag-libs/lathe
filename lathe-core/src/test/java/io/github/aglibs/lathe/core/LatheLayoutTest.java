@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -13,6 +14,23 @@ class LatheLayoutTest {
   @AfterEach
   void clearProperty() {
     System.clearProperty("lathe.cache");
+  }
+
+  // The guard for LatheLayout.Maven: build-neutral modules never name a Maven-only constant. A
+  // front-end module is scanned too, so a wrong path cannot make the guard pass vacuously.
+  @Test
+  void mavenNames_buildNeutralModulesNever_frontEndModuleDoes() {
+    assertThat(List.of("lathe-server", "lathe-mcp-server", "lathe-test-runner", "lathe-junit"))
+        .allSatisfy(module -> assertThat(filesNamingMaven(module)).as(module).isEmpty());
+    assertThat(filesNamingMaven("lathe-maven-plugin")).isNotEmpty();
+  }
+
+  private static List<Path> filesNamingMaven(final String module) {
+    final Path sources = Path.of("..", module, "src", "main", "java");
+    return IOUtil.unchecked(() -> FileUtil.walkFiles(sources, FileUtil::isJavaFile)).stream()
+        .filter(
+            file -> IOUtil.unchecked(() -> Files.readString(file)).contains("LatheLayout.Maven"))
+        .toList();
   }
 
   @Test

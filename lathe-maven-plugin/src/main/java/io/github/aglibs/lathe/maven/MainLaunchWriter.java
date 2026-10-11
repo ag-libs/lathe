@@ -48,7 +48,7 @@ final class MainLaunchWriter {
   }
 
   void write(final Path workspaceRoot, final MavenProject project) {
-    if (LatheLayout.POM_PACKAGING.equals(project.getPackaging())) {
+    if (LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging())) {
       return;
     }
 

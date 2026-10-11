@@ -29,8 +29,8 @@ final class JvmArgsWriter {
 
   private static final String COMPILER_PLUGIN_KEY =
       Plugin.constructKey(
-          LatheLayout.MAVEN_COMPILER_PLUGIN_GROUP_ID,
-          LatheLayout.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
+          LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
+          LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
   private static final String FORKED_JVM_ARG_PREFIX = "-J";
 
   // Only module access is carried over: other forked-javac options (e.g. -J-Xmx256m) size a
@@ -150,7 +150,9 @@ final class JvmArgsWriter {
 
   private static List<String> jvmConfigTokens(final Path workspaceRoot) {
     final var jvmConfig =
-        workspaceRoot.resolve(LatheLayout.MVN_DIR).resolve(LatheLayout.MVN_JVM_CONFIG_FILE);
+        workspaceRoot
+            .resolve(LatheLayout.Maven.MVN_DIR)
+            .resolve(LatheLayout.Maven.MVN_JVM_CONFIG_FILE);
     if (!Files.isReadable(jvmConfig)) {
       return List.of();
     }

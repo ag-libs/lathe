@@ -30,19 +30,19 @@ final class LatheModelInjector {
     final Plugin compiler =
         findOrCreatePlugin(
             project,
-            LatheLayout.MAVEN_COMPILER_PLUGIN_GROUP_ID,
-            LatheLayout.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
-    putLatheDependency(compiler.getDependencies(), LatheLayout.COMPILER_ARTIFACT_ID, null);
+            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
+            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
+    putLatheDependency(compiler.getDependencies(), LatheLayout.Maven.COMPILER_ARTIFACT_ID, null);
     // The compiler is selected via the property, not a <compilerId> config node: a node added in
     // afterProjectsRead does not reach the default compile executions (lathe-maven-extension.md
     // §9).
     project
         .getProperties()
-        .setProperty(LatheLayout.MAVEN_COMPILER_ID_PROPERTY, LatheLayout.COMPILER_ID);
+        .setProperty(LatheLayout.Maven.MAVEN_COMPILER_ID_PROPERTY, LatheLayout.Maven.COMPILER_ID);
   }
 
   void injectCaptureDependency(final MavenProject project) {
-    putLatheDependency(project.getDependencies(), LatheLayout.JUNIT_ARTIFACT_ID, "test");
+    putLatheDependency(project.getDependencies(), LatheLayout.Maven.JUNIT_ARTIFACT_ID, "test");
   }
 
   /**
@@ -53,10 +53,12 @@ final class LatheModelInjector {
   void injectRootExecutions(final MavenProject topLevelProject) {
     final Plugin plugin =
         findOrCreatePlugin(
-            topLevelProject, LatheLayout.LATHE_GROUP_ID, LatheLayout.PLUGIN_ARTIFACT_ID);
+            topLevelProject,
+            LatheLayout.Maven.LATHE_GROUP_ID,
+            LatheLayout.Maven.PLUGIN_ARTIFACT_ID);
     plugin.setVersion(version);
-    bindGoal(plugin, LatheLayout.INIT_EXECUTION_ID, LatheLayout.INIT_GOAL);
-    bindGoal(plugin, LatheLayout.SYNC_EXECUTION_ID, LatheLayout.SYNC_GOAL);
+    bindGoal(plugin, LatheLayout.Maven.INIT_EXECUTION_ID, LatheLayout.Maven.INIT_GOAL);
+    bindGoal(plugin, LatheLayout.Maven.SYNC_EXECUTION_ID, LatheLayout.Maven.SYNC_GOAL);
   }
 
   private Plugin findOrCreatePlugin(
@@ -81,14 +83,14 @@ final class LatheModelInjector {
     dependencies.stream()
         .filter(
             dependency ->
-                LatheLayout.LATHE_GROUP_ID.equals(dependency.getGroupId())
+                LatheLayout.Maven.LATHE_GROUP_ID.equals(dependency.getGroupId())
                     && artifactId.equals(dependency.getArtifactId()))
         .findFirst()
         .ifPresentOrElse(
             existing -> existing.setVersion(version),
             () -> {
               final var dependency = new Dependency();
-              dependency.setGroupId(LatheLayout.LATHE_GROUP_ID);
+              dependency.setGroupId(LatheLayout.Maven.LATHE_GROUP_ID);
               dependency.setArtifactId(artifactId);
               dependency.setVersion(version);
               if (scope != null) {

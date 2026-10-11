@@ -20,7 +20,7 @@ final class ExtensionProps {
     try (final InputStream in =
         ExtensionProps.class.getResourceAsStream(
             "/META-INF/maven/%s/%s/pom.properties"
-                .formatted(LatheLayout.LATHE_GROUP_ID, "lathe-maven-extension"))) {
+                .formatted(LatheLayout.Maven.LATHE_GROUP_ID, "lathe-maven-extension"))) {
       if (in != null) {
         props.load(in);
       }

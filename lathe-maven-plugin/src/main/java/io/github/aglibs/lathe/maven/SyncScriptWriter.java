@@ -71,7 +71,7 @@ final class SyncScriptWriter {
             LatheLayout.SYNC_SCRIPT_COMMAND,
             LatheLayout.SYNC_TESTS_FLAG,
             ServerInstaller.javaResolvePrologue(),
-            LatheLayout.SYNC_PHASE,
+            LatheLayout.Maven.SYNC_PHASE,
             LatheLayout.SYNC_TESTS_FLAG,
             LatheFlags.CAPTURE_ONLY);
   }
