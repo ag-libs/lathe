@@ -293,7 +293,7 @@ public final class LatheEngine {
           files.stream()
               .map(file -> LatheUri.toPath(file.uri()))
               .collect(Collectors.toUnmodifiableSet());
-      await(service.commitChangeSet(changed));
+      await(service.writeReported(changed));
       // An editor's server on this workspace sees the files freshly stamped, so it would never
       // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
       final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);

@@ -19,6 +19,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.OutputData;
@@ -30,6 +31,7 @@ import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -663,6 +665,45 @@ class LatheTextDocumentServiceTest {
         .as("both written together once B's write takes the failed A along")
         .containsEntry("com/example/A.java", 5_000L)
         .containsEntry("com/example/B.java", 6_000L);
+  }
+
+  @Test
+  void writeReported_whileABuildHoldsTheLock_writesReportedFilesEvenAtTheirStamp_externalWaits()
+      throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("com/example/A.java", "package com.example; class A {}");
+    sources.put("com/example/B.java", "package com.example; class B {}");
+    sources.put("com/example/C.java", "package com.example; class C {}");
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+    final Path lock = LatheLayout.reactorLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
+    LatheLock.acquire(lock);
+    clearInvocations(client);
+
+    // A and B are reported -- B with its mtime still equal to its stamp -- and C changed
+    // externally.
+    TestCompiler.writeAt(files.get(0), "package com.example; class A { int addedA; }", 5_000L);
+    TestCompiler.writeAt(files.get(1), "package com.example; class B { int addedB; }", 1_000L);
+    TestCompiler.writeAt(files.get(2), "package com.example; class C { int addedC; }", 5_000L);
+    service.writeReported(Set.of(files.get(0), files.get(1))).get(10, TimeUnit.SECONDS);
+
+    final Path classes = tmp.resolve(".lathe/module/classes/com/example");
+    assertThat(Files.readString(classes.resolve("B.class"), StandardCharsets.ISO_8859_1))
+        .as("B written though its mtime equals its stamp")
+        .contains("addedB");
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .as("stamps during the build: the reported A written, the external C left for later")
+        .containsEntry("com/example/A.java", 5_000L)
+        .containsEntry("com/example/C.java", 1_000L);
+    verify(client, never()).notifyProgress(argThat(LatheTextDocumentServiceTest::isRecompileBegin));
+
+    LatheLock.release(lock);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .as("after the build, the external change catches up")
+        .containsEntry("com/example/C.java", 5_000L);
   }
 
   @Test

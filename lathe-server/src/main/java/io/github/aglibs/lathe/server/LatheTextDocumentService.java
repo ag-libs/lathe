@@ -101,9 +101,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.reconcileForVerify()).thenCompose(done -> done);
   }
 
-  /** Compile a change set the caller wrote to disk itself, completing once the mirror has it. */
-  public CompletableFuture<Void> commitChangeSet(final Set<Path> changed) {
-    return worker.submit(() -> session.commitChangeSet(changed)).thenCompose(done -> done);
+  /** Write files the caller changed on disk itself, completing once the mirror has them. */
+  public CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    return worker.submit(() -> session.writeReported(changed)).thenCompose(done -> done);
   }
 
   /** The changed files plus their same-module candidate callers, grouped by module rel. */
