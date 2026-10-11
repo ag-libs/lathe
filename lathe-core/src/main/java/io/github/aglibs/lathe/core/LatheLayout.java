@@ -59,8 +59,6 @@ public final class LatheLayout {
   public static final String RUN_CONFIG_LOCAL_FILE = "run.json";
   public static final String STYLE_FILE = "style.json";
   public static final String STYLE_SHARED_FILE = "lathe-style.json";
-  public static final String TEST_LAUNCH_SCHEMA_VERSION = "1";
-  public static final String MAIN_LAUNCH_SCHEMA_VERSION = "1";
   public static final String TEST_RUNNER_MAIN_CLASS =
       "io.github.aglibs.lathe.runner.LatheTestRunner";
 
@@ -106,6 +104,12 @@ public final class LatheLayout {
   public static final String STALE_REMEDIATION =
       "Stale: module(s) %%s have source newer than their compiled classes, so cross-module results may be out of date. Run `%s` to refresh Lathe's classes."
           .formatted(SYNC_SCRIPT_COMMAND);
+
+  // SCHEMA_VERSION covers every .lathe/ file. The build must be clean: an incremental one skips
+  // up-to-date modules, leaving their files in the old format. The %s pair is found, expected.
+  public static final String SCHEMA_REMEDIATION =
+      "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s clean %s` to regenerate it."
+          .formatted(MVN, SYNC_PHASE);
 
   private LatheLayout() {}
 

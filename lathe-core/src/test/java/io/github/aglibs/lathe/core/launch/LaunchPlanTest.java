@@ -28,7 +28,6 @@ final class LaunchPlanTest {
     final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -85,7 +84,6 @@ final class LaunchPlanTest {
     final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -125,7 +123,6 @@ final class LaunchPlanTest {
   void forMain_modularTemplate_buildsModuleCommand() {
     final var data =
         new MainLaunchData(
-            "1",
             LaunchMode.MODULE,
             "/jdk",
             "com.example.app",
@@ -166,7 +163,6 @@ final class LaunchPlanTest {
   void forMain_classpathTemplate_buildsClasspathCommand() {
     final var data =
         new MainLaunchData(
-            "1",
             LaunchMode.CLASSPATH,
             "/jdk",
             "",
@@ -195,7 +191,6 @@ final class LaunchPlanTest {
   void forMain_overlay_appendsJvmArgsClasspathAndProgramArgs() {
     final var data =
         new MainLaunchData(
-            "1",
             LaunchMode.CLASSPATH,
             "/jdk",
             "",
@@ -231,7 +226,6 @@ final class LaunchPlanTest {
     final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -285,7 +279,6 @@ final class LaunchPlanTest {
     final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -322,7 +315,6 @@ final class LaunchPlanTest {
     final var resultsSink = Path.of("/tmp/lathe-results.ndjson");
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -354,7 +346,6 @@ final class LaunchPlanTest {
   void forMain_debug_emitsSuspendedJdwpAgentBeforeMainClass() {
     final var data =
         new MainLaunchData(
-            "1",
             LaunchMode.CLASSPATH,
             "/jdk",
             "",
@@ -381,7 +372,6 @@ final class LaunchPlanTest {
   void forTestMain_modularTemplate_patchesTestClassesAndRunsMainNotRunner() {
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -426,7 +416,6 @@ final class LaunchPlanTest {
   void forTestMain_classpathTemplate_runsMainOnTestClasspath() {
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.CLASSPATH,
             "/jdk",
@@ -457,7 +446,6 @@ final class LaunchPlanTest {
   void forTestMain_debug_emitsSuspendedJdwpAgentBeforeEntry() {
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -486,7 +474,6 @@ final class LaunchPlanTest {
   void forMain_noDebug_omitsJdwpAgent() {
     final var data =
         new MainLaunchData(
-            "1",
             LaunchMode.CLASSPATH,
             "/jdk",
             "",
@@ -516,7 +503,6 @@ final class LaunchPlanTest {
     final var testClasses = workspace.resolve("app/target/test-classes").toString();
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",
@@ -557,7 +543,6 @@ final class LaunchPlanTest {
     final var testClasses = workspace.resolve("app/target/test-classes").toString();
     final var data =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.MODULE,
             "/jdk",

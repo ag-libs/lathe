@@ -124,7 +124,6 @@ final class CompletenessGateTest {
 
   private MainLaunchData mainLaunch() {
     return new MainLaunchData(
-        "1",
         LaunchMode.MODULE,
         "/jdk",
         "com.example.jpms",
@@ -146,7 +145,6 @@ final class CompletenessGateTest {
 
   private TestLaunchData testLaunch(final List<String> modulePath, final List<String> classPath) {
     return new TestLaunchData(
-        "1",
         "surefire",
         LaunchMode.CLASSPATH,
         "/jdk",

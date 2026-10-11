@@ -216,7 +216,6 @@ class MultiModuleTest {
     final var launch = lathe("jpms/test-launch.json");
     assertThat(launch).exists();
     final var content = read(launch);
-    assertThat(content).contains("\"schemaVersion\"");
     assertThat(content).contains("\"kind\": \"surefire\"");
     assertThat(content).contains("\"mode\": \"MODULE\"");
     assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
@@ -275,7 +274,6 @@ class MultiModuleTest {
     final var launch = lathe("jpms/main-launch.json");
     assertThat(launch).exists();
     final var content = read(launch);
-    assertThat(content).contains("\"schemaVersion\": \"1\"");
     assertThat(content).contains("\"mode\": \"MODULE\"");
     assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
     // The launched module's own output leads the module path; its required module follows.

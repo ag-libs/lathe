@@ -22,7 +22,6 @@ final class RunOverlayTest {
 
   private static MainLaunchData classpathTemplate() {
     return new MainLaunchData(
-        "1",
         LaunchMode.CLASSPATH,
         "/jdk",
         "",

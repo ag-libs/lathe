@@ -39,6 +39,9 @@ public final class WorkspaceManifest {
   private final List<Path> pomPaths;
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
+  // The user-facing remediation when workspace.json has another schema version; null when it
+  // matches or is absent.
+  private final String schemaMismatch;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -50,7 +53,8 @@ public final class WorkspaceManifest {
       final List<Path> typeIndexShardPaths,
       final List<Path> pomPaths,
       final List<Path> runnerClasspath,
-      final ResourceRootIndex resourceRoots) {
+      final ResourceRootIndex resourceRoots,
+      final String schemaMismatch) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -61,9 +65,14 @@ public final class WorkspaceManifest {
     this.pomPaths = pomPaths;
     this.runnerClasspath = runnerClasspath;
     this.resourceRoots = resourceRoots;
+    this.schemaMismatch = schemaMismatch;
   }
 
   public static WorkspaceManifest empty() {
+    return emptyWith(null);
+  }
+
+  private static WorkspaceManifest emptyWith(final String schemaMismatch) {
     return new WorkspaceManifest(
         Map.of(),
         Map.of(),
@@ -74,7 +83,8 @@ public final class WorkspaceManifest {
         List.of(),
         List.of(),
         List.of(),
-        ResourceRootIndex.empty());
+        ResourceRootIndex.empty(),
+        schemaMismatch);
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -91,7 +101,9 @@ public final class WorkspaceManifest {
             () ->
                 "[manifest] unexpected schemaVersion %s — ignoring"
                     .formatted(data.schemaVersion()));
-        return empty();
+        return emptyWith(
+            LatheLayout.SCHEMA_REMEDIATION.formatted(
+                data.schemaVersion(), LatheLayout.SCHEMA_VERSION));
       }
 
       final List<DependencyData> entries =
@@ -137,7 +149,8 @@ public final class WorkspaceManifest {
           typeIndexShardPaths,
           resolvedPomPaths,
           runnerClasspath,
-          ResourceRootIndex.build(workspaceRoot, data.resourceRoots()));
+          ResourceRootIndex.build(workspaceRoot, data.resourceRoots()),
+          null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -163,6 +176,10 @@ public final class WorkspaceManifest {
             ? me.getQualifiedName().toString()
             : null;
     return new TypeEntry(topLevel, moduleName);
+  }
+
+  public Optional<String> schemaMismatch() {
+    return Optional.ofNullable(schemaMismatch);
   }
 
   public boolean containsFile(final Path file) {

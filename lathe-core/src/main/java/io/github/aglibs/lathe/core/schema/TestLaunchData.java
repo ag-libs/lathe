@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 public record TestLaunchData(
-    String schemaVersion,
     String kind,
     LaunchMode mode,
     String javaHome,
@@ -24,7 +23,6 @@ public record TestLaunchData(
 
   public TestLaunchData {
     ValidCheck.check()
-        .notBlank(schemaVersion, "schemaVersion")
         .notBlank(kind, "kind")
         .notNull(mode, "mode")
         .notBlank(javaHome, "javaHome")

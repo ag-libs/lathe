@@ -24,6 +24,26 @@ class WorkspaceManifestTest extends SampleFixture {
   }
 
   @Test
+  void load_schemaVersion_mismatchLoadsEmptyWithRemediationMatchLoadsData() throws Exception {
+    final List<String> runnerClasspath = List.of(tmp.resolve("cache/runner.jar").toString());
+    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, List.of(), null, runnerClasspath);
+    final var matching = WorkspaceManifest.load(tmp);
+    writeWorkspaceManifest("0", List.of(), null, runnerClasspath);
+
+    final var mismatched = WorkspaceManifest.load(tmp);
+
+    assertThat(matching.schemaMismatch()).isEmpty();
+    assertThat(matching.runnerClasspath()).isNotEmpty();
+    assertThat(mismatched.runnerClasspath()).isEmpty();
+    assertThat(mismatched.schemaMismatch())
+        .hasValueSatisfying(
+            text ->
+                assertThat(text)
+                    .contains("schema 0, expected %s".formatted(LatheLayout.SCHEMA_VERSION))
+                    .contains("clean"));
+  }
+
+  @Test
   void runnerClasspath_empty_returnsEmpty() {
     assertThat(WorkspaceManifest.empty().runnerClasspath()).isEmpty();
   }
@@ -147,18 +167,20 @@ class WorkspaceManifestTest extends SampleFixture {
   private void writeWorkspaceManifest(
       final List<DependencyData> deps, final JdkSourceData jdk, final List<String> runnerClasspath)
       throws Exception {
+    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, deps, jdk, runnerClasspath);
+  }
+
+  private void writeWorkspaceManifest(
+      final String schemaVersion,
+      final List<DependencyData> deps,
+      final JdkSourceData jdk,
+      final List<String> runnerClasspath)
+      throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
     Json.write(
         new WorkspaceManifestData(
-            LatheLayout.SCHEMA_VERSION,
-            tmp.toString(),
-            null,
-            runnerClasspath,
-            jdk,
-            deps,
-            List.of(),
-            List.of()),
+            schemaVersion, tmp.toString(), null, runnerClasspath, jdk, deps, List.of(), List.of()),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

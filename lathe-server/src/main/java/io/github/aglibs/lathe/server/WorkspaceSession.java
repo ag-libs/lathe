@@ -264,7 +264,7 @@ final class WorkspaceSession {
     watcher.updatePomPaths(manifest.pomPaths());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
     if (configured) {
-      client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace ready."));
+      showWorkspaceStatus("Lathe: workspace ready.");
     } else {
       client.showMessage(new MessageParams(MessageType.Warning, LatheLayout.SETUP_REMEDIATION));
     }
@@ -3988,7 +3988,16 @@ final class WorkspaceSession {
     refreshOpenDocuments();
     old.close();
     scheduleAllOpenFiles();
-    client.showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
+    showWorkspaceStatus("Lathe: workspace reloaded.");
+  }
+
+  // A workspace.json from another schema loads as empty, so say why instead of "ready".
+  private void showWorkspaceStatus(final String okText) {
+    client.showMessage(
+        manifest
+            .schemaMismatch()
+            .map(text -> new MessageParams(MessageType.Warning, text))
+            .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }
 
   // Re-scans the reactor mirror and rebuilds the type index without the full-reload work (no

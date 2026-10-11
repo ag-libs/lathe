@@ -31,7 +31,6 @@ final class LaunchReaderTest {
   void read_presentLaunchFiles_returnsData() throws IOException {
     final var testLaunch =
         new TestLaunchData(
-            "1",
             "surefire",
             LaunchMode.CLASSPATH,
             "/jdk",
@@ -47,7 +46,6 @@ final class LaunchReaderTest {
             "");
     final var mainLaunch =
         new MainLaunchData(
-            "1",
             LaunchMode.MODULE,
             "/jdk",
             "com.example.jpms",

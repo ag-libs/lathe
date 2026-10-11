@@ -66,7 +66,6 @@ final class MainLaunchWriter {
     final Path moduleInfo = moduleInfoSource(project);
     if (moduleInfo == null) {
       return new MainLaunchData(
-          LatheLayout.MAIN_LAUNCH_SCHEMA_VERSION,
           LaunchMode.CLASSPATH,
           javaHome,
           null,
@@ -90,7 +89,6 @@ final class MainLaunchWriter {
         Stream.concat(Stream.of(outputDir), placement.getModulepathElements().keySet().stream())
             .toList();
     return new MainLaunchData(
-        LatheLayout.MAIN_LAUNCH_SCHEMA_VERSION,
         LaunchMode.MODULE,
         javaHome,
         placement.getMainModuleDescriptor().name(),

@@ -36,7 +36,6 @@ final class TestLaunchDataTest {
     assertThatThrownBy(
             () ->
                 new TestLaunchData(
-                    "1",
                     "",
                     LaunchMode.CLASSPATH,
                     "/jdk",
@@ -68,7 +67,6 @@ final class TestLaunchDataTest {
   private static TestLaunchData testLaunch(
       final LaunchMode mode, final String mainModule, final List<String> classPath) {
     return new TestLaunchData(
-        "1",
         "surefire",
         mode,
         "/jdk",

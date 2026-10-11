@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.junit;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
@@ -88,7 +87,6 @@ final class LaunchCapture {
     final LaunchMode mode = patchModules.isEmpty() ? LaunchMode.CLASSPATH : LaunchMode.MODULE;
     final String mainModule = patchModules.isEmpty() ? "" : patchModules.keySet().iterator().next();
     return new TestLaunchData(
-        LatheLayout.TEST_LAUNCH_SCHEMA_VERSION,
         KIND_SUREFIRE,
         mode,
         javaHome,

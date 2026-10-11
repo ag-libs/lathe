@@ -192,6 +192,17 @@ The server reads it at startup; the user-owned `lathe-style.json` overrides it s
 Maven derives it from the root project's Spotless Java step.
 Details: [Pinned Formatters](done/lathe-pinned-formatters.md).
 
+## Versioning
+
+One version covers all of `.lathe/`: `schemaVersion` in `workspace.json` (`LatheLayout.SCHEMA_VERSION`).
+Any change to the format of any `.lathe/` file bumps it; the other files carry no version of their own.
+A server that finds another version ignores `workspace.json` and warns that `.lathe/` must be regenerated with a clean build.
+It must be clean: an incremental build skips up-to-date modules, leaving their per-module files in the old format.
+
+The single check is enough because `.lathe/` is regenerable, never migrated:
+the fix for any mismatch is a rebuild, so the version only has to detect it and say so.
+The bump matters most for the quiet case: an old file that still parses, with a newly added field silently defaulted instead of failing.
+
 ## User-owned files
 
 A front-end never writes these:
@@ -248,8 +259,6 @@ Found while writing this contract (2026-10-11); each is a gap in the current fro
   A compile plus mirror copy over 2 minutes looks stale to readers.
 - **OpenJDK does not hold the reactor lock and writes no `lathe-sync.sh`.**
   The server can reconcile against half-written output while it syncs, and sync prompts point at a missing script.
-- **Launch schema versions are written but not checked.**
-  Only `workspace.json` is version-gated.
 - **Several writes are not atomic.**
   Params, stamps, and the OpenJDK `workspace.json` are written in place, and the mirror is deleted before it is copied.
 - **The server writes mirror directories for OpenJDK modules.**

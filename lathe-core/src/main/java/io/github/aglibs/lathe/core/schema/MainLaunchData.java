@@ -4,7 +4,6 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
 public record MainLaunchData(
-    String schemaVersion,
     LaunchMode mode,
     String javaHome,
     String mainModule,
@@ -19,7 +18,6 @@ public record MainLaunchData(
 
   public MainLaunchData {
     ValidCheck.check()
-        .notBlank(schemaVersion, "schemaVersion")
         .notNull(mode, "mode")
         .notBlank(javaHome, "javaHome")
         .notNull(workingDir, "workingDir")

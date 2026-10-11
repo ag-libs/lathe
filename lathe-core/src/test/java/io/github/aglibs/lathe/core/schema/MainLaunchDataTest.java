@@ -35,18 +35,7 @@ final class MainLaunchDataTest {
     assertThatThrownBy(
             () ->
                 new MainLaunchData(
-                    "1",
-                    LaunchMode.CLASSPATH,
-                    "",
-                    "",
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    ""))
+                    LaunchMode.CLASSPATH, "", "", null, null, null, null, null, null, null, ""))
         .hasMessageContaining("javaHome");
   }
 
@@ -65,7 +54,6 @@ final class MainLaunchDataTest {
   private static MainLaunchData mainLaunch(
       final LaunchMode mode, final String mainModule, final List<String> classPath) {
     return new MainLaunchData(
-        "1",
         mode,
         "/jdk",
         mainModule,
