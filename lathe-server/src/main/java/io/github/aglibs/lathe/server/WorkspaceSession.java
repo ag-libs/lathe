@@ -54,11 +54,10 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.CompletenessResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.LaunchReader;
 import io.github.aglibs.lathe.server.run.LaunchSession;
-import io.github.aglibs.lathe.server.run.LaunchTemplateReader;
 import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.MainClassScope;
-import io.github.aglibs.lathe.server.run.MainLaunchReader;
 import io.github.aglibs.lathe.server.run.ResolvedLaunch;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigReader;
@@ -365,8 +364,8 @@ final class WorkspaceSession {
 
     try {
       final TestLaunchData template =
-          new LaunchTemplateReader(workspaceRoot)
-              .read(moduleRel)
+          new LaunchReader(workspaceRoot)
+              .test(moduleRel)
               .orElseThrow(
                   () -> new IllegalStateException("no captured test-launch.json for " + moduleRel));
       assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
@@ -465,8 +464,7 @@ final class WorkspaceSession {
       final JdwpOptions jdwp)
       throws IOException {
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
-      final Optional<TestLaunchData> template =
-          new LaunchTemplateReader(workspaceRoot).read(moduleRel);
+      final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
       if (template.isEmpty()) {
         return MainLaunchPlan.blocked(
             List.of(
@@ -483,7 +481,7 @@ final class WorkspaceSession {
           RunOverlay.applyToTestMain(template.get(), workspaceRoot, mainClass, overlay, jdwp));
     }
 
-    final Optional<MainLaunchData> template = new MainLaunchReader(workspaceRoot).read(moduleRel);
+    final Optional<MainLaunchData> template = new LaunchReader(workspaceRoot).main(moduleRel);
     if (template.isEmpty()) {
       return MainLaunchPlan.blocked(List.of("no derived main-launch.json for " + moduleRel));
     }
@@ -1102,7 +1100,7 @@ final class WorkspaceSession {
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result) {
     try {
-      final var template = new LaunchTemplateReader(workspaceRoot).read(moduleRel);
+      final var template = new LaunchReader(workspaceRoot).test(moduleRel);
       if (template.isEmpty()) {
         LOG.warning(
             () ->
