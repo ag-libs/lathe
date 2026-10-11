@@ -150,7 +150,7 @@ An executable script that re-runs this front-end's sync from the workspace root:
 ```
 
 - `--tests` also re-captures test launches without running tests.
-- Modules scope the sync to those modules and their dependents.
+- Modules scope the sync to those modules and their upstream.
 
 The Neovim client runs it for the server's sync prompts and `:LatheSync`;
 server and MCP remediation messages name it.

@@ -93,7 +93,8 @@ class MultiModuleTest {
     assertThat(read(script))
         .startsWith("#!/bin/sh\n")
         .contains("-Dmaven.build.cache.enabled=false")
-        .contains("-am -amd");
+        .contains("-am\"")
+        .doesNotContain("-amd");
   }
 
   // --- sync: workspace.json ---

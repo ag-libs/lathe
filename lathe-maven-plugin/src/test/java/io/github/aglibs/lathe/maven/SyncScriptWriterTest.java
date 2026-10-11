@@ -49,9 +49,9 @@ class SyncScriptWriterTest {
 
     assertThat(run(Map.of(), "--tests").stdout()).endsWith("%s %s".formatted(CACHE_OFF, CAPTURE));
     assertThat(run(Map.of(), "app", "core").stdout())
-        .endsWith("%s -pl app,core -am -amd process-test-classes".formatted(CACHE_OFF));
+        .endsWith("%s -pl app,core -am process-test-classes".formatted(CACHE_OFF));
     assertThat(run(Map.of(), "--tests", "app").stdout())
-        .endsWith("%s -pl app -am -amd %s".formatted(CACHE_OFF, CAPTURE));
+        .endsWith("%s -pl app -am %s".formatted(CACHE_OFF, CAPTURE));
   }
 
   @Test

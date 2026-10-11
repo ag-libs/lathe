@@ -103,7 +103,7 @@ reused):
 
 - [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven writes it, Neovim runs it). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
-  of composing Maven commands; runs the build on the recorded JDK, scopes with `-am -amd`. Prepares Gradle.
+  of composing Maven commands; runs the build on the recorded JDK, scopes with `-am`. Prepares Gradle.
 - [Build-Tool-Agnostic Core](planned/lathe-build-agnostic-core.md) — **proposed, prerequisite for
   Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
   `workspace.json` replaces `target/`-shape path guessing, `pomPaths` → `buildFiles`, neutral texts,

@@ -73,8 +73,8 @@ External on-disk source/resource changes are detected server-side by comparing p
 stamps against the mirrored bytecode and routed to the same re-sync prompt
 (see [external-change detection](done/lathe-external-change-detection.md) and
 [compile-stamp staleness](done/lathe-staleness-compile-stamps.md)); changed resources are copied into
-`.lathe/` without a build. When only some modules changed, the server computes the affected module set
-and asks the client to run a scoped `.lathe/lathe-sync.sh <modules>` (`-am -amd`) rather than a full sync.
+`.lathe/` without a build. A build-file change prompts a full `.lathe/lathe-sync.sh`; the scoped form
+`.lathe/lathe-sync.sh <modules>` (`-am`) appears only in remediation messages for a named module.
 `LatheWorkspaceService.didChangeWatchedFiles` is an unused no-op.
 Type indexes back dependency, JDK, and reactor type-name completion.
 Beyond the standard LSP methods, the server exposes an `executeCommand` surface for run/test/debug,

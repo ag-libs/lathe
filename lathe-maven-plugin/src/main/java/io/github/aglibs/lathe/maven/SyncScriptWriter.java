@@ -35,9 +35,10 @@ final class SyncScriptWriter {
 
   // --tests captures each module's test launch without running the tests: the capture-only filter
   // excludes them all, and failIfNoTests=false keeps a build that requires tests green.
-  // A scoped sync needs both directions: -am builds the modules' upstream so they resolve against
-  // fresh classes, and -amd rebuilds the downstream whose classpath a POM change alters. The build
-  // cache stays off, since a cache hit skips javac and the test fork, where Lathe captures.
+  // A scoped sync builds the modules with -am, so they resolve against fresh upstream classes. No
+  // -amd: Maven does not add the dependents' own upstream, so on a large reactor a dependent fails
+  // to resolve a module outside the scope; callers that need dependents name them. The build cache
+  // stays off, since a cache hit skips javac and the test fork, where Lathe captures.
   static String render() {
     return """
         #!/bin/sh
@@ -60,7 +61,7 @@ final class SyncScriptWriter {
         fi
         scope=
         if [ $# -gt 0 ]; then
-          scope="-pl $(echo "$@" | tr ' ' ',') -am -amd"
+          scope="-pl $(echo "$@" | tr ' ' ',') -am"
         fi
         set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope $goal
         echo "lathe-sync: $*" >&2

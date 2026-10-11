@@ -94,7 +94,7 @@ public final class LatheLayout {
   public static final String SYNC_SCRIPT_COMMAND = "%s/%s".formatted(LATHE_DIR, SYNC_SCRIPT);
   public static final String SYNC_TESTS_FLAG = "--tests";
 
-  // Scoped form: refresh the given modules, their upstream, and everything downstream.
+  // Scoped form: refresh the given modules and their upstream.
   public static String scopedSyncCommand(final Collection<String> modules) {
     return "%s %s".formatted(SYNC_SCRIPT_COMMAND, String.join(" ", modules));
   }

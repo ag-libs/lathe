@@ -60,7 +60,7 @@ The build integration writes one executable script on every sync:
 - **`--tests`** — also re-capture test launches, without running the tests (Maven: `test -Dlathe.capture.only=true -DfailIfNoTests=false`: the test fork starts and writes `test-launch.json`, but the capture-only filter excludes every test), the mode behind "Sync + capture tests".
 - **`module ...`** — a scoped sync of these workspace-relative module paths and what they need (see Scoped sync).
   A build that cannot scope runs a full sync and says so on stderr.
-- **`--tests module ...`** — both: a scoped sync that also re-captures test launches for those modules (and, through `-amd`, their dependents).
+- **`--tests module ...`** — both: a scoped sync that also re-captures test launches for those modules.
 
 For Maven:
 
@@ -68,8 +68,8 @@ For Maven:
 |---|---|
 | `.lathe/lathe-sync.sh` | `mvn … process-test-classes` |
 | `.lathe/lathe-sync.sh --tests` | `mvn … test -Dlathe.capture.only=true -DfailIfNoTests=false` |
-| `.lathe/lathe-sync.sh app core` | `mvn … -pl app,core -am -amd process-test-classes` |
-| `.lathe/lathe-sync.sh --tests app` | `mvn … -pl app -am -amd test -Dlathe.capture.only=true -DfailIfNoTests=false` |
+| `.lathe/lathe-sync.sh app core` | `mvn … -pl app,core -am process-test-classes` |
+| `.lathe/lathe-sync.sh --tests app` | `mvn … -pl app -am test -Dlathe.capture.only=true -DfailIfNoTests=false` |
 
 - **Visible command.**
   Before running the build, the script prints the exact command it is about to run on stderr, as its first line (`lathe-sync: mvnd --no-transfer-progress … process-test-classes`).
@@ -111,7 +111,7 @@ elif [ -x ./mvnw ]; then mvn=./mvnw
 else mvn=mvn
 fi
 scope=
-if [ $# -gt 0 ]; then scope="-pl $(echo "$@" | tr ' ' ',') -am -amd"; fi
+if [ $# -gt 0 ]; then scope="-pl $(echo "$@" | tr ' ' ',') -am"; fi
 set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope "$goal"
 echo "lathe-sync: $*" >&2
 exec "$@"
@@ -122,13 +122,13 @@ The flags are today's Neovim flags, moved here: `--no-transfer-progress` drops d
 
 ### Scoped sync
 
-A scoped sync is requested after a POM change in some modules.
-It needs both directions, and `-am -amd` gives them:
+A scoped sync refreshes named modules: one whose classes are not compiled into `.lathe/` yet, one whose test launch is not captured, or the dependents a change reaches (which the caller lists itself).
+It builds them with **`-am`**, so they resolve against fresh upstream classes in the same reactor rather than stale `~/.m2` artifacts.
 
-- **`-am`** builds the modules' upstream in the same reactor, so they resolve against fresh upstream classes rather than stale `~/.m2` artifacts.
-- **`-amd`** rebuilds the downstream modules, whose captured classpath changes when a POM adds or removes a dependency.
-
-This replaces both of today's halves (the client's `-am`, the server text's `-amd`).
+It does not add `-amd`.
+Maven's `-amd` adds the modules' dependents but not the dependents' own upstream,
+so on a large reactor (Helidon) a dependent needs a module outside the scope, resolves it from `~/.m2`, and the build fails before compiling.
+A build-file change, the case that alters dependents' classpaths, always runs a full sync instead.
 
 ### Other build front-ends
 
