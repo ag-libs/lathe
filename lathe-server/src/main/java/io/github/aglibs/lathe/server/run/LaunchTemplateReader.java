@@ -25,6 +25,8 @@ public final class LaunchTemplateReader {
     }
 
     return Optional.of(
-        LatheLock.awaitAndRead(moduleDir, () -> Json.read(launchFile, TestLaunchData.class)));
+        LatheLock.awaitAndRead(
+            LatheLayout.moduleLockFile(moduleDir),
+            () -> Json.read(launchFile, TestLaunchData.class)));
   }
 }

@@ -86,7 +86,7 @@ public final class LatheCompiler implements Compiler {
     } finally {
       if (locked) {
         try {
-          LatheLock.release(moduleDir);
+          LatheLock.release(LatheLayout.moduleLockFile(moduleDir));
         } catch (final IOException e) {
           LOG.warn("[lathe] {} failed to delete lock file", moduleRel, e);
         }
@@ -96,7 +96,7 @@ public final class LatheCompiler implements Compiler {
 
   private boolean tryAcquireLock(final Path moduleDir, final Path moduleRel) {
     try {
-      LatheLock.acquire(moduleDir);
+      LatheLock.acquire(LatheLayout.moduleLockFile(moduleDir));
       return true;
     } catch (final IOException e) {
       LOG.warn("[lathe] {} failed to create lock file", moduleRel, e);

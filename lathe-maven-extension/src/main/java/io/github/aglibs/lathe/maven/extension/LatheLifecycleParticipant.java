@@ -97,7 +97,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
   // spurious prompt, never a failed build.
   private static boolean touchLock(final Path latheDir) {
     try {
-      LatheLock.acquire(latheDir);
+      LatheLock.acquire(LatheLayout.reactorLockFile(latheDir));
       return true;
     } catch (final IOException e) {
       return false;
@@ -106,7 +106,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   private static void releaseLock(final Path latheDir) {
     try {
-      LatheLock.release(latheDir);
+      LatheLock.release(LatheLayout.reactorLockFile(latheDir));
     } catch (final IOException e) {
       // Best-effort; the staleness TTL reclaims a leaked lock.
     }

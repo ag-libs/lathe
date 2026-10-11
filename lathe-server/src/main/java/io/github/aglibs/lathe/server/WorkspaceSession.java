@@ -3728,7 +3728,8 @@ final class WorkspaceSession {
   // others not, workspace.json being rewritten) neither prompts spuriously nor copies against a
   // half-written mirror. A crashed build is reclaimed by the lock's staleness TTL.
   private boolean reactorBuildInProgress() {
-    return LatheLock.isBuilding(workspaceRoot.resolve(LatheLayout.LATHE_DIR));
+    return LatheLock.isBuilding(
+        LatheLayout.reactorLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
   }
 
   private Set<Path> openSourcePaths() {

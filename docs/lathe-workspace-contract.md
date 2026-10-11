@@ -33,7 +33,7 @@ Run gating and main-class scope recognize only these two names, and the generate
 |---|---|---|
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
 | `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | symlinks | required |
-| `lathe.lock`, `<moduleRel>/lathe.lock` | empty file, mtime | required while writing |
+| `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
 | `<moduleRel>/classes/`, `<moduleRel>/test-classes/` | bytecode mirror | recommended, unless `externalOutput` |
@@ -78,7 +78,7 @@ The scripts pick the JVM as `$LATHE_JAVA_HOME`, else the content of `.lathe/java
 then add `@.lathe/jvm.args` when present.
 `java-home` and `jvm.args` are resolved relative to the working directory, so clients spawn the launcher with the workspace root as cwd.
 
-### `lathe.lock`
+### `lathe.lock`, `module.lock`
 
 An empty file; only its existence and mtime matter (`LatheLock`).
 It is held while it exists and its mtime is under 2 minutes old; an older lock is stale and ignored.
@@ -87,8 +87,9 @@ It is held while it exists and its mtime is under 2 minutes old; an older lock i
   The Maven extension takes it after the projects are read and heartbeats it every 30 seconds until the session ends;
   the Neovim client pre-touches it when it starts `lathe-sync.sh`, so the server sees the build before Maven starts.
   While it is held, the server suppresses reloads, sync prompts, and reconcile, so it never reads half-written output.
-- **Module lock** `.lathe/<moduleRel>/lathe.lock`: held while one module's params, stamps, and mirror are rewritten (the compiler shim).
+- **Module lock** `.lathe/<moduleRel>/module.lock`: held while one module's params, stamps, and mirror are rewritten (the compiler shim).
   Launch readers and the run gate wait for it.
+  It has its own name because the root module's directory is `.lathe/` itself: under a shared name, releasing the root's module lock would release the reactor lock mid-build.
 
 A front-end that writes `.lathe/` while an editor may be running holds the reactor lock for the whole write, and heartbeats it if the write can exceed 2 minutes.
 
@@ -221,7 +222,7 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 |---|---|---|
 | `lsp-params-<tree>.json` | yes | yes, `classes` only |
 | launcher links | yes | yes |
-| `lathe.lock` | yes | no |
+| `lathe.lock`, `module.lock` | yes | no |
 | `workspace.json` | yes, full reactor | yes, empty lists |
 | `lsp-stamps-<tree>.json` | yes | yes |
 | bytecode mirror | yes | no (`externalOutput`) |
@@ -241,9 +242,6 @@ Found while writing this contract (2026-10-11); each is a gap in the current fro
   The server and launch planner turn a sibling module's output into its mirror by path shape (a `target` parent for launches; any workspace path for the compile classpath),
   so a jar committed in the repo is wrongly redirected and OpenJDK build-tool classpaths point at missing paths.
   The output map in the [design](planned/lathe-build-agnostic-core.md) replaces the guess.
-- **The root module's lock is the reactor lock.**
-  For the root module `<moduleRel>` is empty, so its module lock is `.lathe/lathe.lock`;
-  in a single-module project the compiler releases the extension's reactor lock after compiling, and it stays released until the next heartbeat.
 - **The root module is spelled two ways.**
   The compiler, test capture, and server use `""`; `main-launch.json` and `resourceRoots` use `"."`.
 - **The module lock has no heartbeat.**

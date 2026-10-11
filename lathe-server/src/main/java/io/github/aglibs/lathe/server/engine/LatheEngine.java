@@ -283,7 +283,7 @@ public final class LatheEngine {
       final Map<String, List<TextEdit>> textEdits,
       final Map<String, String> moves,
       final List<LatheFileEdit> files) {
-    IOUtil.unchecked(() -> LatheLock.acquire(latheDir));
+    IOUtil.unchecked(() -> LatheLock.acquire(LatheLayout.reactorLockFile(latheDir)));
     try {
       textEdits.forEach(LatheEngine::applyFileEdits);
       moves.forEach(
@@ -302,7 +302,7 @@ public final class LatheEngine {
       }
 
     } finally {
-      IOUtil.unchecked(() -> LatheLock.release(latheDir));
+      IOUtil.unchecked(() -> LatheLock.release(LatheLayout.reactorLockFile(latheDir)));
     }
 
     // So this rename's stale-module advisory reflects the commit, without the 2s scan lag.

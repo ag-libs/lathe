@@ -48,7 +48,9 @@ public final class CompletenessGate {
       final String moduleRel = latheDir.relativize(moduleDir).toString();
       final Set<String> sourceTrees = entry.getValue();
       reasons.addAll(
-          LatheLock.awaitAndRead(moduleDir, () -> checkModule(moduleDir, moduleRel, sourceTrees)));
+          LatheLock.awaitAndRead(
+              LatheLayout.moduleLockFile(moduleDir),
+              () -> checkModule(moduleDir, moduleRel, sourceTrees)));
     }
 
     return reasons.isEmpty() ? CompletenessResult.open() : CompletenessResult.blocked(reasons);

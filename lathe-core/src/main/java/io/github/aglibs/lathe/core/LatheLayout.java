@@ -38,7 +38,10 @@ public final class LatheLayout {
   // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
   // daemon JVM), so this reads the same under mvn and mvnd.
   public static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
-  public static final String LOCK_FILE = "lathe.lock";
+  // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
+  // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
+  public static final String REACTOR_LOCK_FILE = "lathe.lock";
+  public static final String MODULE_LOCK_FILE = "module.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String POM_XML = "pom.xml";
   public static final String GENERATED_SOURCES = "generated-sources";
@@ -143,6 +146,14 @@ public final class LatheLayout {
 
   public static String cacheName(final String value) {
     return value.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-+", "-");
+  }
+
+  public static Path reactorLockFile(final Path latheDir) {
+    return latheDir.resolve(REACTOR_LOCK_FILE);
+  }
+
+  public static Path moduleLockFile(final Path moduleDir) {
+    return moduleDir.resolve(MODULE_LOCK_FILE);
   }
 
   public static String paramsFileName(final String sourceTree) {

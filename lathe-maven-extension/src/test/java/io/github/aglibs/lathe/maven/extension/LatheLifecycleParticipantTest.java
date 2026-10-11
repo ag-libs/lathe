@@ -17,7 +17,7 @@ class LatheLifecycleParticipantTest {
   private final LatheLifecycleParticipant participant = new LatheLifecycleParticipant();
 
   private static Path lockFile(final Path latheDir) {
-    return latheDir.resolve(LatheLayout.LOCK_FILE);
+    return LatheLayout.reactorLockFile(latheDir);
   }
 
   private static MavenProject projectWithDisabled(final String value) {

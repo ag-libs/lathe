@@ -15,41 +15,49 @@ final class LatheLockTest {
   @TempDir private Path moduleDir;
 
   @Test
-  void acquire_missingModuleDir_createsDirAndLockFile() throws IOException {
-    final Path nested = moduleDir.resolve("nested");
+  void acquire_missingParentDir_createsDirAndLockFile() throws IOException {
+    final Path lockFile = LatheLayout.moduleLockFile(moduleDir.resolve("nested"));
 
-    LatheLock.acquire(nested);
+    LatheLock.acquire(lockFile);
 
-    assertThat(nested.resolve(LatheLayout.LOCK_FILE)).exists();
+    assertThat(lockFile).exists();
   }
 
   @Test
-  void release_existingLockFile_deletesIt() throws IOException {
-    LatheLock.acquire(moduleDir);
+  void release_existingOrMissingLockFile_leavesNoLockFile() throws IOException {
+    final Path lockFile = moduleLock();
+    LatheLock.release(lockFile);
+    LatheLock.acquire(lockFile);
 
-    LatheLock.release(moduleDir);
+    LatheLock.release(lockFile);
 
-    assertThat(moduleDir.resolve(LatheLayout.LOCK_FILE)).doesNotExist();
+    assertThat(lockFile).doesNotExist();
   }
 
   @Test
-  void release_missingLockFile_noop() throws IOException {
-    LatheLock.release(moduleDir);
+  void releaseModuleLock_rootModuleUnderHeldReactorLock_reactorLockStillHeld() throws IOException {
+    // The root module's module dir is .lathe/ itself, the reactor lock's dir.
+    final Path reactorLock = LatheLayout.reactorLockFile(moduleDir);
+    LatheLock.acquire(reactorLock);
+    LatheLock.acquire(moduleLock());
 
-    assertThat(moduleDir.resolve(LatheLayout.LOCK_FILE)).doesNotExist();
+    LatheLock.release(moduleLock());
+
+    assertThat(LatheLock.isBuilding(reactorLock)).isTrue();
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
   }
 
   @Test
   void acquireThenAwaitAndRead_lockHeld_waitsUntilReleased()
       throws IOException, InterruptedException {
-    LatheLock.acquire(moduleDir);
+    LatheLock.acquire(moduleLock());
 
     final var releaser =
         new Thread(
             () -> {
               try {
                 Thread.sleep(200);
-                LatheLock.release(moduleDir);
+                LatheLock.release(moduleLock());
               } catch (final IOException | InterruptedException e) {
                 throw new RuntimeException(e);
               }
@@ -57,48 +65,45 @@ final class LatheLockTest {
     releaser.start();
 
     final var waited = Stopwatch.start();
-    LatheLock.awaitAndRead(moduleDir, () -> "value");
+    LatheLock.awaitAndRead(moduleLock(), () -> "value");
     releaser.join();
 
     assertThat(waited.elapsedMs()).isGreaterThanOrEqualTo(200);
   }
 
   @Test
-  void awaitAndRead_noLockFile_readsImmediately() throws IOException {
-    final String result = LatheLock.awaitAndRead(moduleDir, () -> "value");
+  void awaitAndRead_noOrStaleLockFile_readsImmediately() throws IOException {
+    final String unlocked = LatheLock.awaitAndRead(moduleLock(), () -> "unlocked");
+    writeStaleLock();
 
-    assertThat(result).isEqualTo("value");
-  }
+    final String stale = LatheLock.awaitAndRead(moduleLock(), () -> "stale");
 
-  @Test
-  void awaitAndRead_staleLockFile_readsImmediately() throws IOException {
-    final Path lockFile = moduleDir.resolve(LatheLayout.LOCK_FILE);
-    Files.writeString(lockFile, "");
-    Files.setLastModifiedTime(lockFile, FileTime.from(Instant.now().minusSeconds(180)));
-
-    final String result = LatheLock.awaitAndRead(moduleDir, () -> "value");
-
-    assertThat(result).isEqualTo("value");
-  }
-
-  @Test
-  void isBuilding_noLockFile_false() {
-    assertThat(LatheLock.isBuilding(moduleDir)).isFalse();
+    assertThat(unlocked).isEqualTo("unlocked");
+    assertThat(stale).isEqualTo("stale");
   }
 
   @Test
   void isBuilding_freshLockFile_true() throws IOException {
-    LatheLock.acquire(moduleDir);
+    LatheLock.acquire(moduleLock());
 
-    assertThat(LatheLock.isBuilding(moduleDir)).isTrue();
+    assertThat(LatheLock.isBuilding(moduleLock())).isTrue();
   }
 
   @Test
-  void isBuilding_staleLockFile_false() throws IOException {
-    final Path lockFile = moduleDir.resolve(LatheLayout.LOCK_FILE);
-    Files.writeString(lockFile, "");
-    Files.setLastModifiedTime(lockFile, FileTime.from(Instant.now().minusSeconds(180)));
+  void isBuilding_noOrStaleLockFile_false() throws IOException {
+    final boolean noLock = LatheLock.isBuilding(moduleLock());
+    writeStaleLock();
 
-    assertThat(LatheLock.isBuilding(moduleDir)).isFalse();
+    assertThat(noLock).isFalse();
+    assertThat(LatheLock.isBuilding(moduleLock())).isFalse();
+  }
+
+  private Path moduleLock() {
+    return LatheLayout.moduleLockFile(moduleDir);
+  }
+
+  private void writeStaleLock() throws IOException {
+    Files.writeString(moduleLock(), "");
+    Files.setLastModifiedTime(moduleLock(), FileTime.from(Instant.now().minusSeconds(180)));
   }
 }

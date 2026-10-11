@@ -12,30 +12,28 @@ public final class LatheLock {
 
   private LatheLock() {}
 
-  public static void acquire(final Path moduleDir) throws IOException {
-    Files.createDirectories(moduleDir);
-    Files.writeString(moduleDir.resolve(LatheLayout.LOCK_FILE), "");
+  public static void acquire(final Path lockFile) throws IOException {
+    Files.createDirectories(lockFile.getParent());
+    Files.writeString(lockFile, "");
   }
 
-  public static void release(final Path moduleDir) throws IOException {
-    Files.deleteIfExists(moduleDir.resolve(LatheLayout.LOCK_FILE));
+  public static void release(final Path lockFile) throws IOException {
+    Files.deleteIfExists(lockFile);
   }
 
-  public static <T> T awaitAndRead(final Path moduleDir, final IOUtil.IOSupplier<T> reader)
+  public static <T> T awaitAndRead(final Path lockFile, final IOUtil.IOSupplier<T> reader)
       throws IOException {
-    awaitClear(moduleDir.resolve(LatheLayout.LOCK_FILE));
+    awaitClear(lockFile);
     return reader.get();
   }
 
   /**
-   * Non-blocking check of whether a module is currently being built/synced — its lock is present
-   * and not stale. Unlike {@link #awaitAndRead}, this never waits; a poll loop uses it to skip a
-   * module whose {@code .lathe/<module>/} is mid-write. An unreadable lock is treated as not
-   * building.
+   * Non-blocking check of whether the lock is held — present and not stale. Unlike {@link
+   * #awaitAndRead}, this never waits. An unreadable lock is treated as not held.
    */
-  public static boolean isBuilding(final Path moduleDir) {
+  public static boolean isBuilding(final Path lockFile) {
     try {
-      return isHeld(moduleDir.resolve(LatheLayout.LOCK_FILE));
+      return isHeld(lockFile);
     } catch (final IOException e) {
       return false;
     }
