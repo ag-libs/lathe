@@ -122,6 +122,12 @@ reused):
 
 **Reliability and further work:**
 
+- [Test Framework: Fewer Cold Compiles](planned/lathe-test-framework.md) — **proposed.** About 60% of the
+  server tests' CPU is javac rebuilding its view of the JDK and an inherited 18-jar test classpath (1,528 cold
+  tasks for 1,220 tests); one shared `TestJavac` with a JDK-only default, content-cached read-only fixtures,
+  instance-owned fixtures, two test tiers, and coverage in a CI profile — roughly half the CPU, same coverage.
+  Invoker suite: it can test a stale `lathe-server` from `~/.m2` (fix first); then parallel projects and a
+  test-only watcher interval save ~20 s of wall-clock.
 - [One Write Pass: Simplifying Recompilation](planned/lathe-recompile-simplification.md) — every trigger (save,
   external change, rename commit, MCP query, startup) requests one pass that writes stale files level by level in dependency order
   and re-analyzes open dependents once; removes the 50-file bulk threshold, the per-path bookkeeping, and the

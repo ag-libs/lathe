@@ -99,7 +99,7 @@ direct analog of `lathe-maven-extension` + `lathe-maven-plugin`.
 
 | Maven | Role | Gradle equivalent |
 |---|---|---|
-| `LatheLifecycleParticipant.afterProjectsRead` + `LatheModelInjector` | wire every module before build | **Settings plugin** using `gradle.lifecycle.beforeProject { }` to apply the project plugin to every project (falls back to `gradle.beforeProject`/`allprojects` on < 8.8) |
+| `LatheLifecycleParticipant.afterProjectsRead` + `LatheModelInjector` | wire every module before build | **Settings plugin** using `gradle.lifecycle.beforeProject { }` to apply the project plugin to every project (Gradle 8.8+, no fallback) |
 | `lathe:init` (mkdir `.lathe/`) | create dir at reactor root | project-plugin apply / `latheInit` |
 | `lathe:sync` + `SyncCoordinator` (aggregator, `process-test-classes`) | source jars, JDK sources, server install, `workspace.json`, `main-launch.json` | root task **`latheSync`** |
 | `lathe-compiler` (Plexus `Compiler`, `compilerId=lathe`) + `ParamsWriter` | capture compiler args, mirror classes, write stamps | non-cacheable **capture finalizer** on each `JavaCompile` (typed-API capture) |
@@ -391,7 +391,7 @@ listed last in the reactor, binds **`exec-maven-plugin`** to run `./gradlew buil
 included: one entry point, one CI stage. (Alternative, rejected for now: a standalone Gradle sub-build
 with its own CI job — more idiomatic for Gradle, but two commands / two CI stages.)
 
-**CI:** the outer build runs one Gradle version; the **Gradle version matrix** (7.x floor / 8.8 / 9.x)
+**CI:** the outer build runs one Gradle version; the **Gradle version matrix** (8.8 floor / latest 8.x / latest 9.x)
 lives *inside* the TestKit tests via `GradleRunner.withGradleVersion(...)`, not in the outer build.
 
 **Release:** the plugin publishes to the **Gradle Plugin Portal** (`com.gradle.plugin-publish`),
@@ -460,9 +460,12 @@ and the fidelity claims are all under test.
 2. **GradleX `java-module-testing` injection mechanism** — whether its module args reach the public task
    API (build-side/in-fork capture suffices) or only internal fork wiring (needs the in-fork ground
    truth). Determines how self-sufficient modular-test capture is.
-3. **Minimum supported Gradle version** — 8.14.6 and 9.8.1 are verified by the spike; the 7.x floor is
-   unverified (toolchain and annotation-processor-path APIs; `getGeneratedSourceOutputDirectory` is
-   6.4+). Settling on 8.x as the floor is the cheap option.
+3. **Minimum supported Gradle version** — *decided:* **Gradle 8.8**, the first version where every capture
+   point works through the standard plugin API with no fallback. The binding API is
+   `gradle.lifecycle.beforeProject` (8.8), which applies the project plugin to every project without
+   cross-project configuration (Isolated-Projects-safe); the other capture APIs (`JavaCompile`'s destination
+   and generated-source directories, effective processor path, compiler args, toolchains) predate it.
+   8.14.6 and 9.8.1 are verified by the spike.
 4. **Capture finalizer shape** — per-task finalizer vs one aggregating task; must stay non-cacheable and
    configuration-cache-safe either way. Reading the `JavaCompile` values through `Provider`s from a
    separate task is spiked and configuration-cache safe. Test capture (B) is settled: always-run,
@@ -487,7 +490,7 @@ Run 2026-10-10 on Gradle 8.14.6 and 9.8.1, JDK 21, in a throwaway multi-project 
 | `-sources` via artifact view | most resolve; Guava silently skipped; legacy classifier query finds it |
 | Spotless pinned formatter version | name readable, version not (no public API) |
 
-Not covered: Gradle 7.x, JPMS (modular main and whitebox test), GradleX `java-module-testing`, toolchains
+Not covered: the 8.8 floor itself (verified on 8.14.6 and 9.8.1), JPMS (modular main and whitebox test), GradleX `java-module-testing`, toolchains
 other than the daemon JDK.
 
 ## Non-goals (this design)
