@@ -61,7 +61,8 @@ Other threads never read or write it; they exchange messages:
 - the session thread hands a tree's worker an immutable request (the sources to write or analyze);
 - the worker runs javac on its own thread, with its own tree-local cache, and posts an immutable result back to the session thread;
 - timers (the reconcile tick, the rename idle commit and unapplied drop) post to the session thread;
-- the MCP engine requests a pass and waits on the returned future from its own thread.
+- the MCP engine requests a pass and waits on the returned future from its own thread;
+- the reactor type index is rebuilt once after the passes, on a pooled thread from an immutable snapshot, and applied on the session thread only if the index is still the one it was built from — a rebuild takes 100–200 ms on a large reactor and would otherwise hold back the publishes queued behind it.
 
 The session thread never blocks: a pass is a chain of these messages, each tree's result posting the next step.
 No lock, `synchronized`, atomic, or concurrent collection is introduced; the one volatile field in this area (`cachedStaleModules`, read for MCP's stale note) goes in the MCP step.
@@ -184,6 +185,7 @@ From today's equalsverifier runs:
 | Work | Time |
 |---|---|
 | One saved file, written (today's save compile) | median 454 ms, p90 632 ms |
+| One saved file through the pass, save to publish (step 3, measured) | median 571 ms, p90 654 ms, against 497 / 569 ms for the save compile on the same run |
 | A batch write of one file | the same call (`generate` with one source); slower only when cold and contended |
 | 108 renamed files written as 8 tree batches in parallel | ~4 s, the largest tree (81 files) 3.9 s |
 | The same written one tree at a time | 12.8 s of writes, commit to refreshed 14.6 s (step 1, measured, rejected) |

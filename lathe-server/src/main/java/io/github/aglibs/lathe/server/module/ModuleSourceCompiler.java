@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.JavacDiagnosticMapper;
 import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.io.File;
@@ -21,7 +22,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.logging.Level;
@@ -100,13 +100,23 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     try {
       final CompilerResult result =
           runner.compileBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
-      final Set<String> failedUris =
+      final Map<String, String> contentByUri =
+          sources.stream()
+              .collect(Collectors.toMap(TransientSource::uri, TransientSource::content));
+      return new BatchWrite(
+          result.writtenBinaryNames(),
           result.diagnostics().stream()
-              .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-              .map(diagnostic -> uriByTempFile.get(sourcePathOf(diagnostic)))
-              .filter(Objects::nonNull)
-              .collect(Collectors.toUnmodifiableSet());
-      return new BatchWrite(result.writtenBinaryNames(), failedUris);
+              .filter(diagnostic -> uriByTempFile.containsKey(sourcePathOf(diagnostic)))
+              .collect(
+                  Collectors.groupingBy(diagnostic -> uriByTempFile.get(sourcePathOf(diagnostic))))
+              .entrySet()
+              .stream()
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      Map.Entry::getKey,
+                      entry ->
+                          JavacDiagnosticMapper.filterAndMap(
+                              entry.getValue(), contentByUri.get(entry.getKey())))));
     } finally {
       IOUtil.unchecked(fm::flush);
     }

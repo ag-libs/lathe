@@ -250,6 +250,25 @@ public final class TestCompiler {
       final Path generatedSourcesDir,
       final List<Path> classpath)
       throws IOException {
+    writeModuleParams(
+        workspaceRoot,
+        moduleName,
+        sourceRoot,
+        generatedSourcesDir,
+        classpath,
+        List.of(),
+        List.of());
+  }
+
+  public static void writeModuleParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path generatedSourcesDir,
+      final List<Path> classpath,
+      final List<Path> processorPath,
+      final List<String> compilerArgs)
+      throws IOException {
     final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
     Files.createDirectories(latheModuleDir);
     final var config =
@@ -260,13 +279,13 @@ public final class TestCompiler {
             List.of(sourceRoot.toString()),
             classpath.stream().map(Path::toString).toList(),
             List.of(),
-            List.of(),
+            processorPath.stream().map(Path::toString).toList(),
             "21",
             "UTF-8",
             false,
             false,
             null,
-            List.of(),
+            compilerArgs,
             null,
             false);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));

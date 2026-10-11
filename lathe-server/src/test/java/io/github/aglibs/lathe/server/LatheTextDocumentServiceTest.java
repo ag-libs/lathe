@@ -668,6 +668,73 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void didSave_processorReportsOnTheWrite_mergedIntoThePublishUntilTheBufferChanges()
+      throws Exception {
+    // Analysis runs without annotation processors, so only the write sees this one's warning.
+    final Path processorSource =
+        TestCompiler.writeAt(
+            tmp.resolve("processor-src/proc/NoteProcessor.java"),
+            """
+            package proc;
+            import java.util.Set;
+            import javax.annotation.processing.*;
+            import javax.lang.model.SourceVersion;
+            import javax.lang.model.element.TypeElement;
+            import javax.tools.Diagnostic;
+            @SupportedAnnotationTypes("*")
+            public class NoteProcessor extends AbstractProcessor {
+              @Override public SourceVersion getSupportedSourceVersion() {
+                return SourceVersion.latestSupported();
+              }
+              @Override public boolean process(Set<? extends TypeElement> types, RoundEnvironment round) {
+                round.getRootElements().forEach(element -> processingEnv.getMessager()
+                    .printMessage(Diagnostic.Kind.WARNING, "noted by processor", element));
+                return false;
+              }
+            }
+            """,
+            1_000L);
+    final Path processors = tmp.resolve("processors");
+    TestCompiler.compileToDir(processors, processorSource);
+    final Path note =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Note.java", "package com.example; class Note {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        null,
+        List.of(),
+        List.of(processors),
+        List.of("-processor", "proc.NoteProcessor"));
+    service.initialize(tmp);
+    awaitStartup();
+    openDoc(note, Files.readString(note));
+    awaitWorkerIdle();
+
+    TestCompiler.writeAt(note, Files.readString(note), 5_000L);
+    save(note);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
+
+    // Edited, the buffer no longer holds what was written, so the write's warning no longer
+    // applies.
+    clearInvocations(client);
+    service.didChange(
+        new DidChangeTextDocumentParams(
+            new VersionedTextDocumentIdentifier(note.toUri().toString(), 2),
+            List.of(
+                new TextDocumentContentChangeEvent("package com.example; class Note { int n; }"))));
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, note) && p.getDiagnostics().isEmpty()));
+  }
+
+  @Test
   void writeReported_whileABuildHoldsTheLock_writesReportedFilesEvenAtTheirStamp_externalWaits()
       throws Exception {
     final var sources = new LinkedHashMap<String, String>();
@@ -1318,6 +1385,11 @@ class LatheTextDocumentServiceTest {
 
   private static boolean isFor(final PublishDiagnosticsParams params, final Path file) {
     return params.getUri().equals(file.toUri().toString());
+  }
+
+  private static boolean hasMessage(final PublishDiagnosticsParams params, final String message) {
+    return params.getDiagnostics().stream()
+        .anyMatch(diagnostic -> diagnostic.getMessage().getLeft().contains(message));
   }
 
   // Collects log messages, so a test can count operations that leave no other observable trace.

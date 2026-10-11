@@ -6,12 +6,12 @@ import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -70,22 +70,17 @@ public interface JavaSourceCompiler extends AutoCloseable {
   default BatchWrite compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var written = new HashSet<String>();
-    final var failed = new HashSet<String>();
+    final var diagnostics = new HashMap<String, List<org.eclipse.lsp4j.Diagnostic>>();
     for (final var source : sources) {
       cancelChecker.checkCanceled();
       final CompilerResult result =
           compile(source.uri(), source.content(), CompileMode.FULL, cancelChecker);
       written.addAll(result.writtenBinaryNames());
-      if (hasError(result.diagnostics())) {
-        failed.add(source.uri());
-      }
+      diagnostics.put(
+          source.uri(), JavacDiagnosticMapper.filterAndMap(result.diagnostics(), source.content()));
     }
 
-    return new BatchWrite(written, failed);
-  }
-
-  static boolean hasError(final List<? extends Diagnostic<?>> diagnostics) {
-    return diagnostics.stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+    return new BatchWrite(written, diagnostics);
   }
 
   /**

@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -174,41 +173,19 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void dependentRefreshMerge_unionsScopes_skipsOnlyFilesEveryRequestExcluded() {
-    final var api = tmp.resolve(".lathe/api");
-    final var app = tmp.resolve(".lathe/app");
-    // Each save excludes the file it just compiled; a file stays excluded only if no merged
-    // request needs it refreshed.
-    final var first = new WorkspaceSession.DependentRefresh(Set.of(api), Set.of("A", "Shared"));
-    final var second = new WorkspaceSession.DependentRefresh(Set.of(app), Set.of("Shared"));
-
-    final var merged = first.merge(second);
-
-    assertThat(merged.scope()).containsExactlyInAnyOrder(api, app);
-    assertThat(merged.exclusions()).containsExactly("Shared");
-  }
-
-  @Test
-  void claimStable_fileMidSaveReactingOrHeldByRename_skipped_restClaimed() {
+  void claimStable_notReadyOrHeldByRename_skipped_restClaimedInOrder() {
     final var settled = sourceRoot.resolve("com/example/Settled.java");
-    final var saving = sourceRoot.resolve("com/example/Saving.java");
-    final var reacting = sourceRoot.resolve("com/example/Reacting.java");
     final var moving = sourceRoot.resolve("com/example/Moving.java");
     final var renamed = sourceRoot.resolve("com/example/Renamed.java");
-    final var inFlight = new HashSet<>(Set.of(reacting));
+    final var reported = sourceRoot.resolve("com/example/Reported.java");
 
-    // Saving's own save compile is still running; Moving has not settled across two ticks;
-    // Renamed waits for its open rename's commit.
-    final List<Path> claimed =
-        WorkspaceSession.claimStable(
-            List.of(settled, saving, reacting, moving, renamed),
-            Set.of(settled, saving, reacting, renamed),
-            Map.of(saving, 1),
-            inFlight,
-            Set.of(renamed));
-
-    assertThat(claimed).containsExactly(settled);
-    assertThat(inFlight).containsExactlyInAnyOrder(reacting, settled);
+    // Moving has not settled across two ticks; Renamed waits for its open rename's commit.
+    assertThat(
+            WorkspaceSession.claimStable(
+                List.of(settled, moving, renamed, reported),
+                Set.of(settled, renamed, reported),
+                Set.of(renamed)))
+        .containsExactly(settled, reported);
   }
 
   @Test

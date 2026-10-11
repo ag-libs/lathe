@@ -14,7 +14,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class JavacDiagnosticMapper {
+public final class JavacDiagnosticMapper {
 
   private JavacDiagnosticMapper() {}
 

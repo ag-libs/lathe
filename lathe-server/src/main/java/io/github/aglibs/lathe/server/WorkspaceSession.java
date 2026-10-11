@@ -74,6 +74,7 @@ import io.github.aglibs.lathe.server.run.TestOutputParams;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -185,9 +186,6 @@ final class WorkspaceSession {
   private boolean awaitingSettle;
   private Stopwatch lastActivity = Stopwatch.start();
   private Stopwatch lastReconcile = Stopwatch.start();
-  // Sources whose in-process recompile is in flight, so a later tick does not resubmit one still
-  // building. Worker-thread-confined like every other field here.
-  private final Set<Path> reacting = new HashSet<>();
   // Sources whose last compile emitted no class (a compile error), keyed to the mtime compiled.
   // Not retried alone until edited; they join their tree's next write, and a write upstream lets
   // them try again.
@@ -199,28 +197,25 @@ final class WorkspaceSession {
   private CompletableFuture<List<Path>> nextPass;
   private boolean nextPassEager;
   private long passGeneration;
-  // Save and reconcile-batch compiles still running. A dependents refresh requested meanwhile
-  // is merged into pendingRefresh and runs once they drain, so a `:wa` burst refreshes each open
-  // file once instead of once per completing save; the reactor type index is rebuilt once the
-  // same way (reactorIndexStale), as one rebuild costs ~200ms on a large reactor.
-  private int sourceCompilesInFlight;
-  private DependentRefresh pendingRefresh;
+  // What the passes owe once none is left to run: the module dirs whose open files to re-analyze,
+  // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
+  // analyzes each open file once and rebuilds the index (~200ms on a large reactor) once.
+  private final Set<Path> refreshScope = new HashSet<>();
   private boolean reactorIndexStale;
-  // Files the editor saved in a committed rename or the MCP engine wrote: the pass writes them
-  // without waiting for them to settle, while a build holds the reactor lock, and even when their
-  // mtime equals their stamp -- the writer said they changed. Each leaves once written.
-  private final Set<Path> reported = new HashSet<>();
+  private long reactorIndexBuilds;
+  // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
+  // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
+  // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
+  // written, unless reported again after its content was read.
+  private final Map<Path, Long> reported = new HashMap<>();
+  private long reportCount;
+  // Per open file, the diagnostics of its last write and the content written: merged into its
+  // publishes while it still has that content, for what analysis cannot report (annotation
+  // processor and compiler plugin findings).
+  private final Map<String, WriteDiagnostics> writeDiagnostics = new HashMap<>();
   // A rename the editor is applying and saving; its files compile together at the commit. Empty
   // when none is open.
   private RenameTransaction renameTransaction = new RenameTransaction();
-  // Files with a save compile in flight (a count per file, as one file can be saved twice in a
-  // row), so the reconcile pass does not compile them a second time from disk meanwhile.
-  private final Map<Path, Integer> saving = new HashMap<>();
-  // Saves of a source tree that arrive while one of its save compiles runs wait here and then
-  // compile together as one batch, so a Save All costs a few batches instead of a compile per file.
-  // A lone save compiles at once.
-  private final Map<ModuleSourceConfig, Integer> treeSavesInFlight = new HashMap<>();
-  private final Map<ModuleSourceConfig, Set<Path>> queuedSaves = new HashMap<>();
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -1480,6 +1475,7 @@ final class WorkspaceSession {
     renameTransaction.onClose(uri);
 
     analysisLru.remove(uri);
+    writeDiagnostics.remove(uri);
     workspace.dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
     reindexFromDisk(uri);
@@ -1505,26 +1501,17 @@ final class WorkspaceSession {
       return;
     }
 
+    // A reactor file is written by a pass, whose refresh then publishes it with its dependents.
     final var route = routeCompiler(uri);
-    if (route instanceof final CompilerRoute.Module module
-        && treeSavesInFlight.containsKey(module.config())) {
-      final Path source = LatheUri.toPath(uri);
-      queuedSaves.computeIfAbsent(module.config(), config -> new LinkedHashSet<>()).add(source);
-      saving.merge(source, 1, Integer::sum);
-      LOG.fine(() -> "[save] queued %s".formatted(uri));
+    if (route instanceof CompilerRoute.Module) {
+      writeReported(Set.of(LatheUri.toPath(uri)));
       return;
     }
 
-    final Path savedPath = LatheUri.toPath(uri);
-    final long savedMtime = mtimeMillis(savedPath);
     final AfterCompile afterCompile =
-        switch (route) {
-          case CompilerRoute.Module module ->
-              publishThen(
-                  route, result -> afterModuleSave(result, module.config(), savedPath, savedMtime));
-          case CompilerRoute.External ignored -> publishThen(route, () -> scheduleAstRefresh(uri));
-          case CompilerRoute.Missing ignored -> publisher::publishIfCurrent;
-        };
+        route instanceof CompilerRoute.External
+            ? publishThen(route, () -> scheduleAstRefresh(uri))
+            : publisher::publishIfCurrent;
     submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
   }
 
@@ -3016,15 +3003,28 @@ final class WorkspaceSession {
     reactorBaseShards.put(config, base);
     reactorShards.put(config, withSourceDelta(config, base));
     reactorIndexStale = true;
-    if (sourceCompilesInFlight == 0) {
-      rebuildReactorIndex();
-    }
   }
 
+  // Built off the session thread, as a rebuild takes 100-200ms on a large reactor and would hold
+  // back the publishes queued behind it; applied only if the index is still the one it was built
+  // from and no newer build started.
   private void rebuildReactorIndex() {
     reactorIndexStale = false;
-    typeIndex = typeIndex.withReactorEntries(reactorShards.values());
     reactorLambdaImplementors = mergeLambdaShards();
+    final WorkspaceTypeIndex base = typeIndex;
+    final List<List<TypeIndexEntry>> shards = List.copyOf(reactorShards.values());
+    final long build = ++reactorIndexBuilds;
+    CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
+        .whenComplete(
+            (index, error) ->
+                worker.execute(
+                    () -> {
+                      if (error != null) {
+                        LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
+                      } else if (typeIndex == base && build == reactorIndexBuilds) {
+                        typeIndex = index;
+                      }
+                    }));
   }
 
   // Index types from dirty/open sources not yet built, so they show in symbols before their class
@@ -3184,7 +3184,6 @@ final class WorkspaceSession {
 
     final var pass = new CompletableFuture<List<Path>>();
     runningPass = pass;
-    sourceCompilesInFlight++;
     pass.whenComplete((stale, error) -> endPass(stale == null ? List.of() : stale));
     try {
       runPass(eager, pass);
@@ -3199,8 +3198,8 @@ final class WorkspaceSession {
   // One pass: drop the classes of deleted sources, claim the stale sources that are ready, copy
   // changed resources, then write the claimed sources level by level, upstream first. While a
   // build holds the reactor lock only reported files are written; external catch-up waits for it.
-  // The pass counts as a source compile in flight from start to end, so the dependents refresh runs
-  // once after it -- or after the next pass, if one was requested meanwhile.
+  // The open files in and downstream of what it wrote are re-analyzed once it ends -- or after the
+  // next pass, if one was requested meanwhile.
   private void runPass(final boolean eager, final CompletableFuture<List<Path>> done) {
     final boolean building = reactorBuildInProgress();
     lastReconcile = Stopwatch.start();
@@ -3218,56 +3217,70 @@ final class WorkspaceSession {
 
   // A reported file is written even when its mtime equals its stamp, so the scan may not list it.
   private StaleScan withReported(final StaleScan scan) {
-    reported.removeIf(source -> !Files.exists(source));
+    reported.keySet().removeIf(source -> !Files.exists(source));
     final var byModule = new HashMap<>(scan.staleByModule());
-    reported.forEach(
-        source ->
-            workspace
-                .moduleSourceFor(source)
-                .filter(config -> !byModule.getOrDefault(config, List.of()).contains(source))
-                .ifPresent(
-                    config ->
-                        byModule.merge(
-                            config,
-                            List.of(source),
-                            (listed, added) ->
-                                Stream.concat(listed.stream(), added.stream()).toList())));
+    reported
+        .keySet()
+        .forEach(
+            source ->
+                workspace
+                    .moduleSourceFor(source)
+                    .filter(config -> !byModule.getOrDefault(config, List.of()).contains(source))
+                    .ifPresent(
+                        config ->
+                            byModule.merge(
+                                config,
+                                List.of(source),
+                                (listed, added) ->
+                                    Stream.concat(listed.stream(), added.stream()).toList())));
     return new StaleScan(scan.newestMtime(), byModule);
   }
 
   private Predicate<Path> notReported() {
-    return source -> !reported.contains(source);
+    return source -> !reported.containsKey(source);
   }
 
-  // Starts the pass requested meanwhile before releasing this one, so the dependents refresh waits
-  // for both and analyzes each open dependent once. A request made during this pass may concern a
-  // file this pass already wrote, so its answer covers both passes' stale sources.
+  // Starts the pass requested meanwhile, handing it this pass's refresh, so each open file is
+  // analyzed once after both. A request made during this pass may concern a file this pass already
+  // wrote, so its answer covers both passes' stale sources.
   private void endPass(final List<Path> finished) {
     runningPass = null;
     final CompletableFuture<List<Path>> next = nextPass;
-    if (next != null) {
-      nextPass = null;
-      final boolean eager = nextPassEager;
-      nextPassEager = false;
-      requestPass(eager)
-          .whenComplete(
-              (stale, error) -> {
-                if (error != null) {
-                  next.completeExceptionally(error);
-                } else {
-                  next.complete(
-                      Stream.concat(finished.stream(), stale.stream()).distinct().toList());
-                }
-              });
+    if (next == null) {
+      refreshAfterPasses();
+      return;
     }
 
-    sourceCompileDone();
+    nextPass = null;
+    final boolean eager = nextPassEager;
+    nextPassEager = false;
+    requestPass(eager)
+        .whenComplete(
+            (stale, error) -> {
+              if (error != null) {
+                next.completeExceptionally(error);
+              } else {
+                next.complete(Stream.concat(finished.stream(), stale.stream()).distinct().toList());
+              }
+            });
+  }
+
+  private void refreshAfterPasses() {
+    if (!refreshScope.isEmpty()) {
+      final Set<Path> scope = Set.copyOf(refreshScope);
+      refreshScope.clear();
+      refreshOpenFiles(scope);
+    }
+
+    if (reactorIndexStale) {
+      rebuildReactorIndex();
+    }
   }
 
   // The stale sources ready to write, by source tree in write order. Ready: reported, or -- unless
   // a build is running -- settled across one tick (or eager) and not failed with no change since;
-  // never held by an open rename or mid-save. A tree that writes anything takes its failed sources
-  // along: they may have failed only for want of what this write brings.
+  // never held by an open rename. A tree that writes anything takes its failed sources along: they
+  // may have failed only for want of what this write brings.
   private Map<ModuleSourceConfig, List<Path>> claimReady(
       final StaleScan scan, final boolean eager, final boolean building) {
     final Map<Path, Long> stale = staleMtimes(scan);
@@ -3277,14 +3290,14 @@ final class WorkspaceSession {
     awaitingSettle = settled.size() < current.size();
     final Set<Path> ready =
         building
-            ? Set.copyOf(reported)
-            : Stream.concat(settled.stream(), reported.stream())
+            ? Set.copyOf(reported.keySet())
+            : Stream.concat(settled.stream(), reported.keySet().stream())
                 .collect(Collectors.toUnmodifiableSet());
     final Set<Path> held = renameTransaction.memberPaths();
     final var batches = new LinkedHashMap<ModuleSourceConfig, List<Path>>();
     for (final var config : compileOrder(scan.staleByModule().keySet())) {
       final List<Path> treeStale = scan.staleByModule().get(config);
-      final List<Path> claimed = claimStable(treeStale, ready, saving, reacting, held);
+      final List<Path> claimed = claimStable(treeStale, ready, held);
       if (claimed.isEmpty()) {
         continue;
       }
@@ -3293,9 +3306,11 @@ final class WorkspaceSession {
           treeStale.stream()
               .filter(source -> !current.containsKey(source))
               .collect(Collectors.toUnmodifiableSet());
-      final var batch = new ArrayList<>(claimed);
-      batch.addAll(claimStable(treeStale, failedHere, saving, reacting, held));
-      batches.put(config, List.copyOf(batch));
+      batches.put(
+          config,
+          Stream.concat(claimed.stream(), claimStable(treeStale, failedHere, held).stream())
+              .distinct()
+              .toList());
     }
 
     return batches;
@@ -3384,10 +3399,10 @@ final class WorkspaceSession {
         .forEach(this::scheduleOpenFile);
   }
 
-  // Files the editor or the MCP engine wrote: written by a pass, the next one if a pass is running.
-  // The engine calls this holding the reactor lock, which defers everything but these.
+  // Files the editor saved or the MCP engine wrote: written by a pass, the next one if a pass is
+  // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
-    reported.addAll(changed);
+    changed.forEach(source -> reported.put(source, ++reportCount));
     return requestPass(false).thenAccept(stale -> {});
   }
 
@@ -3496,7 +3511,7 @@ final class WorkspaceSession {
     }
 
     refreshReactorShard(config);
-    refreshOpenDependents(config, null);
+    refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
 
@@ -3559,14 +3574,10 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // Writes the batches level by level (writeLevels), counting as one source compile in flight
-  // throughout, so the dependents refresh runs once after the last level, not after each tree.
   private CompletableFuture<Void> writeInOrder(final Map<ModuleSourceConfig, List<Path>> batches) {
-    sourceCompilesInFlight++;
     final List<List<ModuleSourceConfig>> levels =
         WorkspaceModuleGraph.levels(List.copyOf(batches.keySet()));
-    return writeLevels(new ArrayDeque<>(levels), batches, passGeneration)
-        .whenComplete((written, error) -> sourceCompileDone());
+    return writeLevels(new ArrayDeque<>(levels), batches, passGeneration);
   }
 
   // Writes one level's trees together and starts the next level once all of them finish, so every
@@ -3578,7 +3589,6 @@ final class WorkspaceSession {
       final Map<ModuleSourceConfig, List<Path>> batches,
       final long generation) {
     if (levels.isEmpty() || generation != passGeneration) {
-      levels.forEach(level -> level.forEach(tree -> batches.get(tree).forEach(reacting::remove)));
       return CompletableFuture.completedFuture(null);
     }
 
@@ -3596,10 +3606,9 @@ final class WorkspaceSession {
         .thenCompose(written -> writeLevels(levels, batches, generation));
   }
 
-  // Releases the batch's external changes for a pass after the build, keeping the reported files.
+  // External changes wait for a pass after the build.
   private List<Path> onlyReported(final List<Path> batch) {
-    batch.stream().filter(notReported()).toList().forEach(reacting::remove);
-    return batch.stream().filter(reported::contains).toList();
+    return batch.stream().filter(reported::containsKey).toList();
   }
 
   // Modules upstream-first, and within a module the main tree before the test tree, so every
@@ -3617,26 +3626,13 @@ final class WorkspaceSession {
     return Comparator.comparing(ModuleSourceConfig::isTestTree);
   }
 
-  // Claim each stable, not-already-reacting source; the batch owns and later releases these.
-  // A file mid-save is left to its save compile, which stamps it when done, and a file an open
-  // rename holds is left to the rename's commit.
+  // The ready sources, minus those an open rename holds: they are written at its commit.
   static List<Path> claimStable(
-      final List<Path> moduleStale,
-      final Set<Path> stable,
-      final Map<Path, Integer> saving,
-      final Set<Path> reacting,
-      final Set<Path> held) {
-    final var claimed = new ArrayList<Path>(moduleStale.size());
-    for (final var source : moduleStale) {
-      if (stable.contains(source)
-          && !saving.containsKey(source)
-          && !held.contains(source)
-          && reacting.add(source)) {
-        claimed.add(source);
-      }
-    }
-
-    return List.copyOf(claimed);
+      final List<Path> moduleStale, final Set<Path> ready, final Set<Path> held) {
+    return moduleStale.stream()
+        .filter(ready::contains)
+        .filter(source -> !held.contains(source))
+        .toList();
   }
 
   // One FULL compile over the tree's whole changed set, so mutually referencing files (a sealed
@@ -3652,7 +3648,6 @@ final class WorkspaceSession {
       final long mtime = mtimeMillis(source);
       final String content = readSource(source);
       if (content == null) {
-        reacting.remove(source);
         reported.remove(source);
         continue;
       }
@@ -3665,22 +3660,70 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
+    // Reported again after this read, a file stays reported for the next pass.
+    final Map<Path, Long> reports =
+        mtimes.keySet().stream()
+            .filter(reported::containsKey)
+            .collect(Collectors.toUnmodifiableMap(source -> source, reported::get));
     final var done = new CompletableFuture<Void>();
-    sourceCompilesInFlight++;
     workspace
         .workerFor(config)
         .compileBatch(List.copyOf(transientSources))
         .whenComplete(
             (written, error) ->
                 worker.execute(
-                    () ->
-                        afterChangedBatch(config, Map.copyOf(mtimes), written, error, retry)
-                            .whenComplete(
-                                (ignored, failure) -> {
-                                  sourceCompileDone();
-                                  done.complete(null);
-                                })));
+                    () -> {
+                      reports.forEach(reported::remove);
+                      if (written != null) {
+                        keepWriteDiagnostics(transientSources, written);
+                      }
+
+                      afterChangedBatch(config, Map.copyOf(mtimes), written, error, retry)
+                          .whenComplete((ignored, failure) -> done.complete(null));
+                    }));
     return done;
+  }
+
+  private void keepWriteDiagnostics(final List<TransientSource> sources, final BatchWrite written) {
+    sources.stream()
+        .filter(source -> docs.get(source.uri()) != null)
+        .forEach(
+            source ->
+                writeDiagnostics.put(
+                    source.uri(),
+                    new WriteDiagnostics(
+                        source.content(),
+                        written.diagnosticsByUri().getOrDefault(source.uri(), List.of()))));
+  }
+
+  // Adds what the file's last write reported and analysis cannot, while the analyzed content is
+  // the written one.
+  private CompileResponse withWriteDiagnostics(
+      final OpenDocument snapshot, final CompileResponse result) {
+    final WriteDiagnostics write = writeDiagnostics.get(snapshot.uri());
+    if (write == null || !write.content().equals(snapshot.content())) {
+      return result;
+    }
+
+    final Set<String> analyzed =
+        result.diagnostics().stream()
+            .map(WorkspaceSession::diagnosticKey)
+            .collect(Collectors.toUnmodifiableSet());
+    final List<Diagnostic> writeOnly =
+        write.diagnostics().stream()
+            .filter(diagnostic -> !analyzed.contains(diagnosticKey(diagnostic)))
+            .toList();
+    return writeOnly.isEmpty()
+        ? result
+        : new CompileResponse(
+            result.uri(),
+            result.generation(),
+            Stream.concat(result.diagnostics().stream(), writeOnly.stream()).toList(),
+            result.writtenBinaryNames());
+  }
+
+  private static String diagnosticKey(final Diagnostic diagnostic) {
+    return "%s|%s".formatted(diagnostic.getRange(), diagnostic.getMessage());
   }
 
   private CompletableFuture<Void> afterChangedBatch(
@@ -3689,8 +3732,6 @@ final class WorkspaceSession {
       final BatchWrite written,
       final Throwable error,
       final boolean retry) {
-    mtimes.keySet().forEach(reacting::remove);
-    reported.removeAll(mtimes.keySet());
     if (error != null || written == null) {
       LOG.log(
           Level.FINE,
@@ -3715,8 +3756,9 @@ final class WorkspaceSession {
                       byFailure.get(true).size(),
                       mtimes.size(),
                       moduleRelForDir(config.moduleDir())));
+      // The failed files' open buffers get their write diagnostics.
+      refreshScope.add(config.moduleDir());
       final List<Path> rest = byFailure.get(false);
-      rest.forEach(reacting::add);
       return rest.isEmpty()
           ? CompletableFuture.completedFuture(null)
           : compileChangedBatch(config, rest, true);
@@ -3725,7 +3767,7 @@ final class WorkspaceSession {
     mtimes.forEach(
         (source, mtime) ->
             freshenClassOutputs(config, source, written.writtenBinaryNames(), mtime));
-    refreshOpenDependents(config, null);
+    refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
         () ->
@@ -4158,7 +4200,7 @@ final class WorkspaceSession {
       final CompilerRoute route, final OpenDocument snapshot, final CompileResponse result) {
     return route instanceof CompilerRoute.External
         ? publisher.publishEmptyIfCurrent(snapshot, result)
-        : publisher.publishIfCurrent(snapshot, result);
+        : publisher.publishIfCurrent(snapshot, withWriteDiagnostics(snapshot, result));
   }
 
   private void submitCompile(final OpenDocument snapshot, final AfterCompile afterCompile) {
@@ -4187,47 +4229,18 @@ final class WorkspaceSession {
       final CompileMode mode,
       final AfterCompile afterCompile) {
     touchAnalysisCache(snapshot.uri());
-    final var request = requestFor(snapshot, mode);
-    final boolean save = mode == CompileMode.FULL;
-    final Path source = LatheUri.toPath(snapshot.uri());
-    final ModuleSourceConfig tree =
-        save && route instanceof final CompilerRoute.Module module ? module.config() : null;
-    if (save) {
-      sourceCompilesInFlight++;
-      saving.merge(source, 1, Integer::sum);
-    }
-
-    if (tree != null) {
-      treeSavesInFlight.merge(tree, 1, Integer::sum);
-    }
-
     moduleWorker
-        .compile(request)
+        .compile(requestFor(snapshot, mode))
         .thenAccept(
             result ->
                 worker.execute(
                     () -> {
-                      try {
-                        afterCompile.accept(snapshot, result);
-                        maybeWidenSealed(route, snapshot, result);
-                      } finally {
-                        if (save) {
-                          saveCompileDone(source, tree);
-                        }
-                      }
+                      afterCompile.accept(snapshot, result);
+                      maybeWidenSealed(route, snapshot, result);
                     }))
         .exceptionally(
             ex -> {
-              worker.execute(
-                  () -> {
-                    try {
-                      publisher.publishError(snapshot, mode, ex);
-                    } finally {
-                      if (save) {
-                        saveCompileDone(source, tree);
-                      }
-                    }
-                  });
+              worker.execute(() -> publisher.publishError(snapshot, mode, ex));
               return null;
             });
   }
@@ -4375,17 +4388,6 @@ final class WorkspaceSession {
     };
   }
 
-  private void afterModuleSave(
-      final CompileResponse result,
-      final ModuleSourceConfig config,
-      final Path savedSource,
-      final long savedMtime) {
-    freshenClassOutputs(config, savedSource, result.writtenBinaryNames(), savedMtime);
-    scheduleAstRefresh(result.uri());
-    refreshOpenDependents(config, result.uri());
-    refreshReactorShard(config);
-  }
-
   private static void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final long mtime) {
     final var root = sourceRootFor(config, savedSource);
@@ -4403,16 +4405,6 @@ final class WorkspaceSession {
     }
   }
 
-  private AfterCompile publishThen(
-      final CompilerRoute route, final Consumer<CompileResponse> followUp) {
-    return (snapshot, result) -> {
-      if (publishDiagnostics(route, snapshot, result)) {
-        LOG.info(() -> "[save] compiled %s".formatted(snapshot.uri()));
-        followUp.accept(result);
-      }
-    };
-  }
-
   private AfterCompile publishThen(final CompilerRoute route, final Runnable followUp) {
     return (snapshot, result) -> {
       if (publishDiagnostics(route, snapshot, result)) {
@@ -4422,85 +4414,19 @@ final class WorkspaceSession {
     };
   }
 
-  // Recompile open files in this module or downstream, so a change/deletion here shows in their
-  // diagnostics; excludeUri (the just-saved file, or null) compiles on its own path.
-  private void refreshOpenDependents(final ModuleSourceConfig module, final String excludeUri) {
-    final var request =
-        new DependentRefresh(
-            moduleGraph.downstreamModuleDirs(module.moduleDir()),
-            excludeUri == null ? Set.of() : Set.of(excludeUri));
-    pendingRefresh = pendingRefresh == null ? request : pendingRefresh.merge(request);
-    if (sourceCompilesInFlight == 0) {
-      runPendingRefresh();
-    }
-  }
-
-  // A queued batch starts before this compile stops counting as in flight, so the dependents
-  // refresh waits for the batch too and runs once.
-  private void saveCompileDone(final Path source, final ModuleSourceConfig tree) {
-    releaseSaving(source);
-    if (tree != null) {
-      treeSaveDone(tree);
-    }
-
-    sourceCompileDone();
-  }
-
-  private void releaseSaving(final Path source) {
-    saving.computeIfPresent(source, (path, count) -> count > 1 ? count - 1 : null);
-  }
-
-  // Once a tree has no save compile running, the saves queued meanwhile compile as one batch; its
-  // dependents refresh republishes them. Saves arriving during the batch queue for the next one.
-  private void treeSaveDone(final ModuleSourceConfig tree) {
-    treeSavesInFlight.computeIfPresent(tree, (config, count) -> count > 1 ? count - 1 : null);
-    if (treeSavesInFlight.containsKey(tree) || !queuedSaves.containsKey(tree)) {
-      return;
-    }
-
-    final List<Path> batch = List.copyOf(queuedSaves.remove(tree));
-    treeSavesInFlight.put(tree, 1);
-    LOG.fine(
-        () ->
-            "[save] batch %d queued file(s) in %s"
-                .formatted(batch.size(), moduleRelForDir(tree.moduleDir())));
-    compileChangedBatch(tree, batch, false)
-        .thenRun(
-            () -> {
-              batch.forEach(this::releaseSaving);
-              treeSaveDone(tree);
-            });
-  }
-
-  private void sourceCompileDone() {
-    sourceCompilesInFlight--;
-    if (sourceCompilesInFlight > 0) {
-      return;
-    }
-
-    if (reactorIndexStale) {
-      rebuildReactorIndex();
-    }
-
-    if (pendingRefresh != null) {
-      runPendingRefresh();
-    }
-  }
-
-  private void runPendingRefresh() {
-    final DependentRefresh refresh = pendingRefresh;
-    pendingRefresh = null;
+  // Re-analyze the open files in the scope's modules, so what the passes wrote shows in their
+  // diagnostics.
+  private void refreshOpenFiles(final Set<Path> scope) {
     LOG.fine(
         () ->
             "[dependents] checking %d open file(s) across %d module(s)"
-                .formatted(docs.all().size(), refresh.scope().size()));
+                .formatted(docs.all().size(), scope.size()));
     final List<String> dependents =
         docs.all().stream()
             .map(OpenDocument::uri)
-            .filter(uri -> !refresh.exclusions().contains(uri))
             // An open rename's files compile at its commit, not against the half-renamed mirror.
             .filter(uri -> !renameTransaction.isMember(uri))
-            .filter(uri -> inDownstreamScope(uri, refresh.scope()))
+            .filter(uri -> inDownstreamScope(uri, scope))
             .toList();
     // A module's dependents are analyzed one task per source tree, not one compile per file.
     final var byTree = new LinkedHashMap<ModuleSourceConfig, List<String>>();
@@ -4565,7 +4491,8 @@ final class WorkspaceSession {
       final List<CompileResponse> responses) {
     boolean published = false;
     for (int i = 0; i < snapshots.size(); i++) {
-      if (publisher.publishQuietlyIfCurrent(snapshots.get(i), responses.get(i))) {
+      if (publisher.publishQuietlyIfCurrent(
+          snapshots.get(i), withWriteDiagnostics(snapshots.get(i), responses.get(i)))) {
         published = true;
         maybeWidenSealed(route, snapshots.get(i), responses.get(i));
       }
@@ -4581,20 +4508,10 @@ final class WorkspaceSession {
     scheduleOpenFile(uri);
   }
 
-  // Downstream modules to refresh, minus the open files that every merged request excluded (a saved
-  // file was just compiled itself, but another save's refresh may still need it).
-  record DependentRefresh(Set<Path> scope, Set<String> exclusions) {
-    DependentRefresh {
-      scope = Set.copyOf(scope);
-      exclusions = Set.copyOf(exclusions);
-    }
-
-    DependentRefresh merge(final DependentRefresh other) {
-      final var mergedScope = new HashSet<>(scope);
-      mergedScope.addAll(other.scope());
-      final var keptExclusions = new HashSet<>(exclusions);
-      keptExclusions.retainAll(other.exclusions());
-      return new DependentRefresh(mergedScope, keptExclusions);
+  record WriteDiagnostics(String content, List<Diagnostic> diagnostics) {
+    WriteDiagnostics {
+      ValidCheck.check().notNull(content, "content").notNull(diagnostics, "diagnostics").validate();
+      diagnostics = List.copyOf(diagnostics);
     }
   }
 
