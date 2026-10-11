@@ -47,7 +47,7 @@ public final class JdkTypeIndexSync {
 
       final TypeIndexFile file =
           new TypeIndexFile(
-              LatheLayout.SCHEMA_VERSION,
+              LatheLayout.CACHE_SCHEMA_VERSION,
               TypeIndexOrigin.jdk(
                   new JdkTypeIndexOrigin(
                       source.home().toString(), source.vendor(), source.version())),

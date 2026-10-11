@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
@@ -43,8 +44,17 @@ class WorkspaceManifestWriterTest {
                 Path.of("/cache/jdks/example-vendor-21.0.1"))
             .withTypeIndex(Path.of("/cache/type-index/jdks/example-vendor-21.0.1/index.json"));
 
+    final var output = new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR);
     writer()
-        .write(workspaceRoot, List.of(dep), jdk, null, List.of(), List.of("pom.xml"), List.of());
+        .write(
+            workspaceRoot,
+            List.of(dep),
+            jdk,
+            null,
+            List.of(),
+            List.of("pom.xml"),
+            List.of(),
+            List.of(output));
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -66,6 +76,7 @@ class WorkspaceManifestWriterTest {
     assertThat(entry.dir()).isEqualTo("/cache/dep");
     assertThat(entry.classpath()).containsExactly("/repo/transitive.jar");
     assertThat(data.pomPaths()).containsExactly("pom.xml");
+    assertThat(data.outputs()).containsExactly(output);
 
     // The build JDK is also written as a plain path for the launcher to run the server under.
     final var javaHome =
@@ -78,7 +89,16 @@ class WorkspaceManifestWriterTest {
     final var jdk =
         JdkSource.missing("Example Vendor", "21.0.1", "example-vendor-21.0.1", Path.of("/jdk"));
 
-    writer().write(workspaceRoot, List.of(), jdk, null, List.of(), List.of("pom.xml"), List.of());
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(),
+            jdk,
+            null,
+            List.of(),
+            List.of("pom.xml"),
+            List.of(),
+            List.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -91,7 +111,16 @@ class WorkspaceManifestWriterTest {
   @Test
   void write_sameContent_touchesMtimeButKeepsContent() throws Exception {
     final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));
-    writer().write(workspaceRoot, List.of(), jdk, null, List.of(), List.of("pom.xml"), List.of());
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(),
+            jdk,
+            null,
+            List.of(),
+            List.of("pom.xml"),
+            List.of(),
+            List.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -99,7 +128,16 @@ class WorkspaceManifestWriterTest {
     final var sentinel = FileTime.fromMillis(1_000_000L);
     Files.setLastModifiedTime(manifest, sentinel);
 
-    writer().write(workspaceRoot, List.of(), jdk, null, List.of(), List.of("pom.xml"), List.of());
+    writer()
+        .write(
+            workspaceRoot,
+            List.of(),
+            jdk,
+            null,
+            List.of(),
+            List.of("pom.xml"),
+            List.of(),
+            List.of());
 
     // Same content: the rewrite is skipped but the mtime is bumped; the content stays
     // byte-identical.
@@ -124,7 +162,8 @@ class WorkspaceManifestWriterTest {
             Path.of("/jdk/src.zip"),
             Path.of("/cache/jdk"));
 
-    writer().write(workspaceRoot, deps, jdk, null, List.of(), List.of("pom.xml"), List.of());
+    writer()
+        .write(workspaceRoot, deps, jdk, null, List.of(), List.of("pom.xml"), List.of(), List.of());
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);

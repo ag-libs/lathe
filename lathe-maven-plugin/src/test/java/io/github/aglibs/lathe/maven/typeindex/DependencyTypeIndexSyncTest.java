@@ -33,7 +33,7 @@ class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
     index(artifact);
 
     final TypeIndexFile file = readIndex(artifact);
-    assertThat(file.schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(file.schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
     assertThat(file.origin().dependency().gav()).isEqualTo("com.example:dep:1.0");
     assertThat(file.origin().dependency().jar()).isEqualTo(artifact.getFile().toPath().toString());
     assertThat(file.types()).isEmpty();
@@ -63,12 +63,13 @@ class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
     final String stale =
         Files.readString(index)
             .replace(
-                "\"schema\": \"%s\"".formatted(LatheLayout.SCHEMA_VERSION), "\"schema\": \"old\"");
+                "\"schema\": \"%s\"".formatted(LatheLayout.CACHE_SCHEMA_VERSION),
+                "\"schema\": \"old\"");
     Files.writeString(index, stale);
 
     index(artifact);
 
-    assertThat(readIndex(artifact).schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(readIndex(artifact).schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
   }
 
   private void useTempCache() {

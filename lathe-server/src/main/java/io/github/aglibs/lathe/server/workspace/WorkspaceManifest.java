@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.workspace;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.LatheUri;
@@ -39,6 +40,7 @@ public final class WorkspaceManifest {
   private final List<Path> pomPaths;
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
+  private final ReactorRewrite reactorRewrite;
   // The user-facing remediation when workspace.json has another schema version; null when it
   // matches or is absent.
   private final String schemaMismatch;
@@ -54,6 +56,7 @@ public final class WorkspaceManifest {
       final List<Path> pomPaths,
       final List<Path> runnerClasspath,
       final ResourceRootIndex resourceRoots,
+      final ReactorRewrite reactorRewrite,
       final String schemaMismatch) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
@@ -65,6 +68,7 @@ public final class WorkspaceManifest {
     this.pomPaths = pomPaths;
     this.runnerClasspath = runnerClasspath;
     this.resourceRoots = resourceRoots;
+    this.reactorRewrite = reactorRewrite;
     this.schemaMismatch = schemaMismatch;
   }
 
@@ -84,6 +88,7 @@ public final class WorkspaceManifest {
         List.of(),
         List.of(),
         ResourceRootIndex.empty(),
+        ReactorRewrite.none(),
         schemaMismatch);
   }
 
@@ -139,6 +144,7 @@ public final class WorkspaceManifest {
       final List<Path> resolvedPomPaths =
           data.pomPaths().stream().map(workspaceRoot::resolve).toList();
       final List<Path> runnerClasspath = data.runnerClasspath().stream().map(Path::of).toList();
+      final var reactorRewrite = ReactorRewrite.of(workspaceRoot, data.outputs());
       return new WorkspaceManifest(
           jarToGav,
           jarToSourceDir,
@@ -149,7 +155,8 @@ public final class WorkspaceManifest {
           typeIndexShardPaths,
           resolvedPomPaths,
           runnerClasspath,
-          ResourceRootIndex.build(workspaceRoot, data.resourceRoots()),
+          ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
+          reactorRewrite,
           null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
@@ -176,6 +183,10 @@ public final class WorkspaceManifest {
             ? me.getQualifiedName().toString()
             : null;
     return new TypeEntry(topLevel, moduleName);
+  }
+
+  public ReactorRewrite reactorRewrite() {
+    return reactorRewrite;
   }
 
   public Optional<String> schemaMismatch() {

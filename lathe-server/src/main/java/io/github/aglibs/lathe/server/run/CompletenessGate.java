@@ -21,26 +21,29 @@ public final class CompletenessGate {
 
   private CompletenessGate() {}
 
-  public static CompletenessResult verify(final TestLaunchData data, final Path workspaceRoot)
+  public static CompletenessResult verify(
+      final TestLaunchData data, final Path workspaceRoot, final ReactorRewrite reactorRewrite)
       throws IOException {
     final List<String> paths =
         Stream.concat(
                 Stream.concat(data.modulePath().stream(), data.classPath().stream()),
                 data.patchModules().values().stream())
             .toList();
-    return verify(paths, workspaceRoot);
+    return verify(paths, workspaceRoot, reactorRewrite);
   }
 
-  public static CompletenessResult verify(final MainLaunchData data, final Path workspaceRoot)
+  public static CompletenessResult verify(
+      final MainLaunchData data, final Path workspaceRoot, final ReactorRewrite reactorRewrite)
       throws IOException {
     final List<String> paths =
         Stream.concat(data.modulePath().stream(), data.classPath().stream()).toList();
-    return verify(paths, workspaceRoot);
+    return verify(paths, workspaceRoot, reactorRewrite);
   }
 
-  private static CompletenessResult verify(final List<String> paths, final Path workspaceRoot)
+  private static CompletenessResult verify(
+      final List<String> paths, final Path workspaceRoot, final ReactorRewrite reactorRewrite)
       throws IOException {
-    final Map<Path, Set<String>> touched = latheTouchedDirs(paths, workspaceRoot);
+    final Map<Path, Set<String>> touched = latheTouchedDirs(paths, workspaceRoot, reactorRewrite);
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
     final var reasons = new ArrayList<String>();
     for (final Map.Entry<Path, Set<String>> entry : touched.entrySet()) {
@@ -89,12 +92,12 @@ public final class CompletenessGate {
   }
 
   private static Map<Path, Set<String>> latheTouchedDirs(
-      final List<String> paths, final Path workspaceRoot) {
+      final List<String> paths, final Path workspaceRoot, final ReactorRewrite reactorRewrite) {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
     final List<Path> candidates =
         paths.stream()
-            .filter(path -> !nothingToBuild(path, workspaceRoot))
-            .map(path -> latheDirOf(path, workspaceRoot))
+            .filter(path -> !nothingToBuild(path, reactorRewrite))
+            .map(path -> latheDirOf(path, reactorRewrite))
             .filter(candidate -> isLatheSourceTreeDir(candidate, latheDir))
             .toList();
 
@@ -111,15 +114,15 @@ public final class CompletenessGate {
   // Maven lists a module's own output dir even when the tree has no sources (the main tree of a
   // test-only module). One that neither Maven nor the mirror ever produced, with no params, has
   // nothing to wait for.
-  private static boolean nothingToBuild(final String path, final Path workspaceRoot) {
-    final Path latheDir = latheDirOf(path, workspaceRoot);
+  private static boolean nothingToBuild(final String path, final ReactorRewrite reactorRewrite) {
+    final Path latheDir = latheDirOf(path, reactorRewrite);
     final Path params =
         latheDir.resolveSibling(LatheLayout.paramsFileName(latheDir.getFileName().toString()));
     return !Files.exists(Path.of(path)) && !Files.exists(latheDir) && !Files.exists(params);
   }
 
-  private static Path latheDirOf(final String path, final Path workspaceRoot) {
-    return Path.of(ReactorRewrite.toLathe(path, workspaceRoot)).normalize();
+  private static Path latheDirOf(final String path, final ReactorRewrite reactorRewrite) {
+    return Path.of(reactorRewrite.toLathe(path)).normalize();
   }
 
   private static boolean isLatheSourceTreeDir(final Path candidate, final Path latheDir) {

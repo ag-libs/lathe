@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
@@ -24,17 +25,24 @@ class WorkspaceManifestTest extends SampleFixture {
   }
 
   @Test
-  void load_schemaVersion_mismatchLoadsEmptyWithRemediationMatchLoadsData() throws Exception {
+  void load_schemaVersion_matchLoadsDataAndOutputsMismatchLoadsEmptyWithRemediation()
+      throws Exception {
     final List<String> runnerClasspath = List.of(tmp.resolve("cache/runner.jar").toString());
-    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, List.of(), null, runnerClasspath);
+    final List<OutputData> outputs =
+        List.of(new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR));
+    final Path appClasses = tmp.resolve("app/target/classes");
+    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, List.of(), null, runnerClasspath, outputs);
     final var matching = WorkspaceManifest.load(tmp);
-    writeWorkspaceManifest("0", List.of(), null, runnerClasspath);
+    writeWorkspaceManifest("0", List.of(), null, runnerClasspath, outputs);
 
     final var mismatched = WorkspaceManifest.load(tmp);
 
     assertThat(matching.schemaMismatch()).isEmpty();
     assertThat(matching.runnerClasspath()).isNotEmpty();
+    assertThat(matching.reactorRewrite().toLathe(appClasses))
+        .isEqualTo(tmp.resolve(".lathe/app/classes"));
     assertThat(mismatched.runnerClasspath()).isEmpty();
+    assertThat(mismatched.reactorRewrite().toLathe(appClasses)).isEqualTo(appClasses);
     assertThat(mismatched.schemaMismatch())
         .hasValueSatisfying(
             text ->
@@ -167,20 +175,29 @@ class WorkspaceManifestTest extends SampleFixture {
   private void writeWorkspaceManifest(
       final List<DependencyData> deps, final JdkSourceData jdk, final List<String> runnerClasspath)
       throws Exception {
-    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, deps, jdk, runnerClasspath);
+    writeWorkspaceManifest(LatheLayout.SCHEMA_VERSION, deps, jdk, runnerClasspath, List.of());
   }
 
   private void writeWorkspaceManifest(
       final String schemaVersion,
       final List<DependencyData> deps,
       final JdkSourceData jdk,
-      final List<String> runnerClasspath)
+      final List<String> runnerClasspath,
+      final List<OutputData> outputs)
       throws Exception {
     final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
     Files.createDirectories(latheDir);
     Json.write(
         new WorkspaceManifestData(
-            schemaVersion, tmp.toString(), null, runnerClasspath, jdk, deps, List.of(), List.of()),
+            schemaVersion,
+            tmp.toString(),
+            null,
+            runnerClasspath,
+            jdk,
+            deps,
+            List.of(),
+            List.of(),
+            outputs),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

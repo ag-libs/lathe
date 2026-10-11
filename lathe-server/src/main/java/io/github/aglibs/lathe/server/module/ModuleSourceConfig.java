@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
@@ -27,7 +28,9 @@ public record ModuleSourceConfig(
     AnalysisMode analysisMode,
     // True when outputDir is the build's own compiled output read directly (OpenJDK), not a .lathe
     // mirror (Maven). Drives raw-classpath resolution and the type-index base.
-    boolean externalOutput) {
+    boolean externalOutput,
+    // Maps sibling modules' build outputs on the paths above to their .lathe/ mirrors.
+    ReactorRewrite reactorRewrite) {
 
   public ModuleSourceConfig {
     sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
@@ -36,6 +39,7 @@ public record ModuleSourceConfig(
     processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
     compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
     analysisMode = analysisMode != null ? analysisMode : AnalysisMode.CLASSPATH;
+    reactorRewrite = reactorRewrite != null ? reactorRewrite : ReactorRewrite.none();
   }
 
   public Path latheClassesDir() {
@@ -74,44 +78,11 @@ public record ModuleSourceConfig(
   }
 
   private List<Path> remapped(final List<Path> paths) {
-    final var latheDir = latheDir();
-    final var workspaceRoot = latheDir.getParent();
-    return paths.stream().map(p -> remapPath(p, workspaceRoot, latheDir)).toList();
+    return paths.stream().map(reactorRewrite::toLathe).toList();
   }
 
-  private Path latheDir() {
-    Path p = moduleDir;
-    while (p != null && !LatheLayout.LATHE_DIR.equals(p.getFileName().toString())) {
-      p = p.getParent();
-    }
-    return p;
-  }
-
-  public static Path remapPath(final Path p, final Path workspaceRoot, final Path latheDir) {
-    if (!p.startsWith(workspaceRoot)) {
-      return p;
-    }
-
-    final var rel = workspaceRoot.relativize(p);
-    if (rel.getParent() == null) {
-      return p;
-    }
-
-    final var sourceTree = rel.getFileName().toString();
-    final var moduleRel = rel.getParent().getParent();
-    // Reactor module JARs appear when Maven reuses a previously packaged artifact instead of
-    // target/classes. Map test JARs (e.g. foo-1.0-tests.jar) to test-classes and main JARs
-    // (e.g. foo-1.0.jar) to classes, matching the .lathe/ mirror kept current by the shim.
-    final var latheSourceTree =
-        sourceTree.endsWith("-tests.jar")
-            ? "test-classes"
-            : sourceTree.endsWith(".jar") ? "classes" : sourceTree;
-    return moduleRel != null
-        ? latheDir.resolve(moduleRel).resolve(latheSourceTree)
-        : latheDir.resolve(latheSourceTree);
-  }
-
-  public static ModuleSourceConfig load(final Path paramsFile, final Path moduleDir)
+  public static ModuleSourceConfig load(
+      final Path paramsFile, final Path moduleDir, final ReactorRewrite reactorRewrite)
       throws IOException {
     final var config = Json.read(paramsFile, ModuleConfigData.class);
     return new ModuleSourceConfig(
@@ -130,7 +101,8 @@ public record ModuleSourceConfig(
         config.proc(),
         config.compilerArgs(),
         config.analysisMode(),
-        config.externalOutput());
+        config.externalOutput(),
+        reactorRewrite);
   }
 
   private static List<Path> toPaths(final List<String> strings) {

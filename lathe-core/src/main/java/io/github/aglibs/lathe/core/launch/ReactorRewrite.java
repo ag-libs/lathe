@@ -1,73 +1,67 @@
 package io.github.aglibs.lathe.core.launch;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
+/**
+ * Turns a reactor module's build output (a directory or packaged jar the front-end listed in {@code
+ * workspace.json}) into that module's {@code .lathe/} mirror. Any other path passes through.
+ */
 public final class ReactorRewrite {
 
-  private ReactorRewrite() {}
+  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of());
 
-  public static String toLathe(final String path, final Path workspaceRoot) {
-    final var candidate = Path.of(path).normalize();
-    final var root = workspaceRoot.normalize();
-    if (!candidate.startsWith(root)) {
-      return path;
-    }
+  private final Map<Path, Path> mirrors;
 
-    final var relative = root.relativize(candidate);
-    if (relative.getParent() == null) {
-      return path;
-    }
-
-    final String sourceTree = relative.getFileName().toString();
-    final Path parent = relative.getParent();
-    if (!LatheLayout.TARGET_DIR.equals(parent.getFileName().toString())) {
-      return path;
-    }
-
-    final String latheSourceTree = latheSourceTree(sourceTree);
-    if (latheSourceTree == null) {
-      return path;
-    }
-
-    final Path moduleRel = parent.getParent();
-    return moduleRel != null
-        ? root.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel).resolve(latheSourceTree).toString()
-        : root.resolve(LatheLayout.LATHE_DIR).resolve(latheSourceTree).toString();
+  private ReactorRewrite(final Map<Path, Path> mirrors) {
+    this.mirrors = mirrors;
   }
 
-  public static List<String> toLathe(final List<String> paths, final Path workspaceRoot) {
-    return paths.stream().map(path -> toLathe(path, workspaceRoot)).toList();
+  public static ReactorRewrite of(final Path workspaceRoot, final List<OutputData> outputs) {
+    final Path root = workspaceRoot.normalize();
+    final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
+    return new ReactorRewrite(
+        outputs.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    output -> root.resolve(output.path()).normalize(),
+                    output -> latheDir.resolve(output.module()).resolve(output.tree()).normalize(),
+                    (first, ignored) -> first)));
   }
 
-  public static Map<String, String> toLathe(
-      final Map<String, String> paths, final Path workspaceRoot) {
-    final var rewritten = new LinkedHashMap<String, String>();
-    for (final Map.Entry<String, String> entry : paths.entrySet()) {
-      rewritten.put(entry.getKey(), toLathe(entry.getValue(), workspaceRoot));
-    }
-
-    return Collections.unmodifiableMap(rewritten);
+  public static ReactorRewrite none() {
+    return NONE;
   }
 
-  private static String latheSourceTree(final String sourceTree) {
-    if (LatheLayout.CLASSES_DIR.equals(sourceTree)
-        || LatheLayout.TEST_CLASSES_DIR.equals(sourceTree)) {
-      return sourceTree;
-    }
+  public Path toLathe(final Path path) {
+    return mirrors.getOrDefault(path.normalize(), path);
+  }
 
-    if (sourceTree.endsWith("-tests.jar")) {
-      return LatheLayout.TEST_CLASSES_DIR;
-    }
+  public String toLathe(final String path) {
+    return Optional.ofNullable(mirrors.get(Path.of(path).normalize()))
+        .map(Path::toString)
+        .orElse(path);
+  }
 
-    if (sourceTree.endsWith(".jar")) {
-      return LatheLayout.CLASSES_DIR;
-    }
+  public List<String> toLathe(final List<String> paths) {
+    return paths.stream().map(this::toLathe).toList();
+  }
 
-    return null;
+  public Map<String, String> toLathe(final Map<String, String> paths) {
+    return Collections.unmodifiableMap(
+        paths.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> toLathe(entry.getValue()),
+                    (first, ignored) -> first,
+                    LinkedHashMap::new)));
   }
 }

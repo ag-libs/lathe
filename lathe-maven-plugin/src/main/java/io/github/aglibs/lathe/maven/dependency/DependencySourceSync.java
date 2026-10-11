@@ -66,7 +66,7 @@ public final class DependencySourceSync {
 
     try {
       final var m = Json.read(marker, SourceMarker.class);
-      return LatheLayout.SCHEMA_VERSION.equals(m.schema())
+      return LatheLayout.CACHE_SCHEMA_VERSION.equals(m.schema())
           && ReactorProjects.gav(artifact).equals(m.gav())
           && sourceJar.toString().equals(m.sourceJar())
           && Files.size(sourceJar) == m.sourceJarSize()
@@ -80,7 +80,7 @@ public final class DependencySourceSync {
       final Path tempDir, final Artifact artifact, final Path sourceJar) throws IOException {
     final var marker =
         new SourceMarker(
-            LatheLayout.SCHEMA_VERSION,
+            LatheLayout.CACHE_SCHEMA_VERSION,
             ReactorProjects.gav(artifact),
             sourceJar.toString(),
             Files.size(sourceJar),

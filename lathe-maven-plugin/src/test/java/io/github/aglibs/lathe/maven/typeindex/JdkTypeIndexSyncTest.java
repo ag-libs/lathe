@@ -34,7 +34,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
 
     final TypeIndexFile file = readIndex(source);
     assertThat(indexed.typeIndex()).isEqualTo(JdkTypeIndexSync.indexPath(source));
-    assertThat(file.schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(file.schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
     assertThat(file.origin().kind()).isEqualTo(TypeIndexOriginKind.JDK);
     assertThat(file.origin().jdk().javaHome()).isEqualTo(source.home().toString());
     assertThat(file.origin().jdk().vendor()).isEqualTo(source.vendor());
@@ -68,12 +68,13 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     final String stale =
         Files.readString(index)
             .replace(
-                "\"schema\": \"%s\"".formatted(LatheLayout.SCHEMA_VERSION), "\"schema\": \"old\"");
+                "\"schema\": \"%s\"".formatted(LatheLayout.CACHE_SCHEMA_VERSION),
+                "\"schema\": \"old\"");
     Files.writeString(index, stale);
 
     JdkTypeIndexSync.index(source, LOG);
 
-    assertThat(readIndex(source).schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(readIndex(source).schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
   }
 
   @Test

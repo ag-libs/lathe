@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -11,6 +13,9 @@ class WorkspaceModuleGraphTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
   private static final Path LATHE_DIR = WORKSPACE.resolve(".lathe");
+  // The output map a front-end would write for these modules' main trees.
+  private static final ReactorRewrite REWRITE =
+      TestCompiler.targetRewrite(WORKSPACE, "api", "app", "core", "left", "right", "service");
 
   private static ModuleSourceConfig config(
       final String moduleRel, final String sourceTree, final List<Path> classpath) {
@@ -30,7 +35,8 @@ class WorkspaceModuleGraphTest {
         null,
         List.of(),
         null,
-        false);
+        false,
+        REWRITE);
   }
 
   private static Path reactorTarget(final String moduleRel) {

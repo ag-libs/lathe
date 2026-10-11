@@ -65,8 +65,8 @@ The compiler configuration of one source tree: `ModuleConfigData`.
 | `externalOutput` | true when the server reads `outputDir` in place instead of a `.lathe/` mirror |
 
 Without it, files under the module are "not in a Lathe module" and get no compiler, and runs are blocked as not compiled.
-Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror;
-see [Known issues](#known-issues) for how that rewrite is guessed today.
+Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror,
+looked up in `workspace.json`'s `outputs`; any other path is used as written.
 
 - **Maven** writes it after every compile (`ParamsWriter`, from the compiler shim), including scoped `-pl` builds.
 - **OpenJDK** writes the `classes` tree only, with `externalOutput=true`: `MODULE_SYSTEM` for JDK modules, `CLASSPATH` for build tools.
@@ -108,12 +108,20 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `dependencySources` | per dependency jar: extracted sources dir, classpath, type-index shard (`DependencyData`) |
 | `pomPaths` | workspace-relative build files the server watches for changes |
 | `resourceRoots` | resource directories, their build output, and owning module (`ResourceRootData`) |
+| `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
+
+Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`.
+The server and launch planner rewrite a listed path to `.lathe/<module>/<tree>`; an unlisted path, such as a jar committed in the repo, is used as written.
+A front-end lists what its build actually produces, so custom output locations need nothing special;
+a front-end whose outputs are read in place (`externalOutput`) lists none.
 
 The server polls it every 2 seconds:
 a content change reloads the workspace, and an mtime-only change re-scans the reactor mirror.
 Without it the server still compiles and navigates the workspace's own code, but has no dependency or JDK sources, no type index for them, no build-file watching, and no test runs.
 
 - **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged.
+  Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
+  a custom test-jar classifier or another classified jar is not listed.
 - **OpenJDK** writes it with empty lists and no `jdk`.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`
@@ -204,6 +212,9 @@ The single check is enough because `.lathe/` is regenerable, never migrated:
 the fix for any mismatch is a rebuild, so the version only has to detect it and say so.
 The bump matters most for the quiet case: an old file that still parses, with a newly added field silently defaulted instead of failing.
 
+The user cache below has its own version, `LatheLayout.CACHE_SCHEMA_VERSION`, carried by the type-index shards and dependency-source markers,
+so a `.lathe/` format change does not force re-extracting and re-indexing every dependency.
+
 ## User-owned files
 
 A front-end never writes these:
@@ -254,11 +265,6 @@ Found while writing this contract (2026-10-11); each is a gap in the current fro
   The compiler shim takes the tree from the output directory's last segment, not from the scope,
   so a custom `<outputDirectory>` leaf (for example `target/main-classes`) yields an unrecognized tree and breaks that module's runs.
   The fix passes the scope from the extension to the shim ([design §9](planned/lathe-build-agnostic-core.md#9-source-trees-by-scope)).
-
-- **Sibling-output rewrite is guessed from the path.**
-  The server and launch planner turn a sibling module's output into its mirror by path shape (a `target` parent for launches; any workspace path for the compile classpath),
-  so a jar committed in the repo is wrongly redirected and OpenJDK build-tool classpaths point at missing paths.
-  The output map in the [design](planned/lathe-build-agnostic-core.md) replaces the guess.
 - **The root module is spelled two ways.**
   The compiler, test capture, and server use `""`; `main-launch.json` and `resourceRoots` use `"."`.
 - **The module lock has no heartbeat.**

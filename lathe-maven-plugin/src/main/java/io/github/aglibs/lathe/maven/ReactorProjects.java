@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,8 +12,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.model.Build;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
@@ -147,6 +150,38 @@ public final class ReactorProjects {
         .collect(
             Collectors.toUnmodifiableMap(
                 ReactorProjects::ga, project -> project.getBuild().getOutputDirectory()));
+  }
+
+  // Every build output a sibling's classpath can name, for workspace.json's output map: the output
+  // dirs, and the jars a reactor past `package` reuses. Jar names are computed because sync runs
+  // before `package`; only the default test-jar classifier is listed.
+  public static List<OutputData> outputs(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    return projects.stream()
+        .filter(project -> !LatheLayout.POM_PACKAGING.equals(project.getPackaging()))
+        .filter(project -> !escapesReactorRoot(workspaceRoot, project))
+        .flatMap(project -> outputs(workspaceRoot, project))
+        .toList();
+  }
+
+  private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
+    final Build build = project.getBuild();
+    final String module = workspaceRoot.relativize(project.getBasedir().toPath()).toString();
+    final Path buildDir = Path.of(build.getDirectory());
+    final String finalName = build.getFinalName();
+    return Stream.of(
+            Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
+            Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR),
+            Map.entry(buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR),
+            Map.entry(
+                buildDir.resolve("%s-%s.jar".formatted(finalName, LatheLayout.TEST_JAR_CLASSIFIER)),
+                LatheLayout.TEST_CLASSES_DIR))
+        .map(
+            output ->
+                new OutputData(
+                    workspaceRoot.relativize(output.getKey()).toString(),
+                    module,
+                    output.getValue()));
   }
 
   public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {

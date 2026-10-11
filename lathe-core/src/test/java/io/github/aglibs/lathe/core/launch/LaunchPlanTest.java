@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
 import java.io.IOException;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.io.TempDir;
 final class LaunchPlanTest {
 
   private static final Path WORKSPACE = Path.of("/workspace");
+  // The output map a front-end would write for module "app".
+  private static final ReactorRewrite REWRITE = appRewrite(WORKSPACE);
 
   @TempDir private Path workspace;
 
@@ -45,7 +48,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            WORKSPACE,
+            REWRITE,
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.METHOD, "com.example.app.HelloTest#greet")),
             resultsSink,
@@ -101,7 +104,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            WORKSPACE,
+            REWRITE,
             List.of(runner),
             List.of(
                 new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest"),
@@ -138,7 +141,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forMain(
             data,
-            WORKSPACE,
+            REWRITE,
             "com.example.app.Main",
             new LaunchOverlay(List.of(), List.of("--port", "8080"), List.of(), List.of()),
             JdwpOptions.NONE);
@@ -177,7 +180,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forMain(
-            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
+            data, REWRITE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -207,7 +210,7 @@ final class LaunchPlanTest {
             List.of("-Dprofile=prod"), List.of("--flag"), List.of("/abs/config"), List.of());
 
     final List<String> args =
-        LaunchPlan.forMain(data, WORKSPACE, "com.example.app.Main", overlay, JdwpOptions.NONE);
+        LaunchPlan.forMain(data, REWRITE, "com.example.app.Main", overlay, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -246,7 +249,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            WORKSPACE,
+            REWRITE,
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
             resultsSink,
@@ -296,7 +299,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            WORKSPACE,
+            REWRITE,
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
             resultsSink,
@@ -332,7 +335,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            WORKSPACE,
+            REWRITE,
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.FooTest")),
             resultsSink,
@@ -360,7 +363,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forMain(
-            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, new JdwpOptions(5005));
+            data, REWRITE, "com.example.app.Main", LaunchOverlay.NONE, new JdwpOptions(5005));
 
     final String agent =
         "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
@@ -388,7 +391,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forTestMain(
-            data, WORKSPACE, "com.example.app.tool.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+            data, REWRITE, "com.example.app.tool.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -432,7 +435,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forTestMain(
-            data, WORKSPACE, "com.example.app.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+            data, REWRITE, "com.example.app.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
@@ -462,7 +465,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forTestMain(
-            data, WORKSPACE, "com.example.app.Tester", LaunchOverlay.NONE, new JdwpOptions(5005));
+            data, REWRITE, "com.example.app.Tester", LaunchOverlay.NONE, new JdwpOptions(5005));
 
     final String agent =
         "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
@@ -488,7 +491,7 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forMain(
-            data, WORKSPACE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
+            data, REWRITE, "com.example.app.Main", LaunchOverlay.NONE, JdwpOptions.NONE);
 
     assertThat(args).noneMatch(arg -> arg.startsWith("-agentlib:jdwp"));
   }
@@ -521,7 +524,7 @@ final class LaunchPlanTest {
     final List<String> args =
         LaunchPlan.forTest(
             data,
-            workspace,
+            appRewrite(workspace),
             List.of(runner),
             List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.app.AppTest")),
             resultsSink,
@@ -559,12 +562,24 @@ final class LaunchPlanTest {
 
     final List<String> args =
         LaunchPlan.forTestMain(
-            data, workspace, "com.example.app.tool.Tester", LaunchOverlay.NONE, JdwpOptions.NONE);
+            data,
+            appRewrite(workspace),
+            "com.example.app.tool.Tester",
+            LaunchOverlay.NONE,
+            JdwpOptions.NONE);
 
     assertThat(args)
         .contains(
             "com.example.app/com.example.app=ALL-UNNAMED",
             "com.example.app/com.example.app.extra=ALL-UNNAMED");
+  }
+
+  private static ReactorRewrite appRewrite(final Path root) {
+    return ReactorRewrite.of(
+        root,
+        List.of(
+            new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR),
+            new OutputData("app/target/test-classes", "app", LatheLayout.TEST_CLASSES_DIR)));
   }
 
   private void writeClass(final String moduleDir, final String relClassPath) throws IOException {

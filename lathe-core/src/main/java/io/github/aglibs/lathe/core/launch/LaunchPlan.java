@@ -21,19 +21,18 @@ public final class LaunchPlan {
 
   public static List<String> forTest(
       final TestLaunchData data,
-      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final List<Path> runnerClasspath,
       final List<TestSelection> selections,
       final Path resultsSink,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
+    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
     final List<String> classPath =
         Stream.concat(data.classPath().stream(), runnerClasspath.stream().map(Path::toString))
             .toList();
-    final List<String> rewrittenClassPath = ReactorRewrite.toLathe(classPath, workspaceRoot);
-    final Map<String, String> patchModules =
-        ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
+    final List<String> rewrittenClassPath = reactorRewrite.toLathe(classPath);
+    final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     if (jdwp.enabled()) {
@@ -58,12 +57,12 @@ public final class LaunchPlan {
 
   public static List<String> forMain(
       final MainLaunchData data,
-      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String mainClass,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
-    final List<String> classPath = ReactorRewrite.toLathe(data.classPath(), workspaceRoot);
+    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
+    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     if (jdwp.enabled()) {
@@ -93,14 +92,13 @@ public final class LaunchPlan {
    */
   public static List<String> forTestMain(
       final TestLaunchData data,
-      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String mainClass,
       final LaunchOverlay overlay,
       final JdwpOptions jdwp) {
-    final List<String> modulePath = ReactorRewrite.toLathe(data.modulePath(), workspaceRoot);
-    final List<String> classPath = ReactorRewrite.toLathe(data.classPath(), workspaceRoot);
-    final Map<String, String> patchModules =
-        ReactorRewrite.toLathe(data.patchModules(), workspaceRoot);
+    final List<String> modulePath = reactorRewrite.toLathe(data.modulePath());
+    final List<String> classPath = reactorRewrite.toLathe(data.classPath());
+    final Map<String, String> patchModules = reactorRewrite.toLathe(data.patchModules());
 
     final var args = baseJavaArgs(data.javaHome(), data.jvmArgs(), overlay.jvmArgs());
     if (jdwp.enabled()) {

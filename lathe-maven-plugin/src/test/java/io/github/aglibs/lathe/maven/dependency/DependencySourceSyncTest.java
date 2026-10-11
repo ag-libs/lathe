@@ -25,11 +25,13 @@ class DependencySourceSyncTest {
     DependencySourceSync.extract(List.of(source), new SystemStreamLog());
 
     final var content = Files.readString(source.dir().resolve(".lathe-source.json"));
-    assertThat(content).contains("\"schema\"").contains("\"" + LatheLayout.SCHEMA_VERSION + "\"");
+    assertThat(content)
+        .contains("\"schema\"")
+        .contains("\"" + LatheLayout.CACHE_SCHEMA_VERSION + "\"");
     assertThat(content).contains("\"gav\"").contains("com.example:dep:1.0");
     assertThat(content).contains("\"sourceJar\"");
     final var marker = Json.fromJson(content, MarkerSnapshot.class);
-    assertThat(marker.schema()).isEqualTo(LatheLayout.SCHEMA_VERSION);
+    assertThat(marker.schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
     assertThat(marker.gav()).isEqualTo("com.example:dep:1.0");
     assertThat(marker.sourceJar()).isEqualTo(source.jar().toString());
   }

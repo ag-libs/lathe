@@ -71,7 +71,7 @@ public final class DependencyTypeIndexSync {
 
     final TypeIndexFile file =
         new TypeIndexFile(
-            LatheLayout.SCHEMA_VERSION,
+            LatheLayout.CACHE_SCHEMA_VERSION,
             TypeIndexOrigin.dependency(
                 new DependencyTypeIndexOrigin(
                     ReactorProjects.gav(artifact),

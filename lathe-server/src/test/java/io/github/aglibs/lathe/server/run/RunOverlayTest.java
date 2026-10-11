@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
@@ -54,7 +55,12 @@ final class RunOverlayTest {
 
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(
-            classpathTemplate(), WORKSPACE, "com.example.app.Main", item, JdwpOptions.NONE);
+            classpathTemplate(),
+            WORKSPACE,
+            ReactorRewrite.none(),
+            "com.example.app.Main",
+            item,
+            JdwpOptions.NONE);
 
     assertThat(resolved.env()).containsEntry("APP_ENV", "prod");
     assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/run-dir"));
@@ -81,7 +87,12 @@ final class RunOverlayTest {
 
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(
-            classpathTemplate(), WORKSPACE, "com.example.app.Main", item, JdwpOptions.NONE);
+            classpathTemplate(),
+            WORKSPACE,
+            ReactorRewrite.none(),
+            "com.example.app.Main",
+            item,
+            JdwpOptions.NONE);
 
     assertThat(resolved.cwd()).isEqualTo(Path.of("/abs/dir"));
     assertThat(resolved.argv()).anyMatch(arg -> arg.contains("/abs/cp"));
@@ -93,6 +104,7 @@ final class RunOverlayTest {
         RunOverlay.applyToMain(
             classpathTemplate(),
             WORKSPACE,
+            ReactorRewrite.none(),
             "com.example.app.Main",
             RunItem.empty("app", RunKind.MAIN),
             JdwpOptions.NONE);
@@ -122,7 +134,12 @@ final class RunOverlayTest {
 
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(
-            classpathTemplate(), tmp, "com.example.app.Main", item, JdwpOptions.NONE);
+            classpathTemplate(),
+            tmp,
+            ReactorRewrite.none(),
+            "com.example.app.Main",
+            item,
+            JdwpOptions.NONE);
 
     assertThat(resolved.env()).containsEntry("A", "fromFile").containsEntry("B", "inline");
   }
@@ -146,7 +163,12 @@ final class RunOverlayTest {
 
     final ResolvedLaunch resolved =
         RunOverlay.applyToMain(
-            classpathTemplate(), tmp, "com.example.app.Main", item, JdwpOptions.NONE);
+            classpathTemplate(),
+            tmp,
+            ReactorRewrite.none(),
+            "com.example.app.Main",
+            item,
+            JdwpOptions.NONE);
 
     assertThat(resolved.env()).containsEntry("X", "1");
   }

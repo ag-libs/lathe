@@ -28,7 +28,11 @@ public final class LatheLayout {
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
   public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
   public static final String SYNC_SCRIPT = "lathe-sync.sh";
-  public static final String SCHEMA_VERSION = "4";
+  // Versions every .lathe/ file; bump it on any .lathe/ format change.
+  public static final String SCHEMA_VERSION = "5";
+  // Versions the ~/.cache/lathe type-index shards and dependency-source markers, separately so a
+  // .lathe/ format change does not force rebuilding every cache.
+  public static final String CACHE_SCHEMA_VERSION = "4";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
   public static final String JVM_ARGS_FILE = "jvm.args";
@@ -44,9 +48,10 @@ public final class LatheLayout {
   public static final String MODULE_LOCK_FILE = "module.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String POM_XML = "pom.xml";
+  public static final String POM_PACKAGING = "pom";
+  public static final String TEST_JAR_CLASSIFIER = "tests";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
-  public static final String TARGET_DIR = "target";
   public static final String CLASSES_DIR = "classes";
   public static final String TEST_CLASSES_DIR = "test-classes";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";

@@ -3,6 +3,8 @@ package io.github.aglibs.lathe.maven;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -126,6 +128,28 @@ class ReactorProjectsTest {
   }
 
   @Test
+  void outputs_jarAndPomModules_listsDirsAndJarsUnderTheRealBuildDirSkippingPom() {
+    final MavenProject root = projectWithOutput("com.example", "root", "1", tmp, "out");
+    final MavenProject app = projectWithOutput("com.example", "app", "2", tmp.resolve("app"));
+    final MavenProject parent =
+        projectWithOutput("com.example", "parent", "1", tmp.resolve("parent"));
+    parent.setPackaging(LatheLayout.POM_PACKAGING);
+
+    final List<OutputData> outputs = ReactorProjects.outputs(tmp, List.of(root, app, parent));
+
+    assertThat(outputs)
+        .containsExactly(
+            new OutputData("out/classes", "", LatheLayout.CLASSES_DIR),
+            new OutputData("out/test-classes", "", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("out/root-1.jar", "", LatheLayout.CLASSES_DIR),
+            new OutputData("out/root-1-tests.jar", "", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR),
+            new OutputData("app/target/test-classes", "app", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("app/target/app-2.jar", "app", LatheLayout.CLASSES_DIR),
+            new OutputData("app/target/app-2-tests.jar", "app", LatheLayout.TEST_CLASSES_DIR));
+  }
+
+  @Test
   void remoteRepositories_deduplicatesByIdAndUrl() {
     final MavenProject first = project("com.example", "first", "1", tmp.resolve("first"));
     final MavenProject second = project("com.example", "second", "1", tmp.resolve("second"));
@@ -164,9 +188,21 @@ class ReactorProjectsTest {
 
   private static MavenProject projectWithOutput(
       final String groupId, final String artifactId, final String version, final Path basedir) {
+    return projectWithOutput(groupId, artifactId, version, basedir, "target");
+  }
+
+  private static MavenProject projectWithOutput(
+      final String groupId,
+      final String artifactId,
+      final String version,
+      final Path basedir,
+      final String buildDir) {
     final MavenProject project = project(groupId, artifactId, version, basedir);
     final var build = new Build();
-    build.setOutputDirectory(basedir.resolve("target/classes").toString());
+    build.setDirectory(basedir.resolve(buildDir).toString());
+    build.setOutputDirectory(basedir.resolve(buildDir).resolve("classes").toString());
+    build.setTestOutputDirectory(basedir.resolve(buildDir).resolve("test-classes").toString());
+    build.setFinalName("%s-%s".formatted(artifactId, version));
     project.setBuild(build);
     return project;
   }

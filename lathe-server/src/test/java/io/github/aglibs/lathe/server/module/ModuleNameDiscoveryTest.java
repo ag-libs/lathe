@@ -71,7 +71,8 @@ class ModuleNameDiscoveryTest {
         null,
         List.of(),
         null,
-        false);
+        false,
+        TestCompiler.targetRewrite(tmp, "reactor"));
   }
 
   private static void writeModule(

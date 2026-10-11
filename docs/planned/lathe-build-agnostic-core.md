@@ -160,7 +160,7 @@ It uses the module registry instead (the module whose source roots contain the f
 
 ### 7. Guarding the result
 
-Maven-only constants in `LatheLayout` (`POM_XML`, `TARGET_DIR`, `MVN_DIR`, `MAVEN_OPTS_PROPERTY`, the compiler-plugin coordinates, `SYNC_PHASE`, `SYNC_COMMAND`) move into a nested `LatheLayout.Maven` class.
+Maven-only constants in `LatheLayout` (`POM_XML`, `POM_PACKAGING`, `TEST_JAR_CLASSIFIER`, `MVN_DIR`, `MAVEN_OPTS_PROPERTY`, the compiler-plugin coordinates, `SYNC_PHASE`, `SYNC_COMMAND`) move into a nested `LatheLayout.Maven` class.
 A test in each downstream module fails if its main sources reference `LatheLayout.Maven`, so a new Maven assumption is caught at review time rather than by the next front-end.
 
 **Alternative considered:** put the Maven constants in a non-exported `lathe-core` package, so the compiler rejects them.
@@ -227,7 +227,7 @@ Gradle has the scope natively (the source-set name), so this is the rule every f
 ## Slicing
 
 1. **Contract document** — docs only; settles the file list the later slices reference. *Done.*
-2. **Output map** — `workspace.json` `outputs`, `ReactorRewrite` as the map-backed instance, `remapPath` removed, the Maven sync writing the entries, the `SCHEMA_VERSION` bump with the cache version split off.
+2. **Output map** — `workspace.json` `outputs`, `ReactorRewrite` as the map-backed instance, `remapPath` removed, the Maven sync writing the entries, the `SCHEMA_VERSION` bump with the cache version split off. *Done.*
 3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`.
 4. **Client** — Neovim messages and neotest directory skip.
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.**

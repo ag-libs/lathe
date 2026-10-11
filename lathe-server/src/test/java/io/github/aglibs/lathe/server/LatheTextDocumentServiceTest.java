@@ -20,6 +20,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
@@ -1129,7 +1130,8 @@ class LatheTextDocumentServiceTest {
             null,
             List.of(),
             List.of(),
-            List.of(new ResourceRootData(resourceDir, outputDir, "", false, "app"))),
+            List.of(new ResourceRootData(resourceDir, outputDir, "", false, "app")),
+            List.of(new OutputData(outputDir, "app", LatheLayout.CLASSES_DIR))),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

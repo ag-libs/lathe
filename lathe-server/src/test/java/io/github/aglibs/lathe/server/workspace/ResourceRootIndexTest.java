@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -10,9 +12,11 @@ import org.junit.jupiter.api.Test;
 class ResourceRootIndexTest {
 
   private static final Path WS = Path.of("/ws");
+  // The output map a front-end would write for module "app".
+  private static final ReactorRewrite REWRITE = TestCompiler.targetRewrite(WS, "app");
 
   private static ResourceRootIndex index(final List<ResourceRootData> roots) {
-    return ResourceRootIndex.build(WS, roots);
+    return ResourceRootIndex.build(WS, REWRITE, roots);
   }
 
   private static List<ResourceRootData> standardRoots() {

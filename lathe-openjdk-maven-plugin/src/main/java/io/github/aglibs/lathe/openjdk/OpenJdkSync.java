@@ -264,6 +264,7 @@ public final class OpenJdkSync {
             null,
             List.of(),
             List.of(),
+            List.of(),
             List.of());
     Json.write(manifest, latheDir(workspaceRoot).resolve(LatheLayout.WORKSPACE_JSON));
   }

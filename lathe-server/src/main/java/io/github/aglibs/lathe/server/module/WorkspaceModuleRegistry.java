@@ -54,7 +54,9 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
         }
 
         try {
-          moduleSources.add(ModuleSourceConfig.load(paramsFile, paramsFile.getParent()));
+          moduleSources.add(
+              ModuleSourceConfig.load(
+                  paramsFile, paramsFile.getParent(), manifest.reactorRewrite()));
         } catch (final IOException e) {
           LOG.log(Level.WARNING, e, () -> "[workspace] failed to load %s".formatted(paramsFile));
         }

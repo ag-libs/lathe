@@ -104,6 +104,7 @@ class MultiModuleTest {
     assertThat(ws).exists();
     final var content = read(ws);
     assertThat(content).contains("\"schemaVersion\"");
+    assertThat(content).contains("\"path\": \"core/target/classes\"");
     assertThat(content).contains("\"workspaceRoot\"");
     assertThat(content).contains("\"serverVersion\"");
     assertThat(content).contains("\"jdk\"");

@@ -12,7 +12,8 @@ public record WorkspaceManifestData(
     JdkSourceData jdk,
     List<DependencyData> dependencySources,
     List<String> pomPaths,
-    List<ResourceRootData> resourceRoots) {
+    List<ResourceRootData> resourceRoots,
+    List<OutputData> outputs) {
 
   public WorkspaceManifestData {
     ValidCheck.check()
@@ -23,5 +24,6 @@ public record WorkspaceManifestData(
     dependencySources = Objects.requireNonNullElse(dependencySources, List.of());
     pomPaths = Objects.requireNonNullElse(pomPaths, List.of());
     resourceRoots = Objects.requireNonNullElse(resourceRoots, List.of());
+    outputs = Objects.requireNonNullElse(outputs, List.of());
   }
 }

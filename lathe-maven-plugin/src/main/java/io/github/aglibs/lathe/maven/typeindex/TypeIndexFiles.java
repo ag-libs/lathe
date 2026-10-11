@@ -26,7 +26,7 @@ final class TypeIndexFiles {
 
     try {
       final TypeIndexFile file = Json.read(index, TypeIndexFile.class);
-      if (!LatheLayout.SCHEMA_VERSION.equals(file.schema()) || file.origin().kind() != kind) {
+      if (!LatheLayout.CACHE_SCHEMA_VERSION.equals(file.schema()) || file.origin().kind() != kind) {
         return Optional.empty();
       }
 

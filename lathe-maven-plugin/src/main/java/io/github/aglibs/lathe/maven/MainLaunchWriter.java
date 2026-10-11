@@ -34,8 +34,6 @@ import org.codehaus.plexus.languages.java.jpms.ResolvePathsResult;
  */
 final class MainLaunchWriter {
 
-  private static final String POM_PACKAGING = "pom";
-
   private final LocationManager locationManager;
   private final Map<String, String> reactorOutputByGa;
   private final Log log;
@@ -50,7 +48,7 @@ final class MainLaunchWriter {
   }
 
   void write(final Path workspaceRoot, final MavenProject project) {
-    if (POM_PACKAGING.equals(project.getPackaging())) {
+    if (LatheLayout.POM_PACKAGING.equals(project.getPackaging())) {
       return;
     }
 

@@ -6,8 +6,11 @@ import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -100,7 +103,8 @@ public final class TestCompiler {
         null,
         List.of(),
         null,
-        false);
+        false,
+        ReactorRewrite.none());
   }
 
   // MODULE_SYSTEM analysis: blank release (so patching a system module is not rejected), no
@@ -124,7 +128,8 @@ public final class TestCompiler {
         null,
         List.of("--patch-module", "%s=.".formatted(patchedModule)),
         AnalysisMode.MODULE_SYSTEM,
-        true);
+        true,
+        ReactorRewrite.none());
   }
 
   public static Path writeAt(final Path path, final String content, final long mtimeMillis)
@@ -173,7 +178,59 @@ public final class TestCompiler {
         dependencies.stream()
             .map(dep -> workspaceRoot.resolve(dep).resolve("target/classes"))
             .toList());
+    recordOutput(workspaceRoot, moduleName);
     return List.copyOf(paths);
+  }
+
+  // The output map a Maven front-end writes for modules with the standard target/ trees.
+  public static List<OutputData> targetOutputs(final String... modules) {
+    return Arrays.stream(modules)
+        .flatMap(
+            module ->
+                Stream.of(LatheLayout.CLASSES_DIR, LatheLayout.TEST_CLASSES_DIR)
+                    .map(
+                        tree ->
+                            new OutputData("%s/target/%s".formatted(module, tree), module, tree)))
+        .toList();
+  }
+
+  public static ReactorRewrite targetRewrite(final Path workspaceRoot, final String... modules) {
+    return ReactorRewrite.of(workspaceRoot, targetOutputs(modules));
+  }
+
+  // Adds the module's outputs to workspace.json's output map, as a front-end's sync would, so a
+  // dependent's classpath entry for it resolves to the mirror.
+  private static void recordOutput(final Path workspaceRoot, final String moduleName)
+      throws IOException {
+    final Path manifestFile =
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
+    final WorkspaceManifestData existing =
+        Files.exists(manifestFile)
+            ? Json.read(manifestFile, WorkspaceManifestData.class)
+            : new WorkspaceManifestData(
+                LatheLayout.SCHEMA_VERSION,
+                workspaceRoot.toString(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of());
+    final List<OutputData> outputs =
+        Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList();
+    Json.write(
+        new WorkspaceManifestData(
+            existing.schemaVersion(),
+            existing.workspaceRoot(),
+            existing.serverVersion(),
+            existing.runnerClasspath(),
+            existing.jdk(),
+            existing.dependencySources(),
+            existing.pomPaths(),
+            existing.resourceRoots(),
+            outputs),
+        manifestFile);
   }
 
   public static void writeModuleParams(

@@ -37,16 +37,20 @@ public final class ResourceRootIndex {
   }
 
   public static ResourceRootIndex build(
-      final Path workspaceRoot, final List<ResourceRootData> resourceRoots) {
+      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
+      final List<ResourceRootData> resourceRoots) {
     return new ResourceRootIndex(
-        resourceRoots.stream().map(root -> toMapping(workspaceRoot, root)).toList());
+        resourceRoots.stream()
+            .map(root -> toMapping(workspaceRoot, reactorRewrite, root))
+            .toList());
   }
 
-  private static Mapping toMapping(final Path workspaceRoot, final ResourceRootData root) {
+  private static Mapping toMapping(
+      final Path workspaceRoot, final ReactorRewrite reactorRewrite, final ResourceRootData root) {
     final Path sourceDir = workspaceRoot.resolve(root.directory()).normalize();
-    final var latheOutput =
-        ReactorRewrite.toLathe(workspaceRoot.resolve(root.outputDir()).toString(), workspaceRoot);
-    return new Mapping(sourceDir, Path.of(latheOutput), root.targetPath(), root.module());
+    final Path latheOutput = reactorRewrite.toLathe(workspaceRoot.resolve(root.outputDir()));
+    return new Mapping(sourceDir, latheOutput, root.targetPath(), root.module());
   }
 
   // Empty if the file is under no resource root; the longest matching root wins (nested roots).

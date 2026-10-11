@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
@@ -301,6 +302,7 @@ final class WorkspaceSession {
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Consumer<TestResult> onResult = resultConsumer(token);
     final Path root = workspaceRoot;
+    final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
     // Register/deregister the run by token so a cancel can reach it. Marshaled onto the worker so
@@ -315,6 +317,7 @@ final class WorkspaceSession {
             () ->
                 launchTest(
                     root,
+                    reactorRewrite,
                     runnerClasspath,
                     moduleRel,
                     selections,
@@ -368,7 +371,8 @@ final class WorkspaceSession {
               .test(moduleRel)
               .orElseThrow(
                   () -> new IllegalStateException("no captured test-launch.json for " + moduleRel));
-      assertLaunchComplete(CompletenessGate.verify(template, workspaceRoot));
+      assertLaunchComplete(
+          CompletenessGate.verify(template, workspaceRoot, manifest.reactorRewrite()));
 
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
@@ -376,7 +380,14 @@ final class WorkspaceSession {
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template, workspaceRoot, runnerClasspath, selections, resultsSink, overlay, jdwp);
+              template,
+              workspaceRoot,
+              manifest.reactorRewrite(),
+              runnerClasspath,
+              selections,
+              resultsSink,
+              overlay,
+              jdwp);
       final var session =
           Launcher.launch(
               resolved.argv(),
@@ -408,7 +419,8 @@ final class WorkspaceSession {
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
       final MainLaunchPlan plan =
-          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, overlay, jdwp);
+          resolveMainLaunch(
+              workspaceRoot, manifest.reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
       if (plan.blocked()) {
         throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
       }
@@ -458,6 +470,7 @@ final class WorkspaceSession {
    */
   private static MainLaunchPlan resolveMainLaunch(
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String moduleRel,
       final String mainClass,
       final RunItem overlay,
@@ -472,13 +485,15 @@ final class WorkspaceSession {
                     .formatted(moduleRel)));
       }
 
-      final CompletenessResult gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      final CompletenessResult gate =
+          CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
       if (!gate.complete()) {
         return MainLaunchPlan.blocked(gate.reasons());
       }
 
       return MainLaunchPlan.ready(
-          RunOverlay.applyToTestMain(template.get(), workspaceRoot, mainClass, overlay, jdwp));
+          RunOverlay.applyToTestMain(
+              template.get(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
     }
 
     final Optional<MainLaunchData> template = new LaunchReader(workspaceRoot).main(moduleRel);
@@ -486,13 +501,15 @@ final class WorkspaceSession {
       return MainLaunchPlan.blocked(List.of("no derived main-launch.json for " + moduleRel));
     }
 
-    final CompletenessResult gate = CompletenessGate.verify(template.get(), workspaceRoot);
+    final CompletenessResult gate =
+        CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
     if (!gate.complete()) {
       return MainLaunchPlan.blocked(gate.reasons());
     }
 
     return MainLaunchPlan.ready(
-        RunOverlay.applyToMain(template.get(), workspaceRoot, mainClass, overlay, jdwp));
+        RunOverlay.applyToMain(
+            template.get(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
   }
 
   /**
@@ -1090,6 +1107,7 @@ final class WorkspaceSession {
 
   private static void launchTest(
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final List<Path> runnerClasspath,
       final String moduleRel,
       final List<TestSelection> selections,
@@ -1111,7 +1129,7 @@ final class WorkspaceSession {
         return;
       }
 
-      final var gate = CompletenessGate.verify(template.get(), workspaceRoot);
+      final var gate = CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
       if (!gate.complete()) {
         LOG.warning(
             () ->
@@ -1126,6 +1144,7 @@ final class WorkspaceSession {
           RunOverlay.applyToTest(
               template.get(),
               workspaceRoot,
+              reactorRewrite,
               runnerClasspath,
               selections,
               resultsSink,
@@ -1193,6 +1212,7 @@ final class WorkspaceSession {
       final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Path root = workspaceRoot;
+    final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
     result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
@@ -1201,7 +1221,17 @@ final class WorkspaceSession {
 
     final var thread =
         new Thread(
-            () -> launchMain(root, moduleRel, mainClass, overlay, onLine, onStart, t, result),
+            () ->
+                launchMain(
+                    root,
+                    reactorRewrite,
+                    moduleRel,
+                    mainClass,
+                    overlay,
+                    onLine,
+                    onStart,
+                    t,
+                    result),
             "lathe-launch-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
@@ -1210,6 +1240,7 @@ final class WorkspaceSession {
 
   private static void launchMain(
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String moduleRel,
       final String mainClass,
       final RunItem overlay,
@@ -1219,7 +1250,8 @@ final class WorkspaceSession {
       final CompletableFuture<LaunchOutcome> result) {
     try {
       final MainLaunchPlan plan =
-          resolveMainLaunch(workspaceRoot, moduleRel, mainClass, overlay, JdwpOptions.NONE);
+          resolveMainLaunch(
+              workspaceRoot, reactorRewrite, moduleRel, mainClass, overlay, JdwpOptions.NONE);
       if (plan.blocked()) {
         LOG.warning(
             () ->

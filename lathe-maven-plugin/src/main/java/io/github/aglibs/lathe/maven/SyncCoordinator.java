@@ -93,7 +93,8 @@ final class SyncCoordinator {
               PluginProps.version(),
               runnerClasspath,
               pomPaths,
-              ModuleResourcesReader.read(workspaceRoot, projects));
+              ModuleResourcesReader.read(workspaceRoot, projects),
+              ReactorProjects.outputs(workspaceRoot, projects));
       final MavenProject rootProject = session.getTopLevelProject();
       final var formatterResolver =
           new FormatterResolver(

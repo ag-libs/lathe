@@ -3,9 +3,11 @@ package io.github.aglibs.lathe.server.run;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
+import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,13 +20,17 @@ final class CompletenessGateTest {
 
   @TempDir private Path workspaceRoot;
 
+  private ReactorRewrite rewrite() {
+    return TestCompiler.targetRewrite(workspaceRoot, "dep", "app", "jpms");
+  }
+
   @Test
   void verify_builtByMavenButNotMirrored_returnsIncompleteWithReasons() throws IOException {
     final var data = testLaunch();
     mavenBuilt("dep/target/classes");
     mavenBuilt("app/target/test-classes");
 
-    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(2);
@@ -36,7 +42,7 @@ final class CompletenessGateTest {
     seedModule("dep", LatheLayout.CLASSES_DIR);
     seedModule("app", LatheLayout.TEST_CLASSES_DIR);
 
-    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(result.complete()).isTrue();
     assertThat(result.reasons()).isEmpty();
@@ -53,7 +59,7 @@ final class CompletenessGateTest {
         appDir.resolve(LatheLayout.paramsFileName(LatheLayout.TEST_CLASSES_DIR)), "{}");
     Files.createDirectories(appDir.resolve(LatheLayout.TEST_CLASSES_DIR));
 
-    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
@@ -67,7 +73,7 @@ final class CompletenessGateTest {
     final var data = mainLaunch();
     mavenBuilt("jpms/target/classes");
 
-    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
@@ -80,7 +86,7 @@ final class CompletenessGateTest {
     final var data = mainLaunch();
     seedModule("jpms", LatheLayout.CLASSES_DIR);
 
-    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(result.complete()).isTrue();
     assertThat(result.reasons()).isEmpty();
@@ -99,9 +105,9 @@ final class CompletenessGateTest {
     seedModule("app", LatheLayout.TEST_CLASSES_DIR);
     mavenBuilt("dep/target/classes");
 
-    final CompletenessResult blocked = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult blocked = CompletenessGate.verify(data, workspaceRoot, rewrite());
     seedModule("dep", LatheLayout.CLASSES_DIR);
-    final CompletenessResult open = CompletenessGate.verify(data, workspaceRoot);
+    final CompletenessResult open = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
     assertThat(blocked.reasons())
         .containsExactly(

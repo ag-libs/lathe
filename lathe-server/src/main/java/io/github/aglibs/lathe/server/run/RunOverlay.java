@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.run;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.LaunchOverlay;
 import io.github.aglibs.lathe.core.launch.LaunchPlan;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -33,12 +34,13 @@ public final class RunOverlay {
   public static ResolvedLaunch applyToMain(
       final MainLaunchData template,
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String mainClass,
       final RunItem item,
       final JdwpOptions jdwp) {
     final List<String> argv =
         LaunchPlan.forMain(
-            template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
+            template, reactorRewrite, mainClass, launchOverlay(item, workspaceRoot), jdwp);
     return new ResolvedLaunch(
         argv,
         resolveEnv(item, workspaceRoot),
@@ -48,12 +50,13 @@ public final class RunOverlay {
   public static ResolvedLaunch applyToTestMain(
       final TestLaunchData template,
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final String mainClass,
       final RunItem item,
       final JdwpOptions jdwp) {
     final List<String> argv =
         LaunchPlan.forTestMain(
-            template, workspaceRoot, mainClass, launchOverlay(item, workspaceRoot), jdwp);
+            template, reactorRewrite, mainClass, launchOverlay(item, workspaceRoot), jdwp);
     return new ResolvedLaunch(
         argv,
         resolveEnv(item, workspaceRoot),
@@ -63,6 +66,7 @@ public final class RunOverlay {
   public static ResolvedLaunch applyToTest(
       final TestLaunchData template,
       final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
       final List<Path> runnerClasspath,
       final List<TestSelection> selections,
       final Path resultsSink,
@@ -71,7 +75,7 @@ public final class RunOverlay {
     final List<String> argv =
         LaunchPlan.forTest(
             template,
-            workspaceRoot,
+            reactorRewrite,
             runnerClasspath,
             selections,
             resultsSink,
