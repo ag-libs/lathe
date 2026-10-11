@@ -67,19 +67,25 @@ public interface JavaSourceCompiler extends AutoCloseable {
    * Full-compiles mutually dependent sources in one task so their cross-references resolve. The
    * default compiles per file; {@code ModuleSourceCompiler} overrides with one multi-file task.
    */
-  default CompilerResult compileBatch(
+  default BatchWrite compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var diagnostics = new ArrayList<Diagnostic<? extends JavaFileObject>>();
     final var written = new HashSet<String>();
+    final var failed = new HashSet<String>();
     for (final var source : sources) {
       cancelChecker.checkCanceled();
       final CompilerResult result =
           compile(source.uri(), source.content(), CompileMode.FULL, cancelChecker);
-      diagnostics.addAll(result.diagnostics());
       written.addAll(result.writtenBinaryNames());
+      if (hasError(result.diagnostics())) {
+        failed.add(source.uri());
+      }
     }
 
-    return new CompilerResult(diagnostics, AttributedFileAnalysis.diagnosticsOnly(), written);
+    return new BatchWrite(written, failed);
+  }
+
+  static boolean hasError(final List<? extends Diagnostic<?>> diagnostics) {
+    return diagnostics.stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
   }
 
   /**

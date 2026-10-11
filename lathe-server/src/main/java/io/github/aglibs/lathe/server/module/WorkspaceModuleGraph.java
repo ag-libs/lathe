@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -113,15 +114,34 @@ public final class WorkspaceModuleGraph {
         .toList();
   }
 
-  // Whether upstream's classes must be in the mirror before downstream compiles: a tree of a module
-  // it depends on, or its own module's main tree when downstream is the test tree.
-  public boolean compilesBefore(
-      final ModuleSourceConfig upstream, final ModuleSourceConfig downstream) {
-    if (upstream.moduleDir().equals(downstream.moduleDir())) {
-      return !upstream.isTestTree() && downstream.isTestTree();
+  // Groups trees given upstream-first into levels: a tree lands one level after the latest tree on
+  // its class or module path (a test tree's path holds its own main tree), so the trees of one
+  // level are independent of each other and can be written together.
+  public static List<List<ModuleSourceConfig>> levels(
+      final List<ModuleSourceConfig> upstreamFirst) {
+    final var levelOf = new HashMap<ModuleSourceConfig, Integer>();
+    final var levels = new ArrayList<List<ModuleSourceConfig>>();
+    for (final var tree : upstreamFirst) {
+      final int level =
+          levelOf.entrySet().stream()
+              .filter(earlier -> dependsOn(tree, earlier.getKey()))
+              .mapToInt(earlier -> earlier.getValue() + 1)
+              .max()
+              .orElse(0);
+      levelOf.put(tree, level);
+      if (level == levels.size()) {
+        levels.add(new ArrayList<>());
+      }
+
+      levels.get(level).add(tree);
     }
 
-    return downstreamModuleDirs(upstream.moduleDir()).contains(downstream.moduleDir());
+    return levels.stream().map(List::copyOf).toList();
+  }
+
+  private static boolean dependsOn(final ModuleSourceConfig tree, final ModuleSourceConfig other) {
+    return tree.remappedClasspath().contains(other.latheClassesDir())
+        || tree.remappedModulepath().contains(other.latheClassesDir());
   }
 
   private static Set<Path> transitiveDownstream(

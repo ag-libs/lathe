@@ -47,6 +47,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -581,24 +582,87 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void manyExternalChangesAboveThreshold_showsBulkNoticeOnceNotModalNotRepeated() throws Exception {
+  void initialize_moreExternalChangesThanTheOldBulkThreshold_compiledInProcessWithoutNotice()
+      throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
-    for (int i = 0; i <= 50; i++) { // 51 unstamped sources → all stale, over the bulk threshold
-      TestCompiler.writeAt(
-          sourceRoot.resolve("com/example/T" + i + ".java"),
-          "package com.example; class T" + i + " {}",
-          5_000L);
-    }
-
+    IntStream.range(0, 61)
+        .forEach(
+            i ->
+                IOUtil.unchecked(
+                    () ->
+                        TestCompiler.writeAt(
+                            sourceRoot.resolve("com/example/T%d.java".formatted(i)),
+                            "package com.example; class T%d {}".formatted(i),
+                            5_000L)));
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
 
     service.initialize(tmp);
-    service.reconcileNow().get(5, TimeUnit.SECONDS); // still over threshold → must not re-notify
+    service.reconcileNow(true).get(30, TimeUnit.SECONDS); // runs after the startup pass
 
-    verify(client, timeout(5_000).times(1))
-        .showMessage(
-            argThat((MessageParams p) -> p.getMessage().contains("files changed at once")));
-    verify(client, never()).showMessageRequest(any()); // non-blocking notice, never a modal
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .as("every changed source compiled and stamped")
+        .hasSize(61)
+        .allSatisfy((source, mtime) -> assertThat(mtime).isEqualTo(5_000L));
+    verify(client, never())
+        .showMessage(argThat((MessageParams p) -> p.getType() == MessageType.Warning));
+    verify(client, never()).showMessageRequest(any());
+  }
+
+  @Test
+  void reconcileNow_brokenFileInABatch_restOfTheTreeIsStillWritten() throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put(
+        "com/example/Good.java", "package com.example; class Good { int g() { return 1; } }");
+    sources.put("com/example/Broken.java", "package com.example; class Broken {}");
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+
+    // Both change on disk; Broken no longer compiles. javac writes nothing for a task with an
+    // error, so the batch is written again without Broken.
+    TestCompiler.writeAt(
+        files.get(0), "package com.example; class Good { int g() { return 2; } }", 5_000L);
+    TestCompiler.writeAt(
+        files.get(1),
+        "package com.example; class Broken { int b() { return missing(); } }",
+        5_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .as("stamps: the good file written, the broken one left stale")
+        .containsEntry("com/example/Good.java", 5_000L)
+        .containsEntry("com/example/Broken.java", 1_000L);
+  }
+
+  @Test
+  void reconcileNow_mutuallyDependentChangesLandingApart_failedOneRidesAlongAndBothCompile()
+      throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("com/example/A.java", "package com.example; class A { int a() { return 1; } }");
+    sources.put("com/example/B.java", "package com.example; class B { int b() { return 2; } }");
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+
+    // A changes first and needs B's new method, so it fails alone.
+    TestCompiler.writeAt(
+        files.get(0),
+        "package com.example; class A { int a() { return new B().newB(); } int newA() { return 3; } }",
+        5_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    // B changes next and needs A's new method: alone it would fail too, leaving both stuck.
+    TestCompiler.writeAt(
+        files.get(1),
+        "package com.example; class B { int b() { return 2; } int newB() { return new A().newA(); } }",
+        6_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+        .as("both written together once B's write takes the failed A along")
+        .containsEntry("com/example/A.java", 5_000L)
+        .containsEntry("com/example/B.java", 6_000L);
   }
 
   @Test
@@ -683,53 +747,6 @@ class LatheTextDocumentServiceTest {
         .containsEntry("com/example/api/Api.java", 5_000L);
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
         .containsEntry("com/example/app/App.java", 5_000L);
-  }
-
-  @Test
-  void reconcileNow_openClusterUnderUnrelatedBacklogOverThreshold_stillRecompilesCluster()
-      throws Exception {
-    // Reproduces the cross-module rename failure. A legitimate small change-set -- the rename's
-    // mutually-referencing files, every one of which the editor's WorkspaceEdit opens -- never
-    // reaches the mirror because an unrelated backlog of mtime-stale files keeps the WHOLE
-    // workspace over the bulk threshold, so reconcileChangedSources bails to the sync notice and
-    // never batches the cluster. The cluster is a sealed root and a new permitted subtype, which
-    // deadlock on a piecemeal compile (each needs the other) and resolve only when batched.
-    final Path shape = mirroredShapes();
-    final Path square = shape.resolveSibling("Square.java");
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path classesDir = tmp.resolve(".lathe/module/classes");
-
-    // An unrelated backlog of 51 unstamped sources -- stale only by mtime, enough on its own to
-    // trip the workspace-wide bulk threshold (> 50) and disable in-process reconcile for
-    // everything.
-    for (int i = 0; i <= 50; i++) {
-      TestCompiler.writeAt(
-          sourceRoot.resolve("backlog/T" + i + ".java"),
-          "package backlog; class T" + i + " {}",
-          5_000L);
-    }
-
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    service.initialize(tmp);
-    awaitStartup();
-
-    // The rename lands on disk and the editor opens every touched file: Shape now permits a new
-    // Square, and Square is created.
-    final String shapeSrc = "package shapes; sealed interface Shape permits Circle, Square {}";
-    final String squareSrc = "package shapes; final class Square implements Shape {}";
-    TestCompiler.writeAt(shape, shapeSrc, 5_000L);
-    TestCompiler.writeAt(square, squareSrc, 5_000L);
-    openDoc(shape, shapeSrc);
-    openDoc(square, squareSrc);
-
-    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
-    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
-
-    // The cluster must reach the mirror despite the backlog; the backlog alone stays deferred.
-    assertThat(classesDir.resolve("shapes/Square.class")).exists();
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry("shapes/Shape.java", 5_000L)
-        .containsEntry("shapes/Square.java", 5_000L);
   }
 
   @Test

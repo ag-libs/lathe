@@ -929,7 +929,6 @@ final class LatheMcpTools {
   private static String deferralText(final String reason) {
     return switch (reason) {
       case "BUILD_FILES_PENDING" -> "a pending build-file or dependency change needs a sync";
-      case "BULK_CHANGE" -> "too many changed files for an in-process recompile";
       case "BUILD_IN_PROGRESS" -> "a build is in progress";
       default -> reason;
     };

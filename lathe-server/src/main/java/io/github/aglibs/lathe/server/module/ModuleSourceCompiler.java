@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -20,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.logging.Level;
@@ -91,12 +93,20 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   @Override
-  public CompilerResult compileBatch(
+  public BatchWrite compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var options = buildOptions(config, compilerArgs, CompileMode.FULL);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     try {
-      return runner.compileBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
+      final CompilerResult result =
+          runner.compileBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
+      final Set<String> failedUris =
+          result.diagnostics().stream()
+              .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+              .map(diagnostic -> uriByTempFile.get(sourcePathOf(diagnostic)))
+              .filter(Objects::nonNull)
+              .collect(Collectors.toUnmodifiableSet());
+      return new BatchWrite(result.writtenBinaryNames(), failedUris);
     } finally {
       IOUtil.unchecked(fm::flush);
     }

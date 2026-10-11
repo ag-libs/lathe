@@ -21,7 +21,6 @@ public record ReconcileOutcome(List<Path> reacted, DeferReason deferral) {
   public enum DeferReason {
     NONE,
     BUILD_FILES_PENDING,
-    BULK_CHANGE,
     BUILD_IN_PROGRESS
   }
 }

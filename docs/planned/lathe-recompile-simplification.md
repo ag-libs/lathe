@@ -39,7 +39,7 @@ Two things carry all the state that matters:
  startup ──────────┘                        2. stale = sources newer than their stamp that are ready,
                                                minus held and failed-unchanged ones
                                             3. write them: one javac task per source tree,
-                                               one tree at a time, upstream trees first
+                                               level by level, upstream trees first
                                             4. re-analyze open files in and downstream of the
                                                written trees: one analysis task per tree, publish
 ```
@@ -67,7 +67,9 @@ The session thread never blocks: a pass is a chain of these messages, each tree'
 No lock, `synchronized`, atomic, or concurrent collection is introduced; the one volatile field in this area (`cachedStaleModules`, read for MCP's stale note) goes in the MCP step.
 What remains between threads is infrastructure, not state: lock files between processes, which are only read, and the compile-admission semaphore, which caps how many javac tasks run at once across tree workers.
 
-The pass is the only write lock: being single-owned and single-flight, it writes at most one tree at a time, so the process has at most one writing javac task — memory bounded to one module's compile, as when Maven compiles that module — and writes take at most one admission permit, leaving the rest to analysis, so typing in other trees stays responsive during a long catch-up.
+The pass is the only write lock: being single-owned and single-flight, it writes at most one dependency level at a time (rule 12), so writing javac tasks never overlap a tree they depend on.
+The trees of one level are written together; the compile-admission semaphore still caps how many javac tasks run at once, so memory stays bounded as with parallel saves today.
+The cost is that a wide level can take every permit for a while, so typing in other trees waits behind it during a long catch-up.
 
 ### Triggers
 
@@ -102,8 +104,11 @@ Found by checking the design against the code; each is a test in the migration s
 11. **A failed file is retried whenever its tree writes again.** If a pass writes any ready file of a tree, the tree's failed-unchanged files join that batch.
     Two files that need each other's new code but became ready in different passes (a slow `:wa`) would otherwise each fail alone and stay stuck until edited; together in one javac task they compile.
     This replaces today's "clear every failure after any successful write", which retries unrelated trees and does nothing when the only new write fails too.
-12. **One write at a time, the reactor lock checked per tree.** Trees are written one after another in dependency order (`compileOrder`), never in parallel.
-    Before each tree, the pass checks the reactor lock (`LatheLayout.reactorLockFile`, `.lathe/lathe.lock`; module locks are the build's own, per module): held by another process (a Maven build started meanwhile), it stops writing external catch-up and continues it after the build, while reported files are still written (rule 1); held by this process (the MCP engine writing a rename), it proceeds.
+12. **One level at a time, the reactor lock checked per level.** The trees to write are grouped into dependency levels (`WorkspaceModuleGraph.levels`): a tree lands one level after the latest tree on its class or module path.
+    The trees of a level are written together, and the next level starts once all of them finish, so every write resolves against freshly written upstream classes.
+    The futures are joined on the session thread, so no state is shared with the workers.
+    Writing one tree at a time doubled the tail of a 108-file rename (14.6 s against 6.8 s), because a tree batch costs about a second even for one file.
+    Before each level, the pass checks the reactor lock (`LatheLayout.reactorLockFile`, `.lathe/lathe.lock`; module locks are the build's own, per module): held by another process (a Maven build started meanwhile), it stops writing external catch-up and continues it after the build, while reported files are still written (rule 1); held by this process (the MCP engine writing a rename), it proceeds.
 13. **A tree batch with errors is retried once without the files that had errors.** javac writes no class at all when any file of the task has an error (verified on JDK 26 with every compile policy), so one broken file would otherwise leave its whole tree unwritten and every downstream file compiling against stale classes.
     The retry leaves out the files javac reported errors in; what compiles without them is written and stamped, and what still fails joins the failed set, retried by rule 11.
     It uses which files failed, not what the errors say, and costs at most one extra javac task when a batch fails; the result — good files written, broken ones keeping their last classes — is what per-file saves produce today.
@@ -163,7 +168,7 @@ Mutable state in `WorkspaceSession` that decides what compiles:
 Ten pieces of state become six, and four of the remaining ones mean one thing each.
 
 Methods and types removed: `afterModuleSave`, `saveCompileDone`, `releaseSaving`, `treeSaveDone`, `sourceCompileDone`, `refreshOpenDependents` and `DependentRefresh` (the pass's step 4 replaces them), `commitChangeSet` (session and service), `reconcileForVerify`'s own scan and write, `noticeBulkChange`, `BULK_CHANGE_THRESHOLD`, `DeferReason.BULK_CHANGE`, the save branch of `publishThen`; `claimStable` keeps only its readiness and exclusion checks.
-The parallel chaining — `compileAfter`, `upstreamBatches`, `WorkspaceModuleGraph.compilesBefore`, and deferred batches counted as in flight — becomes a plain loop over `compileOrder` (rule 12).
+The parallel chaining — `compileAfter`, `upstreamBatches`, `WorkspaceModuleGraph.compilesBefore`, and deferred batches counted as in flight — becomes a loop over dependency levels (rule 12).
 In the MCP step, `cachedStaleModules` (volatile) goes: the notes come from the pass's result.
 With the live-analysis step, the sealed widening goes entirely — `maybeWidenSealed`, `widenSources`, `hasCrossFileResolutionError`, `isCrossFileResolutionCode`, the two error-code constants — and with it `diagnoseInBatch` in the compiler, the analysis session, and the worker, leaving one analysis entry point (`compileOpenBatch`) for the refresh and for live analysis alike.
 `failedCompiles` keeps its job but loses the clear-on-any-success rule (rule 11).
@@ -181,7 +186,8 @@ From today's equalsverifier runs:
 | One saved file, written (today's save compile) | median 454 ms, p90 632 ms |
 | A batch write of one file | the same call (`generate` with one source); slower only when cold and contended |
 | 108 renamed files written as 8 tree batches in parallel | ~4 s, the largest tree (81 files) 3.9 s |
-| The same written one tree at a time (rule 12) | expected ~5–8 s on warm workers; measured in step 1 |
+| The same written one tree at a time | 12.8 s of writes, commit to refreshed 14.6 s (step 1, measured, rejected) |
+| The same written level by level (rule 12) | 2 levels; commit to refreshed 6.8 s, the 81-file tree 4.9 s (step 1, measured) |
 | Re-analysis of one open file | 34–64 ms |
 | Re-analysis of 50 open files in one task | 212 ms |
 | Analysis of 2–7 files in one task | 38–95 ms — the live-analysis cost with a few unsaved siblings |
@@ -222,7 +228,7 @@ After the refactor, a separate step reorganizes the tests: `LatheTextDocumentSer
 Each step is one commit, with the full reactor build (invoker ITs included) and burst-harness runs on equalsverifier, dropwizard and helidon (Neovim pacing, Save All, partial save, never applied, undo, MCP beside an editor).
 
 0. **Make the safety net behavioral** (tests only): reword the four log-tag assertions as above; no production change.
-1. **Introduce the pass** (single-owner, one tree at a time, rules 12 and 13) for the reconcile tick, startup, and the MCP freshen; delete the bulk threshold, its notice, the open/closed split, and `reconcileForVerify`'s copy.
+1. **Introduce the pass** (single-owner, level by level, rules 12 and 13) for the reconcile tick, startup, and the MCP freshen; delete the bulk threshold, its notice, the open/closed split, and `reconcileForVerify`'s copy.
 2. **Rename commit through the pass**; delete `commitChangeSet` (the MCP engine's own pass runs under the lock it holds).
 3. **Saves through the pass**, with the write-diagnostics merge; delete the per-file save write, `saving`, the save queue, and the in-flight counter and refresh merging.
    A before/after timing of a single save on a warm worker confirms the cost above.
@@ -234,7 +240,7 @@ Steps 1–3 change no user-visible behavior except the branch-switch row above; 
 
 ## Risks
 
-- **A very large catch-up** (thousands of files after a branch switch) compiles every affected tree in the server JVM, one tree at a time (rule 12): memory stays at one module's compile and typing keeps its permits, but the catch-up takes longer than with parallel trees.
+- **A very large catch-up** (thousands of files after a branch switch) compiles every affected tree in the server JVM, level by level (rule 12): the admission semaphore bounds memory, but a wide level can hold every permit, so typing in other trees may wait.
   Measured in step 1 on helidon: time to quiet, heap high-water mark, and keystroke latency during the catch-up.
   If sequential writes prove too slow, the one knob is how many trees may write at once; the model is one.
 - **One broken file in a batch**: handled by rule 13 (retry without it); measured with the helidon `MediaType.text()` case, where one record broke `common/media-type` and 31 downstream files.

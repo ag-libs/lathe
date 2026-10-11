@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
@@ -165,7 +166,7 @@ public final class CompilationWorker {
         });
   }
 
-  public CompletableFuture<Set<String>> compileBatch(final List<TransientSource> sources) {
+  public CompletableFuture<BatchWrite> compileBatch(final List<TransientSource> sources) {
     return submit(ctx -> ctx.compileBatch(sources, () -> {}));
   }
 

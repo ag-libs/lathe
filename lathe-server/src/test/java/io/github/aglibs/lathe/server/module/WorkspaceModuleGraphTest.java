@@ -157,25 +157,6 @@ class WorkspaceModuleGraphTest {
   }
 
   @Test
-  void compilesBefore_dependencyAndOwnMainTree_beforeDependentsAndTestTree() {
-    final var apiMain = config("api", "classes", List.of());
-    final var appMain = config("app", "classes", List.of(reactorTarget("api")));
-    final var appTest = config("app", "test-classes", List.of(reactorTarget("app")));
-    final var otherMain = config("other", "classes", List.of());
-    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, appMain, appTest, otherMain));
-
-    assertThat(graph.compilesBefore(apiMain, appMain)).isTrue();
-    assertThat(graph.compilesBefore(apiMain, appTest)).isTrue(); // transitive through app
-    assertThat(graph.compilesBefore(appMain, appTest)).isTrue();
-
-    assertThat(graph.compilesBefore(appMain, apiMain)).isFalse();
-    assertThat(graph.compilesBefore(appTest, appMain)).isFalse();
-    assertThat(graph.compilesBefore(appMain, appMain)).isFalse();
-    assertThat(graph.compilesBefore(otherMain, appMain)).isFalse();
-    assertThat(graph.compilesBefore(apiMain, otherMain)).isFalse();
-  }
-
-  @Test
   void upstreamFirst_ordersDependenciesBeforeDependents() {
     // Chain api -> service -> app: order is fully pinned.
     final var apiMain = config("api", "classes", List.of());
@@ -209,5 +190,28 @@ class WorkspaceModuleGraphTest {
                     LATHE_DIR.resolve("api"))))
         .startsWith(LATHE_DIR.resolve("api"))
         .endsWith(LATHE_DIR.resolve("app"));
+  }
+
+  @Test
+  void levels_diamondWithTestTreesAndAnUnrelatedModule_groupsIndependentTreesTogether() {
+    final var apiMain = config("api", "classes", List.of());
+    final var apiTest = config("api", "test-classes", List.of(reactorTarget("api")));
+    final var leftMain = config("left", "classes", List.of(reactorTarget("api")));
+    final var rightMain = config("right", "classes", List.of(reactorTarget("api")));
+    final var appMain =
+        config("app", "classes", List.of(reactorTarget("left"), reactorTarget("right")));
+    final var coreMain = config("core", "classes", List.of());
+
+    assertThat(
+            WorkspaceModuleGraph.levels(
+                List.of(apiMain, coreMain, apiTest, leftMain, rightMain, appMain)))
+        .as(
+            "the shared dependency and the unrelated module first, its dependents next, the sink last")
+        .containsExactly(
+            List.of(apiMain, coreMain), List.of(apiTest, leftMain, rightMain), List.of(appMain));
+    assertThat(WorkspaceModuleGraph.levels(List.of(leftMain, rightMain)))
+        .as("siblings without their changed dependency share one level")
+        .containsExactly(List.of(leftMain, rightMain));
+    assertThat(WorkspaceModuleGraph.levels(List.of())).isEmpty();
   }
 }

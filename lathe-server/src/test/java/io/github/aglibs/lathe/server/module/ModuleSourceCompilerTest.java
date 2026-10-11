@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
@@ -297,10 +298,33 @@ class ModuleSourceCompilerTest {
                   new TransientSource(square.toUri().toString(), newSquare)),
               () -> {});
 
-      assertThat(result.diagnostics()).noneMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
+      assertThat(result.failedUris()).isEmpty();
       assertThat(result.writtenBinaryNames()).contains("shapes.Shape", "shapes.Square");
       assertThat(config.latheClassesDir().resolve("shapes/Shape.class")).exists();
       assertThat(config.latheClassesDir().resolve("shapes/Square.class")).exists();
+    }
+  }
+
+  @Test
+  void compileBatch_oneBrokenSource_reportsOnlyItAsFailed_andWritesNothing() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+    final String brokenUri = sourceRoot.resolve("Broken.java").toUri().toString();
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final BatchWrite result =
+          compiler.compileBatch(
+              List.of(
+                  new TransientSource(brokenUri, "class Broken { int b() { return missing(); } }"),
+                  new TransientSource(
+                      sourceRoot.resolve("Good.java").toUri().toString(), "class Good {}")),
+              () -> {});
+
+      // javac writes no class when any source fails, which is why the session retries without it.
+      assertThat(result.failedUris()).containsExactly(brokenUri);
+      assertThat(result.writtenBinaryNames()).isEmpty();
     }
   }
 

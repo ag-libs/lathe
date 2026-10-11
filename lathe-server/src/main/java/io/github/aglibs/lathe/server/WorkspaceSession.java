@@ -22,6 +22,7 @@ import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
@@ -175,9 +176,6 @@ final class WorkspaceSession {
   private Map<String, List<String>> reactorLambdaImplementors = Map.of();
   private WorkspaceWatcher watcher;
   private boolean buildFilesNotificationPending;
-  // Guards against re-notifying every idle tick while churn continues; reset when the stale set
-  // drains.
-  private boolean bulkNoticeShown;
   // Stale sources and their mtimes seen on the previous idle tick. A source is recompiled
   // in-process
   // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
@@ -190,13 +188,23 @@ final class WorkspaceSession {
   // building. Worker-thread-confined like every other field here.
   private final Set<Path> reacting = new HashSet<>();
   // Sources whose last compile emitted no class (a compile error), keyed to the mtime compiled.
-  // They are skipped until edited again or another compile lands, not recompiled every tick.
+  // Not retried alone until edited; they join their tree's next write, and a write upstream lets
+  // them try again.
   private final Map<Path, Long> failedCompiles = new HashMap<>();
+  // The write pass: one at a time. A request while one runs is answered by the next pass, started
+  // when this one ends; eager if any request for it was. A reload bumps the generation, so a pass
+  // started before it stops writing.
+  private CompletableFuture<List<Path>> runningPass;
+  private CompletableFuture<List<Path>> nextPass;
+  private boolean nextPassEager;
+  private long passGeneration;
   // Save and reconcile-batch compiles still running. A dependents refresh requested meanwhile
   // is merged into pendingRefresh and runs once they drain, so a `:wa` burst refreshes each open
-  // file once instead of once per completing save.
+  // file once instead of once per completing save; the reactor type index is rebuilt once the
+  // same way (reactorIndexStale), as one rebuild costs ~200ms on a large reactor.
   private int sourceCompilesInFlight;
   private DependentRefresh pendingRefresh;
+  private boolean reactorIndexStale;
   // A rename the editor is applying and saving; its files compile together at the commit. Empty
   // when none is open.
   private RenameTransaction renameTransaction = new RenameTransaction();
@@ -272,7 +280,7 @@ final class WorkspaceSession {
 
     // Startup reconciliation for the cold-start delta (changes while Lathe was down). Eager: the
     // delta is settled on disk, so compile it now rather than waiting out the two-tick guard.
-    reconcileIfIdle(true);
+    requestPass(true);
   }
 
   void close() {
@@ -1502,11 +1510,13 @@ final class WorkspaceSession {
       return;
     }
 
+    final Path savedPath = LatheUri.toPath(uri);
+    final long savedMtime = mtimeMillis(savedPath);
     final AfterCompile afterCompile =
         switch (route) {
           case CompilerRoute.Module module ->
               publishThen(
-                  route, result -> afterModuleSave(result, module.config(), LatheUri.toPath(uri)));
+                  route, result -> afterModuleSave(result, module.config(), savedPath, savedMtime));
           case CompilerRoute.External ignored -> publishThen(route, () -> scheduleAstRefresh(uri));
           case CompilerRoute.Missing ignored -> publisher::publishIfCurrent;
         };
@@ -3000,6 +3010,14 @@ final class WorkspaceSession {
 
     reactorBaseShards.put(config, base);
     reactorShards.put(config, withSourceDelta(config, base));
+    reactorIndexStale = true;
+    if (sourceCompilesInFlight == 0) {
+      rebuildReactorIndex();
+    }
+  }
+
+  private void rebuildReactorIndex() {
+    reactorIndexStale = false;
     typeIndex = typeIndex.withReactorEntries(reactorShards.values());
     reactorLambdaImplementors = mergeLambdaShards();
   }
@@ -3134,29 +3152,120 @@ final class WorkspaceSession {
     }
   }
 
-  // Idle-tick and startup reconciliation: clean deleted sources, recompile externally changed ones,
-  // copy stale resources. Suppressed mid-build. Returns the in-flight recompiles for reconcileNow.
-  private List<CompletableFuture<Void>> reconcileIfIdle(final boolean eager) {
-    if (reactorBuildInProgress()) {
-      LOG.fine(() -> "[reconcile] skipped — reactor build in progress");
-      return List.of();
-    }
-
-    lastReconcile = Stopwatch.start();
-    reconcileDeletedSources();
-    final List<CompletableFuture<Void>> reactions = reconcileChangedSources(eager);
-    reconcileResources();
-    return reactions;
-  }
-
-  // Test/tool seam: run one reconcile pass and complete once its in-process recompiles finish. Must
-  // be invoked on the worker thread. eager mirrors the startup pass (no two-tick wait).
+  // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
+  // worker thread. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow() {
     return reconcileNow(false);
   }
 
   CompletableFuture<Void> reconcileNow(final boolean eager) {
-    return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
+    return requestPass(eager).thenAccept(stale -> {});
+  }
+
+  // Asks for a write pass; completes with the stale sources it considered once its writes finish.
+  // eager treats every stale source as ready (startup, an MCP query) instead of waiting a tick for
+  // a file that may still be being written. Runs on the worker, which owns all pass state; the pass
+  // is registered as running before any of its work, so one that finishes at once still ends
+  // cleanly.
+  private CompletableFuture<List<Path>> requestPass(final boolean eager) {
+    if (runningPass != null) {
+      if (nextPass == null) {
+        nextPass = new CompletableFuture<>();
+      }
+
+      nextPassEager |= eager;
+      return nextPass;
+    }
+
+    final var pass = new CompletableFuture<List<Path>>();
+    runningPass = pass;
+    sourceCompilesInFlight++;
+    pass.whenComplete((stale, error) -> endPass(stale == null ? List.of() : stale));
+    try {
+      runPass(eager, pass);
+    } catch (final RuntimeException e) {
+      LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
+      pass.completeExceptionally(e); // never leave a pass running, or every later request waits
+    }
+
+    return pass;
+  }
+
+  // One pass: drop the classes of deleted sources, claim the stale sources that are ready, copy
+  // changed resources, then write the claimed sources one source tree at a time, upstream first.
+  // The pass counts as a source compile in flight from start to end, so the dependents refresh runs
+  // once after it -- or after the next pass, if one was requested meanwhile.
+  private void runPass(final boolean eager, final CompletableFuture<List<Path>> done) {
+    if (reactorBuildInProgress()) {
+      LOG.fine(() -> "[reconcile] skipped — reactor build in progress");
+      done.complete(List.of());
+      return;
+    }
+
+    lastReconcile = Stopwatch.start();
+    reconcileDeletedSources();
+    final StaleScan scan = scanStaleModules();
+    final Map<ModuleSourceConfig, List<Path>> batches = claimReady(scan, eager);
+    reconcileResources();
+    reportRecompile(batches.values().stream().mapToInt(List::size).sum(), done);
+    writeInOrder(batches, true).whenComplete((written, error) -> done.complete(scan.staleFiles()));
+  }
+
+  // Starts the pass requested meanwhile before releasing this one, so the dependents refresh waits
+  // for both and analyzes each open dependent once. A request made during this pass may concern a
+  // file this pass already wrote, so its answer covers both passes' stale sources.
+  private void endPass(final List<Path> finished) {
+    runningPass = null;
+    final CompletableFuture<List<Path>> next = nextPass;
+    if (next != null) {
+      nextPass = null;
+      final boolean eager = nextPassEager;
+      nextPassEager = false;
+      requestPass(eager)
+          .whenComplete(
+              (stale, error) -> {
+                if (error != null) {
+                  next.completeExceptionally(error);
+                } else {
+                  next.complete(
+                      Stream.concat(finished.stream(), stale.stream()).distinct().toList());
+                }
+              });
+    }
+
+    sourceCompileDone();
+  }
+
+  // The stale sources ready to write, by source tree in write order. Ready: settled across one tick
+  // (or eager), not held by an open rename, not mid-save, and not failed with no change since. A
+  // tree that writes anything takes its failed sources along: they may have failed only for want
+  // of what this write brings.
+  private Map<ModuleSourceConfig, List<Path>> claimReady(
+      final StaleScan scan, final boolean eager) {
+    final Map<Path, Long> stale = staleMtimes(scan);
+    final Map<Path, Long> current = withoutFailedCompiles(stale, failedCompiles);
+    final Set<Path> ready = eager ? current.keySet() : stableSources(current, pendingStale);
+    pendingStale = current;
+    awaitingSettle = ready.size() < current.size();
+    final Set<Path> held = renameTransaction.memberPaths();
+    final var batches = new LinkedHashMap<ModuleSourceConfig, List<Path>>();
+    for (final var config : compileOrder(scan.staleByModule().keySet())) {
+      final List<Path> treeStale = scan.staleByModule().get(config);
+      final List<Path> claimed = claimStable(treeStale, ready, saving, reacting, held);
+      if (claimed.isEmpty()) {
+        continue;
+      }
+
+      final Set<Path> failedHere =
+          treeStale.stream()
+              .filter(source -> !current.containsKey(source))
+              .collect(Collectors.toUnmodifiableSet());
+      final var batch = new ArrayList<>(claimed);
+      batch.addAll(claimStable(treeStale, failedHere, saving, reacting, held));
+      batches.put(config, List.copyOf(batch));
+    }
+
+    return batches;
   }
 
   // The editor applies a rename's edit and saves its files; until the last save they are not
@@ -3243,9 +3352,9 @@ final class WorkspaceSession {
   }
 
   // Commits a change set the server produced and wrote to disk itself (an engine rename): drops the
-  // classes of deleted and moved-away sources, then compiles the changed files in chained batches.
-  // The server knows the set is complete, so neither the bulk threshold nor the reactor lock the
-  // writer holds defers it. Runs on the worker.
+  // classes of deleted and moved-away sources, then writes the changed files one tree at a time.
+  // The server knows the set is complete, so the reactor lock the writer holds does not defer it.
+  // Runs on the worker.
   CompletableFuture<Void> commitChangeSet(final Set<Path> changed) {
     reconcileDeletedSources();
     final Map<ModuleSourceConfig, List<Path>> byTree =
@@ -3255,16 +3364,22 @@ final class WorkspaceSession {
                 Collectors.groupingBy(
                     Map.Entry::getKey,
                     Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableList())));
-    final List<CompletableFuture<Void>> batches = compileChangedInOrder(byTree, changed);
-    reportRecompile(changed.size(), batches);
-    return CompletableFuture.allOf(batches.toArray(CompletableFuture[]::new));
+    final Set<Path> held = renameTransaction.memberPaths();
+    final var batches = new LinkedHashMap<ModuleSourceConfig, List<Path>>();
+    for (final var config : compileOrder(byTree.keySet())) {
+      batches.put(config, claimStable(byTree.get(config), changed, saving, reacting, held));
+    }
+
+    final CompletableFuture<Void> written = writeInOrder(batches, false);
+    reportRecompile(changed.size(), written);
+    return written;
   }
 
-  // The engine's freshen step, before every MCP query and verify_change: recompile the change set,
-  // but never prompt. If the in-process recompile can't be trusted (build-file sync pending, bulk
-  // change,
-  // or a running build) it returns a DeferReason so the caller falls back to Maven. A source that
-  // failed unchanged since is still reported but not recompiled again. Runs on the worker.
+  // The engine's freshen step, before every MCP query and verify_change: an eager pass, never a
+  // prompt. If an in-process recompile can't be trusted (a build-file sync pending, or a running
+  // build) it returns a DeferReason so the caller falls back to the build. The outcome lists every
+  // stale source, including one that failed unchanged since and so was not recompiled. Runs on
+  // the worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     if (reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
@@ -3276,20 +3391,8 @@ final class WorkspaceSession {
           new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_FILES_PENDING));
     }
 
-    reconcileDeletedSources();
-    final StaleScan scan = scanStaleModules();
-    final List<Path> updated = scan.staleFiles();
-    if (updated.size() > BULK_CHANGE_THRESHOLD) {
-      return CompletableFuture.completedFuture(
-          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BULK_CHANGE));
-    }
-
-    final List<CompletableFuture<Void>> reactions =
-        compileChangedInOrder(
-            scan.staleByModule(),
-            withoutFailedCompiles(staleMtimes(scan), failedCompiles).keySet());
-    return CompletableFuture.allOf(reactions.toArray(CompletableFuture[]::new))
-        .thenApply(done -> new ReconcileOutcome(updated, ReconcileOutcome.DeferReason.NONE));
+    return requestPass(true)
+        .thenApply(stale -> new ReconcileOutcome(stale, ReconcileOutcome.DeferReason.NONE));
   }
 
   // Files to diagnose for verify_change: each changed file plus its same-module callers, by module.
@@ -3401,73 +3504,17 @@ final class WorkspaceSession {
     scanStaleModules();
   }
 
-  // Recompile externally changed sources into the mirror (no Maven); a bulk *untouched* remainder
-  // defers to the sync prompt, while open-and-saved edits always reconcile (see the split below).
-  // eager compiles the stale set now (startup, settled on disk); otherwise a source must hold
-  // its mtime across two ticks, so a file mid-write is left to settle.
-  // Runs even while a build-file sync prompt is pending: such a change gates the classpath, but a
-  // source
-  // edit (a rename) only needs recompiling against the current one — it must not freeze behind it.
-  private List<CompletableFuture<Void>> reconcileChangedSources(final boolean eager) {
-    final StaleScan scan = scanStaleModules();
-    final Map<Path, Long> current = withoutFailedCompiles(staleMtimes(scan), failedCompiles);
-    if (current.isEmpty()) {
-      pendingStale = Map.of();
-      awaitingSettle = false;
-      bulkNoticeShown = false;
-      return List.of();
-    }
-
-    // The active edit surface -- open-and-saved files, which a rename's WorkspaceEdit opens for
-    // every file it touches -- is always reconciled in-process: it is bounded by the open-editor
-    // count and resolves its own mutually-referencing cluster in one batch. Only the untouched
-    // remainder is gated by the bulk threshold, so a standing mtime-stale backlog (a build left the
-    // mirror older than the sources) can no longer disable reconcile for a live edit buried under
-    // it. A bulk remainder still defers to the sync prompt.
-    final Set<Path> openPaths = openSourcePaths();
-    final Map<Boolean, Map<Path, Long>> byOpen =
-        current.entrySet().stream()
-            .collect(
-                Collectors.partitioningBy(
-                    entry -> openPaths.contains(entry.getKey()),
-                    Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
-    final Map<Path, Long> externalStale = byOpen.get(false);
-    final boolean externalBulk = externalStale.size() > BULK_CHANGE_THRESHOLD;
-    if (externalBulk) {
-      noticeBulkChange(scan, externalStale.size());
-    } else {
-      bulkNoticeShown = false;
-    }
-
-    final Map<Path, Long> reconcilable = externalBulk ? byOpen.get(true) : current;
-    final Set<Path> ready =
-        eager ? reconcilable.keySet() : stableSources(reconcilable, pendingStale);
-    pendingStale = current;
-    awaitingSettle = ready.size() < reconcilable.size();
-    if (ready.isEmpty()) {
-      return List.of();
-    }
-
-    final List<CompletableFuture<Void>> reactions =
-        compileChangedInOrder(scan.staleByModule(), ready);
-    reportRecompile(ready.size(), reactions);
-
-    return reactions;
-  }
-
   // A self-clearing $/progress task spanning the in-process recompile, so the editor shows the
-  // catch-up after a saved external change (a rename) and clears it once the mirror is current.
-  // The bulk remainder keeps its own one-shot notice.
-  private void reportRecompile(final int count, final List<CompletableFuture<Void>> reactions) {
-    if (reactions.isEmpty()) {
+  // catch-up after an external change (a branch switch, a rename) and clears it once written.
+  private void reportRecompile(final int count, final CompletableFuture<?> written) {
+    if (count == 0) {
       return;
     }
 
     LOG.fine(() -> "[react] recompiling %d changed file(s)".formatted(count));
     final var progress = progressReporter.open(null, new CompletableFuture<>());
     progress.begin("Lathe: recompiling %d file(s)".formatted(count), 1);
-    CompletableFuture.allOf(reactions.toArray(CompletableFuture[]::new))
-        .whenComplete((ignored, error) -> progress.finish(error));
+    written.whenComplete((ignored, error) -> progress.finish(error));
   }
 
   static Map<Path, Long> staleMtimes(final StaleScan scan) {
@@ -3496,51 +3543,39 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // Trees compile on their own workers in parallel, so each tree's batch waits for the batches of
-  // the trees it compiles against; otherwise it could resolve the old upstream classes, fail, and
-  // wait for a later pass. Independent trees still overlap.
-  private List<CompletableFuture<Void>> compileChangedInOrder(
-      final Map<ModuleSourceConfig, List<Path>> staleByModule, final Set<Path> stable) {
-    final var started = new LinkedHashMap<ModuleSourceConfig, CompletableFuture<Void>>();
-    final Set<Path> held = renameTransaction.memberPaths();
-    for (final var config : compileOrder(staleByModule.keySet())) {
-      final List<Path> batch =
-          claimStable(staleByModule.get(config), stable, saving, reacting, held);
-      if (!batch.isEmpty()) {
-        started.put(config, compileAfter(upstreamBatches(started, config), config, batch));
-      }
-    }
-
-    return List.copyOf(started.values());
-  }
-
-  private List<CompletableFuture<Void>> upstreamBatches(
-      final Map<ModuleSourceConfig, CompletableFuture<Void>> started,
-      final ModuleSourceConfig config) {
-    return started.entrySet().stream()
-        .filter(entry -> moduleGraph.compilesBefore(entry.getKey(), config))
-        .map(Map.Entry::getValue)
-        .toList();
-  }
-
-  // A deferred batch counts as in flight, so the dependents refresh still waits for it.
-  private CompletableFuture<Void> compileAfter(
-      final List<CompletableFuture<Void>> upstream,
-      final ModuleSourceConfig config,
-      final List<Path> batch) {
-    if (upstream.isEmpty()) {
-      return compileChangedBatch(config, batch);
-    }
-
+  // Writes the batches level by level (writeLevels), counting as one source compile in flight
+  // throughout, so the dependents refresh runs once after the last level, not after each tree.
+  private CompletableFuture<Void> writeInOrder(
+      final Map<ModuleSourceConfig, List<Path>> batches, final boolean respectLock) {
     sourceCompilesInFlight++;
-    return CompletableFuture.allOf(upstream.toArray(CompletableFuture[]::new))
-        .thenComposeAsync(
-            ignored -> {
-              final CompletableFuture<Void> done = compileChangedBatch(config, batch);
-              sourceCompileDone();
-              return done;
-            },
-            worker::execute);
+    final List<List<ModuleSourceConfig>> levels =
+        WorkspaceModuleGraph.levels(List.copyOf(batches.keySet()));
+    return writeLevels(new ArrayDeque<>(levels), batches, passGeneration, respectLock)
+        .whenComplete((written, error) -> sourceCompileDone());
+  }
+
+  // Writes one level's trees together and starts the next level once all of them finish, so every
+  // write resolves against the freshly written upstream classes. Stops at a reload (another
+  // generation), and -- for a pass -- before a level while a build holds the reactor lock; what is
+  // left stays stale for the next pass. Completes on the session thread.
+  private CompletableFuture<Void> writeLevels(
+      final Deque<List<ModuleSourceConfig>> levels,
+      final Map<ModuleSourceConfig, List<Path>> batches,
+      final long generation,
+      final boolean respectLock) {
+    if (levels.isEmpty()
+        || generation != passGeneration
+        || (respectLock && reactorBuildInProgress())) {
+      levels.forEach(level -> level.forEach(tree -> batches.get(tree).forEach(reacting::remove)));
+      return CompletableFuture.completedFuture(null);
+    }
+
+    final CompletableFuture<?>[] writes =
+        levels.removeFirst().stream()
+            .map(tree -> compileChangedBatch(tree, batches.get(tree), false))
+            .toArray(CompletableFuture[]::new);
+    return CompletableFuture.allOf(writes)
+        .thenCompose(written -> writeLevels(levels, batches, generation, respectLock));
   }
 
   // Modules upstream-first, and within a module the main tree before the test tree, so every
@@ -3581,12 +3616,16 @@ final class WorkspaceSession {
   }
 
   // One FULL compile over the tree's whole changed set, so mutually referencing files (a sealed
-  // root and a new permitted subtype) resolve inside the batch.
+  // root and a new permitted subtype) resolve inside the batch. Each source's mtime is read with
+  // its content, so an edit landing during the compile is not stamped as written. javac writes
+  // nothing when any source fails, so a failing batch is written once more without the sources that
+  // failed, unless this already is that retry.
   private CompletableFuture<Void> compileChangedBatch(
-      final ModuleSourceConfig config, final List<Path> sources) {
+      final ModuleSourceConfig config, final List<Path> sources, final boolean retry) {
     final var transientSources = new ArrayList<TransientSource>(sources.size());
-    final var readable = new ArrayList<Path>(sources.size());
+    final var mtimes = new LinkedHashMap<Path, Long>();
     for (final var source : sources) {
+      final long mtime = mtimeMillis(source);
       final String content = readSource(source);
       if (content == null) {
         reacting.remove(source);
@@ -3594,14 +3633,13 @@ final class WorkspaceSession {
       }
 
       transientSources.add(new TransientSource(source.toUri().toString(), content));
-      readable.add(source);
+      mtimes.put(source, mtime);
     }
 
     if (transientSources.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
 
-    final List<Path> batch = List.copyOf(readable);
     final var done = new CompletableFuture<Void>();
     sourceCompilesInFlight++;
     workspace
@@ -3610,57 +3648,92 @@ final class WorkspaceSession {
         .whenComplete(
             (written, error) ->
                 worker.execute(
-                    () -> {
-                      try {
-                        afterChangedBatch(config, batch, written, error);
-                      } finally {
-                        sourceCompileDone();
-                        done.complete(null);
-                      }
-                    }));
+                    () ->
+                        afterChangedBatch(config, Map.copyOf(mtimes), written, error, retry)
+                            .whenComplete(
+                                (ignored, failure) -> {
+                                  sourceCompileDone();
+                                  done.complete(null);
+                                })));
     return done;
   }
 
-  private void afterChangedBatch(
+  private CompletableFuture<Void> afterChangedBatch(
       final ModuleSourceConfig config,
-      final List<Path> sources,
-      final Set<String> writtenBinaryNames,
-      final Throwable error) {
-    sources.forEach(reacting::remove);
-    if (error != null || writtenBinaryNames == null) {
+      final Map<Path, Long> mtimes,
+      final BatchWrite written,
+      final Throwable error,
+      final boolean retry) {
+    mtimes.keySet().forEach(reacting::remove);
+    if (error != null || written == null) {
       LOG.log(
           Level.FINE,
           error,
           () ->
               "[react] batch compile failed in %s".formatted(moduleRelForDir(config.moduleDir())));
-      sources.forEach(source -> failedCompiles.put(source, mtimeMillis(source)));
-      return;
+      failedCompiles.putAll(mtimes);
+      return CompletableFuture.completedFuture(null);
     }
 
-    sources.forEach(source -> freshenClassOutputs(config, source, writtenBinaryNames));
+    if (!written.failedUris().isEmpty() && !retry) {
+      final Map<Boolean, List<Path>> byFailure =
+          mtimes.keySet().stream()
+              .collect(
+                  Collectors.partitioningBy(
+                      source -> written.failedUris().contains(source.toUri().toString())));
+      byFailure.get(true).forEach(source -> failedCompiles.put(source, mtimes.get(source)));
+      LOG.fine(
+          () ->
+              "[react] %d of %d file(s) failed in %s, writing the rest"
+                  .formatted(
+                      byFailure.get(true).size(),
+                      mtimes.size(),
+                      moduleRelForDir(config.moduleDir())));
+      final List<Path> rest = byFailure.get(false);
+      rest.forEach(reacting::add);
+      return rest.isEmpty()
+          ? CompletableFuture.completedFuture(null)
+          : compileChangedBatch(config, rest, true);
+    }
+
+    mtimes.forEach(
+        (source, mtime) ->
+            freshenClassOutputs(config, source, written.writtenBinaryNames(), mtime));
     refreshOpenDependents(config, null);
     refreshReactorShard(config);
     LOG.fine(
         () ->
             "[react] recompiled %d file(s) in %s"
-                .formatted(sources.size(), moduleRelForDir(config.moduleDir())));
+                .formatted(mtimes.size(), moduleRelForDir(config.moduleDir())));
+    return CompletableFuture.completedFuture(null);
   }
 
   // Only prune + stamp a source the compile actually emitted a class for. A source that failed to
-  // compile (an ordering error mid-rename emits no bytecode) keeps its old mirror class and stays
-  // unstamped, so a later batch retries it once its dependencies land -- otherwise the stamp would
-  // mark it fresh while its mirror class is stale and dependents keep seeing the old type.
+  // compile keeps its old mirror class and stays unstamped, so a later batch retries it once its
+  // dependencies land -- otherwise the stamp would mark it fresh while its mirror class is stale.
+  // A source that was written may supply what failed ones here or downstream were missing, so they
+  // get another try.
   private void freshenClassOutputs(
-      final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
+      final ModuleSourceConfig config,
+      final Path source,
+      final Set<String> writtenBinaryNames,
+      final long mtime) {
     if (!wroteClassOf(config, source, writtenBinaryNames)) {
-      failedCompiles.put(source, mtimeMillis(source));
+      failedCompiles.put(source, mtime);
       return;
     }
 
-    // Progress may supply what a failed source was missing, so each gets one more attempt.
-    failedCompiles.clear();
+    final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
+    failedCompiles
+        .keySet()
+        .removeIf(
+            failed ->
+                workspace
+                    .moduleSourceFor(failed)
+                    .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
+                    .orElse(true));
     deleteClassOutputs(config, source, writtenBinaryNames);
-    recordCompileStamp(config, source);
+    recordCompileStamp(config, source, mtime);
   }
 
   // Any written class of the source counts (Foo.class, Foo$*.class, or a sibling type), so a file
@@ -3699,25 +3772,6 @@ final class WorkspaceSession {
     } catch (final IOException e) {
       return null;
     }
-  }
-
-  // Too much changed to catch up in-process. A single non-blocking notice (not a repeating modal)
-  // recommends a sync, keeping the editor usable during churn.
-  private void noticeBulkChange(final StaleScan scan, final int changedCount) {
-    if (bulkNoticeShown) {
-      return;
-    }
-
-    bulkNoticeShown = true;
-    LOG.info(
-        () ->
-            "[react] bulk change in %s count=%d — sync recommended"
-                .formatted(moduleRels(scan.modules()), changedCount));
-    client.showMessage(
-        new MessageParams(
-            MessageType.Warning,
-            "Lathe: %d files changed at once — analysis may be stale. Run a Lathe sync to refresh."
-                .formatted(changedCount)));
   }
 
   // The reactor-relative module paths of the stale modules, for the client's -pl selector. Derived
@@ -3898,11 +3952,8 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
-  // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
-  // sync instead of recompiling in-process file by file.
-  private static final int BULK_CHANGE_THRESHOLD = 50;
-  // At most this many open documents share one dependents-refresh analysis task.
-  private static final int OPEN_BATCH_MAX = 50;
+  // At most this many open documents share one analysis task (dependents refresh, sealed widening).
+  private static final int ANALYSIS_BATCH_MAX = 50;
   // Once a rename's first file is saved, this long without another of its files' events commits
   // the saved ones, so an editor that never saves the rest cannot hold the others back.
   private static final long RENAME_IDLE_MS = 10_000;
@@ -3942,11 +3993,11 @@ final class WorkspaceSession {
       }
       case BUILD_FILES_CHANGED -> {
         promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
-        reconcileIfIdle(false);
+        requestPass(false);
       }
       case NO_CHANGE -> {
         if (reconcileDue(lastActivity.elapsedMs(), lastReconcile.elapsedMs(), awaitingSettle)) {
-          reconcileIfIdle(false);
+          requestPass(false);
         }
       }
     }
@@ -4025,6 +4076,7 @@ final class WorkspaceSession {
 
     final var newWorkspace = WorkspaceModuleRegistry.scan(workspaceRoot, newManifest);
     final var old = workspace;
+    passGeneration++; // the configs and workers a running pass writes through are being replaced
     workspace = newWorkspace;
     manifest = newManifest;
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
@@ -4169,7 +4221,7 @@ final class WorkspaceSession {
     }
 
     final List<TransientSource> sources = widenSources(module.config(), snapshot);
-    if (sources.size() < 2 || sources.size() > BULK_CHANGE_THRESHOLD) {
+    if (sources.size() < 2 || sources.size() > ANALYSIS_BATCH_MAX) {
       return;
     }
 
@@ -4298,14 +4350,18 @@ final class WorkspaceSession {
   }
 
   private void afterModuleSave(
-      final CompileResponse result, final ModuleSourceConfig config, final Path savedSource) {
-    freshenClassOutputs(config, savedSource, result.writtenBinaryNames());
+      final CompileResponse result,
+      final ModuleSourceConfig config,
+      final Path savedSource,
+      final long savedMtime) {
+    freshenClassOutputs(config, savedSource, result.writtenBinaryNames(), savedMtime);
     scheduleAstRefresh(result.uri());
     refreshOpenDependents(config, result.uri());
     refreshReactorShard(config);
   }
 
-  private static void recordCompileStamp(final ModuleSourceConfig config, final Path savedSource) {
+  private static void recordCompileStamp(
+      final ModuleSourceConfig config, final Path savedSource, final long mtime) {
     final var root = sourceRootFor(config, savedSource);
     if (root == null || root.equals(config.originalGenSourcesDir())) {
       return;
@@ -4314,7 +4370,7 @@ final class WorkspaceSession {
     final var sw = Stopwatch.start();
     final var rel = root.relativize(savedSource).toString();
     try {
-      CompiledStamps.record(config.moduleDir(), config.sourceTree(), rel, mtimeMillis(savedSource));
+      CompiledStamps.record(config.moduleDir(), config.sourceTree(), rel, mtime);
       LOG.fine(() -> "[stamp] recorded %s %dms".formatted(rel, sw.elapsedMs()));
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[stamp] record failed for %s".formatted(rel));
@@ -4382,7 +4438,7 @@ final class WorkspaceSession {
         () ->
             "[save] batch %d queued file(s) in %s"
                 .formatted(batch.size(), moduleRelForDir(tree.moduleDir())));
-    compileChangedBatch(tree, batch)
+    compileChangedBatch(tree, batch, false)
         .thenRun(
             () -> {
               batch.forEach(this::releaseSaving);
@@ -4392,7 +4448,15 @@ final class WorkspaceSession {
 
   private void sourceCompileDone() {
     sourceCompilesInFlight--;
-    if (sourceCompilesInFlight == 0 && pendingRefresh != null) {
+    if (sourceCompilesInFlight > 0) {
+      return;
+    }
+
+    if (reactorIndexStale) {
+      rebuildReactorIndex();
+    }
+
+    if (pendingRefresh != null) {
       runPendingRefresh();
     }
   }
@@ -4424,9 +4488,9 @@ final class WorkspaceSession {
 
     byTree.forEach(
         (config, uris) -> {
-          for (int from = 0; from < uris.size(); from += OPEN_BATCH_MAX) {
+          for (int from = 0; from < uris.size(); from += ANALYSIS_BATCH_MAX) {
             refreshAsBatch(
-                config, uris.subList(from, Math.min(from + OPEN_BATCH_MAX, uris.size())));
+                config, uris.subList(from, Math.min(from + ANALYSIS_BATCH_MAX, uris.size())));
           }
         });
   }

@@ -123,7 +123,7 @@ reused):
 **Reliability and further work:**
 
 - [One Write Pass: Simplifying Recompilation](planned/lathe-recompile-simplification.md) — every trigger (save,
-  external change, rename commit, MCP query, startup) requests one pass that writes stale files one source tree at a time
+  external change, rename commit, MCP query, startup) requests one pass that writes stale files level by level in dependency order
   and re-analyzes open dependents once; removes the 50-file bulk threshold, the per-path bookkeeping, and the
   error-code widening (live analysis includes unsaved siblings); MCP notes say "fix the code" or "sync required"
   (planned, awaiting the build-agnostic-core merge).
