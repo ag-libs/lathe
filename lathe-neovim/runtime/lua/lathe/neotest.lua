@@ -362,17 +362,42 @@ function M.root(dir)
   return vim.fs.root(dir, ".lathe")
 end
 
-function M.filter_dir(name, _rel_path, _root)
-  return name ~= "target" and name ~= ".lathe" and name ~= ".git"
+-- Each module's top-level build directory, root-relative, from workspace.json's output map: the
+-- front-end lists what its build writes, so `app/target/classes` (module "app") prunes `app/target`
+-- and a Gradle `lib/build/classes/java/main` prunes `lib/build`. Read once per root.
+local build_dirs_cache = {}
+
+local function read_build_dirs(root)
+  local manifest = require("lathe.json").read(vim.fs.joinpath(root, ".lathe", "workspace.json"))
+  local dirs = {}
+  for _, output in ipairs(manifest and manifest.outputs or {}) do
+    local prefix = (output.module or "") == "" and "" or (output.module .. "/")
+    local build_dir = vim.startswith(output.path, prefix) and output.path:sub(#prefix + 1):match("^[^/]+")
+    if build_dir then
+      dirs[prefix .. build_dir] = true
+    end
+  end
+
+  return dirs
 end
 
--- Surefire's own default test-file include patterns (what Maven uses whenever a project
--- doesn't override <includes> in its maven-surefire-plugin config): Test*.java,
--- *Test.java, *Tests.java, *TestCase.java. Hardcoded here as a reasonable default rather
--- than guessed at -- could be improved later by reading each module's real, possibly
--- project-overridden <includes> at lathe:sync time (the same way runnerClasspath already
--- reads real reactor state instead of assuming one) and recording it in workspace.json for
--- this adapter to read, instead of assuming every project uses Surefire's defaults.
+local function build_dirs(root)
+  build_dirs_cache[root] = build_dirs_cache[root] or read_build_dirs(root)
+  return build_dirs_cache[root]
+end
+
+function M.filter_dir(name, rel_path, root)
+  if name == ".lathe" or name == ".git" then
+    return false
+  end
+
+  return not build_dirs(root)[rel_path]
+end
+
+-- The common test-class naming convention: Test*.java, *Test.java, *Tests.java,
+-- *TestCase.java. These are Surefire's default includes, and Gradle projects follow the same
+-- naming in practice, so it is a pre-filter, not a build rule. A project that overrides its test
+-- includes would need the front-end to record them in workspace.json for this adapter to read.
 function M.is_test_file(file_path)
   if not file_path:match("%.java$") then
     return false

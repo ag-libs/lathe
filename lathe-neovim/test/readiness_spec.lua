@@ -76,6 +76,12 @@ spec.check(
   notes[2] and notes[2]:find("synced", 1, true) ~= nil,
   true
 )
+spec.check(
+  "configured, no workspace: message names each front-end's first command",
+  notes[2] and notes[2]:find("mvn process-test-classes", 1, true) ~= nil
+    and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) ~= nil,
+  true
+)
 
 -- Fires once per session after configuring, too.
 lathe.warn_if_not_ready(vim.fn.bufadd(bare .. "/src/main/java/D.java"))

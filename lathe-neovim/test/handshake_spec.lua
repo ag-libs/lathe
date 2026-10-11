@@ -30,6 +30,11 @@ spec.check(
   notes[#notes] and notes[#notes]:find("lathe-maven-extension", 1, true) ~= nil,
   true
 )
+spec.check(
+  "absent: message names the Lathe build plugin generically",
+  notes[#notes] and notes[#notes]:find("Lathe build plugin", 1, true) ~= nil,
+  true
+)
 
 -- Older server than client: same "server is older" nudge.
 lathe.check_protocol(client_protocol - 1)

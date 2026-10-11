@@ -1,16 +1,6 @@
 local M = {}
 
-local function decode(path)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-
-  local content = f:read("*a")
-  f:close()
-  local ok, decoded = pcall(vim.json.decode, content)
-  return (ok and type(decoded) == "table") and decoded or nil
-end
+local decode = require("lathe.json").read
 
 -- Reads the workspace style file under an already-resolved root (this module never does workspace
 -- discovery). Committed lathe-style.json wins over generated .lathe/style.json section by section,

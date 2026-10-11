@@ -563,13 +563,39 @@ do
   vim.fn.delete(work, "rf")
 end
 
--- filter_dir() prunes build output and VCS/workspace-metadata directories
--- from neotest's workspace-wide discovery walk.
+-- filter_dir() prunes each module's build directory, as listed by workspace.json's output map, plus
+-- VCS/workspace-metadata directories, from neotest's workspace-wide discovery walk.
 do
-  spec.check("filter_dir excludes target", adapter.filter_dir("target", "app/target", "/root"), false)
-  spec.check("filter_dir excludes .lathe", adapter.filter_dir(".lathe", ".lathe", "/root"), false)
-  spec.check("filter_dir excludes .git", adapter.filter_dir(".git", ".git", "/root"), false)
-  spec.check("filter_dir keeps src", adapter.filter_dir("src", "app/src", "/root"), true)
+  local root = vim.fn.tempname()
+  vim.fn.mkdir(root .. "/.lathe", "p")
+  vim.fn.writefile({
+    vim.json.encode({
+      outputs = {
+        { path = "app/target/classes", module = "app", tree = "classes" },
+        { path = "app/target/app-1.0.jar", module = "app", tree = "classes" },
+        { path = "out/classes", module = "", tree = "classes" },
+        { path = "lib/build/classes/java/main", module = "lib", tree = "classes" },
+      },
+    }),
+  }, root .. "/.lathe/workspace.json")
+  local bare = vim.fn.tempname()
+  vim.fn.mkdir(bare, "p")
+
+  spec.check("filter_dir prunes a Maven build dir", adapter.filter_dir("target", "app/target", root), false)
+  spec.check("filter_dir prunes a root module's custom build dir", adapter.filter_dir("out", "out", root), false)
+  spec.check("filter_dir prunes a Gradle build dir", adapter.filter_dir("build", "lib/build", root), false)
+  spec.check(
+    "filter_dir keeps a source package named target",
+    adapter.filter_dir("target", "app/src/main/java/com/x/target", root),
+    true
+  )
+  spec.check("filter_dir keeps src", adapter.filter_dir("src", "app/src", root), true)
+  spec.check("filter_dir excludes .lathe", adapter.filter_dir(".lathe", ".lathe", root), false)
+  spec.check("filter_dir excludes .git", adapter.filter_dir(".git", ".git", root), false)
+  spec.check("filter_dir without a manifest keeps target", adapter.filter_dir("target", "app/target", bare), true)
+
+  vim.fn.delete(root, "rf")
+  vim.fn.delete(bare, "rf")
 end
 
 -- build_spec with strategy == "dap" (neotest's summary `d`/`D` and run.run({strategy="dap"})) must

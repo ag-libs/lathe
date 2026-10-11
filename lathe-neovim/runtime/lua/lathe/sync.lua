@@ -10,6 +10,11 @@
 
 local M = {}
 
+-- Before the first sync there is no script to run, so a setup or recovery message names each
+-- build front-end's first command (mirrors the server's SETUP_REMEDIATION).
+M.SETUP_HINT = 'for Maven, add the lathe-maven-extension and run `mvn process-test-classes`; '
+  .. 'for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`.'
+
 -- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
 local running = {}
 
@@ -167,8 +172,8 @@ function M.run(root, capture_tests, modules)
   local script = vim.fs.joinpath(root, SCRIPT)
   if vim.fn.executable(script) ~= 1 then
     vim.notify(
-      'Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update '
-        .. 'lathe-maven-extension and run `mvn process-test-classes` once.',
+      'Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the '
+        .. 'Lathe build plugin and sync once: ' .. M.SETUP_HINT,
       vim.log.levels.WARN
     )
     return

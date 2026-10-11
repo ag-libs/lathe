@@ -3,8 +3,8 @@
 -- Installation: copy this file (or symlink it) into your Neovim config and call:
 --   require('lathe').setup()
 --
--- The launcher is read from <root>/.lathe/lathe-launcher.sh, a symlink `mvn process-test-classes`
--- links at the server version this workspace pins (when the Lathe Maven plugin is present).
+-- The launcher is read from <root>/.lathe/lathe-launcher.sh, a symlink the build's Lathe sync
+-- links at the server version this workspace pins.
 --
 -- For local server development, set LATHE_SERVER_DIR to a built server version directory (e.g.
 -- ~/.cache/lathe/servers/0.1.0-SNAPSHOT) to run that launcher instead of the workspace-pinned one,
@@ -139,7 +139,8 @@ function M.start(bufnr)
   local launcher = launcher_path(root)
   if vim.fn.executable(launcher) ~= 1 then
     vim.notify(
-      'Lathe: launcher not found at ' .. launcher .. '; run mvn process-test-classes.',
+      'Lathe: launcher not found at ' .. launcher .. '; sync the workspace: '
+        .. require('lathe.sync').SETUP_HINT,
       vim.log.levels.ERROR,
       { title = 'Lathe' }
     )
@@ -186,11 +187,12 @@ function M.warn_if_not_ready(bufnr)
   if not M._configured then
     msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
   elseif root == nil then
-    msg = 'Lathe: no `.lathe/` workspace -- the Lathe Maven plugin is not configured, or the project '
-      .. 'is not synced. Run `mvn process-test-classes` (then `:LatheSync` refreshes it).'
+    msg = 'Lathe: no `.lathe/` workspace -- Lathe is not set up for this project, or it is not '
+      .. 'synced yet: ' .. require('lathe.sync').SETUP_HINT .. ' Then `:LatheSync` refreshes it.'
   else
     msg = 'Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. '
-      .. 'Set lathe-maven-extension to 0.1.16 or later and run `mvn process-test-classes`.'
+      .. 'Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: '
+      .. require('lathe.sync').SETUP_HINT
   end
 
   vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
@@ -236,7 +238,8 @@ function M.check_protocol(server_protocol)
 
   local msg
   if type(server_protocol) ~= 'number' or server_protocol < client_protocol then
-    msg = 'Lathe: server is older than this client -- bump the `lathe-maven-extension` version in your build and rebuild.'
+    msg = 'Lathe: server is older than this client -- update the Lathe build plugin in your build '
+      .. '(Maven: the `lathe-maven-extension` version) and sync again.'
   else
     msg = 'Lathe: client is older than this server -- update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull).'
   end
