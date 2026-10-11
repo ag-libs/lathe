@@ -4,6 +4,9 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -160,20 +163,61 @@ class LatheEngineTest {
   }
 
   @Test
-  void staleModules_moduleNotYetSynced_reportsModule() throws Exception {
-    // Source with no compile stamp (never built) counts as stale.
-    TestCompiler.writeModuleSource(
-        tmp, "com/example/Sample.java", "package com.example; class Sample {}");
+  void notes_agentEditDoesNotCompile_notCompiledWithItsError_noSyncSuggested_untilFixed()
+      throws Exception {
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
     engine = new LatheEngine(tmp);
+    engine.diagnostics(source);
+    assertThat(engine.notes(List.of(source)))
+        .isEqualTo(new LatheNotes(List.of(), List.of(), false));
 
-    assertThat(engine.staleModules()).isNotEmpty();
+    Files.writeString(source, "package com.example; class Sample { Missing m; }");
+    engine.diagnostics(source);
+    final LatheNotes broken = engine.notes(List.of(source));
+    assertThat(broken.notCompiled())
+        .singleElement()
+        .asString()
+        .startsWith("module/src/main/java/com/example/Sample.java:1: ")
+        .contains("cannot find symbol");
+    assertThat(broken.syncRequired()).as("code to fix, not a sync").isEmpty();
+
+    Files.writeString(source, "package com.example; class Sample { int m; }");
+    engine.diagnostics(source);
+    assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
   }
 
   @Test
-  void staleModules_noConfiguredModules_returnsEmpty() {
+  void notes_fileInNoSyncedModule_syncRequiredWithTheCommand() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/Sample.java", "package com.example; class Sample {}");
+    final Path unsynced =
+        TestCompiler.writeAt(
+            tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
+            "package com.example; class Fresh {}",
+            1_000L);
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.staleModules()).isEmpty();
+    assertThat(engine.notes(List.of(unsynced)).syncRequired())
+        .containsExactly(
+            "newmodule/src/main/java/com/example/Fresh.java is in no synced module — run `.lathe/lathe-sync.sh`");
+  }
+
+  @Test
+  void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Json.write(
+        new WorkspaceManifestData(
+            "0", tmp.toString(), null, List.of(), null, List.of(), List.of(), List.of(), List.of()),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of()).syncRequired())
+        .singleElement()
+        .asString()
+        .contains("another Lathe version")
+        .contains("`.lathe/lathe-sync.sh`");
   }
 
   @Test

@@ -254,10 +254,10 @@ Steps 1–3 change no user-visible behavior except the branch-switch row above; 
 Before answering, every MCP tool requests a pass and waits for it (above), so the agent's own edits are compiled first, however many.
 Whatever is still not current is reported as one of two notes, replacing today's single `Stale: … run a sync`, which suggested a sync even when only the agent's code was broken:
 
-- **Not compiled** — files whose write failed and that have not changed since: `Not compiled: Foo.java:12 cannot find symbol Bar — fix the code; cross-module answers use Foo's last good classes`.
+- **Not compiled** — files whose write failed and that have not changed since, each with its first error (kept with the failure): `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol — fix the code; cross-module answers use their last good classes.`
   No sync is suggested; the next edit is retried automatically.
 - **Sync required** — only what the server cannot do itself, with the reason and the exact command:
-  a changed build file awaiting a sync (`BUILD_FILES_PENDING`: `build files changed — run .lathe/lathe-sync.sh`), a file in no synced module (`<module> is not synced — run .lathe/lathe-sync.sh <module>`), or a `.lathe/` written by another Lathe version (`WorkspaceManifest.schemaMismatch`: `.lathe was written by Lathe X — run .lathe/lathe-sync.sh`).
+  a changed build file awaiting a sync (`BUILD_FILES_PENDING`: `build files changed — run .lathe/lathe-sync.sh`), a queried file in no synced module (`<file> is in no synced module — run .lathe/lathe-sync.sh`; the full sync, as the server cannot name a module it has never synced without the build tool), or a `.lathe/` written by another Lathe version (`WorkspaceManifest.schemaMismatch`: `.lathe was written by Lathe X — run .lathe/lathe-sync.sh`).
 
 A running reactor build gets neither: the note says the answer reflects the mirror before the build and to re-query when it ends.
 The server does not run a sync itself: it is a Maven build the agent should see and own, like every other build it runs.

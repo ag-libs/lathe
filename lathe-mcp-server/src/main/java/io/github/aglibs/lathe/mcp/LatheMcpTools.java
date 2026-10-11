@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
+import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
@@ -27,10 +28,12 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.Diagnostic;
 
@@ -433,7 +436,7 @@ final class LatheMcpTools {
     return guarded(
         "get_diagnostics",
         file,
-        () -> diagnosticsResult(file, engine.diagnostics(file), engine.staleModules()));
+        () -> diagnosticsResult(file, engine.diagnostics(file), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleDefinition(
@@ -442,7 +445,7 @@ final class LatheMcpTools {
         "get_definition",
         request,
         (file, line, column) ->
-            definitionResult(engine.definition(file, line, column), engine.staleModules()));
+            definitionResult(engine.definition(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleReferences(
@@ -452,7 +455,8 @@ final class LatheMcpTools {
         request,
         (file, line, column) ->
             referencesResult(
-                engine.references(file, line, column, maxResults(request)), engine.staleModules()));
+                engine.references(file, line, column, maxResults(request)),
+                engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleFindImplementations(
@@ -463,7 +467,7 @@ final class LatheMcpTools {
         (file, line, column) ->
             implementationsResult(
                 engine.findImplementations(file, line, column, maxResults(request)),
-                engine.staleModules()));
+                engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleRename(
@@ -477,7 +481,7 @@ final class LatheMcpTools {
         "rename_symbol",
         request,
         (file, line, column) ->
-            renameResult(engine.rename(file, line, column, newName), engine.staleModules()));
+            renameResult(engine.rename(file, line, column, newName), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleRunTest(
@@ -500,7 +504,7 @@ final class LatheMcpTools {
     return guarded(
         "run_test",
         file,
-        () -> testRunResult(engine.runTest(file, scope, method), engine.staleModules()));
+        () -> testRunResult(engine.runTest(file, scope, method), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleAnalyzeChange(
@@ -509,7 +513,7 @@ final class LatheMcpTools {
         "analyze_change",
         request,
         (file, line, column) ->
-            analyzeResult(engine.analyzeChange(file, line, column), engine.staleModules()));
+            analyzeResult(engine.analyzeChange(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleVerifyChange(
@@ -542,7 +546,7 @@ final class LatheMcpTools {
         (file, line, column) ->
             callHierarchyResult(
                 engine.callHierarchy(file, line, column, direction, maxResults(request)),
-                engine.staleModules()));
+                engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleDescribe(
@@ -551,7 +555,7 @@ final class LatheMcpTools {
         "describe_symbol",
         request,
         (file, line, column) ->
-            describeResult(engine.describe(file, line, column), engine.staleModules()));
+            describeResult(engine.describe(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleSearchSymbols(
@@ -566,7 +570,7 @@ final class LatheMcpTools {
         query,
         () ->
             searchResult(
-                query, engine.searchSymbols(query, maxResults(request)), engine.staleModules()));
+                query, engine.searchSymbols(query, maxResults(request)), engine.notes(List.of())));
   }
 
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
@@ -618,24 +622,24 @@ final class LatheMcpTools {
           + " same-named unrelated symbols were left untouched.";
 
   private static CallToolResult referencesResult(
-      final LatheReferences refs, final List<String> stale) {
+      final LatheReferences refs, final LatheNotes notes) {
     return locationListResult(
         "reference",
         refs.total(),
         refs.truncated(),
         refs.references(),
-        stale,
+        notes,
         REFERENCES_AUTHORITY);
   }
 
   private static CallToolResult implementationsResult(
-      final LatheImplementations impls, final List<String> stale) {
+      final LatheImplementations impls, final LatheNotes notes) {
     return locationListResult(
         "implementation",
         impls.total(),
         impls.truncated(),
         impls.implementations(),
-        stale,
+        notes,
         IMPLEMENTATIONS_AUTHORITY);
   }
 
@@ -646,7 +650,7 @@ final class LatheMcpTools {
       final int total,
       final boolean truncated,
       final List<LatheLocation> locations,
-      final List<String> stale,
+      final LatheNotes notes,
       final String authority) {
     final List<Map<String, Object>> items =
         locations.stream().map(LatheMcpTools::locationMap).toList();
@@ -662,15 +666,15 @@ final class LatheMcpTools {
         text,
         Map.<String, Object>of(
             "total", total, "truncated", truncated, "%ss".formatted(noun), items),
-        stale);
+        notes);
   }
 
-  private static CallToolResult renameResult(final LatheRename rename, final List<String> stale) {
+  private static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
       return result(
           "No references to rename.",
           Map.<String, Object>of("newName", rename.newName(), "totalEdits", 0, "files", List.of()),
-          stale);
+          notes);
     }
 
     final List<Map<String, Object>> items =
@@ -689,11 +693,11 @@ final class LatheMcpTools {
         text,
         Map.<String, Object>of(
             "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
-        stale);
+        notes);
   }
 
   private static CallToolResult callHierarchyResult(
-      final LatheCallHierarchy ch, final List<String> stale) {
+      final LatheCallHierarchy ch, final LatheNotes notes) {
     final String noun = ch.incoming() ? "caller" : "callee";
     final String arrow = ch.incoming() ? "←" : "→";
     final String header =
@@ -716,16 +720,16 @@ final class LatheMcpTools {
             "total", ch.total(),
             "truncated", ch.truncated(),
             "calls", ch.calls().stream().map(LatheMcpTools::callMap).toList()),
-        stale);
+        notes);
   }
 
-  private static CallToolResult describeResult(final String markup, final List<String> stale) {
+  private static CallToolResult describeResult(final String markup, final LatheNotes notes) {
     final String text = markup.isBlank() ? "No symbol information at that position." : markup;
-    return result(text, Map.<String, Object>of("markup", markup), stale);
+    return result(text, Map.<String, Object>of("markup", markup), notes);
   }
 
   private static CallToolResult searchResult(
-      final String query, final List<LatheSymbol> symbols, final List<String> stale) {
+      final String query, final List<LatheSymbol> symbols, final LatheNotes notes) {
     final String text =
         symbols.isEmpty()
             ? "No symbols matching '%s'.".formatted(query)
@@ -741,7 +745,7 @@ final class LatheMcpTools {
             "query", query,
             "total", symbols.size(),
             "symbols", symbols.stream().map(LatheMcpTools::symbolMap).toList()),
-        stale);
+        notes);
   }
 
   private static String symbolLine(final LatheSymbol symbol) {
@@ -776,12 +780,12 @@ final class LatheMcpTools {
         "snippet", loc.snippet());
   }
 
-  private static CallToolResult testRunResult(final LatheTestRun run, final List<String> stale) {
+  private static CallToolResult testRunResult(final LatheTestRun run, final LatheNotes notes) {
     if (!run.launched()) {
       return result(
           "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())),
           Map.<String, Object>of("launched", false, "blockedReasons", run.blockedReasons()),
-          stale);
+          notes);
     }
 
     final String header =
@@ -805,7 +809,7 @@ final class LatheMcpTools {
             "failed", run.failed(),
             "skipped", run.skipped(),
             "failures", run.failures().stream().map(LatheMcpTools::testFailureMap).toList()),
-        stale);
+        notes);
   }
 
   private static String testFailureLine(final LatheTestFailure f) {
@@ -817,7 +821,7 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult analyzeResult(
-      final LatheChangeImpact impact, final List<String> stale) {
+      final LatheChangeImpact impact, final LatheNotes notes) {
     final String overrides =
         impact.overrideFamily().isEmpty()
             ? "none"
@@ -849,12 +853,15 @@ final class LatheMcpTools {
             "relevantTests", impact.relevantTests(),
             "overrideFamily",
                 impact.overrideFamily().stream().map(LatheMcpTools::locationMap).toList()),
-        stale);
+        notes);
   }
 
   private static String joinOrNone(final List<String> items) {
     return items.isEmpty() ? "none" : String.join(", ", items);
   }
+
+  // verify_change reports its own deferral and diagnostics.
+  private static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), false);
 
   private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {
     if (verify.deferral() != null) {
@@ -865,7 +872,7 @@ final class LatheMcpTools {
           text,
           Map.<String, Object>of(
               "deferred", verify.deferral(), "suggestedSync", verify.suggestedSync()),
-          List.of());
+          NO_NOTES);
     }
 
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
@@ -874,7 +881,7 @@ final class LatheMcpTools {
             ? "No new diagnostics — the changed files compile cleanly."
             : "%d diagnostic(s) after recompile:%n%s"
                 .formatted(total, moduleDiagnosticsLines(verify.perModule()));
-    return result(head + crossModuleNote(verify), verifyStructured(verify, total), List.of());
+    return result(head + crossModuleNote(verify), verifyStructured(verify, total), NO_NOTES);
   }
 
   private static String crossModuleNote(final LatheVerifyChange verify) {
@@ -935,7 +942,7 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult diagnosticsResult(
-      final Path file, final List<Diagnostic> diagnostics, final List<String> stale) {
+      final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
     final List<Map<String, Object>> items =
         diagnostics.stream().map(LatheMcpTools::diagnosticMap).toList();
     final String text =
@@ -949,15 +956,15 @@ final class LatheMcpTools {
                         .map(LatheMcpTools::diagnosticLine)
                         .collect(Collectors.joining(System.lineSeparator())));
     return result(
-        text, Map.<String, Object>of("file", file.toString(), "diagnostics", items), stale);
+        text, Map.<String, Object>of("file", file.toString(), "diagnostics", items), notes);
   }
 
   private static CallToolResult definitionResult(
-      final List<LatheLocation> targets, final List<String> stale) {
+      final List<LatheLocation> targets, final LatheNotes notes) {
     final List<Map<String, Object>> items =
         targets.stream().map(LatheMcpTools::locationMap).toList();
     final String text = targets.isEmpty() ? "No definition found." : locationLines(targets);
-    return result(text, Map.<String, Object>of("targets", items), stale);
+    return result(text, Map.<String, Object>of("targets", items), notes);
   }
 
   private static String locationLines(final List<LatheLocation> locations) {
@@ -971,13 +978,28 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult result(
-      final String text, final Map<String, Object> structured, final List<String> stale) {
+      final String text, final Map<String, Object> structured, final LatheNotes notes) {
     final String body =
-        stale.isEmpty()
-            ? text
-            : "%s%n%n%s"
-                .formatted(text, LatheLayout.STALE_REMEDIATION.formatted(String.join(", ", stale)));
+        Stream.concat(Stream.of(text), noteLines(notes))
+            .collect(Collectors.joining(System.lineSeparator().repeat(2)));
     return CallToolResult.builder().addTextContent(body).structuredContent(structured).build();
+  }
+
+  // What an answer cannot vouch for: code the agent must fix (no sync helps), what only a sync can
+  // fix, and a build running meanwhile.
+  static Stream<String> noteLines(final LatheNotes notes) {
+    return Stream.of(
+            notes.notCompiled().isEmpty()
+                ? null
+                : "Not compiled: %s — fix the code; cross-module answers use their last good classes."
+                    .formatted(String.join("; ", notes.notCompiled())),
+            notes.syncRequired().isEmpty()
+                ? null
+                : "Sync required: %s".formatted(String.join("; ", notes.syncRequired())),
+            notes.buildInProgress()
+                ? "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends."
+                : null)
+        .filter(Objects::nonNull);
   }
 
   private static Map<String, Object> diagnosticMap(final Diagnostic d) {

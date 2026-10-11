@@ -166,7 +166,12 @@ class WorkspaceSessionTest {
     final var edited = sourceRoot.resolve("com/example/Edited.java");
     final var fresh = sourceRoot.resolve("com/example/Fresh.java");
     final Map<Path, Long> stale = Map.of(broken, 100L, edited, 200L, fresh, 300L);
-    final Map<Path, Long> failed = Map.of(broken, 100L, edited, 150L);
+    final Map<Path, WorkspaceSession.FailedWrite> failed =
+        Map.of(
+            broken,
+            new WorkspaceSession.FailedWrite(100L, "1: error"),
+            edited,
+            new WorkspaceSession.FailedWrite(150L, "1: error"));
 
     assertThat(WorkspaceSession.withoutFailedCompiles(stale, failed))
         .containsOnlyKeys(edited, fresh);

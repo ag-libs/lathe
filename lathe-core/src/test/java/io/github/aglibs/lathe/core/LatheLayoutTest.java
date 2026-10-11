@@ -37,7 +37,7 @@ class LatheLayoutTest {
   void syncRemediations_syncedWorkspaceNamesScript_firstSyncNamesBuildCommand() {
     assertThat(LatheLayout.scopedSyncCommand(List.of("app", "core")))
         .isEqualTo(".lathe/lathe-sync.sh app core");
-    assertThat(LatheLayout.STALE_REMEDIATION).contains("`.lathe/lathe-sync.sh`");
+    assertThat(LatheLayout.SCHEMA_REMEDIATION).contains("`.lathe/lathe-sync.sh`");
     assertThat(LatheLayout.captureTestsCommand("app"))
         .isEqualTo(".lathe/lathe-sync.sh --tests app");
     // No script exists before the first sync, so setup names each front-end's first command.

@@ -122,8 +122,8 @@ class McpSmokeTest {
           .contains("Main.java")
           .doesNotContain("\"isError\":true");
       // The rename compiles the files it changed before returning, so its own result is current
-      // and carries no freshness advisory.
-      assertThat(response).doesNotContain("Stale:");
+      // and carries no note.
+      assertThat(response).doesNotContain("Not compiled:").doesNotContain("Sync required:");
       assertThat(Files.readString(stringUtils)).contains("String upperCase(");
       assertThat(Files.readString(main)).contains("StringUtils.upperCase(");
     } finally {

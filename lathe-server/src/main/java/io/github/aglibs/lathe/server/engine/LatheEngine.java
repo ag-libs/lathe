@@ -219,6 +219,7 @@ public final class LatheEngine {
    * maxResults}.
    */
   public List<LatheSymbol> searchSymbols(final String query, final int maxResults) {
+    await(service.reconcileForVerify()); // so types the agent just wrote are found
     final List<? extends SymbolInformation> symbols = await(service.workspaceSymbolFuture(query));
     return symbols.stream().limit(maxResults).map(this::toLatheSymbol).toList();
   }
@@ -304,9 +305,6 @@ public final class LatheEngine {
     } finally {
       IOUtil.unchecked(() -> LatheLock.release(LatheLayout.reactorLockFile(latheDir)));
     }
-
-    // So this rename's stale-module advisory reflects the commit, without the 2s scan lag.
-    await(service.refreshStaleModulesFuture());
   }
 
   private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
@@ -316,9 +314,12 @@ public final class LatheEngine {
     IOUtil.unchecked(() -> Files.writeString(path, updated));
   }
 
-  /** Reactor-relative paths of modules whose source is newer than their compiled classes. */
-  public List<String> staleModules() {
-    return await(service.staleModulesFuture());
+  /**
+   * What an answer about {@code files} cannot vouch for: files whose write failed (fix the code),
+   * what only a sync can fix, and a running build. Read after the tool's own write pass.
+   */
+  public LatheNotes notes(final List<Path> files) {
+    return await(service.notesFuture(files));
   }
 
   /**
@@ -493,8 +494,8 @@ public final class LatheEngine {
 
   // An agent edits files with its own tools, outside the editor's change events, and queries right
   // after, before the idle reconcile tick has caught up: freshen the mirror first so cross-file
-  // answers see those edits. A deferral (POM sync, bulk change, running build) answers from the
-  // current mirror, which staleModules reports.
+  // answers see those edits. What the pass could not write (code that does not compile, a pending
+  // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
     await(service.reconcileForVerify());
     final var uri = file.toUri().toString();

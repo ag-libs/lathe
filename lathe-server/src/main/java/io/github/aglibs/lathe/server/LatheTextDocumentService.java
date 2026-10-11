@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -581,16 +582,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
-  public CompletableFuture<List<String>> staleModulesFuture() {
-    return worker.submit(() -> session.staleModules());
-  }
-
-  public CompletableFuture<Void> refreshStaleModulesFuture() {
-    return worker.submit(
-        () -> {
-          session.refreshStaleScan();
-          return null;
-        });
+  /** What an answer about {@code files} cannot vouch for, after the last write pass. */
+  public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
+    return worker.submit(() -> session.notes(files));
   }
 
   public CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(

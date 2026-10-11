@@ -34,7 +34,7 @@ public final class LatheMcpServer {
   // Routing guidance injected into the agent's context (Claude Code reads server instructions).
   // Dispatch-first and kept well under the ~2KB the client truncates at. The tool descriptions
   // repeat the key cues so they still steer clients that drop instructions (e.g. claude.ai web).
-  private static final String INSTRUCTIONS =
+  static final String INSTRUCTIONS =
       """
       Lathe provides javac-accurate, cross-module code intelligence for this multi-module Java build \
       — precise where text search is ambiguous. Choose by task:
@@ -61,8 +61,11 @@ public final class LatheMcpServer {
       replays just that against the compiled classpath, no full build; prefer it over the build's \
       own test command for a single target.
 
-      A "Stale:" note on a result means a module's source is newer than its compiled classes; run \
-      `%s` to refresh, then re-query."""
+      Every tool first compiles the files you changed, so answers reflect your edits. A result may \
+      end with notes: "Not compiled:" lists files whose code does not compile, with the error -- fix \
+      the code, no sync helps; "Sync required:" names what only a sync fixes (changed build files, \
+      a module never synced) with the exact command to run, such as `%s`; "A build is running" \
+      means re-query once it ends."""
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
   private LatheMcpServer() {}

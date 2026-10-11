@@ -86,12 +86,6 @@ public final class LatheLayout {
               Maven.SYNC_GOAL,
               LATHE_DIR);
 
-  // A non-editor client (the MCP agent) gets no interactive sync prompt, so a tool result carries
-  // this instead. The remaining %s is the stale-module list, filled at use.
-  public static final String STALE_REMEDIATION =
-      "Stale: module(s) %%s have source newer than their compiled classes, so cross-module results may be out of date. Run `%s` to refresh Lathe's classes."
-          .formatted(SYNC_SCRIPT_COMMAND);
-
   // The remaining %s pair is the found and expected SCHEMA_VERSION.
   public static final String SCHEMA_REMEDIATION =
       "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."

@@ -46,6 +46,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DapHost;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
+import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
@@ -108,6 +109,7 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -181,14 +183,14 @@ final class WorkspaceSession {
   // in-process
   // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
   private Map<Path, Long> pendingStale = Map.of();
-  // Not !pendingStale.isEmpty(): a standing bulk backlog would keep that true and defeat back-off.
+  // Not !pendingStale.isEmpty(): a standing backlog would keep that true and defeat back-off.
   private boolean awaitingSettle;
   private Stopwatch lastActivity = Stopwatch.start();
   private Stopwatch lastReconcile = Stopwatch.start();
-  // Sources whose last compile emitted no class (a compile error), keyed to the mtime compiled.
-  // Not retried alone until edited; they join their tree's next write, and a write upstream lets
-  // them try again.
-  private final Map<Path, Long> failedCompiles = new HashMap<>();
+  // Sources whose last compile emitted no class (a compile error), with the mtime compiled and the
+  // first error. Not retried alone until edited; they join their tree's next write, and a write
+  // upstream lets them try again.
+  private final Map<Path, FailedWrite> failedCompiles = new HashMap<>();
   // The write pass: one at a time. A request while one runs is answered by the next pass, started
   // when this one ends; eager if any request for it was. A reload bumps the generation, so a pass
   // started before it stops writing.
@@ -221,9 +223,6 @@ final class WorkspaceSession {
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
-  // MCP has no push into the agent, so a tool result reads this cached scan instead of a prompt.
-  // Volatile: written on the worker, read from request threads.
-  private volatile List<String> cachedStaleModules = List.of();
   private final DocumentRegistry docs = new DocumentRegistry();
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
@@ -3531,20 +3530,11 @@ final class WorkspaceSession {
     final var sw = Stopwatch.start();
     final List<ModuleSourceConfig> configs = workspace.allConfigs();
     final StaleScan scan = staleModules(configs);
-    cachedStaleModules = moduleRels(scan.modules());
     LOG.fine(
         () ->
             "[stale] scanned %d source trees %dms stale=%d"
                 .formatted(configs.size(), sw.elapsedMs(), scan.modules().size()));
     return scan;
-  }
-
-  List<String> staleModules() {
-    return cachedStaleModules;
-  }
-
-  void refreshStaleScan() {
-    scanStaleModules();
   }
 
   // A self-clearing $/progress task spanning the in-process recompile, so the editor shows the
@@ -3570,10 +3560,67 @@ final class WorkspaceSession {
                 source -> source, WorkspaceSession::mtimeMillis, (first, ignored) -> first));
   }
 
+  private static boolean failedUnchanged(final FailedWrite failed, final long mtime) {
+    return failed != null && failed.mtime() == mtime;
+  }
+
+  // "line: message" of the source's first error in the write, for the MCP "Not compiled" note.
+  private static String firstError(final BatchWrite written, final Path source) {
+    return written.diagnosticsByUri().getOrDefault(source.toUri().toString(), List.of()).stream()
+        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+        .findFirst()
+        .map(
+            diagnostic ->
+                "%d: %s"
+                    .formatted(
+                        diagnostic.getRange().getStart().getLine() + 1,
+                        diagnostic.getMessage().getLeft().lines().findFirst().orElse("")))
+        .orElse("no class was written");
+  }
+
+  record FailedWrite(long mtime, String error) {
+    FailedWrite {
+      ValidCheck.check().notNull(error, "error").validate();
+    }
+  }
+
+  // What an MCP answer cannot vouch for after its pass: files whose write failed and that are
+  // unchanged since (fixed in code, retried on their next edit), and what only a sync can fix.
+  LatheNotes notes(final List<Path> files) {
+    final List<String> notCompiled =
+        failedCompiles.entrySet().stream()
+            .filter(entry -> failedUnchanged(entry.getValue(), mtimeMillis(entry.getKey())))
+            .map(
+                entry ->
+                    "%s:%s"
+                        .formatted(
+                            workspaceRoot.relativize(entry.getKey()), entry.getValue().error()))
+            .sorted()
+            .toList();
+    final Stream<String> pendingBuildFiles =
+        buildFilesNotificationPending
+            ? Stream.of("build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
+            : Stream.empty();
+    final Stream<String> unsynced =
+        files.stream()
+            .filter(file -> routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing)
+            .map(
+                file ->
+                    "%s is in no synced module — run `%s`"
+                        .formatted(
+                            workspaceRoot.relativize(file), LatheLayout.SYNC_SCRIPT_COMMAND));
+    return new LatheNotes(
+        notCompiled,
+        Stream.of(pendingBuildFiles, manifest.schemaMismatch().stream(), unsynced)
+            .flatMap(notes -> notes)
+            .toList(),
+        reactorBuildInProgress());
+  }
+
   static Map<Path, Long> withoutFailedCompiles(
-      final Map<Path, Long> stale, final Map<Path, Long> failedCompiles) {
+      final Map<Path, Long> stale, final Map<Path, FailedWrite> failedCompiles) {
     return stale.entrySet().stream()
-        .filter(entry -> !entry.getValue().equals(failedCompiles.get(entry.getKey())))
+        .filter(entry -> !failedUnchanged(failedCompiles.get(entry.getKey()), entry.getValue()))
         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
   }
 
@@ -3750,7 +3797,9 @@ final class WorkspaceSession {
           error,
           () ->
               "[react] batch compile failed in %s".formatted(moduleRelForDir(config.moduleDir())));
-      failedCompiles.putAll(mtimes);
+      mtimes.forEach(
+          (source, mtime) ->
+              failedCompiles.put(source, new FailedWrite(mtime, "the compiler failed")));
       return CompletableFuture.completedFuture(null);
     }
 
@@ -3760,7 +3809,12 @@ final class WorkspaceSession {
               .collect(
                   Collectors.partitioningBy(
                       source -> written.failedUris().contains(source.toUri().toString())));
-      byFailure.get(true).forEach(source -> failedCompiles.put(source, mtimes.get(source)));
+      byFailure
+          .get(true)
+          .forEach(
+              source ->
+                  failedCompiles.put(
+                      source, new FailedWrite(mtimes.get(source), firstError(written, source))));
       LOG.fine(
           () ->
               "[react] %d of %d file(s) failed in %s, writing the rest"
@@ -3776,9 +3830,7 @@ final class WorkspaceSession {
           : compileChangedBatch(config, rest, true);
     }
 
-    mtimes.forEach(
-        (source, mtime) ->
-            freshenClassOutputs(config, source, written.writtenBinaryNames(), mtime));
+    mtimes.forEach((source, mtime) -> freshenClassOutputs(config, source, written, mtime));
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
@@ -3796,10 +3848,11 @@ final class WorkspaceSession {
   private void freshenClassOutputs(
       final ModuleSourceConfig config,
       final Path source,
-      final Set<String> writtenBinaryNames,
+      final BatchWrite written,
       final long mtime) {
+    final Set<String> writtenBinaryNames = written.writtenBinaryNames();
     if (!wroteClassOf(config, source, writtenBinaryNames)) {
-      failedCompiles.put(source, mtime);
+      failedCompiles.put(source, new FailedWrite(mtime, firstError(written, source)));
       return;
     }
 
@@ -3852,17 +3905,6 @@ final class WorkspaceSession {
     } catch (final IOException e) {
       return null;
     }
-  }
-
-  // The reactor-relative module paths of the stale modules, for the client's -pl selector. Derived
-  // from the .lathe mirror (moduleDir = latheDir/moduleRel); the classes/test-classes configs of
-  // one module share a moduleDir, so distinct dedupes them.
-  private List<String> moduleRels(final Set<ModuleSourceConfig> modules) {
-    return modules.stream()
-        .map(config -> moduleRelForDir(config.moduleDir()))
-        .distinct()
-        .sorted()
-        .toList();
   }
 
   private String moduleRelForDir(final Path moduleDir) {

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -199,5 +200,25 @@ class LatheMcpToolsTest {
 
   private SyncToolSpecification tool(final String name) {
     return specs.stream().filter(spec -> spec.tool().name().equals(name)).findFirst().orElseThrow();
+  }
+
+  @Test
+  void noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay() {
+    assertThat(LatheMcpTools.noteLines(new LatheNotes(List.of(), List.of(), false))).isEmpty();
+    assertThat(
+            LatheMcpTools.noteLines(
+                new LatheNotes(
+                    List.of("a/A.java:3: cannot find symbol", "b/B.java:1: ';' expected"),
+                    List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+                    true)))
+        .containsExactly(
+            "Not compiled: a/A.java:3: cannot find symbol; b/B.java:1: ';' expected — fix the code; cross-module answers use their last good classes.",
+            "Sync required: build files changed — run `.lathe/lathe-sync.sh`",
+            "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends.");
+    assertThat(LatheMcpServer.INSTRUCTIONS)
+        .as("the routing instructions explain both notes")
+        .contains("\"Not compiled:\"")
+        .contains("\"Sync required:\"")
+        .doesNotContain("Stale:");
   }
 }
