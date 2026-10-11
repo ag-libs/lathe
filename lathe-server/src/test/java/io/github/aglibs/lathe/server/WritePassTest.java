@@ -139,6 +139,52 @@ class WritePassTest extends ServiceTestBase {
   }
 
   @Test
+  void reconcileNow_retryWritesNothing_earlierFailuresStayRecorded_nextPassWritesNothing()
+      throws Exception {
+    final Path core =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "core",
+                Map.of(
+                    "com/example/A.java", "package com.example; public class A {}",
+                    "com/example/B.java", "package com.example; public class B {}"),
+                List.of(),
+                1_000L)
+            .getFirst()
+            .getParent();
+    final Path user =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of("com/example/app/C.java", "package com.example.app; class C {}"),
+                List.of("core"),
+                1_000L)
+            .getFirst();
+    service.initialize(tmp);
+    awaitStartup();
+    // C fails in an earlier pass and is recorded.
+    TestCompiler.writeAt(user, "package com.example.app; class C { Missing m; }", 5_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+    // A breaks; B needs the X only A's new version declares, so the batch fails on A and its retry
+    // without A fails on B: javac writes nothing.
+    TestCompiler.writeAt(
+        core.resolve("A.java"),
+        "package com.example; public class A { Missing m; public static class X {} }",
+        6_000L);
+    TestCompiler.writeAt(
+        core.resolve("B.java"), "package com.example; public class B { A.X x; }", 6_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+    try (final var compiles = new CompileLog()) {
+      service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+      assertThat(writes(compiles))
+          .as("nothing changed and nothing was written, so no failure is retried")
+          .isEmpty();
+    }
+  }
+
+  @Test
   void writeReported_whileABuildHoldsTheLock_writesReportedFilesEvenAtTheirStamp_externalWaits()
       throws Exception {
     final var sources = new LinkedHashMap<String, String>();

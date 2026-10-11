@@ -3825,7 +3825,10 @@ final class WorkspaceSession {
           : compileChangedBatch(config, rest, Set.copyOf(byFailure.get(true)));
     }
 
-    retryFailuresDownstream(config, failedFirst);
+    if (!written.writtenBinaryNames().isEmpty()) {
+      retryFailuresDownstream(config, failedFirst);
+    }
+
     mtimes.forEach(
         (source, mtime) -> {
           try {
@@ -3846,8 +3849,10 @@ final class WorkspaceSession {
     return CompletableFuture.completedFuture(null);
   }
 
-  // A write may supply what earlier failures here or downstream were missing, so they get another
-  // try; the files that failed in this very write (failedFirst) keep their record.
+  // A write that produced classes may supply what earlier failures here or downstream were missing,
+  // so they get another try; the files that failed in this very write (failedFirst) keep their
+  // record. A retry that failed too wrote nothing, so it must not reopen them -- or every pass
+  // would retry them and fail again.
   private void retryFailuresDownstream(
       final ModuleSourceConfig config, final Set<Path> failedFirst) {
     final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
