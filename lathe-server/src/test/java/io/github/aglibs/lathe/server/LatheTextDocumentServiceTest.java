@@ -12,6 +12,7 @@ import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
@@ -37,12 +38,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Handler;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -797,7 +801,7 @@ class LatheTextDocumentServiceTest {
       }
 
       awaitWorkerIdle();
-      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 3 files");
+      assertRefreshedOnce(compiles, fx.users());
 
       awaitWorkerIdle();
       compiles.clear();
@@ -811,7 +815,7 @@ class LatheTextDocumentServiceTest {
       }
 
       awaitWorkerIdle();
-      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 4 files");
+      assertRefreshedOnce(compiles, fx.users());
     } finally {
       logger.removeHandler(handler);
     }
@@ -890,10 +894,9 @@ class LatheTextDocumentServiceTest {
       }
 
       awaitWorkerIdle();
-      assertThat(compiles).noneMatch(m -> m.startsWith("[compile:full]"));
-      assertThat(compiles).noneMatch(m -> m.startsWith("[compile:fast]"));
-      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch]")).hasSize(1);
-      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 4 files");
+      // Nothing compiles while the edit is applied and saved; then one write and one analysis.
+      assertThat(writes(compiles)).as("write tasks, by files written").containsExactly(4);
+      assertThat(analyses(compiles)).as("analysis tasks, by files analyzed").containsExactly(4);
 
       final Path classes = tmp.resolve(".lathe/module/classes/com/example");
       assertThat(classes.resolve("Dep2.class")).exists();
@@ -978,8 +981,14 @@ class LatheTextDocumentServiceTest {
       }
 
       awaitWorkerIdle();
-      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:full]")).hasSize(1);
-      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch] 3 files")).hasSize(1);
+      assertThat(writes(compiles))
+          .as("write tasks, by files written")
+          .hasSizeLessThanOrEqualTo(2)
+          .satisfies(
+              tasks ->
+                  assertThat(tasks.stream().mapToInt(Integer::intValue).sum())
+                      .as("files written")
+                      .isEqualTo(files.size()));
       final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
       for (final Path file : files) {
         assertThat(stamps)
@@ -999,13 +1008,39 @@ class LatheTextDocumentServiceTest {
             IOUtil.unchecked(() -> Files.readString(file))));
   }
 
-  // The open-document analyses in the compile log, the batch size kept and the timing dropped: a
-  // dependents refresh analyzes a tree's open files in one task, so a per-file "[compile:open]"
-  // here means it fell back to one compile per file.
-  private static List<String> refreshAnalyses(final Collection<String> compileLog) {
+  // The javac tasks in a compile log, as the number of files each covered: a single-file compile
+  // logs a URI, a batch logs "N files". Counting kinds of work, not the path that ran it, keeps
+  // these tests valid however the server schedules the work.
+  private static final Pattern COMPILE_TASK =
+      Pattern.compile("^\\[compile:([\\w-]+)\\] (?:(\\d+) files)?");
+
+  // The open dependents were refreshed once: each republished exactly once, all by one multi-file
+  // analysis task. A single-file analysis of the saved file itself is allowed.
+  private void assertRefreshedOnce(
+      final Collection<String> compileLog, final List<Path> dependents) {
+    assertThat(analyses(compileLog))
+        .as("multi-file analysis tasks (the dependents refresh)")
+        .filteredOn(files -> files > 1)
+        .hasSize(1);
+    dependents.forEach(
+        dependent ->
+            verify(client, times(1)).publishDiagnostics(argThat(p -> isFor(p, dependent))));
+  }
+
+  private static List<Integer> writes(final Collection<String> compileLog) {
+    return tasks(compileLog, Set.of("full", "batch"));
+  }
+
+  private static List<Integer> analyses(final Collection<String> compileLog) {
+    return tasks(compileLog, Set.of("open", "fast", "open-batch"));
+  }
+
+  private static List<Integer> tasks(final Collection<String> compileLog, final Set<String> kinds) {
     return compileLog.stream()
-        .filter(m -> m.startsWith("[compile:open"))
-        .map(m -> m.replaceFirst(" \\d+ms$", "").replaceFirst("(files) .*", "$1"))
+        .map(COMPILE_TASK::matcher)
+        .filter(Matcher::find)
+        .filter(task -> kinds.contains(task.group(1)))
+        .map(task -> task.group(2) == null ? 1 : Integer.parseInt(task.group(2)))
         .toList();
   }
 

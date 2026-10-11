@@ -103,10 +103,16 @@ Found by checking the design against the code; each is a test in the migration s
     Two files that need each other's new code but became ready in different passes (a slow `:wa`) would otherwise each fail alone and stay stuck until edited; together in one javac task they compile.
     This replaces today's "clear every failure after any successful write", which retries unrelated trees and does nothing when the only new write fails too.
 12. **One write at a time, the reactor lock checked per tree.** Trees are written one after another in dependency order (`compileOrder`), never in parallel.
-    Before each tree, the pass checks `.lathe/lathe.lock`: held by another process (a Maven build started meanwhile), it stops writing external catch-up and continues it after the build, while reported files are still written (rule 1); held by this process (the MCP engine writing a rename), it proceeds.
+    Before each tree, the pass checks the reactor lock (`LatheLayout.reactorLockFile`, `.lathe/lathe.lock`; module locks are the build's own, per module): held by another process (a Maven build started meanwhile), it stops writing external catch-up and continues it after the build, while reported files are still written (rule 1); held by this process (the MCP engine writing a rename), it proceeds.
 13. **A tree batch with errors is retried once without the files that had errors.** javac writes no class at all when any file of the task has an error (verified on JDK 26 with every compile policy), so one broken file would otherwise leave its whole tree unwritten and every downstream file compiling against stale classes.
     The retry leaves out the files javac reported errors in; what compiles without them is written and stamped, and what still fails joins the failed set, retried by rule 11.
     It uses which files failed, not what the errors say, and costs at most one extra javac task when a batch fails; the result — good files written, broken ones keeping their last classes — is what per-file saves produce today.
+
+14. **A pass that is dirty when its writes finish hands its refresh to the next pass**, which refreshes the union of both scopes once.
+    A fast `:wa` gives one pass for the first saved file and another for the rest; refreshing after each would analyze every open dependent twice.
+    Today the dependents drain prevents that, and `didSave_singleSaveThenBurstAcrossFiles_recompilesEachOpenDependentOnce` pins it.
+15. **Each config keeps its write target.** A Maven tree writes into its `.lathe` mirror; an OpenJDK tree (`MODULE_SYSTEM`, external output) writes throwaway classes, its real output being the JDK build's, rebuilt through the build-file watch (batch markers).
+    The pass changes when writes happen, not where.
 
 One trade-off to accept and measure: a save made during a long external catch-up (a branch switch) waits for that pass to end before it is written.
 The catch-up is rare and visible through its progress task; if measurement shows the wait matters, a reported file could start its own pass for trees the running one is not writing — not planned now.
@@ -188,7 +194,7 @@ So a save in the pass costs today's write plus one ~50 ms analysis, and a branch
 |---|---|---|
 | Save one file | its write publishes its diagnostics | same write, then its analysis publishes (~50 ms later) |
 | Branch switch, 51+ Java files | warning "N files changed at once — run a Lathe sync"; mirror stays stale | `Lathe: recompiling N file(s)` progress; compiled in-process |
-| `pom.xml` changed | sync prompt | unchanged |
+| A build file changed (`pom.xml`, or an OpenJDK batch marker) | sync prompt | unchanged |
 | Rename, `:wa`, Save All | as now | as now (same batches, through the pass) |
 | Typing in a file that uses a sibling's unsaved change | correct only for "cannot find symbol" and sealed errors; others are false errors until the sibling is saved | every kind of cross-file error resolved from the unsaved sibling |
 
@@ -242,12 +248,12 @@ Whatever is still not current is reported as one of two notes, replacing today's
 - **Not compiled** — files whose write failed and that have not changed since: `Not compiled: Foo.java:12 cannot find symbol Bar — fix the code; cross-module answers use Foo's last good classes`.
   No sync is suggested; the next edit is retried automatically.
 - **Sync required** — only what the server cannot do itself, with the reason and the exact command:
-  a pending POM change (`pom.xml changed — run .lathe/lathe-sync.sh`), or a file in no synced module (`<module> is not synced — run .lathe/lathe-sync.sh <module>`).
+  a changed build file awaiting a sync (`BUILD_FILES_PENDING`: `build files changed — run .lathe/lathe-sync.sh`), a file in no synced module (`<module> is not synced — run .lathe/lathe-sync.sh <module>`), or a `.lathe/` written by another Lathe version (`WorkspaceManifest.schemaMismatch`: `.lathe was written by Lathe X — run .lathe/lathe-sync.sh`).
 
 A running reactor build gets neither: the note says the answer reflects the mirror before the build and to re-query when it ends.
 The server does not run a sync itself: it is a Maven build the agent should see and own, like every other build it runs.
 
-Tests: an agent edit that does not compile yields `Not compiled` with the file and error and no sync suggestion, and once fixed the next query has no note; a pending POM change yields `Sync required` with the command; the routing instructions served at `initialize` describe the two notes.
+Tests: an agent edit that does not compile yields `Not compiled` with the file and error and no sync suggestion, and once fixed the next query has no note; a pending build-file change and a schema mismatch each yield `Sync required` with the command; the routing instructions served at `initialize` describe the two notes.
 
 ## Docs to update with the code
 
