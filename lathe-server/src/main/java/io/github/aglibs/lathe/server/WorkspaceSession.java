@@ -1438,7 +1438,8 @@ final class WorkspaceSession {
       return;
     }
 
-    final RenameTransaction.Action action = trackRename(renameTransaction.onSave(uri));
+    final RenameTransaction.Action action =
+        trackRename(renameTransaction.onSave(uri, savedContent));
     if (action == RenameTransaction.Action.COMMIT) {
       commitRenameTransaction();
     }
@@ -3128,18 +3129,19 @@ final class WorkspaceSession {
                 moves.getOrDefault(uri, uri), original, SourceLocator.applyEdits(original, edits));
           }
         });
-    moves.keySet().forEach(tx::addMovedAway);
+    moves.forEach(tx::addMovedAway);
     LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));
     worker.schedule(RENAME_UNAPPLIED_KEY, RENAME_UNAPPLIED_MS, this::dropUnappliedRename);
   }
 
-  // An edit the editor never applied (a cancelled refactor preview) must not hold its files back
-  // from the ordinary path; one it applied waits for its saves however long the user reviews it.
+  // An edit the editor never applied (a cancelled refactor preview) was dormant all along, so its
+  // files were handled as usual: forget it. One it applied waits for its saves however long the
+  // user reviews it.
   private void dropUnappliedRename() {
     if (renameTransaction.size() > 0 && !renameTransaction.applied()) {
       LOG.fine(
           () -> "[rename-tx] dropped unapplied members=%d".formatted(renameTransaction.size()));
-      commitRenameTransaction();
+      renameTransaction = new RenameTransaction();
     }
   }
 
@@ -3176,7 +3178,15 @@ final class WorkspaceSession {
     LOG.info(
         () -> "[rename-tx] commit saved=%d unsaved=%d".formatted(saved.size(), unsaved.size()));
     commitChangeSet(saved);
-    unsaved.stream().filter(uri -> docs.get(uri) != null).forEach(this::scheduleOpenFile);
+    // The commit's dependents refresh recompiles open files downstream of what it compiled.
+    final Set<Path> refreshed =
+        saved.stream()
+            .flatMap(path -> workspace.moduleSourceFor(path).stream())
+            .flatMap(config -> moduleGraph.downstreamModuleDirs(config.moduleDir()).stream())
+            .collect(Collectors.toUnmodifiableSet());
+    unsaved.stream()
+        .filter(uri -> docs.get(uri) != null && !inDownstreamScope(uri, refreshed))
+        .forEach(this::scheduleOpenFile);
   }
 
   // Commits a change set the server produced and wrote to disk itself (an engine rename): drops the

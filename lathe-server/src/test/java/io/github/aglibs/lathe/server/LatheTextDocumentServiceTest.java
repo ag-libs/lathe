@@ -843,7 +843,12 @@ class LatheTextDocumentServiceTest {
       // edited text; move the renamed file on disk (unsaved), close it and reopen it under its
       // new name. Then `:wa` writes and saves them one by one.
       final var edited = new LinkedHashMap<Path, String>();
-      edits.forEach(
+      // The renamed-from buffer is edited first, as an editor applies it, so the transaction is
+      // applied before any other touched file opens.
+      final var ordered = new LinkedHashMap<String, List<TextEdit>>();
+      ordered.put(fx.dep().toUri().toString(), edits.get(fx.dep().toUri().toString()));
+      ordered.putAll(edits);
+      ordered.forEach(
           (uri, fileEdits) -> {
             final Path file = LatheUri.toPath(uri);
             final String content = IOUtil.unchecked(() -> Files.readString(file));
@@ -882,7 +887,7 @@ class LatheTextDocumentServiceTest {
       assertThat(compiles).noneMatch(m -> m.startsWith("[compile:fast]"));
       assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch]")).hasSize(1);
       for (final Path file : edited.keySet()) {
-        assertThat(openCompiles(compiles, file)).isEqualTo(1);
+        assertThat(openCompiles(compiles, file)).as(file.getFileName().toString()).isEqualTo(1);
       }
 
       final Path classes = tmp.resolve(".lathe/module/classes/com/example");

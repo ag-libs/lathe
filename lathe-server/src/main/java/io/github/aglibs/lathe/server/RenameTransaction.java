@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import java.nio.file.Path;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
@@ -11,7 +10,9 @@ import java.util.stream.Collectors;
 // The files a rename the server produced touches, from the edit until the editor has saved them
 // all, so the session compiles them as one change set instead of file by file. Members are matched
 // by content (a hash of the text before and after the edit), never by the shape of the change
-// events, so this holds for every editor. Owned by the session's worker thread.
+// events, so this holds for every editor. Until the editor applies the edit (a member shows its
+// edited text) the transaction is dormant: every event is ordinary and no file is held, so a rename
+// the user cancels never delays the files it named. Owned by the session's worker thread.
 final class RenameTransaction {
 
   enum Action {
@@ -29,8 +30,9 @@ final class RenameTransaction {
   private static final Logger LOG = Logger.getLogger(RenameTransaction.class.getName());
 
   private final Map<String, Member> members = new HashMap<>();
-  // A moved file's old URI: the editor still edits and then closes it, which changes nothing.
-  private final Set<String> movedAway = new HashSet<>();
+  // A moved file's old URI to its new one: the editor edits the old buffer (that edit applies the
+  // rename) and then closes it, which changes nothing.
+  private final Map<String, String> movedAway = new HashMap<>();
   // Whether the editor has applied the edit at all: a member seen with its edited content.
   private boolean applied;
 
@@ -46,17 +48,15 @@ final class RenameTransaction {
     members.put(uri, member);
   }
 
-  void addMovedAway(final String uri) {
-    members.remove(uri);
-    movedAway.add(uri);
+  void addMovedAway(final String oldUri, final String newUri) {
+    members.remove(oldUri);
+    movedAway.put(oldUri, newUri);
   }
 
   Action onContent(final String uri, final String content) {
-    if (movedAway.contains(uri)) {
-      return Action.SUPPRESS;
-    }
-
-    final Member member = members.get(uri);
+    // The old URI of a moved file stands for its member until the editor closes it.
+    final String key = movedAway.getOrDefault(uri, uri);
+    final Member member = members.get(key);
     if (member == null) {
       return Action.NORMAL;
     }
@@ -70,10 +70,14 @@ final class RenameTransaction {
 
     if (hash == member.originalHash) {
       member.atOriginal = true;
+      if (!applied) {
+        return Action.NORMAL;
+      }
+
       return undone() ? Action.ABANDON : Action.SUPPRESS;
     }
 
-    leave(uri, "diverged");
+    leave(key, "diverged");
     return Action.NORMAL;
   }
 
@@ -86,14 +90,28 @@ final class RenameTransaction {
     }
   }
 
-  Action onSave(final String uri) {
+  // savedContent is the text the editor sent with the save, null when it sent none.
+  Action onSave(final String uri, final String savedContent) {
     final Member member = members.get(uri);
     if (member == null) {
-      return movedAway.contains(uri) ? Action.SUPPRESS : Action.NORMAL;
+      return applied && movedAway.containsKey(uri) ? Action.SUPPRESS : Action.NORMAL;
+    }
+
+    if (savedContent != null) {
+      final int hash = hash(savedContent);
+      if (hash == member.expectedHash) {
+        applied = true;
+      } else if (hash != member.originalHash) {
+        leave(uri, "saved diverged");
+        return Action.NORMAL;
+      }
+    }
+
+    if (!applied) {
+      return Action.NORMAL;
     }
 
     member.saved = true;
-    applied = true;
     return members.values().stream().allMatch(m -> m.saved) ? Action.COMMIT : Action.SUPPRESS;
   }
 
@@ -104,8 +122,9 @@ final class RenameTransaction {
     }
   }
 
+  // Held from the ordinary paths (dependents refresh, reconcile) only once applied.
   boolean isMember(final String uri) {
-    return members.containsKey(uri) || movedAway.contains(uri);
+    return applied && (members.containsKey(uri) || movedAway.containsKey(uri));
   }
 
   private boolean undone() {
@@ -121,7 +140,9 @@ final class RenameTransaction {
   }
 
   Set<Path> memberPaths() {
-    return members.keySet().stream().map(LatheUri::toPath).collect(Collectors.toUnmodifiableSet());
+    return applied
+        ? members.keySet().stream().map(LatheUri::toPath).collect(Collectors.toUnmodifiableSet())
+        : Set.of();
   }
 
   Set<Path> savedPaths() {

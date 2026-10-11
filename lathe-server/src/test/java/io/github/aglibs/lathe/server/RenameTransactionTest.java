@@ -16,13 +16,18 @@ class RenameTransactionTest {
   private static final String MOVED = "file:///ws/src/New.java";
 
   @Test
-  void onContent_originalOrExpectedSuppressed_handEditLeaves_nonMemberNormal() {
+  void onContent_dormantUntilApplied_thenEditedSuppressed_handEditLeaves_nonMemberNormal() {
     final var tx = new RenameTransaction();
     tx.add(A, "class A { Old o; }", "class A { New o; }");
 
-    // The editor opens the file as it is on disk, then applies the rename's edit.
-    assertThat(tx.onContent(A, "class A { Old o; }")).isEqualTo(SUPPRESS);
+    // The editor opens the file as it is on disk: not applied yet, so an ordinary open.
+    assertThat(tx.onContent(A, "class A { Old o; }")).isEqualTo(NORMAL);
+    assertThat(tx.isMember(A)).isFalse();
+    assertThat(tx.memberPaths()).isEmpty();
+    // It applies the rename's edit: from now on the file waits for the commit.
     assertThat(tx.onContent(A, "class A { New o; }")).isEqualTo(SUPPRESS);
+    assertThat(tx.isMember(A)).isTrue();
+    assertThat(tx.memberPaths()).hasSize(1);
     assertThat(tx.onContent(B, "class B {}")).isEqualTo(NORMAL);
 
     // The user types into it: from now on it is an ordinary document.
@@ -40,21 +45,36 @@ class RenameTransactionTest {
   }
 
   @Test
-  void applied_onlyOnceAMemberShowsTheEditOrIsSaved_notWhenOpenedUnchanged() {
+  void applied_onlyOnceAMemberShowsOrSavesTheEdit_notWhenOpenedOrSavedUnchanged() {
     final var opened = new RenameTransaction();
     opened.add(A, "class A { Old o; }", "class A { New o; }");
     opened.add(B, "b", "b2");
 
     // A cancelled preview may open the files, but never applies the edit to them.
     opened.onContent(A, "class A { Old o; }");
+    assertThat(opened.onSave(B, null)).isEqualTo(NORMAL);
     assertThat(opened.applied()).isFalse();
     opened.onContent(A, "class A { New o; }");
     assertThat(opened.applied()).isTrue();
 
+    // An editor that applies the edit and saves it without a change event.
     final var saved = new RenameTransaction();
     saved.add(B, "b", "b2");
-    saved.onSave(B);
+    assertThat(saved.onSave(B, "b2")).isEqualTo(COMMIT);
     assertThat(saved.applied()).isTrue();
+  }
+
+  @Test
+  void onSave_savedTextDivergingFromTheRename_leaves() {
+    final var tx = new RenameTransaction();
+    tx.add(A, "a", "a2");
+    tx.add(B, "b", "b2");
+    tx.onContent(A, "a2");
+
+    // B is saved with text that is neither its original nor the rename's: a hand edit.
+    assertThat(tx.onSave(B, "b-edited")).isEqualTo(NORMAL);
+    assertThat(tx.size()).isEqualTo(1);
+    assertThat(tx.onSave(A, "a2")).isEqualTo(COMMIT);
   }
 
   @Test
@@ -62,8 +82,6 @@ class RenameTransactionTest {
     final var tx = new RenameTransaction();
     tx.add(A, "class A { Old o; }", "class A { New o; }");
     tx.add(B, "class B { Old o; }", "class B { New o; }");
-    // Opened before the edit is applied: back at the original, but nothing was applied yet.
-    assertThat(tx.onContent(A, "class A { Old o; }")).isEqualTo(SUPPRESS);
     tx.onContent(A, "class A { New o; }");
     tx.onContent(B, "class B { New o; }");
 
@@ -76,7 +94,7 @@ class RenameTransactionTest {
     saved.add(A, "class A { Old o; }", "class A { New o; }");
     saved.add(B, "class B { Old o; }", "class B { New o; }");
     saved.onContent(A, "class A { New o; }");
-    saved.onSave(B); // a saved member is on disk: undoing the rest does not abandon it
+    saved.onSave(B, null); // a saved member is on disk: undoing the rest does not abandon it
     assertThat(saved.onContent(A, "class A { Old o; }")).isEqualTo(SUPPRESS);
   }
 
@@ -88,7 +106,7 @@ class RenameTransactionTest {
     tx.onFormat(A, "class A {\n  New o;\n}\n");
 
     assertThat(tx.onContent(A, "class A {\n  New o;\n}\n")).isEqualTo(SUPPRESS);
-    assertThat(tx.onSave(A)).isEqualTo(COMMIT);
+    assertThat(tx.onSave(A, "class A {\n  New o;\n}\n")).isEqualTo(COMMIT);
   }
 
   @Test
@@ -96,12 +114,13 @@ class RenameTransactionTest {
     final var tx = new RenameTransaction();
     tx.add(A, "a", "a2");
     tx.add(B, "b", "b2");
+    tx.onContent(A, "a2");
 
     assertThat(tx.anySaved()).isFalse();
-    assertThat(tx.onSave(A)).isEqualTo(SUPPRESS);
+    assertThat(tx.onSave(A, null)).isEqualTo(SUPPRESS);
     assertThat(tx.anySaved()).isTrue();
-    assertThat(tx.onSave("file:///ws/src/Other.java")).isEqualTo(NORMAL);
-    assertThat(tx.onSave(B)).isEqualTo(COMMIT);
+    assertThat(tx.onSave("file:///ws/src/Other.java", null)).isEqualTo(NORMAL);
+    assertThat(tx.onSave(B, "b2")).isEqualTo(COMMIT);
     assertThat(tx.savedPaths()).hasSize(2);
     assertThat(tx.unsavedUris()).isEmpty();
   }
@@ -110,23 +129,25 @@ class RenameTransactionTest {
   void onClose_movedAwayKeepsMembership_unsavedMemberLeaves_savedMemberStays() {
     final var tx = new RenameTransaction();
     tx.add(MOVED, "class Old {}", "class New {}");
-    tx.addMovedAway(OLD);
+    tx.addMovedAway(OLD, MOVED);
     tx.add(A, "a", "a2");
     tx.add(B, "b", "b2");
 
-    // Neovim edits the moved buffer under its old URI, then closes it and reopens it as the new
-    // one.
+    // Neovim edits the moved buffer under its old URI -- which applies the rename -- then closes it
+    // and reopens it as the new one.
+    assertThat(tx.onContent(OLD, "class Old {}")).isEqualTo(NORMAL);
     assertThat(tx.onContent(OLD, "class New {}")).isEqualTo(SUPPRESS);
+    assertThat(tx.applied()).isTrue();
     tx.onClose(OLD);
     assertThat(tx.onContent(MOVED, "class New {}")).isEqualTo(SUPPRESS);
 
-    tx.onSave(B);
+    tx.onSave(B, null);
     tx.onClose(B); // saved: stays for the commit
     tx.onClose(A); // reverted unsaved: leaves
 
     assertThat(tx.size()).isEqualTo(2);
     assertThat(tx.unsavedUris()).containsExactly(MOVED);
-    assertThat(tx.onSave(MOVED)).isEqualTo(COMMIT);
+    assertThat(tx.onSave(MOVED, null)).isEqualTo(COMMIT);
   }
 
   @Test
@@ -134,14 +155,14 @@ class RenameTransactionTest {
     final var tx = new RenameTransaction();
     // Old -> New moves the file; renaming it back moves New -> Old.
     tx.add(MOVED, "class Old {}", "class New {}");
-    tx.addMovedAway(OLD);
+    tx.addMovedAway(OLD, MOVED);
     tx.add(OLD, "class New {}", "class Old {}");
-    tx.addMovedAway(MOVED);
+    tx.addMovedAway(MOVED, OLD);
 
-    assertThat(tx.isMember(OLD)).isTrue();
     assertThat(tx.size()).isEqualTo(1);
     assertThat(tx.onContent(OLD, "class Old {}")).isEqualTo(SUPPRESS);
-    assertThat(tx.onSave(OLD)).isEqualTo(COMMIT);
+    assertThat(tx.isMember(OLD)).isTrue();
+    assertThat(tx.onSave(OLD, null)).isEqualTo(COMMIT);
   }
 
   @Test
@@ -150,8 +171,13 @@ class RenameTransactionTest {
     tx.add(A, "class A { Old o; }", "class A { Mid o; }");
     tx.add(A, "class A { Mid o; }", "class A { New o; }");
 
-    assertThat(tx.onContent(A, "class A { Old o; }")).isEqualTo(SUPPRESS);
     assertThat(tx.onContent(A, "class A { New o; }")).isEqualTo(SUPPRESS);
-    assertThat(tx.onContent(A, "class A { Mid o; }")).isEqualTo(NORMAL);
+    assertThat(tx.onContent(A, "class A { Old o; }")).isEqualTo(ABANDON);
+
+    final var midway = new RenameTransaction();
+    midway.add(A, "class A { Old o; }", "class A { Mid o; }");
+    midway.add(A, "class A { Mid o; }", "class A { New o; }");
+    // The first rename's text is neither the original nor the latest edit: a hand edit.
+    assertThat(midway.onContent(A, "class A { Mid o; }")).isEqualTo(NORMAL);
   }
 }
