@@ -25,6 +25,7 @@ It need not mirror a real directory: OpenJDK uses flat names (`java.base`, a bui
 
 A module has one or two **source trees**, named `classes` (main) and `test-classes` (test).
 The names are Lathe's, not Maven's: every front-end uses them, whatever its build calls the outputs.
+The front-end assigns the tree by scope (main or test), never from the build's directory names.
 Run gating and main-class scope recognize only these two names, and the generated-sources mirror name is derived from them.
 
 ## Files
@@ -248,6 +249,11 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 ## Known issues
 
 Found while writing this contract (2026-10-11); each is a gap in the current front-ends or server, not part of the contract.
+
+- **Maven names the tree after the output directory.**
+  The compiler shim takes the tree from the output directory's last segment, not from the scope,
+  so a custom `<outputDirectory>` leaf (for example `target/main-classes`) yields an unrecognized tree and breaks that module's runs.
+  The fix passes the scope from the extension to the shim ([design §9](planned/lathe-build-agnostic-core.md#9-source-trees-by-scope)).
 
 - **Sibling-output rewrite is guessed from the path.**
   The server and launch planner turn a sibling module's output into its mirror by path shape (a `target` parent for launches; any workspace path for the compile classpath),

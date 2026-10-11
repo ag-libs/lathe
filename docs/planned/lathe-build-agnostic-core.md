@@ -33,7 +33,8 @@ It is the first real test of the contract; [§8](#8-the-openjdk-front-end) cover
 
 - No Gradle code, and no change to how the Maven front-end captures compiler options or test launches.
 - No change to the `.lathe/` source-tree names `classes` and `test-classes`.
-  They are Lathe's layout names (the mirror is Lathe's own directory), not Maven's, and every front-end uses them.
+  They are Lathe's layout names (the mirror is Lathe's own directory), not Maven's, and every front-end uses them,
+  assigning them by scope rather than by the build's directory names ([§9](#9-source-trees-by-scope)).
 - Maven-only client features stay Maven-only: Neovim's `pom.xml` validation (`pom.lua`) is a per-file feature, not a build assumption.
 
 ## Changes
@@ -67,20 +68,37 @@ The front-end, which knows its outputs, records them; downstream looks them up i
 
 Paths are workspace-relative.
 The Maven sync writes each module's `outputDirectory`, `testOutputDirectory`, and its packaged main and test-jar file names.
-It extends `ReactorProjects.reactorOutputDirs`, which already maps each reactor module to its output directory for `MainLaunchWriter`, rather than walking the projects a second time.
+A new `ReactorProjects.outputs(workspaceRoot, projects)` builds them, skipping `pom` modules, next to `reactorOutputDirs`, which maps each module to its output directory for `MainLaunchWriter`.
 The list is always whole-reactor: a partial (`-pl`) sync already skips writing `workspace.json`, so `outputs` is never half-merged.
 
 Jar names are computed, not read.
 The sync runs at `process-test-classes`, before `package`, so the artifact file does not exist yet;
-the name comes from `build.finalName` plus the test-jar classifier (default `tests`, configurable on `maven-jar-plugin`).
-Other classified jars (for example a shaded jar) are not listed and pass through unchanged, a known limit rather than a guess.
+the names are `<build.directory>/<finalName>.jar` and `<finalName>-tests.jar`, the default test-jar classifier.
+A custom test-jar classifier and other classified jars (for example a shaded jar) are not listed and pass through unchanged:
+a stated limit, matching what today's `-tests.jar` guess covers, rather than parsing `maven-jar-plugin` configuration for a rare case.
 
-One `lathe-core` helper resolves a path through the map;
-a path not in the map passes through unchanged, which fixes the in-repo jar case.
-`ReactorRewrite` and `ModuleSourceConfig.remapPath` both delegate to it, so the two can no longer disagree.
-This changes `ReactorRewrite.toLathe(path, workspaceRoot)`: it takes the output map instead of guessing from the root,
-so its callers (`LaunchPlan`, `CompletenessGate`, `ResourceRootIndex`) are handed the loaded manifest.
+Because each entry records the build's real directories, custom output locations resolve too:
+a module whose `<build><directory>` is `out/` instead of `target/` maps correctly, which the `target`-shaped guess never did.
+(A custom output *leaf* name is a separate problem, the tree name; see [§9](#9-source-trees-by-scope).)
+
+`ReactorRewrite` becomes the one place that resolves a path through the map.
+It turns from static guessing into an instance built from the manifest, `ReactorRewrite.of(workspaceRoot, outputs)`,
+holding absolute output path → `.lathe/<module>/<tree>`; its `toLathe` overloads (`String`, `List`, `Map`) keep their shapes.
+A path not in the map passes through unchanged, which fixes the in-repo jar case and OpenJDK's build-tool classpaths.
+
+- `WorkspaceManifest` builds it once and exposes `reactorRewrite()`; an empty or mismatched manifest yields an empty map, so every path passes through.
+- `ModuleSourceConfig.remapPath` is deleted: the record gains a `ReactorRewrite` component, set at load by `WorkspaceModuleRegistry`, and `remappedClasspath`/`remappedModulepath`/`remappedProcessorPath` delegate to it.
+  The two routines can no longer disagree, because there is only one.
+- `LaunchPlan.forTest`/`forMain`/`forTestMain` take the `ReactorRewrite` in place of `workspaceRoot`, which they used only for rewriting;
+  `CompletenessGate.verify` gains it next to `workspaceRoot`, which it still needs to locate `.lathe/`; `ResourceRootIndex.build` receives it.
+
 OpenJDK keeps `externalOutput` (its outputs are read in place, not mirrored); it writes no `outputs` entries.
+
+**Versioning.**
+An old `workspace.json` without `outputs` would load and silently lose every cross-module rewrite, the quiet case the schema version exists for,
+so `LatheLayout.SCHEMA_VERSION` is bumped.
+That constant also keys the type-index shards and dependency-source markers in `~/.cache/lathe`, which this change does not touch;
+they move to their own `CACHE_SCHEMA_VERSION`, kept at the current value, so the bump does not rebuild every cache.
 
 **Alternative considered:** derive the map from each module's `lsp-params` `outputDir`.
 That covers directories but not packaged jars, which the build places by its own naming rules, so the front-end must state them anyway.
@@ -180,23 +198,41 @@ Each change above touches it:
   With no `outputs`, the directory skip still walks `build/`, as it does today.
   OpenJDK's tests are jtreg, which test discovery does not cover.
 
+### 9. Source trees by scope
+
+The tree name is a scope, not a directory: the front-end assigns `classes` to main output and `test-classes` to test output,
+whatever its build calls them.
+The output map already states each entry's `tree`; the params, stamps, and mirror must follow the same rule.
+
+Maven does not yet.
+The compiler shim names the tree after the output directory's last segment (`ParamsWriter`), because it sees only the compiler configuration, which carries no scope.
+A module with `<outputDirectory>target/main-classes</outputDirectory>` gets a tree called `main-classes`,
+which run gating and main-class scope do not recognize, so its runs break.
+Projects keeping the standard leaf names, under any directory, are unaffected.
+
+The fix passes the scope from the Maven extension, which sees the `compile` and `testCompile` executions, to the shim.
+Gradle has the scope natively (the source-set name), so this is the rule every front-end follows, and Maven's derivation is the exception to remove before Gradle.
+
 ## Verification
 
 - The Maven invoker tests (`multi-module`, `LspSmokeTest`, and the rest) pass unchanged; they are the proof that Maven behavior did not move.
 - Output-map unit tests use Maven-shaped **and** Gradle-shaped paths (`build/classes/java/main`, `build/libs/app.jar`), proving neutrality without a Gradle build.
 - A regression test for an in-repo jar (`libs/vendor.jar`) passing through unchanged.
-- The Maven sync writes jar entries for a default and a custom test-jar classifier, before `package` has run.
+- The Maven sync writes jar entries with the default `tests` classifier before `package` has run, and skips `pom` modules.
+- A module built into a custom `<build><directory>` resolves to its mirror.
+- A Maven module with a custom output leaf name still gets the `classes`/`test-classes` trees (slice 7).
 - An OpenJDK build tool's classpath entry under `build/<conf>/buildtools/` passes through unchanged.
 - The OpenJDK sync writes `lathe-sync.sh` and holds `lathe.lock` while it writes `.lathe/`.
 
 ## Slicing
 
-1. **Contract document** — docs only; settles the file list the later slices reference.
-2. **Output map** — `workspace.json` `outputs`, the `lathe-core` helper, `ReactorRewrite` and `remapPath` delegating (callers passed the manifest), the Maven sync writing the entries.
+1. **Contract document** — docs only; settles the file list the later slices reference. *Done.*
+2. **Output map** — `workspace.json` `outputs`, `ReactorRewrite` as the map-backed instance, `remapPath` removed, the Maven sync writing the entries, the `SCHEMA_VERSION` bump with the cache version split off.
 3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`.
 4. **Client** — Neovim messages and neotest directory skip.
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.**
 6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`.
+7. **Maven trees by scope** — the extension passes the compile scope to the shim, which stops deriving the tree from the output leaf name.
 
 ## Decisions
 
@@ -205,3 +241,8 @@ Each change above touches it:
 2. **First-sync wording** — list every front-end's first command in the remediation, rather than detecting the build tool from the root (`pom.xml` vs `settings.gradle`).
    Listing keeps the server free of build detection, and with Maven as the only front-end the message is unchanged.
    Revisit detection if the list grows long.
+3. **Test-jar classifier** — only the default `tests`.
+   Custom classifiers pass through unchanged, as a stated limit; reading `maven-jar-plugin` configuration is not worth it for a rare case.
+4. **Cache version** — `CACHE_SCHEMA_VERSION` splits off from `SCHEMA_VERSION`, so a `.lathe/` format change does not rebuild `~/.cache/lathe`.
+5. **Where the rewrite lives in a module config** — a `ReactorRewrite` component on `ModuleSourceConfig`, set at load,
+   rather than a parameter on each `remapped…()` call, which would thread it through three call chains.
