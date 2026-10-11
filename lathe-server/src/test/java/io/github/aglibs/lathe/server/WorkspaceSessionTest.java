@@ -66,6 +66,23 @@ class WorkspaceSessionTest {
   }
 
   @Test
+  void deleteClassOutputs_sourceAtTheTreeRoot_prunesItsClass_skipsPackageDirectories()
+      throws Exception {
+    // module-info.java's class sits in the classes root, beside the package directories.
+    final Path moduleInfo = sourceRoot.resolve("module-info.java");
+    Files.createDirectories(sourceRoot);
+    Files.writeString(moduleInfo, "module app {}");
+    final Path classesRoot = config.latheClassesDir();
+    Files.writeString(classesRoot.resolve("module-info.class"), "");
+
+    assertThat(WorkspaceSession.deleteClassOutputs(config, moduleInfo, Set.of("module-info")))
+        .as("kept: the write produced it")
+        .isZero();
+    assertThat(WorkspaceSession.deleteClassOutputs(config, moduleInfo, Set.of())).isEqualTo(1);
+    assertThat(classesRoot.resolve("com")).isDirectory();
+  }
+
+  @Test
   void deleteClassOutputs_nonJavaSource_removesNothing() throws Exception {
     final var txtFile = tmp.resolve("module/src/main/java/com/example/Foo.txt");
     Files.writeString(outputDir.resolve("Foo.class"), "");

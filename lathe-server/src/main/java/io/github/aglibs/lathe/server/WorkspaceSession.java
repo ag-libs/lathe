@@ -3093,8 +3093,10 @@ final class WorkspaceSession {
     }
 
     try (final var stream = Files.list(classDir)) {
+      // A source at the tree's root (module-info.java) shares its directory with the packages.
       final var deletedClassFiles =
           stream
+              .filter(path -> path.getFileName().toString().endsWith(".class"))
               .filter(path -> !keptBinaryNames.contains(toBinaryName(config, path)))
               .filter(path -> classOutputOf(source, path))
               .toList();
@@ -3824,7 +3826,17 @@ final class WorkspaceSession {
     }
 
     retryFailuresDownstream(config, failedFirst);
-    mtimes.forEach((source, mtime) -> freshenClassOutputs(config, source, written, mtime));
+    mtimes.forEach(
+        (source, mtime) -> {
+          try {
+            freshenClassOutputs(config, source, written, mtime);
+          } catch (final RuntimeException e) {
+            // Left unstamped, the file would be rewritten by every next pass.
+            LOG.log(Level.SEVERE, e, () -> "[react] freshening %s failed".formatted(source));
+            failedCompiles.put(
+                source, new FailedWrite(mtime, "internal error, see the server log"));
+          }
+        });
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
