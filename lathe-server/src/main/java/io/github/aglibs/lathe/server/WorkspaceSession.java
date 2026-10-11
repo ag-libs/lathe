@@ -174,7 +174,7 @@ final class WorkspaceSession {
       new LinkedHashMap<>();
   private Map<String, List<String>> reactorLambdaImplementors = Map.of();
   private WorkspaceWatcher watcher;
-  private boolean pomNotificationPending;
+  private boolean buildFilesNotificationPending;
   // Guards against re-notifying every idle tick while churn continues; reset when the stale set
   // drains.
   private boolean bulkNoticeShown;
@@ -262,7 +262,7 @@ final class WorkspaceSession {
         WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
-    watcher.updatePomPaths(manifest.pomPaths());
+    watcher.updateBuildFiles(manifest.buildFiles());
     worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
@@ -481,8 +481,8 @@ final class WorkspaceSession {
       if (template.isEmpty()) {
         return MainLaunchPlan.blocked(
             List.of(
-                "no captured test launch for %s; run `mvn test` to capture it"
-                    .formatted(moduleRel)));
+                "no captured test launch for %s; run `%s` to capture it"
+                    .formatted(moduleRel, LatheLayout.captureTestsCommand(moduleRel))));
       }
 
       final CompletenessResult gate =
@@ -3252,7 +3252,8 @@ final class WorkspaceSession {
   }
 
   // The engine's freshen step, before every MCP query and verify_change: recompile the change set,
-  // but never prompt. If the in-process recompile can't be trusted (POM sync pending, bulk change,
+  // but never prompt. If the in-process recompile can't be trusted (build-file sync pending, bulk
+  // change,
   // or a running build) it returns a DeferReason so the caller falls back to Maven. A source that
   // failed unchanged since is still reported but not recompiled again. Runs on the worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
@@ -3261,9 +3262,9 @@ final class WorkspaceSession {
           new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS));
     }
 
-    if (pomNotificationPending) {
+    if (buildFilesNotificationPending) {
       return CompletableFuture.completedFuture(
-          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.POM_PENDING));
+          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_FILES_PENDING));
     }
 
     reconcileDeletedSources();
@@ -3395,7 +3396,8 @@ final class WorkspaceSession {
   // defers to the sync prompt, while open-and-saved edits always reconcile (see the split below).
   // eager compiles the stale set now (startup, settled on disk); otherwise a source must hold
   // its mtime across two ticks, so a file mid-write is left to settle.
-  // Runs even while a POM-sync prompt is pending: a POM change gates the classpath, but a source
+  // Runs even while a build-file sync prompt is pending: such a change gates the classpath, but a
+  // source
   // edit (a rename) only needs recompiling against the current one — it must not freeze behind it.
   private List<CompletableFuture<Void>> reconcileChangedSources(final boolean eager) {
     final StaleScan scan = scanStaleModules();
@@ -3910,7 +3912,8 @@ final class WorkspaceSession {
       return;
     }
 
-    // Defer every reactive branch (staleness prompt, POM/workspace reload) while a build runs, so a
+    // Defer every reactive branch (staleness prompt, build-file/workspace reload) while a build
+    // runs, so a
     // mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after the lock
     // clears picks up the settled state in one reload.
     if (reactorBuildInProgress()) {
@@ -3928,8 +3931,8 @@ final class WorkspaceSession {
         refreshReactorTypeIndex();
         pendingStale = Map.of();
       }
-      case POM_CHANGED -> {
-        promptForSync("Maven project changed. Lathe will run a full refresh.", List.of());
+      case BUILD_FILES_CHANGED -> {
+        promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
         reconcileIfIdle(false);
       }
       case NO_CHANGE -> {
@@ -3949,13 +3952,13 @@ final class WorkspaceSession {
   }
 
   private void promptForSync(final String message, final List<String> scope) {
-    if (pomNotificationPending) {
+    if (buildFilesNotificationPending) {
       LOG.fine(() -> "[sync] prompt suppressed — already pending");
       return;
     }
 
     pendingSyncModules = scope;
-    pomNotificationPending = true;
+    buildFilesNotificationPending = true;
     final var request =
         new ShowMessageRequestParams(
             List.of(
@@ -3969,13 +3972,14 @@ final class WorkspaceSession {
         .thenAccept(action -> worker.execute(() -> onSyncPromptResponse(action)));
   }
 
-  // Any response ends the loop: the acknowledged POM baseline stays quiet until the POMs change
+  // Any response ends the loop: the acknowledged build-file baseline stays quiet until the files
+  // change
   // again, even while the client's Maven job runs. Sync / Sync + capture ask the client to run
   // Maven
   // (the server never does); Later just dismisses.
   private void onSyncPromptResponse(final MessageActionItem action) {
-    pomNotificationPending = false;
-    watcher.acknowledgePoms();
+    buildFilesNotificationPending = false;
+    watcher.acknowledgeBuildFiles();
     final String title = action == null ? null : action.getTitle();
     LOG.info(() -> "[sync] answered action=%s".formatted(title));
     switch (title) {
@@ -4006,8 +4010,8 @@ final class WorkspaceSession {
   private void reloadWorkspace() {
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
-      watcher.updatePomPaths(newManifest.pomPaths());
-      pomNotificationPending = false;
+      watcher.updateBuildFiles(newManifest.buildFiles());
+      buildFilesNotificationPending = false;
     }
 
     final var newWorkspace = WorkspaceModuleRegistry.scan(workspaceRoot, newManifest);

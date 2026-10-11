@@ -37,7 +37,7 @@ public final class WorkspaceManifest {
   private final Path jdkSourceDir;
   private final Map<Path, List<Path>> sourceDirToClasspath;
   private final List<Path> typeIndexShardPaths;
-  private final List<Path> pomPaths;
+  private final List<Path> buildFiles;
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
   private final ReactorRewrite reactorRewrite;
@@ -53,7 +53,7 @@ public final class WorkspaceManifest {
       final Path jdkSourceDir,
       final Map<Path, List<Path>> sourceDirToClasspath,
       final List<Path> typeIndexShardPaths,
-      final List<Path> pomPaths,
+      final List<Path> buildFiles,
       final List<Path> runnerClasspath,
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
@@ -65,7 +65,7 @@ public final class WorkspaceManifest {
     this.jdkSourceDir = jdkSourceDir;
     this.sourceDirToClasspath = sourceDirToClasspath;
     this.typeIndexShardPaths = typeIndexShardPaths;
-    this.pomPaths = pomPaths;
+    this.buildFiles = buildFiles;
     this.runnerClasspath = runnerClasspath;
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
@@ -141,8 +141,8 @@ public final class WorkspaceManifest {
                       ? Stream.of(jdk.typeIndex())
                       : Stream.empty())
               .toList();
-      final List<Path> resolvedPomPaths =
-          data.pomPaths().stream().map(workspaceRoot::resolve).toList();
+      final List<Path> resolvedBuildFiles =
+          data.buildFiles().stream().map(workspaceRoot::resolve).toList();
       final List<Path> runnerClasspath = data.runnerClasspath().stream().map(Path::of).toList();
       final var reactorRewrite = ReactorRewrite.of(workspaceRoot, data.outputs());
       return new WorkspaceManifest(
@@ -153,7 +153,7 @@ public final class WorkspaceManifest {
           jdk != null ? jdk.sourceDir() : null,
           sourceDirToClasspath,
           typeIndexShardPaths,
-          resolvedPomPaths,
+          resolvedBuildFiles,
           runnerClasspath,
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
@@ -225,8 +225,8 @@ public final class WorkspaceManifest {
     return typeIndexShardPaths;
   }
 
-  public List<Path> pomPaths() {
-    return pomPaths;
+  public List<Path> buildFiles() {
+    return buildFiles;
   }
 
   public List<Path> runnerClasspath() {

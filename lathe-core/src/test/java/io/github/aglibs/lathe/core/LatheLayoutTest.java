@@ -20,9 +20,12 @@ class LatheLayoutTest {
     assertThat(LatheLayout.scopedSyncCommand(List.of("app", "core")))
         .isEqualTo(".lathe/lathe-sync.sh app core");
     assertThat(LatheLayout.STALE_REMEDIATION).contains("`.lathe/lathe-sync.sh`");
-    // No script exists before the first sync, so setup still names the build command.
+    assertThat(LatheLayout.captureTestsCommand("app"))
+        .isEqualTo(".lathe/lathe-sync.sh --tests app");
+    // No script exists before the first sync, so setup names each front-end's first command.
     assertThat(LatheLayout.SETUP_REMEDIATION)
         .contains("`mvn process-test-classes`")
+        .contains("`mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`")
         .doesNotContain("lathe-sync.sh");
   }
 

@@ -75,7 +75,7 @@ class WorkspaceManifestWriterTest {
     assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(entry.dir()).isEqualTo("/cache/dep");
     assertThat(entry.classpath()).containsExactly("/repo/transitive.jar");
-    assertThat(data.pomPaths()).containsExactly("pom.xml");
+    assertThat(data.buildFiles()).containsExactly("pom.xml");
     assertThat(data.outputs()).containsExactly(output);
 
     // The build JDK is also written as a plain path for the launcher to run the server under.

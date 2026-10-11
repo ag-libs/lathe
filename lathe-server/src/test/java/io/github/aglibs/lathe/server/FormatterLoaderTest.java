@@ -20,7 +20,7 @@ class FormatterLoaderTest {
                 FormatterLoader.invoke(
                     FormatterLoaderTest.class.getDeclaredMethod("lacksJavacGrants"), null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("run lathe:sync")
+        .hasMessageContaining("run `.lathe/lathe-sync.sh`")
         .hasCauseInstanceOf(IllegalAccessError.class);
     assertThatThrownBy(
             () ->

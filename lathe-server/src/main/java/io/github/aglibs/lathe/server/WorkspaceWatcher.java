@@ -20,7 +20,7 @@ final class WorkspaceWatcher {
     NO_CHANGE,
     WORKSPACE_CHANGED,
     REACTOR_REFRESH,
-    POM_CHANGED
+    BUILD_FILES_CHANGED
   }
 
   // A manifest mtime bump with changed content (STRUCTURAL) vs unchanged content (REACTOR_ONLY).
@@ -30,12 +30,12 @@ final class WorkspaceWatcher {
     REACTOR_ONLY
   }
 
-  private record PomFingerprint(long mtime, long size) {}
+  private record BuildFileFingerprint(long mtime, long size) {}
 
   private final Path manifestPath;
   private long lastManifestMtime;
   private String lastManifestContent;
-  private Map<Path, PomFingerprint> pomBaseline = Map.of();
+  private Map<Path, BuildFileFingerprint> buildFileBaseline = Map.of();
 
   WorkspaceWatcher(final Path workspaceRoot) {
     this.manifestPath =
@@ -56,25 +56,25 @@ final class WorkspaceWatcher {
       return PollResult.REACTOR_REFRESH;
     }
 
-    if (detectPomChange()) {
-      LOG.info(() -> "[watcher] POM changed — sync needed");
-      return PollResult.POM_CHANGED;
+    if (detectBuildFileChange()) {
+      LOG.info(() -> "[watcher] build files changed — sync needed");
+      return PollResult.BUILD_FILES_CHANGED;
     }
 
     return PollResult.NO_CHANGE;
   }
 
-  void updatePomPaths(final List<Path> absPomPaths) {
-    pomBaseline = fingerprintAll(absPomPaths);
+  void updateBuildFiles(final List<Path> absBuildFiles) {
+    buildFileBaseline = fingerprintAll(absBuildFiles);
   }
 
-  // Re-snapshot the current fingerprints of the already-tracked POMs so a dismissed sync prompt
-  // stays quiet until the POMs change again — without asserting the workspace is synced.
-  void acknowledgePoms() {
-    pomBaseline = fingerprintAll(pomBaseline.keySet());
+  // Re-snapshot the current fingerprints of the already-tracked build files so a dismissed sync
+  // prompt stays quiet until they change again — without asserting the workspace is synced.
+  void acknowledgeBuildFiles() {
+    buildFileBaseline = fingerprintAll(buildFileBaseline.keySet());
   }
 
-  private static Map<Path, PomFingerprint> fingerprintAll(final Collection<Path> paths) {
+  private static Map<Path, BuildFileFingerprint> fingerprintAll(final Collection<Path> paths) {
     return paths.stream()
         .collect(Collectors.toUnmodifiableMap(p -> p, WorkspaceWatcher::fingerprint));
   }
@@ -105,13 +105,13 @@ final class WorkspaceWatcher {
     return IOUtil.unchecked(() -> Files.readString(manifestPath, StandardCharsets.UTF_8));
   }
 
-  private boolean detectPomChange() {
-    return pomBaseline.entrySet().stream()
+  private boolean detectBuildFileChange() {
+    return buildFileBaseline.entrySet().stream()
         .anyMatch(e -> !fingerprint(e.getKey()).equals(e.getValue()));
   }
 
-  private static PomFingerprint fingerprint(final Path path) {
-    return new PomFingerprint(mtime(path), size(path));
+  private static BuildFileFingerprint fingerprint(final Path path) {
+    return new BuildFileFingerprint(mtime(path), size(path));
   }
 
   private static long mtime(final Path path) {

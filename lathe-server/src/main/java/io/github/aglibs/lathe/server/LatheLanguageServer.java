@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.WorkspaceStyle;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
@@ -260,8 +261,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     if (spec.classpath().isEmpty()) {
       LOG.warning(
           () ->
-              "[initialize] %s formatter has no resolved classpath; run lathe:sync"
-                  .formatted(spec.engine()));
+              "[initialize] %s formatter has no resolved classpath; run %s"
+                  .formatted(spec.engine(), LatheLayout.SYNC_SCRIPT_COMMAND));
       return null;
     }
 

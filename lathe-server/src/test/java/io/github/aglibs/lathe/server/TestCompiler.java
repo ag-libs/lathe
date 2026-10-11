@@ -227,7 +227,7 @@ public final class TestCompiler {
             existing.runnerClasspath(),
             existing.jdk(),
             existing.dependencySources(),
-            existing.pomPaths(),
+            existing.buildFiles(),
             existing.resourceRoots(),
             outputs),
         manifestFile);

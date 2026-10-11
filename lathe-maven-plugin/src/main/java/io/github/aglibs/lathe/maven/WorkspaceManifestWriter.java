@@ -28,7 +28,7 @@ final class WorkspaceManifestWriter {
       final JdkSource jdkSource,
       final String serverVersion,
       final List<String> runnerClasspath,
-      final List<String> pomPaths,
+      final List<String> buildFiles,
       final List<ResourceRootData> resourceRoots,
       final List<OutputData> outputs) {
     final var data =
@@ -39,7 +39,7 @@ final class WorkspaceManifestWriter {
             runnerClasspath,
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList(),
-            pomPaths,
+            buildFiles,
             resourceRoots,
             outputs);
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);

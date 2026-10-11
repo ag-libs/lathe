@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
@@ -34,12 +35,15 @@ final class FormatterLoader {
 
       // Reported as a formatting failure rather than escaping as an internal error. Access is
       // refused when the server JVM lacks the javac-internals grants (a .lathe/ older than the
-      // last lathe:sync, or a launcher not started from the workspace root); any other linkage
+      // last sync, or a launcher not started from the workspace root); any other linkage
       // failure is a formatter release that does not support this JDK's javac.
       if (e.getCause() instanceof final IllegalAccessError error) {
         throw new IllegalStateException(
-            "%s cannot access javac; run lathe:sync and restart the server: %s"
-                .formatted(method.getDeclaringClass().getName(), error.getMessage()),
+            "%s cannot access javac; run `%s` and restart the server: %s"
+                .formatted(
+                    method.getDeclaringClass().getName(),
+                    LatheLayout.SYNC_SCRIPT_COMMAND,
+                    error.getMessage()),
             error);
       }
 

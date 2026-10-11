@@ -217,7 +217,7 @@ class MultiModuleTest {
     final var launch = lathe("jpms/test-launch.json");
     assertThat(launch).exists();
     final var content = read(launch);
-    assertThat(content).contains("\"kind\": \"surefire\"");
+    assertThat(content).contains("\"kind\": \"junit-platform\"");
     assertThat(content).contains("\"mode\": \"MODULE\"");
     assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
     assertThat(content).contains("\"patchModules\"");

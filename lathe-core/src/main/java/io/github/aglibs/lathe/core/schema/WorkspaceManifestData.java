@@ -11,7 +11,7 @@ public record WorkspaceManifestData(
     List<String> runnerClasspath,
     JdkSourceData jdk,
     List<DependencyData> dependencySources,
-    List<String> pomPaths,
+    List<String> buildFiles,
     List<ResourceRootData> resourceRoots,
     List<OutputData> outputs) {
 
@@ -22,7 +22,7 @@ public record WorkspaceManifestData(
         .validate();
     runnerClasspath = Objects.requireNonNullElse(runnerClasspath, List.of());
     dependencySources = Objects.requireNonNullElse(dependencySources, List.of());
-    pomPaths = Objects.requireNonNullElse(pomPaths, List.of());
+    buildFiles = Objects.requireNonNullElse(buildFiles, List.of());
     resourceRoots = Objects.requireNonNullElse(resourceRoots, List.of());
     outputs = Objects.requireNonNullElse(outputs, List.of());
   }

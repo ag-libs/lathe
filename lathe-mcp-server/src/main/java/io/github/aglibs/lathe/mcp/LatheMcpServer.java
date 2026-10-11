@@ -36,7 +36,7 @@ public final class LatheMcpServer {
   // repeat the key cues so they still steer clients that drop instructions (e.g. claude.ai web).
   private static final String INSTRUCTIONS =
       """
-      Lathe provides javac-accurate, cross-module code intelligence for this Java/Maven reactor \
+      Lathe provides javac-accurate, cross-module code intelligence for this multi-module Java build \
       — precise where text search is ambiguous. Choose by task:
 
       - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
@@ -56,10 +56,10 @@ public final class LatheMcpServer {
       - Finding the implementations of an interface, or the overrides of a method (the declarations \
       themselves, not their call sites): use find_implementations.
       - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
-      Maven).
+      full build).
       - Checking whether a specific test, class, or package passes after an edit: use run_test — it \
-      replays just that against the compiled classpath, no reactor build; prefer it over \
-      `mvn test` for a single target.
+      replays just that against the compiled classpath, no full build; prefer it over the build's \
+      own test command for a single target.
 
       A "Stale:" note on a result means a module's source is newer than its compiled classes; run \
       `%s` to refresh, then re-query."""

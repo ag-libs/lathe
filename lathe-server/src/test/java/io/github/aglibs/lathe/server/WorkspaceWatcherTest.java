@@ -50,11 +50,11 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updatePomPaths(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom));
 
     // Update mtime and size
     Files.writeString(pom, "<project>updated</project>");
-    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
   }
 
   @Test
@@ -64,27 +64,27 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updatePomPaths(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom));
 
     // Mtime changes but size stays same (touch)
     Files.setLastModifiedTime(pom, FileTime.fromMillis(PAST.toMillis() + 10_000L));
-    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
   }
 
   @Test
-  void poll_updatePomPaths_resetsBaseline() throws IOException {
+  void poll_updateBuildFiles_resetsBaseline() throws IOException {
     final var pom = workspaceRoot.resolve("pom.xml");
     Files.writeString(pom, "<project/>");
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updatePomPaths(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom));
 
     // Make it stale
     Files.writeString(pom, "<project>updated</project>");
 
-    // Now call updatePomPaths to reset baseline to current disk state
-    watcher.updatePomPaths(List.of(pom));
+    // Now call updateBuildFiles to reset baseline to current disk state
+    watcher.updateBuildFiles(List.of(pom));
 
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
   }
@@ -96,7 +96,7 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updatePomPaths(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom));
 
     // Change both
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
@@ -137,20 +137,20 @@ class WorkspaceWatcherTest {
   }
 
   @Test
-  void acknowledgePoms_afterPomChange_stopsReprompting() throws IOException {
+  void acknowledgeBuildFiles_afterPomChange_stopsReprompting() throws IOException {
     final var pom = workspaceRoot.resolve("pom.xml");
     Files.writeString(pom, "<project/>");
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updatePomPaths(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom));
     Files.writeString(pom, "<project>updated</project>");
 
     // Without acknowledgement the change is reported on every poll — the re-prompt loop.
-    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
-    assertThat(watcher.poll()).isEqualTo(PollResult.POM_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
 
-    watcher.acknowledgePoms();
+    watcher.acknowledgeBuildFiles();
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
   }
 

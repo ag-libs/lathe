@@ -77,7 +77,7 @@ final class SyncCoordinator {
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");
     } else {
-      final List<String> pomPaths =
+      final List<String> buildFiles =
           projects.stream()
               .map(p -> workspaceRoot.relativize(p.getFile().toPath()).toString())
               .toList();
@@ -92,7 +92,7 @@ final class SyncCoordinator {
               enrichedJdkSource,
               PluginProps.version(),
               runnerClasspath,
-              pomPaths,
+              buildFiles,
               ModuleResourcesReader.read(workspaceRoot, projects),
               ReactorProjects.outputs(workspaceRoot, projects));
       final MavenProject rootProject = session.getTopLevelProject();

@@ -76,7 +76,7 @@ final class LatheMcpTools {
                 """
                 Compiler-accurate errors and warnings for a Java file, exactly as javac sees \
                 them on the real build classpath. Call after editing a file to check whether \
-                it compiles — no Maven, no whole-project build.\
+                it compiles — no whole-project build.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -202,12 +202,13 @@ final class LatheMcpTools {
                 """)
             .description(
                 """
-                Replay a test against the compiled classpath — no reactor build. Runs one method, \
-                the whole test class, or its package; prefer it over `mvn test` for a single \
-                target after an edit. Returns pass/fail/skip counts and each failure's message and \
-                line. Needs a captured test-launch.json (run `mvn test` once); it reports that if \
-                missing.\
-                """)
+                Replay a test against the compiled classpath — no full build. Runs one method, \
+                the whole test class, or its package; prefer it over the build's own test command \
+                for a single target after an edit. Returns pass/fail/skip counts and each failure's \
+                message and line. Needs a captured test-launch.json (run `%s` once); it reports \
+                that if missing.\
+                """
+                    .formatted(LatheLayout.captureTestsCommand("<module>")))
             .build();
     return SyncToolSpecification.builder()
         .tool(tool)
@@ -380,9 +381,9 @@ final class LatheMcpTools {
             .description(
                 """
                 After editing Java files, recompile just the changed set in-process against the real \
-                classpath — no full Maven build — and report the new compiler diagnostics grouped by \
+                classpath — no full build — and report the new compiler diagnostics grouped by \
                 module. Detects the change set from disk automatically, or pass `files` to scope it. \
-                When the change reaches other modules it returns the exact scoped `mvn` command to \
+                When the change reaches other modules it returns the exact scoped sync command to \
                 verify the remainder. Use it to confirm your edits still compile before a build.\
                 """)
             .build();
@@ -927,9 +928,9 @@ final class LatheMcpTools {
 
   private static String deferralText(final String reason) {
     return switch (reason) {
-      case "POM_PENDING" -> "a pending POM/dependency change needs a full build";
+      case "BUILD_FILES_PENDING" -> "a pending build-file or dependency change needs a sync";
       case "BULK_CHANGE" -> "too many changed files for an in-process recompile";
-      case "BUILD_IN_PROGRESS" -> "a reactor build is in progress";
+      case "BUILD_IN_PROGRESS" -> "a build is in progress";
       default -> reason;
     };
   }

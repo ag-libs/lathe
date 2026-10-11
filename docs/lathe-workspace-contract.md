@@ -106,7 +106,7 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `runnerClasspath` | `lathe-test-runner` plus JUnit Platform jars; empty blocks test runs |
 | `jdk` | JDK sources and type-index shard (`JdkSourceData`), or null |
 | `dependencySources` | per dependency jar: extracted sources dir, classpath, type-index shard (`DependencyData`) |
-| `pomPaths` | workspace-relative build files the server watches for changes |
+| `buildFiles` | workspace-relative build files the server watches for changes |
 | `resourceRoots` | resource directories, their build output, and owning module (`ResourceRootData`) |
 | `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
 

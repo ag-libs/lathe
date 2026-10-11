@@ -72,6 +72,7 @@ public final class LatheLayout {
   public static final String LATHE_GROUP_ID = "io.github.ag-libs";
   public static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
   public static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
+  public static final String OPENJDK_PLUGIN_ARTIFACT_ID = "lathe-openjdk-maven-plugin";
   public static final String JUNIT_ARTIFACT_ID = "lathe-junit";
   public static final String COMPILER_ID = "lathe";
   public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
@@ -91,18 +92,25 @@ public final class LatheLayout {
   // What users and agents run to refresh an already-synced workspace: the script the build wrote,
   // which knows the build tool. Every remediation below and the MCP instructions compose it.
   public static final String SYNC_SCRIPT_COMMAND = "%s/%s".formatted(LATHE_DIR, SYNC_SCRIPT);
+  public static final String SYNC_TESTS_FLAG = "--tests";
 
   // Scoped form: refresh the given modules, their upstream, and everything downstream.
   public static String scopedSyncCommand(final Collection<String> modules) {
     return "%s %s".formatted(SYNC_SCRIPT_COMMAND, String.join(" ", modules));
   }
 
+  // Re-captures the module's test launch without running its tests.
+  public static String captureTestsCommand(final String module) {
+    return "%s %s %s".formatted(SYNC_SCRIPT_COMMAND, SYNC_TESTS_FLAG, module);
+  }
+
   // A missing .lathe/ can mean the project is not set up for Lathe at all, or set up but not yet
-  // built — so this remediation covers both rather than assuming a build alone will fix it.
-  // Centralized here so the wording lives in one place.
+  // built — so this remediation covers both rather than assuming a build alone will fix it. No sync
+  // script exists yet, so it names each front-end's first command instead.
   public static final String SETUP_REMEDIATION =
-      "If this project is not set up for Lathe yet, add the lathe-maven-extension; then run `%s` to generate %s."
-          .formatted(SYNC_COMMAND, LATHE_DIR);
+      "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Either generates %s."
+          .formatted(
+              SYNC_COMMAND, MVN, LATHE_GROUP_ID, OPENJDK_PLUGIN_ARTIFACT_ID, SYNC_GOAL, LATHE_DIR);
 
   // A non-editor client (the MCP agent) gets no interactive sync prompt, so a tool result carries
   // this instead. The remaining %s is the stale-module list, filled at use.

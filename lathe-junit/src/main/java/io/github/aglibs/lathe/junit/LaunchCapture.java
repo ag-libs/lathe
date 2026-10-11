@@ -12,7 +12,7 @@ import java.util.stream.Stream;
 
 final class LaunchCapture {
 
-  private static final String KIND_SUREFIRE = "surefire";
+  private static final String KIND = "junit-platform";
 
   private LaunchCapture() {}
 
@@ -87,7 +87,7 @@ final class LaunchCapture {
     final LaunchMode mode = patchModules.isEmpty() ? LaunchMode.CLASSPATH : LaunchMode.MODULE;
     final String mainModule = patchModules.isEmpty() ? "" : patchModules.keySet().iterator().next();
     return new TestLaunchData(
-        KIND_SUREFIRE,
+        KIND,
         mode,
         javaHome,
         mainModule,

@@ -228,7 +228,7 @@ Gradle has the scope natively (the source-set name), so this is the rule every f
 
 1. **Contract document** — docs only; settles the file list the later slices reference. *Done.*
 2. **Output map** — `workspace.json` `outputs`, `ReactorRewrite` as the map-backed instance, `remapPath` removed, the Maven sync writing the entries, the `SCHEMA_VERSION` bump with the cache version split off. *Done.*
-3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`.
+3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`. *Done.*
 4. **Client** — Neovim messages and neotest directory skip.
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.**
 6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`.
