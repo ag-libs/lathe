@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
@@ -15,10 +16,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
@@ -131,11 +135,63 @@ public final class TestCompiler {
     return path;
   }
 
+  /**
+   * Writes a module whose sources (root-relative path to content) are already compiled into its
+   * mirror and stamped at {@code mtimeMillis}, so the workspace starts fresh. {@code dependencies}
+   * name upstream modules written the same way; they go on the classpath as Maven would list them.
+   * Returns the source paths in the given order.
+   */
+  public static List<Path> writeMirroredModule(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Map<String, String> sources,
+      final List<String> dependencies,
+      final long mtimeMillis)
+      throws IOException {
+    final Path sourceRoot = workspaceRoot.resolve(moduleName).resolve("src/main/java");
+    final var paths = new ArrayList<Path>();
+    for (final var source : sources.entrySet()) {
+      paths.add(writeAt(sourceRoot.resolve(source.getKey()), source.getValue(), mtimeMillis));
+    }
+
+    final Path latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
+    final List<Path> mirrors =
+        dependencies.stream()
+            .map(
+                dep -> workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(dep).resolve("classes"))
+            .toList();
+    compileToDir(latheModuleDir.resolve("classes"), mirrors, paths.toArray(Path[]::new));
+    CompiledStamps.writeAll(
+        latheModuleDir,
+        "classes",
+        sources.keySet().stream().collect(Collectors.toMap(rel -> rel, rel -> mtimeMillis)));
+    writeModuleParams(
+        workspaceRoot,
+        moduleName,
+        sourceRoot,
+        null,
+        dependencies.stream()
+            .map(dep -> workspaceRoot.resolve(dep).resolve("target/classes"))
+            .toList());
+    return List.copyOf(paths);
+  }
+
   public static void writeModuleParams(
       final Path workspaceRoot,
       final String moduleName,
       final Path sourceRoot,
       final Path generatedSourcesDir)
+      throws IOException {
+    writeModuleParams(workspaceRoot, moduleName, sourceRoot, generatedSourcesDir, List.of());
+  }
+
+  // The classpath may name another module's target/classes, which the server maps to its mirror.
+  public static void writeModuleParams(
+      final Path workspaceRoot,
+      final String moduleName,
+      final Path sourceRoot,
+      final Path generatedSourcesDir,
+      final List<Path> classpath)
       throws IOException {
     final var latheModuleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleName);
     Files.createDirectories(latheModuleDir);
@@ -145,7 +201,7 @@ public final class TestCompiler {
             latheModuleDir.resolve("classes").toString(),
             generatedSourcesDir != null ? generatedSourcesDir.toString() : null,
             List.of(sourceRoot.toString()),
-            List.of(),
+            classpath.stream().map(Path::toString).toList(),
             List.of(),
             List.of(),
             "21",

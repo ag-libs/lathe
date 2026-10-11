@@ -2,8 +2,8 @@
 
 ## Status
 
-**Potential.** No code yet.
-Two design reviews are resolved (see Decisions); implementation is planned as a measurement and two slices, engine-applied first.
+**Slices 1 and 2 implemented** (see As built under Slices, which records where the code differs from the design below); slice 0 and the deferred parts remain.
+Two design reviews are resolved (see Decisions).
 Rename first: it is the largest edit the server produces (a type rename touched 108 files and 1,059 occurrences in equalsverifier) and the hardest for the server to absorb.
 Other multi-file edits the server produces (code actions, extract refactorings) can join later through the same mechanism.
 The chained batch write and the batch analysis this design introduces are the general primitives described in [Batching](lathe-batching.md), which maps them onto the other bursts.
@@ -197,6 +197,30 @@ Design rules that follow:
    This fixes both MCP gaps and reconcile's ordering gap, and proves the commit without any editor-event tracking.
 2. **Editor-applied tracking.**
    Expected hashes, suppression of per-member live compiles and token refreshes, the cross-module analysis on apply, format-on-save handling, recorded saves, merging, and the ending rules — all committing through slice 1.
+
+### As built
+
+Slices 1 and 2 are implemented with these differences from the design above:
+
+- **No analysis on apply.** Members publish nothing between the edit and the commit; the commit's dependents refresh then compiles and publishes each open member once, against the committed mirror.
+  This drops the cross-module `diagnoseInBatch` extension. The apply-time analysis stays deferred until a member's missing diagnostics during review prove to matter.
+- **The commit's refresh includes the members**, since it is what publishes them. While the transaction is open, every dependents refresh **skips** members instead: a moved file's orphan cleanup triggers one at apply time, which would otherwise compile every member against the half-renamed mirror and publish errors.
+- **The LSP and the engine take separate entry points**: the service's `rename` opens the transaction before the response goes out (ahead of the edit's document events); the engine calls `renameEdit`, writes the files itself, and commits with `commitChangeSet`, so an engine rename never leaves an editor transaction open.
+- **A rename the editor never applies** (no member seen with its edited content and none saved within 30 s, as when a refactor preview is cancelled) is dropped, so it cannot hold its files back; an applied one still has no deadline before its first save.
+- **A rename undone everywhere before saving** (Neovim's `u` in every touched buffer: undo is per buffer, and the file move stays on disk) is dropped once the last member is back to its original text, so the files return to the ordinary path. Undoing only some members leaves them unsaved; the idle commit then commits the saved ones and the undone ones compile as ordinary documents.
+- **Not yet built:** holding the per-publish semantic-token refresh (the commit's refresh still sends one per published member), dropping a member on an unexpected disk change, counting a member written to disk without `didSave` as saved, and merging tasks for a workspace reload.
+
+Measured with `dev/burst.py` on equalsverifier (rename `EqualsVerifier`, 108 files):
+
+| | Neovim pacing, before | after | Save All, before | after |
+|---|---|---|---|---|
+| Compiles | 1,834 | 116 | 651 | 116 |
+| `publishDiagnostics` | 1,792 | 109 | 589 | 109 |
+| Token refreshes | 1,759 | 108 | 567 | 108 |
+| Analysis cache evictions | 2,044 | 17 | 801 | 17 |
+| Edit to quiet | 66.7 s | 72.7 s | 51.9 s | 14.4 s |
+
+With Neovim's pacing the harness cannot show a shorter `:wa` (its pacing is fixed); the commit's chained batches and the members' refresh run after the last save, about 9 s.
 
 ## Tests
 

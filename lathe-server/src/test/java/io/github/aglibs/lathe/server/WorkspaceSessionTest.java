@@ -189,20 +189,23 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void claimStable_fileMidSaveOrAlreadyReacting_skipped_restClaimed() {
+  void claimStable_fileMidSaveReactingOrHeldByRename_skipped_restClaimed() {
     final var settled = sourceRoot.resolve("com/example/Settled.java");
     final var saving = sourceRoot.resolve("com/example/Saving.java");
     final var reacting = sourceRoot.resolve("com/example/Reacting.java");
     final var moving = sourceRoot.resolve("com/example/Moving.java");
+    final var renamed = sourceRoot.resolve("com/example/Renamed.java");
     final var inFlight = new HashSet<>(Set.of(reacting));
 
-    // Saving's own save compile is still running; Moving has not settled across two ticks.
+    // Saving's own save compile is still running; Moving has not settled across two ticks;
+    // Renamed waits for its open rename's commit.
     final List<Path> claimed =
         WorkspaceSession.claimStable(
-            List.of(settled, saving, reacting, moving),
-            Set.of(settled, saving, reacting),
+            List.of(settled, saving, reacting, moving, renamed),
+            Set.of(settled, saving, reacting, renamed),
             Map.of(saving, 1),
-            inFlight);
+            inFlight,
+            Set.of(renamed));
 
     assertThat(claimed).containsExactly(settled);
     assertThat(inFlight).containsExactlyInAnyOrder(reacting, settled);

@@ -171,9 +171,10 @@ final class LatheMcpTools {
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
                 match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
-                and reports exactly which files it changed. Refuses if it would \
-                touch a file outside the reactor. After a cross-module rename, rebuild the reactor to \
-                confirm it still compiles.\
+                and reports exactly which files it changed. Renaming a public top-level type also \
+                renames its file. Refuses if it would touch a file outside the reactor. The changed \
+                files are compiled before it returns, so follow-up queries see the new names. After \
+                a cross-module rename, rebuild the reactor to confirm it still compiles.\
                 """)
             .build();
     return SyncToolSpecification.builder()

@@ -12,7 +12,9 @@ import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -191,6 +193,77 @@ class LatheEngineTest {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
     assertThat(Files.readString(fx.callee())).contains("void welcome()").doesNotContain("greet");
     assertThat(Files.readString(fx.caller())).contains("c.welcome()").doesNotContain("greet");
+  }
+
+  @Test
+  void rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass()
+      throws Exception {
+    final String apiSource =
+        "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
+    final Path api =
+        TestCompiler.writeMirroredModule(
+                tmp, "api", Map.of("com/example/api/Api.java", apiSource), List.of(), 1_000L)
+            .getFirst();
+    final Path app =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of(
+                    "com/example/app/App.java",
+                    "package com.example.app;\nimport com.example.api.Api;\n"
+                        + "class App { int u() { return new Api().a(); } }\n"),
+                List.of("api"),
+                1_000L)
+            .getFirst();
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(apiSource, apiSource.indexOf("Api {"));
+    final LatheRename rename = engine.rename(api, pos.getLine(), pos.getCharacter(), "Renamed");
+
+    final Path renamed = api.resolveSibling("Renamed.java");
+    assertThat(api).doesNotExist();
+    assertThat(Files.readString(renamed)).contains("public class Renamed");
+    assertThat(Files.readString(app)).contains("new Renamed()").doesNotContain("Api()");
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Renamed.java"))
+        .anySatisfy(uri -> assertThat(uri).endsWith("App.java"));
+
+    // The commit swapped the mirror's class and compiled the dependent against it, in one go.
+    final Path apiClasses = tmp.resolve(".lathe/api/classes/com/example/api");
+    assertThat(apiClasses.resolve("Renamed.class")).exists();
+    assertThat(apiClasses.resolve("Api.class")).doesNotExist();
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
+        .containsEntry("com/example/app/App.java", Files.getLastModifiedTime(app).toMillis());
+    assertThat(tmp.resolve(".lathe/lathe.lock")).doesNotExist();
+  }
+
+  @Test
+  void rename_moreFilesThanTheBulkThreshold_compilesEveryFileIntoTheMirror() throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("com/example/Callee.java", "package com.example; class Callee { void greet() {} }");
+    for (int i = 0; i < 55; i++) {
+      sources.put(
+          "com/example/Caller%d.java".formatted(i),
+          "package com.example; class Caller%d { void run(Callee c) { c.greet(); } }".formatted(i));
+    }
+
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    engine = new LatheEngine(tmp);
+
+    final String calleeSource = sources.get("com/example/Callee.java");
+    final var pos = offsetToPosition(calleeSource, calleeSource.indexOf("greet"));
+    engine.rename(files.getFirst(), pos.getLine(), pos.getCharacter(), "welcome");
+
+    // Every touched file is compiled and stamped before rename returns, not deferred to a sync.
+    final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+    for (final Path file : files) {
+      assertThat(stamps)
+          .containsEntry(
+              tmp.resolve("module/src/main/java").relativize(file).toString(),
+              Files.getLastModifiedTime(file).toMillis());
+    }
   }
 
   @Test

@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
@@ -71,7 +72,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     formatEngine = engine;
   }
 
-  void setFileRenameSupported(final boolean supported) {
+  public void setFileRenameSupported(final boolean supported) {
     fileRenameSupported = supported;
   }
 
@@ -97,6 +98,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
    */
   public CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     return worker.submit(() -> session.reconcileForVerify()).thenCompose(done -> done);
+  }
+
+  /** Compile a change set the caller wrote to disk itself, completing once the mirror has it. */
+  public CompletableFuture<Void> commitChangeSet(final Set<Path> changed) {
+    return worker.submit(() -> session.commitChangeSet(changed)).thenCompose(done -> done);
   }
 
   /** The changed files plus their same-module candidate callers, grouped by module rel. */
@@ -343,6 +349,20 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<WorkspaceEdit> rename(final RenameParams params) {
+    // The editor applies and saves the edit, so the session tracks it as one transaction. The
+    // response is sent only once the transaction is open, ahead of the edit's document events.
+    return renameEdit(params)
+        .thenCompose(
+            edit ->
+                worker.submit(
+                    () -> {
+                      session.beginRenameTransaction(edit);
+                      return edit;
+                    }));
+  }
+
+  /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */
+  public CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
     final var uri = params.getTextDocument().getUri();
     final var pos = params.getPosition();
     final var newName = params.getNewName();

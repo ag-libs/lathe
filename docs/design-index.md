@@ -314,10 +314,10 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [Rename Transactions](potential/lathe-rename-transactions.md) — the server would absorb a rename it
-  produced as one transaction: one batch analysis when the edit is applied, one shared commit (batch compile per source
-  tree, one dependents refresh, one semantic-token refresh) when the last touched file is saved or, for MCP, right after
-  the engine writes the files. Review issues resolved; two slices, engine-applied first.
+- [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
+  rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
+  (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine
+  writes the files; the as-built notes record the deferred parts.
 - [Batching](potential/lathe-batching.md) — two server primitives for multi-file bursts: chained batch writes
   (reconcile, the rename commit, save coalescing) and in-memory batch analysis (dependents refresh, open bursts, reload),
   coalescing by load rather than timers; plus narrowing the dependents refresh.

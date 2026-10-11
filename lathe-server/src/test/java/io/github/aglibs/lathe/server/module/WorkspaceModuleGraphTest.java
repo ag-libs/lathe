@@ -151,6 +151,25 @@ class WorkspaceModuleGraphTest {
   }
 
   @Test
+  void compilesBefore_dependencyAndOwnMainTree_beforeDependentsAndTestTree() {
+    final var apiMain = config("api", "classes", List.of());
+    final var appMain = config("app", "classes", List.of(reactorTarget("api")));
+    final var appTest = config("app", "test-classes", List.of(reactorTarget("app")));
+    final var otherMain = config("other", "classes", List.of());
+    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, appMain, appTest, otherMain));
+
+    assertThat(graph.compilesBefore(apiMain, appMain)).isTrue();
+    assertThat(graph.compilesBefore(apiMain, appTest)).isTrue(); // transitive through app
+    assertThat(graph.compilesBefore(appMain, appTest)).isTrue();
+
+    assertThat(graph.compilesBefore(appMain, apiMain)).isFalse();
+    assertThat(graph.compilesBefore(appTest, appMain)).isFalse();
+    assertThat(graph.compilesBefore(appMain, appMain)).isFalse();
+    assertThat(graph.compilesBefore(otherMain, appMain)).isFalse();
+    assertThat(graph.compilesBefore(apiMain, otherMain)).isFalse();
+  }
+
+  @Test
   void upstreamFirst_ordersDependenciesBeforeDependents() {
     // Chain api -> service -> app: order is fully pinned.
     final var apiMain = config("api", "classes", List.of());

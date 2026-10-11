@@ -136,6 +136,8 @@ change, a bulk change, or a running build).
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
 touch a file outside the reactor**.
+Renaming a public top-level type also renames its file.
+The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 
 ## Usage logging
 

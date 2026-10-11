@@ -113,6 +113,17 @@ public final class WorkspaceModuleGraph {
         .toList();
   }
 
+  // Whether upstream's classes must be in the mirror before downstream compiles: a tree of a module
+  // it depends on, or its own module's main tree when downstream is the test tree.
+  public boolean compilesBefore(
+      final ModuleSourceConfig upstream, final ModuleSourceConfig downstream) {
+    if (upstream.moduleDir().equals(downstream.moduleDir())) {
+      return !upstream.isTestTree() && downstream.isTestTree();
+    }
+
+    return downstreamModuleDirs(upstream.moduleDir()).contains(downstream.moduleDir());
+  }
+
   private static Set<Path> transitiveDownstream(
       final Path root, final Map<Path, Set<Path>> directDependents) {
     final var visited = new HashSet<Path>();

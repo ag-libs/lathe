@@ -14,10 +14,12 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -29,6 +31,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 
 public final class SourceLocator {
 
@@ -109,6 +112,36 @@ public final class SourceLocator {
       }
     }
     return new Position(line, col);
+  }
+
+  // Rebuild the document from the original: for each edit (in document order) emit the untouched
+  // gap before it plus its replacement, then the final untouched tail. Edits never overlap, so the
+  // gaps are well-defined and offsets need no adjusting for earlier edits.
+  public static String applyEdits(final String content, final List<? extends TextEdit> edits) {
+    final List<TextEdit> ordered =
+        edits.stream()
+            .map(TextEdit.class::cast)
+            .sorted(Comparator.comparingInt(e -> offset(content, e.getRange().getStart())))
+            .toList();
+    return IntStream.rangeClosed(0, ordered.size())
+        .mapToObj(i -> segment(content, ordered, i))
+        .collect(Collectors.joining());
+  }
+
+  private static String segment(
+      final String content, final List<TextEdit> ordered, final int index) {
+    final int from = index == 0 ? 0 : offset(content, ordered.get(index - 1).getRange().getEnd());
+    if (index == ordered.size()) {
+      return content.substring(from); // the untouched tail after the last edit
+    }
+
+    final TextEdit edit = ordered.get(index);
+    final int to = offset(content, edit.getRange().getStart());
+    return "%s%s".formatted(content.substring(from, to), edit.getNewText());
+  }
+
+  private static int offset(final String content, final Position position) {
+    return toOffset(content, position.getLine(), position.getCharacter());
   }
 
   /** The offset of a 0-based {@code line}/{@code character} in raw text, before it is parsed. */

@@ -3,24 +3,26 @@ package io.github.aglibs.lathe.server.engine;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.ModulePlacement;
 import io.github.aglibs.lathe.server.ReconcileOutcome;
+import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -122,6 +124,8 @@ public final class LatheEngine {
     this.workspaceRoot = workspaceRoot;
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     service.connect(new NoopLanguageClient());
+    // The engine moves files itself, so a public type's rename can move its declaring file.
+    service.setFileRenameSupported(true);
     service.initialize(workspaceRoot);
   }
 
@@ -241,14 +245,15 @@ public final class LatheEngine {
             new TextDocumentIdentifier(file.toUri().toString()),
             new Position(line, column),
             newName);
-    final WorkspaceEdit edit = await(service.rename(params));
-    final Map<String, List<TextEdit>> changes = edit == null ? Map.of() : edit.getChanges();
-    if (changes == null || changes.isEmpty()) {
+    final WorkspaceEdit edit = await(service.renameEdit(params));
+    final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
+    if (textEdits.isEmpty()) {
       return new LatheRename(newName, 0, List.of());
     }
 
+    final Map<String, String> moves = RenameProvider.fileMoves(edit);
     final List<String> nonReactor =
-        changes.keySet().stream()
+        Stream.concat(textEdits.keySet().stream(), moves.values().stream())
             .filter(uri -> origin(LatheUri.toPath(uri)) != LatheLocation.Origin.REACTOR)
             .sorted()
             .toList();
@@ -257,54 +262,51 @@ public final class LatheEngine {
           "[rename] refusing: would edit non-reactor file(s) %s".formatted(nonReactor));
     }
 
-    final List<LatheFileEdit> files = new ArrayList<>();
-    for (final Map.Entry<String, List<TextEdit>> entry : changes.entrySet()) {
-      files.add(applyFileEdits(entry.getKey(), entry.getValue()));
-    }
-
-    files.sort(Comparator.comparing(LatheFileEdit::uri));
-    // Refresh now so this rename's advisory reflects the edits it just wrote, without the 2s lag.
-    await(service.refreshStaleModulesFuture());
+    final List<LatheFileEdit> files =
+        textEdits.entrySet().stream()
+            .map(
+                entry -> {
+                  final String uri = moves.getOrDefault(entry.getKey(), entry.getKey());
+                  return new LatheFileEdit(
+                      uri, origin(LatheUri.toPath(uri)), entry.getValue().size());
+                })
+            .sorted(Comparator.comparing(LatheFileEdit::uri))
+            .toList();
+    writeAndCommit(textEdits, moves, files);
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
     return new LatheRename(newName, total, files);
   }
 
-  private LatheFileEdit applyFileEdits(final String uri, final List<TextEdit> edits) {
-    final var path = LatheUri.toPath(uri);
-    final String content = IOUtil.unchecked(() -> Files.readString(path));
-    final String updated = applyEdits(content, edits);
-    IOUtil.unchecked(() -> Files.writeString(path, updated));
-    return new LatheFileEdit(uri, origin(path), edits.size());
-  }
-
-  // Rebuild the document from the original: for each edit (in document order) emit the untouched
-  // gap before it plus its replacement, then the final untouched tail. Edits never overlap, so the
-  // gaps are well-defined and offsets need no adjusting for earlier edits.
-  private static String applyEdits(final String content, final List<TextEdit> edits) {
-    final List<TextEdit> ordered =
-        edits.stream()
-            .sorted(
-                Comparator.comparingInt((TextEdit e) -> offset(content, e.getRange().getStart())))
-            .toList();
-    return IntStream.rangeClosed(0, ordered.size())
-        .mapToObj(i -> segment(content, ordered, i))
-        .collect(Collectors.joining());
-  }
-
-  private static String segment(
-      final String content, final List<TextEdit> ordered, final int index) {
-    final int from = index == 0 ? 0 : offset(content, ordered.get(index - 1).getRange().getEnd());
-    if (index == ordered.size()) {
-      return content.substring(from); // the untouched tail after the last edit
+  // Holds the reactor lock while writing, so an editor's server on the same workspace never
+  // reconciles a half-written rename, and returns once the mirror holds the whole change.
+  private void writeAndCommit(
+      final Map<String, List<TextEdit>> textEdits,
+      final Map<String, String> moves,
+      final List<LatheFileEdit> files) {
+    IOUtil.unchecked(() -> LatheLock.acquire(latheDir));
+    try {
+      textEdits.forEach(LatheEngine::applyFileEdits);
+      moves.forEach(
+          (oldUri, newUri) ->
+              IOUtil.unchecked(() -> Files.move(LatheUri.toPath(oldUri), LatheUri.toPath(newUri))));
+      final Set<Path> changed =
+          files.stream()
+              .map(file -> LatheUri.toPath(file.uri()))
+              .collect(Collectors.toUnmodifiableSet());
+      await(service.commitChangeSet(changed));
+    } finally {
+      IOUtil.unchecked(() -> LatheLock.release(latheDir));
     }
 
-    final TextEdit edit = ordered.get(index);
-    final int to = offset(content, edit.getRange().getStart());
-    return "%s%s".formatted(content.substring(from, to), edit.getNewText());
+    // So this rename's stale-module advisory reflects the commit, without the 2s scan lag.
+    await(service.refreshStaleModulesFuture());
   }
 
-  private static int offset(final String content, final Position position) {
-    return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
+  private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
+    final var path = LatheUri.toPath(uri);
+    final String content = IOUtil.unchecked(() -> Files.readString(path));
+    final String updated = SourceLocator.applyEdits(content, edits);
+    IOUtil.unchecked(() -> Files.writeString(path, updated));
   }
 
   /** Reactor-relative paths of modules whose source is newer than their compiled classes. */

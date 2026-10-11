@@ -22,15 +22,16 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -69,6 +70,7 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
@@ -81,6 +83,7 @@ import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
+import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
@@ -609,21 +612,9 @@ class LatheTextDocumentServiceTest {
   @Test
   void reconcileNow_sealedRootAndNewPermittedSubtypeChangedExternally_recompilesBothInOneBatch()
       throws Exception {
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path shape = sourceRoot.resolve("shapes/Shape.java");
-    final Path circle = sourceRoot.resolve("shapes/Circle.java");
-    final Path square = sourceRoot.resolve("shapes/Square.java");
-
-    // Consistent, already-mirrored baseline: Shape permits Circle only, both compiled and stamped.
-    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
-    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
+    final Path shape = mirroredShapes();
+    final Path square = shape.resolveSibling("Square.java");
     final Path classesDir = tmp.resolve(".lathe/module/classes");
-    TestCompiler.compileToDir(classesDir, shape, circle);
-    CompiledStamps.writeAll(
-        tmp.resolve(".lathe/module"),
-        "classes",
-        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
 
     service.initialize(tmp);
     awaitStartup();
@@ -643,6 +634,52 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
+  void reconcileNow_upstreamAndDependentChangedTogether_compilesDependentAfterUpstreamInOnePass()
+      throws Exception {
+    // Mirrored baseline: app calls Api.a().
+    final Path api =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "api",
+                Map.of(
+                    "com/example/api/Api.java",
+                    "package com.example.api; public class Api { public int a() { return 1; } }"),
+                List.of(),
+                1_000L)
+            .getFirst();
+    final Path app =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of(
+                    "com/example/app/App.java",
+                    "package com.example.app;"
+                        + " class App { int u() { return new com.example.api.Api().a(); } }"),
+                List.of("api"),
+                1_000L)
+            .getFirst();
+
+    service.initialize(tmp);
+    awaitStartup();
+
+    // A rename lands on disk: a() becomes b() and its caller follows. App compiles only against
+    // the new Api class, so its batch must run after api's has written the mirror.
+    TestCompiler.writeAt(
+        api, "package com.example.api; public class Api { public int b() { return 1; } }", 5_000L);
+    TestCompiler.writeAt(
+        app,
+        "package com.example.app; class App { int u() { return new com.example.api.Api().b(); } }",
+        5_000L);
+
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/api"), "classes"))
+        .containsEntry("com/example/api/Api.java", 5_000L);
+    assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
+        .containsEntry("com/example/app/App.java", 5_000L);
+  }
+
+  @Test
   void reconcileNow_openClusterUnderUnrelatedBacklogOverThreshold_stillRecompilesCluster()
       throws Exception {
     // Reproduces the cross-module rename failure. A legitimate small change-set -- the rename's
@@ -651,20 +688,10 @@ class LatheTextDocumentServiceTest {
     // workspace over the bulk threshold, so reconcileChangedSources bails to the sync notice and
     // never batches the cluster. The cluster is a sealed root and a new permitted subtype, which
     // deadlock on a piecemeal compile (each needs the other) and resolve only when batched.
+    final Path shape = mirroredShapes();
+    final Path square = shape.resolveSibling("Square.java");
     final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path shape = sourceRoot.resolve("shapes/Shape.java");
-    final Path circle = sourceRoot.resolve("shapes/Circle.java");
-    final Path square = sourceRoot.resolve("shapes/Square.java");
-
-    // Mirrored baseline: Shape permits Circle only, both compiled and stamped.
-    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
-    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
     final Path classesDir = tmp.resolve(".lathe/module/classes");
-    TestCompiler.compileToDir(classesDir, shape, circle);
-    CompiledStamps.writeAll(
-        tmp.resolve(".lathe/module"),
-        "classes",
-        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
 
     // An unrelated backlog of 51 unstamped sources -- stale only by mtime, enough on its own to
     // trip the workspace-wide bulk threshold (> 50) and disable in-process reconcile for
@@ -701,20 +728,8 @@ class LatheTextDocumentServiceTest {
 
   @Test
   void openSealedSubtype_liveDiagnostics_widenClearsErrorAgainstOpenSibling() throws Exception {
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    final Path shape = sourceRoot.resolve("shapes/Shape.java");
-    final Path circle = sourceRoot.resolve("shapes/Circle.java");
-    final Path square = sourceRoot.resolve("shapes/Square.java");
-
-    // Mirror baseline: Shape permits Circle only, both compiled and stamped fresh.
-    TestCompiler.writeAt(shape, "package shapes; sealed interface Shape permits Circle {}", 1_000L);
-    TestCompiler.writeAt(circle, "package shapes; final class Circle implements Shape {}", 1_000L);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), shape, circle);
-    CompiledStamps.writeAll(
-        tmp.resolve(".lathe/module"),
-        "classes",
-        Map.of("shapes/Shape.java", 1_000L, "shapes/Circle.java", 1_000L));
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    final Path shape = mirroredShapes();
+    final Path square = shape.resolveSibling("Square.java");
     service.initialize(tmp);
 
     final String shapeUri = shape.toUri().toString();
@@ -790,6 +805,89 @@ class LatheTextDocumentServiceTest {
         verify(client, after(1_500).atLeastOnce()).publishDiagnostics(argThat(p -> isFor(p, user)));
         assertThat(openCompiles(compiles, user)).isEqualTo(1);
       }
+    } finally {
+      logger.removeHandler(handler);
+    }
+  }
+
+  @Test
+  void rename_editorAppliesMoveAndSavesEveryFile_compilesEachOnceAfterOneBatchAtTheLastSave()
+      throws Exception {
+    final DepFixture fx = depWithUsers(3);
+    service.setFileRenameSupported(true);
+    service.initialize(tmp);
+    awaitStartup();
+    final String depSource = Files.readString(fx.dep());
+    openDoc(fx.dep(), depSource);
+    awaitWorkerIdle();
+
+    // Renaming the public type moves its file, Dep.java -> Dep2.java.
+    final var pos = offsetToPosition(depSource, depSource.indexOf("Dep {"));
+    final WorkspaceEdit edit =
+        service
+            .rename(
+                new RenameParams(
+                    new TextDocumentIdentifier(fx.dep().toUri().toString()), pos, "Dep2"))
+            .get(10, TimeUnit.SECONDS);
+    final Map<String, List<TextEdit>> edits = RenameProvider.textEdits(edit);
+    final Map<String, String> moves = RenameProvider.fileMoves(edit);
+    assertThat(edits).hasSize(4);
+    assertThat(moves).hasSize(1);
+
+    final var compiles = new ConcurrentLinkedQueue<String>();
+    final var handler = new MessageCollector(compiles);
+    final var logger = Logger.getLogger(SourceAnalysisSession.class.getName());
+    logger.addHandler(handler);
+    try {
+      // Apply it as Neovim does: open each touched file as it is on disk and change it to the
+      // edited text; move the renamed file on disk (unsaved), close it and reopen it under its
+      // new name. Then `:wa` writes and saves them one by one.
+      final var edited = new LinkedHashMap<Path, String>();
+      edits.forEach(
+          (uri, fileEdits) -> {
+            final Path file = LatheUri.toPath(uri);
+            final String content = IOUtil.unchecked(() -> Files.readString(file));
+            if (!file.equals(fx.dep())) {
+              openDoc(file, content);
+            }
+
+            final String next = SourceLocator.applyEdits(content, fileEdits);
+            service.didChange(
+                new DidChangeTextDocumentParams(
+                    new VersionedTextDocumentIdentifier(uri, 2),
+                    List.of(new TextDocumentContentChangeEvent(next))));
+            edited.put(LatheUri.toPath(moves.getOrDefault(uri, uri)), next);
+          });
+      moves.forEach(
+          (oldUri, newUri) -> {
+            IOUtil.unchecked(() -> Files.move(LatheUri.toPath(oldUri), LatheUri.toPath(newUri)));
+            service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(oldUri)));
+            openDoc(LatheUri.toPath(newUri), edited.get(LatheUri.toPath(newUri)));
+          });
+      service.reconcileNow(true).get(10, TimeUnit.SECONDS); // the move is seen before saving
+      edited.forEach(
+          (file, next) -> {
+            IOUtil.unchecked(() -> Files.writeString(file, next));
+            save(file);
+          });
+
+      // Each file republishes clean once the commit has compiled them together.
+      for (final Path file : edited.keySet()) {
+        verify(client, timeout(10_000))
+            .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
+      }
+
+      awaitWorkerIdle();
+      assertThat(compiles).noneMatch(m -> m.startsWith("[compile:full]"));
+      assertThat(compiles).noneMatch(m -> m.startsWith("[compile:fast]"));
+      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch]")).hasSize(1);
+      for (final Path file : edited.keySet()) {
+        assertThat(openCompiles(compiles, file)).isEqualTo(1);
+      }
+
+      final Path classes = tmp.resolve(".lathe/module/classes/com/example");
+      assertThat(classes.resolve("Dep2.class")).exists();
+      assertThat(classes.resolve("Dep.class")).doesNotExist();
     } finally {
       logger.removeHandler(handler);
     }
@@ -972,34 +1070,28 @@ class LatheTextDocumentServiceTest {
   // Dep plus userCount callers of Dep.v(), compiled into the mirror and stamped, so the workspace
   // starts fresh and the callers are exactly what a change to Dep must refresh.
   private DepFixture depWithUsers(final int userCount) throws Exception {
-    final Path dep =
-        TestCompiler.writeModuleSource(
-            tmp,
-            "com/example/Dep.java",
-            "package com.example;\npublic class Dep { public int v() { return 1; } }\n");
-    final var users = new ArrayList<Path>();
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put(
+        "com/example/Dep.java",
+        "package com.example;\npublic class Dep { public int v() { return 1; } }\n");
     for (int i = 0; i < userCount; i++) {
-      users.add(
-          TestCompiler.writeModuleSource(
-              tmp,
-              "com/example/User%d.java".formatted(i),
-              "package com.example;\nclass User%d { int u() { return new Dep().v(); } }\n"
-                  .formatted(i)));
+      sources.put(
+          "com/example/User%d.java".formatted(i),
+          "package com.example;\nclass User%d { int u() { return new Dep().v(); } }\n"
+              .formatted(i));
     }
 
-    final var sources = new ArrayList<Path>(users);
-    sources.add(dep);
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), sources.toArray(Path[]::new));
-    final var stamps = new HashMap<String, Long>();
-    for (final Path source : sources) {
-      stamps.put(
-          sourceRoot.relativize(source).toString(), Files.getLastModifiedTime(source).toMillis());
-    }
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    return new DepFixture(files.getFirst(), files.subList(1, files.size()));
+  }
 
-    CompiledStamps.writeAll(tmp.resolve(".lathe/module"), "classes", stamps);
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    return new DepFixture(dep, users);
+  // Mirrored baseline: sealed Shape permits only Circle, both compiled and stamped; returns Shape.
+  private Path mirroredShapes() throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put("shapes/Shape.java", "package shapes; sealed interface Shape permits Circle {}");
+    sources.put("shapes/Circle.java", "package shapes; final class Circle implements Shape {}");
+    return TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L).getFirst();
   }
 
   private record DepFixture(Path dep, List<Path> users) {

@@ -32,6 +32,7 @@ import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
@@ -196,6 +197,9 @@ final class WorkspaceSession {
   // file once instead of once per completing save.
   private int sourceCompilesInFlight;
   private DependentRefresh pendingRefresh;
+  // A rename the editor is applying and saving; its files compile together at the commit. Empty
+  // when none is open.
+  private RenameTransaction renameTransaction = new RenameTransaction();
   // Files with a save compile in flight (a count per file, as one file can be saved twice in a
   // row), so the reconcile pass does not compile them a second time from disk meanwhile.
   private final Map<Path, Integer> saving = new HashMap<>();
@@ -1355,6 +1359,11 @@ final class WorkspaceSession {
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
+    if (trackRename(renameTransaction.onContent(uri, content))
+        == RenameTransaction.Action.SUPPRESS) {
+      return; // compiled with the rest of the rename at its commit
+    }
+
     compileAndPublish(snapshot, CompileMode.OPEN);
   }
 
@@ -1388,8 +1397,13 @@ final class WorkspaceSession {
     docs.put(uri, content, version);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
-    publisher.publishEmpty(uri);
     worker.cancel(uri);
+    if (trackRename(renameTransaction.onContent(uri, content))
+        == RenameTransaction.Action.SUPPRESS) {
+      return;
+    }
+
+    publisher.publishEmpty(uri);
     worker.schedule(
         uri,
         debounceMs,
@@ -1406,6 +1420,8 @@ final class WorkspaceSession {
     docs.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
+    renameTransaction.onClose(uri);
+
     analysisLru.remove(uri);
     workspace.dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
@@ -1419,6 +1435,15 @@ final class WorkspaceSession {
 
     final var snapshot = snapshotForSave(uri, savedContent);
     if (snapshot == null) {
+      return;
+    }
+
+    final RenameTransaction.Action action = trackRename(renameTransaction.onSave(uri));
+    if (action == RenameTransaction.Action.COMMIT) {
+      commitRenameTransaction();
+    }
+
+    if (action != RenameTransaction.Action.NORMAL) {
       return;
     }
 
@@ -2825,6 +2850,10 @@ final class WorkspaceSession {
     try {
       final List<TextEdit> result = format.apply(content);
       LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
+      if (!result.isEmpty() && renameTransaction.isMember(uri)) {
+        renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
+      }
+
       // Formatting is a synchronous request (format-on-save blocks the editor), so a progress
       // spinner would only paint after the edit; report the outcome once it is done instead. Stay
       // quiet when nothing changed, so saving an already-formatted file does not nag.
@@ -3076,6 +3105,98 @@ final class WorkspaceSession {
     return CompletableFuture.allOf(reconcileIfIdle(eager).toArray(CompletableFuture[]::new));
   }
 
+  // The editor applies a rename's edit and saves its files; until the last save they are not
+  // compiled one by one but together at the commit. A rename while one is open merges into it.
+  void beginRenameTransaction(final WorkspaceEdit edit) {
+    final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
+    if (textEdits.isEmpty()) {
+      return;
+    }
+
+    if (renameTransaction.size() == 0) {
+      renameTransaction = new RenameTransaction(); // drop what a fully abandoned one left behind
+    }
+
+    final RenameTransaction tx = renameTransaction;
+    final Map<String, String> moves = RenameProvider.fileMoves(edit);
+    textEdits.forEach(
+        (uri, edits) -> {
+          final OpenDocument open = docs.get(uri);
+          final String original = open != null ? open.content() : readSource(LatheUri.toPath(uri));
+          if (original != null) {
+            tx.add(
+                moves.getOrDefault(uri, uri), original, SourceLocator.applyEdits(original, edits));
+          }
+        });
+    moves.keySet().forEach(tx::addMovedAway);
+    LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));
+    worker.schedule(RENAME_UNAPPLIED_KEY, RENAME_UNAPPLIED_MS, this::dropUnappliedRename);
+  }
+
+  // An edit the editor never applied (a cancelled refactor preview) must not hold its files back
+  // from the ordinary path; one it applied waits for its saves however long the user reviews it.
+  private void dropUnappliedRename() {
+    if (renameTransaction.size() > 0 && !renameTransaction.applied()) {
+      LOG.fine(
+          () -> "[rename-tx] dropped unapplied members=%d".formatted(renameTransaction.size()));
+      commitRenameTransaction();
+    }
+  }
+
+  // Once one of the rename's files is saved, each event on its files re-arms the idle commit; a
+  // rename the user undid everywhere before saving is dropped.
+  private RenameTransaction.Action trackRename(final RenameTransaction.Action action) {
+    if (action == RenameTransaction.Action.ABANDON) {
+      // Dropping it recompiles every open member, this one included.
+      LOG.fine(() -> "[rename-tx] abandoned members=%d".formatted(renameTransaction.size()));
+      commitRenameTransaction();
+      return RenameTransaction.Action.SUPPRESS;
+    }
+
+    if (action != RenameTransaction.Action.NORMAL && renameTransaction.anySaved()) {
+      worker.schedule(RENAME_COMMIT_KEY, RENAME_IDLE_MS, this::commitRenameTransaction);
+    }
+
+    return action;
+  }
+
+  // Compiles the rename's saved files as one change set; its dependents refresh then publishes the
+  // open ones. Files never saved become ordinary open documents again.
+  private void commitRenameTransaction() {
+    final RenameTransaction tx = renameTransaction;
+    if (tx.size() == 0) {
+      return;
+    }
+
+    renameTransaction = new RenameTransaction();
+    worker.cancel(RENAME_COMMIT_KEY);
+    worker.cancel(RENAME_UNAPPLIED_KEY);
+    final Set<Path> saved = tx.savedPaths();
+    final Set<String> unsaved = tx.unsavedUris();
+    LOG.info(
+        () -> "[rename-tx] commit saved=%d unsaved=%d".formatted(saved.size(), unsaved.size()));
+    commitChangeSet(saved);
+    unsaved.stream().filter(uri -> docs.get(uri) != null).forEach(this::scheduleOpenFile);
+  }
+
+  // Commits a change set the server produced and wrote to disk itself (an engine rename): drops the
+  // classes of deleted and moved-away sources, then compiles the changed files in chained batches.
+  // The server knows the set is complete, so neither the bulk threshold nor the reactor lock the
+  // writer holds defers it. Runs on the worker.
+  CompletableFuture<Void> commitChangeSet(final Set<Path> changed) {
+    reconcileDeletedSources();
+    final Map<ModuleSourceConfig, List<Path>> byTree =
+        changed.stream()
+            .flatMap(path -> workspace.moduleSourceFor(path).map(c -> Map.entry(c, path)).stream())
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toUnmodifiableList())));
+    final List<CompletableFuture<Void>> batches = compileChangedInOrder(byTree, changed);
+    reportRecompile(changed.size(), batches);
+    return CompletableFuture.allOf(batches.toArray(CompletableFuture[]::new));
+  }
+
   // The engine's freshen step, before every MCP query and verify_change: recompile the change set,
   // but never prompt. If the in-process recompile can't be trusted (POM sync pending, bulk change,
   // or a running build) it returns a DeferReason so the caller falls back to Maven. A source that
@@ -3157,8 +3278,7 @@ final class WorkspaceSession {
                   placements.put(
                       path,
                       new ModulePlacement(
-                          moduleRelForDir(config.moduleDir()),
-                          LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()))));
+                          moduleRelForDir(config.moduleDir()), config.isTestTree())));
     }
 
     return Map.copyOf(placements);
@@ -3311,14 +3431,51 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
+  // Trees compile on their own workers in parallel, so each tree's batch waits for the batches of
+  // the trees it compiles against; otherwise it could resolve the old upstream classes, fail, and
+  // wait for a later pass. Independent trees still overlap.
   private List<CompletableFuture<Void>> compileChangedInOrder(
       final Map<ModuleSourceConfig, List<Path>> staleByModule, final Set<Path> stable) {
-    final var reactions = new ArrayList<CompletableFuture<Void>>();
+    final var started = new LinkedHashMap<ModuleSourceConfig, CompletableFuture<Void>>();
+    final Set<Path> held = renameTransaction.memberPaths();
     for (final var config : compileOrder(staleByModule.keySet())) {
-      reactions.addAll(reactToChangedSources(config, staleByModule.get(config), stable));
+      final List<Path> batch =
+          claimStable(staleByModule.get(config), stable, saving, reacting, held);
+      if (!batch.isEmpty()) {
+        started.put(config, compileAfter(upstreamBatches(started, config), config, batch));
+      }
     }
 
-    return List.copyOf(reactions);
+    return List.copyOf(started.values());
+  }
+
+  private List<CompletableFuture<Void>> upstreamBatches(
+      final Map<ModuleSourceConfig, CompletableFuture<Void>> started,
+      final ModuleSourceConfig config) {
+    return started.entrySet().stream()
+        .filter(entry -> moduleGraph.compilesBefore(entry.getKey(), config))
+        .map(Map.Entry::getValue)
+        .toList();
+  }
+
+  // A deferred batch counts as in flight, so the dependents refresh still waits for it.
+  private CompletableFuture<Void> compileAfter(
+      final List<CompletableFuture<Void>> upstream,
+      final ModuleSourceConfig config,
+      final List<Path> batch) {
+    if (upstream.isEmpty()) {
+      return compileChangedBatch(config, batch);
+    }
+
+    sourceCompilesInFlight++;
+    return CompletableFuture.allOf(upstream.toArray(CompletableFuture[]::new))
+        .thenComposeAsync(
+            ignored -> {
+              final CompletableFuture<Void> done = compileChangedBatch(config, batch);
+              sourceCompileDone();
+              return done;
+            },
+            worker::execute);
   }
 
   // Modules upstream-first, and within a module the main tree before the test tree, so every
@@ -3333,26 +3490,24 @@ final class WorkspaceSession {
   }
 
   private static Comparator<ModuleSourceConfig> mainTreeFirst() {
-    return Comparator.comparing(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()));
-  }
-
-  // One batch per tree over its claimed stale set; empty when nothing is ready.
-  private List<CompletableFuture<Void>> reactToChangedSources(
-      final ModuleSourceConfig config, final List<Path> moduleStale, final Set<Path> stable) {
-    final List<Path> batch = claimStable(moduleStale, stable, saving, reacting);
-    return batch.isEmpty() ? List.of() : List.of(compileChangedBatch(config, batch));
+    return Comparator.comparing(ModuleSourceConfig::isTestTree);
   }
 
   // Claim each stable, not-already-reacting source; the batch owns and later releases these.
-  // A file mid-save is left to its save compile, which stamps it when done.
+  // A file mid-save is left to its save compile, which stamps it when done, and a file an open
+  // rename holds is left to the rename's commit.
   static List<Path> claimStable(
       final List<Path> moduleStale,
       final Set<Path> stable,
       final Map<Path, Integer> saving,
-      final Set<Path> reacting) {
+      final Set<Path> reacting,
+      final Set<Path> held) {
     final var claimed = new ArrayList<Path>(moduleStale.size());
     for (final var source : moduleStale) {
-      if (stable.contains(source) && !saving.containsKey(source) && reacting.add(source)) {
+      if (stable.contains(source)
+          && !saving.containsKey(source)
+          && !held.contains(source)
+          && reacting.add(source)) {
         claimed.add(source);
       }
     }
@@ -3680,6 +3835,13 @@ final class WorkspaceSession {
   // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
   // sync instead of recompiling in-process file by file.
   private static final int BULK_CHANGE_THRESHOLD = 50;
+  // Once a rename's first file is saved, this long without another of its files' events commits
+  // the saved ones, so an editor that never saves the rest cannot hold the others back.
+  private static final long RENAME_IDLE_MS = 10_000;
+  private static final String RENAME_COMMIT_KEY = "rename-commit";
+  // A rename none of whose files shows the edit this long after the response was never applied.
+  private static final long RENAME_UNAPPLIED_MS = 30_000;
+  private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
   static final long ACTIVE_WINDOW_MS = 30_000L;
   static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
   private static final String SYNC_ACTION = "Sync";
@@ -4130,6 +4292,8 @@ final class WorkspaceSession {
     docs.all().stream()
         .map(OpenDocument::uri)
         .filter(uri -> !refresh.exclusions().contains(uri))
+        // An open rename's files compile at its commit, not against the half-renamed mirror.
+        .filter(uri -> !renameTransaction.isMember(uri))
         .filter(uri -> inDownstreamScope(uri, refresh.scope()))
         .toList()
         .forEach(this::scheduleDependent);

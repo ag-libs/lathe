@@ -91,4 +91,41 @@ public final class RenameProvider {
                     occurrence -> new TextEdit(occurrence.getRange(), newName),
                     Collectors.toUnmodifiableList())));
   }
+
+  // Text edits by URI, from documentChanges when the edit carries a file move, else from changes.
+  public static Map<String, List<TextEdit>> textEdits(final WorkspaceEdit edit) {
+    if (edit == null) {
+      return Map.of();
+    }
+
+    if (edit.getDocumentChanges() == null) {
+      return edit.getChanges() == null ? Map.of() : Map.copyOf(edit.getChanges());
+    }
+
+    return edit.getDocumentChanges().stream()
+        .filter(Either::isLeft)
+        .map(Either::getLeft)
+        .collect(
+            Collectors.toUnmodifiableMap(
+                change -> change.getTextDocument().getUri(), RenameProvider::plainEdits));
+  }
+
+  // A rename emits plain text edits only, never snippets.
+  private static List<TextEdit> plainEdits(final TextDocumentEdit change) {
+    return change.getEdits().stream().map(Either::getLeft).toList();
+  }
+
+  // A moved file's old URI to its new one.
+  public static Map<String, String> fileMoves(final WorkspaceEdit edit) {
+    if (edit == null || edit.getDocumentChanges() == null) {
+      return Map.of();
+    }
+
+    return edit.getDocumentChanges().stream()
+        .filter(Either::isRight)
+        .map(Either::getRight)
+        .filter(RenameFile.class::isInstance)
+        .map(RenameFile.class::cast)
+        .collect(Collectors.toUnmodifiableMap(RenameFile::getOldUri, RenameFile::getNewUri));
+  }
 }

@@ -57,6 +57,10 @@ public record ModuleSourceConfig(
     return Stream.concat(sourceRoots.stream(), Stream.of(generatedSourcesDir())).toList();
   }
 
+  public boolean isTestTree() {
+    return LatheLayout.TEST_CLASSES_DIR.equals(sourceTree);
+  }
+
   public List<Path> remappedClasspath() {
     return remapped(classpath);
   }
