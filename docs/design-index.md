@@ -119,6 +119,11 @@ reused):
 
 **Reliability and further work:**
 
+- [One Write Pass: Simplifying Recompilation](planned/lathe-recompile-simplification.md) — every trigger (save,
+  external change, rename commit, MCP query, startup) requests one pass that writes stale files in chained batches
+  and re-analyzes open dependents once; removes the 50-file bulk threshold, the per-path bookkeeping, and the
+  error-code widening (live analysis includes unsaved siblings); MCP notes say "fix the code" or "sync required"
+  (planned, awaiting the build-agnostic-core merge).
 - [Named Run Configurations](done/lathe-named-run-configs.md) — resolves TE-2: the overlay file
   becomes a `{ defaults, configs }` object (`defaults` = the auto-applied baselines, `configs` =
   name-keyed selectable entries that pin a target), explicit selection via `:LatheRun {name}` /
