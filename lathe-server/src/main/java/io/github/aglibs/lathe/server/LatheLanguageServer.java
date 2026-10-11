@@ -205,8 +205,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   // The workspace style file wins when it declares a formatter; otherwise the client's
   // initializationOptions.lathe.style.formatter. "none", unknown, or absent disables formatting.
-  private static FormatEngine resolveFormatEngine(
-      final InitializeParams params, final Path workingDir) {
+  private FormatEngine resolveFormatEngine(final InitializeParams params, final Path workingDir) {
     final FormatterSpec spec = workspaceFormatterSpec(workingDir);
     if (spec != null) {
       return engineFor(spec, workingDir);
@@ -229,7 +228,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
   }
 
-  private static FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
+  private FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
       case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
           pinned(
@@ -289,18 +288,21 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
         command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
   }
 
-  private static FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
+  private FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
     if (command.isEmpty() || workingDir == null) {
       return null;
     }
 
     return new FileCommandFormatEngine(
-        command, workingDir, FileCommandFormatEngine.DEFAULT_TIMEOUT);
+        command,
+        workingDir,
+        FileCommandFormatEngine.DEFAULT_TIMEOUT,
+        textDocumentService::moduleRelOf);
   }
 
   // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
   // command} shape as the file, so it flows through engineFor too.
-  private static FormatEngine initOptionFormatEngine(
+  private FormatEngine initOptionFormatEngine(
       final InitializeParams params, final Path workingDir) {
     final JsonObject formatter = initOptionFormatter(params);
     if (formatter == null) {

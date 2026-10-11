@@ -10,20 +10,24 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class FileCommandFormatEngineTest {
 
+  private static final Function<Path, Optional<String>> NO_MODULE = file -> Optional.empty();
+
   @TempDir private Path root;
 
   private FileCommandFormatEngine engine(final List<String> command) {
-    return new FileCommandFormatEngine(command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT);
+    return new FileCommandFormatEngine(
+        command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT, NO_MODULE);
   }
 
   @Test
   void format_returnsFormattedBuffer_withoutTouchingTheOpenFile() throws Exception {
-    Files.writeString(root.resolve("pom.xml"), "<project/>");
     final Path file = root.resolve("Foo.java");
     Files.writeString(file, "on disk\n");
     final FileTime before = Files.getLastModifiedTime(file);
@@ -38,7 +42,7 @@ class FileCommandFormatEngineTest {
     assertThat(Files.readString(file)).isEqualTo("on disk\n"); // the open file is never touched
     assertThat(Files.getLastModifiedTime(file)).isEqualTo(before); // nor its mtime
     assertThat(Files.list(root).map(Path::getFileName).map(Path::toString).toList())
-        .containsExactlyInAnyOrder("pom.xml", "Foo.java"); // scratch temp removed
+        .containsExactly("Foo.java"); // scratch temp removed
   }
 
   @Test
@@ -54,13 +58,17 @@ class FileCommandFormatEngineTest {
   }
 
   @Test
-  void format_substitutesModulePath_relativeForSubmoduleDotForRoot() throws Exception {
-    Files.writeString(root.resolve("pom.xml"), "<project/>");
-    Files.createDirectories(root.resolve("sub"));
-    Files.writeString(root.resolve("sub/pom.xml"), "<project/>");
-    final var echoModule = engine(List.of("sh", "-c", "printf %MODULE% > %FILE%"));
+  void format_substitutesModule_fromLookupOrDotWhenNone() throws Exception {
+    final Path sub = root.resolve("sub");
+    Files.createDirectories(sub);
+    final var echoModule =
+        new FileCommandFormatEngine(
+            List.of("sh", "-c", "printf %MODULE% > %FILE%"),
+            root,
+            FileCommandFormatEngine.DEFAULT_TIMEOUT,
+            file -> file.startsWith(sub) ? Optional.of("sub") : Optional.empty());
 
-    assertThat(echoModule.format("x", root.resolve("sub/Foo.java"))).isEqualTo("sub");
+    assertThat(echoModule.format("x", sub.resolve("Foo.java"))).isEqualTo("sub");
     assertThat(echoModule.format("x", root.resolve("Root.java"))).isEqualTo(".");
   }
 
@@ -75,7 +83,7 @@ class FileCommandFormatEngineTest {
   @Test
   void format_exceedsTimeout_throws() {
     final var slow =
-        new FileCommandFormatEngine(List.of("sleep", "5"), root, Duration.ofMillis(200));
+        new FileCommandFormatEngine(List.of("sleep", "5"), root, Duration.ofMillis(200), NO_MODULE);
 
     assertThatThrownBy(() -> slow.format("x", root.resolve("F.java")))
         .isInstanceOf(IOException.class)
@@ -111,10 +119,12 @@ class FileCommandFormatEngineTest {
         .as("empty command")
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
-            () -> new FileCommandFormatEngine(List.of("mvn"), null, Duration.ofSeconds(1)))
+            () ->
+                new FileCommandFormatEngine(List.of("mvn"), null, Duration.ofSeconds(1), NO_MODULE))
         .as("null workspace root")
         .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(() -> new FileCommandFormatEngine(List.of("mvn"), root, Duration.ZERO))
+    assertThatThrownBy(
+            () -> new FileCommandFormatEngine(List.of("mvn"), root, Duration.ZERO, NO_MODULE))
         .as("non-positive timeout")
         .isInstanceOf(ValidationException.class);
   }

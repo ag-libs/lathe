@@ -1112,6 +1112,24 @@ class LatheTextDocumentServiceTest {
     assertThat(Files.readString(freshDest)).isEqualTo("keep"); // up to date → untouched
   }
 
+  @Test
+  void moduleRelOf_sourceInsideOrOutsideAModule_namesTheRegistryModuleOrNone() throws Exception {
+    final Path api =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "platform/api",
+                Map.of("com/example/api/Api.java", "package com.example.api; public class Api {}"),
+                List.of(),
+                1_000L)
+            .getFirst();
+
+    service.initialize(tmp);
+    awaitStartup();
+
+    assertThat(service.moduleRelOf(api)).contains("platform/api");
+    assertThat(service.moduleRelOf(tmp.resolve("scripts/Tool.java"))).isEmpty();
+  }
+
   private Path writeResourceDest(final String name, final String content, final long mtime)
       throws Exception {
     return TestCompiler.writeAt(tmp.resolve(".lathe/app/classes").resolve(name), content, mtime);

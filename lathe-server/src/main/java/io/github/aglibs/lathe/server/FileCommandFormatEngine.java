@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.File;
 import java.io.IOException;
@@ -10,6 +9,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -19,8 +20,13 @@ import java.util.logging.Logger;
 // source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
 // The name is a dotfile so file-trees/fuzzy-finders that hide dotfiles (neo-tree, oil, Telescope)
 // do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
-// Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> temp path, %MODULE% -> module dir or ".".
-record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
+// Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> temp path, %MODULE% -> the file's module or ".", as
+// moduleOf (the workspace's module registry) names it.
+record FileCommandFormatEngine(
+    List<String> command,
+    Path workspaceRoot,
+    Duration timeout,
+    Function<Path, Optional<String>> moduleOf)
     implements FormatEngine {
 
   private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
@@ -31,6 +37,7 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
     ValidCheck.check()
         .notEmpty(command, "command")
         .notNull(workspaceRoot, "workspaceRoot")
+        .notNull(moduleOf, "moduleOf")
         .assertTrue(timeout != null && timeout.isPositive(), "timeout must be positive")
         .validate();
     command = List.copyOf(command);
@@ -60,7 +67,7 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
 
   private List<String> resolve(final Path file) {
     final String absolute = file.toAbsolutePath().toString();
-    final String module = moduleRelativePath(file);
+    final String module = moduleOf.apply(file).orElse(".");
     final String maven = mavenExecutable(workspaceRoot, System.getenv("PATH"));
     return command.stream()
         .map(
@@ -98,22 +105,6 @@ record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duratio
     }
 
     return false;
-  }
-
-  // The file's Maven module for `-pl`: the nearest ancestor holding a pom.xml, relative to the
-  // workspace root, or "." when that is the root itself.
-  private String moduleRelativePath(final Path file) {
-    var dir = file.toAbsolutePath().getParent();
-    while (dir != null && dir.startsWith(workspaceRoot)) {
-      if (Files.exists(dir.resolve(LatheLayout.POM_XML))) {
-        final String rel = workspaceRoot.relativize(dir).toString();
-        return rel.isEmpty() ? "." : rel;
-      }
-
-      dir = dir.getParent();
-    }
-
-    return ".";
   }
 
   private void run(final List<String> argv) throws IOException, InterruptedException {

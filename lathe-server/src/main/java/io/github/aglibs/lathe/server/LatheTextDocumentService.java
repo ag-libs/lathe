@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -541,6 +542,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
   // stray request gets no edits.
+  // A format engine calls this while the worker runs session.format, so it reads the session
+  // directly rather than through the worker.
+  Optional<String> moduleRelOf(final Path file) {
+    return session.moduleRelOf(file);
+  }
+
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
       final String uri, final List<Range> ranges) {
     final FormatEngine engine = formatEngine;

@@ -1385,6 +1385,15 @@ final class WorkspaceSession {
     return moduleRel(workspaceRoot, config);
   }
 
+  // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
+  // root module.
+  Optional<String> moduleRelOf(final Path file) {
+    return workspace
+        .moduleSourceFor(file)
+        .map(this::moduleRel)
+        .map(rel -> rel.isEmpty() ? "." : rel);
+  }
+
   private static String moduleRel(final Path workspaceRoot, final ModuleSourceConfig config) {
     return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()).toString();
   }
