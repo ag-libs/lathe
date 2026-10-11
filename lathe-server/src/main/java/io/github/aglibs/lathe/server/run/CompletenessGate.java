@@ -41,29 +41,35 @@ public final class CompletenessGate {
   private static CompletenessResult verify(final List<String> paths, final Path workspaceRoot)
       throws IOException {
     final Map<Path, Set<String>> touched = latheTouchedDirs(paths, workspaceRoot);
+    final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
     final var reasons = new ArrayList<String>();
     for (final Map.Entry<Path, Set<String>> entry : touched.entrySet()) {
       final Path moduleDir = entry.getKey();
+      final String moduleRel = latheDir.relativize(moduleDir).toString();
       final Set<String> sourceTrees = entry.getValue();
-      reasons.addAll(LatheLock.awaitAndRead(moduleDir, () -> checkModule(moduleDir, sourceTrees)));
+      reasons.addAll(
+          LatheLock.awaitAndRead(moduleDir, () -> checkModule(moduleDir, moduleRel, sourceTrees)));
     }
 
     return reasons.isEmpty() ? CompletenessResult.open() : CompletenessResult.blocked(reasons);
   }
 
-  private static List<String> checkModule(final Path moduleDir, final Set<String> sourceTrees)
+  // A tree is incomplete when its compile was never captured (no params) or its classes never
+  // reached the mirror; either way a sync of the module builds it.
+  private static List<String> checkModule(
+      final Path moduleDir, final String moduleRel, final Set<String> sourceTrees)
       throws IOException {
     final var reasons = new ArrayList<String>();
     for (final String sourceTree : sourceTrees) {
-      final Path paramsFile = moduleDir.resolve(LatheLayout.paramsFileName(sourceTree));
-      if (!Files.exists(paramsFile)) {
-        reasons.add("%s: %s missing".formatted(moduleDir, paramsFile.getFileName()));
-        continue;
-      }
-
-      final Path outputDir = moduleDir.resolve(sourceTree);
-      if (!isNonEmptyDirectory(outputDir)) {
-        reasons.add("%s: %s missing or empty".formatted(moduleDir, sourceTree));
+      final boolean captured =
+          Files.exists(moduleDir.resolve(LatheLayout.paramsFileName(sourceTree)));
+      if (!captured || !isNonEmptyDirectory(moduleDir.resolve(sourceTree))) {
+        reasons.add(
+            "%s %s are not compiled into .lathe yet — run %s"
+                .formatted(
+                    moduleRel,
+                    LatheLayout.TEST_CLASSES_DIR.equals(sourceTree) ? "test classes" : "classes",
+                    LatheLayout.scopedSyncCommand(List.of(moduleRel))));
       }
     }
 
@@ -85,7 +91,8 @@ public final class CompletenessGate {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
     final List<Path> candidates =
         paths.stream()
-            .map(path -> Path.of(ReactorRewrite.toLathe(path, workspaceRoot)).normalize())
+            .filter(path -> !nothingToBuild(path, workspaceRoot))
+            .map(path -> latheDirOf(path, workspaceRoot))
             .filter(candidate -> isLatheSourceTreeDir(candidate, latheDir))
             .toList();
 
@@ -97,6 +104,20 @@ public final class CompletenessGate {
                 Collectors.mapping(
                     candidate -> candidate.getFileName().toString(),
                     Collectors.toCollection(LinkedHashSet::new))));
+  }
+
+  // Maven lists a module's own output dir even when the tree has no sources (the main tree of a
+  // test-only module). One that neither Maven nor the mirror ever produced, with no params, has
+  // nothing to wait for.
+  private static boolean nothingToBuild(final String path, final Path workspaceRoot) {
+    final Path latheDir = latheDirOf(path, workspaceRoot);
+    final Path params =
+        latheDir.resolveSibling(LatheLayout.paramsFileName(latheDir.getFileName().toString()));
+    return !Files.exists(Path.of(path)) && !Files.exists(latheDir) && !Files.exists(params);
+  }
+
+  private static Path latheDirOf(final String path, final Path workspaceRoot) {
+    return Path.of(ReactorRewrite.toLathe(path, workspaceRoot)).normalize();
   }
 
   private static boolean isLatheSourceTreeDir(final Path candidate, final Path latheDir) {

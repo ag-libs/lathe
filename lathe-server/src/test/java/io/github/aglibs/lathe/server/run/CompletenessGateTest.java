@@ -19,8 +19,10 @@ final class CompletenessGateTest {
   @TempDir private Path workspaceRoot;
 
   @Test
-  void verify_missingOutputs_returnsIncompleteWithReasons() throws IOException {
+  void verify_builtByMavenButNotMirrored_returnsIncompleteWithReasons() throws IOException {
     final var data = testLaunch();
+    mavenBuilt("dep/target/classes");
+    mavenBuilt("app/target/test-classes");
 
     final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
 
@@ -55,18 +57,22 @@ final class CompletenessGateTest {
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
-    assertThat(result.reasons().getFirst()).contains("test-classes");
+    assertThat(result.reasons().getFirst())
+        .isEqualTo(
+            "app test classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh app");
   }
 
   @Test
-  void verify_mainMissingOutput_returnsIncompleteWithReason() throws IOException {
+  void verify_mainBuiltByMavenButNotMirrored_returnsIncompleteWithReason() throws IOException {
     final var data = mainLaunch();
+    mavenBuilt("jpms/target/classes");
 
     final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot);
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
-    assertThat(result.reasons().getFirst()).contains(LatheLayout.CLASSES_DIR);
+    assertThat(result.reasons().getFirst())
+        .isEqualTo("jpms classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh jpms");
   }
 
   @Test
@@ -78,6 +84,33 @@ final class CompletenessGateTest {
 
     assertThat(result.complete()).isTrue();
     assertThat(result.reasons()).isEmpty();
+  }
+
+  @Test
+  void verify_testOnlyModuleOwnMainTreeNeverBuilt_skipped_otherTreesStillChecked()
+      throws IOException {
+    // Maven lists app's own target/classes although app has only tests: nothing ever built it.
+    final var data =
+        testLaunch(
+            List.of(workspaceRoot.resolve("dep/target/classes").toString()),
+            List.of(
+                workspaceRoot.resolve("app/target/test-classes").toString(),
+                workspaceRoot.resolve("app/target/classes").toString()));
+    seedModule("app", LatheLayout.TEST_CLASSES_DIR);
+    mavenBuilt("dep/target/classes");
+
+    final CompletenessResult blocked = CompletenessGate.verify(data, workspaceRoot);
+    seedModule("dep", LatheLayout.CLASSES_DIR);
+    final CompletenessResult open = CompletenessGate.verify(data, workspaceRoot);
+
+    assertThat(blocked.reasons())
+        .containsExactly(
+            "dep classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh dep");
+    assertThat(open.complete()).isTrue();
+  }
+
+  private void mavenBuilt(final String outputDir) throws IOException {
+    Files.createDirectories(workspaceRoot.resolve(outputDir));
   }
 
   private void seedModule(final String moduleRel, final String sourceTree) throws IOException {
@@ -106,14 +139,20 @@ final class CompletenessGateTest {
   }
 
   private TestLaunchData testLaunch() {
+    return testLaunch(
+        List.of(workspaceRoot.resolve("dep/target/classes").toString()),
+        List.of(workspaceRoot.resolve("app/target/test-classes").toString(), "/m2/junit.jar"));
+  }
+
+  private TestLaunchData testLaunch(final List<String> modulePath, final List<String> classPath) {
     return new TestLaunchData(
         "1",
         "surefire",
         LaunchMode.CLASSPATH,
         "/jdk",
         "",
-        List.of(workspaceRoot.resolve("dep/target/classes").toString()),
-        List.of(workspaceRoot.resolve("app/target/test-classes").toString(), "/m2/junit.jar"),
+        modulePath,
+        classPath,
         Map.of(),
         List.of(),
         List.of(),
