@@ -679,12 +679,9 @@ final class WorkspaceSession {
                     "no %s source root for module '%s'".formatted(scope, moduleRel)));
   }
 
-  // The real (non-generated) source directory a new file lands in — the same primary-root selection
-  // the staleness scan uses (skip originalGenSourcesDir).
+  // The real (non-generated) source directory a new file lands in.
   private static Optional<Path> primarySourceRoot(final ModuleSourceConfig config) {
-    return config.sourceRoots().stream()
-        .filter(root -> !root.equals(config.originalGenSourcesDir()))
-        .findFirst();
+    return nonGeneratedSourceRoots(config).stream().findFirst();
   }
 
   List<String> modules() {
@@ -1663,13 +1660,19 @@ final class WorkspaceSession {
       final List<Location> occurrences,
       final String newName,
       final boolean fileRenameSupported) {
-    if (occurrences.isEmpty()) {
+    // Generated sources are left alone: their processors regenerate them from the renamed sources,
+    // and an edited copy written alongside would collide with the regenerated one.
+    final List<Location> editable =
+        occurrences.stream()
+            .filter(location -> !isGeneratedSource(LatheUri.toPath(location.getUri())))
+            .toList();
+    if (editable.isEmpty()) {
       return null;
     }
 
     final Optional<Path> declaringFile = renameDeclaringFile(target);
     if (declaringFile.isEmpty()) {
-      return RenameProvider.toWorkspaceEdit(occurrences, newName);
+      return RenameProvider.toWorkspaceEdit(editable, newName);
     }
 
     if (!fileRenameSupported) {
@@ -1679,7 +1682,11 @@ final class WorkspaceSession {
     final var file = declaringFile.get();
     final var oldUri = file.toUri().toString();
     final var newUri = file.resolveSibling(newName + ".java").toUri().toString();
-    return RenameProvider.toWorkspaceEditWithFileRename(occurrences, newName, oldUri, newUri);
+    return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
+  }
+
+  private boolean isGeneratedSource(final Path file) {
+    return workspace.allConfigs().stream().anyMatch(config -> config.isGenerated(file));
   }
 
   CompletableFuture<WorkspaceEdit> renameFuture(
@@ -3147,9 +3154,7 @@ final class WorkspaceSession {
   // A module's user source roots -- everything but the annotation-processor output, whose files the
   // compile regenerates and so must never be scanned or reacted to.
   private static List<Path> nonGeneratedSourceRoots(final ModuleSourceConfig config) {
-    return config.sourceRoots().stream()
-        .filter(root -> !root.equals(config.originalGenSourcesDir()))
-        .toList();
+    return config.sourceRoots().stream().filter(root -> !config.isGenerated(root)).toList();
   }
 
   private static boolean isOrphanedSource(final List<Path> roots, final String rel) {
@@ -3245,6 +3250,8 @@ final class WorkspaceSession {
                 source ->
                     workspace
                         .moduleSourceFor(source)
+                        // A generated source is the processors' to rewrite, never an input.
+                        .filter(config -> !config.isGenerated(source))
                         .map(config -> Map.entry(config, source))
                         .stream())
             .collect(
@@ -3717,6 +3724,21 @@ final class WorkspaceSession {
     if (transientSources.isEmpty()) {
       return CompletableFuture.completedFuture(null);
     }
+
+    LOG.fine(
+        () -> {
+          final String names =
+              mtimes.keySet().stream()
+                  .limit(20)
+                  .map(source -> source.getFileName().toString())
+                  .collect(Collectors.joining(", "));
+          return "[react] writing %d file(s) in %s: %s%s"
+              .formatted(
+                  mtimes.size(),
+                  moduleRelForDir(config.moduleDir()),
+                  names,
+                  mtimes.size() > 20 ? " +%d more".formatted(mtimes.size() - 20) : "");
+        });
 
     // Reported again after this read, a file stays reported for the next pass.
     final Map<Path, Long> reports =
@@ -4396,7 +4418,7 @@ final class WorkspaceSession {
   private static void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final long mtime) {
     final var root = sourceRootFor(config, savedSource);
-    if (root == null || root.equals(config.originalGenSourcesDir())) {
+    if (root == null || config.isGenerated(root)) {
       return;
     }
 

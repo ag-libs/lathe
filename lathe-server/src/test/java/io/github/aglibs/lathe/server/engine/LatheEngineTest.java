@@ -240,6 +240,38 @@ class LatheEngineTest {
   }
 
   @Test
+  void rename_methodAlsoCalledFromGeneratedSource_leavesTheGeneratedSourceAlone() throws Exception {
+    final GreetFixture fx = greetFixture();
+    // An annotation processor's output that calls the method: it regenerates from the renamed
+    // source, so editing it would only collide with the regenerated copy.
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    final String generatedSource =
+        "package com.example; class CalleeHelper { void run(Callee c) { c.greet(); } }";
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/CalleeHelper.java"),
+            generatedSource,
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final LatheRename rename =
+        engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
+
+    assertThat(rename.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
+        .noneSatisfy(uri -> assertThat(uri).endsWith("CalleeHelper.java"));
+    assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+  }
+
+  @Test
   void rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass()
       throws Exception {
     final String apiSource =

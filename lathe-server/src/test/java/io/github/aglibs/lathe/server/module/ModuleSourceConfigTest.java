@@ -51,6 +51,20 @@ class ModuleSourceConfigTest {
         .containsExactly(testSrc, moduleDir.resolve(LatheLayout.GENERATED_TEST_SOURCES));
   }
 
+  @Test
+  void isGenerated_buildOutputOrLatheMirror_true_handWrittenSource_false() {
+    final Path src = WORKSPACE.resolve("module/src/main/java");
+    final Path mavenTarget = WORKSPACE.resolve("module/target/generated-sources/annotations");
+    final var config = config(mavenTarget, src);
+
+    assertThat(config.isGenerated(mavenTarget.resolve("com/example/UserBuilder.java"))).isTrue();
+    assertThat(
+            config.isGenerated(
+                config.generatedSourcesDir().resolve("com/example/UserBuilder.java")))
+        .isTrue();
+    assertThat(config.isGenerated(src.resolve("com/example/User.java"))).isFalse();
+  }
+
   private static ModuleSourceConfig config(
       final Path originalGenSourcesDir, final Path sourceRoot) {
     final Path moduleDir = LATHE_DIR.resolve("module");

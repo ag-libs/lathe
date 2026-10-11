@@ -50,6 +50,13 @@ public record ModuleSourceConfig(
     return moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree));
   }
 
+  // The build's annotation-processor output, or Lathe's mirror of it: sources the processors
+  // rewrite from the hand-written ones.
+  public boolean isGenerated(final Path file) {
+    return file.startsWith(generatedSourcesDir())
+        || (originalGenSourcesDir != null && file.startsWith(originalGenSourcesDir));
+  }
+
   // Source roots plus the .lathe generated-sources mirror (when the module has generated sources).
   // Definition/reference resolution searches these, so a generated type resolves to the fresh copy
   // Lathe regenerates on save — not the stale Maven target/ copy.

@@ -185,6 +185,35 @@ class WritePassTest extends ServiceTestBase {
   }
 
   @Test
+  void writeReported_generatedSource_neverWritten() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        Map.of("com/example/User.java", "package com.example; class User {}"),
+        List.of(),
+        1_000L);
+    TestCompiler.writeModuleParams(
+        tmp, "module", sourceRoot, tmp.resolve("module/target/generated-sources/annotations"));
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/UserBuilder.java"),
+            "package com.example; class UserBuilder {}",
+            5_000L);
+    service.initialize(tmp);
+    awaitStartup();
+
+    try (final var compiles = new CompileLog()) {
+      service.writeReported(Set.of(generated)).get(10, TimeUnit.SECONDS);
+      assertThat(writes(compiles))
+          .as("a processor's output is never an input of a write")
+          .isEmpty();
+    }
+  }
+
+  @Test
   void writeReported_whileABuildHoldsTheLock_writesReportedFilesEvenAtTheirStamp_externalWaits()
       throws Exception {
     final var sources = new LinkedHashMap<String, String>();
