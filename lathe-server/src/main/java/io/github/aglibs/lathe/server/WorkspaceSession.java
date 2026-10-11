@@ -3223,7 +3223,15 @@ final class WorkspaceSession {
 
     reportRecompile(
         (int) batches.values().stream().flatMap(List::stream).filter(notReported()).count(), done);
-    writeInOrder(batches).whenComplete((written, error) -> done.complete(scan.staleFiles()));
+    writeInOrder(batches)
+        .whenComplete(
+            (written, error) -> {
+              if (error != null) {
+                LOG.log(Level.SEVERE, error, () -> "[reconcile] write failed");
+              }
+
+              done.complete(scan.staleFiles());
+            });
   }
 
   // A reported file is written even when its mtime equals its stamp, so the scan may not list it.
@@ -3659,7 +3667,7 @@ final class WorkspaceSession {
                     compileChangedBatch(
                         tree,
                         building ? onlyReported(batches.get(tree)) : batches.get(tree),
-                        false))
+                        Set.of()))
             .toArray(CompletableFuture[]::new);
     return CompletableFuture.allOf(writes)
         .thenCompose(written -> writeLevels(levels, batches, generation));
@@ -3698,9 +3706,9 @@ final class WorkspaceSession {
   // root and a new permitted subtype) resolve inside the batch. Each source's mtime is read with
   // its content, so an edit landing during the compile is not stamped as written. javac writes
   // nothing when any source fails, so a failing batch is written once more without the sources that
-  // failed, unless this already is that retry.
+  // failed (failedFirst, empty on the first attempt).
   private CompletableFuture<Void> compileChangedBatch(
-      final ModuleSourceConfig config, final List<Path> sources, final boolean retry) {
+      final ModuleSourceConfig config, final List<Path> sources, final Set<Path> failedFirst) {
     final var transientSources = new ArrayList<TransientSource>(sources.size());
     final var mtimes = new LinkedHashMap<Path, Long>();
     for (final var source : sources) {
@@ -3724,23 +3732,20 @@ final class WorkspaceSession {
         mtimes.keySet().stream()
             .filter(reported::containsKey)
             .collect(Collectors.toUnmodifiableMap(source -> source, reported::get));
-    final var done = new CompletableFuture<Void>();
-    workspace
+    return workspace
         .workerFor(config)
         .compileBatch(List.copyOf(transientSources))
-        .whenComplete(
-            (written, error) ->
-                worker.execute(
-                    () -> {
-                      reports.forEach(reported::remove);
-                      if (written != null) {
-                        keepWriteDiagnostics(transientSources, written);
-                      }
+        .handleAsync(
+            (written, error) -> {
+              reports.forEach(reported::remove);
+              if (written != null) {
+                keepWriteDiagnostics(transientSources, written);
+              }
 
-                      afterChangedBatch(config, Map.copyOf(mtimes), written, error, retry)
-                          .whenComplete((ignored, failure) -> done.complete(null));
-                    }));
-    return done;
+              return afterChangedBatch(config, Map.copyOf(mtimes), written, error, failedFirst);
+            },
+            worker::execute)
+        .thenCompose(next -> next);
   }
 
   private void keepWriteDiagnostics(final List<TransientSource> sources, final BatchWrite written) {
@@ -3790,7 +3795,7 @@ final class WorkspaceSession {
       final Map<Path, Long> mtimes,
       final BatchWrite written,
       final Throwable error,
-      final boolean retry) {
+      final Set<Path> failedFirst) {
     if (error != null || written == null) {
       LOG.log(
           Level.FINE,
@@ -3803,7 +3808,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
-    if (!written.failedUris().isEmpty() && !retry) {
+    if (!written.failedUris().isEmpty() && failedFirst.isEmpty()) {
       final Map<Boolean, List<Path>> byFailure =
           mtimes.keySet().stream()
               .collect(
@@ -3827,9 +3832,10 @@ final class WorkspaceSession {
       final List<Path> rest = byFailure.get(false);
       return rest.isEmpty()
           ? CompletableFuture.completedFuture(null)
-          : compileChangedBatch(config, rest, true);
+          : compileChangedBatch(config, rest, Set.copyOf(byFailure.get(true)));
     }
 
+    retryFailuresDownstream(config, failedFirst);
     mtimes.forEach((source, mtime) -> freshenClassOutputs(config, source, written, mtime));
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
@@ -3840,11 +3846,25 @@ final class WorkspaceSession {
     return CompletableFuture.completedFuture(null);
   }
 
+  // A write may supply what earlier failures here or downstream were missing, so they get another
+  // try; the files that failed in this very write (failedFirst) keep their record.
+  private void retryFailuresDownstream(
+      final ModuleSourceConfig config, final Set<Path> failedFirst) {
+    final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
+    failedCompiles
+        .keySet()
+        .removeIf(
+            failed ->
+                !failedFirst.contains(failed)
+                    && workspace
+                        .moduleSourceFor(failed)
+                        .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
+                        .orElse(true));
+  }
+
   // Only prune + stamp a source the compile actually emitted a class for. A source that failed to
   // compile keeps its old mirror class and stays unstamped, so a later batch retries it once its
   // dependencies land -- otherwise the stamp would mark it fresh while its mirror class is stale.
-  // A source that was written may supply what failed ones here or downstream were missing, so they
-  // get another try.
   private void freshenClassOutputs(
       final ModuleSourceConfig config,
       final Path source,
@@ -3856,15 +3876,6 @@ final class WorkspaceSession {
       return;
     }
 
-    final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
-    failedCompiles
-        .keySet()
-        .removeIf(
-            failed ->
-                workspace
-                    .moduleSourceFor(failed)
-                    .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
-                    .orElse(true));
     deleteClassOutputs(config, source, writtenBinaryNames);
     recordCompileStamp(config, source, mtime);
   }
@@ -4027,11 +4038,13 @@ final class WorkspaceSession {
     }
   }
 
-  // No stamp (never built) or modified since the recorded compile; the class file is not consulted.
+  // No stamp (never built) or an mtime other than the one compiled -- older too, as a restore that
+  // keeps file times (rsync -a, cp -p, tar) brings back older content; the class file is not
+  // consulted.
   private static boolean isStale(
       final Path root, final Path source, final Map<String, Long> stamps) {
     final Long stamp = stamps.get(root.relativize(source).toString());
-    return stamp == null || mtimeMillis(source) > stamp;
+    return stamp == null || mtimeMillis(source) != stamp;
   }
 
   private static long mtimeMillis(final Path path) {

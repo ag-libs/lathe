@@ -39,7 +39,7 @@ class WritePassTest extends ServiceTestBase {
 
   @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
-    writeStaleModule(1_000L, 5_000L); // compiled after the source's last edit → fresh
+    writeStaleModule(5_000L, 5_000L); // the stamp is the mtime compiled, so equal → fresh
     service.setWorkDoneProgressSupported(true);
 
     service.initialize(tmp);
@@ -101,6 +101,11 @@ class WritePassTest extends ServiceTestBase {
         .as("stamps: the good file written, the broken one left stale")
         .containsEntry("com/example/Good.java", 5_000L)
         .containsEntry("com/example/Broken.java", 1_000L);
+    assertThat(service.notesFuture(List.of()).get(5, TimeUnit.SECONDS).notCompiled())
+        .as("the broken file stays recorded though the rest of its tree was written after it")
+        .singleElement()
+        .asString()
+        .startsWith("module/src/main/java/com/example/Broken.java:1: ");
   }
 
   @Test

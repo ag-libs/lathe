@@ -218,16 +218,27 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void staleModules_returnsNewestMtimeAndTheStaleModule() throws Exception {
+  void staleModules_editedAddedOrRestoredOlder_stale_matchingStampFresh() throws Exception {
     writeJava("Edited", 5_000L); // stamped at 1000, edited after → stale
     writeJava("Added", 9_000L); // no stamp (a newly added file) → stale, and the newest
+    writeJava("Restored", 1_000L); // older than its stamp, as a restore keeping file times → stale
     writeJava("Fresh", 2_000L); // stamp matches its mtime → up to date, ignored
-    writeStamps(Map.of("com/example/Edited.java", 1_000L, "com/example/Fresh.java", 2_000L));
+    writeStamps(
+        Map.of(
+            "com/example/Edited.java",
+            1_000L,
+            "com/example/Restored.java",
+            4_000L,
+            "com/example/Fresh.java",
+            2_000L));
 
     final var scan = WorkspaceSession.staleModules(List.of(config));
 
     assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
+    assertThat(scan.staleFiles())
+        .extracting(path -> path.getFileName().toString())
+        .containsExactlyInAnyOrder("Edited.java", "Added.java", "Restored.java");
   }
 
   @Test
