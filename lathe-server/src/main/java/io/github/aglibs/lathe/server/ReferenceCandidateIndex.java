@@ -147,7 +147,11 @@ final class ReferenceCandidateIndex {
     }
 
     final String enclosing = imp.substring(0, lastDot);
-    if (Character.isUpperCase(enclosing.charAt(enclosing.lastIndexOf('.') + 1))) {
+    // The scan also matches "import" in comments, so the text may end in a dot ("decl..."): no
+    // simple name follows, and nothing is indexed.
+    final int simpleNameStart = enclosing.lastIndexOf('.') + 1;
+    if (simpleNameStart < enclosing.length()
+        && Character.isUpperCase(enclosing.charAt(simpleNameStart))) {
       tokens.add(enclosing);
     }
   }

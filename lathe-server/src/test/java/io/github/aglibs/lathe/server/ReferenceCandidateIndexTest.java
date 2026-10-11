@@ -144,6 +144,27 @@ class ReferenceCandidateIndexTest {
   }
 
   @Test
+  void build_importWordInCommentEndingInDots_indexesFileWithoutFailing() throws IOException {
+    // The JDK's Xerces XSDHandler has this comment: the text scan reads "import" up to the next
+    // ';' as `theonecontainingdecl...returnnull`, whose enclosing spelling ends in a dot.
+    final var src = Files.createDirectories(root.resolve("src"));
+    final var file =
+        Files.writeString(
+            src.resolve("Handler.java"),
+            """
+            class Handler {
+              Object find() {
+                // import the one containing decl...
+                return null;
+              }
+            }""");
+
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
+
+    assertThat(index.candidateUris("Handler")).containsExactly(uri(file));
+  }
+
+  @Test
   void build_includesGeneratedSourcesDir_whenPresent() throws IOException {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(
