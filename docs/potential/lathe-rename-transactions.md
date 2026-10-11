@@ -3,6 +3,7 @@
 ## Status
 
 **Slices 1 and 2 implemented** (see As built under Slices, which records where the code differs from the design below); slice 0 and the deferred parts remain.
+**Since 2026-10-11** the commit is one more request to the [One Write Pass](../done/lathe-recompile-simplification.md): it releases the transaction's hold and reports the saved files, which the pass writes (`commitChangeSet` is gone); there is no bulk threshold to be exempt from, and `diagnoseInBatch` was replaced by live analysis that includes the tree's unsaved buffers.
 Two design reviews are resolved (see Decisions).
 Rename first: it is the largest edit the server produces (a type rename touched 108 files and 1,059 occurrences in equalsverifier) and the hardest for the server to absorb.
 Other multi-file edits the server produces (code actions, extract refactorings) can join later through the same mechanism.

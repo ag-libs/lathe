@@ -128,11 +128,14 @@ file after your edit, with no Maven:
 - **Maven is still needed** only for POM / dependency / module-structure changes and for reactor-bound
   code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
 
-While a referenced module's source is newer than its compiled classes (e.g. in the moment before the
-reconcile catches up), results append a **`Stale:`** note listing those modules; it clears once the
-in-process recompile lands, or you can force it with `.lathe/lathe-sync.sh`. Every tool recompiles
-changed sources before answering, so a note that persists means that catch-up was deferred (a POM
-change, a bulk change, or a running build).
+Every tool first compiles the files you changed, however many, so its answer reflects your edits.
+What it still cannot vouch for comes as a note at the end of the result:
+
+- **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
+  `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
+  Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
+- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, a file in a module that was never synced, or a `.lathe/` written by another Lathe version.
+- **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
 touch a file outside the reactor**.
@@ -158,5 +161,6 @@ server's stderr in their own logs. Set `LATHE_DEBUG=1` for finer detail.
   (`mvn process-test-classes`); see the prerequisite above.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
-- **Tools resolve nothing / results look stale** — check for a `Stale:` note and run `.lathe/lathe-sync.sh`; a
-  cold index also needs a moment to warm on the first query.
+- **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
+  `Not compiled:`, run the command a `Sync required:` note names; a cold index also needs a moment to
+  warm on the first query.

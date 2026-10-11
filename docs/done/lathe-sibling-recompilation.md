@@ -4,7 +4,7 @@
 
 Shipped as the **open-dependents refresh**. After a compile (and on source deletion),
 `WorkspaceSession.refreshOpenDependents` recompiles the *open* downstream dependents in the module
-graph and republishes their diagnostics. The richer design below — API-signature-hash gating and
+graph and republishes their diagnostics (since 2026-10-11, `refreshOpenFiles`, once per [write pass](lathe-recompile-simplification.md)). The richer design below — API-signature-hash gating and
 recompiling *closed* sibling callers via a debounced `ReferenceCandidateIndex` pass — was **not** built
 and is dropped as a non-goal (LSP clients surface diagnostics for open buffers). Retained for the
 problem statement and the dropped-design rationale.

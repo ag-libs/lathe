@@ -65,6 +65,11 @@ So a file can look clean when you open it and surface more diagnostics after the
 Error Prone findings and, where the build sets `-Werror`, warnings promoted to errors.
 This is intentional: processor runs are too expensive to repeat on every keystroke, so Lathe keeps live
 editing responsive and reserves the full, build-faithful pass for save.
+The findings of that save stay on the file until you edit it again.
+
+The live pass also sees your **unsaved** edits in other open files of the same module.
+Change a method's parameters in one buffer and use the new signature in another, and neither shows a false error before you save.
+A buffer that does not parse at the moment (an unclosed brace mid-edit) is left out, so it cannot cause errors elsewhere; its saved version is used instead.
 
 Plugins such as Error Prone reach into `javac` internals, so the JVM running them needs extra
 `--add-exports`/`--add-opens` grants.
@@ -73,11 +78,13 @@ Your build already declares these, as `-J` flags for a forked compiler, in `.mvn
 
 ## Workspace freshness
 
-Files you have open are analysed live as you edit and save them. When sources or resources change
-**outside** the editor — a branch switch, a `git pull`, or an AI agent editing files — Lathe detects it
-and offers to refresh; changed resources are copied into `.lathe/` without a build. Until you accept the
-refresh, cross-file features (workspace symbol search, missing-import suggestions, and navigation into
-those files) can still reflect the previous state.
+Files you have open are analysed live as you edit and save them.
+When sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent editing files — Lathe detects it and recompiles the changed files itself, however many, with a progress indicator; changed resources are copied into `.lathe/` without a build.
+Saves, outside changes, and renames all go through the same write: changed files are compiled module by module in dependency order, and the open files they affect are re-checked once afterwards.
+A file that does not compile keeps its last good classes and is retried when it or a file it depends on changes.
+
+Only a change to a **build file** (a `pom.xml`, or a dependency change) asks you to sync, as Lathe cannot reproduce dependency resolution itself.
+While a build holds `.lathe/lathe.lock`, Lathe still compiles the files you save and catches up on outside changes when the build ends.
 
 ## Partial builds
 

@@ -3,6 +3,7 @@
 ## Status
 
 **Batch write, save coalescing, and batch analysis for the dependents refresh implemented**; batch analysis for open bursts and reload is not.
+**Since 2026-10-11** both primitives sit under the [One Write Pass](../done/lathe-recompile-simplification.md): every burst — saves, outside changes, a rename commit, an MCP query — is one pass that writes per source tree a dependency level at a time and re-analyzes the affected open files once; the save queue, the bulk threshold, and the widen step are gone.
 This document names the two batching primitives the server needs and maps every multi-file burst onto them.
 [Rename Transactions](lathe-rename-transactions.md) is the first consumer: its commit uses the chained batch write, which reconcile now uses too.
 Its as-built version needs no batch analysis (members are republished by the commit's dependents refresh), so batch analysis waits for the dependents refresh, open bursts, and reload.

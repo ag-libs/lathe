@@ -147,6 +147,10 @@ reaction and reports its result, plus a precise `mvn` recommendation Lathe never
 
 ### The `reconcileForVerify` seam (new — the one substrate touch)
 
+> **Since 2026-10-11** ([One Write Pass](../done/lathe-recompile-simplification.md)): the bulk gate is gone — `reconcileForVerify` requests an eager write pass and waits for it, whatever the change set's size.
+> It still defers on a pending build-file sync and a running build (`BUILD_FILES_PENDING`, `BUILD_IN_PROGRESS`); `DeferReason.BULK_CHANGE` and `BULK_CHANGE_THRESHOLD` no longer exist.
+> The text below is the original design.
+
 The shipped `reconcileNow(eager)` is unusable as-is by an agent: it returns `void`, is package-private
 (the engine is in `server.engine`, a different package), and its reaction refuses **silently** — it
 returns an empty list with no signal when it hits a private gate (`pomNotificationPending`,

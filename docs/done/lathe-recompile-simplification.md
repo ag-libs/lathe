@@ -2,7 +2,9 @@
 
 ## Status
 
-**Planned — awaiting approval.** No code yet.
+**Implemented** on 2026-10-11, in the migration's steps: `ad0952ad` (the pass, level-by-level writes, no bulk threshold), `b8cfcdd3` (rename commit), `dbf516ad` (saves, one refresh per pass, write-only diagnostics), `067ee923` (live analysis with unsaved siblings), `80150f28` (MCP notes), `b25db634` (test reorganization).
+Where the implementation settled a detail differently from the plan below, the plan was updated: writes go a dependency level at a time (rule 12), the reactor type index is rebuilt off the session thread, and a file in no synced module suggests the full sync.
+
 Every way the server writes compiled classes collapses into one pass that every trigger requests; the bulk threshold and most bookkeeping disappear with the paths they served.
 The MCP server then either fixes staleness itself or tells the agent exactly why and what to run.
 
@@ -264,6 +266,6 @@ The server does not run a sync itself: it is a Maven build the agent should see 
 
 Tests: an agent edit that does not compile yields `Not compiled` with the file and error and no sync suggestion, and once fixed the next query has no note; a pending build-file change and a schema mismatch each yield `Sync required` with the command; the routing instructions served at `initialize` describe the two notes.
 
-## Docs to update with the code
+## Docs updated with the code
 
 `docs/guide/ai-agents.md` (deferrals and notes), `docs/planned/lathe-change-impact-and-verification.md` (the `BULK_CHANGE` gate), `docs/potential/lathe-rename-transactions.md` and `docs/potential/lathe-batching.md` (now one pass), and pointers here from `docs/done/lathe-in-process-workspace-sync.md` and `docs/done/lathe-external-change-detection.md`.

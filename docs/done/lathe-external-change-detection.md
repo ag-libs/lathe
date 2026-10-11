@@ -1,5 +1,7 @@
 # Lathe — External-Change Detection → Sync Prompt
 
+> **Superseded for sources and resources:** [In-Process Workspace Sync](lathe-in-process-workspace-sync.md) compiles outside changes in-process, now through [One Write Pass](lathe-recompile-simplification.md); the sync prompt below remains only for build-file changes.
+
 Lathe compiles the open file live and otherwise trusts the `.lathe/` mirror that Maven produced at the
 last `mvn process-test-classes`. Anything that changes on disk **outside the editor** — a branch
 switch, a `git pull`, or an AI agent editing files — leaves the mirror and the reactor type index

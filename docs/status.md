@@ -22,9 +22,9 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | Type-index shards | Implemented | Dependency, JDK, and reactor type candidates are available. |
 | Workspace manifest | Implemented | Server version, source roots, type indexes, and POM fingerprints are recorded. |
 | Server launcher installation | Implemented | Maven installs versioned launchers under `servers/<version>/` and links each workspace's `.lathe/lathe-launcher.sh` (+ MCP) at the pinned version; no machine-global `current` symlink. |
-| Sync launcher | Implemented (Maven, Neovim, server/MCP texts) | `lathe:sync` writes `.lathe/lathe-sync.sh [--tests] [module ...]`, which runs the build on the project's JDK with the build cache off and prints the full command first. The Neovim client runs it for the `lathe/sync` prompt and `:LatheSync` / `:LatheSyncCaptureTest`; server and MCP texts name it (`Stale:` notes, `verify_change`'s `suggestedSync`), keeping `mvn process-test-classes` only for the first sync. See `lathe-sync-launcher.md`. |
+| Sync launcher | Implemented (Maven, Neovim, server/MCP texts) | `lathe:sync` writes `.lathe/lathe-sync.sh [--tests] [module ...]`, which runs the build on the project's JDK with the build cache off and prints the full command first. The Neovim client runs it for the `lathe/sync` prompt and `:LatheSync` / `:LatheSyncCaptureTest`; server and MCP texts name it (`Sync required:` notes, `verify_change`'s `suggestedSync`), keeping `mvn process-test-classes` only for the first sync. See `lathe-sync-launcher.md`. |
 | POM staleness detection | Implemented | Neovim receives a sync prompt after a POM / project-structure change (or a bulk, branch-switch-scale source change). |
-| In-process workspace sync | Implemented | Sources changed outside the editor (a git pull, branch switch, or agent) are recompiled in-process into the `.lathe/` mirror on the idle tick — the changed files in dependency order, deletions removing their mirrored classes, plus a refresh of open dependents — no Maven round trip. |
+| In-process workspace sync | Implemented | One write pass serves saves, outside changes (a git pull, branch switch, or agent), rename commits, startup, and MCP queries: changed files are compiled into the `.lathe/` mirror one source tree per javac task, a dependency level at a time, deletions remove their mirrored classes, and the affected open files are re-analyzed once — any number of files, no Maven round trip. A file that fails keeps its last good classes and is retried with its tree's next write. See [the design](done/lathe-recompile-simplification.md). |
 | Server-exit surfacing & manual start | Implemented | Neovim notifies on an unexpected server exit (pointing at the LSP log); the launcher routes JVM startup errors to stderr so they reach that log; `:LatheStart` starts the server for a directory with no Java file open. |
 | Javac-plugin JVM access | Implemented | `lathe:sync` copies the build's `--add-exports`/`--add-opens` (forked `-J` flags, `.mvn/jvm.config`, `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args`, which the launcher passes to the server JVM, so Error Prone and similar plugins run on save. |
 | Inheritance index | Implemented | Dependency, JDK, and reactor entries include direct supertypes in immutable snapshots. |
@@ -34,7 +34,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 
 | Area | Status | Current behavior and gaps |
 |---|---|---|
-| Diagnostics | Implemented | Fast change diagnostics, full save diagnostics, and unused private/local hints. Duplicate `cant.resolve` errors on the same line are deduplicated; unused-declaration scan is suppressed when compilation has errors. The unnamed variable `_` (JEP 456) and variables conventionally named `ignored` (e.g. `catch (… ignored)`) are excluded from unused-declaration hints (EG-051, resolved). |
+| Diagnostics | Implemented | Fast change diagnostics that include the source tree's unsaved open buffers (each that parses), save diagnostics adding annotation-processor and compiler-plugin findings, and unused private/local hints. Duplicate `cant.resolve` errors on the same line are deduplicated; unused-declaration scan is suppressed when compilation has errors. The unnamed variable `_` (JEP 456) and variables conventionally named `ignored` (e.g. `catch (… ignored)`) are excluded from unused-declaration hints (EG-051, resolved). |
 | Hover | Implemented | Includes source-backed Javadoc rendering. |
 | Definition | Implemented | Supports reactor and extracted dependency/JDK sources where available. An unresolved target returns no result instead of jumping to the file top (EG-049, resolved); go-to-definition on a record accessor lands on the component in the record header (EG-047, resolved); go-to-definition/hover on an annotation-processor–generated type (a record's `@Builder`) resolves to the fresh `.lathe` generated-sources mirror the server regenerates on save, not the stale Maven `target/` copy (EG-052, resolved). |
 | Declaration | Implemented | `textDocument/declaration` navigates an overriding method (at its declaration site or a call site) to its root contract method in the superclass or interface; falls back to `definition` for non-overriding symbols. |
@@ -85,7 +85,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | `verify_change` | Implemented | After edits, recompiles the changed set in-process (auto-detected from disk, or scoped by `files`), reports new diagnostics per module, and emits the scoped sync (`suggestedSync`, e.g. `.lathe/lathe-sync.sh app core`) for the cross-module remainder — no build run. |
 | `analyze_change` | Implemented | Pre-edit impact of a symbol: override/implementation family, production vs test reference counts, affected reactor modules, and relevant test classes. Read-only. |
 
-Cross-cutting: every located result carries a source snippet and an origin (reactor / dependency / JDK / generated); results append a `Stale:` advisory when a module's source is newer than its compiled classes; task→tool routing instructions are served at connection time; and each tool call is logged (`[tool] <name> <args> <ms> <outcome>`) to stderr for usage analysis.
+Cross-cutting: every located result carries a source snippet and an origin (reactor / dependency / JDK / generated); every tool first compiles the agent's changed files, and a result ends with a `Not compiled:` note (files with compile errors, fix the code) or a `Sync required:` note (build files changed, a module never synced, a foreign `.lathe/` version, with the command) when it cannot vouch for itself; task→tool routing instructions are served at connection time; and each tool call is logged (`[tool] <name> <args> <ms> <outcome>`) to stderr for usage analysis.
 
 ## Implemented Architecture
 
@@ -126,5 +126,5 @@ Detailed implementation designs and historical decisions are indexed under
 - Sources changed outside the editor (a git pull, branch switch, or agent) are recompiled in-process
   into the `.lathe/` mirror on the idle tick — the changed files in dependency order, deletions
   removing their mirrored classes, plus a refresh of open dependents (WS-1). Types created or renamed
-  in closed files appear without a sync; the Maven prompt now fires only for a POM/structure change or
-  a bulk (branch-switch-scale) change.
+  in closed files appear without a sync; the Maven prompt fires only for a POM/structure change — a
+  branch switch of any size is compiled in-process.

@@ -30,9 +30,10 @@ stdio, validated live against the private payment reactor.
   `search_symbols` finds a type/symbol by name across reactor + dependencies + JDK. All verified live
   on the payment reactor (e.g. incoming `call_hierarchy` on an overloaded method → 97 cross-module
   callers with snippets).
-- **Freshness advisory:** results append a `Stale:` note listing modules whose source is newer than
-  their compiled classes (reusing the existing idle-reconcile scan, cached), so the agent knows to
-  re-sync; `rename_symbol` compiles its own change set before returning, so its result is current. MCP has no server→model
+- **Freshness notes:** every tool first writes the agent's changed files through the write pass; a result
+  then ends with `Not compiled:` (files with compile errors — fix the code) or `Sync required:` (build files
+  changed, a module never synced, a foreign `.lathe/` — with the command), replacing the earlier `Stale:`
+  module list ([One Write Pass](../done/lathe-recompile-simplification.md), 2026-10-11). MCP has no server→model
   push, so this rides in the result text (verified with `claude-code-guide`).
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).

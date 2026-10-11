@@ -42,6 +42,7 @@ small `multi-module` invoker fixture.
    open doc.** This reaction is the shipped in-process-sync feature
    ([In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md)) — correct in intent (keep open
    diagnostics fresh when a dependency changes) but too eager and uncoalesced when compiles are expensive.
+   *Since [One Write Pass](../done/lathe-recompile-simplification.md) (2026-10-11) this refresh runs once per write pass (`refreshAfterPasses → refreshOpenFiles`), one analysis task per source tree, so a burst of external changes costs one re-analysis of each open file, not one per change.*
 
 2. **One serial analysis worker, no prioritization.** A multi-second *background* recompile blocks a
    millisecond-scale *interactive* request queued behind it. This is the dominant driver of the felt latency:

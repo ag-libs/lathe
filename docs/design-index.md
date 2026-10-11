@@ -126,13 +126,8 @@ reused):
   server tests' CPU is javac rebuilding its view of the JDK and an inherited 18-jar test classpath (1,528 cold
   tasks for 1,220 tests); one shared `TestJavac` with a JDK-only default, content-cached read-only fixtures,
   instance-owned fixtures, two test tiers, and coverage in a CI profile — roughly half the CPU, same coverage.
-  Invoker suite: it can test a stale `lathe-server` from `~/.m2` (fix first); then parallel projects and a
+  Invoker suite: it could test a stale `lathe-server` (fixed in `bfec20a6`); then parallel projects and a
   test-only watcher interval save ~20 s of wall-clock.
-- [One Write Pass: Simplifying Recompilation](planned/lathe-recompile-simplification.md) — every trigger (save,
-  external change, rename commit, MCP query, startup) requests one pass that writes stale files level by level in dependency order
-  and re-analyzes open dependents once; removes the 50-file bulk threshold, the per-path bookkeeping, and the
-  error-code widening (live analysis includes unsaved siblings); MCP notes say "fix the code" or "sync required"
-  (planned, awaiting the build-agnostic-core merge).
 - [Named Run Configurations](done/lathe-named-run-configs.md) — resolves TE-2: the overlay file
   becomes a `{ defaults, configs }` object (`defaults` = the auto-applied baselines, `configs` =
   name-keyed selectable entries that pin a target), explicit selection via `:LatheRun {name}` /
@@ -215,6 +210,11 @@ reused):
 
 ## Completed Designs
 
+- [One Write Pass: Simplifying Recompilation](done/lathe-recompile-simplification.md) — every trigger (save,
+  external change, rename commit, MCP query, startup) requests one pass that writes stale files a dependency
+  level at a time and re-analyzes the affected open files once; removed the 50-file bulk threshold, the save
+  queue and per-path bookkeeping, and the error-code widening (live analysis includes the tree's unsaved
+  buffers that parse); MCP results end with "Not compiled" (fix the code) or "Sync required" (with the command).
 - [Maven Extension for Automatic POM Setup](done/lathe-maven-extension.md) — a Maven core extension
   registered in `.mvn/extensions.xml` that injects the compiler shim, `init`/`sync` goals, and the
   test-capture dependency into the effective model in memory (extension-wins merge, `lathe.capture.only`

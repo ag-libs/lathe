@@ -113,7 +113,7 @@ picker. The server owns placement — module, source root, package, and skeleton
 
 Lathe keeps its model in step with your build. Open files are analysed live as you edit and save; when
 sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent
-editing files — Lathe reconciles in-process automatically, recompiling the changed files in dependency
+editing files — Lathe reconciles in-process automatically, recompiling the changed files, however many, in dependency
 order and cleaning up deletions with no Maven build. Only **POM / module-structure** changes prompt a
 full refresh, which runs `.lathe/lathe-sync.sh` — a script the build writes, so the editor never needs to
 know your build tool. Run it yourself any time: `.lathe/lathe-sync.sh` refreshes everything,

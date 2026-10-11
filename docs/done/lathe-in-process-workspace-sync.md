@@ -4,6 +4,7 @@ Status: done — MVP shipped (commits 3f9fd1cd deletion cleanup, 1845b3f1 update
 fb42c783 reconcile seam + e2e, 5adc2023 cleanup). Verified end-to-end against the multi-module invoker
 workspace: change / add / delete / cross-module / open-dependent refresh handled in-process, POM and
 bulk (>50) changes still prompt. Deferred follow-up: batch-FULL-per-module compile (per-file MVP shipped).
+Superseded in its mechanics by [One Write Pass](lathe-recompile-simplification.md) (2026-10-11): changes of any size are written in-process, one javac task per source tree; only build-file changes prompt.
 Supersedes the parked [In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md)
 and revises the source half of the shipped
 [External-Change Detection → Sync Prompt](../done/lathe-external-change-detection.md):
