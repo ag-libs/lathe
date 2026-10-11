@@ -26,6 +26,9 @@ After this step, nothing outside the Maven front-end (`lathe-compiler`, `lathe-m
 a new front-end only has to write the files the workspace contract describes.
 Maven behavior is unchanged, and the existing unit and invoker tests pass without edits to their expectations.
 
+`lathe-openjdk-maven-plugin` is already a second front-end: packaged as a Maven plugin, it reads the `make` build.
+It is the first real test of the contract; [§8](#8-the-openjdk-front-end) covers what this step means for it.
+
 ## Non-goals
 
 - No Gradle code, and no change to how the Maven front-end captures compiler options or test launches.
@@ -97,7 +100,7 @@ Two kinds of text, handled differently:
   the MCP tool descriptions (`LatheMcpServer`, `LatheMcpTools`) speak of a multi-module Java build and the sync script, not a Maven reactor and `mvn test`;
   "run lathe:sync" (`LatheLanguageServer`) names the script.
 - **Before `.lathe/` exists** there is no script, so the first-sync remediation has to name a build command.
-  `LatheLayout.SETUP_REMEDIATION` and the Neovim "no workspace" and "launcher not found" messages (`lathe.lua`, `sync.lua`) point at the installation guide and list each supported front-end's first command, Maven's being the only one for now.
+  `LatheLayout.SETUP_REMEDIATION` and the Neovim "no workspace" and "launcher not found" messages (`lathe.lua`, `sync.lua`) point at the installation guide and list each supported front-end's first command: Maven's, and OpenJDK's `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`.
   The version-skew message ("bump the `lathe-maven-extension` version") names the Lathe build plugin generically, with Maven's coordinate as the example.
 
 `LaunchCapture`'s `kind` value `surefire` becomes a neutral `junit-platform`; nothing reads it.
@@ -146,12 +149,45 @@ A test in each downstream module fails if its main sources reference `LatheLayou
 That works only for `lathe-server`, the one JPMS module;
 the MCP server and `lathe-test-runner` load `lathe-core` from the classpath, where package encapsulation does not apply, so the test is needed anyway.
 
+The guard treats `lathe-openjdk-maven-plugin` as a front-end, so it is exempt,
+but it reads a `make` build and should have no reason to reference `LatheLayout.Maven`.
+
+### 8. The OpenJDK front-end
+
+The OpenJDK sync (`OpenJdkSync`) writes per-module params and stamps, `workspace.json`, and `java-home`, and nothing else.
+Each change above touches it:
+
+- **Output map — fixes a likely bug.**
+  OpenJDK writes no `outputs` entries, so every path passes through unchanged, which is what it needs.
+  Today `remapPath` rewrites every path under the workspace root:
+  a build tool's classpath (from its `_batch.cmdline`) points into `build/<conf>/buildtools/...`, which becomes `.lathe/build/<conf>/<leaf>`, a path that does not exist.
+  `ModuleSourceCompiler` adds only the tool's own output directory unmodified, so a tool that depends on another tool's output resolves against a missing path.
+  This is traced from the code, not yet confirmed on a build.
+  `externalOutput` stays: it also selects the type-index scan root.
+- **Build files — a home for the planned freshness check.**
+  OpenJDK writes an empty `pomPaths` today.
+  [OpenJDK Support](lathe-openjdk-support.md) plans a rebuild check on each module's `_the.<module>_batch` marker mtime;
+  listing those markers in `buildFiles` gives it the re-sync prompt through the existing watcher, with no new server code.
+- **Texts — the sync script.**
+  The remediations in §3 name `.lathe/lathe-sync.sh`, which the OpenJDK sync does not write.
+  It writes one that runs `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`,
+  so the remediations hold and the Neovim sync command works for OpenJDK too.
+- **Contract — required and optional files.**
+  OpenJDK writes no bytecode mirror, no `style.json`, and no launch files, so the contract (§4) marks each file as required for every front-end or optional.
+  The lock is required: the OpenJDK sync takes no `LatheLock` today, so the server can reconcile against a half-written `.lathe/` while it runs.
+  The OpenJDK sync holds the lock for its whole run.
+- **Neovim test discovery — unchanged.**
+  With no `outputs`, the directory skip still walks `build/`, as it does today.
+  OpenJDK's tests are jtreg, which test discovery does not cover.
+
 ## Verification
 
 - The Maven invoker tests (`multi-module`, `LspSmokeTest`, and the rest) pass unchanged; they are the proof that Maven behavior did not move.
 - Output-map unit tests use Maven-shaped **and** Gradle-shaped paths (`build/classes/java/main`, `build/libs/app.jar`), proving neutrality without a Gradle build.
 - A regression test for an in-repo jar (`libs/vendor.jar`) passing through unchanged.
 - The Maven sync writes jar entries for a default and a custom test-jar classifier, before `package` has run.
+- An OpenJDK build tool's classpath entry under `build/<conf>/buildtools/` passes through unchanged.
+- The OpenJDK sync writes `lathe-sync.sh` and holds `lathe.lock` while it writes `.lathe/`.
 
 ## Slicing
 
@@ -160,6 +196,7 @@ the MCP server and `lathe-test-runner` load `lathe-core` from the classpath, whe
 3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`.
 4. **Client** — Neovim messages and neotest directory skip.
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.**
+6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`.
 
 ## Decisions
 
