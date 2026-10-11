@@ -203,6 +203,11 @@ final class WorkspaceSession {
   // Files with a save compile in flight (a count per file, as one file can be saved twice in a
   // row), so the reconcile pass does not compile them a second time from disk meanwhile.
   private final Map<Path, Integer> saving = new HashMap<>();
+  // Saves of a source tree that arrive while one of its save compiles runs wait here and then
+  // compile together as one batch, so a Save All costs a few batches instead of a compile per file.
+  // A lone save compiles at once.
+  private final Map<ModuleSourceConfig, Integer> treeSavesInFlight = new HashMap<>();
+  private final Map<ModuleSourceConfig, Set<Path>> queuedSaves = new HashMap<>();
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
@@ -1449,6 +1454,15 @@ final class WorkspaceSession {
     }
 
     final var route = routeCompiler(uri);
+    if (route instanceof final CompilerRoute.Module module
+        && treeSavesInFlight.containsKey(module.config())) {
+      final Path source = LatheUri.toPath(uri);
+      queuedSaves.computeIfAbsent(module.config(), config -> new LinkedHashSet<>()).add(source);
+      saving.merge(source, 1, Integer::sum);
+      LOG.fine(() -> "[save] queued %s".formatted(uri));
+      return;
+    }
+
     final AfterCompile afterCompile =
         switch (route) {
           case CompilerRoute.Module module ->
@@ -4045,9 +4059,15 @@ final class WorkspaceSession {
             snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
     final boolean save = mode == CompileMode.FULL;
     final Path source = LatheUri.toPath(snapshot.uri());
+    final ModuleSourceConfig tree =
+        save && route instanceof final CompilerRoute.Module module ? module.config() : null;
     if (save) {
       sourceCompilesInFlight++;
       saving.merge(source, 1, Integer::sum);
+    }
+
+    if (tree != null) {
+      treeSavesInFlight.merge(tree, 1, Integer::sum);
     }
 
     moduleWorker
@@ -4061,7 +4081,7 @@ final class WorkspaceSession {
                         maybeWidenSealed(route, snapshot, result);
                       } finally {
                         if (save) {
-                          saveCompileDone(source);
+                          saveCompileDone(source, tree);
                         }
                       }
                     }))
@@ -4073,7 +4093,7 @@ final class WorkspaceSession {
                       publisher.publishError(snapshot, mode, ex);
                     } finally {
                       if (save) {
-                        saveCompileDone(source);
+                        saveCompileDone(source, tree);
                       }
                     }
                   });
@@ -4280,9 +4300,41 @@ final class WorkspaceSession {
     }
   }
 
-  private void saveCompileDone(final Path source) {
-    saving.computeIfPresent(source, (path, count) -> count > 1 ? count - 1 : null);
+  // A queued batch starts before this compile stops counting as in flight, so the dependents
+  // refresh waits for the batch too and runs once.
+  private void saveCompileDone(final Path source, final ModuleSourceConfig tree) {
+    releaseSaving(source);
+    if (tree != null) {
+      treeSaveDone(tree);
+    }
+
     sourceCompileDone();
+  }
+
+  private void releaseSaving(final Path source) {
+    saving.computeIfPresent(source, (path, count) -> count > 1 ? count - 1 : null);
+  }
+
+  // Once a tree has no save compile running, the saves queued meanwhile compile as one batch; its
+  // dependents refresh republishes them. Saves arriving during the batch queue for the next one.
+  private void treeSaveDone(final ModuleSourceConfig tree) {
+    treeSavesInFlight.computeIfPresent(tree, (config, count) -> count > 1 ? count - 1 : null);
+    if (treeSavesInFlight.containsKey(tree) || !queuedSaves.containsKey(tree)) {
+      return;
+    }
+
+    final List<Path> batch = List.copyOf(queuedSaves.remove(tree));
+    treeSavesInFlight.put(tree, 1);
+    LOG.fine(
+        () ->
+            "[save] batch %d queued file(s) in %s"
+                .formatted(batch.size(), moduleRelForDir(tree.moduleDir())));
+    compileChangedBatch(tree, batch)
+        .thenRun(
+            () -> {
+              batch.forEach(this::releaseSaving);
+              treeSaveDone(tree);
+            });
   }
 
   private void sourceCompileDone() {

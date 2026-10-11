@@ -30,6 +30,7 @@ import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -893,6 +894,52 @@ class LatheTextDocumentServiceTest {
       final Path classes = tmp.resolve(".lathe/module/classes/com/example");
       assertThat(classes.resolve("Dep2.class")).exists();
       assertThat(classes.resolve("Dep.class")).doesNotExist();
+    } finally {
+      logger.removeHandler(handler);
+    }
+  }
+
+  @Test
+  void didSave_savesArrivingDuringASaveCompile_compileAsOneBatch_eachRepublished()
+      throws Exception {
+    final DepFixture fx = depWithUsers(3);
+    service.initialize(tmp);
+    awaitStartup();
+    final var files = new ArrayList<Path>(fx.users());
+    files.add(fx.dep());
+    for (final Path file : files) {
+      openDoc(file, Files.readString(file));
+    }
+
+    awaitWorkerIdle();
+    clearInvocations(client);
+    final var compiles = new ConcurrentLinkedQueue<String>();
+    final var handler = new MessageCollector(compiles);
+    final var logger = Logger.getLogger(SourceAnalysisSession.class.getName());
+    logger.addHandler(handler);
+    try {
+      // A Save All of hand-edited files: the first save compiles at once, the rest arrive while it
+      // runs and compile together when it is done.
+      for (final Path file : files) {
+        Files.writeString(file, Files.readString(file) + "\n// edited\n");
+        save(file);
+      }
+
+      for (final Path file : files) {
+        verify(client, timeout(10_000))
+            .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
+      }
+
+      awaitWorkerIdle();
+      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:full]")).hasSize(1);
+      assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch] 3 files")).hasSize(1);
+      final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+      for (final Path file : files) {
+        assertThat(stamps)
+            .containsEntry(
+                tmp.resolve("module/src/main/java").relativize(file).toString(),
+                Files.getLastModifiedTime(file).toMillis());
+      }
     } finally {
       logger.removeHandler(handler);
     }

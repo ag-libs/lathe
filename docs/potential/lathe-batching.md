@@ -2,7 +2,7 @@
 
 ## Status
 
-**Batch write implemented; batch analysis not yet.**
+**Batch write and save coalescing implemented; batch analysis not yet.**
 This document names the two batching primitives the server needs and maps every multi-file burst onto them.
 [Rename Transactions](lathe-rename-transactions.md) is the first consumer: its commit uses the chained batch write, which reconcile now uses too.
 Its as-built version needs no batch analysis (members are republished by the commit's dependents refresh), so batch analysis waits for the dependents refresh, open bursts, and reload.
@@ -132,7 +132,7 @@ Rename Transactions' slice 0 measures whether per-publish refreshes are what slo
 1. **Rename Transactions slice 0** — the save-pacing measurement and, if confirmed, one token refresh per drained queue.
    *Measured:* with per-member compiles and publishes suppressed, Neovim's `:wa` over 108 files fell from ~59 s to ~6 s; one token refresh per drained queue is still open.
 2. **Rename Transactions slice 1** — chained batch writes (reconcile benefits at once) and the engine-applied commit. *Done.*
-3. **Save coalescing** — small: it reuses the batch write and covers Save All in every editor.
+3. **Save coalescing** — small: it reuses the batch write and covers Save All in every editor. *Done:* a save arriving while its tree has a save compile running is queued; when that compile ends, the queued files compile as one batch write, started before the running compile stops counting as in flight so the dependents refresh still runs once; that refresh republishes them.
 4. **Narrowing the dependents refresh** — independent, and removes most dependents work before any batch analysis exists; small only if open question 1 resolves to a simple closure.
 5. **Rename Transactions slice 2** — the editor-applied transaction. *Done*, without batch analysis (see its as-built notes).
 6. **Batch analysis for the dependents refresh, open bursts, and reload.**
