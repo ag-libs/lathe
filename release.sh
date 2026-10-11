@@ -64,6 +64,13 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 git diff --quiet && git diff --cached --quiet \
   || die "working tree has uncommitted changes — commit or stash first"
 
+# Release exactly what origin/main has: local-only commits would ship without CI having run on
+# them, and a branch behind origin would leave a release commit and tag that cannot be pushed.
+git fetch --quiet origin main || die "cannot fetch origin/main"
+read -r behind ahead < <(git rev-list --left-right --count origin/main...HEAD)
+[ "$ahead" -eq 0 ] || die "main has ${ahead} commit(s) not on origin — push them and let CI pass first"
+[ "$behind" -eq 0 ] || die "main is ${behind} commit(s) behind origin — pull first"
+
 git rev-parse -q --verify "refs/tags/${tag}" >/dev/null \
   && die "tag ${tag} already exists locally"
 

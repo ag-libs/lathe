@@ -22,12 +22,14 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
 
 ## Cutting a release
 
-1. Make sure `main` is green (CI passed for the commit you're releasing).
+1. Make sure `main` is green (CI passed for the commit you're releasing), and your local `main` matches
+   `origin/main`: `release.sh` refuses to release local-only commits or a `main` that is behind.
 2. Bump the docs and create the tag:
    ```bash
    ./release.sh 0.1.1          # or just ./release.sh for the next patch
    ```
-   This validates the version, checks preconditions (on `main`, clean tree, tag unused), updates the
+   This validates the version, checks preconditions (on `main`, clean tree, in sync with `origin/main`,
+   tag unused), updates the
    install-snippet version in `README.md` and `docs/guide/installation.md`, shows the diff for you to
    confirm, then commits and creates the tag `v0.1.1`. Use `--dry-run` to preview without committing.
    It then asks whether to push and publish now; answering yes runs steps 3 and 4 for you.
