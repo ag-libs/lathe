@@ -85,6 +85,10 @@ final class ReferenceCandidateIndex {
           update(path.toUri().toString(), Files.readString(path));
         } catch (final IOException e) {
           LOG.log(Level.FINE, e, () -> "[candidate-index] skipped: %s".formatted(path));
+        } catch (final RuntimeException e) {
+          // A text-scan bug on one file must cost that file's candidates, not the workspace load
+          // that builds this index before the type index.
+          LOG.log(Level.SEVERE, e, () -> "[candidate-index] failed to index: %s".formatted(path));
         }
       }
     } catch (final IOException e) {
