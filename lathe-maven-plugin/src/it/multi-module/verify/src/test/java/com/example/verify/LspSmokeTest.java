@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.net.URI;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -567,7 +568,9 @@ class LspSmokeTest {
     return (paren >= 0 ? label.substring(0, paren) : label).trim();
   }
 
-  private static void saveDoc(final String uri, final String content) {
+  // As an editor saves: the file is written to disk, then the server is told.
+  private static void saveDoc(final String uri, final String content) throws IOException {
+    Files.writeString(Path.of(URI.create(uri)), content);
     final var params = new DidSaveTextDocumentParams();
     params.setTextDocument(new TextDocumentIdentifier(uri));
     params.setText(content);
