@@ -29,6 +29,7 @@ Set LATHE_TIMEOUT=<seconds> to change the per-request wait (default: 15).
 """
 
 import argparse
+import collections
 import json
 import os
 import queue
@@ -108,6 +109,11 @@ class LspClient:
         self._notifications: dict[str, queue.Queue] = {}
         self._notif_lock = threading.Lock()
         self._stopped = False
+        # message counts by method, for burst measurements (dev/burst.py)
+        self.notification_counts: collections.Counter = collections.Counter()
+        self.server_request_counts: collections.Counter = collections.Counter()
+        # optional hook run (on the reader thread) for each server->client request
+        self.on_server_request: Callable[[dict], None] | None = None
 
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
@@ -221,12 +227,22 @@ class LspClient:
             elif "method" in msg and "id" not in msg:
                 # notification
                 method = msg["method"]
+                self.notification_counts[method] += 1
                 with self._notif_lock:
                     q = self._notifications.setdefault(method, queue.Queue())
                 q.put(msg)
 
+    # Requests a real editor acknowledges with a null result.
+    _NULL_RESULT_REQUESTS = {
+        "window/workDoneProgress/create",
+        "workspace/semanticTokens/refresh",
+    }
+
     def _handle_server_request(self, msg: dict):
-        if msg["method"] == "window/workDoneProgress/create":
+        self.server_request_counts[msg["method"]] += 1
+        if self.on_server_request:
+            self.on_server_request(msg)
+        if msg["method"] in self._NULL_RESULT_REQUESTS:
             self._send({"jsonrpc": "2.0", "id": msg["id"], "result": None})
             return
         self._send({
@@ -698,6 +714,7 @@ class LatheClient(LspClient):
                         "documentChanges": True,
                         "resourceOperations": ["create", "rename", "delete"],
                     },
+                    "semanticTokens": {"refreshSupport": True},
                 },
             },
         })
