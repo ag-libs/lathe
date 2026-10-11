@@ -221,6 +221,37 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  @Test
+  void analyzeOpenBatch_eachSourceOwnResultInOrder_withTokens_syntaxErrorStaysLocal()
+      throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+    final List<TransientSource> sources =
+        List.of(
+            new TransientSource(
+                sourceRoot.resolve("Broken.java").toUri().toString(),
+                "class Broken { void m( { } }"),
+            new TransientSource(
+                sourceRoot.resolve("Valid.java").toUri().toString(), "class Valid { String v; }"),
+            // Resolves Valid from the batch, as an open sibling, without any compiled class.
+            new TransientSource(
+                sourceRoot.resolve("User.java").toUri().toString(), "class User { Valid v; }"));
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final List<CompilerResult> results = compiler.analyzeOpenBatch(sources, () -> {});
+
+      assertThat(results).hasSize(3);
+      assertThat(hasError(results.get(0))).isTrue();
+      for (final CompilerResult result : results.subList(1, 3)) {
+        assertThat(hasError(result)).isFalse();
+        assertThat(result.fileAnalysis().tree()).isNotNull();
+        assertThat(result.fileAnalysis().semanticTokens()).isNotEmpty();
+      }
+    }
+  }
+
   private static String declaredTypeName(final TransientAnalysis analysis) {
     final var declared = (ClassTree) analysis.analysis().tree().getTypeDecls().getFirst();
     return declared.getSimpleName().toString();

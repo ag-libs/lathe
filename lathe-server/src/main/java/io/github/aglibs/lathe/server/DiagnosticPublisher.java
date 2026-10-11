@@ -29,6 +29,15 @@ final class DiagnosticPublisher {
     return publish(snapshot, result, result.diagnostics());
   }
 
+  // Publishes without refreshing semantic tokens, for a batch that refreshes them once at the end.
+  boolean publishQuietlyIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
+    return deliver(snapshot, result, result.diagnostics());
+  }
+
+  void refreshTokens() {
+    client.refreshSemanticTokens();
+  }
+
   /**
    * Publishes an empty diagnostics list for a read-only external (JDK/dependency) source, so the
    * user sees no compiler diagnostics on a file they cannot edit, while keeping the same staleness
@@ -42,13 +51,24 @@ final class DiagnosticPublisher {
       final OpenDocument snapshot,
       final CompileResponse result,
       final List<Diagnostic> diagnostics) {
+    if (!deliver(snapshot, result, diagnostics)) {
+      return false;
+    }
+
+    client.refreshSemanticTokens();
+    return true;
+  }
+
+  private boolean deliver(
+      final OpenDocument snapshot,
+      final CompileResponse result,
+      final List<Diagnostic> diagnostics) {
     if (registry.isStale(snapshot, result.generation())) {
       return false;
     }
 
     DiagnosticPayloadCodec.serializeDiagnosticData(diagnostics);
     client.publishDiagnostics(new PublishDiagnosticsParams(result.uri(), diagnostics));
-    client.refreshSemanticTokens();
     return true;
   }
 

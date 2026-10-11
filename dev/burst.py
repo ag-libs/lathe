@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from lsp import LatheClient  # noqa: E402
 
-COMPILE = re.compile(r"INFO +\[compile:(\w+)\]")
+COMPILE = re.compile(r"INFO +\[compile:([\w-]+)\]")
 COUNTED = {
     "react batches": re.compile(r"\[react\] recompiled"),
     "dependents scheduled": re.compile(r"\[dependents\] recompiling"),

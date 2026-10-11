@@ -788,12 +788,15 @@ class LatheTextDocumentServiceTest {
     final var logger = Logger.getLogger(SourceAnalysisSession.class.getName());
     logger.addHandler(handler);
     try {
-      // A single save refreshes each open dependent as soon as its own compile is done.
+      // A single save refreshes its open dependents as soon as its own compile is done, in one
+      // analysis task for their tree.
       save(fx.dep());
       for (final Path user : fx.users()) {
         verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
-        assertThat(openCompiles(compiles, user)).isEqualTo(1);
       }
+
+      awaitWorkerIdle();
+      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 3 files");
 
       awaitWorkerIdle();
       compiles.clear();
@@ -804,8 +807,10 @@ class LatheTextDocumentServiceTest {
       fx.users().forEach(this::save);
       for (final Path user : fx.users()) {
         verify(client, after(1_500).atLeastOnce()).publishDiagnostics(argThat(p -> isFor(p, user)));
-        assertThat(openCompiles(compiles, user)).isEqualTo(1);
       }
+
+      awaitWorkerIdle();
+      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 4 files");
     } finally {
       logger.removeHandler(handler);
     }
@@ -887,9 +892,7 @@ class LatheTextDocumentServiceTest {
       assertThat(compiles).noneMatch(m -> m.startsWith("[compile:full]"));
       assertThat(compiles).noneMatch(m -> m.startsWith("[compile:fast]"));
       assertThat(compiles).filteredOn(m -> m.startsWith("[compile:batch]")).hasSize(1);
-      for (final Path file : edited.keySet()) {
-        assertThat(openCompiles(compiles, file)).as(file.getFileName().toString()).isEqualTo(1);
-      }
+      assertThat(refreshAnalyses(compiles)).containsExactly("[compile:open-batch] 4 files");
 
       final Path classes = tmp.resolve(".lathe/module/classes/com/example");
       assertThat(classes.resolve("Dep2.class")).exists();
@@ -897,6 +900,49 @@ class LatheTextDocumentServiceTest {
     } finally {
       logger.removeHandler(handler);
     }
+  }
+
+  @Test
+  void didSave_dependentEditedDuringRefreshBatch_lastPublishReflectsTheEdit() throws Exception {
+    final DepFixture fx = depWithUsers(3);
+    service.initialize(tmp);
+    awaitStartup();
+    openDoc(fx.dep(), Files.readString(fx.dep()));
+    for (final Path user : fx.users()) {
+      openDoc(user, Files.readString(user));
+    }
+
+    awaitWorkerIdle();
+    clearInvocations(client);
+    final Path edited = fx.users().getFirst();
+
+    // The save starts a refresh batch over the users; one of them is edited while it runs. A batch
+    // result for the old content is stale and dropped, so the edit's own compile has the last word.
+    save(fx.dep());
+    service.didChange(
+        new DidChangeTextDocumentParams(
+            new VersionedTextDocumentIdentifier(edited.toUri().toString(), 2),
+            List.of(
+                new TextDocumentContentChangeEvent(
+                    "package com.example;\nclass User0 { int u() { return missing(); } }\n"))));
+
+    verify(client, timeout(5_000))
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    isFor(p, edited)
+                        && p.getDiagnostics().stream()
+                            .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error)));
+    awaitWorkerIdle();
+    final var publishes = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
+    verify(client, atLeastOnce()).publishDiagnostics(publishes.capture());
+    assertThat(
+            publishes.getAllValues().stream()
+                .filter(p -> isFor(p, edited))
+                .toList()
+                .getLast()
+                .getDiagnostics())
+        .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
   }
 
   @Test
@@ -952,9 +998,14 @@ class LatheTextDocumentServiceTest {
             IOUtil.unchecked(() -> Files.readString(file))));
   }
 
-  private static long openCompiles(final Collection<String> compileLog, final Path file) {
-    final String prefix = "[compile:open] %s ".formatted(file.toUri());
-    return compileLog.stream().filter(m -> m.startsWith(prefix)).count();
+  // The open-document analyses in the compile log, the batch size kept and the timing dropped: a
+  // dependents refresh analyzes a tree's open files in one task, so a per-file "[compile:open]"
+  // here means it fell back to one compile per file.
+  private static List<String> refreshAnalyses(final Collection<String> compileLog) {
+    return compileLog.stream()
+        .filter(m -> m.startsWith("[compile:open"))
+        .map(m -> m.replaceFirst(" \\d+ms$", "").replaceFirst("(files) .*", "$1"))
+        .toList();
   }
 
   @Test

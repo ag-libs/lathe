@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -54,27 +55,31 @@ final class JavacRunner {
       final Iterable<? extends JavaFileObject> sourceFiles,
       final List<String> options,
       final CancelChecker cancelChecker) {
-    return analyzeBatchDiagnosed(sourceFiles, options, cancelChecker).analyses();
+    return analyzeBatchDiagnosed(sourceFiles, options, false, cancelChecker).analyses();
   }
 
   // Analyze several files in one task, keeping the diagnostics, so a live compile can widen a
-  // single-file failure into the file's siblings.
+  // single-file failure into the file's siblings. withTokens also scans each file's semantic
+  // tokens, as a single open-file analysis does, for analyses that will be cached and served.
   BatchAnalysis analyzeBatchDiagnosed(
       final Iterable<? extends JavaFileObject> sourceFiles,
       final List<String> options,
+      final boolean withTokens,
       final CancelChecker cancelChecker) {
     cancelChecker.checkCanceled();
     return admission.run(
         cancelChecker,
         () -> {
-          final BatchAnalysis batch = attributeBatch(sourceFiles, options);
+          final BatchAnalysis batch = attributeBatch(sourceFiles, options, withTokens);
           cancelChecker.checkCanceled();
           return batch;
         });
   }
 
   private BatchAnalysis attributeBatch(
-      final Iterable<? extends JavaFileObject> sourceFiles, final List<String> options) {
+      final Iterable<? extends JavaFileObject> sourceFiles,
+      final List<String> options,
+      final boolean withTokens) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task = createTask(sourceFiles, options, collector);
     try {
@@ -85,7 +90,9 @@ final class JavacRunner {
       final Types types = task.getTypes();
       final var analyses = new ArrayList<AttributedFileAnalysis>();
       for (final var cu : units) {
-        analyses.add(new AttributedFileAnalysis(trees, elements, types, cu, null));
+        analyses.add(
+            new AttributedFileAnalysis(
+                trees, elements, types, cu, withTokens ? TokenScanner.scan(trees, cu) : null));
       }
 
       return new BatchAnalysis(analyses, collector.getDiagnostics());

@@ -95,6 +95,17 @@ public interface JavaSourceCompiler extends AutoCloseable {
     return compile(target.uri(), target.content(), CompileMode.FAST, cancelChecker);
   }
 
+  /**
+   * Analyzes open documents together, one result per source as its own OPEN compile would give. The
+   * default compiles each alone; {@code ModuleSourceCompiler} overrides it with one task.
+   */
+  default List<CompilerResult> analyzeOpenBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    return sources.stream()
+        .map(source -> compile(source.uri(), source.content(), CompileMode.OPEN, cancelChecker))
+        .toList();
+  }
+
   StandardJavaFileManager fileManager();
 
   @Override

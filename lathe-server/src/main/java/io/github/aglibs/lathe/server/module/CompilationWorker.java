@@ -20,6 +20,7 @@ import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -31,6 +32,7 @@ import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -133,6 +135,33 @@ public final class CompilationWorker {
               ctx.compile(request.uri(), request.content(), request.version(), request.mode());
           return new CompileResponse(
               request.uri(), request.generation(), diags, ctx.lastWrittenBinaryNames());
+        });
+  }
+
+  // Several open documents of this tree analyzed in one task, each answered as its own compile.
+  public CompletableFuture<List<CompileResponse>> compileOpenBatch(
+      final List<CompileRequest> requests) {
+    return submit(
+        ctx -> {
+          final Map<String, List<Diagnostic>> diagnostics =
+              ctx.compileOpenBatch(
+                  requests.stream()
+                      .map(request -> new TransientSource(request.uri(), request.content()))
+                      .toList(),
+                  requests.stream()
+                      .collect(
+                          Collectors.toUnmodifiableMap(
+                              CompileRequest::uri, CompileRequest::version)),
+                  () -> {});
+          return requests.stream()
+              .map(
+                  request ->
+                      new CompileResponse(
+                          request.uri(),
+                          request.generation(),
+                          diagnostics.get(request.uri()),
+                          Set.of()))
+              .toList();
         });
   }
 

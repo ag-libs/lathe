@@ -121,6 +121,30 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return diags;
   }
 
+  // Analyze several open documents in one task, each cached and diagnosed as its own OPEN compile
+  // would be; returns the diagnostics by URI.
+  public Map<String, List<Diagnostic>> compileOpenBatch(
+      final List<TransientSource> sources,
+      final Map<String, Integer> versionByUri,
+      final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final List<CompilerResult> runs = compiler.analyzeOpenBatch(sources, cancelChecker);
+    cancelChecker.checkCanceled();
+    final var diagnostics = new HashMap<String, List<Diagnostic>>();
+    for (int i = 0; i < sources.size(); i++) {
+      final TransientSource source = sources.get(i);
+      final CompilerResult run = runs.get(i);
+      cache.put(
+          source.uri(),
+          new CachedFileAnalysis(
+              source.content(), versionByUri.get(source.uri()), run.fileAnalysis()));
+      diagnostics.put(source.uri(), mapDiagnostics(run, source.content()));
+    }
+
+    LOG.info(() -> "[compile:open-batch] %d files %dms".formatted(sources.size(), t.elapsedMs()));
+    return Map.copyOf(diagnostics);
+  }
+
   // Recompute the target's diagnostics with its siblings present; analyze-only.
   public List<Diagnostic> diagnoseInBatch(
       final List<TransientSource> sources,

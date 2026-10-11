@@ -2,7 +2,7 @@
 
 ## Status
 
-**Batch write and save coalescing implemented; batch analysis not yet.**
+**Batch write, save coalescing, and batch analysis for the dependents refresh implemented**; batch analysis for open bursts and reload is not.
 This document names the two batching primitives the server needs and maps every multi-file burst onto them.
 [Rename Transactions](lathe-rename-transactions.md) is the first consumer: its commit uses the chained batch write, which reconcile now uses too.
 Its as-built version needs no batch analysis (members are republished by the commit's dependents refresh), so batch analysis waits for the dependents refresh, open bursts, and reload.
@@ -135,7 +135,7 @@ Rename Transactions' slice 0 measures whether per-publish refreshes are what slo
 3. **Save coalescing** — small: it reuses the batch write and covers Save All in every editor. *Done:* a save arriving while its tree has a save compile running is queued; when that compile ends, the queued files compile as one batch write, started before the running compile stops counting as in flight so the dependents refresh still runs once; that refresh republishes them.
 4. **Narrowing the dependents refresh** — independent, and removes most dependents work before any batch analysis exists; small only if open question 1 resolves to a simple closure.
 5. **Rename Transactions slice 2** — the editor-applied transaction. *Done*, without batch analysis (see its as-built notes).
-6. **Batch analysis for the dependents refresh, open bursts, and reload.**
+6. **Batch analysis for the dependents refresh, open bursts, and reload.** *Done for the dependents refresh:* its open files are grouped per source tree and analyzed in one OPEN-mode task per tree (at most 50 files), each cached and diagnosed as its own OPEN compile would be, with semantic tokens scanned; each result publishes if still current and the batch refreshes semantic tokens once. A lone file, or one outside a module, keeps its per-file compile; a failed batch falls back to it. Batched files resolve each other from their editor text rather than the mirror. On the equalsverifier rename: 116 -> 18 compiles, 108 -> 9 token refreshes, 8.3 s -> 5.5 s after the last save.
 7. **Fewer small reconcile batches** — only if measurement still shows fragmentation.
 
 ## Tests

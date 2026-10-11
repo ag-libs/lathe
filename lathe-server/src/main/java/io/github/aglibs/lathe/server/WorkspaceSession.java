@@ -3859,6 +3859,8 @@ final class WorkspaceSession {
   // Above this many externally changed sources (a branch switch, a large pull), recommend a Maven
   // sync instead of recompiling in-process file by file.
   private static final int BULK_CHANGE_THRESHOLD = 50;
+  // At most this many open documents share one dependents-refresh analysis task.
+  private static final int OPEN_BATCH_MAX = 50;
   // Once a rename's first file is saved, this long without another of its files' events commits
   // the saved ones, so an editor that never saves the rest cannot hold the others back.
   private static final long RENAME_IDLE_MS = 10_000;
@@ -4054,9 +4056,7 @@ final class WorkspaceSession {
       final CompileMode mode,
       final AfterCompile afterCompile) {
     touchAnalysisCache(snapshot.uri());
-    final var request =
-        new CompileRequest(
-            snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
+    final var request = requestFor(snapshot, mode);
     final boolean save = mode == CompileMode.FULL;
     final Path source = LatheUri.toPath(snapshot.uri());
     final ModuleSourceConfig tree =
@@ -4351,14 +4351,86 @@ final class WorkspaceSession {
         () ->
             "[dependents] checking %d open file(s) across %d module(s)"
                 .formatted(docs.all().size(), refresh.scope().size()));
-    docs.all().stream()
-        .map(OpenDocument::uri)
-        .filter(uri -> !refresh.exclusions().contains(uri))
-        // An open rename's files compile at its commit, not against the half-renamed mirror.
-        .filter(uri -> !renameTransaction.isMember(uri))
-        .filter(uri -> inDownstreamScope(uri, refresh.scope()))
-        .toList()
-        .forEach(this::scheduleDependent);
+    final List<String> dependents =
+        docs.all().stream()
+            .map(OpenDocument::uri)
+            .filter(uri -> !refresh.exclusions().contains(uri))
+            // An open rename's files compile at its commit, not against the half-renamed mirror.
+            .filter(uri -> !renameTransaction.isMember(uri))
+            .filter(uri -> inDownstreamScope(uri, refresh.scope()))
+            .toList();
+    // A module's dependents are analyzed one task per source tree, not one compile per file.
+    final var byTree = new LinkedHashMap<ModuleSourceConfig, List<String>>();
+    for (final String uri : dependents) {
+      if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
+        byTree.computeIfAbsent(module.config(), config -> new ArrayList<>()).add(uri);
+      } else {
+        scheduleDependent(uri);
+      }
+    }
+
+    byTree.forEach(
+        (config, uris) -> {
+          for (int from = 0; from < uris.size(); from += OPEN_BATCH_MAX) {
+            refreshAsBatch(
+                config, uris.subList(from, Math.min(from + OPEN_BATCH_MAX, uris.size())));
+          }
+        });
+  }
+
+  private void refreshAsBatch(final ModuleSourceConfig config, final List<String> uris) {
+    final List<OpenDocument> snapshots =
+        uris.stream().map(docs::get).filter(Objects::nonNull).toList();
+    if (snapshots.size() < 2) {
+      snapshots.forEach(snapshot -> scheduleDependent(snapshot.uri()));
+      return;
+    }
+
+    final var route = new CompilerRoute.Module(workspace.workerFor(config), config);
+    final var requests = new ArrayList<CompileRequest>(snapshots.size());
+    for (final OpenDocument snapshot : snapshots) {
+      worker.cancel(snapshot.uri());
+      touchAnalysisCache(snapshot.uri());
+      requests.add(requestFor(snapshot, CompileMode.OPEN));
+    }
+
+    LOG.fine(
+        () ->
+            "[dependents] batch %d file(s) in %s"
+                .formatted(snapshots.size(), moduleRelForDir(config.moduleDir())));
+    route
+        .worker()
+        .compileOpenBatch(requests)
+        .thenAccept(responses -> worker.execute(() -> publishBatch(route, snapshots, responses)))
+        .exceptionally(
+            ex -> {
+              LOG.log(Level.FINE, ex, () -> "[dependents] batch failed, compiling one by one");
+              worker.execute(() -> snapshots.forEach(s -> scheduleDependent(s.uri())));
+              return null;
+            });
+  }
+
+  private static CompileRequest requestFor(final OpenDocument snapshot, final CompileMode mode) {
+    return new CompileRequest(
+        snapshot.uri(), snapshot.content(), snapshot.version(), snapshot.generation(), mode);
+  }
+
+  // Each result publishes as its own compile would; semantic tokens refresh once for the batch.
+  private void publishBatch(
+      final CompilerRoute.Module route,
+      final List<OpenDocument> snapshots,
+      final List<CompileResponse> responses) {
+    boolean published = false;
+    for (int i = 0; i < snapshots.size(); i++) {
+      if (publisher.publishQuietlyIfCurrent(snapshots.get(i), responses.get(i))) {
+        published = true;
+        maybeWidenSealed(route, snapshots.get(i), responses.get(i));
+      }
+    }
+
+    if (published) {
+      publisher.refreshTokens();
+    }
   }
 
   private void scheduleDependent(final String uri) {

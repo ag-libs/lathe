@@ -121,17 +121,35 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     final JavacRunner.BatchAnalysis batch =
-        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, cancelChecker);
-    final AttributedFileAnalysis targetAnalysis =
+        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, false, cancelChecker);
+    return resultFor(batch, uriByTempFile, targetUri);
+  }
+
+  // Analyze open documents in one task, one result per source as its own OPEN compile would give.
+  @Override
+  public List<CompilerResult> analyzeOpenBatch(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var options = buildOptions(config, compilerArgs, CompileMode.OPEN);
+    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
+    final JavacRunner.BatchAnalysis batch =
+        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, true, cancelChecker);
+    return sources.stream().map(source -> resultFor(batch, uriByTempFile, source.uri())).toList();
+  }
+
+  private static CompilerResult resultFor(
+      final JavacRunner.BatchAnalysis batch,
+      final Map<Path, String> uriByTempFile,
+      final String uri) {
+    final AttributedFileAnalysis analysis =
         batch.analyses().stream()
-            .filter(analysis -> targetUri.equals(uriByTempFile.get(sourcePathOf(analysis))))
+            .filter(candidate -> uri.equals(uriByTempFile.get(sourcePathOf(candidate))))
             .findFirst()
             .orElseGet(AttributedFileAnalysis::diagnosticsOnly);
-    final List<Diagnostic<? extends JavaFileObject>> targetDiagnostics =
+    final List<Diagnostic<? extends JavaFileObject>> diagnostics =
         batch.diagnostics().stream()
-            .filter(diagnostic -> targetUri.equals(uriByTempFile.get(sourcePathOf(diagnostic))))
+            .filter(diagnostic -> uri.equals(uriByTempFile.get(sourcePathOf(diagnostic))))
             .toList();
-    return new CompilerResult(targetDiagnostics, targetAnalysis, Set.of());
+    return new CompilerResult(diagnostics, analysis, Set.of());
   }
 
   private static TransientAnalysis toTransientAnalysis(
