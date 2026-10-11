@@ -16,6 +16,7 @@
 
   <properties>
     <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
+    <maven-clean-plugin.version>3.2.0</maven-clean-plugin.version>
     <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships. -->
     <spotless-lib.version>4.10.3</spotless-lib.version>
   </properties>
@@ -124,6 +125,37 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-plugin-plugin</artifactId>
         <version>${maven-plugin.version}</version>
+      </plugin>
+      <plugin>
+        <!-- The invoker keeps Lathe's own artifacts and the server launchers it unpacks between runs,
+             so a rebuilt SNAPSHOT would be tested as the previous build. Drop them before it installs
+             fresh ones (same phase, declared first); the JDK, dependency and type-index caches stay. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>${maven-clean-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>drop-previous-lathe-build</id>
+            <goals>
+              <goal>clean</goal>
+            </goals>
+            <phase>pre-integration-test</phase>
+            <configuration>
+              <excludeDefaultDirectories>true</excludeDefaultDirectories>
+              <filesets>
+                <fileset>
+                  <directory>${project.build.directory}/local-repo/io/github/ag-libs</directory>
+                </fileset>
+                <fileset>
+                  <directory>${project.build.directory}/it-home/.cache/lathe/servers</directory>
+                </fileset>
+                <fileset>
+                  <directory>${project.build.directory}/it-home/.cache/lathe/latest</directory>
+                </fileset>
+              </filesets>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
