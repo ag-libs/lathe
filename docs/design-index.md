@@ -108,6 +108,9 @@ reused):
   Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
   `workspace.json` replaces `target/`-shape path guessing, `pomPaths` → `buildFiles`, neutral texts,
   and a written workspace contract.
+- [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
+  front-end writes: path, schema record, writer, readers, required/recommended/optional, Maven vs
+  OpenJDK coverage, and known issues.
 - [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.14 and 9.8.** A
   `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
   typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,

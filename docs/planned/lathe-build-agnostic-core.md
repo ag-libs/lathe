@@ -108,7 +108,7 @@ Two kinds of text, handled differently:
 ### 4. The workspace contract, written down
 
 The files a front-end must produce are known only from the Maven code.
-A reference document (`docs/lathe-workspace-contract.md`) lists every `.lathe/` file, its schema record, who writes it, and its semantics:
+A reference document ([`docs/lathe-workspace-contract.md`](../lathe-workspace-contract.md), written in slice 1) lists every `.lathe/` file, its schema record, who writes it, and its semantics:
 
 | File | Schema / format |
 |---|---|
