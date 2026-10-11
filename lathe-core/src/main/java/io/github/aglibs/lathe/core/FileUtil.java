@@ -4,14 +4,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -52,6 +57,37 @@ public final class FileUtil {
     try (final var walk = Files.walk(root)) {
       return walk.filter(Files::isRegularFile).filter(keep).sorted().toList();
     }
+  }
+
+  // Every regular file below root matching keep, with its mtime read from the walk's own attributes
+  // -- one stat per entry, not a walk plus a stat per file, which matters for a scan repeated every
+  // few seconds (file-system calls are costly on macOS). Empty when root is not a directory; a file
+  // that vanishes during the walk is skipped.
+  public static Map<Path, Long> fileMtimes(final Path root, final Predicate<Path> keep)
+      throws IOException {
+    if (!Files.isDirectory(root)) {
+      return Map.of();
+    }
+
+    final var mtimes = new HashMap<Path, Long>();
+    Files.walkFileTree(
+        root,
+        new SimpleFileVisitor<>() {
+          @Override
+          public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) {
+            if (attrs.isRegularFile() && keep.test(file)) {
+              mtimes.put(file, attrs.lastModifiedTime().toMillis());
+            }
+
+            return FileVisitResult.CONTINUE;
+          }
+
+          @Override
+          public FileVisitResult visitFileFailed(final Path file, final IOException e) {
+            return FileVisitResult.CONTINUE;
+          }
+        });
+    return Map.copyOf(mtimes);
   }
 
   // Dotted names of every package that contains at least one .class file below root, sorted and

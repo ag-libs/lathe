@@ -163,7 +163,7 @@ Mutable state in `WorkspaceSession` that decides what compiles:
 | `sourceCompilesInFlight` | when writes from all paths have drained | **gone** — the pass knows its own writes |
 | `pendingRefresh` (`DependentRefresh`) | merged refresh requests from all paths | **gone** — one refresh at the end of the pass |
 | `bulkNoticeShown` | show the bulk notice once | **gone** |
-| `pendingStale`, `awaitingSettle` | one-tick readiness of external changes; tick back-off | stays |
+| `pendingStale`, `awaitingSettle` | one-tick readiness of external changes; tick back-off | `pendingStale` stays; the idle back-off and `awaitingSettle` were removed later (a pass every 2 s; a scan costs ~25 ms on a 377-tree reactor after the one-walk scan) |
 | `failedCompiles` | do not retry a failed, unchanged file | stays |
 | — | | **new** `reported`: files saved or engine-written, until written |
 | — | | **new** pass `running` / `dirty` flags |

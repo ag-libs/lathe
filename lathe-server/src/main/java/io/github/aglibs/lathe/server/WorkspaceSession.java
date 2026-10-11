@@ -178,14 +178,9 @@ final class WorkspaceSession {
   private Map<String, List<String>> reactorLambdaImplementors = Map.of();
   private WorkspaceWatcher watcher;
   private boolean buildFilesNotificationPending;
-  // Stale sources and their mtimes seen on the previous idle tick. A source is recompiled
-  // in-process
-  // only once its mtime has held across two ticks, so a file mid-write is left to settle first.
+  // Stale sources and their mtimes seen on the previous tick. An outside change is written only
+  // once its mtime has held across two ticks, so a file mid-write is left to settle first.
   private Map<Path, Long> pendingStale = Map.of();
-  // Not !pendingStale.isEmpty(): a standing backlog would keep that true and defeat back-off.
-  private boolean awaitingSettle;
-  private Stopwatch lastActivity = Stopwatch.start();
-  private Stopwatch lastReconcile = Stopwatch.start();
   // Sources whose last compile emitted no class (a compile error), with the mtime compiled and the
   // first error. Not retried alone until edited; they join their tree's next write, and a write
   // upstream lets them try again.
@@ -1404,7 +1399,6 @@ final class WorkspaceSession {
   }
 
   void onOpen(final String uri, final String content, final int version) {
-    lastActivity = Stopwatch.start();
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
@@ -1449,7 +1443,6 @@ final class WorkspaceSession {
   }
 
   void onChange(final String uri, final String content, final int version) {
-    lastActivity = Stopwatch.start();
     docs.put(uri, content, version);
     unsaved.add(uri);
     LOG.fine(() -> "[change] %s".formatted(uri));
@@ -1473,7 +1466,6 @@ final class WorkspaceSession {
   }
 
   void onClose(final String uri) {
-    lastActivity = Stopwatch.start();
     docs.remove(uri);
     unsaved.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
@@ -1488,7 +1480,6 @@ final class WorkspaceSession {
   }
 
   void onSave(final String uri, final String savedContent) {
-    lastActivity = Stopwatch.start();
     LOG.info(() -> "[save] %s".formatted(uri));
     unsaved.remove(uri);
     worker.cancel(uri);
@@ -3065,7 +3056,7 @@ final class WorkspaceSession {
   // Files the bytecode base may not cover: on-disk sources stale vs their compile stamp, plus open
   // buffers, restricted to this module's source roots.
   private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
-    return Stream.concat(staleSourcesInModule(config).stream(), openSourcePaths().stream())
+    return Stream.concat(TreeState.read(config).stale().stream(), openSourcePaths().stream())
         .filter(path -> sourceRootFor(config, path) != null)
         .distinct()
         .toList();
@@ -3125,17 +3116,14 @@ final class WorkspaceSession {
   // key with no surviving source is that orphan: drop its classes and prune the stamp. Returns the
   // class files removed (0 when a mismatched class cannot be located — a full mvn clean repairs
   // it).
-  static int deleteOrphanedClassOutputs(final ModuleSourceConfig config) {
-    final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
+  static int deleteOrphanedClassOutputs(final TreeState tree) {
+    final ModuleSourceConfig config = tree.config();
     final List<Path> roots = nonGeneratedSourceRoots(config);
-    if (stamps.isEmpty() || roots.isEmpty()) {
+    if (roots.isEmpty()) {
       return 0;
     }
 
-    final Set<String> orphans =
-        stamps.keySet().stream()
-            .filter(rel -> isOrphanedSource(roots, rel))
-            .collect(Collectors.toUnmodifiableSet());
+    final Set<String> orphans = tree.orphans();
     if (orphans.isEmpty()) {
       return 0;
     }
@@ -3155,10 +3143,6 @@ final class WorkspaceSession {
   // compile regenerates and so must never be scanned or reacted to.
   private static List<Path> nonGeneratedSourceRoots(final ModuleSourceConfig config) {
     return config.sourceRoots().stream().filter(root -> !config.isGenerated(root)).toList();
-  }
-
-  private static boolean isOrphanedSource(final List<Path> roots, final String rel) {
-    return roots.stream().noneMatch(root -> Files.exists(root.resolve(rel)));
   }
 
   private static void pruneOrphanStamps(
@@ -3214,13 +3198,28 @@ final class WorkspaceSession {
   // next pass, if one was requested meanwhile.
   private void runPass(final boolean eager, final CompletableFuture<List<Path>> done) {
     final boolean building = reactorBuildInProgress();
-    lastReconcile = Stopwatch.start();
-    reconcileDeletedSources();
-    final StaleScan scan = withReported(scanStaleModules());
+    final var scanned = Stopwatch.start();
+    final List<TreeState> trees = workspace.allConfigs().stream().map(TreeState::read).toList();
+    trees.forEach(this::reconcileDeletedSourcesIn);
+    final StaleScan scan = withReported(staleModules(trees));
+    final long sourcesMs = scanned.elapsedMs();
     final Map<ModuleSourceConfig, List<Path>> batches = claimReady(scan, eager, building);
-    if (!building) {
-      reconcileResources();
-    }
+    final var resourcesScanned = Stopwatch.start();
+    final int resources = building ? 0 : reconcileResources();
+    // Per pass, so a slow file system (macOS) shows what a scan costs there, and per file.
+    LOG.fine(
+        () ->
+            "[stale] scanned %d source trees: %d sources %dms, %d resources %dms, stale=%d"
+                .formatted(
+                    trees.size(),
+                    trees.stream()
+                        .flatMap(tree -> tree.sourcesByRoot().values().stream())
+                        .mapToInt(Map::size)
+                        .sum(),
+                    sourcesMs,
+                    resources,
+                    resourcesScanned.elapsedMs(),
+                    scan.modules().size()));
 
     reportRecompile(
         batches.values().stream()
@@ -3307,7 +3306,6 @@ final class WorkspaceSession {
     final Map<Path, Long> current = withoutFailedCompiles(stale, failedCompiles);
     final Set<Path> settled = eager ? current.keySet() : stableSources(current, pendingStale);
     pendingStale = current;
-    awaitingSettle = settled.size() < current.size();
     final Set<Path> ready =
         building
             ? Set.copyOf(reported.keySet())
@@ -3533,12 +3531,9 @@ final class WorkspaceSession {
         .toList();
   }
 
-  private void reconcileDeletedSources() {
-    workspace.allConfigs().forEach(this::reconcileDeletedSourcesIn);
-  }
-
-  private void reconcileDeletedSourcesIn(final ModuleSourceConfig config) {
-    final int removed = deleteOrphanedClassOutputs(config);
+  private void reconcileDeletedSourcesIn(final TreeState tree) {
+    final ModuleSourceConfig config = tree.config();
+    final int removed = deleteOrphanedClassOutputs(tree);
     if (removed == 0) {
       return;
     }
@@ -3546,17 +3541,6 @@ final class WorkspaceSession {
     refreshReactorShard(config);
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
-  }
-
-  private StaleScan scanStaleModules() {
-    final var sw = Stopwatch.start();
-    final List<ModuleSourceConfig> configs = workspace.allConfigs();
-    final StaleScan scan = staleModules(configs);
-    LOG.fine(
-        () ->
-            "[stale] scanned %d source trees %dms stale=%d"
-                .formatted(configs.size(), sw.elapsedMs(), scan.modules().size()));
-    return scan;
   }
 
   // A self-clearing $/progress task spanning the in-process recompile, so the editor shows the
@@ -3953,27 +3937,35 @@ final class WorkspaceSession {
   // resource edit is picked up without Maven. The copy bumps the destination mtime, so the next
   // pass
   // sees it as fresh — no dedupe state needed.
-  private void reconcileResources() {
-    manifest.resourceSourceDirs().stream()
-        .filter(Files::isDirectory)
-        .forEach(this::copyStaleResourcesUnder);
+  // Returns how many resources were checked.
+  private int reconcileResources() {
+    int checked = 0;
+    for (final Path sourceDir : manifest.resourceSourceDirs()) {
+      checked += copyStaleResourcesUnder(sourceDir);
+    }
+
+    return checked;
   }
 
-  private void copyStaleResourcesUnder(final Path sourceDir) {
-    try (final var walk = Files.walk(sourceDir)) {
-      walk.filter(Files::isRegularFile).forEach(this::copyIfStale);
+  private int copyStaleResourcesUnder(final Path sourceDir) {
+    try {
+      final Map<Path, Long> resources = FileUtil.fileMtimes(sourceDir, file -> true);
+      resources.forEach(this::copyIfStale);
+      return resources.size();
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
+      return 0;
     }
   }
 
-  private void copyIfStale(final Path file) {
+  // A missing copy reads as mtime 0, so it is copied too.
+  private void copyIfStale(final Path file, final long mtime) {
     final Optional<Path> dest = manifest.resourceDestination(file);
     if (dest.isEmpty()) {
       return;
     }
 
-    if (!Files.exists(dest.get()) || mtimeMillis(file) > mtimeMillis(dest.get())) {
+    if (mtime > mtimeMillis(dest.get())) {
       copyResource(file, dest.get());
     }
   }
@@ -4023,47 +4015,78 @@ final class WorkspaceSession {
     }
   }
 
-  static StaleScan staleModules(final Collection<ModuleSourceConfig> configs) {
+  static StaleScan staleModules(final List<TreeState> trees) {
     return new StaleScan(
-        configs.stream()
-            .map(config -> Map.entry(config, staleSourcesInModule(config)))
+        trees.stream()
+            .map(tree -> Map.entry(tree.config(), tree.stale()))
             .filter(entry -> !entry.getValue().isEmpty())
             .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
-  // Open files count like any other: the stamp gate admits a file only once its saved mtime
-  // differs, and an unsaved buffer is not on disk.
-  private static List<Path> staleSourcesInModule(final ModuleSourceConfig config) {
-    final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
-    return nonGeneratedSourceRoots(config).stream()
-        .flatMap(root -> staleSourcesUnder(root, stamps))
-        .toList();
-  }
-
-  private static Stream<Path> staleSourcesUnder(final Path root, final Map<String, Long> stamps) {
-    if (!Files.isDirectory(root)) {
-      return Stream.empty();
+  // A source tree as one pass sees it: each hand-written source with its mtime, from one walk per
+  // root, and the tree's stamps -- so its stale and orphaned sources follow without a further
+  // file-system call (a scan repeated every few seconds; such calls are costly on macOS).
+  record TreeState(
+      ModuleSourceConfig config,
+      Map<Path, Map<Path, Long>> sourcesByRoot,
+      Map<String, Long> stamps) {
+    TreeState {
+      ValidCheck.check()
+          .notNull(config, "config")
+          .notNull(sourcesByRoot, "sourcesByRoot")
+          .notNull(stamps, "stamps")
+          .validate();
+      sourcesByRoot = Map.copyOf(sourcesByRoot);
+      stamps = Map.copyOf(stamps);
     }
 
-    try (final var walk = Files.walk(root)) {
-      return walk
-          .filter(FileUtil::isJavaFile)
-          .filter(source -> isStale(root, source, stamps))
-          .toList()
-          .stream();
+    static TreeState read(final ModuleSourceConfig config) {
+      return new TreeState(
+          config,
+          nonGeneratedSourceRoots(config).stream()
+              .collect(
+                  Collectors.toMap(
+                      root -> root, WorkspaceSession::javaSourceMtimes, (first, ignored) -> first)),
+          CompiledStamps.load(config.moduleDir(), config.sourceTree()));
+    }
+
+    // No stamp (never built) or an mtime other than the one compiled -- older too, as a restore
+    // that keeps file times (rsync -a, cp -p, tar) brings back older content. Open files count
+    // like any other: an unsaved buffer is not on disk.
+    List<Path> stale() {
+      return sourcesByRoot.entrySet().stream()
+          .flatMap(
+              root ->
+                  root.getValue().entrySet().stream()
+                      .filter(
+                          source ->
+                              !source
+                                  .getValue()
+                                  .equals(
+                                      stamps.get(
+                                          root.getKey().relativize(source.getKey()).toString())))
+                      .map(Map.Entry::getKey))
+          .toList();
+    }
+
+    // Stamped sources no longer on disk: their classes are left in the mirror.
+    Set<String> orphans() {
+      return stamps.keySet().stream()
+          .filter(
+              rel ->
+                  sourcesByRoot.entrySet().stream()
+                      .noneMatch(root -> root.getValue().containsKey(root.getKey().resolve(rel))))
+          .collect(Collectors.toUnmodifiableSet());
+    }
+  }
+
+  private static Map<Path, Long> javaSourceMtimes(final Path root) {
+    try {
+      return FileUtil.fileMtimes(root, FileUtil::isJavaFile);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[watcher] source scan failed under %s".formatted(root));
-      return Stream.empty();
+      return Map.of();
     }
-  }
-
-  // No stamp (never built) or an mtime other than the one compiled -- older too, as a restore that
-  // keeps file times (rsync -a, cp -p, tar) brings back older content; the class file is not
-  // consulted.
-  private static boolean isStale(
-      final Path root, final Path source, final Map<String, Long> stamps) {
-    final Long stamp = stamps.get(root.relativize(source).toString());
-    return stamp == null || mtimeMillis(source) != stamp;
   }
 
   private static long mtimeMillis(final Path path) {
@@ -4113,8 +4136,6 @@ final class WorkspaceSession {
   // A rename none of whose files shows the edit this long after the response was never applied.
   private static final long RENAME_UNAPPLIED_MS = 30_000;
   private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
-  static final long ACTIVE_WINDOW_MS = 30_000L;
-  static final long IDLE_RECONCILE_INTERVAL_MS = 20_000L;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -4147,20 +4168,9 @@ final class WorkspaceSession {
         promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
         requestPass(false);
       }
-      case NO_CHANGE -> {
-        if (reconcileDue(lastActivity.elapsedMs(), lastReconcile.elapsedMs(), awaitingSettle)) {
-          requestPass(false);
-        }
-      }
+      // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
+      case NO_CHANGE -> requestPass(false);
     }
-  }
-
-  // The pass stats every reactor source and resource -- costly on macOS -- so back off when idle.
-  static boolean reconcileDue(
-      final long sinceActivityMs, final long sinceReconcileMs, final boolean awaitingSettle) {
-    return awaitingSettle
-        || sinceActivityMs < ACTIVE_WINDOW_MS
-        || sinceReconcileMs >= IDLE_RECONCILE_INTERVAL_MS;
   }
 
   private void promptForSync(final String message, final List<String> scope) {

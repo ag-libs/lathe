@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -101,7 +102,8 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Ghost$Inner.class"), "");
     writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
 
-    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(config);
+    final int removed =
+        WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
 
     assertThat(removed).isEqualTo(2);
     assertThat(outputDir.resolve("Ghost.class")).doesNotExist();
@@ -117,7 +119,8 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Live.class"), "");
     writeStamps(Map.of("com/example/Live.java", 2_000L));
 
-    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(config);
+    final int removed =
+        WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
 
     assertThat(removed).isZero();
     assertThat(outputDir.resolve("Live.class")).exists();
@@ -230,18 +233,6 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void reconcileDue_idleWithNothingSettling_waitsForIdleInterval_activityOrSettlingForcesIt() {
-    final long idle = WorkspaceSession.ACTIVE_WINDOW_MS;
-    final long interval = WorkspaceSession.IDLE_RECONCILE_INTERVAL_MS;
-
-    assertThat(WorkspaceSession.reconcileDue(idle, 2_000L, false)).isFalse();
-    assertThat(WorkspaceSession.reconcileDue(idle, interval - 1, false)).isFalse();
-    assertThat(WorkspaceSession.reconcileDue(idle, interval, false)).isTrue();
-    assertThat(WorkspaceSession.reconcileDue(idle - 1, 2_000L, false)).isTrue();
-    assertThat(WorkspaceSession.reconcileDue(idle, 2_000L, true)).isTrue();
-  }
-
-  @Test
   void staleModules_editedAddedOrRestoredOlder_stale_matchingStampFresh() throws Exception {
     writeJava("Edited", 5_000L); // stamped at 1000, edited after → stale
     writeJava("Added", 9_000L); // no stamp (a newly added file) → stale, and the newest
@@ -256,7 +247,7 @@ class WorkspaceSessionTest {
             "com/example/Fresh.java",
             2_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config));
+    final var scan = staleModules(config);
 
     assertThat(scan.modules()).containsExactly(config);
     assertThat(scan.staleFiles())
@@ -270,7 +261,7 @@ class WorkspaceSessionTest {
     writeJava("Mismatch", 3_000L);
     writeStamps(Map.of("com/example/Mismatch.java", 3_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config));
+    final var scan = staleModules(config);
 
     assertThat(scan.modules()).isEmpty();
   }
@@ -280,7 +271,7 @@ class WorkspaceSessionTest {
     writeJava("Live", 2_000L);
     writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
 
-    final var scan = WorkspaceSession.staleModules(List.of(config));
+    final var scan = staleModules(config);
 
     assertThat(scan.modules()).isEmpty();
   }
@@ -304,7 +295,7 @@ class WorkspaceSessionTest {
             genRoot,
             genRoot);
 
-    final var scan = WorkspaceSession.staleModules(List.of(config, genConfig));
+    final var scan = staleModules(config, genConfig);
 
     assertThat(scan.modules()).containsExactly(config);
     assertThat(scan.staleFiles())
@@ -697,6 +688,11 @@ class WorkspaceSessionTest {
 
   private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
     return WorkspaceSession.renderNewType(sourceRoot, pkg, type, name);
+  }
+
+  private static WorkspaceSession.StaleScan staleModules(final ModuleSourceConfig... configs) {
+    return WorkspaceSession.staleModules(
+        Arrays.stream(configs).map(WorkspaceSession.TreeState::read).toList());
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

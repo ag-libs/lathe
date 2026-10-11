@@ -173,4 +173,21 @@ final class FileUtilTest {
     Files.createDirectories(file.getParent());
     Files.writeString(file, "");
   }
+
+  @Test
+  void fileMtimes_regularFilesKeptByTheFilter_withTheirMtimes_emptyForMissingRoot()
+      throws Exception {
+    final Path root = tempDir.resolve("src");
+    final Path java = root.resolve("com/example/A.java");
+    final Path text = root.resolve("com/example/notes.txt");
+    Files.createDirectories(java.getParent());
+    Files.writeString(java, "class A {}");
+    Files.writeString(text, "notes");
+    Files.setLastModifiedTime(java, FileTime.fromMillis(5_000L));
+
+    assertThat(FileUtil.fileMtimes(root, FileUtil::isJavaFile))
+        .as("only the kept regular files, each with its mtime; directories never")
+        .isEqualTo(Map.of(java, 5_000L));
+    assertThat(FileUtil.fileMtimes(tempDir.resolve("missing"), path -> true)).isEmpty();
+  }
 }
