@@ -223,7 +223,7 @@ class ModuleSourceCompilerTest {
   }
 
   @Test
-  void analyzeOpenBatch_eachSourceOwnResultInOrder_withTokens_syntaxErrorStaysLocal()
+  void analyzeOpenBatch_eachSourceOwnResultInOrder_withTokens_syntaxErrorStaysLocal_parseFlagged()
       throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
     Files.createDirectories(sourceRoot);
@@ -238,18 +238,33 @@ class ModuleSourceCompilerTest {
                 sourceRoot.resolve("Valid.java").toUri().toString(), "class Valid { String v; }"),
             // Resolves Valid from the batch, as an open sibling, without any compiled class.
             new TransientSource(
-                sourceRoot.resolve("User.java").toUri().toString(), "class User { Valid v; }"));
+                sourceRoot.resolve("User.java").toUri().toString(), "class User { Valid v; }"),
+            // Parses, but does not attribute: an error that is not a parse error.
+            new TransientSource(
+                sourceRoot.resolve("Typo.java").toUri().toString(), "class Typo { Missing m; }"));
 
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final List<CompilerResult> results = compiler.analyzeOpenBatch(sources, () -> {});
 
-      assertThat(results).hasSize(3);
+      assertThat(results).hasSize(4);
       assertThat(hasError(results.get(0))).isTrue();
       for (final CompilerResult result : results.subList(1, 3)) {
         assertThat(hasError(result)).isFalse();
         assertThat(result.fileAnalysis().tree()).isNotNull();
         assertThat(result.fileAnalysis().semanticTokens()).isNotEmpty();
       }
+
+      assertThat(results)
+          .as("parsed cleanly: only the file whose parse failed is flagged, in the batch")
+          .extracting(CompilerResult::parsedCleanly)
+          .containsExactly(false, true, true, true);
+      assertThat(
+              List.of(sources.get(0), sources.get(3)).stream()
+                  .map(source -> compiler.compile(source.uri(), source.content(), CompileMode.OPEN))
+                  .map(CompilerResult::parsedCleanly)
+                  .toList())
+          .as("and in a single-file analysis")
+          .containsExactly(false, true);
     }
   }
 
@@ -328,35 +343,6 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  @Test
-  void diagnoseInBatch_targetResolvedBySiblings_reportsOnlyTargetDiagnostics() throws Exception {
-    final Path sourceRoot = td.resolve("src/main/java");
-    Files.createDirectories(sourceRoot.resolve("shapes"));
-    final String shapeUri = sourceRoot.resolve("shapes/Shape.java").toUri().toString();
-    final String circleUri = sourceRoot.resolve("shapes/Circle.java").toUri().toString();
-    final String squareUri = sourceRoot.resolve("shapes/Square.java").toUri().toString();
-    final var config =
-        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-
-    // Square carries an unrelated error, to prove only the target's diagnostics are returned.
-    final List<TransientSource> sources =
-        List.of(
-            new TransientSource(
-                shapeUri, "package shapes; sealed interface Shape permits Circle, Square {}"),
-            new TransientSource(
-                circleUri, "package shapes; final class Circle implements Shape {}"),
-            new TransientSource(
-                squareUri,
-                "package shapes; final class Square implements Shape { void x() { nope(); } }"));
-
-    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
-      // Shape resolves the new Square via the batch, and Square's unrelated error does not leak in.
-      assertThat(hasError(compiler.diagnoseInBatch(sources, shapeUri, () -> {}))).isFalse();
-      // The target's own error still surfaces.
-      assertThat(hasError(compiler.diagnoseInBatch(sources, squareUri, () -> {}))).isTrue();
-    }
-  }
-
   private static boolean hasError(final CompilerResult result) {
     return result.diagnostics().stream().anyMatch(d -> d.getKind() == Diagnostic.Kind.ERROR);
   }
@@ -383,11 +369,11 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // The dirty overlay (open ∪ dirty siblings) resolves cross-file references in MODULE_SYSTEM: a
-  // producer absent from the host java.base is seen only because the batch writes it into the
-  // --patch-module overlay dir alongside the consumer.
+  // An analysis with siblings resolves cross-file references in MODULE_SYSTEM: a producer absent
+  // from the host java.base is seen only because the batch writes it into the --patch-module
+  // overlay dir alongside the consumer.
   @Test
-  void diagnoseInBatch_moduleSystemMode_siblingResolvedViaPatchOverlay() throws Exception {
+  void analyzeOpenBatch_moduleSystemMode_siblingResolvedViaPatchOverlay() throws Exception {
     final Path sourceRoot = td.resolve("src");
     final Path consumer = sourceRoot.resolve("java/util/LatheConsumer.java");
     final Path producer = sourceRoot.resolve("java/util/LatheProducer.java");
@@ -411,8 +397,9 @@ class ModuleSourceCompilerTest {
           List.of(
               new TransientSource(consumer.toUri().toString(), consumerSrc),
               new TransientSource(producer.toUri().toString(), producerSrc));
-      assertThat(hasError(compiler.diagnoseInBatch(sources, consumer.toUri().toString(), () -> {})))
-          .isFalse();
+      assertThat(compiler.analyzeOpenBatch(sources, () -> {}))
+          .extracting(ModuleSourceCompilerTest::hasError)
+          .containsExactly(false, false);
     }
   }
 

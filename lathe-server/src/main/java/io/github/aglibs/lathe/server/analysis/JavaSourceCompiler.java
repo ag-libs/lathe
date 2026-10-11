@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -84,19 +85,6 @@ public interface JavaSourceCompiler extends AutoCloseable {
   }
 
   /**
-   * Re-diagnoses {@code targetUri} with its siblings in one task, returning only the target's
-   * result. The default compiles the target alone; {@code ModuleSourceCompiler} overrides it.
-   */
-  default CompilerResult diagnoseInBatch(
-      final List<TransientSource> sources,
-      final String targetUri,
-      final CancelChecker cancelChecker) {
-    final TransientSource target =
-        sources.stream().filter(source -> source.uri().equals(targetUri)).findFirst().orElseThrow();
-    return compile(target.uri(), target.content(), CompileMode.FAST, cancelChecker);
-  }
-
-  /**
    * Analyzes open documents together, one result per source as its own OPEN compile would give. The
    * default compiles each alone; {@code ModuleSourceCompiler} overrides it with one task.
    */
@@ -115,30 +103,25 @@ public interface JavaSourceCompiler extends AutoCloseable {
   static CompilerResult runAnalysis(
       final JavacTask task, final DiagnosticCollector<JavaFileObject> collector) {
     try {
-      final CompilationUnitTree cu = safeCompile(task);
+      final var it = task.parse().iterator();
+      final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
+      final boolean parsedCleanly =
+          collector.getDiagnostics().stream().noneMatch(JavaSourceCompiler::isError);
+      analyzeSafely(task);
       final var trees = Trees.instance(task);
-      if (cu != null) {
-        final List<SemanticToken> tokens = TokenScanner.scan(trees, cu);
-        return new CompilerResult(
-            collector.getDiagnostics(),
-            new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens),
-            Set.of());
-      }
-
+      final List<SemanticToken> tokens = cu != null ? TokenScanner.scan(trees, cu) : null;
       return new CompilerResult(
           collector.getDiagnostics(),
-          new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), null, null),
-          Set.of());
+          new AttributedFileAnalysis(trees, task.getElements(), task.getTypes(), cu, tokens),
+          Set.of(),
+          cu != null && parsedCleanly);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
-  static CompilationUnitTree safeCompile(final JavacTask task) throws IOException {
-    final var it = task.parse().iterator();
-    final CompilationUnitTree cu = it.hasNext() ? it.next() : null;
-    analyzeSafely(task);
-    return cu;
+  static boolean isError(final Diagnostic<?> diagnostic) {
+    return diagnostic.getKind() == Diagnostic.Kind.ERROR;
   }
 
   static void analyzeSafely(final JavacTask task) throws IOException {

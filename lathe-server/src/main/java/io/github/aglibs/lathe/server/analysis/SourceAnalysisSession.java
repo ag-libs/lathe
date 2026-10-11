@@ -63,6 +63,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final DefinitionLocator definitionLocator;
   private final JavadocLocator javadocLocator;
   private final Map<String, CachedFileAnalysis> cache = new HashMap<>();
+  // Per file, the content its last analysis parsed cleanly; absent when that analysis had a parse
+  // error. Only such a sibling joins another file's analysis.
+  private final Map<String, String> cleanParses = new HashMap<>();
   private final SourceParser parser;
   private final TypeHierarchyResolver typeHierarchyResolver;
   private Set<String> lastWrittenBinaryNames = Set.of();
@@ -112,6 +115,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       lastWrittenBinaryNames = run.writtenBinaryNames();
     } else {
       cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
+      recordParse(uri, content, run);
     }
 
     final List<Diagnostic> diags = mapDiagnostics(run, content);
@@ -138,27 +142,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
           source.uri(),
           new CachedFileAnalysis(
               source.content(), versionByUri.get(source.uri()), run.fileAnalysis()));
+      recordParse(source.uri(), source.content(), run);
       diagnostics.put(source.uri(), mapDiagnostics(run, source.content()));
     }
 
     LOG.info(() -> "[compile:open-batch] %d files %dms".formatted(sources.size(), t.elapsedMs()));
     return Map.copyOf(diagnostics);
-  }
-
-  // Recompute the target's diagnostics with its siblings present; analyze-only.
-  public List<Diagnostic> diagnoseInBatch(
-      final List<TransientSource> sources,
-      final String targetUri,
-      final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final CompilerResult run = compiler.diagnoseInBatch(sources, targetUri, cancelChecker);
-    cancelChecker.checkCanceled();
-    final List<Diagnostic> diags = mapDiagnostics(run, targetContent(sources, targetUri));
-    LOG.fine(
-        () ->
-            "[widen] %s %d files %dms diags=%d"
-                .formatted(targetUri, sources.size(), t.elapsedMs(), diags.size()));
-    return diags;
   }
 
   private static List<Diagnostic> mapDiagnostics(final CompilerResult run, final String content) {
@@ -172,14 +161,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return unusedDiags.isEmpty()
         ? compiled
         : Stream.concat(compiled.stream(), unusedDiags.stream()).toList();
-  }
-
-  private static String targetContent(final List<TransientSource> sources, final String targetUri) {
-    return sources.stream()
-        .filter(source -> source.uri().equals(targetUri))
-        .map(TransientSource::content)
-        .findFirst()
-        .orElse("");
   }
 
   public CompletionOutcome complete(
@@ -237,7 +218,20 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return outcome;
   }
 
+  private void recordParse(final String uri, final String content, final CompilerResult run) {
+    if (run.parsedCleanly()) {
+      cleanParses.put(uri, content);
+    } else {
+      cleanParses.remove(uri);
+    }
+  }
+
+  public boolean parsedCleanly(final String uri, final String content) {
+    return content.equals(cleanParses.get(uri));
+  }
+
   public void dropFromCache(final String uri) {
+    cleanParses.remove(uri);
     if (cache.remove(uri) != null) {
       LOG.fine(() -> "[evict] %s dropped".formatted(uri));
     }

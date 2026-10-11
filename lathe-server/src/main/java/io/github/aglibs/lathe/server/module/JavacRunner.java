@@ -10,11 +10,13 @@ import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic;
@@ -84,6 +86,12 @@ final class JavacRunner {
     final var task = createTask(sourceFiles, options, collector);
     try {
       final Iterable<? extends CompilationUnitTree> units = task.parse();
+      final Set<URI> parseFailed =
+          collector.getDiagnostics().stream()
+              .filter(JavaSourceCompiler::isError)
+              .filter(diagnostic -> diagnostic.getSource() != null)
+              .map(diagnostic -> diagnostic.getSource().toUri())
+              .collect(Collectors.toUnmodifiableSet());
       JavaSourceCompiler.analyzeSafely(task);
       final var trees = Trees.instance(task);
       final Elements elements = task.getElements();
@@ -95,18 +103,21 @@ final class JavacRunner {
                 trees, elements, types, cu, withTokens ? TokenScanner.scan(trees, cu) : null));
       }
 
-      return new BatchAnalysis(analyses, collector.getDiagnostics());
+      return new BatchAnalysis(analyses, collector.getDiagnostics(), parseFailed);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
+  // parseFailed: the sources javac's parse phase reported an error in.
   record BatchAnalysis(
       List<AttributedFileAnalysis> analyses,
-      List<Diagnostic<? extends JavaFileObject>> diagnostics) {
+      List<Diagnostic<? extends JavaFileObject>> diagnostics,
+      Set<URI> parseFailed) {
     BatchAnalysis {
       analyses = List.copyOf(analyses);
       diagnostics = List.copyOf(diagnostics);
+      parseFailed = Set.copyOf(parseFailed);
     }
   }
 

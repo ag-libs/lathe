@@ -108,7 +108,6 @@ import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
@@ -213,6 +212,9 @@ final class WorkspaceSession {
   // publishes while it still has that content, for what analysis cannot report (annotation
   // processor and compiler plugin findings).
   private final Map<String, WriteDiagnostics> writeDiagnostics = new HashMap<>();
+  // Open files whose buffer differs from disk: analysis of another file in their tree includes
+  // them, so it sees their unsaved declarations.
+  private final Set<String> unsaved = new HashSet<>();
   // A rename the editor is applying and saving; its files compile together at the commit. Empty
   // when none is open.
   private RenameTransaction renameTransaction = new RenameTransaction();
@@ -1411,6 +1413,13 @@ final class WorkspaceSession {
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
     candidateIndex.update(uri, content);
+    // An editor may open a buffer restored with unsaved changes.
+    if (LatheUri.isFileUri(uri) && content.equals(readSource(LatheUri.toPath(uri)))) {
+      unsaved.remove(uri);
+    } else {
+      unsaved.add(uri);
+    }
+
     if (trackRename(renameTransaction.onContent(uri, content))
         == RenameTransaction.Action.SUPPRESS) {
       return; // compiled with the rest of the rename at its commit
@@ -1447,6 +1456,7 @@ final class WorkspaceSession {
   void onChange(final String uri, final String content, final int version) {
     lastActivity = Stopwatch.start();
     docs.put(uri, content, version);
+    unsaved.add(uri);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
     worker.cancel(uri);
@@ -1470,6 +1480,7 @@ final class WorkspaceSession {
   void onClose(final String uri) {
     lastActivity = Stopwatch.start();
     docs.remove(uri);
+    unsaved.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
     worker.cancel(uri);
     renameTransaction.onClose(uri);
@@ -1484,6 +1495,7 @@ final class WorkspaceSession {
   void onSave(final String uri, final String savedContent) {
     lastActivity = Stopwatch.start();
     LOG.info(() -> "[save] %s".formatted(uri));
+    unsaved.remove(uri);
     worker.cancel(uri);
 
     final var snapshot = snapshotForSave(uri, savedContent);
@@ -4020,8 +4032,6 @@ final class WorkspaceSession {
         .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
-  // At most this many open documents share one analysis task (dependents refresh, sealed widening).
-  private static final int ANALYSIS_BATCH_MAX = 50;
   // Once a rename's first file is saved, this long without another of its files' events commits
   // the saved ones, so an editor that never saves the rest cannot hold the others back.
   private static final long RENAME_IDLE_MS = 10_000;
@@ -4229,15 +4239,13 @@ final class WorkspaceSession {
       final CompileMode mode,
       final AfterCompile afterCompile) {
     touchAnalysisCache(snapshot.uri());
+    final List<CompileRequest> siblings =
+        route instanceof final CompilerRoute.Module module && mode != CompileMode.FULL
+            ? unsavedSiblings(module.config(), snapshot)
+            : List.of();
     moduleWorker
-        .compile(requestFor(snapshot, mode))
-        .thenAccept(
-            result ->
-                worker.execute(
-                    () -> {
-                      afterCompile.accept(snapshot, result);
-                      maybeWidenSealed(route, snapshot, result);
-                    }))
+        .compile(requestFor(snapshot, mode), siblings)
+        .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
         .exceptionally(
             ex -> {
               worker.execute(() -> publisher.publishError(snapshot, mode, ex));
@@ -4245,73 +4253,18 @@ final class WorkspaceSession {
             });
   }
 
-  // Single-file failures that may just be a missing sibling declaration; both clear once the
-  // siblings compile together.
-  private static final String CANT_RESOLVE_CODE = "compiler.err.cant.resolve";
-  private static final String SEALED_INHERIT_CODE = "compiler.err.cant.inherit.from.sealed";
-
-  // Re-diagnose the target with its siblings when a failure looks cross-file, then republish just
-  // the target. Analyze-only.
-  private void maybeWidenSealed(
-      final CompilerRoute route, final OpenDocument snapshot, final CompileResponse result) {
-    if (!(route instanceof final CompilerRoute.Module module)
-        || !hasCrossFileResolutionError(result)) {
-      return;
-    }
-
-    final List<TransientSource> sources = widenSources(module.config(), snapshot);
-    if (sources.size() < 2 || sources.size() > ANALYSIS_BATCH_MAX) {
-      return;
-    }
-
-    module
-        .worker()
-        .diagnoseInBatch(sources, snapshot.uri())
-        .thenAccept(
-            diagnostics ->
-                worker.execute(
-                    () ->
-                        publisher.publishIfCurrent(
-                            snapshot,
-                            new CompileResponse(
-                                snapshot.uri(), snapshot.generation(), diagnostics, Set.of()))));
-  }
-
-  private static boolean hasCrossFileResolutionError(final CompileResponse result) {
-    return result.diagnostics().stream()
-        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
-        .anyMatch(WorkspaceSession::isCrossFileResolutionCode);
-  }
-
-  private static boolean isCrossFileResolutionCode(final Diagnostic diagnostic) {
-    final Either<String, Integer> code = diagnostic.getCode();
-    if (code == null || !code.isLeft()) {
-      return false;
-    }
-
-    final String javacCode = code.getLeft();
-    return javacCode.equals(SEALED_INHERIT_CODE) || javacCode.startsWith(CANT_RESOLVE_CODE);
-  }
-
-  // The target plus its same-tree siblings (open buffers and stale on-disk sources).
-  private List<TransientSource> widenSources(
+  // The tree's other unsaved open buffers, most recently edited first; the worker takes those that
+  // parse, up to its cap.
+  private List<CompileRequest> unsavedSiblings(
       final ModuleSourceConfig config, final OpenDocument target) {
-    final var sources = new ArrayList<TransientSource>();
-    sources.add(new TransientSource(target.uri(), target.content()));
-    for (final var doc : docs.all()) {
-      if (!doc.uri().equals(target.uri()) && inSourceTree(doc.uri(), config)) {
-        sources.add(new TransientSource(doc.uri(), doc.content()));
-      }
-    }
-
-    for (final var stale : staleSourcesInModule(config, openSourcePaths(), false)) {
-      final String content = readSource(stale);
-      if (content != null) {
-        sources.add(new TransientSource(stale.toUri().toString(), content));
-      }
-    }
-
-    return List.copyOf(sources);
+    return unsaved.stream()
+        .filter(uri -> !uri.equals(target.uri()))
+        .map(docs::get)
+        .filter(Objects::nonNull)
+        .filter(doc -> inSourceTree(doc.uri(), config))
+        .sorted(Comparator.comparingLong(OpenDocument::generation).reversed())
+        .map(doc -> requestFor(doc, CompileMode.OPEN))
+        .toList();
   }
 
   private boolean inSourceTree(final String uri, final ModuleSourceConfig config) {
@@ -4440,9 +4393,11 @@ final class WorkspaceSession {
 
     byTree.forEach(
         (config, uris) -> {
-          for (int from = 0; from < uris.size(); from += ANALYSIS_BATCH_MAX) {
+          for (int from = 0; from < uris.size(); from += CompilationWorker.ANALYSIS_BATCH_MAX) {
             refreshAsBatch(
-                config, uris.subList(from, Math.min(from + ANALYSIS_BATCH_MAX, uris.size())));
+                config,
+                uris.subList(
+                    from, Math.min(from + CompilationWorker.ANALYSIS_BATCH_MAX, uris.size())));
           }
         });
   }
@@ -4455,7 +4410,6 @@ final class WorkspaceSession {
       return;
     }
 
-    final var route = new CompilerRoute.Module(workspace.workerFor(config), config);
     final var requests = new ArrayList<CompileRequest>(snapshots.size());
     for (final OpenDocument snapshot : snapshots) {
       worker.cancel(snapshot.uri());
@@ -4467,10 +4421,10 @@ final class WorkspaceSession {
         () ->
             "[dependents] batch %d file(s) in %s"
                 .formatted(snapshots.size(), moduleRelForDir(config.moduleDir())));
-    route
-        .worker()
+    workspace
+        .workerFor(config)
         .compileOpenBatch(requests)
-        .thenAccept(responses -> worker.execute(() -> publishBatch(route, snapshots, responses)))
+        .thenAccept(responses -> worker.execute(() -> publishBatch(snapshots, responses)))
         .exceptionally(
             ex -> {
               LOG.log(Level.FINE, ex, () -> "[dependents] batch failed, compiling one by one");
@@ -4486,15 +4440,12 @@ final class WorkspaceSession {
 
   // Each result publishes as its own compile would; semantic tokens refresh once for the batch.
   private void publishBatch(
-      final CompilerRoute.Module route,
-      final List<OpenDocument> snapshots,
-      final List<CompileResponse> responses) {
+      final List<OpenDocument> snapshots, final List<CompileResponse> responses) {
     boolean published = false;
     for (int i = 0; i < snapshots.size(); i++) {
       if (publisher.publishQuietlyIfCurrent(
           snapshots.get(i), withWriteDiagnostics(snapshots.get(i), responses.get(i)))) {
         published = true;
-        maybeWidenSealed(route, snapshots.get(i), responses.get(i));
       }
     }
 

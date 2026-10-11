@@ -139,10 +139,11 @@ The error-code trigger misses every other error a sibling's unsaved change can c
 
 **After**, analyzing an open file (on open and while typing) always includes the **unsaved open buffers of its source tree** as extra sources, through the same analysis batch call the refresh uses; only the analyzed file publishes.
 
-- *Unsaved* means changed since its last open or save; a per-document flag tracks it.
+- *Unsaved* means the buffer differs from the file on disk: checked once at open (an editor may restore a buffer with unsaved changes), set by a change, cleared by a save; a session-owned set tracks it.
 - No unsaved sibling — the common case — means the file is analyzed alone, as today.
 - A sibling joins only if its own last analysis parsed cleanly, so a half-typed sibling (an unbalanced brace) cannot cause false errors elsewhere; otherwise its written classes are used, as today.
-- At most `ANALYSIS_BATCH_MAX` siblings join, most recently edited first.
+  *Parsed cleanly* means javac's parse phase, which runs before attribution, reported no error for that content; the tree's worker records it with each analysis and checks it when the sibling is offered, so no error code is inspected.
+- The most recently edited siblings that parse cleanly join, so that the file and its siblings fill at most one `ANALYSIS_BATCH_MAX` (50) task; older unsaved buffers beyond that count with their written classes, as before.
 - Siblings in other trees are not included, as today: an upstream module's unsaved change still shows downstream after it is saved.
 - Files changed on disk but not yet written need no special case: the pass writes them promptly.
 

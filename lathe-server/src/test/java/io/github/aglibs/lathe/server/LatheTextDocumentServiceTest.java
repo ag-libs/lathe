@@ -724,14 +724,14 @@ class LatheTextDocumentServiceTest {
 
     // Edited, the buffer no longer holds what was written, so the write's warning no longer
     // applies.
-    clearInvocations(client);
-    service.didChange(
-        new DidChangeTextDocumentParams(
-            new VersionedTextDocumentIdentifier(note.toUri().toString(), 2),
-            List.of(
-                new TextDocumentContentChangeEvent("package com.example; class Note { int n; }"))));
+    change(note, "package com.example; class Note { private int marker; }", 2);
     verify(client, timeout(5_000))
-        .publishDiagnostics(argThat(p -> isFor(p, note) && p.getDiagnostics().isEmpty()));
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    isFor(p, note)
+                        && hasMessage(p, "'marker'")
+                        && !hasMessage(p, "noted by processor")));
   }
 
   @Test
@@ -858,44 +858,92 @@ class LatheTextDocumentServiceTest {
   }
 
   @Test
-  void openSealedSubtype_liveDiagnostics_widenClearsErrorAgainstOpenSibling() throws Exception {
+  void didOpen_subtypeOfAnUnsavedSealedRoot_neverReportsTheStaleSealedClause() throws Exception {
     final Path shape = mirroredShapes();
     final Path square = shape.resolveSibling("Square.java");
     service.initialize(tmp);
 
-    final String shapeUri = shape.toUri().toString();
-    final String squareUri = square.toUri().toString();
-    // Open the edited pair as unsaved buffers: Shape now permits Square (opened first, so it is a
-    // live sibling), then Square implements Shape (its single-file compile hits the stale mirror's
-    // sealed clause). The widen recompiles Square with the open Shape buffer and clears the error.
+    // Shape's buffer permits Square, unsaved (opened restored with changes, as after an editor
+    // restart); Square is analyzed with it, not against the written Shape that does not permit it.
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(
-                shapeUri,
+                shape.toUri().toString(),
                 "java",
                 1,
                 "package shapes; sealed interface Shape permits Circle, Square {}")));
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(
-                squareUri, "java", 1, "package shapes; final class Square implements Shape {}")));
+                square.toUri().toString(),
+                "java",
+                1,
+                "package shapes; final class Square implements Shape {}")));
 
-    // The widen's clean republish for Square eventually arrives.
-    verify(client, timeout(5_000).atLeastOnce())
-        .publishDiagnostics(
-            argThat(p -> p.getUri().equals(squareUri) && p.getDiagnostics().isEmpty()));
-
-    // Square's final published state is clean, though the sealed error was reported first.
+    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, square)));
+    awaitWorkerIdle();
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, atLeastOnce()).publishDiagnostics(captor.capture());
-    final List<PublishDiagnosticsParams> squarePublishes =
-        captor.getAllValues().stream().filter(p -> p.getUri().equals(squareUri)).toList();
-    assertThat(squarePublishes)
-        .anyMatch(
-            p ->
-                p.getDiagnostics().stream()
-                    .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error));
-    assertThat(squarePublishes.getLast().getDiagnostics()).isEmpty();
+    assertThat(captor.getAllValues())
+        .filteredOn(p -> isFor(p, square))
+        .as("every publish for Square")
+        .allMatch(p -> p.getDiagnostics().isEmpty());
+  }
+
+  @Test
+  void didChange_unsavedSiblingChangedSignature_analyzedAgainstIt_unlessItNoLongerParses()
+      throws Exception {
+    // An unused field is reported only by an analysis without errors, so a publish carrying it is
+    // a clean analysis -- not the empty publish that clears a file on each change.
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put(
+        "com/example/Greeter.java",
+        "package com.example; class Greeter { static String greet(String name) { return name; } }");
+    sources.put(
+        "com/example/User.java",
+        "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\"); } }");
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    final Path greeter = files.get(0);
+    final Path user = files.get(1);
+    service.initialize(tmp);
+    awaitStartup();
+    openDoc(greeter, Files.readString(greeter));
+    openDoc(user, Files.readString(user));
+    awaitWorkerIdle();
+
+    // Greeter gains a parameter, unsaved; User calls it the new way. Against the written Greeter
+    // that call is an error -- a kind the old error-code widening never looked at.
+    clearInvocations(client);
+    change(
+        greeter,
+        "package com.example; class Greeter { private static int g; static String greet(String name, int times) { return name; } }",
+        2);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, greeter) && hasMessage(p, "'g'")));
+    clearInvocations(client);
+    change(
+        user,
+        "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\", 2); } }",
+        2);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(
+            argThat(p -> isFor(p, user) && hasMessage(p, "'marker'") && !hasError(p)));
+
+    // Greeter is mid-edit and no longer parses: User falls back to the written Greeter.
+    clearInvocations(client);
+    change(
+        greeter,
+        "package com.example; class Greeter { static String greet(String name, int times) { return name; }",
+        3);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, greeter) && hasError(p)));
+    clearInvocations(client);
+    change(
+        user,
+        "package com.example; class User { private int marker; String u() { return Greeter.greet(\"a\", 2);  } }",
+        3);
+    verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user) && hasError(p)));
   }
 
   @Test
@@ -1124,6 +1172,13 @@ class LatheTextDocumentServiceTest {
     } finally {
       logger.removeHandler(handler);
     }
+  }
+
+  private void change(final Path file, final String content, final int version) {
+    service.didChange(
+        new DidChangeTextDocumentParams(
+            new VersionedTextDocumentIdentifier(file.toUri().toString(), version),
+            List.of(new TextDocumentContentChangeEvent(content))));
   }
 
   private void save(final Path file) {
@@ -1385,6 +1440,11 @@ class LatheTextDocumentServiceTest {
 
   private static boolean isFor(final PublishDiagnosticsParams params, final Path file) {
     return params.getUri().equals(file.toUri().toString());
+  }
+
+  private static boolean hasError(final PublishDiagnosticsParams params) {
+    return params.getDiagnostics().stream()
+        .anyMatch(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error);
   }
 
   private static boolean hasMessage(final PublishDiagnosticsParams params, final String message) {

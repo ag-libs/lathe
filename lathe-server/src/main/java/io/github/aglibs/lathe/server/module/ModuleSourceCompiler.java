@@ -132,19 +132,6 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return analyses.stream().map(analysis -> toTransientAnalysis(analysis, uriByTempFile)).toList();
   }
 
-  // Analyze the target with its siblings, returning only the target's diagnostics and tree.
-  @Override
-  public CompilerResult diagnoseInBatch(
-      final List<TransientSource> sources,
-      final String targetUri,
-      final CancelChecker cancelChecker) {
-    final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
-    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
-    final JavacRunner.BatchAnalysis batch =
-        runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, false, cancelChecker);
-    return resultFor(batch, uriByTempFile, targetUri);
-  }
-
   // Analyze open documents in one task, one result per source as its own OPEN compile would give.
   @Override
   public List<CompilerResult> analyzeOpenBatch(
@@ -169,7 +156,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         batch.diagnostics().stream()
             .filter(diagnostic -> uri.equals(uriByTempFile.get(sourcePathOf(diagnostic))))
             .toList();
-    return new CompilerResult(diagnostics, analysis, Set.of());
+    final boolean parsedCleanly =
+        analysis.tree() != null
+            && !batch.parseFailed().contains(analysis.tree().getSourceFile().toUri());
+    return new CompilerResult(diagnostics, analysis, Set.of(), parsedCleanly);
   }
 
   private static TransientAnalysis toTransientAnalysis(

@@ -32,13 +32,12 @@ import org.junit.jupiter.api.Test;
 class SourceAnalysisSessionTest {
 
   @Test
-  void safeCompile_wrappedError_rethrowsFatalCause() throws IOException {
+  void analyzeSafely_wrappedError_rethrowsFatalCause() throws IOException {
     final JavacTask task = mock(JavacTask.class);
     final var expected = new AssertionError("expected");
-    when(task.parse()).thenReturn(List.of());
     when(task.analyze()).thenThrow(new IllegalStateException(expected));
 
-    assertThatThrownBy(() -> JavaSourceCompiler.safeCompile(task)).isSameAs(expected);
+    assertThatThrownBy(() -> JavaSourceCompiler.analyzeSafely(task)).isSameAs(expected);
   }
 
   @Test

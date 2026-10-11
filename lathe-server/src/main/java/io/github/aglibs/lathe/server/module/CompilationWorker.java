@@ -34,6 +34,7 @@ import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -56,6 +57,9 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 public final class CompilationWorker {
 
   private static final Logger LOG = Logger.getLogger(CompilationWorker.class.getName());
+  // At most this many open documents share one analysis task: a refresh chunk, or a file plus the
+  // unsaved siblings that join it.
+  public static final int ANALYSIS_BATCH_MAX = 50;
   private static final int FATAL_EXIT_STATUS = 1;
 
   private final ExecutorService executor;
@@ -130,12 +134,32 @@ public final class CompilationWorker {
   }
 
   public CompletableFuture<CompileResponse> compile(final CompileRequest request) {
+    return compile(request, List.of());
+  }
+
+  // Analyzes the file together with the given unsaved siblings of its tree (most recently edited
+  // first), so it sees their unsaved declarations: the first that parsed cleanly in their last
+  // analysis of that same content join, up to the cap. Answers for the file alone.
+  public CompletableFuture<CompileResponse> compile(
+      final CompileRequest request, final List<CompileRequest> siblings) {
     return submit(
         ctx -> {
-          final var diags =
-              ctx.compile(request.uri(), request.content(), request.version(), request.mode());
+          final List<CompileRequest> joining =
+              siblings.stream()
+                  .filter(sibling -> ctx.parsedCleanly(sibling.uri(), sibling.content()))
+                  .limit(ANALYSIS_BATCH_MAX - 1)
+                  .toList();
+          if (joining.isEmpty()) {
+            final var diags =
+                ctx.compile(request.uri(), request.content(), request.version(), request.mode());
+            return new CompileResponse(
+                request.uri(), request.generation(), diags, ctx.lastWrittenBinaryNames());
+          }
+
+          final Map<String, List<Diagnostic>> diagnostics =
+              analyzeTogether(ctx, Stream.concat(Stream.of(request), joining.stream()).toList());
           return new CompileResponse(
-              request.uri(), request.generation(), diags, ctx.lastWrittenBinaryNames());
+              request.uri(), request.generation(), diagnostics.get(request.uri()), Set.of());
         });
   }
 
@@ -144,16 +168,7 @@ public final class CompilationWorker {
       final List<CompileRequest> requests) {
     return submit(
         ctx -> {
-          final Map<String, List<Diagnostic>> diagnostics =
-              ctx.compileOpenBatch(
-                  requests.stream()
-                      .map(request -> new TransientSource(request.uri(), request.content()))
-                      .toList(),
-                  requests.stream()
-                      .collect(
-                          Collectors.toUnmodifiableMap(
-                              CompileRequest::uri, CompileRequest::version)),
-                  () -> {});
+          final Map<String, List<Diagnostic>> diagnostics = analyzeTogether(ctx, requests);
           return requests.stream()
               .map(
                   request ->
@@ -166,13 +181,19 @@ public final class CompilationWorker {
         });
   }
 
-  public CompletableFuture<BatchWrite> compileBatch(final List<TransientSource> sources) {
-    return submit(ctx -> ctx.compileBatch(sources, () -> {}));
+  private static Map<String, List<Diagnostic>> analyzeTogether(
+      final SourceAnalysisSession ctx, final List<CompileRequest> requests) {
+    return ctx.compileOpenBatch(
+        requests.stream()
+            .map(request -> new TransientSource(request.uri(), request.content()))
+            .toList(),
+        requests.stream()
+            .collect(Collectors.toUnmodifiableMap(CompileRequest::uri, CompileRequest::version)),
+        () -> {});
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnoseInBatch(
-      final List<TransientSource> sources, final String targetUri) {
-    return submit(ctx -> ctx.diagnoseInBatch(sources, targetUri, () -> {}));
+  public CompletableFuture<BatchWrite> compileBatch(final List<TransientSource> sources) {
+    return submit(ctx -> ctx.compileBatch(sources, () -> {}));
   }
 
   public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {

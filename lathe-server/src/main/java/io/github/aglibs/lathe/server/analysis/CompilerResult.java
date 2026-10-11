@@ -9,7 +9,10 @@ import javax.tools.JavaFileObject;
 public record CompilerResult(
     List<Diagnostic<? extends JavaFileObject>> diagnostics,
     AttributedFileAnalysis fileAnalysis,
-    Set<String> writtenBinaryNames) {
+    Set<String> writtenBinaryNames,
+    // No error from javac's parse phase: the file's declarations are whole, so it can stand in for
+    // its written classes in another file's analysis.
+    boolean parsedCleanly) {
   public CompilerResult {
     ValidCheck.check()
         .notNull(diagnostics, "diagnostics")
@@ -18,5 +21,13 @@ public record CompilerResult(
         .validate();
     diagnostics = List.copyOf(diagnostics);
     writtenBinaryNames = Set.copyOf(writtenBinaryNames);
+  }
+
+  // A write, or a result with no parse of its own to report on.
+  public CompilerResult(
+      final List<Diagnostic<? extends JavaFileObject>> diagnostics,
+      final AttributedFileAnalysis fileAnalysis,
+      final Set<String> writtenBinaryNames) {
+    this(diagnostics, fileAnalysis, writtenBinaryNames, true);
   }
 }
