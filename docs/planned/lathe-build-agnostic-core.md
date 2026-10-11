@@ -231,7 +231,7 @@ Gradle has the scope natively (the source-set name), so this is the rule every f
 3. **Build files and texts** — `buildFiles`, `BUILD_FILES_CHANGED`, server and MCP texts, the capture `kind`. *Done.*
 4. **Client** — Neovim messages and neotest directory skip. *Done.*
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.** *Done.*
-6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`.
+6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`. *Done.*
 7. **Maven trees by scope** — the extension passes the compile scope to the shim, which stops deriving the tree from the output leaf name.
 
 ## Decisions

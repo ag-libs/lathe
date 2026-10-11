@@ -3,7 +3,9 @@ package io.github.aglibs.lathe.openjdk;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -50,29 +52,43 @@ public final class OpenJdkSync {
       throw new IOException("no built modules at %s — build the JDK first".formatted(modulesDir));
     }
 
-    int modules = 0;
-    final var moduleRoots = new ArrayList<Path>();
-    try (Stream<Path> dirs = Files.list(modulesDir)) {
-      for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
-        final var module = moduleOut.getFileName().toString();
-        final Path cmdline = moduleOut.resolve("_the.%s%s".formatted(module, BATCH_SUFFIX));
-        if (!Files.isRegularFile(cmdline)) {
-          log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
-          continue;
+    // Held for the whole write, so an editor's server never reconciles a half-written .lathe/.
+    final Path lock = LatheLayout.reactorLockFile(latheDir(workspaceRoot));
+    LatheLock.acquire(lock);
+    try {
+      final var moduleCmdlines = new ArrayList<Path>();
+      final var moduleRoots = new ArrayList<Path>();
+      try (Stream<Path> dirs = Files.list(modulesDir)) {
+        for (final Path moduleOut : dirs.filter(Files::isDirectory).sorted().toList()) {
+          final var module = moduleOut.getFileName().toString();
+          final Path cmdline = moduleOut.resolve("_the.%s%s".formatted(module, BATCH_SUFFIX));
+          if (!Files.isRegularFile(cmdline)) {
+            log.accept("[sync] %s skipped — not compiled (no .cmdline)".formatted(module));
+            continue;
+          }
+          moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
+          moduleCmdlines.add(cmdline);
         }
-        moduleRoots.addAll(syncModule(module, moduleOut, cmdline, workspaceRoot));
-        modules++;
       }
+
+      final List<Path> toolCmdlines =
+          syncBuildTools(buildDir, workspaceRoot, List.copyOf(moduleRoots));
+
+      // make touches each batch's marker after it compiles, so the server's build-file watch
+      // notices a rebuilt module or tool and prompts a re-sync.
+      final List<String> buildFiles =
+          Stream.concat(moduleCmdlines.stream(), toolCmdlines.stream())
+              .map(cmdline -> workspaceRoot.relativize(batchFile(cmdline, "")).toString())
+              .toList();
+      writeWorkspace(workspaceRoot, serverVersion, buildFiles);
+      writeJavaHome(workspaceRoot, explodedJdk);
+      writeSyncScript(workspaceRoot, buildDir, serverVersion);
+      log.accept(
+          "[sync] %d module(s) + %d tool(s) -> %s"
+              .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
+    } finally {
+      LatheLock.release(lock);
     }
-
-    final int tools = syncBuildTools(buildDir, workspaceRoot, List.copyOf(moduleRoots), log);
-
-    writeWorkspace(workspaceRoot, serverVersion);
-    writeJavaHome(workspaceRoot, explodedJdk);
-    final int moduleCount = modules;
-    log.accept(
-        "[sync] %d module(s) + %d tool(s) -> %s"
-            .formatted(moduleCount, tools, latheDir(workspaceRoot)));
   }
 
   // Returns the module's source roots, so the build-tool pass can skip tools that overlap a module.
@@ -98,7 +114,7 @@ public final class OpenJdkSync {
             parsed.compilerArgs(),
             AnalysisMode.MODULE_SYSTEM,
             true);
-    final List<Path> sources = readFilelist(siblingFilelist(cmdlineFile));
+    final List<Path> sources = readFilelist(batchFile(cmdlineFile, ".filelist"));
     writeConfig(latheDir(workspaceRoot).resolve(module), config, sources, sourceRoots);
     return sourceRoots;
   }
@@ -107,14 +123,12 @@ public final class OpenJdkSync {
   // build's output dir directly. Tools whose roots overlap a real module are skipped (interim
   // modules; data-gen steps that compile a few module sources, e.g. break-iterator for java.base),
   // since the module already covers those files and a second config would mislabel its packages.
-  private static int syncBuildTools(
-      final Path buildDir,
-      final Path workspaceRoot,
-      final List<Path> moduleRoots,
-      final Consumer<String> log)
+  // Returns the synced tools' cmdline files.
+  private static List<Path> syncBuildTools(
+      final Path buildDir, final Path workspaceRoot, final List<Path> moduleRoots)
       throws IOException {
     final Path toolsRoot = buildDir.resolve(BUILDTOOLS_DIR);
-    int synced = 0;
+    final var synced = new ArrayList<Path>();
     for (final Path cmdline : toolCmdlines(toolsRoot)) {
       final String content = Files.readString(cmdline);
       if (content.contains("--module-source-path")) {
@@ -122,7 +136,7 @@ public final class OpenJdkSync {
       }
 
       final Path outputDir = cmdline.getParent();
-      final List<Path> sources = readFilelist(siblingFilelist(cmdline));
+      final List<Path> sources = readFilelist(batchFile(cmdline, ".filelist"));
       final List<Path> sourceRoots = inferRoots(outputDir, sources);
       if (sources.isEmpty() || sourceRoots.isEmpty() || overlapsModule(sourceRoots, moduleRoots)) {
         continue;
@@ -148,9 +162,9 @@ public final class OpenJdkSync {
               true);
       writeConfig(
           latheDir(workspaceRoot).resolve(batchName(cmdline)), config, sources, sourceRoots);
-      synced++;
+      synced.add(cmdline);
     }
-    return synced;
+    return List.copyOf(synced);
   }
 
   private static List<Path> toolCmdlines(final Path toolsRoot) throws IOException {
@@ -165,10 +179,11 @@ public final class OpenJdkSync {
     return name.substring("_the.".length(), name.length() - BATCH_SUFFIX.length());
   }
 
-  private static Path siblingFilelist(final Path cmdline) {
+  // "_the.<BATCH>_batch.cmdline" -> its sibling "_the.<BATCH>_batch<suffix>"; "" is the marker
+  // make touches when the batch compiles.
+  private static Path batchFile(final Path cmdline, final String suffix) {
     final String name = cmdline.getFileName().toString();
-    return cmdline.resolveSibling(
-        name.substring(0, name.length() - ".cmdline".length()) + ".filelist");
+    return cmdline.resolveSibling(name.substring(0, name.length() - ".cmdline".length()) + suffix);
   }
 
   // Source roots inferred from the compiled output layout: the -d dir mirrors the package structure
@@ -253,7 +268,8 @@ public final class OpenJdkSync {
         .max(Comparator.comparingInt(Path::getNameCount));
   }
 
-  private static void writeWorkspace(final Path workspaceRoot, final String serverVersion)
+  private static void writeWorkspace(
+      final Path workspaceRoot, final String serverVersion, final List<String> buildFiles)
       throws IOException {
     final var manifest =
         new WorkspaceManifestData(
@@ -263,7 +279,7 @@ public final class OpenJdkSync {
             List.of(),
             null,
             List.of(),
-            List.of(),
+            buildFiles,
             List.of(),
             List.of());
     Json.write(manifest, latheDir(workspaceRoot).resolve(LatheLayout.WORKSPACE_JSON));
@@ -274,5 +290,40 @@ public final class OpenJdkSync {
     Files.writeString(
         latheDir(workspaceRoot).resolve(LatheLayout.JAVA_HOME_FILE),
         explodedJdk + System.lineSeparator());
+  }
+
+  // Re-runs this goal pinned to the version and build that wrote it, so a re-sync never switches
+  // Lathe versions or JDK configurations. It never runs make (building the JDK is the user's call),
+  // and skips the JDK prologue: java-home is the freshly built JDK, right for the server but not
+  // for
+  // running Maven. --tests and modules are accepted and ignored: there is no jtreg capture, and
+  // re-reading the whole build is cheap.
+  private static void writeSyncScript(
+      final Path workspaceRoot, final Path buildDir, final String version) throws IOException {
+    final String script =
+        """
+        #!/bin/sh
+        # Generated by %s:%s -- do not edit. Usage: %s [%s] [module ...]
+        cd "$(dirname "$0")/.." || exit 1
+        if [ $# -gt 0 ]; then
+          echo "lathe-sync: arguments ignored; the OpenJDK sync re-reads the whole build" >&2
+        fi
+        set -- mvn --no-transfer-progress %s:%s:%s:%s "-D%s=%s"
+        echo "lathe-sync: $*" >&2
+        exec "$@"
+        """
+            .formatted(
+                LatheLayout.Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
+                LatheLayout.Maven.SYNC_GOAL,
+                LatheLayout.SYNC_SCRIPT_COMMAND,
+                LatheLayout.SYNC_TESTS_FLAG,
+                LatheLayout.Maven.LATHE_GROUP_ID,
+                LatheLayout.Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
+                version,
+                LatheLayout.Maven.SYNC_GOAL,
+                LatheFlags.BUILD_DIR,
+                buildDir.toAbsolutePath());
+    final Path latheDir = latheDir(workspaceRoot);
+    FileUtil.writeIfChanged(latheDir, latheDir.resolve(LatheLayout.SYNC_SCRIPT), script, true);
   }
 }

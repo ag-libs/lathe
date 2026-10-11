@@ -28,7 +28,7 @@ public final class SyncMojo extends AbstractMojo {
    * The configured build output dir, e.g. {@code build/linux-x86_64-server-release}. Optional: when
    * omitted, the single configured build under {@code <root>/build} is discovered automatically.
    */
-  @Parameter(property = "lathe.buildDir")
+  @Parameter(property = LatheFlags.BUILD_DIR)
   private String buildDir;
 
   @Parameter(defaultValue = "${basedir}", readonly = true, required = true)

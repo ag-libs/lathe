@@ -122,7 +122,7 @@ Without it the server still compiles and navigates the workspace's own code, but
 - **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged.
   Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
   a custom test-jar classifier or another classified jar is not listed.
-- **OpenJDK** writes it with empty lists and no `jdk`.
+- **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`
 
@@ -245,11 +245,11 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 |---|---|---|
 | `lsp-params-<tree>.json` | yes | yes, `classes` only |
 | launcher links | yes | yes |
-| `lathe.lock`, `module.lock` | yes | no |
-| `workspace.json` | yes, full reactor | yes, empty lists |
+| `lathe.lock`, `module.lock` | yes | `lathe.lock` only |
+| `workspace.json` | yes, full reactor | yes, `buildFiles` = batch markers |
 | `lsp-stamps-<tree>.json` | yes | yes |
 | bytecode mirror | yes | no (`externalOutput`) |
-| `lathe-sync.sh` | yes, full reactor | no |
+| `lathe-sync.sh` | yes, full reactor | yes, re-runs its own sync goal |
 | `java-home` | yes, full reactor | yes |
 | generated-sources mirror | yes | no |
 | `test-launch.json` | yes | no |
@@ -269,8 +269,6 @@ Found while writing this contract (2026-10-11); each is a gap in the current fro
   The compiler, test capture, and server use `""`; `main-launch.json` and `resourceRoots` use `"."`.
 - **The module lock has no heartbeat.**
   A compile plus mirror copy over 2 minutes looks stale to readers.
-- **OpenJDK does not hold the reactor lock and writes no `lathe-sync.sh`.**
-  The server can reconcile against half-written output while it syncs, and sync prompts point at a missing script.
 - **Several writes are not atomic.**
   Params, stamps, and the OpenJDK `workspace.json` are written in place, and the mirror is deleted before it is copied.
 - **The server writes mirror directories for OpenJDK modules.**

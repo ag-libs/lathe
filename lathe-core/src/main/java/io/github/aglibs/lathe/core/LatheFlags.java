@@ -8,6 +8,7 @@ public final class LatheFlags {
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
+  public static final String BUILD_DIR = "lathe.buildDir";
   public static final String RESULTS_SINK = "lathe.results.sink";
 
   // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
