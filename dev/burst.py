@@ -78,10 +78,12 @@ class Editor:
     def __init__(self, client: LatheClient):
         self.client = client
         self.docs: dict[str, dict] = {}
+        self.original: dict[str, str] = {}
 
     def adopt(self, uri: str):
         """Tracks a document the client already opened."""
         self.docs[uri] = {"text": uri_path(uri).read_text(), "version": 1}
+        self.original[uri] = self.docs[uri]["text"]
 
     def ensure_open(self, uri: str):
         if uri in self.docs:
@@ -101,6 +103,7 @@ class Editor:
     def move(self, old_uri: str, new_uri: str):
         """Neovim renames the buffer in place, so the moved file keeps its save position."""
         uri_path(old_uri).rename(uri_path(new_uri))
+        self.original[new_uri] = self.original.pop(old_uri)
         self.docs = {new_uri if uri == old_uri else uri: {"text": d["text"], "version": 1}
                      if uri == old_uri else d for uri, d in self.docs.items()}
         self.client.notify("textDocument/didClose", {"textDocument": {"uri": old_uri}})
@@ -155,9 +158,17 @@ class TokenRepaint:
 
 
 def wait_quiet(client: LatheClient, quiet_s: float, max_s: float) -> float:
-    """Waits until no compile/react/dependents line for quiet_s; returns when activity ended."""
+    """Waits until no compile/react/dependents line for quiet_s; returns when activity ended. A rename
+    commit's batch can compile for longer than quiet_s without logging, so once a commit is logged the
+    wait first lasts until its dependents refresh starts."""
     start = time.monotonic()
     seen = len(client.stderr_lines)
+    while time.monotonic() - start < max_s:
+        lines = client.stderr_lines
+        commit = next((i for i in range(len(lines) - 1, -1, -1) if "[rename-tx] commit" in lines[i]), None)
+        if commit is None or any("[dependents] checking" in l for l in lines[commit:]):
+            break
+        time.sleep(0.25)
     last_activity = time.monotonic()
     while time.monotonic() - start < max_s:
         time.sleep(0.25)
@@ -177,6 +188,55 @@ def declaration(file: Path, symbol: str) -> tuple[int, int]:
         if match:
             return row, line.index(symbol, match.start())
     raise SystemExit("no declaration of %s in %s" % (symbol, file))
+
+
+def last_publishes(client: LatheClient) -> dict[str, list]:
+    """The last diagnostics published per URI (drains the client's publish queue)."""
+    q = client._notification_queue("textDocument/publishDiagnostics")
+    last = {}
+    while not q.empty():
+        params = q.get_nowait()["params"]
+        last[params["uri"]] = params["diagnostics"]
+    return last
+
+
+def mirror_class(workspace: Path, source: Path) -> Path:
+    """The .lathe mirror class file a top-level type's source compiles to."""
+    rel = source.relative_to(workspace)
+    parts = rel.parts
+    i = parts.index("src")
+    tree = "test-classes" if parts[i + 1] == "test" else "classes"
+    pkg = Path(*parts[i + 3:]).with_suffix(".class")
+    return workspace / ".lathe" / Path(*parts[:i]) / tree / pkg
+
+
+def check(editor: Editor, client: LatheClient, workspace: Path, moved: tuple | None,
+          old: str, new: str) -> bool:
+    """End-of-burst correctness: no member still erroring, and for a moved type the mirror and the
+    workspace symbols hold only the new name."""
+    last = last_publishes(client)
+    erroring = sorted(uri_path(uri).name for uri in editor.docs
+                      if any(d.get("severity") == 1 for d in last.get(uri, [])))
+    ok = not erroring
+    print("  %-28s %6d  %s" % ("members erroring at end", len(erroring), " ".join(erroring[:5])))
+    if moved:
+        old_class, new_class = (mirror_class(workspace, uri_path(u)) for u in moved)
+        # Only the workspace's own types: a JDK or dependency type may share the old name.
+        names = {s["name"] for s in client.workspace_symbol(new) + client.workspace_symbol(old)
+                 if uri_path(s["location"]["uri"]).is_relative_to(workspace)}
+        mirror_ok = new_class.exists() and not old_class.exists()
+        symbols_ok = new in names and old not in names
+        ok = ok and mirror_ok and symbols_ok
+        print("  %-28s %6s  old=%s new=%s" % ("mirror swapped", mirror_ok, old_class.exists(),
+                                              new_class.exists()))
+        print("  %-28s %6s  %s" % ("symbols swapped", symbols_ok,
+                                   sorted(n for n in names if n in (old, new))))
+    print("CHECKS:", "ok" if ok else "FAIL")
+    return ok
+
+
+def saw(client: LatheClient, first_line: int, needle: str) -> bool:
+    return any(needle in line for line in client.stderr_lines[first_line:])
 
 
 def report(client: LatheClient, first_line: int, times: dict):
@@ -212,11 +272,22 @@ def main():
                         help="seconds without compile activity that count as settled")
     parser.add_argument("--declaring-last", action="store_true",
                         help="save the renamed file last (an editor that saves dependents first)")
+    parser.add_argument("--at", help="1-based LINE:COL of the symbol (default: its type declaration)")
+    parser.add_argument("--save-count", type=int,
+                        help="save only the first N touched files (the rest stay unsaved)")
+    parser.add_argument("--no-apply", action="store_true",
+                        help="never apply the edit (a cancelled preview); expect the transaction dropped")
+    parser.add_argument("--undo", action="store_true",
+                        help="apply, then undo every file instead of saving; expect it abandoned")
     parser.add_argument("--log", type=Path, help="write the server's stderr for the burst here")
     args = parser.parse_args()
 
     file = args.file.resolve()
-    row, col = declaration(file, args.symbol)
+    if args.at:
+        line, column = (int(n) for n in args.at.split(":"))
+        row, col = line - 1, column - 1
+    else:
+        row, col = declaration(file, args.symbol)
     with LatheClient.start(args.workspace, debug=True) as client:
         client.open(file, timeout=120)
         time.sleep(args.warmup)
@@ -230,36 +301,63 @@ def main():
         tokens = TokenRepaint(client, visible)
         client.on_server_request = tokens.on_request
         first_line = len(client.stderr_lines)
-        client.notification_counts.clear()
-        client.server_request_counts.clear()
+        try:
+            client.notification_counts.clear()
+            client.server_request_counts.clear()
 
-        t0 = time.monotonic()
-        moved_to = apply_workspace_edit(editor, edit)
-        if moved_to:
-            visible[0] = moved_to
-        print("applied edit to %d file(s)%s" % (
-            len(editor.docs), ", moved %s" % uri_path(moved_to).name if moved_to else ""))
-        time.sleep(args.think)
+            t0 = time.monotonic()
+            if args.no_apply:
+                time.sleep(35)
+                dropped = saw(client, first_line, "[rename-tx] dropped unapplied")
+                print("CHECKS:", "ok" if dropped else "FAIL", "(transaction dropped unapplied: %s)" % dropped)
+                return
 
-        t_save = time.monotonic()
-        order = list(editor.docs)
-        if args.declaring_last:
-            order.remove(visible[0])
-            order.append(visible[0])
-        for uri in order:
-            editor.save(uri, not args.no_format)
-            time.sleep(args.pace)
-        t_saved = time.monotonic()
-        print("saved %d file(s)" % len(editor.docs))
+            moves = [(c["oldUri"], c["newUri"]) for c in edit.get("documentChanges") or []
+                     if c.get("kind") == "rename"]
+            moved_to = apply_workspace_edit(editor, edit)
+            if moved_to:
+                visible[0] = moved_to
+            print("applied edit to %d file(s)%s" % (
+                len(editor.docs), ", moved %s" % uri_path(moved_to).name if moved_to else ""))
+            time.sleep(args.think)
 
-        settled = wait_quiet(client, args.quiet, 600)
-        report(client, first_line, {
-            "save phase": t_saved - t_save,
-            "quiet after last save": max(0.0, settled - t_saved),
-            "total (edit to quiet)": settled - t0,
-        })
-        if args.log:
-            args.log.write_text("\n".join(client.stderr_lines[first_line:]) + "\n")
+            if args.undo:
+                for uri in list(editor.docs):
+                    editor.change(uri, editor.original[uri])
+                time.sleep(2)
+                abandoned = saw(client, first_line, "[rename-tx] abandoned")
+                print("CHECKS:", "ok" if abandoned else "FAIL", "(transaction abandoned: %s)" % abandoned)
+                return
+
+            t_save = time.monotonic()
+            order = list(editor.docs)
+            if args.declaring_last:
+                order.remove(visible[0])
+                order.append(visible[0])
+            for uri in order[:args.save_count]:
+                editor.save(uri, not args.no_format)
+                time.sleep(args.pace)
+            t_saved = time.monotonic()
+            print("saved %d file(s)" % len(order[:args.save_count]))
+
+            if args.save_count is not None:
+                time.sleep(12)  # past the server's 10 s idle commit for a partly saved rename
+            settled = wait_quiet(client, args.quiet, 600)
+            report(client, first_line, {
+                "save phase": t_saved - t_save,
+                "quiet after last save": max(0.0, settled - t_saved),
+                "total (edit to quiet)": settled - t0,
+            })
+            if args.save_count is None:
+                check(editor, client, args.workspace.resolve(), moves[0] if moves else None,
+                      args.symbol, args.new_name)
+            else:
+                committed = saw(client, first_line, "[rename-tx] commit saved=%d" % args.save_count)
+                print("CHECKS:", "ok" if committed else "FAIL",
+                      "(idle commit of the %d saved: %s)" % (args.save_count, committed))
+        finally:
+            if args.log:
+                args.log.write_text("\n".join(client.stderr_lines[first_line:]) + "\n")
 
 
 if __name__ == "__main__":
