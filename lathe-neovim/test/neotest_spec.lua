@@ -805,4 +805,121 @@ do
   spec.check("skipped typed as warning", items[3].type, "W")
 end
 
+
+-- The open nudge: a test buffer's first diagnostics re-fire BufAdd so neotest discovers it, unless
+-- its discovery already returned tests -- re-firing BufAdd would make neotest rescan the file's
+-- whole directory, once per file a rename opens.
+do
+  local real_get_clients = vim.lsp.get_clients
+  vim.lsp.get_clients = function(filter)
+    return filter and filter.name == "lathe" and { {} } or {}
+  end
+
+  local nudged = {}
+  vim.api.nvim_create_autocmd("BufAdd", {
+    callback = function(ev)
+      nudged[ev.buf] = (nudged[ev.buf] or 0) + 1
+    end,
+  })
+  local function open_test_buffer(name)
+    local buf = vim.api.nvim_create_buf(true, false)
+    vim.api.nvim_buf_set_name(buf, "/workspace/demo/src/test/java/demo/" .. name)
+    return buf
+  end
+  local function first_diagnostics(buf)
+    vim.api.nvim_exec_autocmds("DiagnosticChanged", { buffer = buf })
+    vim.wait(200, function()
+      return false
+    end)
+  end
+
+  local fresh = open_test_buffer("FreshTest.java")
+  local known = open_test_buffer("KnownTest.java")
+  nudged = {}
+  adapter._record_discovered(known)
+  first_diagnostics(fresh)
+  first_diagnostics(known)
+
+  spec.check("undiscovered test buffer is nudged once", nudged[fresh], 1)
+  spec.check("already discovered test buffer is not nudged", nudged[known], nil)
+
+  vim.lsp.get_clients = real_get_clients
+end
+
+
+-- Discovery cache: neotest rescans a directory per buffer added there, so a loaded, unchanged test
+-- buffer is answered from its last discovery; an edit asks again, and an unloaded file (nothing to
+-- key on) always asks. Stubs nio, neotest's Tree, and the client, so neither plugin is needed.
+do
+  local requests = 0
+  local client = {
+    request = {
+      workspace_executeCommand = function()
+        requests = requests + 1
+        return nil,
+          {
+            {
+              id = "demo.CacheTest",
+              parentId = "",
+              kind = 2,
+              label = "CacheTest",
+              moduleRel = "demo",
+              range = { start = { line = 0, character = 0 }, ["end"] = { line = 3, character = 1 } },
+            },
+          }
+      end,
+    },
+  }
+  package.loaded["nio"] = {
+    sleep = function() end,
+    lsp = {
+      get_clients = function()
+        return { client }
+      end,
+    },
+    control = {
+      future = function()
+        local value
+        return {
+          set = function(v)
+            value = v
+          end,
+          wait = function()
+            return value
+          end,
+        }
+      end,
+    },
+  }
+  package.loaded["neotest.types"] = {
+    Tree = {
+      from_list = function(list)
+        return list
+      end,
+    },
+  }
+
+  local path = "/workspace/demo/src/test/java/demo/CacheTest.java"
+  local buf = vim.fn.bufadd(path)
+  vim.fn.bufload(buf)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "class CacheTest {}" })
+
+  spec.check("first discovery finds the class", adapter.discover_positions(path) ~= nil, true)
+  adapter.discover_positions(path)
+  adapter.discover_positions(path)
+  spec.check("unchanged buffer is asked once", requests, 1)
+
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "class CacheTest { void t() {} }" })
+  adapter.discover_positions(path)
+  spec.check("an edit asks again", requests, 2)
+
+  local unloaded = "/workspace/demo/src/test/java/demo/UnloadedTest.java"
+  adapter.discover_positions(unloaded)
+  adapter.discover_positions(unloaded)
+  spec.check("an unloaded file always asks", requests, 4)
+
+  package.loaded["nio"] = nil
+  package.loaded["neotest.types"] = nil
+end
+
 spec.finish()

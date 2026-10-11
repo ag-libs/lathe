@@ -155,6 +155,21 @@ end
 local OPEN_CONFIRM_TIMEOUT_MS = 8000
 local OPEN_CONFIRM_POLL_MS = 50
 local open_confirmed = {}
+-- Buffers whose discovery already returned tests: neotest has their positions, so they need no
+-- nudge. The nudge re-fires BufAdd, which also makes neotest rescan the file's whole directory, so
+-- a rename that opens many test files would otherwise rescan each directory once per file.
+local discovered = {}
+-- Neotest rescans a file's whole directory whenever a buffer in it is added, so opening many test
+-- files at once (a rename) asks for each file dozens of times. Repeats are answered from the last
+-- discovery while the buffer is unchanged, and concurrent requests for a file share one.
+local discovery_cache = {}
+local discovery_inflight = {}
+
+--- Records that `bufnr`'s discovery returned tests. A test seam: discover_positions needs nio and a
+--- live client.
+function M._record_discovered(bufnr)
+  discovered[bufnr] = true
+end
 
 --- Nudges neotest to (re)discover `buf`'s file. neotest re-discovers a file on BufAdd, but does not
 --- fire that discovery on the real open when its initial scan happened before the server was ready;
@@ -182,7 +197,7 @@ vim.api.nvim_create_autocmd("DiagnosticChanged", {
 
     open_confirmed[ev.buf] = true
     local name = vim.api.nvim_buf_get_name(ev.buf)
-    if name ~= "" and M.is_test_file(name) then
+    if name ~= "" and M.is_test_file(name) and not discovered[ev.buf] then
       debug_log("[discover] " .. name .. " open on server -> nudging neotest re-discovery")
       -- Defer out of the DiagnosticChanged callback before firing another autocmd.
       vim.schedule(function()
@@ -196,6 +211,8 @@ vim.api.nvim_create_autocmd({ "LspDetach", "BufDelete" }, {
   group = READY_AUGROUP,
   callback = function(ev)
     open_confirmed[ev.buf] = nil
+    discovered[ev.buf] = nil
+    discovery_cache[vim.api.nvim_buf_get_name(ev.buf)] = nil
   end,
 })
 
@@ -456,19 +473,14 @@ local function build_tree(file_path, targets)
   end)
 end
 
-function M.discover_positions(file_path)
-  -- Gate on workspace readiness so an early discovery suspends until the server has loaded, rather
-  -- than racing it and caching "no tests" (D1).
-  await_ready()
-
+--- Asks the server for `file_path`'s runnables, or nil when there is no client or no targets; also
+--- returns the buffer's changedtick as of the request (nil for an unloaded file).
+local function request_targets(file_path, bufnr)
   local client = lathe_client()
   if not client then
     debug_log("[discover] " .. file_path .. " client=absent → nil")
     return nil
   end
-
-  local bufnr = vim.fn.bufadd(file_path)
-  local uri = vim.uri_from_fname(file_path)
 
   -- The file the user actually opened is a loaded buffer whose didOpen may still be in flight; the
   -- server answers runnables only for an open doc, so wait for its server-confirmed open before
@@ -480,14 +492,50 @@ function M.discover_positions(file_path)
     debug_log("[discover] " .. file_path .. " open-confirmed=" .. tostring(open_confirmed[bufnr] == true))
   end
 
+  local tick = vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or nil
   local err, targets = client.request.workspace_executeCommand({
     command = "lathe.runnables.list",
-    arguments = { { uri = uri } },
+    arguments = { { uri = vim.uri_from_fname(file_path) } },
   }, bufnr)
   if err or not targets or #targets == 0 then
     return nil
   end
 
+  return targets, tick
+end
+
+function M.discover_positions(file_path)
+  -- Gate on workspace readiness so an early discovery suspends until the server has loaded, rather
+  -- than racing it and caching "no tests" (D1).
+  await_ready()
+
+  local bufnr = vim.fn.bufadd(file_path)
+  local tick = vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or nil
+  local cached = discovery_cache[file_path]
+  if tick and cached and cached.tick == tick then
+    return build_tree(file_path, cached.targets)
+  end
+
+  local pending = discovery_inflight[file_path]
+  if pending then
+    local targets = pending.wait()
+    return targets and build_tree(file_path, targets) or nil
+  end
+
+  local future = nio().control.future()
+  discovery_inflight[file_path] = future
+  local targets, requested_tick = request_targets(file_path, bufnr)
+  discovery_inflight[file_path] = nil
+  future.set(targets or false)
+  if not targets then
+    return nil
+  end
+
+  if requested_tick then
+    discovery_cache[file_path] = { tick = requested_tick, targets = targets }
+  end
+
+  M._record_discovered(bufnr)
   return build_tree(file_path, targets)
 end
 
