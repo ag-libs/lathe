@@ -56,7 +56,11 @@ final class WorkspaceWatcher {
       return PollResult.REACTOR_REFRESH;
     }
 
-    if (detectBuildFileChange()) {
+    final Map<Path, BuildFileFingerprint> current = fingerprintAll(buildFileBaseline.keySet());
+    if (!current.equals(buildFileBaseline)) {
+      // Reported once per change. The sync prompt it raises may wait unanswered for hours; a
+      // report on every poll meanwhile would rescan the whole workspace each tick.
+      buildFileBaseline = current;
       LOG.info(() -> "[watcher] build files changed — sync needed");
       return PollResult.BUILD_FILES_CHANGED;
     }
@@ -66,12 +70,6 @@ final class WorkspaceWatcher {
 
   void updateBuildFiles(final List<Path> absBuildFiles) {
     buildFileBaseline = fingerprintAll(absBuildFiles);
-  }
-
-  // Re-snapshot the current fingerprints of the already-tracked build files so a dismissed sync
-  // prompt stays quiet until they change again — without asserting the workspace is synced.
-  void acknowledgeBuildFiles() {
-    buildFileBaseline = fingerprintAll(buildFileBaseline.keySet());
   }
 
   private static Map<Path, BuildFileFingerprint> fingerprintAll(final Collection<Path> paths) {
@@ -103,11 +101,6 @@ final class WorkspaceWatcher {
     }
 
     return IOUtil.unchecked(() -> Files.readString(manifestPath, StandardCharsets.UTF_8));
-  }
-
-  private boolean detectBuildFileChange() {
-    return buildFileBaseline.entrySet().stream()
-        .anyMatch(e -> !fingerprint(e.getKey()).equals(e.getValue()));
   }
 
   private static BuildFileFingerprint fingerprint(final Path path) {

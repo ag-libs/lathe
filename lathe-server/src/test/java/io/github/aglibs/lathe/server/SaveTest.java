@@ -159,7 +159,9 @@ class SaveTest extends ServiceTestBase {
                 new TextDocumentContentChangeEvent(
                     "package com.example;\nclass User0 { int u() { return missing(); } }\n"))));
 
-    verify(client, timeout(5_000))
+    // At least once: under load the refresh may re-analyze the edited file after its own compile,
+    // publishing the same error again; the last publish is what matters.
+    verify(client, timeout(5_000).atLeastOnce())
         .publishDiagnostics(
             argThat(
                 p ->

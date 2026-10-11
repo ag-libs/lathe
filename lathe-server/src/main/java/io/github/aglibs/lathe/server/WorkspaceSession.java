@@ -4184,14 +4184,11 @@ final class WorkspaceSession {
         .thenAccept(action -> worker.execute(() -> onSyncPromptResponse(action)));
   }
 
-  // Any response ends the loop: the acknowledged build-file baseline stays quiet until the files
-  // change
-  // again, even while the client's Maven job runs. Sync / Sync + capture ask the client to run
-  // Maven
-  // (the server never does); Later just dismisses.
+  // Sync / Sync + capture ask the client to run Maven (the server never does); Later just
+  // dismisses. The watcher reports each build-file change once, so either way it stays quiet until
+  // the files change again.
   private void onSyncPromptResponse(final MessageActionItem action) {
     buildFilesNotificationPending = false;
-    watcher.acknowledgeBuildFiles();
     final String title = action == null ? null : action.getTitle();
     LOG.info(() -> "[sync] answered action=%s".formatted(title));
     switch (title) {

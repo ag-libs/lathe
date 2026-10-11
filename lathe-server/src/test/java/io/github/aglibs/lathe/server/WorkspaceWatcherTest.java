@@ -137,21 +137,21 @@ class WorkspaceWatcherTest {
   }
 
   @Test
-  void acknowledgeBuildFiles_afterPomChange_stopsReprompting() throws IOException {
+  void poll_buildFileChanged_reportedOnce_againOnlyWhenItChangesAgain() throws IOException {
     final var pom = workspaceRoot.resolve("pom.xml");
     Files.writeString(pom, "<project/>");
     Files.setLastModifiedTime(pom, PAST);
-
     final var watcher = new WorkspaceWatcher(workspaceRoot);
     watcher.updateBuildFiles(List.of(pom));
+
     Files.writeString(pom, "<project>updated</project>");
-
-    // Without acknowledgement the change is reported on every poll — the re-prompt loop.
     assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
-    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+    assertThat(watcher.poll())
+        .as("not again while its sync prompt may still be unanswered")
+        .isEqualTo(PollResult.NO_CHANGE);
 
-    watcher.acknowledgeBuildFiles();
-    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+    Files.writeString(pom, "<project>updated again</project>");
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
   }
 
   private Path manifest() {
