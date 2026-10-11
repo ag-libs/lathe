@@ -235,10 +235,35 @@ public record ReferenceTarget(
       return false;
     }
 
-    final var eeOwner = (TypeElement) ee.getEnclosingElement();
-    final var targetOwner = (TypeElement) targetMethod.getEnclosingElement();
-    return elements.overrides(ee, targetMethod, eeOwner)
-        || elements.overrides(targetMethod, ee, targetOwner);
+    return overridesEitherWay(ee, targetMethod, elements);
+  }
+
+  // Reference search (and so rename) also covers a record implementing the method through a
+  // component: its header, backing field, and canonical-constructor parameter stand for the
+  // implicit accessor, which has no declaration of its own. Call hierarchy keeps to real calls.
+  boolean matchesFamily(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (matchesWithOverrides(element, types, elements, targetMethod)) {
+      return true;
+    }
+
+    if (kind != ElementKind.METHOD || targetMethod == null || element == null) {
+      return false;
+    }
+
+    final var accessor = recordAccessorFor(element, types);
+    return accessor != null && overridesEitherWay(accessor, targetMethod, elements);
+  }
+
+  private static boolean overridesEitherWay(
+      final ExecutableElement method, final ExecutableElement target, final Elements elements) {
+    final var methodOwner = (TypeElement) method.getEnclosingElement();
+    final var targetOwner = (TypeElement) target.getEnclosingElement();
+    return elements.overrides(method, target, methodOwner)
+        || elements.overrides(target, method, targetOwner);
   }
 
   boolean matches(final Element element, final Types types, final Elements elements) {

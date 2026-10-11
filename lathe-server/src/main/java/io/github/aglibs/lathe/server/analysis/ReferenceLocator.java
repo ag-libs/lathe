@@ -109,7 +109,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberReference(final MemberReferenceTree node, final Void ignored) {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getName().toString(), ReferenceRole.INVOCATION);
     }
     return null;
@@ -118,7 +118,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   @Override
   public Void visitNewClass(final NewClassTree node, final Void ignored) {
     final var element = trees.getElement(getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)) {
       final var id = node.getIdentifier();
       final String name =
           id instanceof final MemberSelectTree mst
@@ -137,7 +137,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     final var qualIdPath = new TreePath(getCurrentPath(), qualId);
     final var element =
         node.isStatic() ? SourceLocator.elementAt(trees, qualIdPath) : trees.getElement(qualIdPath);
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)) {
       if (qualId instanceof final MemberSelectTree mst) {
         addMatchAtIdentifier(qualId, mst.getIdentifier().toString(), ReferenceRole.IMPORT);
       } else if (qualId instanceof final IdentifierTree it) {
@@ -154,7 +154,7 @@ final class ReferenceLocator extends SourceTreeLocator {
         && mst.getExpression() instanceof final MemberSelectTree qualifier) {
       final var qualifierPath = new TreePath(new TreePath(getCurrentPath(), qualId), qualifier);
       final var qualifierElement = trees.getElement(qualifierPath);
-      if (target.matchesWithOverrides(qualifierElement, types, elements, targetMethod)) {
+      if (target.matchesFamily(qualifierElement, types, elements, targetMethod)) {
         addMatchAtIdentifier(qualifier, qualifier.getIdentifier().toString(), ReferenceRole.IMPORT);
       }
     }
@@ -166,7 +166,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
     final var element = SourceLocator.elementAt(trees, getCurrentPath());
-    if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (target.matchesFamily(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getIdentifier().toString(), roleForMemberSelect(element));
     }
     return null;
@@ -257,7 +257,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   }
 
   private boolean matchesTarget(final Element element) {
-    if (!target.matchesWithOverrides(element, types, elements, targetMethod)) {
+    if (!target.matchesFamily(element, types, elements, targetMethod)) {
       return false;
     }
 

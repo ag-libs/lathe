@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Map;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -300,6 +301,48 @@ class RenameProviderTest {
         session -> {
           final var edits = renameEdits(session, source, "int count", "count", "total");
           assertThat(edits).hasSize(3).allMatch(e -> e.getNewText().equals("total"));
+        });
+  }
+
+  @Test
+  void rename_interfaceMethodImplementedByRecordComponent_renamesComponent_stillCompiles() {
+    // Impl implements Named.text() through its component's implicit accessor, which has no
+    // declaration of its own: the component must be renamed with the method, or Impl stops
+    // implementing Named. Unrelated's same-named component is not part of the family.
+    final var source =
+        """
+        interface Named { String text(); }
+        record Impl(String text) implements Named {
+            Impl { text = text.trim(); }
+            String loud() { return text + "!"; }
+        }
+        record Unrelated(String text) {
+            String read() { return text; }
+        }
+        class Use { String read(Named named) { return named.text(); } }
+        """;
+    withSession(
+        source,
+        session -> {
+          final String renamed =
+              SourceLocator.applyEdits(
+                  source, renameEdits(session, source, "String text();", "text", "label"));
+
+          assertThat(renamed)
+              .isEqualTo(
+                  """
+                  interface Named { String label(); }
+                  record Impl(String label) implements Named {
+                      Impl { label = label.trim(); }
+                      String loud() { return label + "!"; }
+                  }
+                  record Unrelated(String text) {
+                      String read() { return text; }
+                  }
+                  class Use { String read(Named named) { return named.label(); } }
+                  """);
+          assertThat(session.compile(TempSourceCompiler.TEST_URI, renamed, 2, CompileMode.OPEN))
+              .noneMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
         });
   }
 
