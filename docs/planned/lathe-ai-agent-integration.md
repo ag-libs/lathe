@@ -16,8 +16,11 @@ stdio, validated live against the private payment reactor.
   `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`** — every located
   result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL). The curated wedge
   is **feature-complete**.
-- `rename_symbol` applies javac-accurate edits to disk across modules and refuses to touch a
-  non-reactor file.
+- `rename_symbol` applies javac-accurate edits to disk across modules, including a public type's file
+  move, and refuses to touch a non-reactor file.
+  It writes under the reactor lock and compiles the whole change set into the mirror before returning, however many files it touched,
+  then touches `workspace.json` so an editor's server on the same workspace re-indexes the renamed types
+  ([Rename Transactions](../potential/lathe-rename-transactions.md)).
 - `run_test` replays a single test **method / class / package** against the compiled classpath (no
   `mvn`, no reactor build), reusing the editor's runnable→selection mapping; returns pass/fail/skip
   counts + each failure's `type: message` and line. Verified live on the payment reactor (sub-3s per
@@ -29,7 +32,7 @@ stdio, validated live against the private payment reactor.
   callers with snippets).
 - **Freshness advisory:** results append a `Stale:` note listing modules whose source is newer than
   their compiled classes (reusing the existing idle-reconcile scan, cached), so the agent knows to
-  re-sync; `rename_symbol` force-refreshes so its own result is current. MCP has no server→model
+  re-sync; `rename_symbol` compiles its own change set before returning, so its result is current. MCP has no server→model
   push, so this rides in the result text (verified with `claude-code-guide`).
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).
@@ -551,7 +554,7 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 ### Phase 2 — Tier 2 (the migration / removal loop) — DONE
 
 - `find_references` ✅ and `rename_symbol` ✅ shipped (cross-module, javac-accurate; rename applies
-  edits to disk and refuses non-reactor files). Measured win on a polymorphic name — see
+  edits to disk, moves a public type's file, compiles the change set before returning, and refuses non-reactor files). Measured win on a polymorphic name — see
   [Second A/B](#second-ab--polymorphic-reference-sites-2026-09-20).
 - `search_symbols` ✅ shipped (name lookup across reactor + deps + JDK; kind filter deferred).
 - `find_implementations` ✅ shipped (an interface's impls / a method's overrides, cross-module;

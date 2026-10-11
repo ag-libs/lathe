@@ -9,10 +9,7 @@ import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.jdk.JdkSource;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
-import java.time.Instant;
 import java.util.List;
 import org.apache.maven.plugin.logging.Log;
 
@@ -50,7 +47,7 @@ final class WorkspaceManifestWriter {
       if (!FileUtil.writeIfChanged(latheDir, manifestPath, newContent, false)) {
         // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
         // the server's watcher re-scans the mirror even though the manifest itself did not change.
-        Files.setLastModifiedTime(manifestPath, FileTime.from(Instant.now()));
+        FileUtil.touch(manifestPath);
         log.info("[sync] workspace unchanged — touched manifest for mirror refresh");
       }
     } catch (final IOException e) {

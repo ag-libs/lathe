@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -73,6 +74,19 @@ final class FileUtilTest {
     // The escaping entry is skipped, never written outside dest, and counted.
     assertThat(tempDir.resolve("escape.java")).doesNotExist();
     assertThat(skipped).isEqualTo(1);
+  }
+
+  @Test
+  void touch_existingFile_bumpsMtimeKeepsContent_missingFileThrows() throws IOException {
+    final Path file = Files.writeString(tempDir.resolve("workspace.json"), "{}");
+    Files.setLastModifiedTime(file, FileTime.fromMillis(1_000L));
+
+    FileUtil.touch(file);
+
+    assertThat(Files.getLastModifiedTime(file).toMillis()).isGreaterThan(1_000L);
+    assertThat(Files.readString(file)).isEqualTo("{}");
+    assertThatThrownBy(() -> FileUtil.touch(tempDir.resolve("missing.json")))
+        .isInstanceOf(IOException.class);
   }
 
   @Test

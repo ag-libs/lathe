@@ -294,6 +294,13 @@ public final class LatheEngine {
               .map(file -> LatheUri.toPath(file.uri()))
               .collect(Collectors.toUnmodifiableSet());
       await(service.commitChangeSet(changed));
+      // An editor's server on this workspace sees the files freshly stamped, so it would never
+      // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
+      final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+      if (Files.exists(manifest)) {
+        IOUtil.unchecked(() -> FileUtil.touch(manifest));
+      }
+
     } finally {
       IOUtil.unchecked(() -> LatheLock.release(latheDir));
     }

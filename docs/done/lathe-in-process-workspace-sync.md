@@ -114,6 +114,7 @@ copy over unsaved edits would clobber live state.
 Compile modules **upstream-first** so a downstream module sees its dependency's fresh
 `.lathe/<up>/classes` (each module's `remappedClasspath()` already points into the mirror — only the
 ordering is new).
+Later: source trees compile on their own workers in parallel, so submission order alone did not keep a downstream batch from compiling against old classes; each tree's batch now waits for the batches it depends on ([Batching](../potential/lathe-batching.md)).
 The order is derivable from `WorkspaceModuleGraph` (it already builds the dependency edges); this adds a
 topo-sort accessor.
 Topo order is not strictly required for eventual analysis correctness (a wrong order simply fails and

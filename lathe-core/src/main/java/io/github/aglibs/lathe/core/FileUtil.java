@@ -7,6 +7,8 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -83,6 +85,11 @@ public final class FileUtil {
     Files.createDirectories(tempFile.getParent());
     Files.writeString(tempFile, content);
     return tempFile;
+  }
+
+  // Bumps an existing file's mtime to now, signalling a watcher without changing its content.
+  public static void touch(final Path file) throws IOException {
+    Files.setLastModifiedTime(file, FileTime.from(Instant.now()));
   }
 
   public static void replaceDir(final Path src, final Path dest) throws IOException {
