@@ -178,19 +178,26 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void claimStable_notReadyOrHeldByRename_skipped_restClaimedInOrder() {
+  void treeBatch_readyNotHeld_withFailedRidingAlong_emptyWhenNothingReady() {
     final var settled = sourceRoot.resolve("com/example/Settled.java");
     final var moving = sourceRoot.resolve("com/example/Moving.java");
     final var renamed = sourceRoot.resolve("com/example/Renamed.java");
-    final var reported = sourceRoot.resolve("com/example/Reported.java");
+    final var failed = sourceRoot.resolve("com/example/Failed.java");
+    final List<Path> tree = List.of(settled, moving, renamed, failed);
 
-    // Moving has not settled across two ticks; Renamed waits for its open rename's commit.
+    // Moving has not settled across two ticks; Renamed waits for its open rename's commit; Failed
+    // failed unchanged since and rides along, as this write may bring what it was missing.
     assertThat(
-            WorkspaceSession.claimStable(
-                List.of(settled, moving, renamed, reported),
-                Set.of(settled, renamed, reported),
-                Set.of(renamed)))
-        .containsExactly(settled, reported);
+            WorkspaceSession.treeBatch(
+                tree, Set.of(settled, renamed), Set.of(failed), Set.of(renamed)))
+        .as("ready and not held, plus failed-unchanged, in the tree's order")
+        .containsExactly(settled, failed);
+    assertThat(WorkspaceSession.treeBatch(tree, Set.of(renamed), Set.of(failed), Set.of(renamed)))
+        .as("only a held file is ready: nothing writes, so the failed one does not ride alone")
+        .isEmpty();
+    assertThat(WorkspaceSession.treeBatch(tree, Set.of(), Set.of(failed), Set.of()))
+        .as("nothing ready")
+        .isEmpty();
   }
 
   @Test
@@ -234,7 +241,6 @@ class WorkspaceSessionTest {
 
     final var scan = WorkspaceSession.staleModules(List.of(config));
 
-    assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
     assertThat(scan.staleFiles())
         .extracting(path -> path.getFileName().toString())
@@ -264,9 +270,10 @@ class WorkspaceSessionTest {
 
   @Test
   void staleModules_includesOpenFiles_excludesGeneratedRoots() throws Exception {
-    // The reconcile batch recompiles the whole changed set together, so a saved rename's open files
-    // must be included -- an interface rename saves its users, which resolve the new type only if
-    // they compile in the same batch. So the newest-stale mtime here is the open file's.
+    // The write pass compiles the whole changed set together, so a saved rename's open files must
+    // be
+    // included -- an interface rename saves its users, which resolve the new type only if they
+    // compile in the same batch.
     writeJava("Open", 9_000L); // stale and open -> still counted
     writeJava("Real", 5_000L);
 
@@ -282,8 +289,10 @@ class WorkspaceSessionTest {
 
     final var scan = WorkspaceSession.staleModules(List.of(config, genConfig));
 
-    assertThat(scan.newestMtime()).isEqualTo(9_000L);
     assertThat(scan.modules()).containsExactly(config);
+    assertThat(scan.staleFiles())
+        .extracting(path -> path.getFileName().toString())
+        .containsExactlyInAnyOrder("Open.java", "Real.java");
   }
 
   @Test
@@ -293,7 +302,6 @@ class WorkspaceSessionTest {
     final var shared = tmp.resolve("make/jdk/src/classes/build/tools/depend/Depend.java");
     final var scan =
         new WorkspaceSession.StaleScan(
-            1_000L,
             Map.of(config, List.of(shared), config(tmp.resolve("other/src")), List.of(shared)));
 
     assertThat(WorkspaceSession.staleMtimes(scan)).containsOnlyKeys(shared);

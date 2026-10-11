@@ -415,8 +415,8 @@ public final class LatheEngine {
    * set is detected from disk (sources newer than their last compile); otherwise it is those files.
    * When the change reaches other modules, {@link LatheVerifyChange#suggestedSync()} carries the
    * scoped sync that builds the remainder — Lathe never runs the build. If the in-process recompile
-   * cannot be trusted (a pending POM sync, too many files, or a running build), the result is
-   * deferred to a full sync.
+   * cannot be trusted (a pending build-file sync, or a running build), the result is deferred to a
+   * full sync.
    */
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());

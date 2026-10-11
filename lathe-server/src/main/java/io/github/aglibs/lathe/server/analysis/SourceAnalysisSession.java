@@ -68,7 +68,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final Map<String, String> cleanParses = new HashMap<>();
   private final SourceParser parser;
   private final TypeHierarchyResolver typeHierarchyResolver;
-  private Set<String> lastWrittenBinaryNames = Set.of();
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -82,10 +81,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
   public List<Diagnostic> compile(
       final String uri, final String content, final int version, final CompileMode mode) {
     return compile(uri, content, version, mode, () -> {});
-  }
-
-  public Set<String> lastWrittenBinaryNames() {
-    return lastWrittenBinaryNames;
   }
 
   // Full-compile a tree's changed files together so a sealed/permits pair resolves; returns what
@@ -111,12 +106,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final var t = Stopwatch.start();
     final CompilerResult run = compiler.compile(uri, content, mode, cancelChecker);
     cancelChecker.checkCanceled();
-    if (mode == CompileMode.FULL) {
-      lastWrittenBinaryNames = run.writtenBinaryNames();
-    } else {
-      cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
-      recordParse(uri, content, run);
-    }
+    cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
+    recordParse(uri, content, run);
 
     final List<Diagnostic> diags = mapDiagnostics(run, content);
     LOG.info(

@@ -83,13 +83,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     final var options = buildOptions(config, compilerArgs, mode);
     LOG.fine(() -> "[compile:%s] tempDir=%s opts=%s".formatted(mode.tag, tempDir, options));
     final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
-    try {
-      return runner.run(jfo, options, mode, cancelChecker);
-    } finally {
-      if (mode == CompileMode.FULL) {
-        IOUtil.unchecked(fm::flush);
-      }
-    }
+    return runner.run(jfo, options, cancelChecker);
   }
 
   @Override
@@ -357,7 +351,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       opts.add("--enable-preview");
     }
 
-    // A FULL compile writes .class files into .lathe/, overwriting the Maven-mirrored bytecode that
+    // A batch write puts .class files into .lathe/, overwriting the Maven-mirrored bytecode that
     // the debugger replays. javac's default without -g omits the LocalVariableTable, so those
     // classes would keep line numbers (breakpoints bind) but lose locals -- the Variables view and
     // local evaluation then fail even when the project's own build emits full debug info. Force -g

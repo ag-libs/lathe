@@ -35,7 +35,6 @@ import org.junit.jupiter.api.io.TempDir;
 // helpers its test classes share.
 abstract class ServiceTestBase {
 
-  protected static final String URI = "file:///workspace/src/main/java/Foo.java";
   protected static final long DEBOUNCE_MS = 50;
 
   protected LanguageClient client;

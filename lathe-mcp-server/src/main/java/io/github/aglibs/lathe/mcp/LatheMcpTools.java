@@ -28,7 +28,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -989,17 +989,19 @@ final class LatheMcpTools {
   // fix, and a build running meanwhile.
   static Stream<String> noteLines(final LatheNotes notes) {
     return Stream.of(
-            notes.notCompiled().isEmpty()
-                ? null
-                : "Not compiled: %s — fix the code; cross-module answers use their last good classes."
-                    .formatted(String.join("; ", notes.notCompiled())),
-            notes.syncRequired().isEmpty()
-                ? null
-                : "Sync required: %s".formatted(String.join("; ", notes.syncRequired())),
-            notes.buildInProgress()
-                ? "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends."
-                : null)
-        .filter(Objects::nonNull);
+            Optional.of(notes.notCompiled())
+                .filter(files -> !files.isEmpty())
+                .map(
+                    files ->
+                        "Not compiled: %s — fix the code; cross-module answers use their last good classes."
+                            .formatted(String.join("; ", files))),
+            Optional.of(notes.syncRequired())
+                .filter(reasons -> !reasons.isEmpty())
+                .map(reasons -> "Sync required: %s".formatted(String.join("; ", reasons))),
+            Optional.of(
+                    "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends.")
+                .filter(text -> notes.buildInProgress()))
+        .flatMap(Optional::stream);
   }
 
   private static Map<String, Object> diagnosticMap(final Diagnostic d) {

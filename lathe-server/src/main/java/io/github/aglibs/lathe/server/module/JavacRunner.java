@@ -4,7 +4,6 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
@@ -38,16 +37,12 @@ final class JavacRunner {
   CompilerResult run(
       final JavaFileObject sourceFile,
       final List<String> options,
-      final CompileMode mode,
       final CancelChecker cancelChecker) {
     cancelChecker.checkCanceled();
     return admission.run(
         cancelChecker,
         () -> {
-          final CompilerResult result =
-              mode == CompileMode.FULL
-                  ? compileFull(sourceFile, options)
-                  : analyze(sourceFile, options);
+          final CompilerResult result = analyze(sourceFile, options);
           cancelChecker.checkCanceled();
           return result;
         });
@@ -60,8 +55,8 @@ final class JavacRunner {
     return analyzeBatchDiagnosed(sourceFiles, options, false, cancelChecker).analyses();
   }
 
-  // Analyze several files in one task, keeping the diagnostics, so a live compile can widen a
-  // single-file failure into the file's siblings. withTokens also scans each file's semantic
+  // Analyze several files in one task, keeping the diagnostics: the dependents refresh, and a live
+  // analysis joined by the unsaved buffers of its tree. withTokens also scans each file's semantic
   // tokens, as a single open-file analysis does, for analyses that will be cached and served.
   BatchAnalysis analyzeBatchDiagnosed(
       final Iterable<? extends JavaFileObject> sourceFiles,
@@ -135,10 +130,6 @@ final class JavacRunner {
           cancelChecker.checkCanceled();
           return result;
         });
-  }
-
-  private CompilerResult compileFull(final JavaFileObject sourceFile, final List<String> options) {
-    return generate(List.of(sourceFile), options);
   }
 
   private CompilerResult generate(

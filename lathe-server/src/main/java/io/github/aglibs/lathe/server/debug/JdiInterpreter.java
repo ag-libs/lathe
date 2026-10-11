@@ -222,7 +222,8 @@ final class JdiInterpreter {
 
       return current.getValue(variable);
     } catch (final AbsentInformationException e) {
-      // Lathe's on-save compile forces -g, so a replayed frame normally has a local-variable table.
+      // Lathe's in-process write forces -g, so a replayed frame normally has a local-variable
+      // table.
       // A miss here is a class Lathe did not compile (a precompiled dependency, or a synthetic
       // lambda/bridge frame) — locals simply cannot be read from it.
       throw new EvaluationException(

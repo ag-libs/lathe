@@ -66,6 +66,8 @@ import org.mockito.ArgumentCaptor;
 // symbols.
 class LatheTextDocumentServiceTest extends ServiceTestBase {
 
+  private static final String URI = "file:///workspace/src/main/java/Foo.java";
+
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() {
     for (int i = 0; i < 5; i++) {

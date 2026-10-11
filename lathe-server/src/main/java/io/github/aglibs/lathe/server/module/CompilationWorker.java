@@ -150,16 +150,14 @@ public final class CompilationWorker {
                   .limit(ANALYSIS_BATCH_MAX - 1)
                   .toList();
           if (joining.isEmpty()) {
-            final var diags =
-                ctx.compile(request.uri(), request.content(), request.version(), request.mode());
-            return new CompileResponse(
-                request.uri(), request.generation(), diags, ctx.lastWrittenBinaryNames());
+            return response(
+                request,
+                ctx.compile(request.uri(), request.content(), request.version(), request.mode()));
           }
 
           final Map<String, List<Diagnostic>> diagnostics =
               analyzeTogether(ctx, Stream.concat(Stream.of(request), joining.stream()).toList());
-          return new CompileResponse(
-              request.uri(), request.generation(), diagnostics.get(request.uri()), Set.of());
+          return response(request, diagnostics.get(request.uri()));
         });
   }
 
@@ -170,15 +168,14 @@ public final class CompilationWorker {
         ctx -> {
           final Map<String, List<Diagnostic>> diagnostics = analyzeTogether(ctx, requests);
           return requests.stream()
-              .map(
-                  request ->
-                      new CompileResponse(
-                          request.uri(),
-                          request.generation(),
-                          diagnostics.get(request.uri()),
-                          Set.of()))
+              .map(request -> response(request, diagnostics.get(request.uri())))
               .toList();
         });
+  }
+
+  private static CompileResponse response(
+      final CompileRequest request, final List<Diagnostic> diagnostics) {
+    return new CompileResponse(request.uri(), request.generation(), diagnostics);
   }
 
   private static Map<String, List<Diagnostic>> analyzeTogether(

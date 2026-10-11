@@ -92,7 +92,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -1523,7 +1522,7 @@ final class WorkspaceSession {
         route instanceof CompilerRoute.External
             ? publishThen(route, () -> scheduleAstRefresh(uri))
             : publisher::publishIfCurrent;
-    submitCompile(route, snapshot, CompileMode.FULL, afterCompile);
+    submitCompile(route, snapshot, CompileMode.OPEN, afterCompile);
   }
 
   CompletableFuture<List<Location>> referencesFuture(
@@ -3040,8 +3039,8 @@ final class WorkspaceSession {
 
   // Index types from dirty/open sources not yet built, so they show in symbols before their class
   // exists: for external output until the next make+sync, and for the Maven mirror whenever a
-  // compile has not caught up (a bulk external change deferred to a sync, a file that does not
-  // compile). Keyed on disk staleness, not open buffers (so they survive closing); the bytecode
+  // compile has not caught up (a write still pending, or a file that does not compile). Keyed on
+  // disk staleness, not open buffers (so they survive closing); the bytecode
   // entry, with its real kind, wins once the class is built.
   private List<TypeIndexEntry> withSourceDelta(
       final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
@@ -3057,10 +3056,9 @@ final class WorkspaceSession {
   }
 
   // Files the bytecode base may not cover: on-disk sources stale vs their compile stamp, plus open
-  // buffers (which the stale scan excludes), restricted to this module's source roots.
+  // buffers, restricted to this module's source roots.
   private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
-    final Set<Path> open = openSourcePaths();
-    return Stream.concat(staleSourcesInModule(config, open, false).stream(), open.stream())
+    return Stream.concat(staleSourcesInModule(config).stream(), openSourcePaths().stream())
         .filter(path -> sourceRootFor(config, path) != null)
         .distinct()
         .toList();
@@ -3170,10 +3168,6 @@ final class WorkspaceSession {
 
   // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
   // worker thread. eager mirrors the startup pass (no two-tick wait).
-  CompletableFuture<Void> reconcileNow() {
-    return reconcileNow(false);
-  }
-
   CompletableFuture<Void> reconcileNow(final boolean eager) {
     return requestPass(eager).thenAccept(stale -> {});
   }
@@ -3222,8 +3216,14 @@ final class WorkspaceSession {
     }
 
     reportRecompile(
-        (int) batches.values().stream().flatMap(List::stream).filter(notReported()).count(), done);
-    writeInOrder(batches)
+        batches.values().stream()
+            .flatMap(List::stream)
+            .filter(source -> !reported.containsKey(source))
+            .count(),
+        done);
+    final List<List<ModuleSourceConfig>> levels =
+        WorkspaceModuleGraph.levels(List.copyOf(batches.keySet()));
+    writeLevels(new ArrayDeque<>(levels), batches, passGeneration)
         .whenComplete(
             (written, error) -> {
               if (error != null) {
@@ -3237,26 +3237,18 @@ final class WorkspaceSession {
   // A reported file is written even when its mtime equals its stamp, so the scan may not list it.
   private StaleScan withReported(final StaleScan scan) {
     reported.keySet().removeIf(source -> !Files.exists(source));
-    final var byModule = new HashMap<>(scan.staleByModule());
-    reported
-        .keySet()
-        .forEach(
-            source ->
-                workspace
-                    .moduleSourceFor(source)
-                    .filter(config -> !byModule.getOrDefault(config, List.of()).contains(source))
-                    .ifPresent(
-                        config ->
-                            byModule.merge(
-                                config,
-                                List.of(source),
-                                (listed, added) ->
-                                    Stream.concat(listed.stream(), added.stream()).toList())));
-    return new StaleScan(scan.newestMtime(), byModule);
-  }
-
-  private Predicate<Path> notReported() {
-    return source -> !reported.containsKey(source);
+    return scan.with(
+        reported.keySet().stream()
+            .flatMap(
+                source ->
+                    workspace
+                        .moduleSourceFor(source)
+                        .map(config -> Map.entry(config, source))
+                        .stream())
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList()))));
   }
 
   // Starts the pass requested meanwhile, handing it this pass's refresh, so each open file is
@@ -3313,26 +3305,39 @@ final class WorkspaceSession {
             : Stream.concat(settled.stream(), reported.keySet().stream())
                 .collect(Collectors.toUnmodifiableSet());
     final Set<Path> held = renameTransaction.memberPaths();
+    final Set<Path> failedUnchanged =
+        stale.keySet().stream()
+            .filter(source -> !current.containsKey(source))
+            .collect(Collectors.toUnmodifiableSet());
     final var batches = new LinkedHashMap<ModuleSourceConfig, List<Path>>();
-    for (final var config : compileOrder(scan.staleByModule().keySet())) {
-      final List<Path> treeStale = scan.staleByModule().get(config);
-      final List<Path> claimed = claimStable(treeStale, ready, held);
-      if (claimed.isEmpty()) {
-        continue;
-      }
+    compileOrder(scan.staleByModule().keySet())
+        .forEach(
+            config -> {
+              final List<Path> batch =
+                  treeBatch(scan.staleByModule().get(config), ready, failedUnchanged, held);
+              if (!batch.isEmpty()) {
+                batches.put(config, batch);
+              }
+            });
+    return Collections.unmodifiableMap(batches);
+  }
 
-      final Set<Path> failedHere =
-          treeStale.stream()
-              .filter(source -> !current.containsKey(source))
-              .collect(Collectors.toUnmodifiableSet());
-      batches.put(
-          config,
-          Stream.concat(claimed.stream(), claimStable(treeStale, failedHere, held).stream())
-              .distinct()
-              .toList());
+  // A tree's batch: its ready sources an open rename does not hold, with its failed-unchanged ones
+  // riding along -- they may have failed only for want of what this write brings. Nothing when no
+  // source of the tree is ready.
+  static List<Path> treeBatch(
+      final List<Path> treeStale,
+      final Set<Path> ready,
+      final Set<Path> failedUnchanged,
+      final Set<Path> held) {
+    if (treeStale.stream().noneMatch(source -> ready.contains(source) && !held.contains(source))) {
+      return List.of();
     }
 
-    return batches;
+    return treeStale.stream()
+        .filter(source -> ready.contains(source) || failedUnchanged.contains(source))
+        .filter(source -> !held.contains(source))
+        .toList();
   }
 
   // The editor applies a rename's edit and saves its files; until the last save they are not
@@ -3547,7 +3552,7 @@ final class WorkspaceSession {
 
   // A self-clearing $/progress task spanning the in-process recompile, so the editor shows the
   // catch-up after an external change (a branch switch, a rename) and clears it once written.
-  private void reportRecompile(final int count, final CompletableFuture<?> written) {
+  private void reportRecompile(final long count, final CompletableFuture<?> written) {
     if (count == 0) {
       return;
     }
@@ -3641,12 +3646,6 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  private CompletableFuture<Void> writeInOrder(final Map<ModuleSourceConfig, List<Path>> batches) {
-    final List<List<ModuleSourceConfig>> levels =
-        WorkspaceModuleGraph.levels(List.copyOf(batches.keySet()));
-    return writeLevels(new ArrayDeque<>(levels), batches, passGeneration);
-  }
-
   // Writes one level's trees together and starts the next level once all of them finish, so every
   // write resolves against the freshly written upstream classes. Stops at a reload (another
   // generation), and while a build holds the reactor lock writes only reported files; what is left
@@ -3678,9 +3677,8 @@ final class WorkspaceSession {
     return batch.stream().filter(reported::containsKey).toList();
   }
 
-  // Modules upstream-first, and within a module the main tree before the test tree, so every
-  // compile
-  // resolves against fresh dependency bytecode.
+  // Modules upstream-first, and within a module the main tree before the test tree, the order
+  // WorkspaceModuleGraph.levels groups into write levels.
   private List<ModuleSourceConfig> compileOrder(final Set<ModuleSourceConfig> configs) {
     final Map<Path, List<ModuleSourceConfig>> byModule =
         configs.stream().collect(Collectors.groupingBy(ModuleSourceConfig::moduleDir));
@@ -3691,15 +3689,6 @@ final class WorkspaceSession {
 
   private static Comparator<ModuleSourceConfig> mainTreeFirst() {
     return Comparator.comparing(ModuleSourceConfig::isTestTree);
-  }
-
-  // The ready sources, minus those an open rename holds: they are written at its commit.
-  static List<Path> claimStable(
-      final List<Path> moduleStale, final Set<Path> ready, final Set<Path> held) {
-    return moduleStale.stream()
-        .filter(ready::contains)
-        .filter(source -> !held.contains(source))
-        .toList();
   }
 
   // One FULL compile over the tree's whole changed set, so mutually referencing files (a sealed
@@ -3782,8 +3771,7 @@ final class WorkspaceSession {
         : new CompileResponse(
             result.uri(),
             result.generation(),
-            Stream.concat(result.diagnostics().stream(), writeOnly.stream()).toList(),
-            result.writtenBinaryNames());
+            Stream.concat(result.diagnostics().stream(), writeOnly.stream()).toList());
   }
 
   private static String diagnosticKey(final Diagnostic diagnostic) {
@@ -3967,9 +3955,8 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  // The stale sources grouped by module and the newest stale-source mtime (0 / empty if none). Open
-  // files and the annotation-processor root are excluded.
-  record StaleScan(long newestMtime, Map<ModuleSourceConfig, List<Path>> staleByModule) {
+  // The stale sources by source tree; the annotation-processor root is excluded.
+  record StaleScan(Map<ModuleSourceConfig, List<Path>> staleByModule) {
     StaleScan {
       staleByModule =
           staleByModule.entrySet().stream()
@@ -3984,43 +3971,37 @@ final class WorkspaceSession {
     List<Path> staleFiles() {
       return staleByModule.values().stream().flatMap(List::stream).toList();
     }
+
+    StaleScan with(final Map<ModuleSourceConfig, List<Path>> more) {
+      return new StaleScan(
+          Stream.concat(staleByModule.entrySet().stream(), more.entrySet().stream())
+              .collect(
+                  Collectors.toMap(
+                      Map.Entry::getKey,
+                      Map.Entry::getValue,
+                      (listed, added) ->
+                          Stream.concat(listed.stream(), added.stream()).distinct().toList())));
+    }
   }
 
-  // The reconcile batch includes open files (see staleSourcesInModule), so there is no open-set to
-  // exclude here.
   static StaleScan staleModules(final Collection<ModuleSourceConfig> configs) {
-    final Map<ModuleSourceConfig, List<Path>> staleByModule =
+    return new StaleScan(
         configs.stream()
-            .map(config -> Map.entry(config, staleSourcesInModule(config, Set.of(), true)))
+            .map(config -> Map.entry(config, staleSourcesInModule(config)))
             .filter(entry -> !entry.getValue().isEmpty())
-            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
-    final long newest =
-        staleByModule.values().stream()
-            .flatMap(List::stream)
-            .mapToLong(WorkspaceSession::mtimeMillis)
-            .max()
-            .orElse(0L);
-    return new StaleScan(newest, staleByModule);
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
-  // Open files normally stay on the live didChange/onSave path, but the reconcile passes
-  // includeOpen=true: an editor rename saves a set of mutually-referencing open files that must
-  // compile together in one batch (from their saved disk content) to resolve each other, since
-  // piecemeal onSave fails on ordering. The mtime-vs-stamp gate still admits only *saved* open
-  // files, so live-but-unsaved buffers are never pulled in.
-  private static List<Path> staleSourcesInModule(
-      final ModuleSourceConfig config, final Set<Path> openPaths, final boolean includeOpen) {
+  // Open files count like any other: the stamp gate admits a file only once its saved mtime
+  // differs, and an unsaved buffer is not on disk.
+  private static List<Path> staleSourcesInModule(final ModuleSourceConfig config) {
     final Map<String, Long> stamps = CompiledStamps.load(config.moduleDir(), config.sourceTree());
     return nonGeneratedSourceRoots(config).stream()
-        .flatMap(root -> staleSourcesUnder(root, openPaths, stamps, includeOpen))
+        .flatMap(root -> staleSourcesUnder(root, stamps))
         .toList();
   }
 
-  private static Stream<Path> staleSourcesUnder(
-      final Path root,
-      final Set<Path> openPaths,
-      final Map<String, Long> stamps,
-      final boolean includeOpen) {
+  private static Stream<Path> staleSourcesUnder(final Path root, final Map<String, Long> stamps) {
     if (!Files.isDirectory(root)) {
       return Stream.empty();
     }
@@ -4028,7 +4009,6 @@ final class WorkspaceSession {
     try (final var walk = Files.walk(root)) {
       return walk
           .filter(FileUtil::isJavaFile)
-          .filter(source -> includeOpen || !openPaths.contains(source))
           .filter(source -> isStale(root, source, stamps))
           .toList()
           .stream();
@@ -4295,7 +4275,7 @@ final class WorkspaceSession {
       final AfterCompile afterCompile) {
     touchAnalysisCache(snapshot.uri());
     final List<CompileRequest> siblings =
-        route instanceof final CompilerRoute.Module module && mode != CompileMode.FULL
+        route instanceof final CompilerRoute.Module module
             ? unsavedSiblings(module.config(), snapshot)
             : List.of();
     moduleWorker

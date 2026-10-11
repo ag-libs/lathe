@@ -77,8 +77,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
 
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
       final List<String> options = buildOptions(filePath);
-      final var externalMode = mode == CompileMode.FULL ? CompileMode.FAST : mode;
-      return runner.run(jfo, options, externalMode, cancelChecker);
+      return runner.run(jfo, options, cancelChecker);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

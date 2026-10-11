@@ -76,69 +76,29 @@ class ModuleSourceCompilerTest {
   }
 
   @Test
-  void compile_fullMode_withInnerClass_writtenBinaryNamesContainsBothClasses() throws Exception {
-    final Path sourceRoot = td.resolve("src/main/java");
-    final Path sourceFile = sourceRoot.resolve("Foo.java");
-    Files.createDirectories(sourceFile.getParent());
-
-    final var config =
-        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-
-    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
-      final var result =
-          compiler.compile(
-              sourceFile.toUri().toString(),
-              "class Foo { static class Inner {} }",
-              CompileMode.FULL);
-
-      assertThat(result.writtenBinaryNames()).containsExactlyInAnyOrder("Foo", "Foo$Inner");
-    }
-  }
-
-  @Test
-  void compile_fullMode_afterInnerClassRemoved_writtenBinaryNamesExcludesRemovedInner()
+  void compileBatch_innerClassAddedThenRemoved_reportsWhatEachWriteWrote_leavesOldOutputs()
       throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
-    final Path sourceFile = sourceRoot.resolve("Foo.java");
-    Files.createDirectories(sourceFile.getParent());
-
+    final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
+    Files.createDirectories(sourceRoot);
     final var config =
         TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
 
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
-      compiler.compile(
-          sourceFile.toUri().toString(), "class Foo { static class Inner {} }", CompileMode.FULL);
+      final BatchWrite withInner =
+          compiler.compileBatch(
+              List.of(new TransientSource(fooUri, "class Foo { static class Inner {} }")),
+              () -> {});
+      assertThat(withInner.writtenBinaryNames()).containsExactlyInAnyOrder("Foo", "Foo$Inner");
+      assertThat(config.latheClassesDir().resolve("Foo.class")).exists();
       assertThat(config.latheClassesDir().resolve("Foo$Inner.class")).exists();
 
-      final var result =
-          compiler.compile(sourceFile.toUri().toString(), "class Foo {}", CompileMode.FULL);
-
-      assertThat(result.writtenBinaryNames()).containsExactly("Foo");
+      final BatchWrite withoutInner =
+          compiler.compileBatch(List.of(new TransientSource(fooUri, "class Foo {}")), () -> {});
+      assertThat(withoutInner.writtenBinaryNames()).containsExactly("Foo");
       assertThat(config.latheClassesDir().resolve("Foo$Inner.class"))
-          .exists(); // WorkspaceSession calls deleteClassOutputs, not ModuleSourceCompiler
-    }
-  }
-
-  @Test
-  void compile_fullMode_generatesClassWithoutAnalysis() throws Exception {
-    final Path sourceRoot = td.resolve("src/main/java");
-    final Path sourceFile = sourceRoot.resolve("Sample.java");
-    Files.createDirectories(sourceFile.getParent());
-
-    final var config =
-        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-
-    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
-      final var result =
-          compiler.compile(
-              sourceFile.toUri().toString(),
-              "class Sample { String value() { return \"x\"; } }",
-              CompileMode.FULL);
-
-      assertThat(result.diagnostics()).isEmpty();
-      assertThat(result.fileAnalysis().tree()).isNull();
-      assertThat(result.fileAnalysis().elements()).isNull();
-      assertThat(config.latheClassesDir().resolve("Sample.class")).exists();
+          .as("deleting outputs a write no longer produces is the session's job")
+          .exists();
     }
   }
 

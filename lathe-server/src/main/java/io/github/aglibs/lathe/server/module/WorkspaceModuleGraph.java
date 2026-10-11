@@ -2,13 +2,13 @@ package io.github.aglibs.lathe.server.module;
 
 import java.nio.file.Path;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -120,23 +120,22 @@ public final class WorkspaceModuleGraph {
   public static List<List<ModuleSourceConfig>> levels(
       final List<ModuleSourceConfig> upstreamFirst) {
     final var levelOf = new HashMap<ModuleSourceConfig, Integer>();
-    final var levels = new ArrayList<List<ModuleSourceConfig>>();
     for (final var tree : upstreamFirst) {
-      final int level =
+      levelOf.put(
+          tree,
           levelOf.entrySet().stream()
               .filter(earlier -> dependsOn(tree, earlier.getKey()))
               .mapToInt(earlier -> earlier.getValue() + 1)
               .max()
-              .orElse(0);
-      levelOf.put(tree, level);
-      if (level == levels.size()) {
-        levels.add(new ArrayList<>());
-      }
-
-      levels.get(level).add(tree);
+              .orElse(0));
     }
 
-    return levels.stream().map(List::copyOf).toList();
+    return upstreamFirst.stream()
+        .collect(Collectors.groupingBy(levelOf::get, TreeMap::new, Collectors.toList()))
+        .values()
+        .stream()
+        .map(List::copyOf)
+        .toList();
   }
 
   private static boolean dependsOn(final ModuleSourceConfig tree, final ModuleSourceConfig other) {

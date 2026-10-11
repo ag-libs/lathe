@@ -10,7 +10,6 @@ import static org.mockito.Mockito.verify;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import java.util.List;
-import java.util.Set;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -37,8 +36,7 @@ class DiagnosticPublisherTest {
   @Test
   void publishIfCurrent_currentSnapshot_publishesDiagnosticsAndRefreshesTokens() {
     final var snapshot = registry.put("file:///A.java", "class A {}", 1);
-    final var result =
-        new CompileResponse("file:///A.java", snapshot.generation(), List.of(), Set.of());
+    final var result = new CompileResponse("file:///A.java", snapshot.generation(), List.of());
 
     final boolean published = publisher.publishIfCurrent(snapshot, result);
     publisher.refreshTokensIfCurrent(snapshot, result);
@@ -52,7 +50,7 @@ class DiagnosticPublisherTest {
   void publishIfCurrent_staleSnapshot_doesNotPublish() {
     final var old = registry.put("file:///A.java", "v1", 1);
     registry.put("file:///A.java", "v2", 2);
-    final var result = new CompileResponse("file:///A.java", old.generation(), List.of(), Set.of());
+    final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
 
     final boolean published = publisher.publishIfCurrent(old, result);
     publisher.refreshTokensIfCurrent(old, result);
@@ -74,7 +72,7 @@ class DiagnosticPublisherTest {
             DiagnosticSeverity.Error,
             "lathe");
     final var result =
-        new CompileResponse("file:///A.java", snapshot.generation(), List.of(realDiag), Set.of());
+        new CompileResponse("file:///A.java", snapshot.generation(), List.of(realDiag));
 
     final boolean published = publisher.publishEmptyIfCurrent(snapshot, result);
 
@@ -87,7 +85,7 @@ class DiagnosticPublisherTest {
   void publishEmptyIfCurrent_staleSnapshot_doesNotPublish() {
     final var old = registry.put("file:///A.java", "v1", 1);
     registry.put("file:///A.java", "v2", 2);
-    final var result = new CompileResponse("file:///A.java", old.generation(), List.of(), Set.of());
+    final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
 
     final boolean published = publisher.publishEmptyIfCurrent(old, result);
 
