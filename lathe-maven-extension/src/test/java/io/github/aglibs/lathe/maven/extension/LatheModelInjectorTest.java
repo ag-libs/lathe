@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.util.List;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Dependency;
@@ -63,6 +64,24 @@ class LatheModelInjectorTest {
     assertThat(compilerPlugin(project).getDependencies())
         .extracting(Dependency::getArtifactId, Dependency::getVersion)
         .containsExactly(tuple("lathe-compiler", VERSION));
+  }
+
+  @Test
+  void injectTreeScopes_customOutputDirs_declareEachDirsScopeForTheShim() {
+    final MavenProject project = project();
+    project.getBuild().setOutputDirectory("/ws/app/out/main-classes");
+    project.getBuild().setTestOutputDirectory("/ws/app/out/check-classes");
+    final String mainKey = LatheLayout.Maven.treeProperty("/ws/app/out/main-classes");
+    final String testKey = LatheLayout.Maven.treeProperty("/ws/app/out/check-classes");
+    try {
+      new LatheModelInjector(VERSION).injectTreeScopes(project);
+
+      assertThat(System.getProperty(mainKey)).isEqualTo(LatheLayout.CLASSES_DIR);
+      assertThat(System.getProperty(testKey)).isEqualTo(LatheLayout.TEST_CLASSES_DIR);
+    } finally {
+      System.clearProperty(mainKey);
+      System.clearProperty(testKey);
+    }
   }
 
   @Test

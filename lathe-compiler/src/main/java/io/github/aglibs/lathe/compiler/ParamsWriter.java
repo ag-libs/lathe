@@ -17,7 +17,7 @@ final class ParamsWriter {
 
   static void write(final CompilerConfiguration config, final Path latheModuleDir)
       throws IOException {
-    final var sourceTree = Path.of(config.getOutputLocation()).getFileName().toString();
+    final String sourceTree = LatheCompiler.sourceTree(config);
     final var genSources = config.getGeneratedSourcesDirectory();
     final var moduleConfig =
         new ModuleConfigData(

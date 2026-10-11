@@ -20,9 +20,10 @@ final class LatheModelInjector {
     this.version = version;
   }
 
-  /** Per-project injection: the compiler shim and the run/test capture dependency. */
+  /** Per-project injection: the compiler shim, its tree scopes, and the capture dependency. */
   void injectProject(final MavenProject project) {
     injectCompilerShim(project);
+    injectTreeScopes(project);
     injectCaptureDependency(project);
   }
 
@@ -39,6 +40,17 @@ final class LatheModelInjector {
     project
         .getProperties()
         .setProperty(LatheLayout.Maven.MAVEN_COMPILER_ID_PROPERTY, LatheLayout.Maven.COMPILER_ID);
+  }
+
+  // The shim names a .lathe/ tree by scope, not by the output directory's leaf: tell it which
+  // scope each of this project's output directories compiles.
+  void injectTreeScopes(final MavenProject project) {
+    System.setProperty(
+        LatheLayout.Maven.treeProperty(project.getBuild().getOutputDirectory()),
+        LatheLayout.CLASSES_DIR);
+    System.setProperty(
+        LatheLayout.Maven.treeProperty(project.getBuild().getTestOutputDirectory()),
+        LatheLayout.TEST_CLASSES_DIR);
   }
 
   void injectCaptureDependency(final MavenProject project) {

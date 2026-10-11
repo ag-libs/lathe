@@ -135,6 +135,15 @@ public final class LatheLayout {
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
 
+    // Hands each compile's scope from the extension to the compiler shim, which sees only an output
+    // directory: system properties cross their classloaders in the one Maven JVM, and the key is
+    // the output directory, so parallel module builds never collide.
+    private static final String TREE_PROPERTY_PREFIX = "lathe.tree:";
+
+    public static String treeProperty(final String outputDirectory) {
+      return TREE_PROPERTY_PREFIX + Path.of(outputDirectory).toAbsolutePath().normalize();
+    }
+
     private Maven() {}
   }
 

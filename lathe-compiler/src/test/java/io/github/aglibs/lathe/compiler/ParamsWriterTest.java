@@ -46,6 +46,31 @@ class ParamsWriterTest {
   }
 
   @Test
+  void write_customOutputLeaf_namesTreeByDeclaredScopeElseByLeaf() throws Exception {
+    final var outputDir = tmp.resolve("module-b/target/main-classes");
+    final var latheModuleDir = tmp.resolve(".lathe/module-b");
+    Files.createDirectories(latheModuleDir);
+    final var config = new CompilerConfiguration();
+    config.setOutputLocation(outputDir.toString());
+    final String fallback = LatheCompiler.sourceTree(config);
+    final String key = LatheLayout.Maven.treeProperty(outputDir.toString());
+    System.setProperty(key, LatheLayout.CLASSES_DIR);
+    try {
+      ParamsWriter.write(config, latheModuleDir);
+
+      final var result =
+          Json.read(
+              latheModuleDir.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)),
+              ModuleConfigData.class);
+      assertThat(result.sourceTree()).isEqualTo(LatheLayout.CLASSES_DIR);
+      assertThat(result.outputDir()).isEqualTo(outputDir.toString());
+      assertThat(fallback).isEqualTo("main-classes");
+    } finally {
+      System.clearProperty(key);
+    }
+  }
+
+  @Test
   void write_omitsNullForMissingOptionalFields() throws Exception {
     final var moduleRoot = tmp.resolve("module-c");
     final var latheModuleDir = tmp.resolve(".lathe/module-c");

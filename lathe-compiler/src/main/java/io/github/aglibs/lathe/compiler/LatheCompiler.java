@@ -116,11 +116,11 @@ public final class LatheCompiler implements Compiler {
       }
 
       ParamsWriter.write(config, moduleDir);
-      final var outputDir = Path.of(config.getOutputLocation());
-      FileUtil.replaceDir(outputDir, moduleDir.resolve(outputDir.getFileName()));
+      final String sourceTree = sourceTree(config);
+      FileUtil.replaceDir(Path.of(config.getOutputLocation()), moduleDir.resolve(sourceTree));
       mirrorGeneratedSources(config, moduleDir);
 
-      writeCompiledStamps(config, moduleDir, outputDir.getFileName().toString());
+      writeCompiledStamps(config, moduleDir, sourceTree);
 
       LOG.info(
           "[lathe] {} {} capture complete {}ms",
@@ -141,9 +141,18 @@ public final class LatheCompiler implements Compiler {
       return;
     }
 
-    final var sourceTree = Path.of(config.getOutputLocation()).getFileName().toString();
     FileUtil.replaceDir(
-        genSources.toPath(), moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree)));
+        genSources.toPath(),
+        moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree(config))));
+  }
+
+  // The compile's scope as the extension declared it for this output directory; without the
+  // extension (or for an output that is neither the main nor the test one), the directory's leaf.
+  static String sourceTree(final CompilerConfiguration config) {
+    final String outputLocation = config.getOutputLocation();
+    return System.getProperty(
+        LatheLayout.Maven.treeProperty(outputLocation),
+        Path.of(outputLocation).getFileName().toString());
   }
 
   // A compile stamp per source (root-relative path -> mtime), excluding the annotation-processor

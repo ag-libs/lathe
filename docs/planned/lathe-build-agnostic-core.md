@@ -204,14 +204,14 @@ The tree name is a scope, not a directory: the front-end assigns `classes` to ma
 whatever its build calls them.
 The output map already states each entry's `tree`; the params, stamps, and mirror must follow the same rule.
 
-Maven does not yet.
-The compiler shim names the tree after the output directory's last segment (`ParamsWriter`), because it sees only the compiler configuration, which carries no scope.
-A module with `<outputDirectory>target/main-classes</outputDirectory>` gets a tree called `main-classes`,
-which run gating and main-class scope do not recognize, so its runs break.
-Projects keeping the standard leaf names, under any directory, are unaffected.
+Maven's compiler shim sees only the compiler configuration, which carries no scope, so it used to name the tree after the output directory's last segment:
+a module with `<outputDirectory>target/main-classes</outputDirectory>` got a tree called `main-classes`, which run gating and main-class scope do not recognize.
 
-The fix passes the scope from the Maven extension, which sees the `compile` and `testCompile` executions, to the shim.
-Gradle has the scope natively (the source-set name), so this is the rule every front-end follows, and Maven's derivation is the exception to remove before Gradle.
+The Maven extension now declares the scope, since it knows each project's output directories before any compile.
+In `afterProjectsRead` it sets a JVM system property per directory, `lathe.tree:<absolute dir>` = `classes` or `test-classes` (`LatheLayout.Maven.treeProperty`),
+and the shim reads it for its output directory, falling back to the leaf only for an output that is neither (a multi-release execution, or no extension).
+System properties cross the extension's and the compiler plugin's classloaders in the one Maven JVM, and the per-directory key keeps parallel module builds apart; under mvnd each build rewrites the keys for its own paths.
+This is a Maven-internal hand-off: Gradle has the scope natively (the source-set name) and writes the tree directly.
 
 ## Verification
 
@@ -232,7 +232,7 @@ Gradle has the scope natively (the source-set name), so this is the rule every f
 4. **Client** — Neovim messages and neotest directory skip. *Done.*
 5. **`%MODULE%` and the `LatheLayout.Maven` guard.** *Done.*
 6. **OpenJDK conformance** — `lathe-sync.sh`, the lock, and the batch markers in `buildFiles`. *Done.*
-7. **Maven trees by scope** — the extension passes the compile scope to the shim, which stops deriving the tree from the output leaf name.
+7. **Maven trees by scope** — the extension passes the compile scope to the shim, which stops deriving the tree from the output leaf name. *Done.*
 
 ## Decisions
 

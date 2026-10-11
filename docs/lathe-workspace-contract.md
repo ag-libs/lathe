@@ -261,10 +261,6 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 
 Found while writing this contract (2026-10-11); each is a gap in the current front-ends or server, not part of the contract.
 
-- **Maven names the tree after the output directory.**
-  The compiler shim takes the tree from the output directory's last segment, not from the scope,
-  so a custom `<outputDirectory>` leaf (for example `target/main-classes`) yields an unrecognized tree and breaks that module's runs.
-  The fix passes the scope from the extension to the shim ([design §9](planned/lathe-build-agnostic-core.md#9-source-trees-by-scope)).
 - **The root module is spelled two ways.**
   The compiler, test capture, and server use `""`; `main-launch.json` and `resourceRoots` use `"."`.
 - **The module lock has no heartbeat.**

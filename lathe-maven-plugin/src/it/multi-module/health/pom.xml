@@ -12,6 +12,11 @@
 
   <artifactId>health</artifactId>
 
+  <!-- A custom output leaf: Lathe must still mirror it as the "classes" tree, by scope. -->
+  <build>
+    <outputDirectory>${project.build.directory}/main-classes</outputDirectory>
+  </build>
+
   <dependencies>
     <dependency>
       <groupId>com.example</groupId>

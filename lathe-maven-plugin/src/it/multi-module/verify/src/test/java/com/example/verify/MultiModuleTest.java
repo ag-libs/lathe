@@ -100,6 +100,17 @@ class MultiModuleTest {
   // --- sync: workspace.json ---
 
   @Test
+  void compile_customOutputLeaf_mirrorsAsClassesTreeByScope() throws IOException {
+    // health compiles into target/main-classes; Lathe names the tree by scope, not by that leaf.
+    assertThat(lathe("health/classes/com/example/health/DbClientHealthCheck.class")).exists();
+    assertThat(lathe("health/main-classes")).doesNotExist();
+    final var params = read(lathe("health/lsp-params-classes.json"));
+    assertThat(params).contains("\"sourceTree\": \"classes\"").contains("main-classes");
+    assertThat(read(lathe("workspace.json")))
+        .contains("\"path\": \"health/target/main-classes\"");
+  }
+
+  @Test
   void sync_workspaceJson_written() throws IOException {
     final var ws = lathe("workspace.json");
     assertThat(ws).exists();
