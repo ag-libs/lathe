@@ -233,23 +233,28 @@ spec.check("O1 stdout line streamed to live buffer", vim.tbl_contains(live_lines
 spec.check("O1 stderr line streamed to live buffer", vim.tbl_contains(live_lines, "warning on stderr"), true)
 spec.check("O3 stderr line is highlighted", #adapter._live_output_stderr_rows() > 0, true)
 
--- O8: the replay launch command is surfaced as the buffer's first line, highlighted as a command,
--- so the user can see (and copy) what ran the tests. It is emitted before any process output.
+-- O8: the run's header -- the run configuration label, then the replay launch command -- opens the
+-- buffer, both highlighted as command lines, so the user can see (and copy) what ran the tests.
+-- It is emitted before any process output.
 local command_rows = adapter._live_output_command_rows()
-spec.check("O8 command line is highlighted", #command_rows, 1)
-spec.check("O8 command is the first line", command_rows[1], 0)
+spec.check("O8 header lines are highlighted", vim.deep_equal(command_rows, { 0, 1 }), true)
+spec.check(
+  "O8 first line names the run configuration",
+  live_lines[1] ~= nil and vim.startswith(live_lines[1], "config:"),
+  true
+)
 spec.check(
   "O8 command line shows the java invocation",
-  live_lines[1] ~= nil and live_lines[1]:find("java", 1, true) ~= nil,
+  live_lines[2] ~= nil and live_lines[2]:find("java", 1, true) ~= nil,
   true
 )
 
--- R1: a directory run binds to a single package selector (keyed by the package
--- name, not the dir path) and reports passed.
+-- R1: a directory run binds to a single package selector and reports passed, keyed on the dir
+-- node's id (a package name matches no neotest node, so results would not reach the tree).
 local dir_results = captured.dir_results or {}
 spec.check(
   "R1 directory run reports a status",
-  dir_results[PACKAGE_ID] and dir_results[PACKAGE_ID].status,
+  dir_results[package_dir] and dir_results[package_dir].status,
   "passed"
 )
 
