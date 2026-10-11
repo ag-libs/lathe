@@ -48,7 +48,7 @@ class WorkspaceManifestTest extends SampleFixture {
             text ->
                 assertThat(text)
                     .contains("schema 0, expected %s".formatted(LatheLayout.SCHEMA_VERSION))
-                    .contains("clean"));
+                    .contains(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test

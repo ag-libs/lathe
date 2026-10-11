@@ -110,11 +110,10 @@ public final class LatheLayout {
       "Stale: module(s) %%s have source newer than their compiled classes, so cross-module results may be out of date. Run `%s` to refresh Lathe's classes."
           .formatted(SYNC_SCRIPT_COMMAND);
 
-  // SCHEMA_VERSION covers every .lathe/ file. The build must be clean: an incremental one skips
-  // up-to-date modules, leaving their files in the old format. The %s pair is found, expected.
+  // The remaining %s pair is the found and expected SCHEMA_VERSION.
   public static final String SCHEMA_REMEDIATION =
-      "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s clean %s` to regenerate it."
-          .formatted(MVN, SYNC_PHASE);
+      "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."
+          .formatted(SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}
 

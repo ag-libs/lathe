@@ -205,8 +205,8 @@ Details: [Pinned Formatters](done/lathe-pinned-formatters.md).
 
 One version covers all of `.lathe/`: `schemaVersion` in `workspace.json` (`LatheLayout.SCHEMA_VERSION`).
 Any change to the format of any `.lathe/` file bumps it; the other files carry no version of their own.
-A server that finds another version ignores `workspace.json` and warns that `.lathe/` must be regenerated with a clean build.
-It must be clean: an incremental build skips up-to-date modules, leaving their per-module files in the old format.
+A server that finds another version ignores `workspace.json` and warns to run `.lathe/lathe-sync.sh`, which rewrites it.
+A bump that changes a per-module file must also make the sync rewrite that file for every module, including those whose compile is up to date.
 
 The single check is enough because `.lathe/` is regenerable, never migrated:
 the fix for any mismatch is a rebuild, so the version only has to detect it and say so.
