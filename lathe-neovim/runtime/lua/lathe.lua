@@ -38,7 +38,9 @@ local M = {}
 M.ROOT_MARKER = '.lathe'
 
 local function cache_root()
-  return vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
+  local root = vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
+  -- Buffer names are symlink-resolved, so prefix checks against them need the resolved cache dir.
+  return vim.uv.fs_realpath(root) or root
 end
 
 --- Absolute path to the server launcher this client execs. Honors the

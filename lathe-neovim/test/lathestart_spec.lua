@@ -84,7 +84,12 @@ end
 -- start() from a marked project resolves the working directory and starts there.
 vim.fn.chdir(project)
 lathe.start(vim.api.nvim_get_current_buf())
-spec.check("start: root_dir resolved to the project", started[1] and started[1].root_dir, vim.fs.normalize(project))
+-- getcwd() is the physical path, so compare against the resolved project (macOS: /var -> /private/var).
+spec.check(
+  "start: root_dir resolved to the project",
+  started[1] and started[1].root_dir,
+  vim.fs.normalize(vim.uv.fs_realpath(project))
+)
 
 -- start() with no .lathe workspace refuses, without spawning a client.
 vim.fn.chdir(nomarker)
