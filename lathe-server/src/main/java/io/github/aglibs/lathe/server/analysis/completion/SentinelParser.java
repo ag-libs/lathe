@@ -5,6 +5,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.analysis.CompilerTrees;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
@@ -460,7 +461,7 @@ final class SentinelParser {
       return Classification.typeReference(inferredRole);
     }
 
-    if (parent instanceof CaseLabelTree) {
+    if (CompilerTrees.isCaseLabel(parent, sentinel)) {
       return Classification.of(SentinelContext.CASE_LABEL);
     }
 

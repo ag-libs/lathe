@@ -22,7 +22,7 @@
          the matrix; the fixture uses no release-25 features and asserts nothing
          about the release, and modern-JDK coverage lives in the external test
          projects (dropwizard/helidon on Java 25). -->
-    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 

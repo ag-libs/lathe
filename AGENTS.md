@@ -60,7 +60,11 @@ property-file helpers.
 
 - `groupId`: `io.github.ag-libs`
 - Package root: `io.github.aglibs.lathe`
-- Java 21: `<maven.compiler.release>21</maven.compiler.release>`
+- Java 17: `<maven.compiler.release>17</maven.compiler.release>` — Lathe runs on JDK 17+; building it needs
+  JDK 21+ (see the next point). Java 18+ APIs and syntax are not available.
+- javac API newer than Java 17 lives **only** in `lathe-server/src/main/java21`, behind `CompilerTrees`
+  (a JDK 17 base version plus a JDK 21 version in the multi-release jar's `META-INF/versions/21`).
+  Everything else stays version-neutral; a new JDK-specific check is one more method there.
 - Repo root: this directory
 
 ---
@@ -91,6 +95,9 @@ synchronization.
 After a large Java change, agents may run `mvn spotless:apply` before tests to normalize formatting.
 
 ### Development overrides (dogfooding lathe on lathe)
+
+**Paused during the JDK 17 transition:** the root `pom.xml` doesn't enable the extension until a Java 17
+release of Lathe is published, so the repo itself gets no `.lathe/` from its build meanwhile.
 
 The lathe repo enables its own `lathe-maven-extension` in the root `pom.xml`, so Neovim selects the
 **published** server pinned by that extension version — not your working tree. A `lathe-server`
@@ -265,6 +272,9 @@ Message format: `[operation] uri-or-module detail Xms outcome`
   **NEVER** use camelCase for test names. (`resolve_missingJavaHome_returnsMissing`)
 - **NEVER** use `@Nested` — flatten all tests into the top-level class with descriptive prefixed names.
 - Always include both a positive case and a negative/edge case per behaviour.
+- Tests run on every supported JDK (17+). A test that needs a newer JDK (a fixture using newer Java
+  syntax, a formatter release that needs it) **MUST** say so with `@EnabledForJreRange`, never with a
+  hand-written version check. Fixtures compile at the test JDK's level (`TestCompiler.RELEASE`).
 - `lathe-server` test classes run in parallel, so tests **MUST** be parallel-safe: no mutable `static`
   state, compile through `TestJavac` / `TempSourceCompiler`, and mark a class `@Isolated` if it
   observes JVM-wide state (e.g. `CompileLog`, which hears every compile in the JVM).

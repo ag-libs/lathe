@@ -210,6 +210,41 @@ The client and sync scripts close this gap:
   The Maven/Java compatibility-floor pin notes change from "Java 21" to "Java 17"; Dependabot bumps that need Java 18+ are closed, like the Maven API pins.
 - `AGENTS.md` changes "Java 21: `<maven.compiler.release>21`" to 17 and notes that Java 18+ features are not available.
 
+### D8 — Newer javac API through a multi-release jar (decided 2026-10-18)
+
+The server runs on the project's JDK, 17 through the newest, and uses that JDK's javac, so it must handle every Java language version.
+Most new syntax needs nothing: tree paths, attribution, `Elements` and `TreeScanner` are version-neutral and handle new constructs on a newer JDK.
+Code is version-specific only where it must *name* a newer tree type or call a newer method — today one place, the case-label check (`CaseLabelTree`, Java 21).
+
+- **`lathe-server` is a multi-release jar** (JEP 238). The few classes that need a newer javac API have two versions:
+  a JDK 17 base in `src/main/java`, and a JDK 21 version in `src/main/java21`, compiled with `release 21` into `META-INF/versions/21` (a second `maven-compiler-plugin` execution, `multiReleaseOutput`);
+  the manifest says `Multi-Release: true`. Each version uses its own JDK's API: the base finds a case-label constant through `CaseTree.getExpressions()`, the JDK 21 version through `CaseLabelTree`.
+- **One seam class, `CompilerTrees`,** holds every such check; the rest of the server calls it and knows nothing of JDK versions. A new JDK-specific check is one method there; a `java25` directory appears only when something needs JDK 25 API.
+- **No preview API, anywhere:** `CaseLabelTree` is preview in JDK 17, so it lives only in the JDK 21 version; `-Xlint:all -Werror` with no `preview` suppression enforces it.
+- **Rejected:** compiling against the newest JDK with runtime guards (loses the `release 17` guarantee), detecting new tree types by `getKind().name()` (a workaround), and keeping the server on 21 (the same problem returns between 21 and 25).
+- **Tests:** Surefire runs from `target/classes`, where the JVM ignores `META-INF/versions`.
+  A `multi-release-jdk21` profile, active when Maven runs on JDK 21+, copies the classes, lays the `versions/21` classes over them, and runs Surefire from the copy.
+- **Lathe's own build needs JDK 21+** (to compile `src/main/java21`); Lathe *runs* on 17+. The CI JDK 17 row builds on 21 and runs every test and the invoker fixture builds on 17 (`-Djvm`, `-Dinvoker.javaHome`), with the layering profile off.
+
+**Spike (2026-10-18):**
+
+| Check | Result |
+|---|---|
+| Multi-release build with JPMS | base class (major 61) plus `META-INF/versions/21` class (major 65), `Multi-Release: true` |
+| Run time, from the jar on the module path | JDK 17 loads the base, JDK 21 and 25 load `versions/21`; each recognizes a case-label constant through its own API |
+| Tests on JDK 21+ without the layering | fail: the base class loads from `target/classes` |
+| Tests on JDK 21+ with the layering | all pass, running the JDK 21 class |
+| Build on 21, everything else on 17 | the full build, every test, and both invoker fixtures pass |
+
+**Found on the way to green on JDK 17:**
+
+- **Fixtures compiled at a hard-coded `release 21`** — 45 server tests failed on 17. One constant, `TestCompiler.RELEASE`, now compiles fixtures at the test JDK's own level.
+- **Fixtures relied on javac 21+ keeping unresolved annotations.** Run/test discovery found no tests on 17 because `@Test` didn't resolve (the fixtures had no JUnit on their classpath, one lacked an import). `TestCompiler.JUNIT_CLASSPATH` gives them JUnit, as a real project has: the real path, on every JDK.
+- **Genuine JDK requirements** are marked `@EnabledForJreRange`: the formatting tests (the google-java-format release the fixtures pin needs JDK 21+; a JDK 17 project pins one that runs on 17, as its own Spotless run requires), the Java 21 `switch`-pattern fixture, the Java 22 unnamed-variable fixture; the palantir conditions moved to the same annotation.
+- **The invoker took `lathe-compiler`, `lathe-server` and `lathe-mcp-server` from `~/.m2`**, which a local `mvn verify` leaves stale (7a by another path); they are now `extraArtifacts`.
+- **The invoker fixtures are Java 17 projects** (their sources use nothing newer), so the JDK 17 row proves Lathe end to end for a Java 17 project.
+- **Lathe's own dogfood extension (a published Java 21 Lathe) crashes JDK 17 test JVMs** — the very bug this design fixes. It is removed from the root POM for now and returns once a Java 17 release is pinned.
+
 ## Testing
 
 ### CI matrix (decided 2026-10-18)
@@ -258,7 +293,7 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
 **JDK 17 floor (D7):**
 
 - **S1 — Java 21 APIs to Java 17 equivalents**, still compiled for 21.
-  `getFirst()` → `get(0)` (37 main, 193 test); `getLast()` (10) and `reversed()` (4) → one-line helpers `CollectionUtil.last` and `CollectionUtil.reversed` in `lathe-core`;
+  `getFirst()` → `get(0)` (37 main, 193 test); `getLast()` (10) → one-line helper `CollectionUtil.last` in `lathe-core` (every `reversed()` turned out to be Java 8's `Comparator.reversed()`);
   `removeFirst()` / `removeLast()` on a `List` → `remove(0)` / `remove(size() - 1)` (on a `Deque` they are Java 6 API and stay);
   the one `ExecutorService` try-with-resources → explicit `shutdown()`.
   **Exit:** the full suite passes on JDK 21.
@@ -266,7 +301,8 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
   One mechanical rule: each `case Foo f [when …] ->` becomes `if (x instanceof Foo f [&& …]) { return …; }` in the same order (early returns);
   over Lathe's own sealed types the chain ends in `throw new IllegalStateException(…)`; record patterns become `instanceof` plus accessors. No test changes.
   **Exit:** the full suite passes on JDK 21.
-- **S3 — The build targets 17.** `maven.compiler.release` 17; the JDK 17 CI row, `fail-fast: false`, and the docs-only `paths-ignore`; JDK-aware test expectations where javac 17 differs; `AGENTS.md`.
+- **S3 — The build targets 17, with the multi-release seam (D8).** `maven.compiler.release` 17; `CompilerTrees` and its JDK 21 version; the multi-release build and test layering;
+  the JDK 17 CI row (build on 21, test on 17) and the docs-only `paths-ignore`; the test fixes and markers above; Java 17 invoker fixtures; the dogfood extension paused; `AGENTS.md`.
   **Exit:** the build and every test pass on JDK 17, 21, 25 and 27.
 
 **Maven 3.6.3:**

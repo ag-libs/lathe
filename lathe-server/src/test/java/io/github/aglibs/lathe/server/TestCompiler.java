@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -31,8 +32,18 @@ import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
+import org.junit.jupiter.params.ParameterizedTest;
 
 public final class TestCompiler {
+
+  // Fixtures compile at the test JDK's own language level, so the suite runs on every supported
+  // JDK.
+  public static final String RELEASE = Integer.toString(Runtime.version().feature());
+
+  // JUnit's API jars from the test JVM's own classpath, for fixtures whose @Test must resolve as in
+  // a real project: javac only reports annotations it can resolve.
+  public static final List<Path> JUNIT_CLASSPATH =
+      List.of(jarOf(org.junit.jupiter.api.Test.class), jarOf(ParameterizedTest.class));
 
   public record ParsedSource(
       JavacTask task,
@@ -53,6 +64,14 @@ public final class TestCompiler {
   }
 
   private TestCompiler() {}
+
+  private static Path jarOf(final Class<?> type) {
+    try {
+      return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
+    } catch (final URISyntaxException e) {
+      throw new IllegalStateException(e);
+    }
+  }
 
   public static ModuleSourceConfig moduleConfig(final Path workspaceRoot, final Path sourceRoot) {
     return moduleConfig(
@@ -90,7 +109,7 @@ public final class TestCompiler {
         List.of(),
         List.of(),
         List.of(),
-        "21",
+        RELEASE,
         "UTF-8",
         false,
         false,
@@ -274,7 +293,7 @@ public final class TestCompiler {
             classpath.stream().map(Path::toString).toList(),
             List.of(),
             processorPath.stream().map(Path::toString).toList(),
-            "21",
+            RELEASE,
             "UTF-8",
             false,
             false,

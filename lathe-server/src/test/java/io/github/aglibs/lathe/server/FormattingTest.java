@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
@@ -14,6 +13,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.io.TempDir;
 
 class FormattingTest {
@@ -46,6 +46,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_alreadyFormattedAndImportsOptimized_returnsEmpty() throws Exception {
     assertThat(
             JavaFormatter.format(
@@ -67,6 +68,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_unusedImport_removesImport() throws Exception {
     final var source =
         """
@@ -95,6 +97,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_localizedChange_returnsMinimalEditNotWholeDocument() throws Exception {
     final var original =
         """
@@ -117,6 +120,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_reorderImportsOption_followsSpotlessDefault() throws Exception {
     final var unsorted =
         """
@@ -139,6 +143,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void formatRanges_oneOfTwoMangledMethods_formatsOnlyThatRange() throws Exception {
     final var source =
         """
@@ -167,10 +172,8 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(maxVersion = PALANTIR_UNSUPPORTED_JDK - 1)
   void format_palantirJavaFormat_followsSpotlessPalantirStepAndFormatsRanges() throws Exception {
-    assumeTrue(
-        Runtime.version().feature() < PALANTIR_UNSUPPORTED_JDK,
-        "the fixture's palantir does not support this JDK");
     final GjfFormatEngine palantir = FormatterFixtures.palantirJavaFormat();
     final var source =
         """
@@ -293,10 +296,8 @@ class FormattingTest {
   // such path): the failure must name the JDK, not suggest a re-sync. Once a palantir release
   // supports JDK 27, this fails: bump the fixture and drop the test.
   @Test
+  @EnabledForJreRange(minVersion = PALANTIR_UNSUPPORTED_JDK)
   void format_palantirOnUnsupportedJdk_reportsUnsupportedJava() {
-    assumeTrue(
-        Runtime.version().feature() >= PALANTIR_UNSUPPORTED_JDK,
-        "the fixture's palantir supports this JDK");
 
     assertThatThrownBy(
             () ->

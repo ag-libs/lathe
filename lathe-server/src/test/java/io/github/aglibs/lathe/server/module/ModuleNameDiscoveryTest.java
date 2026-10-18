@@ -64,7 +64,7 @@ class ModuleNameDiscoveryTest {
         List.of(),
         modulepath,
         List.of(),
-        "21",
+        TestCompiler.RELEASE,
         "UTF-8",
         false,
         false,

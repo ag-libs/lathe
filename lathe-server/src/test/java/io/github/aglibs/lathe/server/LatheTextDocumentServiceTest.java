@@ -61,6 +61,7 @@ import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.mockito.ArgumentCaptor;
 
 // Editor features through the service: analysis on open and change, formatting, navigation,
@@ -170,6 +171,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
     service.setFormatEngine(FormatterFixtures.googleJavaFormat());
@@ -211,6 +213,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void rangeFormatting_inProcessEngine_formatsOnlyTheRange() throws Exception {
     service.initialize(tmp);
     service.setFormatEngine(FormatterFixtures.googleJavaFormat());

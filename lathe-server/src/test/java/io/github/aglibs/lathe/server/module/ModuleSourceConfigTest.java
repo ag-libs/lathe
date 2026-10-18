@@ -106,7 +106,7 @@ class ModuleSourceConfigTest {
             List.of(sibling, external, inRepoJar),
             List.of(siblingTestJar),
             List.of(sibling),
-            "21",
+            TestCompiler.RELEASE,
             "UTF-8",
             false,
             false,

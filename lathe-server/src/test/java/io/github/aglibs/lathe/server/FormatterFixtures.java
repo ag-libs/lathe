@@ -13,6 +13,10 @@ final class FormatterFixtures {
 
   private static final Path FORMATTERS = Path.of("target", "test-formatters");
 
+  // The google-java-format release the fixtures pin runs on JDK 21+ (it links to javac classes 17
+  // lacks); on JDK 17 Lathe reports it as unsupported instead, as FormatterLoaderTest checks.
+  static final int GOOGLE_JAVA_FORMAT_MIN_JDK = 21;
+
   private FormatterFixtures() {}
 
   static List<String> googleJavaFormatClasspath() {

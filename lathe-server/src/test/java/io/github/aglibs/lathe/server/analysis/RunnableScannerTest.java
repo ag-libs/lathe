@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.util.List;
@@ -301,7 +302,8 @@ class RunnableScannerTest {
   }
 
   private static List<RunTarget> scan(final String source, final String moduleRel) {
-    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+    try (var session =
+        new SourceAnalysisSession(new TempSourceCompiler(TestCompiler.JUNIT_CLASSPATH))) {
       session.compile(URI, source, 1, CompileMode.OPEN);
       return session.runnables(URI, source, 1, moduleRel);
     }

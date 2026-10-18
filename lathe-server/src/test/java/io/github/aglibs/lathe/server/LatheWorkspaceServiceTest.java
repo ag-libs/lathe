@@ -186,7 +186,7 @@ class LatheWorkspaceServiceTest {
           }
         }
         """);
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null, TestCompiler.JUNIT_CLASSPATH);
     textDocumentService.initialize(tmp);
     return source;
   }
