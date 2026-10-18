@@ -74,7 +74,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
       service.didChange(changeParams("content-" + i));
     }
 
-    verify(client, timeout(DEBOUNCE_MS * 5).atLeastOnce())
+    verify(client, timeout(5_000).atLeastOnce())
         .publishDiagnostics(argThat(p -> p.getUri().equals(URI) && !p.getDiagnostics().isEmpty()));
   }
 
@@ -84,7 +84,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
       service.didChange(changeParams("content-" + i));
     }
 
-    verify(client, timeout(DEBOUNCE_MS * 5).atLeastOnce())
+    verify(client, timeout(5_000).atLeastOnce())
         .publishDiagnostics(
             argThat(
                 p ->
@@ -102,7 +102,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class Foo {}")));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
+    verify(client, timeout(5_000)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
   }
 
@@ -155,7 +155,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI)));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
-    verify(client, timeout(DEBOUNCE_MS * 3)).publishDiagnostics(captor.capture());
+    verify(client, timeout(5_000)).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo(URI);
     assertThat(captor.getValue().getDiagnostics()).isEmpty();
   }
