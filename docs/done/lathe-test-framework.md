@@ -287,7 +287,7 @@ The machine is busy at 72–97% during the main phase; the rest is Maven startup
 `-Djunit.jupiter.execution.parallel.enabled=false` runs the suite sequentially, for debugging.
 
 **7b — parallel invoker projects (2026-10-18).** `parallelThreads=2` in `lathe-maven-plugin`'s invoker configuration.
-Invoker suite alone (`-Dsurefire.skip=true`), from a cold start (`target/it`, `target/local-repo`, `target/it-home` deleted): 35.0 s → 28.2–29.6 s over three runs, all passing; warm, 23.1 s.
+Invoker suite (`mvn verify -pl lathe-maven-plugin`, which also runs that module's 59 unit tests, a few seconds), from a cold start (`target/it`, `target/local-repo`, `target/it-home` deleted): 35.0 s → 28.2–29.6 s over three runs, all passing; warm, 23.1 s.
 Less than the estimated 16 s because `formatters` is now shorter; `multi-module` (about 22 s) is the long pole.
 The projects share the local repository and the Lathe cache, so parallel builds exposed two races, both fixed:
 a cold cache let two syncs extract the same JDK or dependency sources, and the later one deleted the earlier one's copy in place while it could be read

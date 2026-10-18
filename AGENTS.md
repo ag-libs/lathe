@@ -74,9 +74,12 @@ property-file helpers.
 ```bash
 mvn install -DskipTests                                          # build and install all modules
 mvn verify -pl lathe-maven-plugin                                # all test layers (unit + invoker)
-mvn verify -pl lathe-maven-plugin -Dsurefire.skip=true           # invoker integration tests only
+mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true  # invoker integration tests only (skipTests would skip them too)
 mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one specific invoker project
 ```
+
+The two `-pl lathe-maven-plugin` commands take the Lathe jars the fixtures need (`extraArtifacts`) from
+`~/.m2`, so run `mvn install -DskipTests` first; the reactor-wide command builds them itself.
 
 ## Test projects
 
