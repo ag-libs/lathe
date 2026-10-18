@@ -14,6 +14,22 @@ class ZipCacheTest {
   @TempDir Path tmp;
 
   @Test
+  void extract_existingTarget_replacedWithNoLeftovers() throws IOException {
+    final Path target = Files.createDirectories(tmp.resolve("target"));
+    Files.writeString(target.resolve("Old.java"), "class Old {}");
+    final Path zip = ZipFixture.create(tmp.resolve("src.zip"), "A.java", "class A {}");
+
+    ZipCache.extract(zip, target, ignored -> {});
+
+    try (final var files = Files.list(target);
+        final var siblings = Files.list(tmp)) {
+      assertThat(files.map(file -> file.getFileName().toString())).containsExactly("A.java");
+      assertThat(siblings.map(sibling -> sibling.getFileName().toString()))
+          .containsExactlyInAnyOrder("src.zip", "target");
+    }
+  }
+
+  @Test
   void extract_cleansTempDirOnFailure() throws IOException {
     final Path zip = ZipFixture.create(tmp.resolve("src.zip"), "A.java", "class A {}");
 

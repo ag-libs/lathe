@@ -4,8 +4,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileSystemException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -23,6 +25,8 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 public final class FileUtil {
+
+  private static final int MOVE_ATTEMPTS = 5;
 
   private FileUtil() {}
 
@@ -176,6 +180,41 @@ public final class FileUtil {
     Files.deleteIfExists(link);
     Files.createSymbolicLink(link, target);
     return true;
+  }
+
+  /**
+   * Moves {@code newDir} to {@code target} by renames, never deleting a visible {@code target} in
+   * place: another build may be reading it. Concurrent callers each move in a complete copy, so if
+   * another lands first, its copy stays and {@code newDir} is left for the caller to delete. Any
+   * other failure is thrown.
+   */
+  public static void moveDirReplacing(final Path newDir, final Path target) throws IOException {
+    final Path previous = newDir.resolveSibling("%s.old".formatted(newDir.getFileName()));
+    for (int attempt = 1; ; attempt++) {
+      try {
+        Files.move(target, previous, StandardCopyOption.ATOMIC_MOVE);
+      } catch (final NoSuchFileException e) {
+        // No copy to replace yet.
+      }
+
+      try {
+        Files.move(newDir, target, StandardCopyOption.ATOMIC_MOVE);
+        return;
+      } catch (final FileSystemException e) {
+        // Other callers can hold the target aside for a moment; a real failure repeats every time.
+        if (Files.isDirectory(target)) {
+          return;
+        }
+
+        if (attempt == MOVE_ATTEMPTS) {
+          throw e;
+        }
+      } finally {
+        if (Files.exists(previous)) {
+          deleteDir(previous);
+        }
+      }
+    }
   }
 
   public static void moveReplacing(final Path src, final Path dest) throws IOException {

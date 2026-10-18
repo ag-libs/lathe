@@ -17,11 +17,7 @@ public final class ZipCache {
     try {
       final int skipped = FileUtil.unzip(zipFile, tempDir);
       hook.accept(tempDir);
-      if (Files.exists(targetDir)) {
-        FileUtil.deleteDir(targetDir);
-      }
-
-      FileUtil.moveReplacing(tempDir, targetDir);
+      FileUtil.moveDirReplacing(tempDir, targetDir);
       return skipped;
     } finally {
       if (Files.exists(tempDir)) {

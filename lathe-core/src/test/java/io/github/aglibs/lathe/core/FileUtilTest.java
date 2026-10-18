@@ -5,10 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -139,6 +144,64 @@ final class FileUtilTest {
   @Test
   void packagesWithClasses_missingRoot_returnsEmpty() throws IOException {
     assertThat(FileUtil.packagesWithClasses(tempDir.resolve("nope"))).isEmpty();
+  }
+
+  @Test
+  void moveDirReplacing_existingTarget_replacedAndNoBackupLeft() throws IOException {
+    final Path target = copyOf("old");
+    final Path newDir = copyOf("new");
+
+    FileUtil.moveDirReplacing(newDir, target);
+
+    assertThat(target.resolve("a")).hasContent("new");
+    assertThat(newDir).doesNotExist();
+    assertThat(siblingNames()).containsExactly(target.getFileName().toString());
+  }
+
+  @Test
+  void moveDirReplacing_moveFails_throwsInsteadOfReportingSuccess() throws IOException {
+    final Path target = copyOf("old");
+
+    assertThatThrownBy(() -> FileUtil.moveDirReplacing(tempDir.resolve("missing"), target))
+        .isInstanceOf(NoSuchFileException.class);
+  }
+
+  @Test
+  void moveDirReplacing_concurrentCallers_leaveOneCompleteCopy() throws Exception {
+    final Path target = tempDir.resolve("target");
+    final List<Callable<Void>> replacements =
+        IntStream.range(0, 8)
+            .mapToObj(i -> IOUtil.unchecked(() -> copyOf("v" + i)))
+            .<Callable<Void>>map(
+                copy ->
+                    () -> {
+                      FileUtil.moveDirReplacing(copy, target);
+                      return null;
+                    })
+            .toList();
+    try (final var pool = Executors.newFixedThreadPool(replacements.size())) {
+      for (final Future<Void> replaced : pool.invokeAll(replacements)) {
+        replaced.get();
+      }
+    }
+
+    assertThat(Files.readString(target.resolve("a")))
+        .as("both files come from the same copy")
+        .isEqualTo(Files.readString(target.resolve("b")));
+    assertThat(siblingNames()).noneMatch(name -> name.endsWith(".old"));
+  }
+
+  private Path copyOf(final String content) throws IOException {
+    final Path dir = Files.createDirectories(tempDir.resolve("copy-%s".formatted(content)));
+    Files.writeString(dir.resolve("a"), content);
+    Files.writeString(dir.resolve("b"), content);
+    return dir;
+  }
+
+  private List<String> siblingNames() throws IOException {
+    try (final var children = Files.list(tempDir)) {
+      return children.map(child -> child.getFileName().toString()).toList();
+    }
   }
 
   @Test
