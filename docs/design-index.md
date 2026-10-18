@@ -187,6 +187,11 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Reuses the cache launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
+- [Wider Maven Support](planned/lathe-wider-maven-support.md) — **proposed, spiked 2026-10-18.** Lower
+  the floor from Maven 3.9 to 3.6.3: register the extension through a Plexus descriptor (Maven <3.9's
+  Sisu can't read Java 21 classes and silently drops it), compile against maven-api 3.6.3, skip-and-warn
+  on `maven-compiler-plugin` <3.6.2 instead of breaking the build, and detect unsupported Maven inside
+  the build and from the client/sync. Verified 49/49 on 3.6.3 and 3.9.16.
 - [Multi-OS Design](planned/lathe-multi-os.md) — **proposed.** Lathe portable by construction across
   Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
   tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names
@@ -340,11 +345,12 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [Guided Setup from the Editor Extension](potential/lathe-guided-setup.md) — **potential, not approved.**
-  Let a beginner in VS Code or Cursor set Lathe up from one notification, without editing the project.
-  Personal mode activates Lathe through `~/.m2/extensions.xml` (Maven 3.10+) or `-Dmaven.ext.class.path`
-  replayed by `SyncCommand` (Maven 3.9), using jars bundled in the `.vsix`. Team mode is one previewed
-  `.mvn/extensions.xml` change, never `pom.xml`. It depends on multi-OS D3/D9; spikes are listed.
+- [Personal Setup](potential/lathe-personal-setup.md) — **potential, no decisions.** Records the
+  2026-10-18 discussion on using Lathe without changing the project, in VS Code/Cursor, Neovim, Zed,
+  Emacs and the terminal. Covers personal vs team mode; activation via `-Dmaven.ext.class.path` (Maven
+  3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by `SyncCommand`; option A (jars in the `.vsix`) vs
+  option B (a coordinate-invoked setup goal, the OpenJDK front-end's pattern); per-editor journeys;
+  detect-and-explain; open questions and spikes.
 - [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
   rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
   (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine

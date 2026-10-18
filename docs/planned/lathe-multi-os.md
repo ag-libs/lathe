@@ -203,7 +203,7 @@ It resolves the JDK and runs `java @<lathe-sync.args> <args>`, which starts a sm
   - Maven: `process-test-classes`, `--tests`, `-pl … -am`;
   - Gradle: `latheSync`, `--no-build-cache`;
   - OpenJDK: its own command.
-  
+
   `SyncCommand` resolves the tool through E3 and runs it.
   Without this, Gradle would need two more copies of the sync logic, in `sh` and in `cmd`.
 - **Rejected alternative:** keep the logic in the scripts. With two script dialects and three front-ends, that means up to six copies of the same logic, each tested separately or not at all.
