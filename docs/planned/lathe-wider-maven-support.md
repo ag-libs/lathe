@@ -212,12 +212,37 @@ The client and sync scripts close this gap:
 
 ## Testing
 
-- **CI matrix, JDK:** add a **JDK 17** row that builds the whole reactor and runs every test on 17, next to 21, 25 and 27.
-  The invoker smoke tests then also run the language server on 17.
+### CI matrix (decided 2026-10-18)
+
+The repository is public, so GitHub-hosted runners are free and unlimited, macOS and Windows included.
+What binds is the account-wide limit of **20 concurrent jobs, 5 of them macOS** ([Actions limits](https://docs.github.com/en/actions/reference/limits)), shared with the `lathe.nvim` mirror and Dependabot.
+The axes barely interact: the JDK matters to the whole build and test suite, the Maven version only to the invoker suite (which runs the fixtures with Maven; Lathe itself builds on 3.9), the OS only to scripts, paths and launchers.
+So CI **covers each axis instead of every combination** (a full cross product would be 48 jobs per push):
+
+| Job | JDK | Maven | OS | Runs |
+|---|---|---|---|---|
+| Full build and tests | **17** (floor) | 3.9 | Linux | everything |
+| Full build and tests | 21 (release baseline) | 3.9 | Linux | everything, plus the client modules |
+| Full build and tests | 25 (LTS) | 3.9 | Linux | everything |
+| Full build and tests | 27 (latest) | 3.9 | Linux | everything |
+| Full build and tests | 25 | 3.9 | macOS | everything |
+| Invoker suite only | **17** | **3.6.3** | Linux | Lathe built on 3.9, the fixtures run with 3.6.3 |
+| Invoker suite only | 21 | **3.8.8** | Linux | same |
+| Invoker suite only | 21 | **3.10** | Linux | same |
+| *(later)* Full build and tests | 25 | 3.9 | Windows | [Multi-OS](lathe-multi-os.md) Phase B |
+
+About 8 jobs of about 3 minutes, all on every push and pull request; no nightly or separate compatibility workflow.
+Two more settings:
+
+- **`fail-fast: false`**, so one broken combination does not cancel the others: compatibility rows exist to show every combination that breaks.
+- **`paths-ignore` for documentation-only changes** (`docs/**`, `**/*.md`). If CI ever becomes a required check for pull requests, a docs-only pull request would wait for a check that never runs; that does not matter while changes go straight to `main`.
+
+Notes on the rows:
+
+- On the JDK 17 row the invoker smoke tests also run the language server on 17.
   javac 17 differs from 21 in some diagnostics and error recovery; a server test that asserts JDK-21-specific output gets a JDK-aware expectation, as the 25 and 27 rows already require.
-- **CI matrix, Maven:** add **Maven 3.6.3** and **3.8.8** rows that run the invoker tests, next to 3.9 and 3.10.
-  The Maven 3.6.3 row runs on **JDK 17**, the combination older setups are most likely to use.
-  The fixture already pins its plugins for the 3.9 defaults. The older rows need the compiler plugin and Surefire pinned, so the fixture's root POM pins them explicitly, the way a real project on old Maven must.
+- If the pinned google-java-format cannot run on JDK 17, that row skips the formatting check; the other rows enforce it.
+- The fixture already pins its plugins for the 3.9 defaults. The older Maven rows need the compiler plugin and Surefire pinned, so the fixture's root POM pins them explicitly, the way a real project on old Maven must.
 - **New invoker fixture `old-compiler`:** a small project whose compiler plugin is 3.1, with `maven.compiler.source`/`target` set. It asserts:
   - the build succeeds;
   - the D3 warning appears, naming the module;
@@ -228,20 +253,36 @@ The client and sync scripts close this gap:
 
 ## Delivery slices
 
-0. **JDK 17 floor** (D7): `release` 17 for every module, the `lathe-server` migration, the JDK 17 CI row, `AGENTS.md`, and the compatibility-floor notes.
-   Independent of slices 1–3, and first: the later slices, and the [Gradle plugin](lathe-gradle-support.md), are then written against Java 17 from the start.
-   **Exit:** the full build and every test pass on JDK 17, 21, 25 and 27.
-1. **Registration and compile floor** (D1, D2): the Plexus descriptor, `maven-api.version` 3.6.3, `-proc:none`, the jar-content test, and the Maven 3.6.3 / 3.8.8 CI rows.
-   **Exit:** the invoker tests pass on 3.6.3, 3.8.8, 3.9 and 3.10.
-2. **Never break the build** (D3): the compiler-plugin guard, the warning, the skipped-module record in `workspace.json`, and the `old-compiler` fixture.
-   **Exit:** a compiler plugin 3.1 project builds green with a clear warning.
-3. **Tell the user** (D4, D5): the Maven-version warning, the server message for skipped modules, the sync pre-flight check, the client nudge text, and the docs (D6).
-   **Exit:** each unsupported case in the D6 table produces its message, and the docs show the new floor.
+Approved 2026-10-18. Each slice builds and passes every test on its own and is one reviewable commit; the work runs on one branch with a pull request, so every slice is checked by CI.
 
-Slice 1 alone already turns Maven 3.6–3.8 from "silently nothing" into "works".
-Slice 2 removes the only build-breaking case found.
+**JDK 17 floor (D7):**
 
-Rough effort: slice 0 about 2–4 days (mostly the server's `switch` rewrites), slice 1 about 1 day, slice 2 1–2 days, slice 3 1–2 days.
+- **S1 — Java 21 APIs to Java 17 equivalents**, still compiled for 21.
+  `getFirst()` → `get(0)` (37 main, 193 test); `getLast()` (10) and `reversed()` (4) → one-line helpers `CollectionUtil.last` and `CollectionUtil.reversed` in `lathe-core`;
+  `removeFirst()` / `removeLast()` on a `List` → `remove(0)` / `remove(size() - 1)` (on a `Deque` they are Java 6 API and stay);
+  the one `ExecutorService` try-with-resources → explicit `shutdown()`.
+  **Exit:** the full suite passes on JDK 21.
+- **S2 — `switch` and record patterns to Java 17**, in `lathe-server` (129 sites in 12 files).
+  One mechanical rule: each `case Foo f [when …] ->` becomes `if (x instanceof Foo f [&& …]) { return …; }` in the same order (early returns);
+  over Lathe's own sealed types the chain ends in `throw new IllegalStateException(…)`; record patterns become `instanceof` plus accessors. No test changes.
+  **Exit:** the full suite passes on JDK 21.
+- **S3 — The build targets 17.** `maven.compiler.release` 17; the JDK 17 CI row, `fail-fast: false`, and the docs-only `paths-ignore`; JDK-aware test expectations where javac 17 differs; `AGENTS.md`.
+  **Exit:** the build and every test pass on JDK 17, 21, 25 and 27.
+
+**Maven 3.6.3:**
+
+- **S4 — Registration and API floor** (D1, D2): the Plexus descriptor instead of the Sisu index, `maven-api.version` 3.6.3, `-proc:none`, the jar-content test,
+  the invoker-only CI rows (Maven 3.6.3 on JDK 17, 3.8.8, 3.10), and the fixture's pinned compiler plugin and Surefire.
+  **Exit:** the invoker suite passes on Maven 3.6.3, 3.8.8, 3.9 and 3.10.
+- **S5 — Never break the build** (D3): the compiler-plugin guard and warning, skipped modules recorded in `workspace.json` (and in the [workspace contract](../lathe-workspace-contract.md)), the `old-compiler` fixture.
+  **Exit:** a compiler plugin 3.1 project builds green with a clear warning.
+- **S6 — Tell the user** (D4, D6, and D5's post-build hint): the Maven-version warning, the server message for skipped modules, the client nudge text, and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting).
+  D5's **pre-flight check** waits for `SyncCommand` ([Multi-OS](lathe-multi-os.md) A2) instead of going into today's shell script.
+  **Exit:** each case in the D6 table produces its message, and the docs show the new floors.
+
+S4 alone turns Maven 3.6–3.8 from "silently nothing" into "works"; S5 removes the only build-breaking case found.
+
+Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1 day, S5 1–2 days, S6 about 1 day.
 
 ## Relationship to other designs
 
