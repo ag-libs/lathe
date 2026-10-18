@@ -43,11 +43,11 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 
 | OS | Versions | Script dialect | CI runner | Status today |
 |---|---|---|---|---|
-| Linux | any with Java 21+ | POSIX `sh` | `ubuntu-latest` | supported, tested |
+| Linux | any with Java 17+ | POSIX `sh` | `ubuntu-latest` | supported, tested |
 | macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | used, **untested in CI** |
 | Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | **not working** |
 
-Common to all: Java 21+, Maven 3.9+, no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
+Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
 
 Windows 10 is a full target, not legacy.
 Microsoft ended its mainstream support in October 2025, but in mid-2026 it still ran on about 28–30% of desktop Windows PCs (StatCounter), and companies, where developer laptops live, upgrade later than consumers.
@@ -293,7 +293,7 @@ The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`)
   - the bundled `jdk-unsafe` signatures (default charset and locale);
   - a short project signatures file: `Files.createSymbolicLink`, `Files.createLink`, `new ProcessBuilder`, `Runtime.exec`, `System.getProperty("os.name")`;
   - `@SuppressForbidden` allowed only inside the E1/E3 classes.
-  Its version has to fit the Maven 3.9 / Java 21 compatibility floor.
+  Its version has to fit the Maven 3.6.3 / Java 17 compatibility floor ([Wider Maven and JDK Support](lathe-wider-maven-support.md)).
 - **The portable-names guard** (R1) in the invoker verification.
 - **A CI OS matrix** (R8).
 
@@ -405,10 +405,15 @@ Each slice can be merged on its own.
 #### A2 — Sync into Java, one tool resolver
 
 - D3 `SyncCommand`, D9 tool resolver; the formatter and `LaunchPlan` move onto it, including the D5 launch argfile.
+- `lathe-install` becomes Maven-free (decided 2026-10-18 with [Gradle support](lathe-gradle-support.md#what-is-reused-vs-new)):
+  a small logging interface replaces Maven's `Log`, artifact resolution goes behind an interface whose Maven implementation stays in `lathe-maven-plugin`,
+  and the build-neutral sync work (JDK sources, type index, `workspace.json`, the sync script) moves in from `lathe-maven-plugin`.
+  `SyncCommand` and the Gradle plugin then share it without loading Maven's API.
 
 **Exit:**
 - `lathe-sync.sh` contains no Maven logic.
 - `SyncCommand` unit tests cover `mvnd` / wrapper / `mvn` and the module scoping.
+- `lathe-install` has no Maven dependency.
 
 #### A3 — Data and names
 

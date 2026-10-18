@@ -114,7 +114,9 @@ reused):
 - [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.14 and 9.8.** A
   `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
   typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,
-  plexus-java module placement, polyglot Maven-orchestrated build. Depends on the build-agnostic step.
+  plexus-java module placement, polyglot Maven-orchestrated build. Decided 2026-10-18: after Multi-OS A0–A3 and
+  the JDK 17 floor, on a Maven-free `lathe-install`; formatter version observed from Spotless's resolution
+  (a committed `lathe-style.json` wins); Lathe artifacts from a reactor-filled repository, never `~/.m2`.
 - [OpenJDK Support](done/lathe-openjdk-support.md) — **shipped (code-intelligence MVP, 2026-10-03).**
   `lathe-openjdk-maven-plugin` `sync` emits `.lathe/` for the JDK's own GNU Make build by reading the
   per-module compile descriptors the build already persists (`_the.<module>.vardeps` /
