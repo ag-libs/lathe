@@ -1,4 +1,4 @@
-# Lathe — Wider Maven Support (Maven 3.6.3+)
+# Lathe — Wider Maven and JDK Support (Maven 3.6.3+, JDK 17+)
 
 ## Status
 
@@ -7,13 +7,22 @@ Feedback from real users suggests that most of them run older Maven: distributio
 A spike on 2026-10-18 showed that Lathe can support **Maven 3.6.3+** with one small registration change and one defensive guard.
 It also showed that today's behavior on older setups ranges from silent to build-breaking.
 
-This document turns the spike into a design: the new floor, the fixes, and how Lathe detects an unsupported setup and tells the user what to do.
+**JDK 17+, decided 2026-10-18.** Lathe's documented JDK floor today is **21** (`README.md`).
+Java 17 is still the newest JDK for roughly a quarter to a third of Java projects
+(New Relic 2024: 35% of production applications; Azul 2025: 34% of organizations; JetBrains 2025: 39% of developers, answers overlapping),
+many of them in companies that standardize on one JDK.
+Lathe moves to **JDK 17+** in the same effort as the Maven floor: both widen who can use Lathe, both touch the extension and plugin modules, and both add older-version CI rows.
+An audit on the same day found the move cheap everywhere except `lathe-server` (see [JDK 17 audit](#jdk-17-audit-2026-10-18)).
+Java 8 and 11 stay out of scope.
+
+This document turns both into a design: the new floors, the fixes, and how Lathe detects an unsupported setup and tells the user what to do.
 
 ## Goal
 
 1. Lathe works on **Maven 3.6.3 and newer**, with the same features as on 3.9.
 2. **Lathe never breaks a user's build.** Where Lathe can't support part of a setup, the build still succeeds, Lathe skips that part, and it says so once, clearly.
 3. **No silent failures.** A setup Lathe can't support is detected inside Maven where possible, and by the editor client and sync script where not. The message names the problem and the fix.
+4. Lathe works on **JDK 17 and newer**: the build may run on 17, the project's tests may run on 17, and the language server runs on the project's build JDK, as it does today.
 
 ## Spike results (2026-10-18)
 
@@ -66,6 +75,37 @@ The trap is a project that sets `maven.compiler.source`/`target` and leaves the 
 
 - **Test capture works with Surefire 2.22.2**, the most common version of the Maven 3.6 era, as well as with 3.5.4.
 - The fixture's `verify` module uses JUnit 6.1.3, which Surefire 2.22.2 can't run. That reproduces with Lathe disabled, so it's a JUnit requirement, not Lathe's.
+
+## JDK 17 audit (2026-10-18)
+
+Every module was compiled with `-Dmaven.compiler.release=17` in a throwaway worktree,
+Java 18–21 constructs were counted in the sources,
+and the class-file version of every runtime dependency was checked.
+
+| Layer | Modules | Runs on | Result |
+|---|---|---|---|
+| Inside the project's JVMs | `lathe-junit` (test fork), `lathe-test-runner` (replay), and the `lathe-core` classes they carry | the project's test JDK | Compile for 17 unchanged; every dependency loads on 17 (the newest, JUnit 6, is exactly Java 17) |
+| Inside the build tool | `lathe-maven-extension`, `lathe-maven-plugin`, `lathe-compiler`, `lathe-install`, `lathe-openjdk-maven-plugin`, `lathe-core` | Maven's JVM (and the Gradle daemon, later) | Compile for 17 unchanged, except one `getFirst()` in `lathe-openjdk-maven-plugin` |
+| Language server and MCP server | `lathe-server`, `lathe-mcp-server` | the project's build JDK (`.lathe/java-home`) | Need the migration below. They use no javac internals (only the public `com.sun.source` API), and all 34 runtime jars load on 17 |
+
+What `lathe-server` uses from Java 18–21:
+
+| Construct | Main | Tests |
+|---|---|---|
+| Type patterns in `switch` (`case Foo f ->`) | 116 | 1 |
+| Record deconstruction patterns (`instanceof Foo(var a, …)`) | 12 | 0 |
+| `getFirst()` / `getLast()` / `reversed()` (Java 21 sequenced collections) | 48 | 191 |
+| `ExecutorService` in try-with-resources (Java 19) | 0 | 1 (in `lathe-core`'s `FileUtilTest`) |
+
+Plus one `getFirst()` in a `lathe-maven-plugin` test.
+
+Java 17 class files (major version 61) are also newer than what Maven 3.6.3's 2019 ASM can read, so [D1](#d1--register-the-extension-through-a-plexus-descriptor-not-the-sisu-index) is still needed on JDK 17.
+
+**Considered and rejected — build side on 17, server pinned to 21.**
+The server would then run on a different JDK from the build whenever the build uses 17:
+the launcher would need a fallback that finds some JDK 21+,
+and the server would have to reproduce the project's API level (`--system <build JDK>`) to keep its diagnostics faithful.
+Moving every module to 17 keeps today's rule, the server runs on the build's own JDK, with no new machinery.
 
 ## Decisions
 
@@ -147,13 +187,36 @@ The client and sync scripts close this gap:
 | Maven | 3.6.3 | D4 warning inside Maven; D5 pre-flight and post-build hints outside |
 | `maven-compiler-plugin` | 3.6.2 | D3 skip-and-warn, per module |
 | Surefire (test capture) | 2.22.2 observed working | capture is best-effort; no new guard |
-| JDK running the build | 21 | unchanged |
+| JDK running the build, the tests, and the language server | 17 | `release` 17 at compile time (D7); a JDK 17 CI row |
 
-`README.md` and `docs/guide/installation.md` change "Maven 3.9+" to "Maven 3.6.3+", list the compiler-plugin floor, and add a troubleshooting section built around the messages above.
+`README.md` and `docs/guide/installation.md` change "Maven 3.9+" to "Maven 3.6.3+" and "Java 21+" to "Java 17+", list the compiler-plugin floor, and add a troubleshooting section built around the messages above.
+
+### D7 — JDK 17 floor, every module
+
+- `maven.compiler.release` is **17** in the root POM, for every module, `lathe-server` and `lathe-mcp-server` included.
+  The compiler then rejects any Java 18+ API or language feature: that is the enforcement, with no separate check.
+- The server keeps running on the build JDK recorded in `.lathe/java-home` (`LATHE_JAVA_HOME` still overrides).
+  A Java 17 project gets a server on JDK 17 and javac 17, so the API and language level match the build by construction.
+  No launcher fallback, no `--system`.
+- **Migration rules for `lathe-server`**, mechanical and behavior-preserving:
+  - `switch` type patterns and record patterns become `if` / `else if` chains with `instanceof` patterns (Java 16+), in the same order as the cases.
+    Where a `switch` relied on exhaustiveness over a sealed type, the chain ends in a branch that throws `IllegalStateException` naming the unexpected type.
+  - `getFirst()` / `getLast()` / `reversed()` become `get(0)` / `get(size() - 1)` / an explicit reversed copy.
+    If the same expression repeats across many call sites, one small helper in `lathe-core`'s `CollectionUtil` replaces it (DRY), rather than a helper per file.
+  - The one `ExecutorService` try-with-resources shuts the pool down explicitly.
+- **What is lost:** the compiler's exhaustiveness check on `switch` over sealed types.
+  The throwing final branch turns a missed case into a loud failure, and the existing tests cover each branch.
+- **Dependencies:** every added or bumped dependency must run on Java 17.
+  The Maven/Java compatibility-floor pin notes change from "Java 21" to "Java 17"; Dependabot bumps that need Java 18+ are closed, like the Maven API pins.
+- `AGENTS.md` changes "Java 21: `<maven.compiler.release>21`" to 17 and notes that Java 18+ features are not available.
 
 ## Testing
 
-- **CI matrix:** add **Maven 3.6.3** and **3.8.8** rows that run the invoker tests, next to 3.9 and 3.10.
+- **CI matrix, JDK:** add a **JDK 17** row that builds the whole reactor and runs every test on 17, next to 21, 25 and 27.
+  The invoker smoke tests then also run the language server on 17.
+  javac 17 differs from 21 in some diagnostics and error recovery; a server test that asserts JDK-21-specific output gets a JDK-aware expectation, as the 25 and 27 rows already require.
+- **CI matrix, Maven:** add **Maven 3.6.3** and **3.8.8** rows that run the invoker tests, next to 3.9 and 3.10.
+  The Maven 3.6.3 row runs on **JDK 17**, the combination older setups are most likely to use.
   The fixture already pins its plugins for the 3.9 defaults. The older rows need the compiler plugin and Surefire pinned, so the fixture's root POM pins them explicitly, the way a real project on old Maven must.
 - **New invoker fixture `old-compiler`:** a small project whose compiler plugin is 3.1, with `maven.compiler.source`/`target` set. It asserts:
   - the build succeeds;
@@ -165,6 +228,9 @@ The client and sync scripts close this gap:
 
 ## Delivery slices
 
+0. **JDK 17 floor** (D7): `release` 17 for every module, the `lathe-server` migration, the JDK 17 CI row, `AGENTS.md`, and the compatibility-floor notes.
+   Independent of slices 1–3, and first: the later slices, and the [Gradle plugin](lathe-gradle-support.md), are then written against Java 17 from the start.
+   **Exit:** the full build and every test pass on JDK 17, 21, 25 and 27.
 1. **Registration and compile floor** (D1, D2): the Plexus descriptor, `maven-api.version` 3.6.3, `-proc:none`, the jar-content test, and the Maven 3.6.3 / 3.8.8 CI rows.
    **Exit:** the invoker tests pass on 3.6.3, 3.8.8, 3.9 and 3.10.
 2. **Never break the build** (D3): the compiler-plugin guard, the warning, the skipped-module record in `workspace.json`, and the `old-compiler` fixture.
@@ -175,13 +241,17 @@ The client and sync scripts close this gap:
 Slice 1 alone already turns Maven 3.6–3.8 from "silently nothing" into "works".
 Slice 2 removes the only build-breaking case found.
 
-Rough effort: slice 1 about 1 day, slice 2 1–2 days, slice 3 1–2 days.
+Rough effort: slice 0 about 2–4 days (mostly the server's `switch` rewrites), slice 1 about 1 day, slice 2 1–2 days, slice 3 1–2 days.
 
 ## Relationship to other designs
 
-- **[Multi-OS Design](lathe-multi-os.md):** the CI matrix grows along two axes, OS and Maven version. D5's pre-flight check lives in `SyncCommand` (multi-OS D3) and uses its tool resolver (D9) to find the wrapper.
+- **[Multi-OS Design](lathe-multi-os.md):** the CI matrix grows along three axes: OS, Maven version, and JDK.
+  Its platform table's "Java 21+" becomes "Java 17+" once D7 lands. D5's pre-flight check lives in `SyncCommand` (multi-OS D3) and uses its tool resolver (D9) to find the wrapper.
 - **[Personal Setup](../potential/lathe-personal-setup.md) (potential):** with real users on older Maven, `-Dmaven.ext.class.path` (works since Maven 3.0.2) is the main personal-mode path, and `~/.m2/extensions.xml` (Maven 3.10+) the minority path. D1 matters for personal mode too: the extension must load on old Maven whichever way it is registered.
-- **[Gradle support](lathe-gradle-support.md):** unaffected.
+- **[Gradle support](lathe-gradle-support.md):** benefits from D7.
+  The Gradle plugin targets Java 17, so the Gradle daemon may run on 17 (Gradle 9's own minimum),
+  and test workers that Gradle toolchains run on 17 can load `lathe-junit`.
+  The Maven-specific decisions (D1–D5) don't apply to it.
 
 ## Open questions
 
@@ -189,3 +259,9 @@ Rough effort: slice 1 about 1 day, slice 2 1–2 days, slice 3 1–2 days.
 2. **`maven-compiler-plugin` 3.6.2 vs 3.7.0:** 3.6.2 worked in the spike. Should the floor be the oldest that works, or a round, well-known version?
 3. **Plugins between Maven and Lathe that read the compiler configuration** (Error Prone setups, Lombok, `maven-processor-plugin`): they behave the same as on 3.9, but haven't been tested on an old Maven. A real older-Maven project from a user would be the best next check.
 4. Should the skipped-module reason (D3) also be surfaced through the MCP server's `get_diagnostics` responses, so agents see it too?
+5. **Maven 3.6.3 on JDK 17** is untested: the spike ran Maven 3.6.3 on JDK 21. The slice 1 CI row answers it.
+6. **Toolchains (follow-up, not changed by this design):** when the build runs on one JDK but compiles on another (Maven toolchains, Gradle toolchains)
+   and the project sets `-source`/`-target` instead of `--release`, `.lathe/java-home` names the JDK that ran the build, not the one that compiled,
+   and the compiler shim records only `--release`.
+   The server then accepts APIs of its own JDK that the real build rejects.
+   This exists today on JDK 21. Recording the compiling JDK fixes it; it matters more for Gradle, where toolchains are the norm.
