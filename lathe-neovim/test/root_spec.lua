@@ -33,8 +33,9 @@ write_file(cache .. "/deps/some/Cached.java", "class Cached {}\n")
 vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
 
-local project_norm = vim.fs.normalize(project)
-local cache_norm = vim.fs.normalize(cache)
+-- Buffer names are symlink-resolved (macOS temp dirs sit under /var -> /private/var), so roots are too.
+local project_norm = vim.fs.normalize(vim.uv.fs_realpath(project))
+local cache_norm = vim.fs.normalize(vim.uv.fs_realpath(cache))
 
 spec.check("ROOT_MARKER", lathe.ROOT_MARKER, ".lathe")
 spec.check("cache_root() honors $LATHE_CACHE", lathe.cache_root(), cache_norm)
@@ -53,6 +54,18 @@ spec.check("get_root: marked project root", lathe.get_root(project_buf), project
 spec.check(
   "get_root: cache file falls back once a project buffer is known",
   lathe.get_root(cache_buf),
+  project_norm
+)
+
+-- $LATHE_CACHE reached through a symlink (e.g. a symlinked home): buffer names are resolved, so a
+-- cache buffer must still be recognized as one.
+local cache_link = work .. "/cache-link"
+assert(vim.uv.fs_symlink(cache, cache_link))
+vim.env.LATHE_CACHE = cache_link
+spec.check("cache_root() resolves a symlinked $LATHE_CACHE", lathe.cache_root(), cache_norm)
+spec.check(
+  "get_root: cache file under a symlinked $LATHE_CACHE falls back",
+  lathe.get_root(vim.fn.bufadd(cache_link .. "/deps/some/Cached.java")),
   project_norm
 )
 

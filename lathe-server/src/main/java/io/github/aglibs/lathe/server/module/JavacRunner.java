@@ -10,7 +10,6 @@ import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -148,17 +147,14 @@ final class JavacRunner {
     }
   }
 
+  // Not derived from jfo.toUri(): javac canonicalizes output paths, so under a symlinked workspace
+  // (macOS /var -> /private/var) they no longer start with the configured class-output root.
   private Set<String> writtenBinaryNames(final Iterable<? extends JavaFileObject> generated) {
-    final Path classesRoot = fm.getLocationAsPaths(StandardLocation.CLASS_OUTPUT).iterator().next();
     final Set<String> names = new HashSet<>();
     for (final var jfo : generated) {
-      final var classFile = Path.of(jfo.toUri());
-      final var relative = classesRoot.relativize(classFile).toString();
-      names.add(
-          relative
-              .substring(0, relative.length() - ".class".length())
-              .replace(classFile.getFileSystem().getSeparator(), "."));
+      names.add(fm.inferBinaryName(StandardLocation.CLASS_OUTPUT, jfo));
     }
+
     return Set.copyOf(names);
   }
 

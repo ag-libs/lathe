@@ -102,6 +102,32 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  // macOS temp dirs live under the /var -> /private/var symlink; javac reports outputs at the
+  // resolved path, which must still map back to binary names.
+  @Test
+  void compileBatch_workspaceBehindSymlink_reportsBinaryNames() throws Exception {
+    final Path root =
+        Files.createSymbolicLink(td.resolve("link"), Files.createDirectory(td.resolve("real")));
+    final Path sourceRoot = root.resolve("src/main/java");
+    final String fooUri = sourceRoot.resolve("com/example/Foo.java").toUri().toString();
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(
+            root.resolve(".lathe"), root.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final BatchWrite write =
+          compiler.compileBatch(
+              List.of(
+                  new TransientSource(
+                      fooUri, "package com.example; class Foo { static class Inner {} }")),
+              () -> {});
+
+      assertThat(write.writtenBinaryNames())
+          .containsExactlyInAnyOrder("com.example.Foo", "com.example.Foo$Inner");
+    }
+  }
+
   @Test
   void compile_openMode_fileUnderGeneratedSourcesRoot_compilesInsteadOfThrowing() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
