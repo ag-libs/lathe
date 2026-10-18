@@ -31,16 +31,16 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
-      assertThat(items.getFirst().getName()).isEqualTo("run");
+      assertThat(items.get(0).getName()).isEqualTo("run");
 
       final List<CallHierarchyIncomingCall> calls =
           session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
       assertThat(calls).hasSize(1);
-      assertThat(calls.getFirst().getFrom().getName()).isEqualTo("invoke");
-      assertThat(calls.getFirst().getFromRanges()).hasSize(1);
-      assertThat(calls.getFirst().getFromRanges().getFirst().getStart().getLine()).isEqualTo(0);
+      assertThat(calls.get(0).getFrom().getName()).isEqualTo("invoke");
+      assertThat(calls.get(0).getFromRanges()).hasSize(1);
+      assertThat(calls.get(0).getFromRanges().get(0).getStart().getLine()).isEqualTo(0);
     }
   }
 
@@ -59,20 +59,19 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
-      assertThat(items.getFirst().getName()).isEqualTo("Box");
+      assertThat(items.get(0).getName()).isEqualTo("Box");
 
-      final CallHierarchyItemData data =
-          CallHierarchyItemDataCodec.decode(items.getFirst().getData());
+      final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(items.get(0).getData());
       assertThat(data).isNotNull();
       assertThat(data.kind()).isEqualTo(ElementKind.CONSTRUCTOR);
 
       final List<CallHierarchyIncomingCall> calls =
           session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
       assertThat(calls).hasSize(1);
-      assertThat(calls.getFirst().getFrom().getName()).isEqualTo("build");
-      assertThat(calls.getFirst().getFromRanges()).hasSize(1);
+      assertThat(calls.get(0).getFrom().getName()).isEqualTo("build");
+      assertThat(calls.get(0).getFromRanges()).hasSize(1);
     }
   }
 
@@ -94,7 +93,7 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
       assertThat(calls).isEmpty();
     }
@@ -118,14 +117,14 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
-      assertThat(items.getFirst().getName()).isEqualTo("setup");
+      assertThat(items.get(0).getName()).isEqualTo("setup");
 
       final List<CallHierarchyIncomingCall> calls =
           session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
       assertThat(calls).hasSize(1);
-      assertThat(calls.getFirst().getFrom().getName()).isEqualTo("run");
+      assertThat(calls.get(0).getFrom().getName()).isEqualTo("run");
     }
   }
 
@@ -153,7 +152,7 @@ class CallHierarchyIncomingLocatorTest {
       // FeatureImpl.setup(); it must not be reported.
       final List<CallHierarchyIncomingCall> calls =
           session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.getFirst()), () -> {});
+              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
       assertThat(calls).isEmpty();
     }

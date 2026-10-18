@@ -376,10 +376,10 @@ class LspSmokeTest {
         server.getTextDocumentService().prepareTypeHierarchy(prepareParams).get(30, SECONDS);
 
     assertThat(items).hasSize(1);
-    assertThat(items.getFirst().getName()).isEqualTo("Greeter");
+    assertThat(items.get(0).getName()).isEqualTo("Greeter");
 
     final var subtypesParams = new TypeHierarchySubtypesParams();
-    subtypesParams.setItem(items.getFirst());
+    subtypesParams.setItem(items.get(0));
 
     final List<TypeHierarchyItem> subtypes =
         server.getTextDocumentService().typeHierarchySubtypes(subtypesParams).get(30, SECONDS);
@@ -421,8 +421,8 @@ class LspSmokeTest {
             .map(change -> (RenameFile) change.getRight())
             .toList();
     assertThat(renames).hasSize(1);
-    assertThat(renames.getFirst().getOldUri()).endsWith("/core/src/main/java/com/example/core/Greeter.java");
-    assertThat(renames.getFirst().getNewUri()).endsWith("/core/src/main/java/com/example/core/Salutation.java");
+    assertThat(renames.get(0).getOldUri()).endsWith("/core/src/main/java/com/example/core/Greeter.java");
+    assertThat(renames.get(0).getNewUri()).endsWith("/core/src/main/java/com/example/core/Salutation.java");
   }
 
   @Test
@@ -440,12 +440,12 @@ class LspSmokeTest {
     final List<CallHierarchyItem> items =
         server.getTextDocumentService().prepareCallHierarchy(prepParams).get(30, SECONDS);
     assertThat(items).hasSize(1);
-    assertThat(items.getFirst().getName()).isEqualTo("upper");
+    assertThat(items.get(0).getName()).isEqualTo("upper");
 
     final List<CallHierarchyIncomingCall> calls =
         server
             .getTextDocumentService()
-            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.getFirst()))
+            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.get(0)))
             .get(30, SECONDS);
 
     assertThat(calls).anyMatch(call -> call.getFrom().getUri().contains("Main.java"));
@@ -472,7 +472,7 @@ class LspSmokeTest {
     final List<CallHierarchyOutgoingCall> calls =
         server
             .getTextDocumentService()
-            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.getFirst()))
+            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.get(0)))
             .get(30, SECONDS);
 
     assertThat(calls)

@@ -35,7 +35,7 @@ class FoldingRangeScannerTest {
         .extracting(FoldingRange::getKind)
         .containsSequence(
             FoldingRangeKind.Imports, FoldingRangeKind.Region, FoldingRangeKind.Region);
-    final var imports = ranges.getFirst();
+    final var imports = ranges.get(0);
     assertThat(imports.getKind()).isEqualTo(FoldingRangeKind.Imports);
     assertThat(imports.getStartLine()).isEqualTo(2);
     assertThat(imports.getEndLine()).isEqualTo(3);
@@ -101,7 +101,7 @@ class FoldingRangeScannerTest {
     final List<FoldingRange> ranges = scanAs(source, "module-info.java");
 
     assertThat(ranges).hasSize(1);
-    final var region = ranges.getFirst();
+    final var region = ranges.get(0);
     assertThat(region.getKind()).isEqualTo(FoldingRangeKind.Region);
     assertThat(region.getStartLine()).isEqualTo(0);
     assertThat(region.getEndLine()).isEqualTo(3);

@@ -352,7 +352,7 @@ class JavadocMarkdownPrinterTest {
                 null, TestJavac.fileManager(List.of(), List.of()), null, null, null, List.of(jfo));
     final CompilationUnitTree cu = task.parse().iterator().next();
     final DocTrees docTrees = DocTrees.instance(task);
-    final var classTree = (ClassTree) cu.getTypeDecls().getFirst();
+    final var classTree = (ClassTree) cu.getTypeDecls().get(0);
     for (final var member : classTree.getMembers()) {
       final var path = TreePath.getPath(cu, member);
       final var tree = docTrees.getDocCommentTree(path);

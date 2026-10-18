@@ -41,7 +41,7 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
   }
 
@@ -229,9 +229,9 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
-    assertThat(hints.getFirst().getMessage().getLeft())
+    assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("local variable 'count' is assigned but never read");
   }
 
@@ -287,9 +287,9 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
-    assertThat(hints.getFirst().getMessage().getLeft())
+    assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("private field 'cached' is assigned but never read");
   }
 
@@ -352,8 +352,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft())
-        .isEqualTo("Unused local variable 'forgotten'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'forgotten'");
   }
 
   @Test
@@ -386,8 +385,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft())
-        .isEqualTo("Unused local variable 'forgotten'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'forgotten'");
   }
 
   // --- Inner classes ---
@@ -457,7 +455,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 'unused'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'unused'");
   }
 
   @Test
@@ -483,7 +481,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused exception parameter 'e'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused exception parameter 'e'");
   }
 
   @Test
@@ -503,7 +501,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused parameter 'v'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused parameter 'v'");
   }
 
   @Test
@@ -523,7 +521,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 's'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 's'");
   }
 
   @Test
@@ -537,7 +535,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getCode()).isEqualTo(Either.forLeft("lathe.unused"));
+    assertThat(hints.get(0).getCode()).isEqualTo(Either.forLeft("lathe.unused"));
   }
 
   // --- helpers ---

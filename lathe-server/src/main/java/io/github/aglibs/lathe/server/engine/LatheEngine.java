@@ -375,7 +375,7 @@ public final class LatheEngine {
     }
 
     final List<LatheCall> all =
-        incoming ? incomingCalls(items.getFirst()) : outgoingCalls(items.getFirst());
+        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0));
     return new LatheCallHierarchy(
         incoming, all.size(), all.size() > maxResults, all.stream().limit(maxResults).toList());
   }

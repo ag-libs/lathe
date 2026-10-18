@@ -401,7 +401,7 @@ class WorkspaceSessionTest {
 
     assertThat(finished.launched()).isFalse();
     assertThat(finished.blockedReasons()).hasSize(1);
-    assertThat(finished.blockedReasons().getFirst()).contains("jvm crashed");
+    assertThat(finished.blockedReasons().get(0)).contains("jvm crashed");
   }
 
   private Path writeJava(final String typeName, final long mtime) throws IOException {

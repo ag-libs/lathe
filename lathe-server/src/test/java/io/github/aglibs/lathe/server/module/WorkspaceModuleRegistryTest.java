@@ -32,7 +32,7 @@ class WorkspaceModuleRegistryTest {
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
-    final Path latheGenerated = registry.allConfigs().getFirst().generatedSourcesDir();
+    final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.allSourceRoots()).contains(src, latheGenerated).doesNotContain(mavenTarget);
   }
@@ -54,7 +54,7 @@ class WorkspaceModuleRegistryTest {
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
-    final Path latheGenerated = registry.allConfigs().getFirst().generatedSourcesDir();
+    final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.moduleSourceFor(latheGenerated.resolve("com/example/FooBuilder.java")))
         .isPresent();

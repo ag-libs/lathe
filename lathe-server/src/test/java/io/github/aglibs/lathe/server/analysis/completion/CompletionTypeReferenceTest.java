@@ -184,7 +184,7 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
                 }
             }""");
     assertThat(items).isNotEmpty();
-    assertThat(items.getFirst().getLabel()).isEqualTo("Listener");
+    assertThat(items.get(0).getLabel()).isEqualTo("Listener");
   }
 
   @Test
@@ -202,7 +202,7 @@ class CompletionTypeReferenceTest extends CompletionTestSupport {
                 }
             }""");
     assertThat(items).isNotEmpty();
-    assertThat(items.getFirst().getLabel()).isEqualTo("Listener");
+    assertThat(items.get(0).getLabel()).isEqualTo("Listener");
   }
 
   @Test

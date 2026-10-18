@@ -52,9 +52,9 @@ class WorkspaceSymbolTest {
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("User", index, List.of(src));
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().getName()).isEqualTo("UserService");
-    assertThat(result.getFirst().getKind()).isEqualTo(SymbolKind.Class);
-    assertThat(result.getFirst().getContainerName()).isEqualTo("com.example");
+    assertThat(result.get(0).getName()).isEqualTo("UserService");
+    assertThat(result.get(0).getKind()).isEqualTo(SymbolKind.Class);
+    assertThat(result.get(0).getContainerName()).isEqualTo("com.example");
   }
 
   @Test
@@ -109,7 +109,7 @@ class WorkspaceSymbolTest {
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Stand", index, List.of(src));
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().getName()).isEqualTo("Standalone");
+    assertThat(result.get(0).getName()).isEqualTo("Standalone");
   }
 
   @Test
@@ -133,7 +133,7 @@ class WorkspaceSymbolTest {
     final var index = indexOf(entry("Foo", "com.example"));
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
-    final var loc = result.getFirst().getLocation();
+    final var loc = result.get(0).getLocation();
     assertThat(loc.getUri()).startsWith("file://");
     assertThat(loc.getUri()).endsWith("com/example/Foo.java");
     assertThat(loc.getRange().getStart().getLine()).isZero();
@@ -153,7 +153,7 @@ class WorkspaceSymbolTest {
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Rem", index, List.of(src, src2));
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().getName()).isEqualTo("Remote");
+    assertThat(result.get(0).getName()).isEqualTo("Remote");
   }
 
   // --- resolveSourcePath: source path resolution ---
@@ -241,7 +241,7 @@ class WorkspaceSymbolTest {
     final List<SymbolInformation> result =
         WorkspaceSymbolResolver.resolve("Service", index, List.of(src));
     assertThat(result).hasSize(1);
-    final var range = result.getFirst().getLocation().getRange();
+    final var range = result.get(0).getLocation().getRange();
     // "public class Service" — "Service" starts at character 13, line 2 (0-indexed)
     assertThat(range.getStart().getLine()).isEqualTo(2);
     assertThat(range.getStart().getCharacter()).isEqualTo(13);

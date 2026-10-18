@@ -537,7 +537,7 @@ final class JdiInterpreter {
   private ReferenceType resolveType(final String binaryName) {
     final List<ReferenceType> classes = vm.classesByName(binaryName);
     if (!classes.isEmpty()) {
-      return classes.getFirst();
+      return classes.get(0);
     }
 
     return forceLoad(binaryName);

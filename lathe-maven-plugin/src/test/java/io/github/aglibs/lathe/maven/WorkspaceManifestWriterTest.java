@@ -69,7 +69,7 @@ class WorkspaceManifestWriterTest {
     assertThat(data.jdk().typeIndex().toString())
         .isEqualTo("/cache/type-index/jdks/example-vendor-21.0.1/index.json");
     assertThat(data.dependencySources()).hasSize(1);
-    final var entry = data.dependencySources().getFirst();
+    final var entry = data.dependencySources().get(0);
     assertThat(entry.gav()).isEqualTo("com.example:dep:1");
     assertThat(entry.jar()).isEqualTo("/repo/dep.jar");
     assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);

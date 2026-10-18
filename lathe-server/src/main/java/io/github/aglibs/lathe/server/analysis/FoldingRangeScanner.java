@@ -13,6 +13,7 @@ import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,8 +80,8 @@ final class FoldingRangeScanner extends TreePathScanner<Void, Void> {
     }
 
     final var positions = trees.getSourcePositions();
-    final long start = positions.getStartPosition(compilationUnit, imports.getFirst());
-    final long end = positions.getEndPosition(compilationUnit, imports.getLast());
+    final long start = positions.getStartPosition(compilationUnit, imports.get(0));
+    final long end = positions.getEndPosition(compilationUnit, CollectionUtil.last(imports));
     add(start, end, FoldingRangeKind.Imports);
   }
 

@@ -622,7 +622,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
             }""");
     assertThat(labels(items)).contains("Version.HTTP_2");
     final var http2 = itemLabeled(items, "Version.HTTP_2").orElseThrow();
-    assertThat(http2.getAdditionalTextEdits().getFirst().getNewText())
+    assertThat(http2.getAdditionalTextEdits().get(0).getNewText())
         .isEqualTo("import java.net.http.HttpClient.Version;\n");
   }
 }

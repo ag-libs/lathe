@@ -162,7 +162,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return;
     }
 
-    final var content = params.getContentChanges().getFirst().getText();
+    final var content = params.getContentChanges().get(0).getText();
     final var version = doc.getVersion();
     worker.execute(() -> session.onChange(uri, content, version));
   }

@@ -84,7 +84,7 @@ class JavacDiagnosticMapperTest {
     final var note = mockDiag(Diagnostic.Kind.NOTE, Diagnostic.NOPOS, Diagnostic.NOPOS);
     final var result = JavacDiagnosticMapper.filterAndMap(List.of(error, note), "x");
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+    assertThat(result.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
   }
 
   // --- helpers ---

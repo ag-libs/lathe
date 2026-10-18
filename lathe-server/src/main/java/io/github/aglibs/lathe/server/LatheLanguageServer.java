@@ -197,7 +197,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   private static String rootUri(final InitializeParams params) {
     final var folders = params.getWorkspaceFolders();
     if (folders != null && !folders.isEmpty()) {
-      return folders.getFirst().getUri();
+      return folders.get(0).getUri();
     }
 
     return params.getRootUri();

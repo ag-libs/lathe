@@ -91,7 +91,7 @@ public final class RunConfigWriter {
       throw new IllegalArgumentException("cannot derive a config name: no test selector");
     }
 
-    return derivedTestName(selectors.getFirst());
+    return derivedTestName(selectors.get(0));
   }
 
   private static String derivedTestName(final TestSelection selection) {

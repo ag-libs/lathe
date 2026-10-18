@@ -40,7 +40,7 @@ class ExtractionSupportTest {
     final var parsed = TestCompiler.parse(file);
     final var trees = parsed.trees();
     final CompilationUnitTree cu = parsed.cu();
-    final var scope = TreePath.getPath(cu, cu.getTypeDecls().getFirst());
+    final var scope = TreePath.getPath(cu, cu.getTypeDecls().get(0));
     final String content = SampleFixture.sourceContent(cu);
     final TreePath selected = SourceLocator.pathAt(trees, cu, content.indexOf("String"));
 

@@ -44,11 +44,11 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
-      assertThat(calls.getFirst().getTo().getName()).isEqualTo("doStuff");
-      assertThat(calls.getFirst().getFromRanges()).hasSize(1);
+      assertThat(calls.get(0).getTo().getName()).isEqualTo("doStuff");
+      assertThat(calls.get(0).getFromRanges()).hasSize(1);
     }
   }
 
@@ -77,11 +77,11 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
-      assertThat(calls.getFirst().getTo().getName()).isEqualTo("Box");
-      assertThat(calls.getFirst().getFromRanges()).hasSize(1);
+      assertThat(calls.get(0).getTo().getName()).isEqualTo("Box");
+      assertThat(calls.get(0).getFromRanges()).hasSize(1);
     }
   }
 
@@ -108,7 +108,7 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.getFirst(), request.uri(), content, 1, List.of(sourceRoot));
+          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).noneMatch(c -> c.getTo().getName().isEmpty());
     }
@@ -126,8 +126,7 @@ class CallHierarchyOutgoingLocatorTest {
       assertThat(items).hasSize(1);
 
       assertThat(
-              session.outgoingCalls(
-                  items.getFirst(), request.uri(), content, 1, List.of(sourceRoot)))
+              session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot)))
           .isEmpty();
     }
   }

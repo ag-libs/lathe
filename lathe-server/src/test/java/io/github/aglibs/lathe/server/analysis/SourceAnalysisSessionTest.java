@@ -132,7 +132,7 @@ class SourceAnalysisSessionTest {
     final var symbols = session.documentSymbol(TempSourceCompiler.TEST_URI, source);
 
     assertThat(symbols).extracting(DocumentSymbol::getKind).containsExactly(SymbolKind.Class);
-    assertThat(symbols.getFirst().getChildren())
+    assertThat(symbols.get(0).getChildren())
         .extracting(DocumentSymbol::getName)
         .containsExactly("field", "method");
     verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.OPEN);

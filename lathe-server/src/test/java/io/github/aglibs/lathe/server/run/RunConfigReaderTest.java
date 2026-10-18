@@ -117,8 +117,8 @@ final class RunConfigReaderTest {
     final RunItem config = new RunConfigReader(workspaceRoot).read().byName("smoke").orElseThrow();
 
     assertThat(config.selectors()).hasSize(1);
-    assertThat(config.selectors().getFirst().kind()).isEqualTo(TestSelectionKind.CLASS);
-    assertThat(config.selectors().getFirst().value()).isEqualTo("com.example.SmokeTest");
+    assertThat(config.selectors().get(0).kind()).isEqualTo(TestSelectionKind.CLASS);
+    assertThat(config.selectors().get(0).value()).isEqualTo("com.example.SmokeTest");
   }
 
   @Test

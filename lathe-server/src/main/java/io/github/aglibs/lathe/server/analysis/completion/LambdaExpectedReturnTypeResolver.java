@@ -229,7 +229,7 @@ final class LambdaExpectedReturnTypeResolver {
 
     return switch (projection) {
       case FIRST_TYPE_ARGUMENT -> {
-        final TypeMirror arg = typeArgs.getFirst();
+        final TypeMirror arg = typeArgs.get(0);
         yield completeType(arg) ? arg : null;
       }
       case MAP_VALUE_TYPE -> {
@@ -243,7 +243,7 @@ final class LambdaExpectedReturnTypeResolver {
         if (typeArgs.size() >= 2 && typeArgs.get(1) instanceof final DeclaredType mapValueType) {
           final List<? extends TypeMirror> innerArgs = mapValueType.getTypeArguments();
           if (!innerArgs.isEmpty()) {
-            final TypeMirror arg = innerArgs.getFirst();
+            final TypeMirror arg = innerArgs.get(0);
             yield completeType(arg) ? arg : null;
           }
         }

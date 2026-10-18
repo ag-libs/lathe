@@ -130,15 +130,15 @@ class CodeActionTest {
     final List<CodeAction> imports = codeActions(actions);
 
     assertThat(imports).hasSize(1);
-    final var action = imports.getFirst();
+    final var action = imports.get(0);
     assertThat(action.getTitle()).isEqualTo("Import 'java.util.ArrayList'");
     assertThat(action.getKind()).isEqualTo("quickfix");
     assertThat(action.getDiagnostics()).hasSize(1);
 
     final var edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText()).isEqualTo("import java.util.ArrayList;\n");
-    assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
+    assertThat(edits.get(0).getNewText()).isEqualTo("import java.util.ArrayList;\n");
+    assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(1);
   }
 
   @Test
@@ -201,8 +201,8 @@ class CodeActionTest {
             .toList();
 
     assertThat(commands).hasSize(1);
-    assertThat(commands.getFirst().getCommand()).isEqualTo("lathe.missingImports");
-    assertThat(commands.getFirst().getTitle()).isEqualTo("Add missing imports…");
+    assertThat(commands.get(0).getCommand()).isEqualTo("lathe.missingImports");
+    assertThat(commands.get(0).getTitle()).isEqualTo("Add missing imports…");
   }
 
   @Test
@@ -299,8 +299,7 @@ class CodeActionTest {
             customTypeIndex);
 
     assertThat(codeActions(actions)).hasSize(1);
-    assertThat(codeActions(actions).getFirst().getTitle())
-        .isEqualTo("Import 'com.other.PublicClass'");
+    assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
   }
 
   @Test
@@ -332,7 +331,7 @@ class CodeActionTest {
             TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), reactorIndex);
 
     assertThat(codeActions(actions)).hasSize(1);
-    assertThat(codeActions(actions).getFirst().getTitle())
+    assertThat(codeActions(actions).get(0).getTitle())
         .isEqualTo("Import 'com.example.MyCustomException'");
   }
 
@@ -461,7 +460,7 @@ class CodeActionTest {
 
     final List<TextEdit> edits =
         throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
-    assertThat(edits.getFirst().getNewText()).isEqualTo(", SQLException");
+    assertThat(edits.get(0).getNewText()).isEqualTo(", SQLException");
   }
 
   @Test
@@ -484,7 +483,7 @@ class CodeActionTest {
     final List<TextEdit> edits =
         throwsAction.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText()).isEqualTo(" throws Exception");
+    assertThat(edits.get(0).getNewText()).isEqualTo(" throws Exception");
   }
 
   // --- DeclareVariable provider ---
@@ -504,13 +503,13 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Declare local variable 'count'");
     assertThat(action.getKind()).isEqualTo("quickfix");
 
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText()).isEqualTo("int count");
+    assertThat(edits.get(0).getNewText()).isEqualTo("int count");
   }
 
   @Test
@@ -529,9 +528,9 @@ class CodeActionTest {
 
     assertThat(actions).hasSize(1);
     final List<TextEdit> edits =
-        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+        actions.get(0).getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText()).isEqualTo("String msg");
+    assertThat(edits.get(0).getNewText()).isEqualTo("String msg");
   }
 
   @Test
@@ -591,11 +590,11 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText())
+    assertThat(edits.get(0).getNewText())
         .contains("try {")
         .contains("throw new java.io.IOException(\"x\");")
         .contains("catch (java.io.IOException e)");
@@ -621,11 +620,11 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText()).doesNotContain("throws");
+    assertThat(edits.get(0).getNewText()).doesNotContain("throws");
   }
 
   @Test
@@ -650,11 +649,11 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Wrap in try/catch");
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText())
+    assertThat(edits.get(0).getNewText())
         .contains("try {")
         .contains("throw new java.io.IOException(\"x\");")
         .contains("catch (java.io.IOException e)")
@@ -717,7 +716,7 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    assertThat(actions.getFirst().getRight().getTitle()).isEqualTo("Wrap in try/catch");
+    assertThat(actions.get(0).getRight().getTitle()).isEqualTo("Wrap in try/catch");
   }
 
   // --- MissingMethodImpl provider ---
@@ -735,13 +734,13 @@ class CodeActionTest {
     final var actions = diagnosticActions(source, diags);
 
     assertThat(actions).hasSize(1);
-    final var action = actions.getFirst().getRight();
+    final var action = actions.get(0).getRight();
     assertThat(action.getTitle()).isEqualTo("Implement abstract methods");
     assertThat(action.getKind()).isEqualTo("quickfix");
 
     final List<TextEdit> edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getNewText())
+    assertThat(edits.get(0).getNewText())
         .contains("@Override")
         .contains("public void run()")
         .contains("throw new UnsupportedOperationException()");
@@ -762,8 +761,8 @@ class CodeActionTest {
 
     assertThat(actions).hasSize(1);
     final List<TextEdit> edits =
-        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
-    final String stubText = edits.getFirst().getNewText();
+        actions.get(0).getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+    final String stubText = edits.get(0).getNewText();
     assertThat(stubText).contains("public boolean hasNext()").contains("public String next()");
   }
 
@@ -801,7 +800,7 @@ class CodeActionTest {
 
     assertThat(rightTitles(actions)).contains("Replace 'var' with 'ArrayList<String>'");
     final List<TextEdit> edits =
-        actions.getFirst().getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
+        actions.get(0).getRight().getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).anyMatch(e -> e.getNewText().contains("import java.util.ArrayList"));
   }
 
@@ -840,7 +839,7 @@ class CodeActionTest {
 
   @Test
   void codeAction_varUpwardProjectedType_replacesWithProjectedType() {
-    // `list.getFirst()` on a `? extends Number` list yields a captured type that `var`
+    // `list.get(0)` on a `? extends Number` list yields a captured type that `var`
     // upward-projects
     // (JLS 14.4.1) to the denotable `Number`, so the refactor is offered with the projected type.
     final var source =
@@ -848,7 +847,7 @@ class CodeActionTest {
         package com.example;
         class Test {
           void m(java.util.List<? extends Number> list) {
-            var x = list.getFirst();
+            var x = list.get(0);
           }
         }
         """;
@@ -1880,7 +1879,7 @@ class CodeActionTest {
             .filter(a -> "Surround with try-with-resources".equals(a.getTitle()))
             .findFirst()
             .orElseThrow();
-    return action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI).getFirst().getNewText();
+    return action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI).get(0).getNewText();
   }
 
   private List<Either<Command, CodeAction>> replaceVarActionsAt(

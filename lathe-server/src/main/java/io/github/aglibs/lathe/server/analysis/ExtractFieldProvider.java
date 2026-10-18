@@ -265,7 +265,7 @@ final class ExtractFieldProvider {
             elementTypeName(type),
             expr,
             takenNames(cls, methodPath))
-        .getFirst();
+        .get(0);
   }
 
   // The simple name of the last type argument (Map<String, User> -> User), or null when the type is

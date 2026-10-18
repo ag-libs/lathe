@@ -758,7 +758,7 @@ final class WorkspaceSession {
     final List<ModuleSourceConfig> enclosed =
         testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
     if (enclosed.size() == 1) {
-      return moduleRun(configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.getFirst()));
+      return moduleRun(configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0)));
     }
 
     return new DirRun("", List.of());
@@ -2722,7 +2722,7 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture(TypeHierarchyExplorerResult.empty());
               }
 
-              final var self = items.getFirst();
+              final var self = items.get(0);
               final var data = TypeHierarchyItemDataCodec.decode(self.getData());
               final var indexSnapshot = typeIndex;
               final List<Path> sourceDirs = typeSourceDirs();
@@ -3133,7 +3133,7 @@ final class WorkspaceSession {
     }
 
     LOG.fine(() -> "[delete] %s orphans=%s".formatted(config.moduleDir().getFileName(), orphans));
-    final Path root = roots.getFirst();
+    final Path root = roots.get(0);
     int removed = 0;
     for (final var rel : orphans) {
       removed += deleteClassOutputs(config, root.resolve(rel), Set.of());

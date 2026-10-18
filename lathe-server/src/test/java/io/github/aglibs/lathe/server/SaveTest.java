@@ -10,6 +10,7 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -155,7 +156,7 @@ class SaveTest extends ServiceTestBase {
 
     awaitWorkerIdle();
     clearInvocations(client);
-    final Path edited = fx.users().getFirst();
+    final Path edited = fx.users().get(0);
 
     // The save starts a refresh batch over the users; one of them is edited while it runs. A batch
     // result for the old content is stale and dropped, so the edit's own compile has the last word.
@@ -180,10 +181,8 @@ class SaveTest extends ServiceTestBase {
     final var publishes = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client, atLeastOnce()).publishDiagnostics(publishes.capture());
     assertThat(
-            publishes.getAllValues().stream()
-                .filter(p -> isFor(p, edited))
-                .toList()
-                .getLast()
+            CollectionUtil.last(
+                    publishes.getAllValues().stream().filter(p -> isFor(p, edited)).toList())
                 .getDiagnostics())
         .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
   }

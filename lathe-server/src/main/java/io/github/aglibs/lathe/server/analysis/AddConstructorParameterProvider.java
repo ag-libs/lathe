@@ -16,6 +16,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
@@ -256,7 +257,7 @@ final class AddConstructorParameterProvider {
     final String param = "final %s %s".formatted(typeText, name);
     final List<? extends VariableTree> params = ctor.getParameters();
     if (!params.isEmpty()) {
-      final long end = positions.getEndPosition(cu, params.getLast());
+      final long end = positions.getEndPosition(cu, CollectionUtil.last(params));
       if (end < 0) {
         return null;
       }
@@ -340,7 +341,7 @@ final class AddConstructorParameterProvider {
       final String name) {
     final List<? extends ExpressionTree> args = call.getArguments();
     if (!args.isEmpty()) {
-      final long end = positions.getEndPosition(cu, args.getLast());
+      final long end = positions.getEndPosition(cu, CollectionUtil.last(args));
       if (end < 0) {
         return null;
       }

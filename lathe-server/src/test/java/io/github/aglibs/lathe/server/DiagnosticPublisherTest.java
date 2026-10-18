@@ -110,7 +110,7 @@ class DiagnosticPublisherTest {
     assertThat(captor.getValue().getUri()).isEqualTo("file:///A.java");
     assertThat(captor.getValue().getDiagnostics()).hasSize(1);
     // Outside a module root is normal in a large repo, not actionable — an unobtrusive Hint.
-    assertThat(captor.getValue().getDiagnostics().getFirst().getSeverity())
+    assertThat(captor.getValue().getDiagnostics().get(0).getSeverity())
         .isEqualTo(DiagnosticSeverity.Hint);
   }
 
@@ -124,7 +124,7 @@ class DiagnosticPublisherTest {
     verify(client).publishDiagnostics(captor.capture());
     assertThat(captor.getValue().getUri()).isEqualTo("file:///A.java");
     assertThat(captor.getValue().getDiagnostics()).hasSize(1);
-    assertThat(captor.getValue().getDiagnostics().getFirst().getSeverity())
+    assertThat(captor.getValue().getDiagnostics().get(0).getSeverity())
         .isEqualTo(DiagnosticSeverity.Error);
   }
 

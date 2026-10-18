@@ -102,35 +102,35 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> debugTest(final ExecuteCommandParams params) {
-    final var argument = parseRunTestArgument(params.getArguments().getFirst());
+    final var argument = parseRunTestArgument(params.getArguments().get(0));
     return textDocumentService
         .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token())
         .thenApply(result -> result);
   }
 
   private CompletableFuture<Object> debugMain(final ExecuteCommandParams params) {
-    final var argument = parseRunMainArgument(params.getArguments().getFirst());
+    final var argument = parseRunMainArgument(params.getArguments().get(0));
     return textDocumentService
         .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
         .thenApply(result -> result);
   }
 
   private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
-    final var argument = parseRunTestArgument(params.getArguments().getFirst());
+    final var argument = parseRunTestArgument(params.getArguments().get(0));
     return textDocumentService
         .runTestFuture(argument.moduleRel(), argument.selections(), argument.token())
         .thenApply(outcome -> outcome);
   }
 
   private CompletableFuture<Object> runMain(final ExecuteCommandParams params) {
-    final var argument = parseRunMainArgument(params.getArguments().getFirst());
+    final var argument = parseRunMainArgument(params.getArguments().get(0));
     return textDocumentService
         .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
         .thenApply(outcome -> outcome);
   }
 
   private CompletableFuture<Object> runNamed(final ExecuteCommandParams params) {
-    final var argument = parseNamedArgument(params.getArguments().getFirst());
+    final var argument = parseNamedArgument(params.getArguments().get(0));
     return textDocumentService
         .runNamedFuture(argument.name(), argument.token())
         .thenApply(outcome -> (Object) outcome)
@@ -138,7 +138,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> debugNamed(final ExecuteCommandParams params) {
-    final var argument = parseNamedArgument(params.getArguments().getFirst());
+    final var argument = parseNamedArgument(params.getArguments().get(0));
     return textDocumentService
         .debugNamedFuture(argument.name(), argument.token())
         .thenApply(result -> (Object) result)
@@ -146,7 +146,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> saveRunConfig(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     final String name = optionalString(json, "name");
     final RunKind kind = RunKind.valueOf(json.get("kind").getAsString());
     final List<TestSelection> selectors =
@@ -164,17 +164,17 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> cancelTest(final ExecuteCommandParams params) {
-    final String token = parseCancelArgument(params.getArguments().getFirst());
+    final String token = parseCancelArgument(params.getArguments().get(0));
     return textDocumentService.cancelRunFuture(token);
   }
 
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
-    final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
+    final String uri = parseListRunnablesArgument(params.getArguments().get(0));
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
   }
 
   private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
-    final String uri = parseListRunnablesArgument(params.getArguments().getFirst());
+    final String uri = parseListRunnablesArgument(params.getArguments().get(0));
     return textDocumentService.refreshResourceFuture(uri).thenApply(dest -> dest);
   }
 
@@ -182,8 +182,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     // The argument is the client's make_position_params() -- a standard TextDocumentPositionParams,
     // so deserialize into that type rather than hand-parsing fields.
     final var at =
-        GSON.fromJson(
-            (JsonElement) params.getArguments().getFirst(), TextDocumentPositionParams.class);
+        GSON.fromJson((JsonElement) params.getArguments().get(0), TextDocumentPositionParams.class);
     return textDocumentService
         .instantiationsFuture(at.getTextDocument().getUri(), at.getPosition())
         .thenApply(locations -> locations);
@@ -191,8 +190,7 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<Object> typeHierarchy(final ExecuteCommandParams params) {
     final var at =
-        GSON.fromJson(
-            (JsonElement) params.getArguments().getFirst(), TextDocumentPositionParams.class);
+        GSON.fromJson((JsonElement) params.getArguments().get(0), TextDocumentPositionParams.class);
     return textDocumentService
         .typeHierarchyExplorerFuture(at.getTextDocument().getUri(), at.getPosition())
         .thenApply(result -> result);
@@ -213,7 +211,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private static CreateTypeArgs createTypeArgs(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return new CreateTypeArgs(
         json.get("moduleRel").getAsString(),
         SourceScope.fromWire(json.get("kind").getAsString()),
@@ -244,26 +242,26 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> packages(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
         .packagesFuture(json.get("moduleRel").getAsString())
         .thenApply(packages -> packages);
   }
 
   private CompletableFuture<Object> resolveContext(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
         .resolveContextFuture(json.get("uri").getAsString())
         .thenApply(context -> context);
   }
 
   private CompletableFuture<Object> dirRunnables(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService.dirRunFuture(json.get("uri").getAsString()).thenApply(plan -> plan);
   }
 
   private CompletableFuture<Object> testSources(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     final List<String> classNames =
         json.getAsJsonArray("classNames").asList().stream().map(JsonElement::getAsString).toList();
     return textDocumentService
@@ -272,14 +270,14 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> resourceOpen(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
         .resourceOpenFuture(json.get("jar").getAsString(), json.get("entry").getAsString())
         .thenApply(path -> path);
   }
 
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
-    final var json = (JsonObject) params.getArguments().getFirst();
+    final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
         .missingImportsFuture(json.get("uri").getAsString())
         .thenApply(result -> result);

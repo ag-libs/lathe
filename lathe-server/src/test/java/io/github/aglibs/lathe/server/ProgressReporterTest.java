@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import org.eclipse.lsp4j.ProgressParams;
@@ -121,7 +122,7 @@ class ProgressReporterTest {
     final var captor = ArgumentCaptor.forClass(ProgressParams.class);
     verify(client, times(2)).notifyProgress(captor.capture());
     assertThat(
-            ((WorkDoneProgressEnd) captor.getAllValues().getLast().getValue().getLeft())
+            ((WorkDoneProgressEnd) CollectionUtil.last(captor.getAllValues()).getValue().getLeft())
                 .getMessage())
         .isEqualTo("Cancelled");
   }
@@ -140,7 +141,7 @@ class ProgressReporterTest {
     final var captor = ArgumentCaptor.forClass(ProgressParams.class);
     verify(client, times(2)).notifyProgress(captor.capture());
     assertThat(
-            ((WorkDoneProgressEnd) captor.getAllValues().getLast().getValue().getLeft())
+            ((WorkDoneProgressEnd) CollectionUtil.last(captor.getAllValues()).getValue().getLeft())
                 .getMessage())
         .isEqualTo("Failed");
   }

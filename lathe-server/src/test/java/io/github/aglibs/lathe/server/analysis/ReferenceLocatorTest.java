@@ -89,7 +89,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart())
+    assertThat(result.get(0).range().getStart())
         .isEqualTo(posOf(FIELD_SOURCE, "return name", "name"));
   }
 
@@ -132,7 +132,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "this.name", "name"));
+    assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "this.name", "name"));
   }
 
   @Test
@@ -166,11 +166,10 @@ class ReferenceLocatorTest {
 
     // field: this.name — one member-select ref
     assertThat(fieldRefs).hasSize(1);
-    assertThat(fieldRefs.getFirst().range().getStart())
-        .isEqualTo(posOf(source, "this.name", "name"));
+    assertThat(fieldRefs.get(0).range().getStart()).isEqualTo(posOf(source, "this.name", "name"));
     // param: the rhs "name" in "this.name = name"
     assertThat(paramRefs).hasSize(1);
-    assertThat(paramRefs.getFirst().range().getStart()).isEqualTo(posOf(source, "= name", "name"));
+    assertThat(paramRefs.get(0).range().getStart()).isEqualTo(posOf(source, "= name", "name"));
   }
 
   // --- methods ---
@@ -208,7 +207,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, stringOverload, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "run(\"x\")", "run"));
+    assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "run(\"x\")", "run"));
   }
 
   @Test
@@ -331,7 +330,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart())
+    assertThat(result.get(0).range().getStart())
         .isEqualTo(posOf(source, "config.bucket()", "bucket"));
   }
 
@@ -511,7 +510,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, target, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "new Box()", "Box"));
+    assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "new Box()", "Box"));
   }
 
   @Test
@@ -530,7 +529,7 @@ class ReferenceLocatorTest {
     final List<ReferenceMatch> result = refs(analysis, noArgTarget, false);
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().range().getStart()).isEqualTo(posOf(source, "new Box();", "Box"));
+    assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "new Box();", "Box"));
   }
 
   // --- method references ---
@@ -770,7 +769,7 @@ class ReferenceLocatorTest {
   void role_fieldRead_isRead() throws IOException {
     final var analysis = compile(FIELD_SOURCE);
     final var target = targetAt(analysis, "String name", "name");
-    assertThat(refs(analysis, target, false).getFirst().role()).isEqualTo(ReferenceRole.READ);
+    assertThat(refs(analysis, target, false).get(0).role()).isEqualTo(ReferenceRole.READ);
   }
 
   @Test
@@ -784,7 +783,7 @@ class ReferenceLocatorTest {
         """;
     final var analysis = compile(source);
     final var target = targetAt(analysis, "String name", "name");
-    assertThat(refs(analysis, target, false).getFirst().role()).isEqualTo(ReferenceRole.WRITE);
+    assertThat(refs(analysis, target, false).get(0).role()).isEqualTo(ReferenceRole.WRITE);
   }
 
   @Test

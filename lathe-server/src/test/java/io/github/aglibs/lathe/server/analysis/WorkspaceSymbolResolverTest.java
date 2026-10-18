@@ -44,7 +44,7 @@ class WorkspaceSymbolResolverTest {
         WorkspaceSymbolResolver.resolve("Widget", index, List.of(srcRoot));
 
     assertThat(results).hasSize(1);
-    final SymbolInformation info = results.getFirst();
+    final SymbolInformation info = results.get(0);
     assertThat(info.getName()).isEqualTo("Widget");
     assertThat(info.getContainerName()).isEqualTo("com.example.impl");
     assertThat(info.getLocation().getUri()).endsWith("com/example/impl/Widget.java");

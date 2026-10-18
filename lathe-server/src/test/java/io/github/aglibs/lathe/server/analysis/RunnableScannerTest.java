@@ -71,7 +71,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var target = scan(source).getFirst();
+    final var target = scan(source).get(0);
 
     assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
     assertThat(target.id()).isEqualTo("demo.App#main");
@@ -176,7 +176,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var method = scan(source).getFirst();
+    final var method = scan(source).get(0);
 
     assertThat(method.id())
         .isEqualTo("demo.FooTest#bar_input_result(java.lang.String,java.util.List)");
@@ -197,7 +197,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var method = scan(source).getFirst();
+    final var method = scan(source).get(0);
 
     assertThat(method.id()).isEqualTo("demo.FooTest#bar_input_result(int,java.lang.String[])");
   }

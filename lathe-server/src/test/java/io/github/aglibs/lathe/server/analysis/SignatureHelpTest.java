@@ -43,8 +43,8 @@ class SignatureHelpTest {
     assertThat(help).isNotNull();
     assertThat(help.getSignatures()).hasSize(1);
     assertThat(help.getActiveParameter()).isEqualTo(0);
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("String name");
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("int count");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("String name");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("int count");
   }
 
   @Test
@@ -83,7 +83,7 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getParameters()).isEmpty();
+    assertThat(help.getSignatures().get(0).getParameters()).isEmpty();
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -102,9 +102,9 @@ class SignatureHelpTest {
 
     assertThat(help).isNotNull();
     assertThat(help.getSignatures()).hasSize(1);
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("String name");
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("int count");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("target");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("String name");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("int count");
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -123,8 +123,8 @@ class SignatureHelpTest {
 
     assertThat(help).isNotNull();
     assertThat(help.getSignatures()).hasSize(1);
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
-    assertThat(help.getSignatures().getFirst().getParameters()).isEmpty();
+    assertThat(help.getSignatures().get(0).getLabel()).contains("target");
+    assertThat(help.getSignatures().get(0).getParameters()).isEmpty();
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -141,8 +141,8 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("inner");
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("int x");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("inner");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("int x");
   }
 
   @Test
@@ -158,7 +158,7 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("inner");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("inner");
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -179,7 +179,7 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("Point");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("Point");
     assertThat(help.getActiveParameter()).isEqualTo(1);
   }
 
@@ -231,7 +231,7 @@ class SignatureHelpTest {
         }
         """;
     final var help = signatureHelpAt(source);
-    final var sig = help.getSignatures().getFirst();
+    final var sig = help.getSignatures().get(0);
     final var label = sig.getLabel();
     final var params = sig.getParameters();
 
@@ -256,7 +256,7 @@ class SignatureHelpTest {
               }
               """);
       assertThat(methodHelp).isNotNull();
-      final var methodSig = methodHelp.getSignatures().getFirst();
+      final var methodSig = methodHelp.getSignatures().get(0);
       assertThat(methodSig.getLabel()).contains("String name", "int count");
       assertThat(methodSig.getDocumentation().getRight().getValue())
           .contains("Greets the recipient")
@@ -299,12 +299,12 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    final var sig = help.getSignatures().getFirst();
+    final var sig = help.getSignatures().get(0);
     assertThat(sig.getDocumentation()).isNotNull();
     assertThat(sig.getDocumentation().getRight().getValue())
         .contains("Says hello")
         .doesNotContain("@param");
-    assertThat(sig.getParameters().getFirst().getDocumentation().getRight().getValue())
+    assertThat(sig.getParameters().get(0).getDocumentation().getRight().getValue())
         .contains("the message");
   }
 
@@ -399,7 +399,7 @@ class SignatureHelpTest {
 
     assertThat(help).isNotNull();
     assertThat(help.getSignatures()).hasSize(1);
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("target");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("target");
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -434,7 +434,7 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("String name");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("String name");
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 
@@ -455,7 +455,7 @@ class SignatureHelpTest {
     final var help = signatureHelpAt(source);
 
     assertThat(help).isNotNull();
-    assertThat(help.getSignatures().getFirst().getLabel()).contains("put");
+    assertThat(help.getSignatures().get(0).getLabel()).contains("put");
     assertThat(help.getActiveParameter()).isEqualTo(0);
   }
 

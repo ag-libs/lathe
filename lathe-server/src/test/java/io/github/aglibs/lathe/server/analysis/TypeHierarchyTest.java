@@ -41,7 +41,7 @@ class TypeHierarchyTest {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
       final List<TypeHierarchyItem> prepared = session.prepareTypeHierarchy(request, index);
-      final var item = prepared.getFirst();
+      final var item = prepared.get(0);
       final var data = TypeHierarchyItemDataCodec.decode(item.getData());
       final List<TypeHierarchyItem> supertypes =
           session.typeHierarchySupertypes(item, index, List.of(sourceRoot));
@@ -78,7 +78,7 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.prepareTypeHierarchy(request, index).getFirst();
+      final var item = session.prepareTypeHierarchy(request, index).get(0);
 
       final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 2000);
 
@@ -111,7 +111,7 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.prepareTypeHierarchy(request, index).getFirst();
+      final var item = session.prepareTypeHierarchy(request, index).get(0);
 
       final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 1);
 
