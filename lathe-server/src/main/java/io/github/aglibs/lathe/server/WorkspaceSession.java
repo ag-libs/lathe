@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.PortUtil;
@@ -147,6 +148,7 @@ final class WorkspaceSession {
   // huge marker-interface anchor cannot flood the picker or the source-locating pass. Beyond it the
   // result is flagged truncated.
   private static final int TYPE_HIERARCHY_NODE_CAP = 2000;
+  private static final long DEFAULT_SCAN_INTERVAL_MS = 2_000L;
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
   // Title of the $/progress task reported while the workspace loads/reloads. The neotest adapter
@@ -266,7 +268,9 @@ final class WorkspaceSession {
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
     watcher.updateBuildFiles(manifest.buildFiles());
-    worker.scheduleAtFixedRate(2_000L, this::checkForChanges);
+    final long scanIntervalMs = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
+    worker.scheduleAtFixedRate(
+        scanIntervalMs > 0 ? scanIntervalMs : DEFAULT_SCAN_INTERVAL_MS, this::checkForChanges);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
     } else {

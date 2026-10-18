@@ -94,6 +94,8 @@ class LspSmokeTest {
     // Editors start the launcher from the workspace root, where it finds .lathe/jvm.args.
     pb.directory(ROOT.toFile());
     pb.environment().put("LATHE_DEBUG", "1");
+    // Scans fast so the tests that wait for an outside change (manifest, pom.xml) need not wait 2 s.
+    pb.environment().put("LATHE_JVM_OPTS", "-Dlathe.scanIntervalMs=200");
     serverProcess = pb.start();
 
     final var stderrThread =

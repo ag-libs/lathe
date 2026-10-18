@@ -17,6 +17,8 @@
   <properties>
     <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
     <maven-clean-plugin.version>3.2.0</maven-clean-plugin.version>
+    <!-- The invoker projects build in parallel; -Dinvoker.parallelThreads=1 runs them one by one. -->
+    <invoker.parallelThreads>2</invoker.parallelThreads>
     <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships. -->
     <spotless-lib.version>4.10.3</spotless-lib.version>
   </properties>
@@ -172,7 +174,8 @@
             <extraArtifact>io.github.ag-libs:lathe-maven-extension:${project.version}:jar</extraArtifact>
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
-          <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository}</mavenOpts>
+          <!-- The projects build in parallel and share the local repository: lock it across processes. -->
+          <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav</mavenOpts>
         </configuration>
         <executions>
           <execution>

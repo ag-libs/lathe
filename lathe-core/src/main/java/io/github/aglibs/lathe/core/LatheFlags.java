@@ -10,6 +10,8 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String BUILD_DIR = "lathe.buildDir";
   public static final String RESULTS_SINK = "lathe.results.sink";
+  // How often the server scans for files changed outside the editor, in ms (default 2000).
+  public static final String SCAN_INTERVAL_MS = "lathe.scanIntervalMs";
 
   // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
   // the global-default style, same shape as the workspace style file; a project file overrides it.

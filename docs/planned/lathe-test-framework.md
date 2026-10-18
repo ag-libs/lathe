@@ -231,12 +231,12 @@ The invoker suite's CPU stays largely as is: it is Maven running real builds.
 1. **`TestJavac`** — the helper, routing `TestCompiler`, `TempSourceCompiler`, and the completion fixture through it; JDK-only default classpath. *Done.*
 2. **Cached fixtures** — `SampleFixture` compiles once per JVM; other read-only fixtures follow. *Done.*
 3. **Instance-owned fixtures** — `CompletionTestSupport` and any other static base-class fixture. *Done.*
-4. **Tiers** — tag the workspace tests; add the tier rule to `CLAUDE.md`.
+4. **Tiers** — tag the workspace tests; add the tier rule to `CLAUDE.md`. *Dropped:* with parallel classes the whole suite takes about 15 s, so a loop that skips the workspace tests would save too little to justify tagging them.
 5. **Coverage profile** — JaCoCo moves to an on-demand profile. *Done.*
-6. **Build ordering** — optional, decided separately: the server's tests in a test-only module.
+6. **Build ordering** — optional, decided separately: the server's tests in a test-only module. *Skipped:* with the server's tests at about 15 s it would save little, and it is the most invasive change here.
 7. **Invoker: reactor artifacts** (7a) — confirm why the reactor's server loses to `~/.m2`, then fix it, with 7d decided alongside. Independent of slices 1–6, and the first to do. *Done (`bfec20a6`); 7d is still open.*
-8. **Invoker: parallel projects** (7b).
-9. **Invoker: test-only watcher interval** (7c).
+8. **Invoker: parallel projects** (7b). *Done.*
+9. **Invoker: test-only watcher interval** (7c). *Done.*
 10. **Gradle test layout** (8) — adopted as the Gradle front-end lands: reactor-filled repository, `.lathe/`-only front-end assertions, server smoke tests in one place, matrix in CI only.
 
 ## Verification
@@ -285,6 +285,20 @@ What made it safe:
 Ten runs in random class and method order all passed, in 14.7–17.5 s (26.5 s sequential), with the same 1,226 tests.
 The machine is busy at 72–97% during the main phase; the rest is Maven startup (about 3 s, one core) and the isolated classes (about 3.5 s, one core).
 `-Djunit.jupiter.execution.parallel.enabled=false` runs the suite sequentially, for debugging.
+
+**7b — parallel invoker projects (2026-10-18).** `parallelThreads=2` in `lathe-maven-plugin`'s invoker configuration.
+Invoker suite alone (`-Dsurefire.skip=true`), from a cold start (`target/it`, `target/local-repo`, `target/it-home` deleted): 35.0 s → 28.2–29.6 s over three runs, all passing; warm, 23.1 s.
+Less than the estimated 16 s because `formatters` is now shorter; `multi-module` (about 22 s) is the long pole.
+The projects share the local repository and the Lathe cache, so parallel builds exposed two races, both fixed:
+a cold cache let two syncs extract the same JDK or dependency sources, and the later one deleted the earlier one's copy in place while it could be read
+(`ZipCache` now swaps by renames, `FileUtil.moveDirReplacing`, a race real users can hit too);
+and Maven locks the local repository only within one process, so the invoked builds use its file lock (`aether.syncContext.named.factory=file-lock`).
+With the lock, cold runs take about 30.5 s.
+The thread count is the `invoker.parallelThreads` property, so `-Dinvoker.parallelThreads=1` runs the projects one by one.
+
+**7c — scan interval for the smoke tests (2026-10-18).** The server reads its outside-change scan interval from `lathe.scanIntervalMs` (`LatheFlags.SCAN_INTERVAL_MS`, default 2000; a non-positive value falls back to it).
+`LspSmokeTest` passes 200 ms through the launcher's `LATHE_JVM_OPTS`: `pomChange_…` 1.29 s → 0.07 s, `workspaceReload_…` 2.54 s → 0.61 s; the warm invoker suite 24.8 s → about 21 s.
+The setting is undocumented for users for now; the unit tests keep the default, where a faster scan only added work.
 A 200 ms server scan interval (instead of 2 s) made the suite slower (28.6 s), so workspace tests do not wait on the scan.
 
 ## Measuring
