@@ -11,18 +11,21 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 
+// One instance per class owns its fixture, so test classes never share or close each other's.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 abstract class CompletionTestSupport {
 
-  @TempDir static Path sharedTmp;
-  @TempDir Path tmp;
+  Path tmp;
 
-  protected static CompletionFixture fixture;
+  protected CompletionFixture fixture;
   protected CompletionFixture localFixture;
 
   @BeforeAll
-  static void setup() throws IOException {
+  void setup(@TempDir final Path sharedTmp) throws IOException {
     fixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
@@ -41,8 +44,13 @@ abstract class CompletionTestSupport {
                     "Stream", "java.util.stream.Stream", TypeKind.INTERFACE)));
   }
 
+  @BeforeEach
+  void newTmp(@TempDir final Path dir) {
+    tmp = dir;
+  }
+
   @AfterAll
-  static void teardown() {
+  void teardown() {
     fixture.close();
   }
 

@@ -265,6 +265,9 @@ Message format: `[operation] uri-or-module detail Xms outcome`
   **NEVER** use camelCase for test names. (`resolve_missingJavaHome_returnsMissing`)
 - **NEVER** use `@Nested` — flatten all tests into the top-level class with descriptive prefixed names.
 - Always include both a positive case and a negative/edge case per behaviour.
+- `lathe-server` test classes run in parallel, so tests **MUST** be parallel-safe: no mutable `static`
+  state, compile through `TestJavac` / `TempSourceCompiler`, and mark a class `@Isolated` if it
+  observes JVM-wide state (e.g. `CompileLog`, which hears every compile in the JVM).
 
 ### How to write a new test
 

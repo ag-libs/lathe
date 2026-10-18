@@ -8,12 +8,12 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.server.TestJavac;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import javax.tools.JavaFileObject;
 import javax.tools.SimpleJavaFileObject;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 
 class JavadocMarkdownPrinterTest {
@@ -348,8 +348,8 @@ class JavadocMarkdownPrinterTest {
         };
     final var task =
         (JavacTask)
-            ToolProvider.getSystemJavaCompiler()
-                .getTask(null, null, null, null, null, List.of(jfo));
+            JavaSourceCompiler.COMPILER.getTask(
+                null, TestJavac.fileManager(List.of(), List.of()), null, null, null, List.of(jfo));
     final CompilationUnitTree cu = task.parse().iterator().next();
     final DocTrees docTrees = DocTrees.instance(task);
     final var classTree = (ClassTree) cu.getTypeDecls().getFirst();

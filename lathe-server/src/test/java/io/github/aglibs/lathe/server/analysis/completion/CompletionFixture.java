@@ -137,14 +137,13 @@ final class CompletionFixture implements AutoCloseable {
     Files.writeString(sourceFile, source);
     final List<String> options =
         Stream.concat(Stream.of("-proc:none"), extraOptions.stream()).toList();
-    try (final var parsed = TestCompiler.parse(sourceFile, options, moduleInfoFile)) {
-      return new AttributedFileAnalysis(
-          parsed.trees(),
-          parsed.task().getElements(),
-          parsed.task().getTypes(),
-          parsed.cu(),
-          List.of());
-    }
+    final var parsed = TestCompiler.parse(sourceFile, options, moduleInfoFile);
+    return new AttributedFileAnalysis(
+        parsed.trees(),
+        parsed.task().getElements(),
+        parsed.task().getTypes(),
+        parsed.cu(),
+        List.of());
   }
 
   private CompletionRequest request(

@@ -37,25 +37,24 @@ class ExtractionSupportTest {
     final var file = tmp.resolve("Bundle.java");
     Files.writeString(file, RECORD_WITH_NON_CANONICAL_CTOR);
 
-    try (var parsed = TestCompiler.parse(file)) {
-      final var trees = parsed.trees();
-      final CompilationUnitTree cu = parsed.cu();
-      final var scope = TreePath.getPath(cu, cu.getTypeDecls().getFirst());
-      final String content = SampleFixture.sourceContent(cu);
-      final TreePath selected = SourceLocator.pathAt(trees, cu, content.indexOf("String"));
+    final var parsed = TestCompiler.parse(file);
+    final var trees = parsed.trees();
+    final CompilationUnitTree cu = parsed.cu();
+    final var scope = TreePath.getPath(cu, cu.getTypeDecls().getFirst());
+    final String content = SampleFixture.sourceContent(cu);
+    final TreePath selected = SourceLocator.pathAt(trees, cu, content.indexOf("String"));
 
-      final List<TreePath> occurrences = ExtractionSupport.occurrences(scope, selected, trees);
+    final List<TreePath> occurrences = ExtractionSupport.occurrences(scope, selected, trees);
 
-      // Real source references survive; no positionless synthetic leaks in — a leaked NOPOS node is
-      // what made offsetToPosition throw and kill the whole code-action request.
-      final var positions = trees.getSourcePositions();
-      assertThat(occurrences)
-          .isNotEmpty()
-          .allSatisfy(
-              o -> {
-                assertThat(positions.getStartPosition(cu, o.getLeaf())).isNotNegative();
-                assertThat(positions.getEndPosition(cu, o.getLeaf())).isNotNegative();
-              });
-    }
+    // Real source references survive; no positionless synthetic leaks in — a leaked NOPOS node is
+    // what made offsetToPosition throw and kill the whole code-action request.
+    final var positions = trees.getSourcePositions();
+    assertThat(occurrences)
+        .isNotEmpty()
+        .allSatisfy(
+            o -> {
+              assertThat(positions.getStartPosition(cu, o.getLeaf())).isNotNegative();
+              assertThat(positions.getEndPosition(cu, o.getLeaf())).isNotNegative();
+            });
   }
 }

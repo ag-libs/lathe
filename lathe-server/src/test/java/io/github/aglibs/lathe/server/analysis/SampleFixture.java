@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -13,33 +14,33 @@ import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.VariableElement;
 import org.eclipse.lsp4j.Position;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Base class that compiles {@code Sample.java} before each test. Subclasses inherit {@link
- * #compiled} ready for inspection.
+ * Base class giving each test {@link #compiled}, the attributed {@code Sample.java}. Tests only
+ * read it, so one compile is shared by every test on a thread; per thread because javac fills in
+ * symbols lazily and is not thread-safe.
  */
 public abstract class SampleFixture {
 
+  private static final ThreadLocal<TestCompiler.ParsedSource> SAMPLE =
+      ThreadLocal.withInitial(() -> IOUtil.unchecked(SampleFixture::parse));
+
   @TempDir public Path tmp;
 
-  public TestCompiler.ParsedSource compiled;
+  public final TestCompiler.ParsedSource compiled = SAMPLE.get();
 
-  @BeforeEach
-  void compile() throws IOException {
+  // The file outlives the parse: tests read the source text back through the compilation unit.
+  private static TestCompiler.ParsedSource parse() throws IOException {
     final var source =
         new String(
-            Objects.requireNonNull(getClass().getResourceAsStream("/Sample.java")).readAllBytes());
-    final var sourceFile = tmp.resolve("Sample.java");
-    Files.writeString(sourceFile, source);
-    compiled = TestCompiler.parse(sourceFile);
-  }
-
-  @AfterEach
-  void closeCompiled() throws IOException {
-    compiled.close();
+            Objects.requireNonNull(SampleFixture.class.getResourceAsStream("/Sample.java"))
+                .readAllBytes());
+    final Path dir = Files.createTempDirectory("lathe-sample-");
+    final Path sourceFile = Files.writeString(dir.resolve("Sample.java"), source);
+    dir.toFile().deleteOnExit();
+    sourceFile.toFile().deleteOnExit();
+    return TestCompiler.parse(sourceFile);
   }
 
   Optional<String> hoverAt(final int line, final int character) {

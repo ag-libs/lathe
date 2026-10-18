@@ -149,24 +149,23 @@ class DefinitionLocatorTest extends SampleFixture {
         """;
     final var sourceFile = tempDir.resolve("Widget.java");
     Files.writeString(sourceFile, source);
-    try (final var parsed = TestCompiler.parse(sourceFile)) {
-      final var widgetType = parsed.task().getElements().getTypeElement("Widget");
-      final var getMethod =
-          widgetType.getEnclosedElements().stream()
-              .filter(e -> e.getSimpleName().contentEquals("get"))
-              .findFirst()
-              .orElseThrow();
+    final var parsed = TestCompiler.parse(sourceFile);
+    final var widgetType = parsed.task().getElements().getTypeElement("Widget");
+    final var getMethod =
+        widgetType.getEnclosedElements().stream()
+            .filter(e -> e.getSimpleName().contentEquals("get"))
+            .findFirst()
+            .orElseThrow();
 
-      final var location =
-          new DefinitionLocator(parsed.parser())
-              .locate(getMethod, parsed.trees(), List.of(), sourceFile.toUri().toString());
+    final var location =
+        new DefinitionLocator(parsed.parser())
+            .locate(getMethod, parsed.trees(), List.of(), sourceFile.toUri().toString());
 
-      assertThat(location).isPresent();
-      // line 2 (0-based), col 18: "    public String get()"
-      // indexOf("get") wrongly lands inside "getter" in the annotation string on line 1
-      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(2);
-      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(18);
-    }
+    assertThat(location).isPresent();
+    // line 2 (0-based), col 18: "    public String get()"
+    // indexOf("get") wrongly lands inside "getter" in the annotation string on line 1
+    assertThat(location.get().getRange().getStart().getLine()).isEqualTo(2);
+    assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(18);
   }
 
   @Test
@@ -183,19 +182,18 @@ class DefinitionLocatorTest extends SampleFixture {
     final var overlayFile = tempDir.resolve("Greeter.java");
     Files.writeString(overlayFile, GREETER_SOURCE);
 
-    try (final var parsed = TestCompiler.parse(overlayFile)) {
-      final var greet = memberNamed(parsed.task().getElements().getTypeElement("Greeter"), "greet");
-      assertThat(parsed.trees().getPath(greet)).isNotNull();
+    final var parsed = TestCompiler.parse(overlayFile);
+    final var greet = memberNamed(parsed.task().getElements().getTypeElement("Greeter"), "greet");
+    assertThat(parsed.trees().getPath(greet)).isNotNull();
 
-      final var location =
-          new DefinitionLocator(parsed.parser())
-              .locate(greet, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
+    final var location =
+        new DefinitionLocator(parsed.parser())
+            .locate(greet, parsed.trees(), List.of(realRoot), overlayFile.toUri().toString());
 
-      assertThat(location).isPresent();
-      assertThat(location.get().getUri())
-          .isEqualTo(realFile.toUri().toString())
-          .isNotEqualTo(overlayFile.toUri().toString());
-    }
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri())
+        .isEqualTo(realFile.toUri().toString())
+        .isNotEqualTo(overlayFile.toUri().toString());
   }
 
   @Test
@@ -247,26 +245,25 @@ class DefinitionLocatorTest extends SampleFixture {
     Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    try (final var parsed = TestCompiler.parseWithClasspath(sourceFile, classDir)) {
-      final var expression = "statuses.put(\"string\", Status.ACTIVE)";
-      final var typePath = pathAt(parsed.trees(), parsed.cu(), expression, "Status");
-      final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
-      final var typeLocation = definitionAt(parsed, typePath);
-      final var constantLocation = definitionAt(parsed, constantPath);
-      final var typeParameter = SourceLocator.parameterElementAt(parsed.trees(), typePath);
-      final var constantParameter = SourceLocator.parameterElementAt(parsed.trees(), constantPath);
+    final var parsed = TestCompiler.parseWithClasspath(sourceFile, classDir);
+    final var expression = "statuses.put(\"string\", Status.ACTIVE)";
+    final var typePath = pathAt(parsed.trees(), parsed.cu(), expression, "Status");
+    final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
+    final var typeLocation = definitionAt(parsed, typePath);
+    final var constantLocation = definitionAt(parsed, constantPath);
+    final var typeParameter = SourceLocator.parameterElementAt(parsed.trees(), typePath);
+    final var constantParameter = SourceLocator.parameterElementAt(parsed.trees(), constantPath);
 
-      assertThat(typeLocation).isPresent();
-      assertThat(typeLocation.get().getUri()).endsWith("EnumArgument.java");
-      assertThat(typeLocation.get().getRange().getStart().getLine()).isEqualTo(4);
-      assertThat(typeLocation.get().getRange().getStart().getCharacter()).isEqualTo(7);
-      assertThat(constantLocation).isPresent();
-      assertThat(constantLocation.get().getUri()).endsWith("EnumArgument.java");
-      assertThat(constantLocation.get().getRange().getStart().getLine()).isEqualTo(5);
-      assertThat(constantLocation.get().getRange().getStart().getCharacter()).isEqualTo(4);
-      assertThat(typeParameter).isNull();
-      assertThat(constantParameter).isNull();
-    }
+    assertThat(typeLocation).isPresent();
+    assertThat(typeLocation.get().getUri()).endsWith("EnumArgument.java");
+    assertThat(typeLocation.get().getRange().getStart().getLine()).isEqualTo(4);
+    assertThat(typeLocation.get().getRange().getStart().getCharacter()).isEqualTo(7);
+    assertThat(constantLocation).isPresent();
+    assertThat(constantLocation.get().getUri()).endsWith("EnumArgument.java");
+    assertThat(constantLocation.get().getRange().getStart().getLine()).isEqualTo(5);
+    assertThat(constantLocation.get().getRange().getStart().getCharacter()).isEqualTo(4);
+    assertThat(typeParameter).isNull();
+    assertThat(constantParameter).isNull();
   }
 
   @Test
@@ -316,16 +313,15 @@ class DefinitionLocatorTest extends SampleFixture {
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
-      final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+    final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
-      final var location =
-          new DefinitionLocator(parsed.parser())
-              .locate(greeterElement, parsed.trees(), List.of(tempDir.resolve("src")), "file:///x");
+    final var location =
+        new DefinitionLocator(parsed.parser())
+            .locate(greeterElement, parsed.trees(), List.of(tempDir.resolve("src")), "file:///x");
 
-      assertThat(location).isPresent();
-      assertThat(location.get().getUri()).endsWith("Greeter.java");
-    }
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).endsWith("Greeter.java");
   }
 
   @Test
@@ -342,14 +338,13 @@ class DefinitionLocatorTest extends SampleFixture {
     Files.createDirectories(classDir);
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { String s; }");
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
-      final var stringElement = parsed.task().getElements().getTypeElement("java.lang.String");
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+    final var stringElement = parsed.task().getElements().getTypeElement("java.lang.String");
 
-      final var file = DefinitionLocator.findSourceFile(stringElement, List.of(srcRoot));
+    final var file = DefinitionLocator.findSourceFile(stringElement, List.of(srcRoot));
 
-      assertThat(file).isPresent();
-      assertThat(file.get().getFileName().toString()).isEqualTo("String.java");
-    }
+    assertThat(file).isPresent();
+    assertThat(file.get().getFileName().toString()).isEqualTo("String.java");
   }
 
   @Test
@@ -367,19 +362,18 @@ class DefinitionLocatorTest extends SampleFixture {
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
-      final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
-      assertThat(parsed.trees().getPath(greeterElement)).isNull();
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+    final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
+    assertThat(parsed.trees().getPath(greeterElement)).isNull();
 
-      final var location =
-          new DefinitionLocator(parsed.parser())
-              .locate(greeterElement, parsed.trees(), List.of(srcDir), "file:///irrelevant");
+    final var location =
+        new DefinitionLocator(parsed.parser())
+            .locate(greeterElement, parsed.trees(), List.of(srcDir), "file:///irrelevant");
 
-      assertThat(location).isPresent();
-      assertThat(location.get().getUri()).endsWith("Greeter.java");
-      assertThat(location.get().getRange().getStart().getLine()).isEqualTo(0);
-      assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(13);
-    }
+    assertThat(location).isPresent();
+    assertThat(location.get().getUri()).endsWith("Greeter.java");
+    assertThat(location.get().getRange().getStart().getLine()).isEqualTo(0);
+    assertThat(location.get().getRange().getStart().getCharacter()).isEqualTo(13);
   }
 
   @Test
@@ -467,14 +461,13 @@ class DefinitionLocatorTest extends SampleFixture {
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { %s ref; }".formatted(typeName));
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
-      final var type = parsed.task().getElements().getTypeElement(typeName);
-      final var member = selector.apply(type);
-      assertThat(parsed.trees().getPath(member)).isNull();
+    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
+    final var type = parsed.task().getElements().getTypeElement(typeName);
+    final var member = selector.apply(type);
+    assertThat(parsed.trees().getPath(member)).isNull();
 
-      return new DefinitionLocator(parsed.parser())
-          .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant");
-    }
+    return new DefinitionLocator(parsed.parser())
+        .locate(member, parsed.trees(), List.of(srcDir), "file:///irrelevant");
   }
 
   private static Path writeModuleInfo(final Path dir, final String source) throws IOException {
@@ -493,11 +486,10 @@ class DefinitionLocatorTest extends SampleFixture {
       final Path sourceRoot)
       throws IOException {
     final var overlayFile = writeModuleInfo(overlayDir, overlaySource);
-    try (final var parsed = TestCompiler.parse(overlayFile)) {
-      final var module = parsed.task().getElements().getModuleElement(targetModule);
-      return new DefinitionLocator(parsed.parser())
-          .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString());
-    }
+    final var parsed = TestCompiler.parse(overlayFile);
+    final var module = parsed.task().getElements().getModuleElement(targetModule);
+    return new DefinitionLocator(parsed.parser())
+        .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString());
   }
 
   private static Element memberNamed(final TypeElement type, final String memberName) {

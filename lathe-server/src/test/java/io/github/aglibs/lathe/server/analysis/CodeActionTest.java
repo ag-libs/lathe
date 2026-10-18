@@ -13,7 +13,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import javax.tools.StandardLocation;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
@@ -31,7 +30,6 @@ class CodeActionTest {
   @TempDir private Path tmp;
 
   private WorkspaceTypeIndex typeIndex;
-  private TempSourceCompiler compiler;
   private SourceAnalysisSession session;
 
   @BeforeEach
@@ -41,8 +39,7 @@ class CodeActionTest {
             tmp.resolve("index.json"),
             new TypeIndexEntry(
                 "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()));
-    compiler = new TempSourceCompiler();
-    session = new SourceAnalysisSession(compiler);
+    session = new SourceAnalysisSession(new TempSourceCompiler());
   }
 
   @AfterEach
@@ -260,7 +257,8 @@ class CodeActionTest {
         public class PublicClass {}
         """);
     TestCompiler.compileToDir(classDir, ppFile, pubFile);
-    compiler.fileManager().setLocationFromPaths(StandardLocation.CLASS_PATH, List.of(classDir));
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
 
     final WorkspaceTypeIndex customTypeIndex =
         TempSourceCompiler.typeIndex(

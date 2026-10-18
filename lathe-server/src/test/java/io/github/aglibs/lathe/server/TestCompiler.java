@@ -39,8 +39,7 @@ public final class TestCompiler {
       Trees trees,
       CompilationUnitTree cu,
       StandardJavaFileManager fm,
-      SourceParser parser)
-      implements AutoCloseable {
+      SourceParser parser) {
 
     public ParsedSource {
       ValidCheck.check()
@@ -50,11 +49,6 @@ public final class TestCompiler {
           .notNull(fm, "fm")
           .notNull(parser, "parser")
           .validate();
-    }
-
-    @Override
-    public void close() throws IOException {
-      fm.close();
     }
   }
 
@@ -322,20 +316,12 @@ public final class TestCompiler {
       final List<String> options,
       final Path... sources)
       throws IOException {
-    final var fm = JavaSourceCompiler.createFileManager();
+    final var fm = TestJavac.fileManager(classpath, options);
     Files.createDirectories(classDir);
+    // The shared file manager keeps this output dir afterwards; only compileToDir writes classes.
     fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
-    if (!classpath.isEmpty()) {
-      fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
-    }
     JavaSourceCompiler.COMPILER
-        .getTask(
-            null,
-            fm,
-            null,
-            options.isEmpty() ? null : options,
-            null,
-            fm.getJavaFileObjects(sources))
+        .getTask(null, fm, null, options, null, fm.getJavaFileObjects(sources))
         .call();
   }
 
@@ -375,10 +361,7 @@ public final class TestCompiler {
   private static ParsedSource doParse(
       final List<Path> sources, final List<Path> classpath, final List<String> options)
       throws IOException {
-    final var fm = JavaSourceCompiler.createFileManager();
-    if (!classpath.isEmpty()) {
-      fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
-    }
+    final var fm = TestJavac.fileManager(classpath, options);
     final var diagnostics = new DiagnosticCollector<JavaFileObject>();
     final JavacTask task =
         (JavacTask)

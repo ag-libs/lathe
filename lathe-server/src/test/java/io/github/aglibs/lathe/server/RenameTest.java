@@ -24,8 +24,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 // An editor-applied rename: held until its last save, then committed as one write.
+// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
+@Isolated
 class RenameTest extends ServiceTestBase {
 
   @Test

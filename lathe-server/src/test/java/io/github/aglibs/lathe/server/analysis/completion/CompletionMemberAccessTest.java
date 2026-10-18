@@ -18,7 +18,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(labels.indexOf(earlier)).isLessThan(labels.indexOf(later));
   }
 
-  private static List<String> completeCollectorsInReturn(
+  private List<String> completeCollectorsInReturn(
       final String imports, final String returnType, final String streamType) {
     return labels(
         fixture.complete(

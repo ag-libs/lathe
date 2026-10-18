@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeastOnce;
@@ -21,9 +22,12 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.mockito.ArgumentCaptor;
 
 // Saves through the write pass: coalescing, one dependents refresh, write-only diagnostics.
+// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
+@Isolated
 class SaveTest extends ServiceTestBase {
 
   @Test
@@ -127,8 +131,12 @@ class SaveTest extends ServiceTestBase {
       save(fx.dep());
       fx.users().forEach(this::save);
       for (final Path user : fx.users()) {
-        verify(client, after(1_500).atLeastOnce()).publishDiagnostics(argThat(p -> isFor(p, user)));
+        verify(client, timeout(5_000).atLeastOnce())
+            .publishDiagnostics(argThat(p -> isFor(p, user)));
       }
+
+      // One quiet window, not one per file, for a duplicate refresh to show before counting.
+      verify(client, after(1_500).atLeastOnce()).publishDiagnostics(any());
 
       awaitWorkerIdle();
       assertRefreshedOnce(compiles, fx.users());

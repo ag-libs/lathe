@@ -10,16 +10,16 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class CompletionModuleInfoTest {
 
-  @TempDir static java.nio.file.Path tmp;
-
-  private static CompletionFixture fixture;
+  private CompletionFixture fixture;
 
   @BeforeAll
-  static void setup() throws IOException {
+  void setup(@TempDir final java.nio.file.Path tmp) throws IOException {
     fixture =
         new CompletionFixture(
             CompletionFixture.typeIndex(
@@ -34,7 +34,7 @@ class CompletionModuleInfoTest {
   }
 
   @AfterAll
-  static void teardown() {
+  void teardown() {
     fixture.close();
   }
 

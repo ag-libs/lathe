@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Measured on 2026-10-11 against `main` at `972bb1c8`; only 7a (invoker correctness) has shipped since, in `bfec20a6`.
+**Proposed.** Measured on 2026-10-11 against `main` at `972bb1c8`; since then 7a (invoker correctness) shipped in `bfec20a6`, and slices 1, 2, 3, and 5 are done, plus parallel test classes in `lathe-server` (see [Results](#results)).
 Each step below is independent and is re-measured on its own.
 It covers `lathe-server`'s unit tests (sections 1–6) and the `lathe-maven-plugin` invoker suite (section 7).
 
@@ -104,7 +104,7 @@ Why the reactor's copy loses (what `invoker:install` puts in the local repositor
 
 ## Non-goals
 
-- Parallel test execution as a goal. The design removes what blocks it, but it costs CPU.
+- ~~Parallel test execution as a goal.~~ Reversed on 2026-10-18: once slices 1–3 removed what blocked it, parallel classes halved `lathe-server`'s wall-clock (see [Results](#results)).
 - Changing what any test asserts.
 - Mocking javac: tests keep compiling real source.
 
@@ -148,7 +148,8 @@ The testing section of `CLAUDE.md` gains a short rule: which tier a new test bel
 
 ### 5. Coverage only when asked for
 
-JaCoCo (6.7% of test CPU, plus slower class loading) moves into a profile that CI enables, out of every local run.
+JaCoCo (6.7% of test CPU, plus slower class loading) moves into a `coverage` profile, run on demand (`mvn verify -Pcoverage`).
+CI does not enable it until something uses the report.
 
 ### 6. Build ordering (optional, structural)
 
@@ -212,7 +213,7 @@ the cost that grows is end-to-end, where every test is a real build and the matr
 |---|---|
 | `TestJavac`: empty default classpath and shared file managers | ~25–35% |
 | Cached read-only fixtures, `SampleFixture` first | ~15% |
-| JaCoCo in a CI profile | ~7% |
+| JaCoCo in an on-demand profile | ~7% |
 
 Together roughly half of the server tests' CPU, same tests and coverage.
 These are estimates from the profile shares and the benchmark, not end-to-end measurements; each step is measured after it lands.
@@ -227,11 +228,11 @@ The invoker suite's CPU stays largely as is: it is Maven running real builds.
 
 ## Slicing
 
-1. **`TestJavac`** — the helper, routing `TestCompiler`, `TempSourceCompiler`, and the completion fixture through it; JDK-only default classpath.
-2. **Cached fixtures** — `SampleFixture` compiles once per JVM; other read-only fixtures follow.
-3. **Instance-owned fixtures** — `CompletionTestSupport` and any other static base-class fixture.
+1. **`TestJavac`** — the helper, routing `TestCompiler`, `TempSourceCompiler`, and the completion fixture through it; JDK-only default classpath. *Done.*
+2. **Cached fixtures** — `SampleFixture` compiles once per JVM; other read-only fixtures follow. *Done.*
+3. **Instance-owned fixtures** — `CompletionTestSupport` and any other static base-class fixture. *Done.*
 4. **Tiers** — tag the workspace tests; add the tier rule to `CLAUDE.md`.
-5. **Coverage profile** — JaCoCo moves to a CI profile.
+5. **Coverage profile** — JaCoCo moves to an on-demand profile. *Done.*
 6. **Build ordering** — optional, decided separately: the server's tests in a test-only module.
 7. **Invoker: reactor artifacts** (7a) — confirm why the reactor's server loses to `~/.m2`, then fix it, with 7d decided alongside. Independent of slices 1–6, and the first to do. *Done (`bfec20a6`); 7d is still open.*
 8. **Invoker: parallel projects** (7b).
@@ -244,6 +245,47 @@ The invoker suite's CPU stays largely as is: it is Maven running real builds.
 - Each slice is re-measured with the same setup as above (wall-clock, CPU, and the JFR categories), and the numbers recorded here.
 - Slice 3 is checked by running test classes in parallel once: no fixture-sharing failures remain.
 - Slice 7 is checked by building a deliberately different `lathe-server` into `~/.m2` and confirming the invoker suite still runs the reactor's own.
+
+## Results
+
+**Slice 1 — `TestJavac` (2026-10-18).** File managers are shared per thread, classpath, and option set
+(options are part of the key because javac applies path options to the file manager; per thread because a file manager is not thread-safe), and `ParsedSource` is no longer closeable.
+No test needed a classpath it had not declared; 1,226 tests pass unchanged.
+
+| Measure | Before | After |
+|---|---|---|
+| `mvn test -pl lathe-server` under mvnd, wall-clock | 35.1 s | 32.0 s |
+| File managers / javac tasks | 1,425 / 1,547 | 866 / 1,547 |
+| Test-JVM CPU samples | 1,928 | 1,652 (−14%) |
+| Samples reading the JDK or classpath | 1,055 | 775 |
+
+Less than the 25–35% estimate. The remaining reads are mostly not in test helpers:
+production compiles in workspace-tier tests (`CompilationWorker`, `JavacRunner`, about 280 samples), `SampleFixture` (83, slice 2),
+and completion's per-request JDK module lookups (`ImportCompletionProvider.isModuleAccessible`, 94).
+The other 866 file managers are mostly `SourceParser`'s, which read only source files and stay cheap.
+
+**Slices 2, 3, 5 (2026-10-18).** `SampleFixture` compiles `Sample.java` once per JVM (a read-only static, its file in a temp dir deleted on exit);
+the completion fixtures are instance fields under `@TestInstance(PER_CLASS)`, with the class-wide temp dir injected as a `@BeforeAll` parameter;
+JaCoCo runs only with `-Pcoverage`, on demand; CI does not pass it, since nothing read the report it produced.
+
+| Measure | Original | After slice 1 | After slices 1–3, 5 |
+|---|---|---|---|
+| `mvn test -pl lathe-server` under mvnd, wall-clock | 35.1 s | 32.0 s | 26.5 s |
+| Test-JVM CPU samples | 1,928 | 1,652 | 1,343 (−30%) |
+| File managers / javac tasks | 1,425 / 1,547 | 866 / 1,547 | 751 / 1,432 |
+
+**Parallel test classes (2026-10-18).** `lathe-server/src/test/resources/junit-platform.properties` runs test classes concurrently, one thread per core, and the methods of a class in order.
+What made it safe:
+
+- `TestJavac` and `SampleFixture` keep their javac state per thread: javac is not thread-safe, and it fills in symbols lazily.
+- `CompileLog` hears every compile in the JVM, so the three classes that count compiles (`SaveTest`, `RenameTest`, `WritePassTest`) are `@Isolated`: JUnit runs them while no other class runs. No assertion changed.
+- `LoggingConfig` reads the logging configuration once per JVM; re-reading it before every class reset the loggers, dropping handlers other classes had attached.
+- `SaveTest` waits one 1.5 s quiet window for a duplicate refresh instead of one per file (saves about 3 s in either mode).
+
+Ten runs in random class and method order all passed, in 14.7–17.5 s (26.5 s sequential), with the same 1,226 tests.
+The machine is busy at 72–97% during the main phase; the rest is Maven startup (about 3 s, one core) and the isolated classes (about 3.5 s, one core).
+`-Djunit.jupiter.execution.parallel.enabled=false` runs the suite sequentially, for debugging.
+A 200 ms server scan interval (instead of 2 s) made the suite slower (28.6 s), so workspace tests do not wait on the scan.
 
 ## Measuring
 
@@ -261,6 +303,7 @@ The numbers above came from a throwaway worktree with no code change:
 ## Decisions
 
 1. **CPU over wall-clock** — the levers are fewer cold compiles and less repeated work, not parallelism.
+   *Revised 2026-10-18:* both — the CPU slices first, then parallel test classes for wall-clock.
 2. **JDK-only default classpath for test compiles** — a test that needs a classpath declares it.
 3. **Build ordering is optional** — slice 6 is decided on its own, after the CPU slices.
 4. **Invoker correctness before invoker speed** — the suite must test the reactor's artifacts (7a) before it is made faster.

@@ -14,9 +14,8 @@ final class TokenScannerTestHelper {
       throws IOException {
     final Path src = tmp.resolve(filename);
     Files.writeString(src, source);
-    try (var compiled = TestCompiler.parse(src)) {
-      return TokenScanner.scan(compiled.trees(), compiled.cu());
-    }
+    final var compiled = TestCompiler.parse(src);
+    return TokenScanner.scan(compiled.trees(), compiled.cu());
   }
 
   static SemanticToken tokenAt(

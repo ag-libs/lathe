@@ -32,9 +32,12 @@ import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 // The write pass: external changes, startup catch-up, reported files, failures, deletions,
 // resources.
+// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
+@Isolated
 class WritePassTest extends ServiceTestBase {
 
   @Test

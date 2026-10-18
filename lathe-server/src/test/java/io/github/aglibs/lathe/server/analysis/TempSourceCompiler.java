@@ -2,11 +2,13 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
+import io.github.aglibs.lathe.server.TestJavac;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -14,18 +16,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import javax.tools.DiagnosticCollector;
-import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
-import javax.tools.StandardLocation;
-import javax.tools.ToolProvider;
 
 public final class TempSourceCompiler implements JavaSourceCompiler {
 
   public static final String TEST_URI = "file:///Test.java";
 
+  private static final List<String> OPTIONS = List.of("-proc:none");
+
   private final Path td;
-  private final JavaCompiler compiler;
   private final StandardJavaFileManager fm;
 
   public TempSourceCompiler() {
@@ -33,16 +33,8 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
   }
 
   public TempSourceCompiler(final List<Path> extraClasspath) {
-    try {
-      this.compiler = ToolProvider.getSystemJavaCompiler();
-      this.fm = compiler.getStandardFileManager(null, null, null);
-      this.td = Files.createTempDirectory("lathe-test-");
-      if (!extraClasspath.isEmpty()) {
-        fm.setLocationFromPaths(StandardLocation.CLASS_PATH, extraClasspath);
-      }
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    this.fm = TestJavac.fileManager(extraClasspath, OPTIONS);
+    this.td = IOUtil.unchecked(() -> Files.createTempDirectory("lathe-test-"));
   }
 
   @Override
@@ -60,13 +52,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
       final var collector = new DiagnosticCollector<JavaFileObject>();
       final var task =
           (JavacTask)
-              compiler.getTask(
-                  null,
-                  fm,
-                  collector,
-                  List.of("-proc:none"),
-                  null,
-                  fm.getJavaFileObjects(tempFile));
+              COMPILER.getTask(null, fm, collector, OPTIONS, null, fm.getJavaFileObjects(tempFile));
 
       return JavaSourceCompiler.runAnalysis(task, collector);
     } catch (final IOException e) {
@@ -103,15 +89,6 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
 
   @Override
   public void close() {
-    try {
-      fm.close();
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
-    }
-    try {
-      FileUtil.deleteDir(td);
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    IOUtil.unchecked(() -> FileUtil.deleteDir(td));
   }
 }

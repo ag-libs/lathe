@@ -151,6 +151,7 @@ abstract class ServiceTestBase {
   // Collects log messages, so a test can count operations that leave no other observable trace.
   // The compile log while open: a test counts compile tasks here, as a stale result is dropped
   // unpublished and redundant compiles show nowhere else.
+  // Hears every compile in the JVM: a test class using it must be @Isolated.
   protected static final class CompileLog extends Handler implements AutoCloseable {
     private static final Logger COMPILER = Logger.getLogger(SourceAnalysisSession.class.getName());
     private final Queue<String> messages = new ConcurrentLinkedQueue<>();
