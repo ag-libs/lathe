@@ -13,8 +13,8 @@ concurrency:
 
 jobs:
   build:
-    name: Build & verify (JDK ${{ matrix.java }}, ubuntu)
-    runs-on: ubuntu-latest
+    name: Build & verify (JDK ${{ matrix.java }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +23,12 @@ jobs:
         # compatibility (e.g. JDK-specific javac source-position and
         # CompletableFuture cancellation shapes). Bump the latest as it moves.
         java: [ '21', '25', '27' ]
+        os: [ ubuntu-latest ]
+        # macOS on the current LTS only: the OS-sensitive parts (launcher scripts, paths, temp dirs)
+        # don't vary by JDK, so one row covers them.
+        include:
+          - java: '25'
+            os: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -57,9 +63,10 @@ jobs:
         # ENABLED during tests. Otherwise LatheFlags.isDisabled() treats CI=true
         # as a skip signal and every enabled-path test fails.
         #
-        # The client modules are JDK-agnostic — build them once on JDK 21, exclude them elsewhere.
+        # The client modules are JDK-agnostic — build them on JDK 21 and on macOS (their scripts are
+        # OS-sensitive), exclude them elsewhere.
         run: |
-          if [ "${{ matrix.java }}" = "21" ]; then
+          if [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
             env -u CI mvn -B --no-transfer-progress clean install
           else
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
@@ -74,6 +81,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: surefire-reports-jdk${{ matrix.java }}
+          name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
           path: '**/target/surefire-reports/'
           retention-days: 7
