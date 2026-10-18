@@ -15,7 +15,7 @@ One line in `init.el` points Eglot at Lathe's per-workspace launcher for Java fi
              '(java-mode ".lathe/lathe-launcher.sh"))
 ```
 
-The launcher is the symlink `lathe:sync` links at `<root>/.lathe/`, pinned to the server version this
+The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
 project uses. Eglot starts the server with the project root as its working directory, so the relative
 path resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 

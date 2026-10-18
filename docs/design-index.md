@@ -198,7 +198,7 @@ reused):
 - [Multi-OS Design](planned/lathe-multi-os.md) — **proposed.** Lathe portable by construction across
   Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
   tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names
-  guard, `forbiddenapis`, OS matrix). No symlinks, argfile launchers, sync logic in Java, canonical URIs,
+  guard, `forbiddenapis`, OS matrix). No symlinks (done), argfile launchers, sync logic in Java, canonical URIs,
   `/` in persisted relative paths. Phase A makes the core portable (Linux/macOS); Phase B adds Windows
   (`.cmd` scripts, VS Code/Cursor first). WSL is the interim workaround.
 

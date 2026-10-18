@@ -33,7 +33,7 @@ Run gating and main-class scope recognize only these two names, and the generate
 | Path under `.lathe/` | Format | Need |
 |---|---|---|
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
-| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | symlinks | required |
+| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | executable scripts | required |
 | `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
@@ -74,7 +74,9 @@ looked up in `workspace.json`'s `outputs`; any other path is used as written.
 
 ### `lathe-launcher.sh`, `lathe-mcp-launcher.sh`
 
-Absolute symlinks to `~/.cache/lathe/servers/<version>/`, where the front-end installs the server and writes the real launcher scripts (`ServerInstaller`, `WorkspaceLauncherLinker`, shared by both front-ends).
+Copies of the launcher scripts the front-end installs under `~/.cache/lathe/servers/<version>/` (`ServerInstaller`, `LauncherCopier`, shared by both front-ends).
+They are plain files, not symlinks, so `.lathe/` works where links can't be created (Windows without admin rights).
+Every sync rewrites them when their content changes.
 The scripts pick the JVM as `$LATHE_JAVA_HOME`, else the content of `.lathe/java-home`, else `java` on `PATH`,
 then add `@.lathe/jvm.args` when present.
 `java-home` and `jvm.args` are resolved relative to the working directory, so clients spawn the launcher with the workspace root as cwd.
@@ -231,7 +233,7 @@ The front-end also fills parts of the user cache (`~/.cache/lathe`, or `-Dlathe.
 
 | Path | Content | Written by |
 |---|---|---|
-| `servers/<version>/` | launcher scripts; `latest` links the highest version | front-end |
+| `servers/<version>/` | launcher scripts; `latest/` holds copies of the highest version's | front-end |
 | `deps/<gav>/` | extracted dependency sources, with a `.lathe-source.json` marker | front-end |
 | `jdks/<key>/` | extracted JDK `src.zip` | front-end |
 | `type-index/deps/…`, `type-index/jdks/…` | type-index shards (`TypeIndexFile`) | front-end |

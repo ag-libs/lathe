@@ -24,8 +24,8 @@ local function write_file(path, contents)
   f:close()
 end
 
--- The launcher is the per-workspace symlink `lathe:sync` links at <root>/.lathe/, pinned to the
--- server version this project uses. Here a plain executable stub stands in for it.
+-- The launcher is the per-workspace script `lathe:sync` writes at <root>/.lathe/, pinned to the
+-- server version this project uses. Here an executable stub stands in for it.
 local launcher = project .. "/.lathe/lathe-launcher.sh"
 write_file(launcher, "#!/bin/sh\n")
 vim.fn.setfperm(launcher, "rwxr-xr-x")
@@ -55,7 +55,7 @@ spec.check(
 spec.check("launcher: server cwd is the workspace root", rpc_args.params.cwd, project)
 
 -- LATHE_SERVER_DIR overrides the launcher location for local server development,
--- without rebuilding the workspace symlink.
+-- without rewriting the workspace launcher.
 local override = work .. "/override"
 vim.fn.mkdir(override, "p")
 local override_launcher = override .. "/lathe-launcher.sh"

@@ -33,7 +33,7 @@ No Lathe plugin, no extra config beyond one file.
    Zed opens unrecognized projects in Restricted Mode, which ignores `.zed/settings.json` and starts no
    language servers until the project is trusted.
 
-The launcher is the symlink `lathe:sync` links at `<root>/.lathe/`, pinned to the server version this
+The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
 project uses; any `mvn` build populates it.
 Zed starts language servers with the worktree root as their working directory, so the relative path
 resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).

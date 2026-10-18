@@ -46,9 +46,9 @@ public final class ServerInstaller {
   }
 
   // Installs the server + MCP launchers for this plugin's version into an immutable,
-  // version-addressed dir shared across workspaces, and returns it so the caller can link each
-  // workspace's .lathe/ at it. Version-correct discovery is per-workspace (see
-  // WorkspaceLauncherLinker); `latest` is only the best-effort pointer for user-global MCP.
+  // version-addressed dir shared across workspaces, and returns it so the caller can copy them into
+  // each workspace's .lathe/. Version-correct discovery is per-workspace (see LauncherCopier);
+  // `latest` is only the best-effort copy for user-global MCP.
   public Path install() throws SyncException {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
@@ -58,32 +58,26 @@ public final class ServerInstaller {
 
     try {
       Files.createDirectories(versionDir);
-      writeLauncher(versionDir, LatheLayout.LAUNCHER_SCRIPT, renderLauncherScript(modulePath));
       writeLauncher(
-          versionDir, LatheLayout.MCP_LAUNCHER_SCRIPT, renderMcpLauncherScript(mcpClasspath));
+          versionDir, LatheLayout.LAUNCHER_SCRIPT, renderLauncherScript(version, modulePath));
+      writeLauncher(
+          versionDir,
+          LatheLayout.MCP_LAUNCHER_SCRIPT,
+          renderMcpLauncherScript(version, mcpClasspath));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
 
-    updateLatestLink();
+    updateLatest();
     removeLegacyCurrentLink();
     return versionDir;
   }
 
-  // Repoints the machine-global `latest` symlink at the newest installed version. By newest version
-  // (not last synced) so syncing an older repo cannot drag it backward.
-  private void updateLatestLink() {
-    final Path newest = newestVersionDir(LatheLayout.serversDir());
-    if (newest == null) {
-      return;
-    }
-
+  private void updateLatest() {
     try {
-      if (FileUtil.linkSymbolic(LatheLayout.latestLink(), newest)) {
-        log.info("[server] latest → %s".formatted(newest.getFileName()));
-      }
+      new LauncherCopier(log).copyNewestToLatest(LatheLayout.serversDir(), LatheLayout.latestDir());
     } catch (final IOException e) {
-      log.debug("[server] could not update latest symlink: %s".formatted(e.getMessage()));
+      log.debug("[server] could not update latest: %s".formatted(e.getMessage()));
     }
   }
 
@@ -206,7 +200,7 @@ public final class ServerInstaller {
         "%s:%s:%s".formatted(groupId, artifactId, version), remoteRepositories);
   }
 
-  static String renderLauncherScript(final String modulePath) {
+  static String renderLauncherScript(final String version, final String modulePath) {
     // java.net.http: not in the default module graph and not declared in module-info.java because
     // lathe-server does not use it directly. Error Prone loads as a classpath javac plugin
     // (-Xplugin:ErrorProne) and runs inside the lathe-server JVM. Its WellKnownMutability class
@@ -220,33 +214,44 @@ public final class ServerInstaller {
     // adds the grants it needs to the same file.
     return """
         #!/bin/sh
-        %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
+        %s%s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
           --module-path %s \\
           -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
         """
-        .formatted(javaResolvePrologue(), jvmArgsPrologue(), STDOUT_GUARD_JVM_OPTS, modulePath);
+        .formatted(
+            versionComment(version),
+            javaResolvePrologue(),
+            jvmArgsPrologue(),
+            STDOUT_GUARD_JVM_OPTS,
+            modulePath);
   }
 
-  static String renderMcpLauncherScript(final String classpath) {
+  static String renderMcpLauncherScript(final String version, final String classpath) {
     // Classpath launcher: on the classpath lathe-server's module-info is ignored, so LatheEngine
     // and
     // the in-process javac it drives run in the unnamed module, which needs jdk.compiler internals
     // exported to ALL-UNNAMED. The editor launcher needs none: the server is a named module there.
     return """
         #!/bin/sh
-        %s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
+        %s%s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
           --add-modules java.net.http \\
         %s%s  -cp %s \\
           io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
         """
         .formatted(
+            versionComment(version),
             javaResolvePrologue(),
             jvmArgsPrologue(),
             STDOUT_GUARD_JVM_OPTS,
             javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
             javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
             classpath);
+  }
+
+  // Workspace copies of a launcher no longer show the version as a symlink target did.
+  private static String versionComment(final String version) {
+    return "# lathe-server %s, generated by lathe:sync; do not edit\n".formatted(version);
   }
 
   // Picks the JDK for the server's in-process compiler: LATHE_JAVA_HOME, else the build JDK in

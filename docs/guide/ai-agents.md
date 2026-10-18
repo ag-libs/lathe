@@ -27,7 +27,7 @@ launcher (below). If the server reports a missing `.lathe/`, this is the fix.
 There is no separate install. `lathe:sync` generates the launcher during the build above and exposes
 it two ways:
 
-- **Per-project** (recommended) — a symlink pinned to the server version *this* project uses:
+- **Per-project** (recommended) — a launcher pinned to the server version *this* project uses:
 
   ```
   .lathe/lathe-mcp-launcher.sh
@@ -36,7 +36,7 @@ it two ways:
   Re-created by every build, so it always matches the project's pinned server and carries no absolute,
   per-machine path (a committed registration stays portable).
 
-- **User-global** — a machine-wide symlink at the newest installed server version:
+- **User-global** — a machine-wide copy of the newest installed server version's launcher:
 
   ```
   ~/.cache/lathe/latest/lathe-mcp-launcher.sh
