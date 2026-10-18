@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Lathe today is developed and tested on Linux, used on macOS, and does not run natively on Windows.
+**Proposed; A0 partly done.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -44,7 +44,7 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 | OS | Versions | Script dialect | CI runner | Status today |
 |---|---|---|---|---|
 | Linux | any with Java 17+ | POSIX `sh` | `ubuntu-latest` | supported, tested |
-| macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | used, **untested in CI** |
+| macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | supported, tested in CI (JDK 25 row) |
 | Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | **not working** |
 
 Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
@@ -111,7 +111,7 @@ The violations are concentrated:
 | R6 | `%MVN%` looks for `mvnd` and `mvnw` without extensions and falls back to bare `mvn`. | `FileCommandFormatEngine.java:83-106` | Maven-driven formatting fails | — |
 | R6 | Run/test classpaths are passed inline. | `LaunchPlan.java:142-177`, `run/Launcher.java:29` | `CreateProcess error=206` on real projects | — |
 | E4 | Replacing a read-only file; `ATOMIC_MOVE` over a file held open; deleting a tree Defender is scanning. | `FileUtil.extractEntry:261-275`, `FileUtil.moveReplacing`, `LatheCompiler.replaceDir`, `ZipCache` | Reopening a resource fails; intermittent sync failures | — |
-| R8 | CI runs `ubuntu-latest` only. | `.github/workflows/ci.yml` | No coverage | macOS has none either |
+| R8 | CI runs `ubuntu-latest` only. *macOS resolved: a `macos-latest` row (JDK 25) since `5a169ce3`.* | `.github/workflows/ci.yml` | No coverage | — |
 
 Things that look risky but are fine:
 - `setExecutable` is a no-op on Windows.
@@ -388,8 +388,8 @@ Each slice can be merged on its own.
 
 #### A0 — Guards in report mode, macOS in CI
 
-- Add `macos-latest` to the CI matrix.
-- Add `forbiddenapis` and the portable-names guard in report-only mode, and list today's violations in this document.
+- Add `macos-latest` to the CI matrix. *Done (`5a169ce3`): one row, on JDK 25, since the OS-sensitive parts don't vary by JDK.*
+- Add `forbiddenapis` and the portable-names guard in report-only mode, and list today's violations in this document. *Open.*
 
 **Exit:** CI green on Linux and macOS; a known, written-down violation list.
 
@@ -582,7 +582,9 @@ Until Phase B ships, a Windows user can run Lathe unchanged through VS Code's Re
 - **Defender and indexer locks** make output-mirror refreshes flaky on Windows. E4 retries mitigate this; watch Windows CI for `post-compile step failed`.
 - **Non-ASCII user profiles** depend on `chcp 65001` and on how the Java launcher decodes argfiles, both checked in B0. The fallback is to put the cache path in through `%USERPROFILE%` rather than as a literal.
 - **Path length:** bounded by the R1 guard. See [Directory layout](#directory-layout).
-- **macOS quirks** that CI will start to show: a case-insensitive filesystem combined with Java's case-sensitive `Path` equality, and `/var` → `/private/var` for temp directories.
+- **macOS quirks** that CI shows: a case-insensitive filesystem combined with Java's case-sensitive `Path` equality, and `/var` → `/private/var` for temp directories.
+  The symlinked temp path already surfaced two bugs, both fixed with the macOS row: the server misnamed written classes when the workspace path goes through a symlink (`5d034fe9`),
+  and the Neovim client didn't recognize cache buffers behind a symlinked cache path (`dad23fc8`).
 - **Editor-UI regressions on Windows** that CI can't see are found late, by users. That's accepted for a first release.
 
 ## Open questions
