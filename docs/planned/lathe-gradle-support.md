@@ -21,6 +21,10 @@ That step fixes them against Maven alone, so this design stays a pure new front-
 Results are folded into the sections below and summarized in [Spike results](#spike-results).
 No showstopper was found; both Gradle versions behaved identically.
 
+**Multi-OS:** the [Multi-OS Design](lathe-multi-os.md) changes the launcher and sync files below.
+They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync logic moves into a build-neutral `SyncCommand` that the Gradle front-end feeds through `.lathe/lathe-sync.args`.
+Its Phase A (A0–A3) should land before this design's slice 2, so `latheSync` writes portable files from the start.
+
 ## Goal
 
 Give a developer on a **Gradle** Java project the same "the tool understands my build" experience Lathe
@@ -45,8 +49,8 @@ know Maven exists. The entire Maven integration exists to *produce* these files:
 | `.lathe/workspace.json` | `WorkspaceManifestData` (incl. `outputs`, `buildFiles`) | `sync` goal (`WorkspaceManifestWriter`) |
 | `.lathe/java-home`, `.lathe/jvm.args` | plain text | `sync` goal |
 | `.lathe/style.json` | `WorkspaceStyle` | `sync` goal (`WorkspaceStyleWriter`, from Spotless config) |
-| `.lathe/lathe-sync.sh` | sync script ([Sync Launcher](lathe-sync-launcher.md)) | `sync` goal |
-| `.lathe/lathe-launcher.sh`, `lathe-mcp-launcher.sh` | links into `~/.cache/lathe/servers/` | `sync` goal |
+| `.lathe/lathe-sync.{sh,cmd}`, `lathe-sync.args` | sync trampoline + build invocation ([Multi-OS](lathe-multi-os.md) D3) | `sync` goal |
+| `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}` | generated launchers ([Multi-OS](lathe-multi-os.md)) | `sync` goal |
 | `.lathe/lathe.lock` | build lock, heartbeated, stale after 2 minutes (`LatheLock`) | Maven extension (whole build) |
 
 The full list, with semantics, is the workspace contract document the build-agnostic step writes.

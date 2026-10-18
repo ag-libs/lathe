@@ -187,6 +187,12 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Reuses the cache launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
+- [Multi-OS Design](planned/lathe-multi-os.md) — **proposed.** Lathe portable by construction across
+  Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
+  tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names
+  guard, `forbiddenapis`, OS matrix). No symlinks, argfile launchers, sync logic in Java, canonical URIs,
+  `/` in persisted relative paths. Phase A makes the core portable (Linux/macOS); Phase B adds Windows
+  (`.cmd` scripts, VS Code/Cursor first). WSL is the interim workaround.
 
 **AI coding agents:**
 
@@ -334,6 +340,11 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
+- [Guided Setup from the Editor Extension](potential/lathe-guided-setup.md) — **potential, not approved.**
+  Let a beginner in VS Code or Cursor set Lathe up from one notification, without editing the project.
+  Personal mode activates Lathe through `~/.m2/extensions.xml` (Maven 3.10+) or `-Dmaven.ext.class.path`
+  replayed by `SyncCommand` (Maven 3.9), using jars bundled in the `.vsix`. Team mode is one previewed
+  `.mvn/extensions.xml` change, never `pom.xml`. It depends on multi-OS D3/D9; spikes are listed.
 - [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
   rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
   (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine
