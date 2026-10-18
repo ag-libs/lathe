@@ -337,10 +337,6 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>org.jacoco</groupId>
-        <artifactId>jacoco-maven-plugin</artifactId>
-      </plugin>
     </plugins>
     <extensions>
       <extension>
@@ -352,6 +348,18 @@
   </build>
 
   <profiles>
+    <profile>
+      <!-- Coverage costs about 8% of test CPU and nothing reads the report yet: run it on demand with -Pcoverage. -->
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <profile>
       <id>release</id>
       <properties>
