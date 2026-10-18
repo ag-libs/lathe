@@ -76,4 +76,4 @@ lighter, editor-agnostic, and reads the build directly:
 ## See also
 
 - [How Lathe works](how-it-works.md)
-- [Design: OpenJDK support](../planned/lathe-openjdk-support.md)
+- [Design: OpenJDK support](../done/lathe-openjdk-support.md)

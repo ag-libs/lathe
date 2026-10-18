@@ -14,7 +14,7 @@ navigation, completion, hover, signature help, and workspace symbols, derived fr
 
 Lathe otherwise derives its model from a **Maven** build (the
 [Maven extension](../done/lathe-maven-extension.md) injects the compiler shim and `init`/`sync` goals),
-with a **Gradle** front-end designed in parallel ([Gradle Support](lathe-gradle-support.md)); all
+with a **Gradle** front-end designed in parallel ([Gradle Support](../planned/lathe-gradle-support.md)); all
 front-ends produce the same `.lathe/` contract. This document designs — and now records — a third
 front-end, for the **OpenJDK build itself** (a GNU Make build).
 

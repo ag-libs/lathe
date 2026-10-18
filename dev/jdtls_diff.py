@@ -3,7 +3,7 @@
 Differential tester: drive Lathe and jdtls over identical probe points on the same project and
 report where they disagree, as triage candidates for Lathe's gap logs.
 
-Advisory dev/ tooling, not a build/CI gate (see docs/planned/lathe-jdtls-differential-testing.md).
+Advisory dev/ tooling, not a build/CI gate (see docs/done/lathe-jdtls-differential-testing.md).
 Reuses `lsp.LatheClient` and `jdtls.JdtlsClient` -- both LspClient presets -- so one comparison loop
 drives both servers over the identical probe set.
 

@@ -83,8 +83,8 @@ of those freshly compiled outputs and of any package added since capture.
    stack trace. This is strictly a stopgap; it does not restore the inner loop.
 
 The staleness signal here overlaps with
-[Staleness Compile Stamps](lathe-staleness-compile-stamps.md) and
-[External-Change Detection](lathe-external-change-detection.md): a per-source compile stamp already
+[Staleness Compile Stamps](../done/lathe-staleness-compile-stamps.md) and
+[External-Change Detection](../done/lathe-external-change-detection.md): a per-source compile stamp already
 tells the server which sources are newer than the capture, which is exactly the set the launch would
 need to overlay.
 
@@ -105,7 +105,7 @@ Independent of the inner loop, the run path is not defensive about its request s
 Separate editing-experience gaps observed in the same session are tracked on their own:
 
 - [Rename](../done/lathe-rename.md) — no `renameProvider` today.
-- [Extract Variable](lathe-extract-variable.md) — first extraction refactor.
+- [Extract Variable](../done/lathe-extract-variable.md) — first extraction refactor.
 - [Declaration Name Completion](../done/lathe-declaration-name-completion.md) — covers the override /
   declaration-context completion gap (typing a supertype method in a class body yields a call, not an
   override stub).

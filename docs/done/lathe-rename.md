@@ -332,7 +332,7 @@ the deferred follow-up (see Deferred), not this delivery.
 - Invoker (`LspSmokeTest`): drive `prepareRename` + `rename` against the multi-module fixture and assert
   the `WorkspaceEdit` touches the expected files.
 - Differential-vs-jdtls comparison is post-M3 quality tooling
-  ([lathe-jdtls-differential-testing.md](../planned/lathe-jdtls-differential-testing.md)), not an M2 gate.
+  ([lathe-jdtls-differential-testing.md](../done/lathe-jdtls-differential-testing.md)), not an M2 gate.
 
 ## Open items before implementation
 

@@ -3,7 +3,7 @@
 Reference for the files a build front-end writes under `<root>/.lathe/`.
 Everything downstream of the build (the server, the MCP server, `lathe-test-runner`, the editor clients) reads these files and never the build itself,
 so a new front-end only has to produce them.
-Design context: [Build-Tool-Agnostic Core](planned/lathe-build-agnostic-core.md).
+Design context: [Build-Tool-Agnostic Core](done/lathe-build-agnostic-core.md).
 
 Front-ends today:
 

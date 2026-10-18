@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Measured on 2026-10-11 against `main` at `972bb1c8`; no code has changed.
+**Proposed.** Measured on 2026-10-11 against `main` at `972bb1c8`; only 7a (invoker correctness) has shipped since, in `bfec20a6`.
 Each step below is independent and is re-measured on its own.
 It covers `lathe-server`'s unit tests (sections 1–6) and the `lathe-maven-plugin` invoker suite (section 7).
 
@@ -162,7 +162,10 @@ This is the largest change here, and it is independent of the CPU work; it is we
 
 ### 7. Invoker suite
 
-**a. Test the reactor's server, not `~/.m2`'s (correctness, first).**
+**a. Test the reactor's server, not `~/.m2`'s (correctness, first).** *Done (`bfec20a6`).*
+The cause was the invoker's own caches: `target/local-repo` and the unpacked launchers in `target/it-home` kept the previous SNAPSHOT between runs.
+A `maven-clean-plugin` execution in `pre-integration-test`, ordered before the invoker, now drops Lathe's artifacts and the `servers/` and `latest/` launcher caches each run; the JDK, dependency, and type-index caches stay.
+The original analysis follows.
 Lathe's own artifacts — `lathe-server` and `lathe-mcp-server` included — are installed from the reactor into the invoker's local repository, and the invoked builds prefer them over `local-m2`.
 The first step is confirming why the reactor's copy currently loses; the fix follows from that.
 With it, a plain `mvn verify` tests the code being verified, with no prior `mvn install`.
@@ -230,7 +233,7 @@ The invoker suite's CPU stays largely as is: it is Maven running real builds.
 4. **Tiers** — tag the workspace tests; add the tier rule to `CLAUDE.md`.
 5. **Coverage profile** — JaCoCo moves to a CI profile.
 6. **Build ordering** — optional, decided separately: the server's tests in a test-only module.
-7. **Invoker: reactor artifacts** (7a) — confirm why the reactor's server loses to `~/.m2`, then fix it, with 7d decided alongside. Independent of slices 1–6, and the first to do.
+7. **Invoker: reactor artifacts** (7a) — confirm why the reactor's server loses to `~/.m2`, then fix it, with 7d decided alongside. Independent of slices 1–6, and the first to do. *Done (`bfec20a6`); 7d is still open.*
 8. **Invoker: parallel projects** (7b).
 9. **Invoker: test-only watcher interval** (7c).
 10. **Gradle test layout** (8) — adopted as the Gradle front-end lands: reactor-filled repository, `.lathe/`-only front-end assertions, server smoke tests in one place, matrix in CI only.

@@ -111,7 +111,11 @@ com.example.Service.run()
 ### 4.2 Deferred
 
 - Method implementations declared in dependency or JDK classes.
-- Lambda expressions as functional-interface implementations.
+- ~~Lambda expressions as functional-interface implementations.~~ *Shipped 2026-10-05:* go-to-implementation on a
+  functional interface's abstract method also returns reactor lambdas and method references whose target type is that
+  interface or a functional sub-interface that inherits or overrides it. Spelled-interface sites come from the reference
+  token index; argument-position sites (where the source never names the interface) come from a lambda-target index read
+  from each reactor class's `invokedynamic` constant-pool entries during the existing type-index scan.
 - Anonymous and local class locations as user-facing implementation results.
 - Unsaved source inheritance overlays.
 - A binary index format.

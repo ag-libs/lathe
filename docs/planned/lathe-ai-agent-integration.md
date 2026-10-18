@@ -6,14 +6,15 @@
 architecture approved; the `lathe-mcp-server` module now builds, launches, and serves tools over
 stdio, validated live against the private payment reactor.
 
-**Shipped (as of 2026-09-20):**
+**Shipped (as of 2026-10-11):**
 
 - `lathe-mcp-server` module on the official MCP Java SDK, with its own launcher
   (`lathe-mcp-launcher.sh`), workspace resolved from `cwd`, stderr logging (`LATHE_DEBUG`), and an
   in-process `LatheEngine` facade in `lathe-server` (subpackage `server.engine`; the LSP service is
   the shared analysis seam driving both front-ends).
-- Tools (9): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
-  `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`** — every located
+- Tools (11): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
+  `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`**, plus the paired
+  **`analyze_change`** / **`verify_change`** ([Change Impact & Verification](../done/lathe-change-impact-and-verification.md)) — every located
   result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL). The curated wedge
   is **feature-complete**.
 - `rename_symbol` applies javac-accurate edits to disk across modules, including a public type's file
@@ -41,7 +42,7 @@ stdio, validated live against the private payment reactor.
 **Next (optional follow-ups, not blockers):** `type_hierarchy`; `add_missing_imports`; transitive
 `call_hierarchy` depth; `run_test` **module** scope (needs a module-run path in the substrate);
 `search_symbols` kind filter. The core wedge is done — the next real work is **measurement**
-([Measurement](#measurement)), not more tools.
+([Measurement](#measurement)), not more tools; the local pilot has run (see Phase 5).
 
 **Dropped:** `verify_build` (wrapping `mvn` over the reactor). An agent can run `mvn` itself, so a
 thin wrapper fails the "does Lathe do this better than agent+bash?" test. Lathe's edge is *individual*
@@ -49,8 +50,8 @@ compilation and tests, not reactor orchestration; cross-module build verificatio
 own `mvn`, and Lathe surfaces staleness instead (see [Freshness model](#freshness-model)).
 
 > **Note.** The cross-module freshness question `verify_build` once stood in for is now answered by two
-> shipped/designed pieces: the shipped [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md)
-> reaction and the designed [`verify_change`](lathe-change-impact-and-verification.md) tool (in-process
+> shipped pieces: the [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md)
+> reaction (since 2026-10-11 the [One Write Pass](../done/lathe-recompile-simplification.md)) and the [`verify_change`](../done/lathe-change-impact-and-verification.md) tool (in-process
 > Tier-1 recompile + a scoped `.lathe/lathe-sync.sh <modules>` handoff for the reactor-bound remainder). Any remaining
 > `verify_build` mention in the deeper Measurement section refers to using the agent's own `mvn` as the
 > benchmark oracle, not a Lathe tool.
@@ -316,7 +317,7 @@ Since `lathe-mcp-server` runs on the **classpath** (see the launcher note and JP
 export**.
 
 Every tool is a pure `LatheEngine` call. The one tool that *mutates* the mirror,
-[`verify_change`](lathe-change-impact-and-verification.md), still stays in-process: it drives the
+[`verify_change`](../done/lathe-change-impact-and-verification.md), still stays in-process: it drives the
 shipped reconcile reaction (`reconcileForVerify`) to FULL-recompile the changed set and reads back
 diagnostics — it never runs Maven, only *recommends* a precise `mvn` for the reactor-bound remainder.
 
@@ -396,7 +397,7 @@ dependency order — reserving Maven for POM / module-structure changes only.
 
 `get_diagnostics` is messaged as "errors in *this* file after your edit" and carries a `Stale:` advisory
 when a referenced module is out of date; cross-module verification is
-[`verify_change`](lathe-change-impact-and-verification.md) (in-process Tier-1 recompile + a precise `mvn`
+[`verify_change`](../done/lathe-change-impact-and-verification.md) (in-process Tier-1 recompile + a precise `mvn`
 handoff for the reactor-bound remainder), **not** a Maven wrapper; and `run_test` is gated on recompiling
 changed files before replay so it cannot report a stale pass/fail. Lathe does not fake cross-module
 codegen/AP freshness — that stays the reactor's job, surfaced as the Tier-3 handoff.
@@ -439,7 +440,7 @@ contract.
 |---|---|---|---|
 | `find_references` ✅ | references | read | `{file,line,column,maxResults?,cursor?}` → `{total, truncated, references[]}` |
 | `rename_symbol` ✅ | rename | **write** | `{file,line,column,newName}` → `{renamed, from, to, editedFiles[], totalEdits}` \| structured refusal. Cross-module confirmed working ([probe](../gaps/gaps-archive.md#fr-017)). |
-| ~~`verify_build`~~ **DROPPED** | — | — | Wrapping `mvn` over the reactor is something the agent can do itself; see [Status](#status). Its cross-module role is now filled by the shipped in-process reaction + [`verify_change`](lathe-change-impact-and-verification.md) (Tier-1 recompile + precise `mvn` handoff), see the [Change impact & verification](#change-impact--verification-paired-pre-post-edit) row below. |
+| ~~`verify_build`~~ **DROPPED** | — | — | Wrapping `mvn` over the reactor is something the agent can do itself; see [Status](#status). Its cross-module role is now filled by the shipped in-process reaction + [`verify_change`](../done/lathe-change-impact-and-verification.md) (Tier-1 recompile + precise `mvn` handoff), see the [Change impact & verification](#change-impact--verification-paired-pre-post-edit) row below. |
 | `find_implementations` ✅ | implementation | read | `{file,line,column,maxResults?}` → `{total, truncated, implementations[]}` — an interface's impls / a method's overrides, cross-module. |
 | `search_symbols` ✅ | workspace/symbol (CamelHumps) | read | `{query, maxResults?}` → `{query, total, symbols[]{name, kind, container, snippet}}`. Kind filter deferred. |
 
@@ -469,7 +470,8 @@ An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a head
 
 ### Change impact & verification (paired pre-/post-edit)
 
-Detailed design: [Change Impact & Verification](lathe-change-impact-and-verification.md).
+Detailed design: [Change Impact & Verification](../done/lathe-change-impact-and-verification.md).
+Both ✅ shipped 2026-09-26; `publicApi` was dropped from the shipped `analyze_change`.
 
 | Tool | Kind | In → Out |
 |---|---|---|
@@ -561,7 +563,7 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 - `find_implementations` ✅ shipped (an interface's impls / a method's overrides, cross-module;
   verified live — a real interface resolved ~30 implementations a grep would miss).
 - `verify_build` — **dropped** (see [Status](#status)); its cross-module role is now filled by the
-  shipped in-process reaction plus [`verify_change`](lathe-change-impact-and-verification.md) (Tier-1
+  shipped in-process reaction plus [`verify_change`](../done/lathe-change-impact-and-verification.md) (Tier-1
   in-process recompile + a precise `mvn` handoff), not an `mvn` wrapper.
 - **Freshness advisory** ✅ and **routing instructions** ✅ shipped as cross-cutting additions this
   phase (not in the original plan): every result flags stale modules, and the server tells the agent
@@ -591,8 +593,10 @@ The `.lsp.json` schema was re-verified against the live plugins reference.
 
 ### Phase 5 — Measurement harness
 
-- Build `dev/bench/` and run the grep-baseline comparison (see [Measurement](#measurement)); can start
-  alongside Phase 2 once Tier 2 exists.
+- Build `dev/bench/` and run the grep-baseline comparison (see [Measurement](#measurement)).
+  ✅ Local git-replay pilot built and run (2026-10-03): pre-registration, harness, two Dropwizard tasks,
+  results in `dev/bench/results/`. The scaled headline run follows
+  [MCP Value Benchmark](lathe-mcp-value-benchmark.md).
 
 ### Phase 6 — Shared-with-editor server, streaming, HTTP transport
 
@@ -709,7 +713,7 @@ objects over mocks).
 - **No attempt to make `.lathe/` optional** for agents — the build-derived model is the moat (see
   [Workspace Readiness](../done/lathe-workspace-readiness.md)).
 - **No faked cross-module freshness** — reactor-bound correctness (codegen, cross-module AP) stays the
-  reactor's job; [`verify_change`](lathe-change-impact-and-verification.md) recompiles the changed set
+  reactor's job; [`verify_change`](../done/lathe-change-impact-and-verification.md) recompiles the changed set
   in-process and *recommends* a precise scoped `mvn` for the remainder rather than pretending an
   in-process compile can substitute for it.
 
@@ -733,7 +737,7 @@ objects over mocks).
 - **State & synchronization** — protocol-stateless, process-stateful (warm workspace); all workspace
   state stays confined to the `lathe-worker` event loop, which is the synchronization mechanism.
 - **Freshness** — single-file in-process javac (no Maven); multi-file/cross-module via the shipped
-  in-process reaction + [`verify_change`](lathe-change-impact-and-verification.md) (Tier-1 recompile + a
+  in-process reaction + [`verify_change`](../done/lathe-change-impact-and-verification.md) (Tier-1 recompile + a
   precise `mvn` handoff for the reactor-bound remainder); not faked.
 - **JPMS placement — classpath for now.** The JPMS spike (against SDK 2.0.1) found the SDK cannot go on
   the module path: `mcp-core` and `mcp-json-jackson3` ship a hyphenated `Automatic-Module-Name`

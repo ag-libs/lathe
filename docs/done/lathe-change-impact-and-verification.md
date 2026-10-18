@@ -9,6 +9,8 @@ per-module diagnostics, cross-module `.lathe/lathe-sync.sh <modules>` handoff). 
 relevant tests), composed from `describe`/`find_implementations`/`find_references` + a path-placement
 accessor. `publicApi` was dropped from the KISS cut (no semantic-modifier accessor) — revisit after
 measurement.
+Since 2026-10-11 `verify_change` drives the [One Write Pass](lathe-recompile-simplification.md) instead of the
+in-process-sync reaction; the notes marked "Since 2026-10-11" below record what changed.
 Code-grounded design for two paired MCP tools — a **pre-edit** impact preview (`analyze_change`) and a
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
@@ -20,7 +22,7 @@ escape hatch). This doc adds only what the *agent* path needs on top of that sub
 trigger and **reporting** diagnostics back — plus the read-only `analyze_change` sibling, which no doc
 previously covered. Because the substrate has shipped, `verify_change` (P1) is unblocked.
 
-The MCP tool-surface tables in [AI Agent Integration](lathe-ai-agent-integration.md#mcp-tool-surface)
+The MCP tool-surface tables in [AI Agent Integration](../planned/lathe-ai-agent-integration.md#mcp-tool-surface)
 reference these two as their detailed design.
 
 ## Goal
@@ -81,6 +83,11 @@ is nothing to "watch." `verify_change` bridges that gap with three additions:
 ## Grounding in the shipped engine (verified against code 2026-09-26)
 
 All seams below exist in the shipped tree — no new substrate work is required for P1.
+
+> **Since 2026-10-11** ([One Write Pass](lathe-recompile-simplification.md)): the reaction is one write pass per request.
+> `ReconcileOutcome` is now `(reacted, deferral)` (deletions are handled inside the pass and no longer reported),
+> and `staleModules` takes the session's tree states and returns `StaleScan(staleByModule)`.
+> The table records the seams as verified on 2026-09-26.
 
 | Capability | Shipped class / method (file) | Note for this design |
 |---|---|---|
@@ -312,7 +319,7 @@ instead surfaced by the Tier-3 handoff and the still-active POM prompt, not by w
 - [In-Process Workspace Sync](../done/lathe-in-process-workspace-sync.md) — **the substrate.** Owns change-set
   detection, the FULL-compile-from-disk primitive, topo ordering, deletion handling, and the
   POM/bulk escape hatch that `verify_change` drives and inherits.
-- [AI Agent Integration](lathe-ai-agent-integration.md) — the MCP tool surface, snippet/authority
+- [AI Agent Integration](../planned/lathe-ai-agent-integration.md) — the MCP tool surface, snippet/authority
   contract, freshness model, and the dropped `verify_build` these two replace honestly.
 - [Staleness via Compile Stamps](../done/lathe-staleness-compile-stamps.md) — the per-source stamp map
   the change-set detection reads.

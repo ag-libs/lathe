@@ -160,7 +160,7 @@ None yet — re-triaged from backlog when scheduled.
 ---
 
 <!-- EG-049..EG-055 were discovered by differential testing against jdtls (dev/jdtls_diff.py; see
-docs/planned/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
+docs/done/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->
 
 ## EG-050 — Javadoc `{@link}` / `{@code}` regions not resolved for references, highlight, completion

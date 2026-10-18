@@ -268,4 +268,4 @@ Tests: an agent edit that does not compile yields `Not compiled` with the file a
 
 ## Docs updated with the code
 
-`docs/guide/ai-agents.md` (deferrals and notes), `docs/planned/lathe-change-impact-and-verification.md` (the `BULK_CHANGE` gate), `docs/potential/lathe-rename-transactions.md` and `docs/potential/lathe-batching.md` (now one pass), and pointers here from `docs/done/lathe-in-process-workspace-sync.md` and `docs/done/lathe-external-change-detection.md`.
+`docs/guide/ai-agents.md` (deferrals and notes), `docs/done/lathe-change-impact-and-verification.md` (the `BULK_CHANGE` gate), `docs/potential/lathe-rename-transactions.md` and `docs/potential/lathe-batching.md` (now one pass), and pointers here from `docs/done/lathe-in-process-workspace-sync.md` and `docs/done/lathe-external-change-detection.md`.

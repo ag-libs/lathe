@@ -403,7 +403,7 @@ table you pass to `start_or_attach`.
 
 > For a systematic behavioural comparison of the two servers, the `dev/jdtls_diff.py` differential
 > harness drives both over identical probe points and reports divergences — see
-> [the differential-testing design](../planned/lathe-jdtls-differential-testing.md).
+> [the differential-testing design](../done/lathe-jdtls-differential-testing.md).
 
 ## Verify
 

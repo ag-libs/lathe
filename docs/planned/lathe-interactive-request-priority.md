@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Discovered while probing [OpenJDK support](lathe-openjdk-support.md) (2026-10-01): on a large
+**Proposed.** Discovered while probing [OpenJDK support](../done/lathe-openjdk-support.md) (2026-10-01): on a large
 module (`java.base`, ~3400 sources) the editor felt "20× slower, recompiling constantly, completion takes
 10–20s." Investigation showed the cost is **not** OpenJDK-specific and **not** a completion/codeAction bug —
 it is a server-wide reaction model that lets **multi-second background recompiles block interactive
@@ -78,7 +78,7 @@ small `multi-module` invoker fixture.
   request or a short post-settle delay. Independent of the server; removes most of the request volume.
 
 - **E. Reduce the compile cost itself (separate track).** The deeper lever for large modules is the
-  [OpenJDK](lathe-openjdk-support.md) Slice-2 performance work (compiled-deps model measured at ~0.7s vs ~3s,
+  [OpenJDK](../done/lathe-openjdk-support.md) Slice-2 performance work (compiled-deps model measured at ~0.7s vs ~3s,
   or a warm/persistent symbol cache). Out of scope here; this document is about not letting *any* expensive
   compile block interactive work.
 

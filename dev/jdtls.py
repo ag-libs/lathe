@@ -5,7 +5,7 @@ jdtls (Eclipse JDT Language Server) preset for differential testing against Lath
 Reuses the generic transport and LSP feature helpers from `lsp.LspClient`; adds only the
 jdtls-specific launch, handshake, and import-readiness wait.
 
-Key facts (see docs/planned/lathe-jdtls-differential-testing.md):
+Key facts (see docs/done/lathe-jdtls-differential-testing.md):
   * jdtls is an Eclipse/OSGi app whose bundled ASM cannot weave class files newer than it
     supports, so it must RUN on a JDK <= its ceiling. jdtls 1.51 runs on JDK 21..25, NOT 26
     (major version 70). We launch it on Corretto 25, which also unlocks the optional

@@ -69,7 +69,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   (`String::§`, `this::§`, `Type::new`) reusing the member-access pipeline, with SAM-aware filtering
   (shipped; resolved CQ-0060).
 - [Surround with try-with-resources](done/lathe-try-with-resources.md) — range-driven refactor wrapping an
-  `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (proposed).
+  `AutoCloseable` declaration in a try-with-resources; sibling of Extract Variable and try/catch wrap (shipped).
 - [Add constructor parameter for a field](done/lathe-add-constructor-parameter.md) — range-driven refactor
   (CA-10) that adds a `final` field as a parameter to every constructor and binds it, generating a constructor
   when none exists; sibling of Extract Field (shipped; resolved CA-10).
@@ -88,7 +88,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   resource **by name** across the workspace's reactor and dependency resources, each row tagged by
   origin (`reactor:<module>` / `dep:<gav>`). Lists entries from jar central directories (no
   decompression) and reactor resource roots, and extracts **only the entry you open** — no bulk
-  unpacking. Reactor opens editable, dependency read-only; content search deferred (proposed).
+  unpacking. Reactor opens editable, dependency read-only; content search deferred (shipped).
 
 **Build-file support:**
 
@@ -101,11 +101,11 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Build-tool front-ends** (new front-ends onto the existing `.lathe/` contract; everything downstream
 reused):
 
-- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven writes it, Neovim runs it). The build integration writes
+- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven and OpenJDK write it, Neovim runs it; Gradle's remains). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
   of composing Maven commands; runs the build on the recorded JDK, scopes with `-am`. Prepares Gradle.
-- [Build-Tool-Agnostic Core](planned/lathe-build-agnostic-core.md) — **proposed, prerequisite for
-  Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
+- [Build-Tool-Agnostic Core](done/lathe-build-agnostic-core.md) — **done (2026-10-11), the prerequisite
+  for Gradle.** Maven-only step that makes `.lathe/` the real seam: a front-end-written `outputs` map in
   `workspace.json` replaces `target/`-shape path guessing, `pomPaths` → `buildFiles`, neutral texts,
   and a written workspace contract.
 - [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
@@ -115,10 +115,10 @@ reused):
   `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
   typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,
   plexus-java module placement, polyglot Maven-orchestrated build. Depends on the build-agnostic step.
-- [OpenJDK Support](planned/lathe-openjdk-support.md) — **proposed.** A `lathe-openjdk` reader that emits
-  `.lathe/` for the JDK's own GNU Make build by reading the per-module compile descriptors the build
-  already persists (`_the.<module>.vardeps` / `_the.<module>_batch.filelist`). Code-intelligence MVP;
-  jtreg run/test deferred.
+- [OpenJDK Support](done/lathe-openjdk-support.md) — **shipped (code-intelligence MVP, 2026-10-03).**
+  `lathe-openjdk-maven-plugin` `sync` emits `.lathe/` for the JDK's own GNU Make build by reading the
+  per-module compile descriptors the build already persists (`_the.<module>.vardeps` /
+  `_the.<module>_batch.filelist`); jtreg run/test deferred.
 
 **Reliability and further work:**
 
@@ -141,8 +141,10 @@ reused):
   an API change (shipped via `refreshOpenDependents`); closed-file recompilation dropped as a non-goal.
 - [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
-- [Differential Testing Against jdtls](planned/lathe-jdtls-differential-testing.md) — **Won't do.** Semantic
-  LSP-response comparison against Eclipse JDT LS; not pursued (gaps tracked via EG-/CQ- + `dev/` probing).
+- [Differential Testing Against jdtls](done/lathe-jdtls-differential-testing.md) — **implemented
+  (2026-10-04)**, reversing the earlier won't-do. `dev/jdtls_diff.py` sends identical LSP requests to Lathe
+  and jdtls over a shared multi-module project and writes a categorised report; advisory `dev/` tooling,
+  not a CI gate. Its first run surfaced EG-049..EG-055.
 - [Standalone `lathe.nvim` Plugin](done/lathe-standalone-nvim-plugin.md) — **shipped**; publishes the
   Neovim Lua client as a plugin-manager-installable repo (unlocks dotfyle/awesome-neovim discovery),
   now the sole client delivery path (the bundled cache path was since removed along with the `current`
@@ -195,18 +197,21 @@ reused):
   the official MCP Java SDK, calling the engine in-process via a `LatheEngine` facade, with its own
   launcher. The tool surface is now feature-complete — `get_diagnostics`, `get_definition`,
   `find_references`, `find_implementations`, `call_hierarchy`, `search_symbols`, `describe_symbol`,
-  `rename_symbol`, and `run_test`, each with per-call usage logging; remaining work is measurement,
-  streaming/cancel, and the Claude Code LSP plugin.
-- [Change Impact & Verification](planned/lathe-change-impact-and-verification.md) — two paired agent
+  `rename_symbol`, `run_test`, `analyze_change`, and `verify_change`, each with per-call usage logging;
+  remaining work is the scaled measurement run, streaming/cancel, and the Claude Code LSP plugin.
+- [Change Impact & Verification](done/lathe-change-impact-and-verification.md) — **shipped
+  (2026-09-26).** Two paired agent
   tools on the MCP surface: `analyze_change` (pre-edit "what will this break?", read-only composition
   of describe/impls/references + the reactor graph) and `verify_change` (post-edit scoped recompile that
-  drives the [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md) reaction — Tier 1 —
-  plus a precise `mvn` handoff for the cross-module remainder — Tier 3). Approved 2026-09-25;
-  `verify_change` depends on the workspace-sync substrate landing first.
+  drives the in-process write pass — Tier 1, since 2026-10-11 the
+  [One Write Pass](done/lathe-recompile-simplification.md) — plus a scoped `.lathe/lathe-sync.sh` handoff
+  for the cross-module remainder — Tier 3).
 - [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
   MCP server makes an agent measurably better on a real Maven reactor: adopt the SWE-bench /
   Multi-SWE-bench plumbing and make Lathe the single ablation variable (grep-only baseline vs agent +
   Lathe MCP), over a moat-curated Dropwizard/Helidon corpus, against a pre-registered hypothesis.
+  **Pilot run (2026-10-03)** in `dev/bench/`: on a cross-module overload rename, grep-only missed a site
+  in 3 of 4 weaker-model runs and Lathe none, at 0.24–0.48× the cost; the scaled headline run is next.
 
 ## Completed Designs
 
@@ -267,7 +272,8 @@ reused):
   [Class/Import Semantic Highlighting](done/lathe-class-import-semantic-highlighting.md) slice is part
   of it. `readonly`/`abstract`/visibility modifiers and `recordComponent`/`annotationMember` deferred.
 - [Goto Implementation and Type Hierarchy](done/lathe-goto-implementation.md) — inheritance-index-backed type
-  navigation and reactor method implementation across reactor, dependency, and JDK types.
+  navigation and reactor method implementation across reactor, dependency, and JDK types, including lambda and
+  method-reference implementations of functional interfaces.
 - [Event-Loop Starvation](done/lathe-event-loop-starvation.md) — diagnosis of synchronous index construction;
   resolved by the goto-implementation design keeping construction on `ServerEventLoop`.
 - [Call Hierarchy](done/lathe-call-hierarchy.md) — `prepareCallHierarchy`, `incomingCalls`, and `outgoingCalls`

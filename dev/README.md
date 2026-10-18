@@ -25,7 +25,7 @@ All files live in `dev/` and are never shipped with the distribution.
 
 Drives Lathe and Eclipse jdtls over identical probe points on the same project and reports where they
 disagree, as triage candidates for the [gap logs](../docs/gaps/gaps.md). Design and rationale:
-[lathe-jdtls-differential-testing.md](../docs/planned/lathe-jdtls-differential-testing.md).
+[lathe-jdtls-differential-testing.md](../docs/done/lathe-jdtls-differential-testing.md).
 
 ```bash
 # Whole capability surface on one or more files (or a directory):

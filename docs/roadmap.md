@@ -84,6 +84,9 @@ ships (see "Deferred to backlog" below).
   resources auto-copy. In-process recompile is
   [parked](potential/lathe-external-change-recompilation.md) (single-module only). The fuller no-Maven
   reconciliation (WS-1) stays backlog.
+  *Since superseded:* the fuller no-Maven reconciliation (WS-1) shipped as
+  [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md), since 2026-10-11 the
+  [One Write Pass](done/lathe-recompile-simplification.md); the Maven prompt remains only for build-file changes.
 
 ### Correctness gaps (triaged)
 
@@ -171,38 +174,52 @@ when cut. Items are grouped, not ordered.
   terminology; define versioning, compatibility, and support policies and the supported JDK, Maven/mvnd,
   OS, and Neovim versions; add rollback and full release qualification CI (large-workspace, clean-install,
   and upgrade verification).
-- Support `LATHE_JVM_OPTS` in the generated launcher; finalize manifest module metadata where it improves
-  startup, staleness detection, or upgrades.
+- Finalize manifest module metadata where it improves startup, staleness detection, or upgrades.
 
 ### Editing features (deferred from M2)
 
 - Rename beyond the M2 common cases; inlay hints; conservative on-type indentation.
-- Generic-bound receiver completion; declaration-name completion; new-type creation.
+- Generic-bound receiver completion; snippet (template) completion.
 - `textDocument/typeDefinition` (Neovim `grt`).
-- Full identifier-level semantic tokens — local-variable-vs-field, class, and import highlighting
-  (see [lathe-semantic-tokens.md](planned/lathe-semantic-tokens.md)).
+- Semantic-token modifiers (`readonly`/`abstract`/visibility) and `recordComponent`/`annotationMember`.
 
 ### Reliability and freshness
 
-- Full no-Maven workspace freshness (WS-1); sibling recompilation and closed-file workspace diagnostics.
+- Interactive request priority: keep multi-second background recompiles from blocking interactive
+  requests (see [lathe-interactive-request-priority.md](planned/lathe-interactive-request-priority.md)).
+- Replay a test written after the last capture without a full Maven capture
+  (see [lathe-new-test-replay-loop.md](planned/lathe-new-test-replay-loop.md)).
 - References *inside* external sources (source browsing); go-to-definition on an incomplete method call
   ([EG-048](gaps/gaps.md)); reference partial-result streaming (only if measurements justify it).
 
 ### Debug and run tail
 
-- Debug write path — DB-1 (assignment/`setVariable`) and DB-2 (array creation); named run configs
-  (`:LatheRun {name}`, TE-2). The debugger itself has shipped as part of M2.
+- Debug write path — DB-1 (assignment/`setVariable`) and DB-2 (array creation). The debugger itself has
+  shipped as part of M2.
+- Re-run all failed tests in one replay JVM (re-running the first failure has shipped).
 
 ### VS Code
 
-- A supported VS Code integration with workspace-diagnostics UX and editor-specific install/testing;
-  depends on the full semantic-token coverage above.
+- A supported VS Code integration with workspace-diagnostics UX and editor-specific install/testing.
+  The thin passthrough extension is built; Marketplace/Open VSX publishing and parity for the custom
+  commands remain (see [lathe-vscode-client.md](planned/lathe-vscode-client.md)).
+
+### Build-tool front-ends
+
+- Gradle, emitting the same `.lathe/` contract (see [lathe-gradle-support.md](planned/lathe-gradle-support.md));
+  its prerequisite, the [build-tool-agnostic core](done/lathe-build-agnostic-core.md), has shipped.
+- OpenJDK jtreg run/test (the OpenJDK code-intelligence front-end has shipped).
+
+### AI coding agents
+
+- The scaled MCP-value benchmark run (the local pilot has run; see
+  [lathe-mcp-value-benchmark.md](planned/lathe-mcp-value-benchmark.md)), MCP streaming/cancel, and the thin
+  Claude Code LSP plugin (see [lathe-ai-agent-integration.md](planned/lathe-ai-agent-integration.md)).
 
 ### Quality tooling
 
-- Differential testing against Eclipse JDT LS: identical LSP requests over a shared fixture, compared
-  semantically to surface behavioral divergences as EG-/CQ- gap candidates
-  (see [lathe-jdtls-differential-testing.md](planned/lathe-jdtls-differential-testing.md)).
+- Fewer cold compiles in the test suite and a faster invoker suite
+  (see [lathe-test-framework.md](planned/lathe-test-framework.md)).
 
 ### Exploration
 

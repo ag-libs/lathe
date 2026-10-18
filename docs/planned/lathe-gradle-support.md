@@ -11,7 +11,7 @@ the MCP server, and all editor clients — works unchanged.
 
 No Gradle code exists yet. This is a design, sliced for incremental delivery.
 
-**Prerequisite:** [Build-Tool-Agnostic Core](lathe-build-agnostic-core.md), done first as its own step.
+**Prerequisite:** [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md), done first as its own step.
 An audit on 2026-10-10 found that downstream code is not yet fully build-neutral:
 sibling-output path mapping assumes Maven's `target/` layout, and several texts and manifest fields are Maven-named.
 That step fixes them against Maven alone, so this design stays a pure new front-end.
@@ -32,7 +32,7 @@ setup shape (register once, build once, point the editor at the cache).
 
 Lathe's model is build-derived, and the build tool is isolated behind a file contract. The
 server, runner, MCP server, and clients **only read `.lathe/`** (plus the machine-wide
-`~/.cache/lathe/`); once the [build-agnostic step](lathe-build-agnostic-core.md) lands, none of them
+`~/.cache/lathe/`); once the [build-agnostic step](../done/lathe-build-agnostic-core.md) lands, none of them
 know Maven exists. The entire Maven integration exists to *produce* these files:
 
 | File | Schema (`lathe-core`) | Produced by (Maven) |
@@ -81,7 +81,7 @@ the two decisions below (in-fork test capture; the honest limit on compiler-arg 
 - Non-JVM Gradle projects; Kotlin/Groovy/Scala compilation (Java only, as today).
 - Android Gradle Plugin (a separate model; explicit non-goal).
 - Any change to the server, runner, MCP server, clients, or the `.lathe/` schema — the ones that are
-  needed land beforehand in the [build-agnostic step](lathe-build-agnostic-core.md).
+  needed land beforehand in the [build-agnostic step](../done/lathe-build-agnostic-core.md).
 
 ## What is reused vs new
 
@@ -423,7 +423,7 @@ and the fidelity claims are all under test.
 
 ## Slicing
 
-0. **[Build-Tool-Agnostic Core](lathe-build-agnostic-core.md)** — separate, Maven-only step, done first:
+0. **[Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md)** — separate, Maven-only step, done first:
    `outputs` map, `buildFiles`, neutral texts, the written workspace contract.
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the non-cacheable capture
    finalizer on `JavaCompile` → `ModuleConfigData`, bytecode mirror, stamps. Delivers full **code
@@ -498,4 +498,4 @@ other than the daemon JDK.
 - Android Gradle Plugin, and non-Java (Kotlin/Groovy/Scala) compilation.
 - Any change to the server, runner, MCP server, clients, or the `.lathe/` schema — the whole point is
   that they are untouched; the changes they need land first in the
-  [build-agnostic step](lathe-build-agnostic-core.md).
+  [build-agnostic step](../done/lathe-build-agnostic-core.md).

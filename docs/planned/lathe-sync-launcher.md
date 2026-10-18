@@ -2,7 +2,7 @@
 
 ## Status
 
-**In progress.** Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it. Gradle and OpenJDK scripts come with their own work.
+**In progress.** Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it. OpenJDK writes its own script (slice 4, done with the [build-agnostic step](../done/lathe-build-agnostic-core.md)); only Gradle's remains, as part of the Gradle work.
 Prepares Lathe for [Gradle support](lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
 
 ## Problem
@@ -164,7 +164,7 @@ The JDK prologue is therefore a per-front-end choice, not part of the contract: 
 ## Slices
 
 1. **Write the script.**
-   `lathe:sync` writes `.lathe/lathe-sync.sh` (shared JDK prologue, scoped `-am -amd`).
+   `lathe:sync` writes `.lathe/lathe-sync.sh` (shared JDK prologue, scoped `-am`; see Scoped sync).
    Tests: a unit test runs the generated script against stub `mvn`/`mvnd`/`./mvnw` for full, `--tests`, scoped, and combined invocations (tool choice, JDK, cwd, printed command); the invoker IT asserts sync writes it, executable.
 2. **Neovim uses it.**
    Delete the Maven code from `lathe/sync.lua`; missing script → notice.
@@ -172,6 +172,7 @@ The JDK prologue is therefore a per-front-end choice, not part of the contract: 
 3. **Server and MCP texts.**
    Remediation strings and `suggestedSync` reference the script.
 4. **Gradle and OpenJDK** write their own scripts as part of their own work.
+   OpenJDK: *Done* (`lathe-openjdk-maven-plugin` `sync`). Gradle: pending.
 
 ## Decisions
 

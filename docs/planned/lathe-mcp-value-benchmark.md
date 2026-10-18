@@ -2,7 +2,13 @@
 
 ## Status
 
-Proposed. No code yet.
+**Pilot built and run (2026-10-03); the scaled headline run is not.**
+The local git-replay pilot lives in `dev/bench/`: the pre-registration (`README.md`), the harness
+(`run.py`, `score.py`, `report.py`), two Dropwizard tasks, and results in `dev/bench/results/`.
+On the overload-sensitive cross-module rename `dw-02` (R=4, two models), the grep-only baseline missed a
+real site in 3 of 4 sonnet runs while both Lathe arms missed none, and Lathe was cheaper on every repeat
+(median cost 0.24× sonnet, 0.48× opus) — see `PILOT-R4.md`.
+The SWE-bench / Multi-SWE-bench plumbing and the moat-curated corpus below remain the plan for the headline run.
 This document is the recommendation that came out of the MCP-value discussion: how to *prove*
 (or disprove) that the `lathe-mcp-server` makes a coding agent measurably better on a real
 multi-module Maven reactor, rather than asserting it.
