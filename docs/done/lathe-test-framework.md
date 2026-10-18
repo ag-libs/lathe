@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Measured on 2026-10-11 against `main` at `972bb1c8`; since then 7a (invoker correctness) shipped in `bfec20a6`, and slices 1, 2, 3, and 5 are done, plus parallel test classes in `lathe-server` (see [Results](#results)).
+**Done (2026-10-18).** Measured on 2026-10-11 against `main` at `972bb1c8`. Slices 1, 2, 3, 5, 7a–7c, and parallel test classes in `lathe-server` shipped; slices 4 and 6 were skipped, and 7d stays open (see [Slicing](#slicing) and [Results](#results)).
 Each step below is independent and is re-measured on its own.
 It covers `lathe-server`'s unit tests (sections 1–6) and the `lathe-maven-plugin` invoker suite (section 7).
 
@@ -191,7 +191,7 @@ Resolving third-party artifacts from `~/.m2` while Lathe's own come from the rea
 
 ### 8. Gradle
 
-[Gradle support](lathe-gradle-support.md) (Gradle 8.8+) adds a TestKit suite, cross-tool contract tests, and a Gradle version matrix.
+[Gradle support](../planned/lathe-gradle-support.md) (Gradle 8.8+) adds a TestKit suite, cross-tool contract tests, and a Gradle version matrix.
 `lathe-server`'s unit tests are unaffected — `.lathe/` is the seam — so sections 1–6 apply as they are;
 the cost that grows is end-to-end, where every test is a real build and the matrix multiplies them.
 

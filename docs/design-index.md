@@ -122,12 +122,13 @@ reused):
 
 **Reliability and further work:**
 
-- [Test Framework: Fewer Cold Compiles](planned/lathe-test-framework.md) — **proposed.** About 60% of the
-  server tests' CPU is javac rebuilding its view of the JDK and an inherited 18-jar test classpath (1,528 cold
-  tasks for 1,220 tests); one shared `TestJavac` with a JDK-only default, content-cached read-only fixtures,
-  instance-owned fixtures, two test tiers, and coverage in a CI profile — roughly half the CPU, same coverage.
-  Invoker suite: it could test a stale `lathe-server` (fixed in `bfec20a6`); then parallel projects and a
-  test-only watcher interval save ~20 s of wall-clock.
+- [Test Framework: Fewer Cold Compiles](done/lathe-test-framework.md) — **done (2026-10-18).** Shared
+  per-thread javac file managers (`TestJavac`, JDK-only default classpath), a once-per-thread `Sample.java`
+  compile, per-class completion fixtures, and parallel test classes cut `lathe-server`'s tests from 35 s to
+  about 15 s with the same 1,226 tests; JaCoCo runs only with `-Pcoverage`. Invoker suite: the stale-server fix
+  (`bfec20a6`), parallel projects with Maven's file lock, and a test-only `lathe.scanIntervalMs`; the parallel
+  runs exposed a `ZipCache` race, fixed for users too. Full `mvn verify` ~72 s → ~45 s. Workspace tiers and the
+  separate test module were skipped.
 - [Named Run Configurations](done/lathe-named-run-configs.md) — resolves TE-2: the overlay file
   becomes a `{ defaults, configs }` object (`defaults` = the auto-applied baselines, `configs` =
   name-keyed selectable entries that pin a target), explicit selection via `:LatheRun {name}` /

@@ -218,8 +218,8 @@ when cut. Items are grouped, not ordered.
 
 ### Quality tooling
 
-- Fewer cold compiles in the test suite and a faster invoker suite
-  (see [lathe-test-framework.md](planned/lathe-test-framework.md)).
+- Fewer cold compiles in the test suite and a faster invoker suite — done
+  (see [lathe-test-framework.md](done/lathe-test-framework.md)).
 
 ### Exploration
 
