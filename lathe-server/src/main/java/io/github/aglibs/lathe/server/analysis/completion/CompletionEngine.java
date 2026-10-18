@@ -419,8 +419,8 @@ public final class CompletionEngine {
       return false;
     }
 
-    return semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror t)
-        && t.getKind() == TypeKind.DECLARED
+    return semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType
+        && expectedType.type().getKind() == TypeKind.DECLARED
         && !isExpectedString(semanticContext);
   }
 
@@ -435,9 +435,11 @@ public final class CompletionEngine {
       return false;
     }
 
-    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
       return false;
     }
+
+    final TypeMirror type = expectedType.type();
 
     final var element = semanticContext.analysis().types().asElement(type);
     return element instanceof final TypeElement typeElement
@@ -452,10 +454,12 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))
-        || type.getKind() != TypeKind.DECLARED) {
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)
+        || expectedType.type().getKind() != TypeKind.DECLARED) {
       return List.of();
     }
+
+    final TypeMirror type = expectedType.type();
 
     final var types = semanticContext.analysis().types();
     if (!(types.asElement(type) instanceof final TypeElement selectorType)) {
@@ -500,9 +504,11 @@ public final class CompletionEngine {
       return null;
     }
 
-    if (!(semanticContext.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
       return null;
     }
+
+    final TypeMirror type = expectedType.type();
 
     final var el = semanticContext.analysis().types().asElement(type);
     if (el instanceof final TypeElement typeEl && typeEl.getKind() == ElementKind.ENUM) {
@@ -613,9 +619,11 @@ public final class CompletionEngine {
       return List.of();
     }
 
-    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(context.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
       return List.of();
     }
+
+    final TypeMirror type = expectedType.type();
 
     final var validator = new TypeIndexValidator(context.analysis(), scope);
     final Set<String> existingStaticImports =

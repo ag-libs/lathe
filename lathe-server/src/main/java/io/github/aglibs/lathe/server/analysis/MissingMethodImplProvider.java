@@ -182,25 +182,28 @@ final class MissingMethodImplProvider implements CodeActionProvider {
   }
 
   private static Set<String> collectFqns(final TypeMirror type) {
-    return switch (type) {
-      case DeclaredType dt -> {
-        final Stream<String> self =
-            dt.asElement() instanceof TypeElement te
-                ? Stream.of(te.getQualifiedName().toString())
-                : Stream.of();
-        final Stream<String> args =
-            dt.getTypeArguments().stream().flatMap(arg -> collectFqns(arg).stream());
-        yield Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
-      }
-      case ArrayType at -> collectFqns(at.getComponentType());
-      case WildcardType wt -> {
-        final Stream<String> ext =
-            wt.getExtendsBound() != null ? collectFqns(wt.getExtendsBound()).stream() : Stream.of();
-        final Stream<String> sup =
-            wt.getSuperBound() != null ? collectFqns(wt.getSuperBound()).stream() : Stream.of();
-        yield Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
-      }
-      default -> Set.of();
-    };
+    if (type instanceof final DeclaredType dt) {
+      final Stream<String> self =
+          dt.asElement() instanceof TypeElement te
+              ? Stream.of(te.getQualifiedName().toString())
+              : Stream.of();
+      final Stream<String> args =
+          dt.getTypeArguments().stream().flatMap(arg -> collectFqns(arg).stream());
+      return Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
+    }
+
+    if (type instanceof final ArrayType at) {
+      return collectFqns(at.getComponentType());
+    }
+
+    if (type instanceof final WildcardType wt) {
+      final Stream<String> ext =
+          wt.getExtendsBound() != null ? collectFqns(wt.getExtendsBound()).stream() : Stream.of();
+      final Stream<String> sup =
+          wt.getSuperBound() != null ? collectFqns(wt.getSuperBound()).stream() : Stream.of();
+      return Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
+    }
+
+    return Set.of();
   }
 }

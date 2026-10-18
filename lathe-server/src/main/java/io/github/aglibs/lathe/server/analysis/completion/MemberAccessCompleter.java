@@ -421,9 +421,9 @@ final class MemberAccessCompleter {
     final boolean lambdaContext =
         site.sentinelContext() == SentinelContext.LAMBDA_BODY
             || TypeResolver.isInsideLambdaBody(site.cursorOffset(), snapshot);
-    if (base.expectedValue() instanceof ExpectedValue.Type(final var type)
+    if (base.expectedValue() instanceof final ExpectedValue.Type expectedType
         && lambdaContext
-        && TypeResolver.isVoidFunctionalInterface(type, snapshot)) {
+        && TypeResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
       return base.asStatementContext();
     }
 
@@ -440,9 +440,9 @@ final class MemberAccessCompleter {
       return base.asStatementContext();
     }
 
-    if (outerValue instanceof ExpectedValue.Type(final var type)
+    if (outerValue instanceof final ExpectedValue.Type expectedType
         && lambdaContext
-        && TypeResolver.isVoidFunctionalInterface(type, snapshot)) {
+        && TypeResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
       return base.asStatementContext();
     }
 

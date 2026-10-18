@@ -133,37 +133,92 @@ final class JdiInterpreter {
 
   private Value eval(final TreePath path) {
     final Tree leaf = path.getLeaf();
-    return switch (leaf) {
-      case ParenthesizedTree p -> eval(child(path, p.getExpression()));
-      case LiteralTree literal -> literal(literal);
-      case IdentifierTree identifier -> identifier(path, identifier);
-      case MemberSelectTree select -> memberSelect(path, select);
-      case UnaryTree unary -> unary(path, unary);
-      case BinaryTree binary -> binary(path, binary);
-      case ArrayAccessTree array -> arrayAccess(path, array);
-      case TypeCastTree cast -> cast(path, cast);
-      case InstanceOfTree instanceOf -> instanceOf(path, instanceOf);
-      case MethodInvocationTree call -> methodInvocation(path, call);
-      case NewClassTree construction -> newInstance(path, construction);
-      case ConditionalExpressionTree ternary -> ternary(path, ternary);
-      default ->
-          throw new EvaluationException("unsupported expression: " + leaf.getKind().toString());
-    };
+    if (leaf instanceof final ParenthesizedTree p) {
+      return eval(child(path, p.getExpression()));
+    }
+
+    if (leaf instanceof final LiteralTree literal) {
+      return literal(literal);
+    }
+
+    if (leaf instanceof final IdentifierTree identifier) {
+      return identifier(path, identifier);
+    }
+
+    if (leaf instanceof final MemberSelectTree select) {
+      return memberSelect(path, select);
+    }
+
+    if (leaf instanceof final UnaryTree unary) {
+      return unary(path, unary);
+    }
+
+    if (leaf instanceof final BinaryTree binary) {
+      return binary(path, binary);
+    }
+
+    if (leaf instanceof final ArrayAccessTree array) {
+      return arrayAccess(path, array);
+    }
+
+    if (leaf instanceof final TypeCastTree cast) {
+      return cast(path, cast);
+    }
+
+    if (leaf instanceof final InstanceOfTree instanceOf) {
+      return instanceOf(path, instanceOf);
+    }
+
+    if (leaf instanceof final MethodInvocationTree call) {
+      return methodInvocation(path, call);
+    }
+
+    if (leaf instanceof final NewClassTree construction) {
+      return newInstance(path, construction);
+    }
+
+    if (leaf instanceof final ConditionalExpressionTree ternary) {
+      return ternary(path, ternary);
+    }
+
+    throw new EvaluationException("unsupported expression: " + leaf.getKind().toString());
   }
 
   private Value literal(final LiteralTree literal) {
     final Object value = literal.getValue();
-    return switch (value) {
-      case null -> null;
-      case Boolean b -> vm.mirrorOf(b);
-      case Character c -> vm.mirrorOf(c);
-      case Integer i -> vm.mirrorOf(i);
-      case Long l -> vm.mirrorOf(l);
-      case Float f -> vm.mirrorOf(f);
-      case Double d -> vm.mirrorOf(d);
-      case String s -> vm.mirrorOf(s);
-      default -> throw new EvaluationException("unsupported literal: " + value);
-    };
+    if (value == null) {
+      return null;
+    }
+
+    if (value instanceof final Boolean b) {
+      return vm.mirrorOf(b);
+    }
+
+    if (value instanceof final Character c) {
+      return vm.mirrorOf(c);
+    }
+
+    if (value instanceof final Integer i) {
+      return vm.mirrorOf(i);
+    }
+
+    if (value instanceof final Long l) {
+      return vm.mirrorOf(l);
+    }
+
+    if (value instanceof final Float f) {
+      return vm.mirrorOf(f);
+    }
+
+    if (value instanceof final Double d) {
+      return vm.mirrorOf(d);
+    }
+
+    if (value instanceof final String s) {
+      return vm.mirrorOf(s);
+    }
+
+    throw new EvaluationException("unsupported literal: " + value);
   }
 
   private Value memberSelect(final TreePath path, final MemberSelectTree select) {
@@ -198,13 +253,23 @@ final class JdiInterpreter {
     final JdiRef ref =
         SymbolToJdi.toRef(attr.trees().getElement(path), attr.types(), attr.elements())
             .orElseThrow(() -> new EvaluationException("cannot resolve: " + path.getLeaf()));
-    return switch (ref) {
-      case JdiRef.Local local -> readLocal(local.name());
-      case JdiRef.Field field -> readField(path, field, receiver);
-      case JdiRef.Type type ->
-          throw new EvaluationException("'%s' is a type, not a value".formatted(type.binaryName()));
-      case JdiRef.Method ignored -> throw new EvaluationException("a method is not a value");
-    };
+    if (ref instanceof final JdiRef.Local local) {
+      return readLocal(local.name());
+    }
+
+    if (ref instanceof final JdiRef.Field field) {
+      return readField(path, field, receiver);
+    }
+
+    if (ref instanceof final JdiRef.Type type) {
+      throw new EvaluationException("'%s' is a type, not a value".formatted(type.binaryName()));
+    }
+
+    if (ref instanceof JdiRef.Method) {
+      throw new EvaluationException("a method is not a value");
+    }
+
+    throw new IllegalStateException("unexpected JDI reference %s".formatted(ref));
   }
 
   private Value readLocal(final String name) {
@@ -475,20 +540,51 @@ final class JdiInterpreter {
 
   /** Renders a value the way {@code String +} would: primitives host-side, objects via toString. */
   private String stringValueOf(final Value value) {
-    return switch (value) {
-      case null -> "null";
-      case StringReference string -> string.value();
-      case BooleanValue b -> String.valueOf(b.value());
-      case CharValue c -> String.valueOf(c.value());
-      case ByteValue b -> String.valueOf(b.value());
-      case ShortValue s -> String.valueOf(s.value());
-      case IntegerValue i -> String.valueOf(i.value());
-      case LongValue l -> String.valueOf(l.value());
-      case FloatValue f -> String.valueOf(f.value());
-      case DoubleValue d -> String.valueOf(d.value());
-      case ObjectReference object -> invokeToString(object);
-      default -> value.toString();
-    };
+    if (value == null) {
+      return "null";
+    }
+
+    if (value instanceof final StringReference string) {
+      return string.value();
+    }
+
+    if (value instanceof final BooleanValue b) {
+      return String.valueOf(b.value());
+    }
+
+    if (value instanceof final CharValue c) {
+      return String.valueOf(c.value());
+    }
+
+    if (value instanceof final ByteValue b) {
+      return String.valueOf(b.value());
+    }
+
+    if (value instanceof final ShortValue s) {
+      return String.valueOf(s.value());
+    }
+
+    if (value instanceof final IntegerValue i) {
+      return String.valueOf(i.value());
+    }
+
+    if (value instanceof final LongValue l) {
+      return String.valueOf(l.value());
+    }
+
+    if (value instanceof final FloatValue f) {
+      return String.valueOf(f.value());
+    }
+
+    if (value instanceof final DoubleValue d) {
+      return String.valueOf(d.value());
+    }
+
+    if (value instanceof final ObjectReference object) {
+      return invokeToString(object);
+    }
+
+    return value.toString();
   }
 
   private String invokeToString(final ObjectReference object) {

@@ -68,28 +68,22 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   private void formatBlockTags(final List<? extends DocTree> tags) {
     for (final DocTree tag : tags) {
-      switch (tag) {
-        case ParamTree p when !p.isTypeParameter() -> {
-          ensureSeparator();
-          sb.append("**@param** `").append(p.getName()).append("` ");
-          scan(p.getDescription(), null);
-        }
-        case ReturnTree r -> {
-          ensureSeparator();
-          sb.append("**@return** ");
-          scan(r.getDescription(), null);
-        }
-        case ThrowsTree t -> {
-          ensureSeparator();
-          sb.append("**@throws** `").append(t.getExceptionName()).append("` ");
-          scan(t.getDescription(), null);
-        }
-        case SeeTree s -> {
-          ensureSeparator();
-          sb.append("**@see** ");
-          scan(s.getReference(), null);
-        }
-        default -> {}
+      if (tag instanceof final ParamTree p && !p.isTypeParameter()) {
+        ensureSeparator();
+        sb.append("**@param** `").append(p.getName()).append("` ");
+        scan(p.getDescription(), null);
+      } else if (tag instanceof final ReturnTree r) {
+        ensureSeparator();
+        sb.append("**@return** ");
+        scan(r.getDescription(), null);
+      } else if (tag instanceof final ThrowsTree t) {
+        ensureSeparator();
+        sb.append("**@throws** `").append(t.getExceptionName()).append("` ");
+        scan(t.getDescription(), null);
+      } else if (tag instanceof final SeeTree s) {
+        ensureSeparator();
+        sb.append("**@see** ");
+        scan(s.getReference(), null);
       }
     }
   }

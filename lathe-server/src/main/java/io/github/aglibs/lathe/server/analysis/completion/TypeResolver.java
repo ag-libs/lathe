@@ -215,8 +215,8 @@ final class TypeResolver {
   static int methodReferenceSamArity(
       final int cursorOffset, final AttributedFileAnalysis snapshot) {
     if (!(resolveExpectedArgumentValue(cursorOffset, snapshot)
-            instanceof ExpectedValue.Type(final TypeMirror type))
-        || !(type instanceof final DeclaredType declared)) {
+            instanceof final ExpectedValue.Type expectedType)
+        || !(expectedType.type() instanceof final DeclaredType declared)) {
       return -1;
     }
 
@@ -1207,11 +1207,11 @@ final class TypeResolver {
       }
 
       final Tree selector =
-          switch (leaf) {
-            case final SwitchTree s -> s.getExpression();
-            case final SwitchExpressionTree s -> s.getExpression();
-            default -> null;
-          };
+          leaf instanceof final SwitchTree statement
+              ? statement.getExpression()
+              : leaf instanceof final SwitchExpressionTree expression
+                  ? expression.getExpression()
+                  : null;
       if (selector != null) {
         final var selectorPath = new TreePath(current, selector);
         final TypeMirror type = snapshot.trees().getTypeMirror(selectorPath);

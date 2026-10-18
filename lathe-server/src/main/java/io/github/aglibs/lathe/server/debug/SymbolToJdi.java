@@ -21,13 +21,19 @@ final class SymbolToJdi {
   private SymbolToJdi() {}
 
   static Optional<JdiRef> toRef(final Element element, final Types types, final Elements elements) {
-    return switch (element) {
-      case VariableElement variable -> Optional.of(variableRef(variable, elements));
-      case TypeElement type ->
-          Optional.of(new JdiRef.Type(elements.getBinaryName(type).toString()));
-      case ExecutableElement method -> Optional.of(methodRef(method, types, elements));
-      case null, default -> Optional.empty();
-    };
+    if (element instanceof final VariableElement variable) {
+      return Optional.of(variableRef(variable, elements));
+    }
+
+    if (element instanceof final TypeElement type) {
+      return Optional.of(new JdiRef.Type(elements.getBinaryName(type).toString()));
+    }
+
+    if (element instanceof final ExecutableElement method) {
+      return Optional.of(methodRef(method, types, elements));
+    }
+
+    return Optional.empty();
   }
 
   // A method/constructor is matched by its declaring type, name (<init> for constructors), and

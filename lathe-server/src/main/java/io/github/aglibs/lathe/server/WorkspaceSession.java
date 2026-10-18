@@ -1365,24 +1365,27 @@ final class WorkspaceSession {
     }
 
     final var t = Stopwatch.start();
-    return switch (routeCompiler(uri)) {
-      case CompilerRoute.Module module -> {
-        touchAnalysisCache(uri);
-        yield module
-            .worker()
-            .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
-            .thenApply(
-                targets -> {
-                  LOG.fine(
-                      () ->
-                          "[runnables] %s %dms targets=%d"
-                              .formatted(uri, t.elapsedMs(), targets.size()));
-                  return targets;
-                });
-      }
-      case CompilerRoute.External ignored -> CompletableFuture.completedFuture(List.of());
-      case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(List.of());
-    };
+    final CompilerRoute route = routeCompiler(uri);
+    if (route instanceof final CompilerRoute.Module module) {
+      touchAnalysisCache(uri);
+      return module
+          .worker()
+          .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
+          .thenApply(
+              targets -> {
+                LOG.fine(
+                    () ->
+                        "[runnables] %s %dms targets=%d"
+                            .formatted(uri, t.elapsedMs(), targets.size()));
+                return targets;
+              });
+    }
+
+    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    throw new IllegalStateException("unexpected route %s".formatted(route));
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
@@ -1429,21 +1432,24 @@ final class WorkspaceSession {
   CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     LOG.fine(() -> "[diagnostics] %s".formatted(uri));
-    return switch (routeCompiler(uri)) {
-      case CompilerRoute.Module module -> {
-        final var snapshot = docs.put(uri, content, version);
-        candidateIndex.update(uri, content);
-        final var result = new CompletableFuture<List<Diagnostic>>();
-        submitCompile(
-            module,
-            snapshot,
-            CompileMode.OPEN,
-            (ignored, response) -> result.complete(response.diagnostics()));
-        yield result;
-      }
-      case CompilerRoute.External ignored -> CompletableFuture.completedFuture(List.of());
-      case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(List.of());
-    };
+    final CompilerRoute route = routeCompiler(uri);
+    if (route instanceof final CompilerRoute.Module module) {
+      final var snapshot = docs.put(uri, content, version);
+      candidateIndex.update(uri, content);
+      final var result = new CompletableFuture<List<Diagnostic>>();
+      submitCompile(
+          module,
+          snapshot,
+          CompileMode.OPEN,
+          (ignored, response) -> result.complete(response.diagnostics()));
+      return result;
+    }
+
+    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    throw new IllegalStateException("unexpected route %s".formatted(route));
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -1538,15 +1544,12 @@ final class WorkspaceSession {
             workspace.allSourceRoots(),
             manifest);
 
-    final var cursorWorker =
-        switch (routeCompiler(uri)) {
-          case CompilerRoute.Module m -> m.worker();
-          case CompilerRoute.External e -> e.worker();
-          case CompilerRoute.Missing ignored -> null;
-        };
-    if (cursorWorker == null) {
+    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
+
+    final CompilationWorker cursorWorker = routedWorker.get();
 
     touchAnalysisCache(openFile.uri());
 
@@ -1771,15 +1774,12 @@ final class WorkspaceSession {
             workspace.allSourceRoots(),
             manifest);
 
-    final var cursorWorker =
-        switch (routeCompiler(uri)) {
-          case CompilerRoute.Module m -> m.worker();
-          case CompilerRoute.External e -> e.worker();
-          case CompilerRoute.Missing ignored -> null;
-        };
-    if (cursorWorker == null) {
+    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
+
+    final CompilationWorker cursorWorker = routedWorker.get();
 
     touchAnalysisCache(openFile.uri());
     final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
@@ -2283,15 +2283,12 @@ final class WorkspaceSession {
             manifest);
     final var indexSnapshot = typeIndex;
     final var lambdaSnapshot = reactorLambdaImplementors;
-    final var cursorWorker =
-        switch (routeCompiler(uri)) {
-          case CompilerRoute.Module module -> module.worker();
-          case CompilerRoute.External external -> external.worker();
-          case CompilerRoute.Missing ignored -> null;
-        };
-    if (cursorWorker == null) {
+    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
+
+    final CompilationWorker cursorWorker = routedWorker.get();
 
     touchAnalysisCache(openFile.uri());
 
@@ -2503,15 +2500,13 @@ final class WorkspaceSession {
     final var declaringConfig = workspace.moduleSourceFor(declaringPath);
 
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
-      final var worker =
-          switch (routeCompiler(data.routingUri())) {
-            case CompilerRoute.Module m -> m.worker();
-            case CompilerRoute.External e -> e.worker();
-            case CompilerRoute.Missing ignored -> null;
-          };
-      if (worker == null) {
+      final Optional<CompilationWorker> routedWorker =
+          routeCompiler(data.routingUri()).analysisWorker();
+      if (routedWorker.isEmpty()) {
         return CompletableFuture.completedFuture(List.of());
       }
+
+      final CompilationWorker worker = routedWorker.get();
       progress.begin(progressTitle, 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       if (declaringDoc != null) {
@@ -2881,14 +2876,13 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return switch (routeCompiler(uri)) {
-      case CompilerRoute.Module module -> foldWith(module.worker(), uri, doc);
-      case CompilerRoute.External external -> foldWith(external.worker(), uri, doc);
-      case CompilerRoute.Missing ignored -> {
-        LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
-        yield CompletableFuture.completedFuture(List.of());
-      }
-    };
+    final Optional<CompilationWorker> worker = routeCompiler(uri).analysisWorker();
+    if (worker.isEmpty()) {
+      LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
+      return CompletableFuture.completedFuture(List.of());
+    }
+
+    return foldWith(worker.get(), uri, doc);
   }
 
   private CompletableFuture<List<FoldingRange>> foldWith(
@@ -4205,10 +4199,10 @@ final class WorkspaceSession {
     buildFilesNotificationPending = false;
     final String title = action == null ? null : action.getTitle();
     LOG.info(() -> "[sync] answered action=%s".formatted(title));
-    switch (title) {
-      case SYNC_ACTION -> requestSync(false);
-      case SYNC_CAPTURE_ACTION -> requestSync(true);
-      case null, default -> {}
+    if (SYNC_ACTION.equals(title)) {
+      requestSync(false);
+    } else if (SYNC_CAPTURE_ACTION.equals(title)) {
+      requestSync(true);
     }
   }
 
@@ -4307,14 +4301,12 @@ final class WorkspaceSession {
       final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
-    switch (route) {
-      case CompilerRoute.Module module ->
-          submitTo(route, module.worker(), snapshot, mode, afterCompile);
-      case CompilerRoute.External external ->
-          submitTo(route, external.worker(), snapshot, mode, afterCompile);
-      case CompilerRoute.Missing missing ->
-          publisher.publishMissing(missing.uri(), missing.message());
+    if (route instanceof final CompilerRoute.Missing missing) {
+      publisher.publishMissing(missing.uri(), missing.message());
+      return;
     }
+
+    submitTo(route, route.analysisWorker().orElseThrow(), snapshot, mode, afterCompile);
   }
 
   private void submitTo(
@@ -4378,12 +4370,15 @@ final class WorkspaceSession {
       return List.of();
     }
 
-    return switch (route) {
-      case CompilerRoute.Module module ->
-          ModuleNameDiscovery.observableModuleNames(module.config());
-      case CompilerRoute.External ignored -> List.of();
-      case CompilerRoute.Missing ignored -> List.of();
-    };
+    if (route instanceof final CompilerRoute.Module module) {
+      return ModuleNameDiscovery.observableModuleNames(module.config());
+    }
+
+    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
+      return List.of();
+    }
+
+    throw new IllegalStateException("unexpected route %s".formatted(route));
   }
 
   private <T> CompletableFuture<T> openDocFeature(
@@ -4413,17 +4408,13 @@ final class WorkspaceSession {
       final String uri,
       final Function<CompilationWorker, CompletableFuture<T>> operation,
       final T missingFallback) {
-    return switch (routeCompiler(uri)) {
-      case CompilerRoute.Module module -> {
-        touchAnalysisCache(uri);
-        yield operation.apply(module.worker());
-      }
-      case CompilerRoute.External external -> {
-        touchAnalysisCache(uri);
-        yield operation.apply(external.worker());
-      }
-      case CompilerRoute.Missing ignored -> CompletableFuture.completedFuture(missingFallback);
-    };
+    final Optional<CompilationWorker> worker = routeCompiler(uri).analysisWorker();
+    if (worker.isEmpty()) {
+      return CompletableFuture.completedFuture(missingFallback);
+    }
+
+    touchAnalysisCache(uri);
+    return operation.apply(worker.get());
   }
 
   private static void recordCompileStamp(
@@ -4615,11 +4606,30 @@ final class WorkspaceSession {
   }
 
   private sealed interface CompilerRoute {
-    record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {}
+    // The worker that analyzes the file; abstract, so a new kind of route must say whether it has
+    // one.
+    Optional<CompilationWorker> analysisWorker();
 
-    record External(CompilationWorker worker) implements CompilerRoute {}
+    record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {
+      @Override
+      public Optional<CompilationWorker> analysisWorker() {
+        return Optional.of(worker);
+      }
+    }
 
-    record Missing(String uri, String message) implements CompilerRoute {}
+    record External(CompilationWorker worker) implements CompilerRoute {
+      @Override
+      public Optional<CompilationWorker> analysisWorker() {
+        return Optional.of(worker);
+      }
+    }
+
+    record Missing(String uri, String message) implements CompilerRoute {
+      @Override
+      public Optional<CompilationWorker> analysisWorker() {
+        return Optional.empty();
+      }
+    }
   }
 
   @FunctionalInterface

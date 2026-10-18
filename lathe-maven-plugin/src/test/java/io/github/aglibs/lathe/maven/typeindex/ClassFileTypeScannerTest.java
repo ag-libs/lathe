@@ -184,8 +184,8 @@ class ClassFileTypeScannerTest {
         sources.keySet().stream()
             .map(fileName -> src.resolve("com/example").resolve(fileName).toString())
             .collect(Collectors.toList());
-    args.addFirst(classes.toString());
-    args.addFirst("-d");
+    args.add(0, classes.toString());
+    args.add(0, "-d");
     final int result = compiler.run(null, null, null, args.toArray(String[]::new));
     assertThat(result).isZero();
     return classes;
