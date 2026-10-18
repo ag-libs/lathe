@@ -33,6 +33,15 @@ updates:
       # Must track the mcp-bom-resolved slf4j-api version, not the latest — a provider/api mismatch
       # reintroduces the SLF4J warning the dependency was added to silence.
       - dependency-name: org.slf4j:slf4j-jdk14
+      # lathe-server's test-formatter jars mirror what each formatter resolves to in a real project:
+      # Guava/failureaccess are the versions each formatter's own pom declares, so they move only
+      # with that formatter (a palantir-java-format bump PR must update its Guava pin by hand).
+      - dependency-name: com.google.guava:*
+      # The Eclipse JDT set is exactly one Spotless eclipse_jdt_formatter lockfile; bumping single
+      # artifacts yields a set no Eclipse release ships. Move it as a whole to a newer lockfile.
+      - dependency-name: org.eclipse.jdt:*
+      - dependency-name: org.eclipse.platform:*
+      - dependency-name: net.java.dev.jna:*
 
   # VS Code extension (Node). Versions are pinned exact (no caret) with a committed lockfile; the
   # ignore rules below keep Dependabot from proposing bumps that would drop VS Code coverage.

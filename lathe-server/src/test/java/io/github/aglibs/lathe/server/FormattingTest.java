@@ -20,7 +20,7 @@ class FormattingTest {
 
   private static final GjfFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
   private static final Path FILE = Path.of("Sample.java");
-  // palantir-java-format 2.98.0 (the fixture) predates JDK 27's javac.
+  // palantir-java-format 2.102.0 (the fixture) predates JDK 27's javac.
   private static final int PALANTIR_UNSUPPORTED_JDK = 27;
 
   // Formatting returns a minimal edit (only the changed region), so apply it to recover the result.
