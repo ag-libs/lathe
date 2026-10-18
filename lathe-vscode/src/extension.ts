@@ -48,7 +48,7 @@ function startClient(folder: WorkspaceFolder): void {
     if (!warnedMissing) {
       warnedMissing = true;
       window.showWarningMessage(
-        'Lathe: no launcher at .lathe/lathe-launcher.sh — run a Lathe-enabled build to generate it, then reload the window.',
+        'Lathe: no launcher at .lathe/lathe-launcher.sh — run a Lathe-enabled build to generate it, then reload the window. If a build already ran, its log says why: Lathe needs Maven 3.6.3+.',
       );
     }
     return;

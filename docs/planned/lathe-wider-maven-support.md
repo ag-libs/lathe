@@ -308,6 +308,8 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
 - **S6 — Tell the user** (D6 and D5's post-build hint): the client nudge text and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting built around D3's message).
   D5's **pre-flight check** waits for `SyncCommand` ([Multi-OS](lathe-multi-os.md) A2) instead of going into today's shell script.
   **Exit:** each case in the D6 table produces its message, and the docs show the new floors.
+  *As built:* README requirements (Java 17+, Maven 3.6.3+ with compiler plugin 3.6.2+, the CI-verified versions) and two troubleshooting entries
+  (no `[lathe]` lines in the build log means the extension didn't load; D3's message and its fixes); the Neovim and VS Code nudges add one sentence pointing at the build log and the Maven floor.
 
 S4 alone turns Maven 3.6–3.8 from "silently nothing" into "works"; S5 turns the only build-breaking case found into a clear message.
 
