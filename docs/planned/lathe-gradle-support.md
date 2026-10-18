@@ -380,6 +380,23 @@ Two registration styles, mirroring Maven's "build extension in the POM" vs "core
 | `CI` env set | Lathe does not run |
 | `.lathe/` exists | overrides the property opt-out (not the absolute kills) |
 
+**Fail-fast requirements check — the counterpart of the Maven side's
+[D3](lathe-wider-maven-support.md#d3--fail-fast-clearly-on-an-unsupported-build-decided-2026-10-18) (decided 2026-10-18).**
+The settings plugin checks before any project is configured, as `afterProjectsRead` does for Maven: it collects every unmet requirement and,
+if there is one, stops the build with one message naming each problem, its fix, and how to build without Lathe. No configuration, no partial support.
+
+| | Maven (shipped) | Gradle |
+|---|---|---|
+| Tool version | `maven.version`, compared with Maven's `ComparableVersion`; floor 3.6.3 | `GradleVersion.current()`, Gradle's own comparison; floor **8.8** |
+| Compiler requirement | each module's `maven-compiler-plugin` 3.6.2+ | none: `JavaCompile` is built into Gradle |
+| Way out named in the message | `-Dlathe.disabled=true` | `-Plathe.disabled=true` |
+
+- **A daemon older than JDK 17 cannot load the plugin at all** (Lathe's classes are Java 17), so the check never runs there; Gradle 8.x would show a bare class-version error.
+  Gradle 9 requires JDK 17 for its daemon anyway; for 8.x, a small entry class compiled for an older Java checks the running JDK first and fails with a clear message, then loads the rest.
+- **The message is shared, the version reading is not.** When this plugin is built, the wording (the heading, one line per problem with its fix, the way out) moves from
+  `lathe-maven-extension`'s `LatheRequirements` into `lathe-core`, so both tools say it the same way; each tool keeps its own version reading and comparison.
+  Not before: today the Maven extension is its only user.
+
 ## End-user setup
 
 1. **Register** — settings plugin (committed) or init script (personal).
@@ -480,7 +497,7 @@ and the fidelity claims are all under test.
 0. **Prerequisites** — the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) (done);
    the JDK 17 floor ([Wider Maven and JDK Support](lathe-wider-maven-support.md) slice 0);
    [Multi-OS](lathe-multi-os.md) A0–A3 with the Maven-free `lathe-install` (before slice 2).
-1. **Compiler capture (main + test)** — settings/project plugin + gating + the non-cacheable capture
+1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the non-cacheable capture
    finalizer on `JavaCompile` → `ModuleConfigData`, bytecode mirror, stamps. Delivers full **code
    intelligence** for main and test.
 2. **`workspace.json` + dependency/JDK sources + server install + formatter** — `latheSync`. Completes the editor
