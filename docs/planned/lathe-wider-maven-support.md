@@ -271,8 +271,8 @@ Notes on the rows:
   javac 17 differs from 21 in some diagnostics and error recovery; a server test that asserts JDK-21-specific output gets a JDK-aware expectation, as the 25 and 27 rows already require.
 - If the pinned google-java-format cannot run on JDK 17, that row skips the formatting check; the other rows enforce it.
 - The fixture already pins its plugins for the 3.9 defaults. The older Maven rows need the compiler plugin and Surefire pinned, so the fixture's root POM pins them explicitly, the way a real project on old Maven must.
-- **New invoker fixture `old-compiler`:** a project pinned to compiler plugin 3.1, expected to fail (`invoker.buildResult=failure`);
-  its `verify.groovy` asserts the build stopped on Lathe's message (naming the plugin version, the module, and `-Dlathe.disabled=true`), not on a `NoSuchMethodError`.
+- **New invoker fixture `old-compiler`:** a project pinned to compiler plugin 3.1, with no sources, expected to fail (`invoker.buildResult=failure`).
+  With no sources the old plugin never runs and cannot fail the build, so the failure is Lathe's check; no verify script (the invoker suite uses no Groovy or BeanShell), and the message wording is `LatheRequirementsTest`'s.
 - **Unit tests:** `LatheRequirements` (D3): a supported build reports nothing; an old Maven plus old compiler plugins yields one line per problem, modules sharing a version on one line; an unknown Maven version skips only the Maven check. The jar-content check (D1).
 - **Wrapper-version detection (D5)** is a pure function over `maven-wrapper.properties`, unit-tested on samples.
 
