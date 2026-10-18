@@ -1365,8 +1365,7 @@ final class WorkspaceSession {
     }
 
     final var t = Stopwatch.start();
-    final CompilerRoute route = routeCompiler(uri);
-    if (route instanceof final CompilerRoute.Module module) {
+    if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
       touchAnalysisCache(uri);
       return module
           .worker()
@@ -1381,11 +1380,7 @@ final class WorkspaceSession {
               });
     }
 
-    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    throw new IllegalStateException("unexpected route %s".formatted(route));
+    return CompletableFuture.completedFuture(List.of());
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
@@ -1432,8 +1427,7 @@ final class WorkspaceSession {
   CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     LOG.fine(() -> "[diagnostics] %s".formatted(uri));
-    final CompilerRoute route = routeCompiler(uri);
-    if (route instanceof final CompilerRoute.Module module) {
+    if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
       final var snapshot = docs.put(uri, content, version);
       candidateIndex.update(uri, content);
       final var result = new CompletableFuture<List<Diagnostic>>();
@@ -1445,11 +1439,7 @@ final class WorkspaceSession {
       return result;
     }
 
-    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    throw new IllegalStateException("unexpected route %s".formatted(route));
+    return CompletableFuture.completedFuture(List.of());
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -4374,11 +4364,7 @@ final class WorkspaceSession {
       return ModuleNameDiscovery.observableModuleNames(module.config());
     }
 
-    if (route instanceof CompilerRoute.External || route instanceof CompilerRoute.Missing) {
-      return List.of();
-    }
-
-    throw new IllegalStateException("unexpected route %s".formatted(route));
+    return List.of();
   }
 
   private <T> CompletableFuture<T> openDocFeature(
