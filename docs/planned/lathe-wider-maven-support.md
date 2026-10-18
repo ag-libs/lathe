@@ -20,7 +20,7 @@ This document turns both into a design: the new floors, the fixes, and how Lathe
 ## Goal
 
 1. Lathe works on **Maven 3.6.3 and newer**, with the same features as on 3.9.
-2. **Lathe never breaks a user's build.** Where Lathe can't support part of a setup, the build still succeeds, Lathe skips that part, and it says so once, clearly.
+2. **Lathe never fails obscurely.** A build Lathe can't support stops before anything runs, with one message naming each problem, its fix, and how to build without Lathe. *(Revised 2026-10-18: an earlier draft skipped unsupported modules with a warning; failing fast is simpler and leaves no half-supported state to record and explain.)*
 3. **No silent failures.** A setup Lathe can't support is detected inside Maven where possible, and by the editor client and sync script where not. The message names the problem and the fix.
 4. Lathe works on **JDK 17 and newer**: the build may run on 17, the project's tests may run on 17, and the language server runs on the project's build JDK, as it does today.
 
@@ -139,34 +139,27 @@ The plugin (`lathe-maven-plugin`) is unaffected: Mojos are described by `plugin.
 - The Maven modules add `-proc:none`. They need no annotation processing: the Plexus descriptor (D1) and `plugin.xml` are hand-written or produced by plugins, not by processors. This matches what happens under 3.9 today.
 - The existing Dependabot pin note for `maven-api.version` changes from 3.9.15 to 3.6.3; bump PRs are still closed.
 
-### D3 — Never break the build: skip-and-warn on old compiler plugins
+### D3 — Fail fast, clearly, on an unsupported build (decided 2026-10-18)
 
-In `afterProjectsRead`, before injecting the shim into a project, the injector reads that project's effective `maven-compiler-plugin` version (POM-declared or default-bound; both appear in the model, per the original extension spike).
+It replaces the earlier skip-and-warn D3 and absorbs D4, which only warned about an old Maven.
 
-- **3.6.2 or newer:** inject as today.
-- **Older, or a version it can't parse** (a property that didn't resolve): do **not** inject the shim for that module.
-  The build compiles exactly as without Lathe.
-  Lathe logs one warning per build that lists every affected module:
+In `afterProjectsRead`, before injecting anything, the participant collects every unmet requirement (`LatheRequirements`):
+
+- **Maven older than 3.6.3**, read from the `maven.version` system property Maven sets to its own version;
+- **any module whose effective `maven-compiler-plugin` is older than 3.6.2** (POM-declared or default-bound: both are in the model by then). Modules without the compiler plugin are skipped.
+
+If any is unmet, the build stops with one `MavenExecutionException`; modules sharing an old compiler version share a line:
 
 ```
-[WARNING] [lathe] maven-compiler-plugin 3.1 is too old for Lathe (needs 3.6.2 or newer).
-[WARNING] [lathe] Your build is unaffected, but Lathe can't read these modules: core, app, health.
-[WARNING] [lathe] Fix: pin a newer version in <pluginManagement>, for example:
-[WARNING] [lathe]   <plugin><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
+[ERROR] [lathe] This build is older than Lathe supports:
+[ERROR]   - Maven 3.5.4 is older than 3.6.3, the oldest Lathe supports: upgrade Maven, or the project's wrapper (mvn wrapper:wrapper -Dmaven=3.9.11)
+[ERROR]   - maven-compiler-plugin 3.1 (core, app) is older than 3.6.2: pin a newer version in <pluginManagement>, for example 3.13.0
+[ERROR]   To build without Lathe, add -Dlathe.disabled=true
 ```
 
-- The modules are also recorded in `workspace.json` as **skipped, with a reason**. The server can then show the reason when a file from such a module is opened ("Lathe can't analyze this module: maven-compiler-plugin 3.1 is too old…"), instead of a generic "no module found".
-- The threshold (`3.6.2`) is a named constant in `LatheLayout.Maven`.
-
-### D4 — Check the Maven version inside Maven
-
-The participant reads the running Maven version (`RuntimeInformation`, available since Maven 3.0).
-
-- **3.6.3 or newer:** proceed silently.
-- **Older, but still able to load the extension (3.3.1–3.6.2):** proceed best-effort, and log one warning:
-  *"[lathe] Maven 3.5.4 is older than Lathe's supported floor (3.6.3). Lathe may not work correctly. Upgrade Maven or the project's wrapper (`mvn wrapper:wrapper -Dmaven=3.9.11`)."*
-  Lathe does not refuse to run: refusing would turn a probably-working setup into a certainly-broken one.
-- The floor is a named constant next to D3's.
+- **Why fail rather than skip:** a build Lathe can't support already failed before this change, with a `NoSuchMethodError` wall that never mentions Lathe; skipping modules would add a half-supported state to record (`workspace.json`) and explain (the server). Old compiler plugins are rare on JDK 17+ projects (compiler 3.1's default `-source 5` is rejected there), CI is unaffected (Lathe switches itself off under `CI`), and the message gives both ways out.
+- The floors (`MIN_MAVEN_VERSION`, `MIN_COMPILER_PLUGIN_VERSION`) and the `maven.version` key are constants in `LatheLayout.Maven`; the plugin lookup is the injector's own (`findPlugin`).
+- The check runs wherever the extension loads: Maven 3.3.1+ (`.mvn/extensions.xml`). Older Maven loads nothing, which D5 detects from outside.
 
 ### D5 — Detect what Maven can't report, from the outside
 
@@ -184,8 +177,8 @@ The client and sync scripts close this gap:
 
 | Component | Floor | How it's enforced |
 |---|---|---|
-| Maven | 3.6.3 | D4 warning inside Maven; D5 pre-flight and post-build hints outside |
-| `maven-compiler-plugin` | 3.6.2 | D3 skip-and-warn, per module |
+| Maven | 3.6.3 | D3 stops the build inside Maven (3.3.1+); D5 pre-flight and post-build hints outside |
+| `maven-compiler-plugin` | 3.6.2 | D3 stops the build, naming the modules |
 | Surefire (test capture) | 2.22.2 observed working | capture is best-effort; no new guard |
 | JDK running the build, the tests, and the language server | 17 | `release` 17 at compile time (D7); a JDK 17 CI row |
 
@@ -278,12 +271,9 @@ Notes on the rows:
   javac 17 differs from 21 in some diagnostics and error recovery; a server test that asserts JDK-21-specific output gets a JDK-aware expectation, as the 25 and 27 rows already require.
 - If the pinned google-java-format cannot run on JDK 17, that row skips the formatting check; the other rows enforce it.
 - The fixture already pins its plugins for the 3.9 defaults. The older Maven rows need the compiler plugin and Surefire pinned, so the fixture's root POM pins them explicitly, the way a real project on old Maven must.
-- **New invoker fixture `old-compiler`:** a small project whose compiler plugin is 3.1, with `maven.compiler.source`/`target` set. It asserts:
-  - the build succeeds;
-  - the D3 warning appears, naming the module;
-  - `workspace.json` records the module as skipped with its reason;
-  - no `lsp-params` is written for it.
-- **Unit tests:** compiler-plugin version comparison (D3), including unresolved properties and odd version strings; Maven-version gating (D4); the jar-content check (D1).
+- **New invoker fixture `old-compiler`:** a project pinned to compiler plugin 3.1, expected to fail (`invoker.buildResult=failure`);
+  its `verify.groovy` asserts the build stopped on Lathe's message (naming the plugin version, the module, and `-Dlathe.disabled=true`), not on a `NoSuchMethodError`.
+- **Unit tests:** `LatheRequirements` (D3): a supported build reports nothing; an old Maven plus old compiler plugins yields one line per problem, modules sharing a version on one line; an unknown Maven version skips only the Maven check. The jar-content check (D1).
 - **Wrapper-version detection (D5)** is a pure function over `maven-wrapper.properties`, unit-tested on samples.
 
 ## Delivery slices
@@ -313,15 +303,15 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
   *As built:* `<proc>none</proc>` once in the root compiler configuration (no module uses an annotation processor), not per module;
   a test reads this module's own output (Maven's jars on the test class path carry Sisu indexes of their own);
   the invoker-only rows are a separate CI job that downloads its Maven and passes it as `invoker.mavenHome`.
-- **S5 — Never break the build** (D3): the compiler-plugin guard and warning, skipped modules recorded in `workspace.json` (and in the [workspace contract](../lathe-workspace-contract.md)), the `old-compiler` fixture.
-  **Exit:** a compiler plugin 3.1 project builds green with a clear warning.
-- **S6 — Tell the user** (D4, D6, and D5's post-build hint): the Maven-version warning, the server message for skipped modules, the client nudge text, and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting).
+- **S5 — Fail fast, clearly** (D3): one requirements check for the Maven version and every module's compiler plugin, stopping the build with one message; the `old-compiler` fixture.
+  **Exit:** a compiler plugin 3.1 project stops before compiling, with Lathe's message.
+- **S6 — Tell the user** (D6 and D5's post-build hint): the client nudge text and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting built around D3's message).
   D5's **pre-flight check** waits for `SyncCommand` ([Multi-OS](lathe-multi-os.md) A2) instead of going into today's shell script.
   **Exit:** each case in the D6 table produces its message, and the docs show the new floors.
 
-S4 alone turns Maven 3.6–3.8 from "silently nothing" into "works"; S5 removes the only build-breaking case found.
+S4 alone turns Maven 3.6–3.8 from "silently nothing" into "works"; S5 turns the only build-breaking case found into a clear message.
 
-Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1 day, S5 1–2 days, S6 about 1 day.
+Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1 day, S5 half a day, S6 half a day.
 
 ## Relationship to other designs
 
@@ -335,12 +325,11 @@ Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1
 
 ## Open questions
 
-1. **Maven 3.3.1–3.6.2:** worth a CI row, or warn-only (D4)? 3.6.3 is from 2019, and older versions are rare even among old setups.
+1. **Maven 3.3.1–3.6.2:** worth a CI row that checks D3 stops the build? 3.6.3 is from 2019, and older versions are rare even among old setups.
 2. **`maven-compiler-plugin` 3.6.2 vs 3.7.0:** 3.6.2 worked in the spike. Should the floor be the oldest that works, or a round, well-known version?
 3. **Plugins between Maven and Lathe that read the compiler configuration** (Error Prone setups, Lombok, `maven-processor-plugin`): they behave the same as on 3.9, but haven't been tested on an old Maven. A real older-Maven project from a user would be the best next check.
-4. Should the skipped-module reason (D3) also be surfaced through the MCP server's `get_diagnostics` responses, so agents see it too?
-5. ~~**Maven 3.6.3 on JDK 17** is untested.~~ *Answered 2026-10-18 (S4): the invoker suite passes with Maven 3.6.3 on JDK 17, fixtures and smoke tests included.*
-6. **Toolchains (follow-up, not changed by this design):** when the build runs on one JDK but compiles on another (Maven toolchains, Gradle toolchains)
+4. ~~**Maven 3.6.3 on JDK 17** is untested.~~ *Answered 2026-10-18 (S4): the invoker suite passes with Maven 3.6.3 on JDK 17, fixtures and smoke tests included.*
+5. **Toolchains (follow-up, not changed by this design):** when the build runs on one JDK but compiles on another (Maven toolchains, Gradle toolchains)
    and the project sets `-source`/`-target` instead of `--release`, `.lathe/java-home` names the JDK that ran the build, not the one that compiled,
    and the compiler shim records only `--release`.
    The server then accepts APIs of its own JDK that the real build rejects.

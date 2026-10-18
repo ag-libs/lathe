@@ -118,6 +118,11 @@ public final class LatheLayout {
     public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
     public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
     public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
+    // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
+    // says why. maven.version is the system property Maven sets to its own version.
+    public static final String MIN_MAVEN_VERSION = "3.6.3";
+    public static final String MIN_COMPILER_PLUGIN_VERSION = "3.6.2";
+    public static final String MAVEN_VERSION_PROPERTY = "maven.version";
     public static final String INIT_GOAL = "init";
     public static final String SYNC_GOAL = "sync";
     public static final String INIT_EXECUTION_ID = "lathe-init";
