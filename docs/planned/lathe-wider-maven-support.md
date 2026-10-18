@@ -310,6 +310,9 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
 - **S4 — Registration and API floor** (D1, D2): the Plexus descriptor instead of the Sisu index, `maven-api.version` 3.6.3, `-proc:none`, the jar-content test,
   the invoker-only CI rows (Maven 3.6.3 on JDK 17, 3.8.8, 3.10), and the fixture's pinned compiler plugin and Surefire.
   **Exit:** the invoker suite passes on Maven 3.6.3, 3.8.8, 3.9 and 3.10.
+  *As built:* `<proc>none</proc>` once in the root compiler configuration (no module uses an annotation processor), not per module;
+  a test reads this module's own output (Maven's jars on the test class path carry Sisu indexes of their own);
+  the invoker-only rows are a separate CI job that downloads its Maven and passes it as `invoker.mavenHome`.
 - **S5 — Never break the build** (D3): the compiler-plugin guard and warning, skipped modules recorded in `workspace.json` (and in the [workspace contract](../lathe-workspace-contract.md)), the `old-compiler` fixture.
   **Exit:** a compiler plugin 3.1 project builds green with a clear warning.
 - **S6 — Tell the user** (D4, D6, and D5's post-build hint): the Maven-version warning, the server message for skipped modules, the client nudge text, and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting).
@@ -336,7 +339,7 @@ Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1
 2. **`maven-compiler-plugin` 3.6.2 vs 3.7.0:** 3.6.2 worked in the spike. Should the floor be the oldest that works, or a round, well-known version?
 3. **Plugins between Maven and Lathe that read the compiler configuration** (Error Prone setups, Lombok, `maven-processor-plugin`): they behave the same as on 3.9, but haven't been tested on an old Maven. A real older-Maven project from a user would be the best next check.
 4. Should the skipped-module reason (D3) also be surfaced through the MCP server's `get_diagnostics` responses, so agents see it too?
-5. **Maven 3.6.3 on JDK 17** is untested: the spike ran Maven 3.6.3 on JDK 21. The slice 1 CI row answers it.
+5. ~~**Maven 3.6.3 on JDK 17** is untested.~~ *Answered 2026-10-18 (S4): the invoker suite passes with Maven 3.6.3 on JDK 17, fixtures and smoke tests included.*
 6. **Toolchains (follow-up, not changed by this design):** when the build runs on one JDK but compiles on another (Maven toolchains, Gradle toolchains)
    and the project sets `-source`/`-target` instead of `--release`, `.lathe/java-home` names the JDK that ran the build, not the one that compiled,
    and the compiler shim records only `--release`.

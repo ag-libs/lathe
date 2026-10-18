@@ -103,3 +103,62 @@ jobs:
           name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
           path: '**/target/surefire-reports/'
           retention-days: 7
+
+  invoker-maven:
+    # The Maven version matters only to the invoker suite, which runs the fixture builds with Maven;
+    # Lathe itself builds on 3.9. Older and newer Maven releases get one invoker-only row each.
+    name: Invoker (Maven ${{ matrix.maven }}, JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - maven: '3.6.3'
+            java: '17'
+          - maven: '3.8.8'
+            java: '21'
+          - maven: '3.10.0'
+            java: '21'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v6
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Set up JDK 21 to build (JDK 17 row)
+        if: matrix.java == '17'
+        uses: actions/setup-java@v6
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Maven 3.9.16
+        uses: stCarolas/setup-maven@v5
+        with:
+          maven-version: 3.9.16
+
+      - name: Download Maven ${{ matrix.maven }} for the fixture builds
+        run: |
+          curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${{ matrix.maven }}/binaries/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+
+      - name: Invoker suite
+        # Builds the modules the fixtures need (unit tests skipped), then runs the fixture builds with
+        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}. `env -u CI` keeps Lathe enabled in them.
+        run: |
+          env -u CI mvn -B --no-transfer-progress verify -pl lathe-maven-plugin -am -Dsurefire.skip=true \
+            -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
+            -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64"
+
+      - name: Upload invoker logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: invoker-logs-maven${{ matrix.maven }}-jdk${{ matrix.java }}
+          path: 'lathe-maven-plugin/target/it/**/build.log'
+          retention-days: 7

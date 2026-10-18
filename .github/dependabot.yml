@@ -20,7 +20,7 @@ updates:
           - minor
           - patch
     ignore:
-      # Pinned to the Maven 3.9 compatibility floor: these provided-scope artifacts are the minimum
+      # Pinned to the Maven 3.6.3 compatibility floor: these provided-scope artifacts are the minimum
       # Maven we compile (and therefore run) against. Bumping them would silently raise the floor.
       - dependency-name: org.apache.maven:maven-core
       - dependency-name: org.apache.maven:maven-plugin-api

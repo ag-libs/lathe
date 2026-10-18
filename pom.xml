@@ -85,8 +85,9 @@
     <java-debug.version>0.53.1</java-debug.version>
     <mcp-sdk.version>2.0.1</mcp-sdk.version>
 
-    <!-- Maven plugin/extension API, shared by lathe-install and the three Maven front-ends -->
-    <maven-api.version>3.9.15</maven-api.version>
+    <!-- Maven plugin/extension API, shared by lathe-install and the three Maven front-ends: the
+         Maven floor Lathe supports, so a newer API is a compile error, not a runtime surprise. -->
+    <maven-api.version>3.6.3</maven-api.version>
     <maven-plugin.version>3.16.0</maven-plugin.version>
 
     <!-- release plugin versions (activated by the release profile) -->
@@ -241,6 +242,8 @@
           <artifactId>maven-compiler-plugin</artifactId>
           <version>${compiler.version}</version>
           <configuration>
+            <!-- No module uses an annotation processor; Maven 3.6.3's API puts Sisu's on the class path. -->
+            <proc>none</proc>
             <compilerArgs>
               <arg>-Xlint:all</arg>
               <arg>-Werror</arg>

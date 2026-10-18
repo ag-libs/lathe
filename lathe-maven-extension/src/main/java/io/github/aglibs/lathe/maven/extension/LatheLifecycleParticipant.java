@@ -9,8 +9,6 @@ import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import javax.inject.Named;
-import javax.inject.Singleton;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
@@ -20,8 +18,9 @@ import org.apache.maven.project.MavenProject;
  * heartbeated {@code .lathe/lathe.lock} for the whole session so the language server suppresses its
  * sync prompt for the entire build, not just the per-module compile windows.
  */
-@Named("lathe")
-@Singleton
+// Registered in META-INF/plexus/components.xml, not by Sisu's class index: Maven before 3.9 ships
+// an
+// ASM that cannot read Java 17 class files and would skip the participant without a word.
 public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
   // Refresh well inside LatheLock's staleness window so a live build never looks crashed, while a
