@@ -1,0 +1,30 @@
+name: Build tools
+description: >-
+  The JDK a CI row tests on, JDK 21 to build when that is 17, and the Maven that builds Lathe.
+inputs:
+  java:
+    description: The JDK the row runs its tests on.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK ${{ inputs.java }}
+      uses: actions/setup-java@v6
+      with:
+        java-version: ${{ inputs.java }}
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Set up JDK 21 to build (JDK 17 row)
+      # lathe-server's src/main/java21 needs a JDK 21+ compiler; this JDK becomes JAVA_HOME and
+      # JAVA_HOME_17_X64 keeps pointing at 17 for the tests.
+      if: inputs.java == '17'
+      uses: actions/setup-java@v6
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Set up Maven 3.9.16
+      uses: stCarolas/setup-maven@v5
+      with:
+        maven-version: 3.9.16
