@@ -204,7 +204,7 @@ class SemanticTokensTest extends SampleFixture {
   void encode_first_token_deltaLine_equals_absoluteLine() {
     final int[] encoded = TokenScanner.encode(tokens);
     assertThat(encoded.length).isGreaterThanOrEqualTo(5);
-    assertThat(encoded[0]).isEqualTo(tokens.getFirst().line());
+    assertThat(encoded[0]).isEqualTo(tokens.get(0).line());
   }
 
   @Test

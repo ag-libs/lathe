@@ -5,6 +5,7 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,7 +101,7 @@ final class AddThrowsProvider implements CodeActionProvider {
       final String source) {
     final List<? extends ExpressionTree> existingThrows = methodTree.getThrows();
     if (!existingThrows.isEmpty()) {
-      final long lastEnd = positions.getEndPosition(cu, existingThrows.getLast());
+      final long lastEnd = positions.getEndPosition(cu, CollectionUtil.last(existingThrows));
       if (lastEnd < 0) {
         return null;
       }

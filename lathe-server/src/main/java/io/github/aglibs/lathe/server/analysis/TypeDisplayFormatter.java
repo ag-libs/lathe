@@ -18,13 +18,23 @@ public final class TypeDisplayFormatter {
   }
 
   public String format(final TypeMirror type) {
-    return switch (type) {
-      case DeclaredType declaredType -> formatDeclaredType(declaredType);
-      case ArrayType arrayType -> "%s[]".formatted(format(arrayType.getComponentType()));
-      case TypeVariable typeVariable -> typeVariable.asElement().getSimpleName().toString();
-      case WildcardType wildcardType -> formatWildcardType(wildcardType);
-      default -> type.toString();
-    };
+    if (type instanceof final DeclaredType declaredType) {
+      return formatDeclaredType(declaredType);
+    }
+
+    if (type instanceof final ArrayType arrayType) {
+      return "%s[]".formatted(format(arrayType.getComponentType()));
+    }
+
+    if (type instanceof final TypeVariable typeVariable) {
+      return typeVariable.asElement().getSimpleName().toString();
+    }
+
+    if (type instanceof final WildcardType wildcardType) {
+      return formatWildcardType(wildcardType);
+    }
+
+    return type.toString();
   }
 
   private String formatDeclaredType(final DeclaredType type) {

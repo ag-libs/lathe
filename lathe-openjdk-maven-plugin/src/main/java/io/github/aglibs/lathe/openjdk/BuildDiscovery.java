@@ -49,7 +49,7 @@ final class BuildDiscovery {
               .formatted(buildRoot, names, BUILD_DIR));
     }
 
-    return configured.getFirst();
+    return configured.get(0);
   }
 
   private static List<Path> configuredBuilds(final Path buildRoot) throws IOException {

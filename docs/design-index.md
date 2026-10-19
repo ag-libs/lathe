@@ -190,13 +190,11 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Reuses the cache launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
-- [Wider Maven and JDK Support](planned/lathe-wider-maven-support.md) — **proposed, spiked 2026-10-18.** Lower
-  the floor from Maven 3.9 to 3.6.3: register the extension through a Plexus descriptor (Maven <3.9's
-  Sisu can't read Java 21 classes and silently drops it), compile against maven-api 3.6.3, skip-and-warn
-  on `maven-compiler-plugin` <3.6.2 instead of breaking the build, and detect unsupported Maven inside
-  the build and from the client/sync. Verified 49/49 on 3.6.3 and 3.9.16. Also lowers the JDK floor from
-  21 to 17 for every module, the server included, which keeps running on the build's own JDK; the audit
-  found only `lathe-server` needs a migration (its Java 21 `switch` patterns and sequenced-collection calls).
+- [Wider Maven and JDK Support](done/lathe-wider-maven-support.md) — **done (2026-10-19, PR #24).** Maven
+  3.6.3+ through a Plexus descriptor (Maven <3.9's Sisu silently dropped the extension) and the 3.6.3 API floor;
+  JDK 17+ for every module, the server included, with javac API newer than 17 behind a multi-release jar
+  (`CompilerTrees`); an unsupported Maven or `maven-compiler-plugin` stops the build with one clear message;
+  CI covers JDK 17–27 and Maven 3.6.3–3.10.
 - [Multi-OS Design](planned/lathe-multi-os.md) — **proposed.** Lathe portable by construction across
   Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
   tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names

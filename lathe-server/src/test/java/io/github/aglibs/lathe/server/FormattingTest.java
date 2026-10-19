@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
@@ -14,6 +13,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.io.TempDir;
 
 class FormattingTest {
@@ -27,7 +27,7 @@ class FormattingTest {
   private static String formattedText(final String source) throws Exception {
     final List<TextEdit> edits = JavaFormatter.format(ENGINE, source, FILE);
     assertThat(edits).hasSize(1);
-    return apply(source, edits.getFirst());
+    return apply(source, edits.get(0));
   }
 
   // The whole line of source containing text, as a range request selects it.
@@ -46,6 +46,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_alreadyFormattedAndImportsOptimized_returnsEmpty() throws Exception {
     assertThat(
             JavaFormatter.format(
@@ -67,6 +68,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_unusedImport_removesImport() throws Exception {
     final var source =
         """
@@ -95,6 +97,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_localizedChange_returnsMinimalEditNotWholeDocument() throws Exception {
     final var original =
         """
@@ -110,13 +113,14 @@ class FormattingTest {
     final List<TextEdit> edits = JavaFormatter.format(ENGINE, unformatted, FILE);
 
     assertThat(edits).hasSize(1);
-    final TextEdit edit = edits.getFirst();
+    final TextEdit edit = edits.get(0);
     assertThat(edit.getRange().getStart().getLine()).isEqualTo(2); // the "int b" line, not line 0
     assertThat(edit.getRange().getEnd().getLine()).isEqualTo(2); // and nothing past it
     assertThat(apply(unformatted, edit)).isEqualTo(original);
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void format_reorderImportsOption_followsSpotlessDefault() throws Exception {
     final var unsorted =
         """
@@ -131,7 +135,7 @@ class FormattingTest {
         FormatterFixtures.googleJavaFormat(Map.of(LatheFlags.FORMAT_REORDER_IMPORTS, "true"));
 
     assertThat(JavaFormatter.format(ENGINE, unsorted, FILE)).isEmpty();
-    assertThat(apply(unsorted, JavaFormatter.format(reordering, unsorted, FILE).getFirst()))
+    assertThat(apply(unsorted, JavaFormatter.format(reordering, unsorted, FILE).get(0)))
         .isEqualTo(
             unsorted.replace(
                 "import java.util.Map;\nimport java.util.List;",
@@ -139,6 +143,7 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void formatRanges_oneOfTwoMangledMethods_formatsOnlyThatRange() throws Exception {
     final var source =
         """
@@ -155,7 +160,7 @@ class FormattingTest {
     final List<TextEdit> edits = JavaFormatter.formatRanges(ENGINE, source, List.of(range));
 
     assertThat(edits).hasSize(1);
-    assertThat(apply(source, edits.getFirst()))
+    assertThat(apply(source, edits.get(0)))
         .isEqualTo(
             source.replace(
                 "  int a( ) {return   1;}\n",
@@ -167,10 +172,8 @@ class FormattingTest {
   }
 
   @Test
+  @EnabledForJreRange(maxVersion = PALANTIR_UNSUPPORTED_JDK - 1)
   void format_palantirJavaFormat_followsSpotlessPalantirStepAndFormatsRanges() throws Exception {
-    assumeTrue(
-        Runtime.version().feature() < PALANTIR_UNSUPPORTED_JDK,
-        "the fixture's palantir does not support this JDK");
     final GjfFormatEngine palantir = FormatterFixtures.palantirJavaFormat();
     final var source =
         """
@@ -200,7 +203,7 @@ class FormattingTest {
         }
         """;
     // Spotless's palantir step always reorders imports and removes unused ones, then formats.
-    final String formatted = apply(source, JavaFormatter.format(palantir, source, FILE).getFirst());
+    final String formatted = apply(source, JavaFormatter.format(palantir, source, FILE).get(0));
     final Range range = lineRange(source, "int b(");
     final List<TextEdit> ranged = JavaFormatter.formatRanges(palantir, source, List.of(range));
 
@@ -269,16 +272,16 @@ class FormattingTest {
     final Range range = lineRange(source, "int b(");
     final List<TextEdit> ranged = JavaFormatter.formatRanges(eclipse, source, List.of(range));
 
-    assertThat(apply(source, JavaFormatter.format(eclipse, source, FILE).getFirst()))
+    assertThat(apply(source, JavaFormatter.format(eclipse, source, FILE).get(0)))
         .isEqualTo(expected);
     assertThat(JavaFormatter.format(eclipse, expected, FILE)).isEmpty();
     assertThat(
             apply(
                 source,
                 JavaFormatter.format(FormatterFixtures.eclipseJdt(prefs.toString()), source, FILE)
-                    .getFirst()))
+                    .get(0)))
         .isEqualTo(expected);
-    assertThat(apply(source, ranged.getFirst()))
+    assertThat(apply(source, ranged.get(0)))
         .isEqualTo(
             source.replace(
                 "int b( ) {return   2;}\n",
@@ -293,10 +296,8 @@ class FormattingTest {
   // such path): the failure must name the JDK, not suggest a re-sync. Once a palantir release
   // supports JDK 27, this fails: bump the fixture and drop the test.
   @Test
+  @EnabledForJreRange(minVersion = PALANTIR_UNSUPPORTED_JDK)
   void format_palantirOnUnsupportedJdk_reportsUnsupportedJava() {
-    assumeTrue(
-        Runtime.version().feature() >= PALANTIR_UNSUPPORTED_JDK,
-        "the fixture's palantir supports this JDK");
 
     assertThatThrownBy(
             () ->

@@ -10,6 +10,7 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
@@ -60,6 +61,7 @@ import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.mockito.ArgumentCaptor;
 
 // Editor features through the service: analysis on open and change, formatting, navigation,
@@ -90,7 +92,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 p ->
                     !p.getDiagnostics().isEmpty()
                         && p.getDiagnostics()
-                            .getFirst()
+                            .get(0)
                             .getMessage()
                             .getLeft()
                             .contains("not under any Lathe module source root")));
@@ -169,6 +171,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void formatting_enabled_delegatesToFormatter() throws Exception {
     service.initialize(tmp);
     service.setFormatEngine(FormatterFixtures.googleJavaFormat());
@@ -210,6 +213,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void rangeFormatting_inProcessEngine_formatsOnlyTheRange() throws Exception {
     service.initialize(tmp);
     service.setFormatEngine(FormatterFixtures.googleJavaFormat());
@@ -221,8 +225,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         service.rangeFormatting(rangeFormattingParams(1)).get(5, TimeUnit.SECONDS);
 
     assertThat(edits).hasSize(1);
-    assertThat(edits.getFirst().getRange().getStart().getLine()).isEqualTo(1);
-    assertThat(edits.getFirst().getRange().getEnd().getLine()).isEqualTo(1);
+    assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(1);
+    assertThat(edits.get(0).getRange().getEnd().getLine()).isEqualTo(1);
   }
 
   @Test
@@ -263,7 +267,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
     assertThat(locations).hasSize(2);
     assertThat(progressCaptor.getAllValues()).extracting(ProgressParams::getToken).contains(token);
-    assertThat(progressCaptor.getAllValues().getLast().getValue().getLeft())
+    assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
         .isInstanceOf(WorkDoneProgressEnd.class);
   }
 
@@ -300,7 +304,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
     verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
     assertThat(sites).isNotEmpty();
-    assertThat(progressCaptor.getAllValues().getLast().getValue().getLeft())
+    assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
         .isInstanceOf(WorkDoneProgressEnd.class);
   }
 
@@ -352,8 +356,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final var result = LatheTextDocumentService.documentSymbolResult(List.of(symbol));
 
     assertThat(result).hasSize(1);
-    assertThat(result.getFirst().isRight()).isTrue();
-    assertThat(result.getFirst().getRight()).isSameAs(symbol);
+    assertThat(result.get(0).isRight()).isTrue();
+    assertThat(result.get(0).getRight()).isSameAs(symbol);
   }
 
   @Test
@@ -373,7 +377,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         service.prepareCallHierarchy(params).get(5, TimeUnit.SECONDS);
 
     assertThat(items).hasSize(1);
-    assertThat(items.getFirst().getName()).isEqualTo("target");
+    assertThat(items.get(0).getName()).isEqualTo("target");
   }
 
   @Test
@@ -422,11 +426,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     final List<CallHierarchyOutgoingCall> calls =
         service
-            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.getFirst()))
+            .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.get(0)))
             .get(5, TimeUnit.SECONDS);
 
     assertThat(calls).hasSize(1);
-    assertThat(calls.getFirst().getTo().getName()).isEqualTo("run");
+    assertThat(calls.get(0).getTo().getName()).isEqualTo("run");
   }
 
   @Test
@@ -452,11 +456,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     final List<CallHierarchyIncomingCall> calls =
         service
-            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.getFirst()))
+            .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.get(0)))
             .get(5, TimeUnit.SECONDS);
 
     assertThat(calls).hasSize(1);
-    assertThat(calls.getFirst().getFrom().getName()).isEqualTo("caller");
+    assertThat(calls.get(0).getFrom().getName()).isEqualTo("caller");
   }
 
   @Test
@@ -549,7 +553,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 Map.of("com/example/api/Api.java", "package com.example.api; public class Api {}"),
                 List.of(),
                 1_000L)
-            .getFirst();
+            .get(0);
 
     service.initialize(tmp);
     awaitStartup();

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.util.List;
@@ -71,7 +72,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var target = scan(source).getFirst();
+    final var target = scan(source).get(0);
 
     assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
     assertThat(target.id()).isEqualTo("demo.App#main");
@@ -176,7 +177,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var method = scan(source).getFirst();
+    final var method = scan(source).get(0);
 
     assertThat(method.id())
         .isEqualTo("demo.FooTest#bar_input_result(java.lang.String,java.util.List)");
@@ -197,7 +198,7 @@ class RunnableScannerTest {
         }
         """;
 
-    final var method = scan(source).getFirst();
+    final var method = scan(source).get(0);
 
     assertThat(method.id()).isEqualTo("demo.FooTest#bar_input_result(int,java.lang.String[])");
   }
@@ -301,7 +302,8 @@ class RunnableScannerTest {
   }
 
   private static List<RunTarget> scan(final String source, final String moduleRel) {
-    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+    try (var session =
+        new SourceAnalysisSession(new TempSourceCompiler(TestCompiler.JUNIT_CLASSPATH))) {
       session.compile(URI, source, 1, CompileMode.OPEN);
       return session.runnables(URI, source, 1, moduleRel);
     }

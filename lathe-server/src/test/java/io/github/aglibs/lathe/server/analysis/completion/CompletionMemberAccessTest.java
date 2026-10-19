@@ -395,7 +395,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 }
             }""");
 
-    assertThat(items.getFirst().getFilterText()).isEqualTo("isProvider");
+    assertThat(items.get(0).getFilterText()).isEqualTo("isProvider");
     assertThat(labels(items)).contains("isSupportedContract");
     assertThat(labels(items)).doesNotContain("ensureContract");
     assertThat(itemWithFilterText(items, "isProvider").orElseThrow().getSortText())
@@ -419,7 +419,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
                 }
             }""");
 
-    assertThat(items.getFirst().getFilterText()).isEqualTo("isProvider");
+    assertThat(items.get(0).getFilterText()).isEqualTo("isProvider");
     assertThat(labels(items)).doesNotContain("ensureContract");
     assertThat(itemWithFilterText(items, "isProvider").orElseThrow().getSortText())
         .isLessThan(itemWithFilterText(items, "getName").orElseThrow().getSortText());

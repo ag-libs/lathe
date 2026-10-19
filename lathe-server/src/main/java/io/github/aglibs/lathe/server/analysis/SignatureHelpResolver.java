@@ -91,7 +91,7 @@ final class SignatureHelpResolver {
 
         callName = id.getName().toString();
         overloads = candidates;
-        resolved = candidates.getFirst();
+        resolved = candidates.get(0);
       } else if (inv.getMethodSelect() instanceof final MemberSelectTree select) {
         final List<ExecutableElement> candidates =
             memberSelectCandidates(analysis, callPath, select);
@@ -101,7 +101,7 @@ final class SignatureHelpResolver {
 
         callName = select.getIdentifier().toString();
         overloads = candidates;
-        resolved = candidates.getFirst();
+        resolved = candidates.get(0);
       } else {
         return null;
       }

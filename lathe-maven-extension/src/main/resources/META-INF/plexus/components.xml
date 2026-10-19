@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Maven reads this descriptor without parsing class files, so the participant loads on every Maven
+     from 3.6.3, unlike Sisu's class index (see LatheLifecycleParticipant). -->
+<component-set>
+  <components>
+    <component>
+      <role>org.apache.maven.AbstractMavenLifecycleParticipant</role>
+      <role-hint>lathe</role-hint>
+      <implementation>io.github.aglibs.lathe.maven.extension.LatheLifecycleParticipant</implementation>
+      <instantiation-strategy>singleton</instantiation-strategy>
+    </component>
+  </components>
+</component-set>

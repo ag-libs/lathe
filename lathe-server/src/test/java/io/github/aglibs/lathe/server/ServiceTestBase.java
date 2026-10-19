@@ -122,7 +122,7 @@ abstract class ServiceTestBase {
 
     final List<Path> files =
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    return new DepFixture(files.getFirst(), files.subList(1, files.size()));
+    return new DepFixture(files.get(0), files.subList(1, files.size()));
   }
 
   // Mirrored baseline: sealed Shape permits only Circle, both compiled and stamped; returns Shape.
@@ -130,7 +130,7 @@ abstract class ServiceTestBase {
     final var sources = new LinkedHashMap<String, String>();
     sources.put("shapes/Shape.java", "package shapes; sealed interface Shape permits Circle {}");
     sources.put("shapes/Circle.java", "package shapes; final class Circle implements Shape {}");
-    return TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L).getFirst();
+    return TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L).get(0);
   }
 
   protected record DepFixture(Path dep, List<Path> users) {

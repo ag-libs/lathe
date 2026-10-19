@@ -30,7 +30,7 @@ class CallHierarchyPrepareTest {
       final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
-      final CallHierarchyItem item = items.getFirst();
+      final CallHierarchyItem item = items.get(0);
       assertThat(item.getName()).isEqualTo("execute");
       assertThat(item.getKind()).isEqualTo(SymbolKind.Function);
       assertThat(item.getDetail()).isEqualTo("Service");
@@ -57,7 +57,7 @@ class CallHierarchyPrepareTest {
       final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
-      final CallHierarchyItem item = items.getFirst();
+      final CallHierarchyItem item = items.get(0);
       assertThat(item.getName()).isEqualTo("Builder");
       assertThat(item.getKind()).isEqualTo(SymbolKind.Constructor);
 

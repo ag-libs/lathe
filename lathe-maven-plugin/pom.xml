@@ -172,6 +172,11 @@
             <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-test-runner:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-maven-extension:${project.version}:jar</extraArtifact>
+            <!-- The fixtures resolve these at build or sync time; installed here, they come from this build,
+                 never from a stale ~/.m2. -->
+            <extraArtifact>io.github.ag-libs:lathe-compiler:${project.version}:jar</extraArtifact>
+            <extraArtifact>io.github.ag-libs:lathe-server:${project.version}:jar</extraArtifact>
+            <extraArtifact>io.github.ag-libs:lathe-mcp-server:${project.version}:jar</extraArtifact>
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <!-- The projects build in parallel and share the local repository: lock it across processes. -->

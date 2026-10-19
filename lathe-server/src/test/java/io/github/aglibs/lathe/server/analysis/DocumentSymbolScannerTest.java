@@ -35,7 +35,7 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scan(source);
 
     assertThat(symbols).extracting(DocumentSymbol::getName).containsExactly("Outer");
-    final var outer = symbols.getFirst();
+    final var outer = symbols.get(0);
     assertThat(outer.getKind()).isEqualTo(SymbolKind.Class);
     assertThat(outer.getSelectionRange().getStart().getLine()).isEqualTo(2);
     assertThat(outer.getSelectionRange().getStart().getCharacter()).isEqualTo(6);
@@ -69,7 +69,7 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scan(source);
 
     assertThat(allNames(symbols)).contains("Host", "r").doesNotContain("");
-    assertThat(symbols.getFirst().getChildren())
+    assertThat(symbols.get(0).getChildren())
         .extracting(DocumentSymbol::getName)
         .containsExactly("r");
   }
@@ -112,8 +112,8 @@ class DocumentSymbolScannerTest {
         }
         """;
 
-    final var fooClass = scan(source).getFirst();
-    final var field = fooClass.getChildren().getFirst();
+    final var fooClass = scan(source).get(0);
+    final var field = fooClass.getChildren().get(0);
 
     assertThat(field.getName()).isEqualTo("Foo");
     assertThat(field.getSelectionRange().getStart().getLine()).isEqualTo(1);
@@ -133,7 +133,7 @@ class DocumentSymbolScannerTest {
         }
         """;
 
-    final var method = named(scan(source).getFirst().getChildren(), "method");
+    final var method = named(scan(source).get(0).getChildren(), "method");
 
     assertThat(children(method)).isEmpty();
   }
@@ -148,7 +148,7 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scanAs(source, "package-info.java");
 
     assertThat(symbols).hasSize(1);
-    final var pkg = symbols.getFirst();
+    final var pkg = symbols.get(0);
     assertThat(pkg.getName()).isEqualTo("com.example.api");
     assertThat(pkg.getKind()).isEqualTo(SymbolKind.Package);
     assertThat(pkg.getSelectionRange().getStart().getLine()).isEqualTo(0);
@@ -166,8 +166,8 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scanAs(source, "package-info.java");
 
     assertThat(symbols).hasSize(1);
-    assertThat(symbols.getFirst().getName()).isEqualTo("com.example");
-    assertThat(symbols.getFirst().getKind()).isEqualTo(SymbolKind.Package);
+    assertThat(symbols.get(0).getName()).isEqualTo("com.example");
+    assertThat(symbols.get(0).getKind()).isEqualTo(SymbolKind.Package);
   }
 
   @Test
@@ -182,7 +182,7 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scanAs(source, "module-info.java");
 
     assertThat(symbols).hasSize(1);
-    final var module = symbols.getFirst();
+    final var module = symbols.get(0);
     assertThat(module.getName()).isEqualTo("com.example");
     assertThat(module.getKind()).isEqualTo(SymbolKind.Module);
     assertThat(module.getSelectionRange().getStart().getLine()).isEqualTo(0);
@@ -200,8 +200,8 @@ class DocumentSymbolScannerTest {
     final List<DocumentSymbol> symbols = scanAs(source, "module-info.java");
 
     assertThat(symbols).hasSize(1);
-    assertThat(symbols.getFirst().getName()).isEqualTo("leaf");
-    assertThat(symbols.getFirst().getKind()).isEqualTo(SymbolKind.Module);
+    assertThat(symbols.get(0).getName()).isEqualTo("leaf");
+    assertThat(symbols.get(0).getKind()).isEqualTo(SymbolKind.Module);
   }
 
   private static List<DocumentSymbol> scan(final String source) {

@@ -101,7 +101,7 @@ final class ExtractVariableProvider {
                 elementTypeName(type),
                 expr,
                 takenNames(exprPath))
-            .getFirst();
+            .get(0);
     final TextEdit importEdit =
         CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
 

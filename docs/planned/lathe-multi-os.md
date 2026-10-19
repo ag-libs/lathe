@@ -47,7 +47,7 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 | macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | supported, tested in CI (JDK 25 row) |
 | Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | **not working** |
 
-Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
+Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
 
 Windows 10 is a full target, not legacy.
 Microsoft ended its mainstream support in October 2025, but in mid-2026 it still ran on about 28–30% of desktop Windows PCs (StatCounter), and companies, where developer laptops live, upgrade later than consumers.
@@ -293,7 +293,7 @@ The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`)
   - the bundled `jdk-unsafe` signatures (default charset and locale);
   - a short project signatures file: `Files.createSymbolicLink`, `Files.createLink`, `new ProcessBuilder`, `Runtime.exec`, `System.getProperty("os.name")`;
   - `@SuppressForbidden` allowed only inside the E1/E3 classes.
-  Its version has to fit the Maven 3.6.3 / Java 17 compatibility floor ([Wider Maven and JDK Support](lathe-wider-maven-support.md)).
+  Its version has to fit the Maven 3.6.3 / Java 17 compatibility floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)).
 - **The portable-names guard** (R1) in the invoker verification.
 - **A CI OS matrix** (R8).
 

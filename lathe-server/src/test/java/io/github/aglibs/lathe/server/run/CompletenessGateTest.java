@@ -63,7 +63,7 @@ final class CompletenessGateTest {
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
-    assertThat(result.reasons().getFirst())
+    assertThat(result.reasons().get(0))
         .isEqualTo(
             "app test classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh app");
   }
@@ -77,7 +77,7 @@ final class CompletenessGateTest {
 
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
-    assertThat(result.reasons().getFirst())
+    assertThat(result.reasons().get(0))
         .isEqualTo("jpms classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh jpms");
   }
 

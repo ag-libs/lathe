@@ -399,9 +399,11 @@ final class TypeReferenceCompleter {
         semanticContext != null && semanticContext.expectedValue() instanceof ExpectedValue.Type
             ? semanticContext.expectedValue()
             : TypeResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
-    if (!(expected instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(expected instanceof final ExpectedValue.Type expectedType)) {
       return List.of();
     }
+
+    final TypeMirror type = expectedType.type();
 
     if (!(analysis.types().asElement(type) instanceof final TypeElement expectedEl)) {
       return List.of();

@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 
 class CompletionArgumentTest extends CompletionTestSupport {
 
@@ -81,7 +83,9 @@ class CompletionArgumentTest extends CompletionTestSupport {
         .contains("value");
   }
 
+  // The fixture uses a switch type pattern, standard since Java 21.
   @Test
+  @EnabledForJreRange(min = JRE.JAVA_21)
   void argumentPosition_switchPatternVar_suggestsVisiblePatternVar() {
     assertThat(
             labels(
@@ -622,7 +626,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
             }""");
     assertThat(labels(items)).contains("Version.HTTP_2");
     final var http2 = itemLabeled(items, "Version.HTTP_2").orElseThrow();
-    assertThat(http2.getAdditionalTextEdits().getFirst().getNewText())
+    assertThat(http2.getAdditionalTextEdits().get(0).getNewText())
         .isEqualTo("import java.net.http.HttpClient.Version;\n");
   }
 }

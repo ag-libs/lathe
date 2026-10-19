@@ -5,6 +5,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.analysis.CompilerTrees;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
@@ -378,63 +379,93 @@ final class SentinelParser {
       return Classification.typeReference(inferredRole);
     }
 
-    return switch (parent) {
-      // --- statement-level expression positions ---
-      case ReturnTree r when simpleName && r.getExpression() == sentinel ->
-          Classification.expression();
-      case ThrowTree t when simpleName && t.getExpression() == sentinel ->
-          Classification.expression();
-      case VariableTree v when simpleName && v.getInitializer() == sentinel ->
-          Classification.expression();
-      // --- expression-tree parents: sentinel is a sub-expression ---
-      case ConditionalExpressionTree ignored -> Classification.expression();
-      case BinaryTree ignored -> Classification.expression();
-      case UnaryTree ignored -> Classification.expression();
-      case ParenthesizedTree ignored -> Classification.expression();
-      case InstanceOfTree i when i.getExpression() == sentinel -> Classification.expression();
-      case TypeCastTree t when t.getExpression() == sentinel -> Classification.expression();
-      case AssignmentTree a when a.getExpression() == sentinel -> Classification.expression();
-      case CompoundAssignmentTree a when a.getExpression() == sentinel ->
-          Classification.expression();
-      case ArrayAccessTree a when a.getIndex() == sentinel -> Classification.expression();
-      case NewArrayTree n when n.getDimensions().stream().anyMatch(d -> d == sentinel) ->
-          Classification.expression();
-      case MemberSelectTree m when m.getExpression() == sentinel && isClassLiteral(m) ->
-          Classification.typeReference(inferredRole);
-      case MemberSelectTree m when m.getExpression() == sentinel && !simpleName ->
-          Classification.of(SentinelContext.MEMBER_ACCESS);
-      case MemberSelectTree m when m.getExpression() == sentinel -> Classification.expression();
-      // --- control-flow condition / selector positions ---
-      case IfTree i when i.getCondition() == sentinel -> Classification.expression();
-      case WhileLoopTree w when w.getCondition() == sentinel -> Classification.expression();
-      case DoWhileLoopTree d when d.getCondition() == sentinel -> Classification.expression();
-      case ForLoopTree f when f.getCondition() == sentinel -> Classification.expression();
-      case EnhancedForLoopTree e when e.getExpression() == sentinel -> Classification.expression();
-      case SynchronizedTree s when s.getExpression() == sentinel -> Classification.expression();
-      case SwitchTree s when s.getExpression() == sentinel -> Classification.expression();
-      case SwitchExpressionTree s when s.getExpression() == sentinel -> Classification.expression();
-      // --- method-call / constructor / lambda / annotation: existing paths ---
-      case MethodInvocationTree m
-          when simpleName && m.getArguments().stream().anyMatch(a -> a == sentinel) ->
-          classifyMethodInvocation(sentinel, m);
-      case LambdaExpressionTree lambda -> classifyLambda(sentinel, lambda);
-      case NewClassTree m when simpleName -> classifyConstructorCall(sentinel, m);
-      case AnnotationTree ignored -> Classification.annotation();
-      // --- type-reference positions ---
-      case VariableTree v when v.getType() == sentinel ->
-          Classification.typeReference(inferredRole);
-      case MethodTree m when m.getReturnType() == sentinel ->
-          Classification.typeReference(inferredRole);
-      case TypeCastTree t when t.getType() == sentinel ->
-          Classification.typeReference(inferredRole);
-      case ParameterizedTypeTree ignored -> Classification.typeReference(inferredRole);
-      case ClassTree ignored -> Classification.typeReference(inferredRole);
-      case ArrayTypeTree ignored -> Classification.typeReference(inferredRole);
-      case WildcardTree ignored -> Classification.typeReference(inferredRole);
-      case TypeParameterTree ignored -> Classification.typeReference(inferredRole);
-      case CaseLabelTree ignored -> Classification.of(SentinelContext.CASE_LABEL);
-      default -> classifyDefault(sentinel);
-    };
+    // --- statement-level expression positions ---
+    if (simpleName
+        && (parent instanceof final ReturnTree returnTree && returnTree.getExpression() == sentinel
+            || parent instanceof final ThrowTree throwTree && throwTree.getExpression() == sentinel
+            || parent instanceof final VariableTree variable
+                && variable.getInitializer() == sentinel)) {
+      return Classification.expression();
+    }
+
+    // --- expression-tree parents: sentinel is a sub-expression ---
+    if (parent instanceof ConditionalExpressionTree
+        || parent instanceof BinaryTree
+        || parent instanceof UnaryTree
+        || parent instanceof ParenthesizedTree
+        || parent instanceof final InstanceOfTree instanceOf
+            && instanceOf.getExpression() == sentinel
+        || parent instanceof final TypeCastTree cast && cast.getExpression() == sentinel
+        || parent instanceof final AssignmentTree assignment
+            && assignment.getExpression() == sentinel
+        || parent instanceof final CompoundAssignmentTree compound
+            && compound.getExpression() == sentinel
+        || parent instanceof final ArrayAccessTree access && access.getIndex() == sentinel
+        || parent instanceof final NewArrayTree newArray
+            && newArray.getDimensions().stream().anyMatch(d -> d == sentinel)) {
+      return Classification.expression();
+    }
+
+    if (parent instanceof final MemberSelectTree m && m.getExpression() == sentinel) {
+      if (isClassLiteral(m)) {
+        return Classification.typeReference(inferredRole);
+      }
+
+      return simpleName
+          ? Classification.expression()
+          : Classification.of(SentinelContext.MEMBER_ACCESS);
+    }
+
+    // --- control-flow condition / selector positions ---
+    if (parent instanceof final IfTree ifTree && ifTree.getCondition() == sentinel
+        || parent instanceof final WhileLoopTree whileLoop && whileLoop.getCondition() == sentinel
+        || parent instanceof final DoWhileLoopTree doWhile && doWhile.getCondition() == sentinel
+        || parent instanceof final ForLoopTree forLoop && forLoop.getCondition() == sentinel
+        || parent instanceof final EnhancedForLoopTree forEach
+            && forEach.getExpression() == sentinel
+        || parent instanceof final SynchronizedTree sync && sync.getExpression() == sentinel
+        || parent instanceof final SwitchTree switchTree && switchTree.getExpression() == sentinel
+        || parent instanceof final SwitchExpressionTree switchExpression
+            && switchExpression.getExpression() == sentinel) {
+      return Classification.expression();
+    }
+
+    // --- method-call / constructor / lambda / annotation: existing paths ---
+    if (parent instanceof final MethodInvocationTree m
+        && simpleName
+        && m.getArguments().stream().anyMatch(a -> a == sentinel)) {
+      return classifyMethodInvocation(sentinel, m);
+    }
+
+    if (parent instanceof final LambdaExpressionTree lambda) {
+      return classifyLambda(sentinel, lambda);
+    }
+
+    if (parent instanceof final NewClassTree m && simpleName) {
+      return classifyConstructorCall(sentinel, m);
+    }
+
+    if (parent instanceof AnnotationTree) {
+      return Classification.annotation();
+    }
+
+    // --- type-reference positions ---
+    if (parent instanceof final VariableTree variable && variable.getType() == sentinel
+        || parent instanceof final MethodTree method && method.getReturnType() == sentinel
+        || parent instanceof final TypeCastTree cast && cast.getType() == sentinel
+        || parent instanceof ParameterizedTypeTree
+        || parent instanceof ClassTree
+        || parent instanceof ArrayTypeTree
+        || parent instanceof WildcardTree
+        || parent instanceof TypeParameterTree) {
+      return Classification.typeReference(inferredRole);
+    }
+
+    if (CompilerTrees.isCaseLabel(parent, sentinel)) {
+      return Classification.of(SentinelContext.CASE_LABEL);
+    }
+
+    return classifyDefault(sentinel);
   }
 
   private static Classification classifyVariableDeclaration(final VariableTree v) {
@@ -458,12 +489,19 @@ final class SentinelParser {
   // generic type (List<String> -> List) and the last segment of a qualified one (java.util.List ->
   // List). Other shapes (primitives, arrays) keep their source form and are filtered downstream.
   private static String simpleTypeName(final Tree type) {
-    return switch (type) {
-      case IdentifierTree id -> id.getName().toString();
-      case ParameterizedTypeTree parameterized -> simpleTypeName(parameterized.getType());
-      case MemberSelectTree member -> member.getIdentifier().toString();
-      default -> type.toString();
-    };
+    if (type instanceof final IdentifierTree id) {
+      return id.getName().toString();
+    }
+
+    if (type instanceof final ParameterizedTypeTree parameterized) {
+      return simpleTypeName(parameterized.getType());
+    }
+
+    if (type instanceof final MemberSelectTree member) {
+      return member.getIdentifier().toString();
+    }
+
+    return type.toString();
   }
 
   // The simple name of the last type argument of a generic type (Map<String, User> -> User), or

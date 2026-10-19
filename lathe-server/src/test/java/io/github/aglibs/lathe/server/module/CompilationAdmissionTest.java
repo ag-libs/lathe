@@ -33,7 +33,8 @@ class CompilationAdmissionTest {
     final var release = new CountDownLatch(1);
     final var futures = new ArrayList<CompletableFuture<Void>>();
 
-    try (final ExecutorService executor = Executors.newFixedThreadPool(6)) {
+    final ExecutorService executor = Executors.newFixedThreadPool(6);
+    try {
       for (int i = 0; i < 6; i++) {
         final CompletableFuture<Void> future =
             CompletableFuture.runAsync(
@@ -54,6 +55,8 @@ class CompilationAdmissionTest {
       await(entered);
       release.countDown();
       CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new)).join();
+    } finally {
+      executor.shutdown();
     }
 
     assertThat(maximum).hasValue(2);

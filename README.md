@@ -177,8 +177,10 @@ model — is in the [AI agents guide](docs/guide/ai-agents.md).
 
 ## Requirements
 
-- **Java 21+** — the same JDK your Maven build uses.
-- **Maven 3.9+** — earlier 3.x releases are not supported. 3.9.x is verified.
+- **Java 17+** — the same JDK your Maven build uses.
+- **Maven 3.6.3+**, with **`maven-compiler-plugin` 3.6.2+** — verified on Maven 3.6.3, 3.8.8, 3.9, and
+  3.10. An older Maven or compiler plugin stops the build with a message naming the fix (see
+  [Troubleshooting](#troubleshooting)).
 
 Test run and debug have additional requirements (Surefire and JUnit Platform
 versions); see [test-capture.md](docs/guide/test-capture.md).
@@ -301,8 +303,9 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
 
 - Guides (editor-agnostic): [how Lathe works](docs/guide/how-it-works.md) ·
   [installation](docs/guide/installation.md) · [run configuration](docs/guide/run-configuration.md) ·
-  [test capture](docs/guide/test-capture.md)
-- Editor references: [Neovim](docs/guide/editors/neovim.md)
+  [test capture](docs/guide/test-capture.md) · [OpenJDK](docs/guide/openjdk.md)
+- Editor references: [Neovim](docs/guide/editors/neovim.md) · [VS Code](docs/guide/editors/vscode.md) ·
+  [Emacs (Eglot)](docs/guide/editors/emacs.md) · [Zed](docs/guide/editors/zed.md)
 - AI agents: [MCP server guide](docs/guide/ai-agents.md)
 - Project: [status](docs/status.md) · [roadmap](docs/roadmap.md) ·
   [design index](docs/design-index.md) · [architecture](docs/lathe-design.md)
@@ -312,7 +315,12 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
 - **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run a
   Maven build at the reactor root — `mvn process-test-classes` is the quickest (it generates Lathe's
   metadata without running tests). If it still isn't working, confirm the Lathe extension is registered
-  (see [installation.md](docs/guide/installation.md)).
+  (see [installation.md](docs/guide/installation.md)). A build log with no `[lathe]` lines means the
+  extension didn't load: check `mvn -v` (or the project's `.mvn/wrapper`) for Maven 3.6.3 or newer.
+- **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+
+  and `maven-compiler-plugin` 3.6.2+. The message lists each problem with its fix: upgrade Maven (or the
+  project's wrapper), or pin a newer compiler plugin in `<pluginManagement>`. To build without Lathe,
+  add `-Dlathe.disabled=true`.
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](docs/guide/editors/neovim.md#verbose-logging)). An unexpected exit
   is also surfaced as an editor notification pointing at the log, and a server that fails at JVM

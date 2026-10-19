@@ -53,9 +53,11 @@ final class CompletionCandidateRanker {
               base != null ? base : candidate.name());
     }
 
-    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(context.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
       return baseSortText(candidate);
     }
+
+    final TypeMirror type = expectedType.type();
 
     final boolean matches = assignableToExpected(candidate.valueType(), type, context);
     final String base = baseSortText(candidate);
@@ -111,12 +113,12 @@ final class CompletionCandidateRanker {
 
   private static String keywordSortText(
       final CompletionCandidate candidate, final SemanticCompletionContext context) {
-    if (context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type)) {
-      if (("true".equals(candidate.name()) || "false".equals(candidate.name()))
-          && booleanCompatible(type, context)) {
-        return "0_%s".formatted(candidate.name());
-      }
+    if (context.expectedValue() instanceof final ExpectedValue.Type expectedType
+        && ("true".equals(candidate.name()) || "false".equals(candidate.name()))
+        && booleanCompatible(expectedType.type(), context)) {
+      return "0_%s".formatted(candidate.name());
     }
+
     if ("null".equals(candidate.name()) && context.inEqualityComparison()) {
       return "0_null";
     }
@@ -136,9 +138,11 @@ final class CompletionCandidateRanker {
       return true;
     }
 
-    if (!(context.expectedValue() instanceof ExpectedValue.Type(final TypeMirror type))) {
+    if (!(context.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
       return true;
     }
+
+    final TypeMirror type = expectedType.type();
 
     if (isThrowable(type, context)) {
       return true;

@@ -28,7 +28,7 @@ class WorkspaceModuleGraphTest {
         classpath,
         List.of(),
         List.of(),
-        "21",
+        TestCompiler.RELEASE,
         "UTF-8",
         false,
         false,

@@ -23,7 +23,8 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
   ExternalCommandFormatEngine {
     ValidCheck.check()
         .notEmpty(command, "command")
-        .assertTrue(timeout != null && timeout.isPositive(), "timeout must be positive")
+        .assertTrue(
+            timeout != null && timeout.compareTo(Duration.ZERO) > 0, "timeout must be positive")
         .validate();
     command = List.copyOf(command);
   }

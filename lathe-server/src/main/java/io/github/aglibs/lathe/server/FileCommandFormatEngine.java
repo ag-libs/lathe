@@ -38,7 +38,8 @@ record FileCommandFormatEngine(
         .notEmpty(command, "command")
         .notNull(workspaceRoot, "workspaceRoot")
         .notNull(moduleOf, "moduleOf")
-        .assertTrue(timeout != null && timeout.isPositive(), "timeout must be positive")
+        .assertTrue(
+            timeout != null && timeout.compareTo(Duration.ZERO) > 0, "timeout must be positive")
         .validate();
     command = List.copyOf(command);
   }

@@ -57,9 +57,9 @@ class MethodImplementationTest {
               candidateUri, candidateContent, 1, target, Set.of("AbstractService", "Direct"));
 
       assertThat(locations).hasSize(1);
-      assertThat(locations.getFirst().getUri()).isEqualTo(candidateUri);
-      assertThat(locations.getFirst().getRange().getStart()).isEqualTo(new Position(4, 16));
-      assertThat(locations.getFirst().getRange().getEnd()).isEqualTo(new Position(4, 23));
+      assertThat(locations.get(0).getUri()).isEqualTo(candidateUri);
+      assertThat(locations.get(0).getRange().getStart()).isEqualTo(new Position(4, 16));
+      assertThat(locations.get(0).getRange().getEnd()).isEqualTo(new Position(4, 23));
     }
   }
 
@@ -94,9 +94,9 @@ class MethodImplementationTest {
               recordUri, recordContent, 1, target, Set.of("Impl"));
 
       assertThat(locations).hasSize(1);
-      assertThat(locations.getFirst().getUri()).isEqualTo(recordUri);
-      assertThat(locations.getFirst().getRange().getStart()).isEqualTo(new Position(0, 19));
-      assertThat(locations.getFirst().getRange().getEnd()).isEqualTo(new Position(0, 23));
+      assertThat(locations.get(0).getUri()).isEqualTo(recordUri);
+      assertThat(locations.get(0).getRange().getStart()).isEqualTo(new Position(0, 19));
+      assertThat(locations.get(0).getRange().getEnd()).isEqualTo(new Position(0, 23));
     }
   }
 

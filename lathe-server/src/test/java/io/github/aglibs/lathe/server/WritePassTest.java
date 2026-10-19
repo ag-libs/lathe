@@ -153,7 +153,7 @@ class WritePassTest extends ServiceTestBase {
                     "com/example/B.java", "package com.example; public class B {}"),
                 List.of(),
                 1_000L)
-            .getFirst()
+            .get(0)
             .getParent();
     final Path user =
         TestCompiler.writeMirroredModule(
@@ -162,7 +162,7 @@ class WritePassTest extends ServiceTestBase {
                 Map.of("com/example/app/C.java", "package com.example.app; class C {}"),
                 List.of("core"),
                 1_000L)
-            .getFirst();
+            .get(0);
     service.initialize(tmp);
     awaitStartup();
     // C fails in an earlier pass and is recorded.
@@ -306,7 +306,7 @@ class WritePassTest extends ServiceTestBase {
                     "package com.example.api; public class Api { public int a() { return 1; } }"),
                 List.of(),
                 1_000L)
-            .getFirst();
+            .get(0);
     final Path app =
         TestCompiler.writeMirroredModule(
                 tmp,
@@ -317,7 +317,7 @@ class WritePassTest extends ServiceTestBase {
                         + " class App { int u() { return new com.example.api.Api().a(); } }"),
                 List.of("api"),
                 1_000L)
-            .getFirst();
+            .get(0);
 
     service.initialize(tmp);
     awaitStartup();
@@ -343,7 +343,7 @@ class WritePassTest extends ServiceTestBase {
   void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
     final DepFixture fx = depWithUsers(1);
     service.initialize(tmp);
-    final Path user = fx.users().getFirst();
+    final Path user = fx.users().get(0);
     openDoc(user, Files.readString(user));
     verify(client, timeout(5_000))
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));

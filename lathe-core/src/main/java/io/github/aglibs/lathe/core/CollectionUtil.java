@@ -7,6 +7,11 @@ public final class CollectionUtil {
 
   private CollectionUtil() {}
 
+  // Java 17 has no List.getLast(); the code base targets 17.
+  public static <T> T last(final List<T> items) {
+    return items.get(items.size() - 1);
+  }
+
   /**
    * Splits {@code items} into consecutive sub-lists of at most {@code size}; the final chunk holds
    * the remainder. Returns views over the source list, so the source must outlive the chunks.

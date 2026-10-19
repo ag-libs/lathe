@@ -3,7 +3,10 @@ name: CI
 on:
   push:
     branches: [ main ]
+    # Documentation-only changes don't run the matrix.
+    paths-ignore: [ 'docs/**', '**/*.md' ]
   pull_request:
+    paths-ignore: [ 'docs/**', '**/*.md' ]
     branches: [ main ]
   workflow_dispatch:
 
@@ -18,11 +21,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 21 is the release baseline (see release.yml); 25 is the current LTS;
-        # 27 is the latest release under active adoption and guards forward
-        # compatibility (e.g. JDK-specific javac source-position and
-        # CompletableFuture cancellation shapes). Bump the latest as it moves.
-        java: [ '21', '25', '27' ]
+        # 17 is the floor Lathe runs on (the row builds on 21 and runs every test on 17); 21 is the
+        # release baseline (see release.yml); 25 is the current LTS; 27 is the latest release under
+        # active adoption and guards forward compatibility (e.g. JDK-specific javac source-position
+        # and CompletableFuture cancellation shapes). Bump the latest as it moves.
+        java: [ '17', '21', '25', '27' ]
         os: [ ubuntu-latest ]
         # macOS on the current LTS only: the OS-sensitive parts (launcher scripts, paths, temp dirs)
         # don't vary by JDK, so one row covers them.
@@ -33,17 +36,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v6
+      - name: Set up build tools
+        uses: ./.github/actions/build-tools
         with:
-          java-version: ${{ matrix.java }}
-          distribution: 'temurin'
-          cache: maven
-
-      - name: Set up Maven 3.9.16
-        uses: stCarolas/setup-maven@v5
-        with:
-          maven-version: 3.9.16
+          java: ${{ matrix.java }}
 
       - name: Set up Neovim
         # lathe-neovim's run-specs.sh needs nvim on PATH (it hard-fails under CI otherwise). VS Code's
@@ -65,8 +61,15 @@ jobs:
         #
         # The client modules are JDK-agnostic — build them on JDK 21 and on macOS (their scripts are
         # OS-sensitive), exclude them elsewhere.
+        #
+        # The JDK 17 row runs every test and the invoker fixture builds on JDK 17, and switches off
+        # the multi-release test layering, which is for JDK 21+ test runs.
         run: |
-          if [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
+          if [ "${{ matrix.java }}" = "17" ]; then
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
+              -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
+              -P '!multi-release-jdk21'
+          elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
             env -u CI mvn -B --no-transfer-progress clean install
           else
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
@@ -83,4 +86,50 @@ jobs:
         with:
           name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
           path: '**/target/surefire-reports/'
+          retention-days: 7
+
+  invoker-maven:
+    # The Maven version matters only to the invoker suite, which runs the fixture builds with Maven;
+    # Lathe itself builds on 3.9. Older and newer Maven releases get one invoker-only row each.
+    name: Invoker (Maven ${{ matrix.maven }}, JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - maven: '3.6.3'
+            java: '17'
+          - maven: '3.8.8'
+            java: '21'
+          - maven: '3.10.0'
+            java: '21'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up build tools
+        uses: ./.github/actions/build-tools
+        with:
+          java: ${{ matrix.java }}
+
+      - name: Download Maven ${{ matrix.maven }} for the fixture builds
+        run: |
+          curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${{ matrix.maven }}/binaries/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
+            | tar xz -C "$RUNNER_TEMP"
+
+      - name: Invoker suite
+        # Builds the reactor without running unit tests (maven.test.skip.exec; skipTests would also skip
+        # the invoker), so every extraArtifact comes from this build, then runs the fixture builds with
+        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}. `env -u CI` keeps Lathe enabled in them.
+        run: |
+          env -u CI mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
+            -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
+            -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64"
+
+      - name: Upload invoker logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: invoker-logs-maven${{ matrix.maven }}-jdk${{ matrix.java }}
+          path: 'lathe-maven-plugin/target/it/**/build.log'
           retention-days: 7

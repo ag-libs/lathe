@@ -191,6 +191,7 @@ function M.warn_if_not_ready(bufnr)
   elseif root == nil then
     msg = 'Lathe: no `.lathe/` workspace -- Lathe is not set up for this project, or it is not '
       .. 'synced yet: ' .. require('lathe.sync').SETUP_HINT .. ' Then `:LatheSync` refreshes it.'
+      .. ' If a build already ran, its log says why: Lathe needs Maven 3.6.3+.'
   else
     msg = 'Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. '
       .. 'Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: '

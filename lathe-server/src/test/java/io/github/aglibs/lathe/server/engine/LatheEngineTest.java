@@ -73,7 +73,7 @@ class LatheEngineTest {
         engine.definition(fx.caller(), pos.getLine(), pos.getCharacter());
 
     assertThat(targets).hasSize(1);
-    final LatheLocation target = targets.getFirst();
+    final LatheLocation target = targets.get(0);
     assertThat(target.uri()).endsWith("Callee.java");
     assertThat(target.origin()).isEqualTo(LatheLocation.Origin.REACTOR);
     assertThat(target.snippet()).contains("void greet");
@@ -279,7 +279,7 @@ class LatheEngineTest {
     final Path api =
         TestCompiler.writeMirroredModule(
                 tmp, "api", Map.of("com/example/api/Api.java", apiSource), List.of(), 1_000L)
-            .getFirst();
+            .get(0);
     final Path app =
         TestCompiler.writeMirroredModule(
                 tmp,
@@ -290,7 +290,7 @@ class LatheEngineTest {
                         + "class App { int u() { return new Api().a(); } }\n"),
                 List.of("api"),
                 1_000L)
-            .getFirst();
+            .get(0);
     engine = new LatheEngine(tmp);
 
     final var pos = offsetToPosition(apiSource, apiSource.indexOf("Api {"));
@@ -330,7 +330,7 @@ class LatheEngineTest {
 
     final String calleeSource = sources.get("com/example/Callee.java");
     final var pos = offsetToPosition(calleeSource, calleeSource.indexOf("greet"));
-    engine.rename(files.getFirst(), pos.getLine(), pos.getCharacter(), "welcome");
+    engine.rename(files.get(0), pos.getLine(), pos.getCharacter(), "welcome");
 
     // Every touched file is compiled and stamped before rename returns, not deferred to a sync.
     final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");

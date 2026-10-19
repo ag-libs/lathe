@@ -179,10 +179,13 @@ final class FileUtilTest {
                       return null;
                     })
             .toList();
-    try (final var pool = Executors.newFixedThreadPool(replacements.size())) {
+    final var pool = Executors.newFixedThreadPool(replacements.size());
+    try {
       for (final Future<Void> replaced : pool.invokeAll(replacements)) {
         replaced.get();
       }
+    } finally {
+      pool.shutdown();
     }
 
     assertThat(Files.readString(target.resolve("a")))

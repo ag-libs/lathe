@@ -22,11 +22,27 @@
          the matrix; the fixture uses no release-25 features and asserts nothing
          about the release, and modern-JDK coverage lives in the external test
          projects (dropwizard/helidon on Java 25). -->
-    <maven.compiler.release>21</maven.compiler.release>
+    <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
   <build>
+    <!-- Pinned as a real project on Maven 3.6 must: its default bindings (compiler 3.1, Surefire
+         2.12.4) cannot build a Java 17 project. -->
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>@compiler.version@</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>@surefire.version@</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
     <plugins>
       <!-- Config-only (no version, no executions): Spotless never runs in this IT, but lathe:sync
            reads this formatter config to generate .lathe/style.json with the google engine. -->

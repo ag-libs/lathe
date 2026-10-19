@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
@@ -11,6 +10,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
+import org.junit.jupiter.api.condition.JRE;
 
 class UnusedDeclarationScannerTest {
 
@@ -41,7 +42,7 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
   }
 
@@ -229,9 +230,9 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
-    assertThat(hints.getFirst().getMessage().getLeft())
+    assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("local variable 'count' is assigned but never read");
   }
 
@@ -287,9 +288,9 @@ class UnusedDeclarationScannerTest {
     final List<Diagnostic> hints = unusedHintsFor(source);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getRange().getStart())
+    assertThat(hints.get(0).getRange().getStart())
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
-    assertThat(hints.getFirst().getMessage().getLeft())
+    assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("private field 'cached' is assigned but never read");
   }
 
@@ -311,11 +312,12 @@ class UnusedDeclarationScannerTest {
 
   // --- Unnamed variables (JEP 456) ---
 
+  // Unnamed variables (`_`) are standard only on JDK 22+ (JEP 456); earlier the source below does
+  // not
+  // compile and the scan is suppressed.
   @Test
+  @EnabledForJreRange(min = JRE.JAVA_22)
   void compile_unnamedVariableUnderscore_notReportedButNamedStillIs() {
-    // Unnamed variables (`_`) are standard only on JDK 22+ (JEP 456); on 21 they are a preview
-    // feature, so the source below fails to compile and the scan is suppressed. Skip there.
-    assumeTrue(Runtime.version().feature() >= 22, "unnamed variables require JDK 22+");
     // `_` is an unnamed variable (intentionally unused, cannot be referenced), so no position — a
     // catch clause, a lambda parameter, an enhanced-for variable, or a `var _` binding — may be
     // reported (before the fix each drew an "Unused ... ''" hint with an empty name). The single
@@ -352,8 +354,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft())
-        .isEqualTo("Unused local variable 'forgotten'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'forgotten'");
   }
 
   @Test
@@ -386,8 +387,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft())
-        .isEqualTo("Unused local variable 'forgotten'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'forgotten'");
   }
 
   // --- Inner classes ---
@@ -457,7 +457,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 'unused'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 'unused'");
   }
 
   @Test
@@ -483,7 +483,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused exception parameter 'e'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused exception parameter 'e'");
   }
 
   @Test
@@ -503,7 +503,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused parameter 'v'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused parameter 'v'");
   }
 
   @Test
@@ -523,7 +523,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getMessage().getLeft()).isEqualTo("Unused local variable 's'");
+    assertThat(hints.get(0).getMessage().getLeft()).isEqualTo("Unused local variable 's'");
   }
 
   @Test
@@ -537,7 +537,7 @@ class UnusedDeclarationScannerTest {
             """);
 
     assertThat(hints).hasSize(1);
-    assertThat(hints.getFirst().getCode()).isEqualTo(Either.forLeft("lathe.unused"));
+    assertThat(hints.get(0).getCode()).isEqualTo(Either.forLeft("lathe.unused"));
   }
 
   // --- helpers ---

@@ -61,6 +61,34 @@
             <arg>-Werror</arg>
           </compilerArgs>
         </configuration>
+        <executions>
+          <!-- The few classes that use javac API newer than Java 17 (src/main/java21), compiled into
+               META-INF/versions/21 of the multi-release jar. -->
+          <execution>
+            <id>compile-java21</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>21</release>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src/main/java21</compileSourceRoot>
+              </compileSourceRoots>
+              <multiReleaseOutput>true</multiReleaseOutput>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Multi-Release>true</Multi-Release>
+            </manifestEntries>
+          </archive>
+        </configuration>
       </plugin>
       <plugin>
         <!-- Tests load pinned formatters (google-java-format, palantir-java-format, Eclipse JDT) from
@@ -286,4 +314,66 @@
       </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <!-- Surefire runs from a directory, where the JVM ignores META-INF/versions. On JDK 21+ the
+           tests run from a copy of the classes with the versions/21 classes laid over the base
+           ones, as the multi-release jar resolves them at run time. -->
+      <id>multi-release-jdk21</id>
+      <activation>
+        <jdk>[21,)</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>copy-base-classes</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-test-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/classes-jdk21</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}</directory>
+                      <excludes>
+                        <exclude>META-INF/versions/**</exclude>
+                      </excludes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+              <execution>
+                <id>overlay-jdk21-classes</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-test-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/classes-jdk21</outputDirectory>
+                  <overwrite>true</overwrite>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}/META-INF/versions/21</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <classesDirectory>${project.build.directory}/classes-jdk21</classesDirectory>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

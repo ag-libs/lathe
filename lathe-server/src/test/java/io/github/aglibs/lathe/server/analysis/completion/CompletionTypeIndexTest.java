@@ -85,7 +85,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
             }""");
 
     assertThat(items).isNotEmpty();
-    assertThat(items.getFirst().getLabel()).isEqualTo("ArrayDeque");
+    assertThat(items.get(0).getLabel()).isEqualTo("ArrayDeque");
   }
 
   @Test
@@ -102,7 +102,7 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
     assertThat(labels(items)).contains("Version");
     final var item = itemLabeled(items, "Version").orElseThrow();
     assertThat(item.getDetail()).isEqualTo("java.net.http.HttpClient.Version");
-    assertThat(item.getAdditionalTextEdits().getFirst().getNewText())
+    assertThat(item.getAdditionalTextEdits().get(0).getNewText())
         .isEqualTo("import java.net.http.HttpClient.Version;\n");
   }
 

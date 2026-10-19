@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ImportTree;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Position;
@@ -26,7 +27,7 @@ public final class ImportAnalyzer {
 
     final var imports = cu.getImports();
     if (!imports.isEmpty()) {
-      final long endOffset = positions.getEndPosition(cu, imports.getLast());
+      final long endOffset = positions.getEndPosition(cu, CollectionUtil.last(imports));
       if (endOffset >= 0) {
         final int insertLine = (int) lineMap.getLineNumber(endOffset);
         return new Range(new Position(insertLine, 0), new Position(insertLine, 0));

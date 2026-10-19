@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven.extension;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.util.List;
+import java.util.Optional;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
@@ -73,13 +74,18 @@ final class LatheModelInjector {
     bindGoal(plugin, LatheLayout.Maven.SYNC_EXECUTION_ID, LatheLayout.Maven.SYNC_GOAL);
   }
 
-  private Plugin findOrCreatePlugin(
+  static Optional<Plugin> findPlugin(
       final MavenProject project, final String groupId, final String artifactId) {
     return project.getBuild().getPlugins().stream()
         .filter(
             plugin ->
                 groupId.equals(plugin.getGroupId()) && artifactId.equals(plugin.getArtifactId()))
-        .findFirst()
+        .findFirst();
+  }
+
+  private Plugin findOrCreatePlugin(
+      final MavenProject project, final String groupId, final String artifactId) {
+    return findPlugin(project, groupId, artifactId)
         .orElseGet(
             () -> {
               final var created = new Plugin();

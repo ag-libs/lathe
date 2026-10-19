@@ -6,7 +6,7 @@ It is meant to be picked up again later. Where the discussion leaned towards an 
 
 Related designs:
 - [Multi-OS Design](../planned/lathe-multi-os.md): the build-neutral `SyncCommand` (D3, decided) and the tool resolver (D9).
-- [Wider Maven Support](../planned/lathe-wider-maven-support.md): the Maven 3.6.3 floor, the Plexus-descriptor fix, and detect-and-explain for unsupported setups.
+- [Wider Maven Support](../done/lathe-wider-maven-support.md): the Maven 3.6.3 floor, the Plexus-descriptor fix, and detect-and-explain for unsupported setups.
 - [VS Code client](../planned/lathe-vscode-client.md): §7 first-run UX and §8 protocol handshake.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the existing coordinate-invoked front-end this design would reuse.
 
@@ -25,7 +25,7 @@ Most of them stop there.
 The audience:
 - **VS Code and Cursor users**, often on Windows, who expect a Java extension to work like Red Hat's: install it, open the folder, done.
 - **Neovim, Zed and Emacs users**, who would also like to try Lathe without touching the project.
-- **Users of older Maven.** Feedback from real users says most of them run older Maven (distribution packages, old wrappers, corporate images). [Wider Maven Support](../planned/lathe-wider-maven-support.md) lowers the floor to 3.6.3.
+- **Users of older Maven.** Feedback from real users says most of them run older Maven (distribution packages, old wrappers, corporate images). [Wider Maven Support](../done/lathe-wider-maven-support.md) lowers the floor to 3.6.3.
 
 ## Prerequisites (agreed in discussion)
 
@@ -182,17 +182,17 @@ Option B serves every row in this section with one mechanism. Option A serves on
 
 ## Detecting and explaining
 
-Building on [Wider Maven Support](../planned/lathe-wider-maven-support.md) D3–D5:
+Building on [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) D3 and D5 (D3, shipped, stops an unsupported build with one message):
 
 | Problem | Where it would be detected | Message (draft) |
 |---|---|---|
 | No Maven found | client, before setup | *"Lathe uses your Maven build, but no `mvnw` or `mvn` was found."* |
-| Maven below 3.6.3 | client / setup goal (wrapper `distributionUrl` or `mvn -v`); inside Maven (D4) | *"Lathe needs Maven 3.6.3+; this project uses 3.5.4. Upgrade the wrapper: …"* |
-| Maven runs on Java < 21 | setup goal (it runs inside that JVM); client via `mvn -v` | *"Lathe needs Maven to run on Java 21+ (your project can still target 8/11/17). Maven here runs on Java 17 (JAVA_HOME=…)."* |
-| Compiler plugin < 3.6.2 | inside Maven (D3 skip-and-warn) | *"maven-compiler-plugin 3.1 is too old for Lathe… your build is unaffected… pin a newer version."* |
+| Maven below 3.6.3 | client / setup goal (wrapper `distributionUrl` or `mvn -v`); inside Maven, the build stops (D3) | *"Lathe needs Maven 3.6.3+; this project uses 3.5.4. Upgrade the wrapper: …"* |
+| Maven runs on Java < 17 | setup goal (it runs inside that JVM); client via `mvn -v` | *"Lathe needs Maven to run on Java 17+ (your project can still target older Java). Maven here runs on Java 11 (JAVA_HOME=…)."* |
+| Compiler plugin < 3.6.2 | inside Maven, the build stops (D3) | *"[lathe] This build is older than Lathe supports: maven-compiler-plugin 3.1 (core) is older than 3.6.2: pin a newer version… To build without Lathe, add -Dlathe.disabled=true"* |
 | Build ran, but no `.lathe/` | client, after the build | *"If you already built: Lathe needs Maven 3.6.3+ and prints `[lathe]` lines in the build log; if there are none, the extension didn't load."* |
 
-**Not yet known:** what Maven prints when it runs on JDK 17 with Lathe registered (team mode or a terminal build). If the extension is dropped silently, the only remedy compatible with the Java 21 decision is a tiny entry-point class compiled for an old release that prints the message and otherwise delegates. It was discussed as a fallback only.
+**Settled 2026-10-18:** Lathe targets Java 17, so Maven on JDK 17 loads the extension normally; Maven on an older JDK cannot load it (class-version error before any Lathe code runs), which the setup goal and the client's `mvn -v` check above report.
 
 ## Other topics discussed
 

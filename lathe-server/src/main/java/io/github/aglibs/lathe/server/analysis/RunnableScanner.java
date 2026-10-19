@@ -122,7 +122,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
     return switch (element.getParameters().size()) {
       case 0 -> true;
-      case 1 -> isStringArray(element.getParameters().getFirst().asType());
+      case 1 -> isStringArray(element.getParameters().get(0).asType());
       default -> false;
     };
   }

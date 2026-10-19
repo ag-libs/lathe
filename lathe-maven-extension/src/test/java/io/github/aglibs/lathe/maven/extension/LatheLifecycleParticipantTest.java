@@ -29,6 +29,25 @@ class LatheLifecycleParticipantTest {
     return project;
   }
 
+  // Maven before 3.9 cannot read Sisu's class index for Java 17 classes and skips the participant
+  // silently, so this module must register it through the Plexus descriptor alone.
+  @Test
+  void registration_plexusDescriptorNamesParticipant_noSisuIndexInThisModule() throws Exception {
+    final Path output =
+        Path.of(
+            LatheLifecycleParticipant.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+
+    assertThat(output.resolve("META-INF/plexus/components.xml"))
+        .content()
+        .contains("org.apache.maven.AbstractMavenLifecycleParticipant")
+        .contains(LatheLifecycleParticipant.class.getName());
+    assertThat(output.resolve("META-INF/sisu/javax.inject.Named")).doesNotExist();
+  }
+
   @Test
   void isPomOptOut_disabledAndNoLatheDir_optsOut(@TempDir final Path root) {
     final var latheDir = root.resolve(LatheLayout.LATHE_DIR);

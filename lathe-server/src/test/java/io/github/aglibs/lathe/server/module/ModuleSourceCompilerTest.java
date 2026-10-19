@@ -255,7 +255,7 @@ class ModuleSourceCompilerTest {
   }
 
   private static String declaredTypeName(final TransientAnalysis analysis) {
-    final var declared = (ClassTree) analysis.analysis().tree().getTypeDecls().getFirst();
+    final var declared = (ClassTree) analysis.analysis().tree().getTypeDecls().get(0);
     return declared.getSimpleName().toString();
   }
 
