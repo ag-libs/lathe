@@ -3,9 +3,14 @@ package com.example.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 class MultiModuleTest {
@@ -13,6 +18,10 @@ class MultiModuleTest {
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
   private static final String LATHE_VERSION = System.getProperty("lathe.version");
   private static final Path LATHE_CACHE = Path.of(System.getProperty("lathe.cache"));
+  private static final int MAX_RELATIVE_PATH = 220;
+  // Characters Windows forbids, a trailing dot or space, and its reserved device names.
+  private static final Pattern ILLEGAL_NAME =
+      Pattern.compile("(?i).*[<>:\"|?*\\\\].*|.*[. ]|(con|prn|aux|nul|com[1-9]|lpt[1-9])(\\..*)?");
 
   private static Path lathe(final String rel) {
     return ROOT.resolve(".lathe").resolve(rel);
@@ -171,6 +180,63 @@ class MultiModuleTest {
     final var content = read(shard);
     assertThat(content).contains("\"types\"");
     assertThat(content).contains("\"simpleName\"");
+  }
+
+  @Test
+  void sync_dependencySources_nestedLikeLocalRepositoryWithoutMavenMetadata() throws IOException {
+    final var assertj = LATHE_CACHE.resolve("deps").resolve("org.assertj").resolve("assertj-core");
+    assertThat(assertj).isDirectory();
+    try (final var versions = Files.list(assertj)) {
+      final List<Path> sources = versions.toList();
+      assertThat(sources).isNotEmpty();
+      sources.forEach(dir -> assertThat(dir.resolve("META-INF/maven")).doesNotExist());
+    }
+  }
+
+  // Every name Lathe writes must be legal on Windows too, and short enough to stay under its
+  // 260-character path limit below a typical C:\Users\<name>\.cache\lathe or project root.
+  @Test
+  void sync_writtenNames_portableToEveryOs() throws IOException {
+    assertThat(portableNameViolations(LATHE_CACHE)).isEmpty();
+    assertThat(portableNameViolations(ROOT.resolve(".lathe"))).isEmpty();
+  }
+
+  private static List<String> portableNameViolations(final Path root) throws IOException {
+    final var violations = new ArrayList<String>();
+    Files.walkFileTree(
+        root,
+        new SimpleFileVisitor<>() {
+          @Override
+          public FileVisitResult preVisitDirectory(final Path dir, final BasicFileAttributes attrs) {
+            check(dir);
+            return FileVisitResult.CONTINUE;
+          }
+
+          @Override
+          public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) {
+            check(file);
+            return FileVisitResult.CONTINUE;
+          }
+
+          // Parallel invoker projects share the cache; their temp extract dirs vanish mid-walk.
+          @Override
+          public FileVisitResult visitFileFailed(final Path file, final IOException e) {
+            return FileVisitResult.CONTINUE;
+          }
+
+          private void check(final Path path) {
+            if (path.equals(root)) {
+              return;
+            }
+
+            final var rel = root.relativize(path).toString();
+            if (rel.length() > MAX_RELATIVE_PATH
+                || ILLEGAL_NAME.matcher(path.getFileName().toString()).matches()) {
+              violations.add(rel);
+            }
+          }
+        });
+    return List.copyOf(violations);
   }
 
   @Test

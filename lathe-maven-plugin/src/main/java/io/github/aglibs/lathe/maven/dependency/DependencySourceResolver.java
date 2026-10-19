@@ -66,8 +66,11 @@ public final class DependencySourceResolver {
       return DependencySource.present(
           ReactorProjects.gav(resolvedArtifact),
           binaryJar,
-          sourceCacheDir(
-              LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR), resolvedArtifact),
+          LatheLayout.artifactDir(
+              LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
+              resolvedArtifact.getGroupId(),
+              resolvedArtifact.getArtifactId(),
+              resolvedArtifact.getVersion()),
           resolvedArtifact,
           classpath);
     } catch (final ArtifactResolutionException e) {
@@ -76,10 +79,5 @@ public final class DependencySourceResolver {
     } catch (final RuntimeException e) {
       throw new SyncException("lathe:sync failed to resolve source artifacts", e);
     }
-  }
-
-  private static Path sourceCacheDir(
-      final Path cacheRoot, final org.eclipse.aether.artifact.Artifact artifact) {
-    return cacheRoot.resolve(ReactorProjects.gav(artifact));
   }
 }

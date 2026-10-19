@@ -199,7 +199,8 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   it exists only for a user-global MCP registration that has no project context (see
   [ai-agents.md](ai-agents.md)).
 - `deps/` and `jdks/` — dependency and JDK **source** trees. `lathe:sync` resolves each dependency's
-  `-sources` JAR through Maven and extracts it here, and extracts the JDK's sources when available;
+  `-sources` JAR through Maven and extracts it to `deps/<groupId>/<artifactId>/<version>/` (the
+  `~/.m2` layout, without the JAR's `META-INF/maven/` build metadata), and extracts the JDK's sources when available;
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
   is recorded as missing and simply not navigable.
 - `type-index/` — the symbol index behind workspace symbol search.

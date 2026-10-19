@@ -47,6 +47,7 @@ public final class LatheLayout {
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
   public static final String STAMPS_FILE_PREFIX = "lsp-stamps-";
   public static final String DEPENDENCY_SOURCE_FILENAME = ".lathe-source.json";
+  public static final String JAR_MAVEN_METADATA_DIR = "META-INF/maven";
   public static final String TYPE_INDEX_FILENAME = "index.json";
   public static final String TEST_LAUNCH_FILE = "test-launch.json";
   public static final String MAIN_LAUNCH_FILE = "main-launch.json";
@@ -156,6 +157,13 @@ public final class LatheLayout {
 
   public static Path serverVersionDir(final String version) {
     return userCacheRoot().resolve(SERVERS_DIR).resolve(version);
+  }
+
+  // Nested like ~/.m2: every segment already appears in the artifact's local-repository path, so
+  // it is legal wherever that repository lives. A flat "g:a:v" name is illegal on Windows.
+  public static Path artifactDir(
+      final Path root, final String groupId, final String artifactId, final String version) {
+    return root.resolve(groupId).resolve(artifactId).resolve(version);
   }
 
   public static Path serversDir() {

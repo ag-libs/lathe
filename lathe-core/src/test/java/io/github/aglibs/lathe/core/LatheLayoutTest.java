@@ -48,6 +48,15 @@ class LatheLayoutTest {
   }
 
   @Test
+  void artifactDir_coordinates_nestsLikeLocalRepositoryWithoutColons(@TempDir final Path root) {
+    final Path dir = LatheLayout.artifactDir(root, "org.example", "lib-core", "1.0-SNAPSHOT");
+
+    assertThat(dir)
+        .isEqualTo(root.resolve("org.example").resolve("lib-core").resolve("1.0-SNAPSHOT"));
+    assertThat(root.relativize(dir).toString()).doesNotContain(":");
+  }
+
+  @Test
   void logsDir_underCacheOverride_resolvesToLogsSubdir(@TempDir final Path cache) {
     System.setProperty("lathe.cache", cache.toString());
 

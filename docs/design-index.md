@@ -195,7 +195,7 @@ reused):
   JDK 17+ for every module, the server included, with javac API newer than 17 behind a multi-release jar
   (`CompilerTrees`); an unsupported Maven or `maven-compiler-plugin` stops the build with one clear message;
   CI covers JDK 17–27 and Maven 3.6.3–3.10.
-- [Multi-OS Design](planned/lathe-multi-os.md) — **proposed.** Lathe portable by construction across
+- [Multi-OS Design](planned/lathe-multi-os.md) — **proposed; macOS CI, no links (D4) and portable cache names (R1) done.** Lathe portable by construction across
   Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
   tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names
   guard, `forbiddenapis`, OS matrix). No symlinks (done), argfile launchers, sync logic in Java, canonical URIs,

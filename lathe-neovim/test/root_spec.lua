@@ -18,7 +18,7 @@ local work = vim.fn.tempname()
 local project = work .. "/project"
 local cache = work .. "/cache"
 vim.fn.mkdir(project .. "/src/main/java", "p")
-vim.fn.mkdir(cache .. "/deps/some", "p")
+vim.fn.mkdir(cache .. "/deps/com.example/some/1.0", "p")
 
 local function write_file(path, contents)
   local f = assert(io.open(path, "w"))
@@ -28,7 +28,7 @@ end
 
 write_file(project .. "/.lathe", "")
 write_file(project .. "/src/main/java/Foo.java", "class Foo {}\n")
-write_file(cache .. "/deps/some/Cached.java", "class Cached {}\n")
+write_file(cache .. "/deps/com.example/some/1.0/Cached.java", "class Cached {}\n")
 
 vim.env.LATHE_CACHE = cache
 local lathe = require("lathe")
@@ -42,7 +42,7 @@ spec.check("cache_root() honors $LATHE_CACHE", lathe.cache_root(), cache_norm)
 
 -- A buffer under the cache with no marked project resolved yet, and no
 -- memoized last_root, has nothing to fall back to.
-local cache_buf = vim.fn.bufadd(cache .. "/deps/some/Cached.java")
+local cache_buf = vim.fn.bufadd(cache .. "/deps/com.example/some/1.0/Cached.java")
 spec.check("get_root: cache file with no fallback available", lathe.get_root(cache_buf), nil)
 
 -- A buffer directly under the `.lathe`-marked root resolves via direct match
@@ -65,7 +65,7 @@ vim.env.LATHE_CACHE = cache_link
 spec.check("cache_root() resolves a symlinked $LATHE_CACHE", lathe.cache_root(), cache_norm)
 spec.check(
   "get_root: cache file under a symlinked $LATHE_CACHE falls back",
-  lathe.get_root(vim.fn.bufadd(cache_link .. "/deps/some/Cached.java")),
+  lathe.get_root(vim.fn.bufadd(cache_link .. "/deps/com.example/some/1.0/Cached.java")),
   project_norm
 )
 

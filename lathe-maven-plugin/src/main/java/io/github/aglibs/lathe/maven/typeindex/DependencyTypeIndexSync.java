@@ -43,12 +43,13 @@ public final class DependencyTypeIndexSync {
 
   public static Path indexPath(final Artifact artifact) {
     final Path versionDir =
-        LatheLayout.userCacheRoot()
-            .resolve(LatheLayout.TYPE_INDEX_DIR)
-            .resolve(LatheLayout.CACHE_DEPS_DIR)
-            .resolve(artifact.getGroupId())
-            .resolve(artifact.getArtifactId())
-            .resolve(artifact.getVersion());
+        LatheLayout.artifactDir(
+            LatheLayout.userCacheRoot()
+                .resolve(LatheLayout.TYPE_INDEX_DIR)
+                .resolve(LatheLayout.CACHE_DEPS_DIR),
+            artifact.getGroupId(),
+            artifact.getArtifactId(),
+            artifact.getVersion());
     final String classifier = artifact.getClassifier();
     if (classifier == null || classifier.isBlank()) {
       return versionDir.resolve(LatheLayout.TYPE_INDEX_FILENAME);
