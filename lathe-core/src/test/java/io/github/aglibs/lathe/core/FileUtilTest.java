@@ -82,6 +82,25 @@ final class FileUtilTest {
   }
 
   @Test
+  void unzip_mavenMetadataEntries_dropsThemKeepsOtherMetaInfNotCounted() throws IOException {
+    final Path zip =
+        ZipFixture.create(
+            tempDir.resolve("lib-sources.jar"),
+            Map.of(
+                "com/example/Hello.java", "class Hello {}",
+                "META-INF/maven/com.example/lib/pom.properties", "version=1",
+                "META-INF/versions/9/com/example/Hello.java", "class Hello {}"));
+
+    final Path dest = tempDir.resolve("dest");
+    final int skipped = FileUtil.unzip(zip, dest);
+
+    assertThat(dest.resolve("com/example/Hello.java")).exists();
+    assertThat(dest.resolve("META-INF/versions/9/com/example/Hello.java")).exists();
+    assertThat(dest.resolve("META-INF/maven")).doesNotExist();
+    assertThat(skipped).isZero();
+  }
+
+  @Test
   void touch_existingFile_bumpsMtimeKeepsContent_missingFileThrows() throws IOException {
     final Path file = Files.writeString(tempDir.resolve("workspace.json"), "{}");
     Files.setLastModifiedTime(file, FileTime.fromMillis(1_000L));

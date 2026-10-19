@@ -190,7 +190,7 @@ printf 'grep setAttribute\ncomplete after "handler.getServletContext()."\n' \
 but initialize Lathe with the real workspace):
 ```
 python3 dev/explore.py --workspace /home/ag-libs/git/dropwizard \
-    /home/ag-libs/.cache/lathe/deps/io.dropwizard.metrics:metrics-core:4.2.38/com/codahale/metrics/MetricRegistry.java
+    /home/ag-libs/.cache/lathe/deps/io.dropwizard.metrics/metrics-core/4.2.38/com/codahale/metrics/MetricRegistry.java
 ```
 
 Use `--workspace` when the file being probed does not live under a `.lathe/`

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; A0 partly done; D4 (no links) done.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -100,7 +100,7 @@ The violations are concentrated:
 |---|---|---|---|---|
 | R2 | **Fixed by [D4](#d4--no-links-on-any-platform).** Workspace launchers and the cache's `latest` pointer were **symlinks**. | `LauncherCopier` now copies them | `lathe:sync` failed without admin rights or Developer Mode | — |
 | R2 | The contract and clients require the launcher to be **executable**. | `lathe-workspace-contract.md`, Neovim client | No Windows file is "executable" in that sense | — |
-| R1 | Dependency-source cache dirs are named **`deps/<g>:<a>:<v>`**. | `DependencySourceResolver.sourceCacheDir:87` | `lathe:sync` fails at the first source jar | — |
+| R1 | Dependency-source cache dirs are named **`deps/<g>:<a>:<v>`**. *Resolved: nested `deps/<g>/<a>/<v>/` ([D7](#d7--nested-dependency-source-cache)).* | `DependencySourceResolver.sourceCacheDir:87` | `lathe:sync` fails at the first source jar | — |
 | R7 | Launchers and the sync script are **POSIX `sh`** with logic inside. The server module path is joined with `:` and pasted in **unquoted**. | `ServerInstaller.java:134,221-249`, `SyncScriptWriter.java:43-69` | Can't run; `:` clashes with `C:` | Breaks on a jar path with a space |
 | E5 | The VS Code extension **spawns `lathe-launcher.sh` directly**. | `lathe-vscode/src/extension.ts:11,58-61` | Server never starts | — |
 | R4 | Open documents and many server maps are keyed by the **raw client URI string**. | `DocumentRegistry.java:10` and all URI-keyed maps | Duplicate references, rename emits two edits for one file, breakpoints never arm, open buffers ignored, write-diagnostics lost | Same for paths with `@ + ! = ,` or spaces, which VS Code percent-encodes |
@@ -130,7 +130,7 @@ The full inventory of what Lathe writes, taken from a real Linux machine on 2026
 | `servers/<version>/` | the generated launchers; the jars stay in `~/.m2` | Keep. Gains argfiles and the host dialect's scripts. |
 | `latest/` | copies of the newest version's launchers (user-global MCP registration) | Done ([D4](#d4--no-links-on-any-platform)); was a symlink. |
 | `current` | old pointer, deleted if present | Keep the cleanup. |
-| `deps/<g>:<a>:<v>/` | dependency `-sources.jar` contents, read-only, plus `.lathe-source.json` | R1: becomes `deps/<g>/<a>/<v>/` ([D7](#d7--nested-dependency-source-cache)). |
+| `deps/<g>/<a>/<v>/` | dependency `-sources.jar` contents without `META-INF/maven/`, read-only, plus `.lathe-source.json` | OK since [D7](#d7--nested-dependency-source-cache); was `deps/<g>:<a>:<v>/`. |
 | `jdks/<vendor-version>/<module>/…` | JDK `src.zip` per JDK | OK. The key goes through `LatheLayout.cacheName`. |
 | `type-index/{deps,jdks}/<groupId>/…` | type-index shards | OK. |
 | `logs/` | MCP session logs, JUL `.lck` files | OK. |
@@ -152,9 +152,12 @@ No reader needed them to be links (clients just run the file at that path), so D
 Windows paths have a similar shape (`C:\Users\<name>\.cache\lathe` vs `/home/<name>/.cache/lathe`), so the deepest paths get close to the classic 260-character `MAX_PATH`.
 Java NIO, VS Code and Cursor handle long paths; Explorer and some tools don't.
 Mitigations, cheapest first:
-1. Skip `META-INF/` when extracting source jars; it holds no Java source.
-2. The R1 guard bounds path length on the Dropwizard and Helidon fixtures.
-3. Only if that isn't enough, document `-Dlathe.cache=C:\lathe` or the `LongPathsEnabled` registry switch.
+1. Skip `META-INF/maven/` when extracting source jars. *Done.* It holds only build metadata, and its `<group>/<artifact>` nesting made every one of the deepest paths.
+   The rest of `META-INF/` stays: multi-release source jars keep real sources in `META-INF/versions/N/` (byte-buddy, bouncycastle).
+   This drops the deepest cache path from 246 to 224 characters below the home directory, about 240 with `C:\Users\<name>` in front.
+2. The R1 guard bounds the path length below the cache and the workspace root to 220 characters. *Done*, in the `multi-module` invoker fixture.
+   Measured 2026-10-19 on a fresh Helidon sync: 210 characters below the cache, 178 below the workspace root, and no name violations.
+3. Only if that isn't enough, document `-Dlathe.cache=C:\lathe` or the `LongPathsEnabled` registry switch. Not needed so far.
 
 ## Decisions
 
@@ -249,8 +252,10 @@ Keying everything by `Path` instead was rejected: it would be a refactor of abou
 
 `deps/<groupId>/<artifactId>/<version>/` mirrors `~/.m2/repository` and the type-index layout.
 It can't collide, unlike flattening `:` to `-`: `a:b-c:1` and `a-b:c:1` would both become `a-b-c-1`.
-The server reads the directory from `workspace.json` and never rebuilds it, so only `DependencySourceResolver.sourceCacheDir` changes, plus a `CACHE_SCHEMA_VERSION` bump.
-Old directories are simply orphaned; there's no migration, per the no-backward-compatibility rule.
+The server reads the directory from `workspace.json` and never rebuilds it, so only the directory name changes: `DependencySourceResolver` and the type index both build it with `LatheLayout.artifactDir`.
+Every segment already appears in the artifact's `~/.m2` path, so it is legal wherever that repository lives and needs no escaping.
+*Done.* No `CACHE_SCHEMA_VERSION` bump was needed: a new directory has no marker, so it is extracted fresh, and a bump would only rebuild every type index for nothing.
+Old directories are simply orphaned (`rm -rf ~/.cache/lathe/deps/*:*` reclaims them); there's no migration, per the no-backward-compatibility rule.
 
 ### D8 — `/` in persisted relative paths
 
@@ -297,7 +302,7 @@ The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`)
   - a short project signatures file: `Files.createSymbolicLink`, `Files.createLink`, `new ProcessBuilder`, `Runtime.exec`, `System.getProperty("os.name")`;
   - `@SuppressForbidden` allowed only inside the E1/E3 classes.
   Its version has to fit the Maven 3.6.3 / Java 17 compatibility floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)).
-- **The portable-names guard** (R1) in the invoker verification.
+- **The portable-names guard** (R1) in the invoker verification. *Done, failing:* `MultiModuleTest.sync_writtenNames_portableToEveryOs` walks the fixture's `.lathe/` and the test cache for Windows-illegal characters, a trailing dot or space, reserved device names and paths over 220 characters.
 - **A CI OS matrix** (R8).
 
 ## Design by component
@@ -392,7 +397,7 @@ Each slice can be merged on its own.
 #### A0 — Guards in report mode, macOS in CI
 
 - Add `macos-latest` to the CI matrix. *Done (`5a169ce3`): one row, on JDK 25, since the OS-sensitive parts don't vary by JDK.*
-- Add `forbiddenapis` and the portable-names guard in report-only mode, and list today's violations in this document. *Open.*
+- Add `forbiddenapis` and the portable-names guard in report-only mode, and list today's violations in this document. *Names guard done, and failing rather than reporting, since D7 left nothing to report. `forbiddenapis` open.*
 
 **Exit:** CI green on Linux and macOS; a known, written-down violation list.
 
@@ -420,7 +425,7 @@ Each slice can be merged on its own.
 
 #### A3 — Data and names
 
-- D7 nested dependency cache; skip `META-INF/`.
+- D7 nested dependency cache; skip `META-INF/maven/`. *Done.*
 - D8 `/` in persisted relative paths, normalized in the schema records.
 
 **Exit:** the names guard passes on the fixtures and on Dropwizard and Helidon, with the path-length bound recorded here.
@@ -435,7 +440,7 @@ Each slice can be merged on its own.
 
 #### A5 — Turn enforcement on
 
-- Switch `forbiddenapis` and the names guard from reporting to failing.
+- Switch `forbiddenapis` and the names guard from reporting to failing. *The names guard fails already.*
 - Update the [Workspace Contract](../lathe-workspace-contract.md) (D8, D11) and the status doc.
 
 **Exit:** a deliberately introduced symlink, `:` file name or bare `ProcessBuilder` fails Linux CI.
@@ -448,7 +453,7 @@ It needs no production code, so it **runs early, in parallel with Phase A**, to 
 It uses a throwaway branch and workflow on `windows-latest`:
 
 1. Run today's build unchanged, invoker tests included, with `continue-on-error`. The failures it produces check this audit against reality.
-   Expected first failure: the `deps/<g>:<a>:<v>` directory name.
+   Both failures the audit predicted are fixed already: the `deps/<g>:<a>:<v>` directory name (D7) and the symlinks (D4).
 2. Write `lathe-launcher.cmd` and the argfile by hand, as in the sketch above.
 3. Run the **stdio smoke**: a small Node script starts the launcher exactly as D11 describes. It sends `initialize`, opens a file containing a compile error, waits for `publishDiagnostics`, and sends `shutdown` and `exit`. It checks that:
    - stdout carries only protocol frames;

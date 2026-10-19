@@ -234,7 +234,7 @@ The front-end also fills parts of the user cache (`~/.cache/lathe`, or `-Dlathe.
 | Path | Content | Written by |
 |---|---|---|
 | `servers/<version>/` | launcher scripts; `latest/` holds copies of the highest version's | front-end |
-| `deps/<gav>/` | extracted dependency sources, with a `.lathe-source.json` marker | front-end |
+| `deps/<groupId>/<artifactId>/<version>/` | extracted dependency sources (no `META-INF/maven/`), with a `.lathe-source.json` marker | front-end |
 | `jdks/<key>/` | extracted JDK `src.zip` | front-end |
 | `type-index/deps/…`, `type-index/jdks/…` | type-index shards (`TypeIndexFile`) | front-end |
 | `logs/` | MCP server logs | server |

@@ -327,6 +327,12 @@ public final class FileUtil {
       return false;
     }
 
+    // Build metadata holds no source, but its <group>/<artifact> nesting makes the longest cache
+    // paths, past Windows' 260-character limit.
+    if (relative.startsWith(LatheLayout.JAR_MAVEN_METADATA_DIR)) {
+      return true;
+    }
+
     final Path target = destDir.resolve(relative).normalize();
     if (!target.startsWith(destDir)) {
       return false;
