@@ -127,7 +127,7 @@ The OpenJDK front-end (`lathe-openjdk-maven-plugin`) already implements most of 
 |---|---|
 | Set up without the project registering anything | `@Mojo(name = "sync", requiresProject = false)`, invoked by coordinates, documented in `docs/guide/openjdk.md` |
 | Resolve Lathe artifacts through the user's Maven | `ServerInstaller` resolves via `RepositorySystem` with the session's repositories |
-| Install the server and write launchers | `ServerInstaller` + `WorkspaceLauncherLinker` (`lathe-install`) |
+| Install the server and write launchers | `ServerInstaller` + `LauncherCopier` (`lathe-install`) |
 | A re-sync that keeps the version | its `lathe-sync.sh` re-invokes the goal pinned to `<version>` |
 | Keep `.lathe/` out of git without editing tracked files | `.git/info/exclude` in the docs (`.lathe/.gitignore` would automate it for both front-ends) |
 | Front-end-agnostic clients | Neovim, VS Code and Zed attach to a JDK checkout like any other workspace |

@@ -3,8 +3,8 @@
 -- Installation: copy this file (or symlink it) into your Neovim config and call:
 --   require('lathe').setup()
 --
--- The launcher is read from <root>/.lathe/lathe-launcher.sh, a symlink the build's Lathe sync
--- links at the server version this workspace pins.
+-- The launcher is read from <root>/.lathe/lathe-launcher.sh, which the build's Lathe sync writes
+-- for the server version this workspace pins.
 --
 -- For local server development, set LATHE_SERVER_DIR to a built server version directory (e.g.
 -- ~/.cache/lathe/servers/0.1.0-SNAPSHOT) to run that launcher instead of the workspace-pinned one,

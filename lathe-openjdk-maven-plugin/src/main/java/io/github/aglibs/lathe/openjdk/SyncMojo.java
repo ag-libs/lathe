@@ -1,10 +1,10 @@
 package io.github.aglibs.lathe.openjdk;
 
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
-import io.github.aglibs.lathe.install.WorkspaceLauncherLinker;
 import java.io.IOException;
 import java.nio.file.Path;
 import javax.inject.Inject;
@@ -69,6 +69,6 @@ public final class SyncMojo extends AbstractMojo {
             session.getCurrentProject().getRemoteProjectRepositories(),
             getLog());
     final Path versionDir = installer.install();
-    new WorkspaceLauncherLinker(getLog()).link(Path.of(workspaceRoot), versionDir);
+    new LauncherCopier(getLog()).copyToWorkspace(Path.of(workspaceRoot), versionDir);
   }
 }

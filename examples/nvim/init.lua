@@ -6,7 +6,7 @@
 --
 -- Requires Neovim 0.12+ and the Java Treesitter parser (:TSInstall java). The client is the
 -- standalone `ag-libs/lathe.nvim` plugin (installed below like any other); the server still comes from
--- your Maven build (`lathe:sync` links it at each project's `.lathe/lathe-launcher.sh`).
+-- your Maven build (`lathe:sync` writes it as each project's `.lathe/lathe-launcher.sh`).
 
 vim.g.mapleader = "\\"
 vim.g.maplocalleader = "\\"

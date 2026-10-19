@@ -140,11 +140,13 @@ public final class FileUtil {
   }
 
   // Writes content atomically (creating dir) unless target already holds it; returns whether it
-  // wrote, so callers log only real changes and avoid touching an unchanged file's mtime.
+  // wrote, so callers log only real changes and avoid touching an unchanged file's mtime. A symlink
+  // is always replaced by a file, even one whose target holds the same content.
   public static boolean writeIfChanged(
       final Path dir, final Path target, final String content, final boolean executable)
       throws IOException {
     if (Files.exists(target)
+        && !Files.isSymbolicLink(target)
         && (!executable || Files.isExecutable(target))
         && content.equals(Files.readString(target, StandardCharsets.UTF_8))) {
       return false;
@@ -168,18 +170,6 @@ public final class FileUtil {
     } finally {
       Files.deleteIfExists(tmp);
     }
-  }
-
-  // Points link at target as a symlink, replacing any existing one; returns false if it already
-  // pointed there so callers can skip logging.
-  public static boolean linkSymbolic(final Path link, final Path target) throws IOException {
-    if (Files.isSymbolicLink(link) && target.equals(Files.readSymbolicLink(link))) {
-      return false;
-    }
-
-    Files.deleteIfExists(link);
-    Files.createSymbolicLink(link, target);
-    return true;
   }
 
   /**

@@ -235,6 +235,21 @@ final class FileUtilTest {
     assertThat(FileUtil.writeIfChanged(dir, file, "b\n", true)).isFalse();
   }
 
+  // Workspaces synced by older versions hold launcher symlinks; the replacement must not write
+  // through the link into the shared target.
+  @Test
+  void writeIfChanged_symlinkToSameContent_replacedByFile_targetUntouched() throws IOException {
+    final Path target = tempDir.resolve("target.sh");
+    final Path link = tempDir.resolve("link.sh");
+    Files.writeString(target, "same\n");
+    Files.createSymbolicLink(link, target);
+
+    assertThat(FileUtil.writeIfChanged(tempDir, link, "same\n", false)).isTrue();
+    assertThat(FileUtil.writeIfChanged(tempDir, link, "new\n", false)).isTrue();
+    assertThat(link).hasContent("new");
+    assertThat(target).hasContent("same");
+  }
+
   private static void writeEmpty(final Path file) throws IOException {
     Files.createDirectories(file.getParent());
     Files.writeString(file, "");

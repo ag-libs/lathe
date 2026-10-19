@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; A0 partly done.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; A0 partly done; D4 (no links) done.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -98,7 +98,7 @@ The violations are concentrated:
 
 | Rule | Finding | Location | Effect on Windows | Also affects Linux/macOS |
 |---|---|---|---|---|
-| R2 | Workspace launchers and the cache's `latest` pointer are **symlinks**. | `WorkspaceLauncherLinker.java:40`, `ServerInstaller.java:82` → `FileUtil.linkSymbolic` | `lathe:sync` fails without admin rights or Developer Mode | — |
+| R2 | **Fixed by [D4](#d4--no-links-on-any-platform).** Workspace launchers and the cache's `latest` pointer were **symlinks**. | `LauncherCopier` now copies them | `lathe:sync` failed without admin rights or Developer Mode | — |
 | R2 | The contract and clients require the launcher to be **executable**. | `lathe-workspace-contract.md`, Neovim client | No Windows file is "executable" in that sense | — |
 | R1 | Dependency-source cache dirs are named **`deps/<g>:<a>:<v>`**. | `DependencySourceResolver.sourceCacheDir:87` | `lathe:sync` fails at the first source jar | — |
 | R7 | Launchers and the sync script are **POSIX `sh`** with logic inside. The server module path is joined with `:` and pasted in **unquoted**. | `ServerInstaller.java:134,221-249`, `SyncScriptWriter.java:43-69` | Can't run; `:` clashes with `C:` | Breaks on a jar path with a space |
@@ -128,7 +128,7 @@ The full inventory of what Lathe writes, taken from a real Linux machine on 2026
 | Path | Contents | Verdict |
 |---|---|---|
 | `servers/<version>/` | the generated launchers; the jars stay in `~/.m2` | Keep. Gains argfiles and the host dialect's scripts. |
-| `latest` | **symlink** → `servers/<newest>` (user-global MCP registration) | R2: becomes a `latest/` directory with a forwarding launcher. |
+| `latest/` | copies of the newest version's launchers (user-global MCP registration) | Done ([D4](#d4--no-links-on-any-platform)); was a symlink. |
 | `current` | old pointer, deleted if present | Keep the cleanup. |
 | `deps/<g>:<a>:<v>/` | dependency `-sources.jar` contents, read-only, plus `.lathe-source.json` | R1: becomes `deps/<g>/<a>/<v>/` ([D7](#d7--nested-dependency-source-cache)). |
 | `jdks/<vendor-version>/<module>/…` | JDK `src.zip` per JDK | OK. The key goes through `LatheLayout.cacheName`. |
@@ -139,14 +139,14 @@ The full inventory of what Lathe writes, taken from a real Linux machine on 2026
 
 | Path | Contents | Verdict |
 |---|---|---|
-| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | **symlinks** → `servers/<version>/…` | R2: generated files, in the host dialect. |
+| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | copies of `servers/<version>/…` | Done ([D4](#d4--no-links-on-any-platform)); was symlinks. The host dialect comes with D2. |
 | `lathe-sync.sh` | generated script with logic | R7: a thin trampoline into Java ([D3](#d3--sync-behavior-moves-into-a-build-neutral-synccommand)). |
 | `java-home`, `jvm.args`, `workspace.json`, `style.json`, `run.json`, `lathe.lock` | plain files | OK. Absolute paths stay native (R3). |
 | `<moduleRel>/{classes,test-classes,generated-*}` | mirrors of the build output | OK for names; exposed to path length and Defender locks (E4). |
 | `<moduleRel>/lsp-params-*.json`, `lsp-stamps-*.json`, `test-launch.json`, `main-launch.json` | per-module contract files | R3: relative keys become `/`-separated. |
 
-Only **three links** exist anywhere: the two workspace launchers and `latest`.
-No reader needs them to be links (clients just run the file at that path), so replacing them with files changes no reader.
+There were **three links**: the two workspace launchers and `latest`.
+No reader needed them to be links (clients just run the file at that path), so D4 replaced them with files without changing any reader.
 
 **Path length.** The deepest cache path on the reference machine is 219 characters, inside a source jar's `META-INF/maven/<group>/<artifact>`.
 Windows paths have a similar shape (`C:\Users\<name>\.cache\lathe` vs `/home/<name>/.cache/lathe`), so the deepest paths get close to the classic 260-character `MAX_PATH`.
@@ -212,13 +212,16 @@ The user-facing command stays `.lathe/lathe-sync.sh` / `.lathe\lathe-sync.cmd`, 
 
 ### D4 — No links, on any platform
 
-Workspace launchers are generated files (`FileUtil.writeIfChanged`), re-checked every sync and rewritten when the server version changes.
-`latest` becomes a directory holding forwarding launchers.
+**Done 2026-10-18.**
+
+`LauncherCopier` copies the launchers from `servers/<version>/` into the workspace's `.lathe/` on every sync, through `FileUtil.writeIfChanged`, so a file is rewritten only when its content changes.
+`latest/` is a directory holding copies of the newest version's launchers.
 `FileUtil.linkSymbolic` is deleted.
 
-It always writes files, rather than trying a link and falling back.
-One code path is simpler, and GitHub's Windows runners run as admin, so a link would succeed there and hide the path real users take.
-`ls -l .lathe` no longer shows the server version, so the generated header comment names it instead.
+- **Copies, not forwarding scripts.** A launcher names only absolute jar paths in the local Maven repository, plus `.lathe/java-home` and `.lathe/jvm.args` relative to the working directory. A copy runs exactly like the original, and keeps running even if `~/.cache/lathe` is wiped.
+- **Always files.** No "try a link, fall back to a copy": one code path is simpler, and GitHub's Windows runners run as admin, so a link would succeed there and hide the path real users take.
+- **Version header.** `ls -l .lathe` no longer shows the version, so each launcher's second line names it: `# lathe-server <version>, generated by lathe:sync; do not edit`.
+- **Migration from links.** `writeIfChanged` always replaces a symlink, even one whose target holds the same content, and renames over the link, never writing through it into `servers/`. An old `latest` link is deleted as a link, never recursively. Older Lathe versions still syncing other projects on the same machine fail harmlessly on the `latest/` directory (a best-effort, debug-logged step).
 
 ### D5 — Argfiles for every long or path-bearing command line
 
@@ -395,7 +398,7 @@ Each slice can be merged on its own.
 
 #### A1 — Launchers: no links, argfiles, script models
 
-- D2 models and the POSIX renderer, D4 no links, D5 server argfiles.
+- D2 models and the POSIX renderer, D5 server argfiles. (D4, no links, is done.)
 
 **Fixes today:** a server jar path containing a space.
 **Exit:**
@@ -445,7 +448,7 @@ It needs no production code, so it **runs early, in parallel with Phase A**, to 
 It uses a throwaway branch and workflow on `windows-latest`:
 
 1. Run today's build unchanged, invoker tests included, with `continue-on-error`. The failures it produces check this audit against reality.
-   Expected first failures: the `deps/<g>:<a>:<v>` directory name, then the symlinks.
+   Expected first failure: the `deps/<g>:<a>:<v>` directory name.
 2. Write `lathe-launcher.cmd` and the argfile by hand, as in the sketch above.
 3. Run the **stdio smoke**: a small Node script starts the launcher exactly as D11 describes. It sends `initialize`, opens a file containing a compile error, waits for `publishDiagnostics`, and sends `shutdown` and `exit`. It checks that:
    - stdout carries only protocol frames;
@@ -501,7 +504,7 @@ The Maven invoker tests are the main end-to-end check, and they can run on `wind
 - **The harness is portable.** `maven-invoker-plugin` is pure Java and finds `mvn.cmd` on Windows. Its configuration has nothing POSIX-specific: the cloned projects, the private local repository, the `-Dlathe.cache` override and the `maven-clean-plugin` pre-step.
 - **The verification is already a Java test suite** in the fixture's `verify` module (`MultiModuleTest`, `LspSmokeTest`, `McpSmokeTest`). `LspSmokeTest` already starts the generated launcher with `ProcessBuilder` and speaks LSP to it, and Java's `ProcessBuilder` can start a `.cmd` directly. So the server-level smoke test for Windows exists already; only the launcher name changes.
 - **What needs changing:**
-  - `MultiModuleTest` asserts POSIX specifics: `lathe-launcher.sh` names, `isSymbolicLink`, `isExecutable` and a `#!/bin/sh` header. Most of these change anyway with D2 and D4. They become assertions on the host dialect's file name and content, through one helper.
+  - `MultiModuleTest` asserts POSIX specifics: `lathe-launcher.sh` names, `isExecutable` and a `#!/bin/sh` header. Most of these change anyway with D2. They become assertions on the host dialect's file name and content, through one helper.
   - `McpSmokeTest` pastes raw paths into JSON strings (`"{\"file\":\"%s\"}".formatted(path)`). On Windows the backslashes are invalid JSON escapes, so the paths need JSON escaping.
   - The Node smoke is still needed for one thing only: the **extension's** `cmd.exe /d /s /c` spawn path. Java's `ProcessBuilder` quotes arguments differently from Node, so the Java tests can't stand in for it.
 - **CI job details:**
@@ -550,7 +553,7 @@ A human re-check is needed only when a change touches the launchers, a client's 
 | Slice | Estimate |
 |---|---|
 | A0 — guards (report), macOS CI | 1 day |
-| A1 — launchers: no links, argfiles, models | 2 days |
+| A1 — launchers: argfiles, models (no links: done) | 2 days |
 | A2 — sync into Java, tool resolver | 2–3 days |
 | A3 — data and names | 1–2 days |
 | A4 — URIs and text | 2–3 days |

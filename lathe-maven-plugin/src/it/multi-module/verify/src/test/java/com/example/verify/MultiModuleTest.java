@@ -46,13 +46,16 @@ class MultiModuleTest {
     assertThat(launcher).exists().isExecutable();
   }
 
+  // Plain copies, not symlinks (a link needs admin rights on Windows), in the workspace and in the
+  // cache's latest/ for user-global MCP.
   @Test
-  void sync_workspaceLauncherSymlinks_linkedToVersionDir() throws IOException {
+  void sync_launchers_copiedFromVersionDirToWorkspaceAndLatest() throws IOException {
     final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
     for (final var script : List.of("lathe-launcher.sh", "lathe-mcp-launcher.sh")) {
-      final var link = lathe(script);
-      assertThat(link).isSymbolicLink().exists().isExecutable();
-      assertThat(Files.readSymbolicLink(link)).isEqualTo(versionDir.resolve(script));
+      final var installed = Files.readString(versionDir.resolve(script));
+      for (final var copy : List.of(lathe(script), LATHE_CACHE.resolve("latest").resolve(script))) {
+        assertThat(copy).isExecutable().hasContent(installed);
+      }
     }
   }
 

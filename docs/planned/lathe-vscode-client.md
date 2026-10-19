@@ -21,7 +21,7 @@ VS Code users install any extension.
 
 This is **additive**. It does not change server delivery: the server stays Maven-resolved and
 version-pinned via the `lathe-maven-extension`, installed into `~/.cache/lathe/servers/<version>/` and
-linked at each workspace's `.lathe/lathe-launcher.sh` by `lathe:sync` exactly as for the other clients.
+copied into each workspace's `.lathe/lathe-launcher.sh` by `lathe:sync` exactly as for the other clients.
 Only a new client is added.
 
 ## Motivation
