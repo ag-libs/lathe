@@ -17,7 +17,7 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
 2. [Multi-OS](lathe-multi-os.md) Phase A, slices A0–A3 — portable launchers, `SyncCommand`, portable data and names.
    Before this design's slice 2; slice 1 can run alongside.
-3. The **JDK 17 floor** ([Wider Maven and JDK Support](lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
+3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
    Before slice 1, so the plugin is written against Java 17 from the start.
 4. **A Maven-free `lathe-install`** (see [What is reused vs new](#what-is-reused-vs-new)) — done as part of Multi-OS A2, which moves sync logic into `lathe-install` anyway.
 
@@ -171,7 +171,7 @@ the process:
 observation, not reconstruction.
 Recording the **compiling** JDK as `.lathe/java-home` matters on Gradle, where toolchains are the norm:
 the server then runs on the JDK that compiled the code, so its API level matches the build even when the project sets
-`sourceCompatibility` instead of `release` (the toolchains limitation noted in [Wider Maven and JDK Support](lathe-wider-maven-support.md), open question 6). **The one genuine reconstruction is the module-path/classpath split**
+`sourceCompatibility` instead of `release` (the toolchains limitation noted in [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), open question 6). **The one genuine reconstruction is the module-path/classpath split**
 (Gradle's `inferModulePath` decision, which it does not expose) — done with plexus-java, the same
 library and logic Maven uses, so the two agree by construction. After the compile, a **non-cacheable
 finalizer** mirrors `destinationDirectory` → `.lathe/<module>/<tree>` and writes stamps — the same
@@ -350,7 +350,7 @@ the step **name** is readable, the version and options are not (spiked on Spotle
 ## JDK requirement
 
 The plugin and everything it loads (`lathe-core`, `lathe-install`) target **Java 17**
-([Wider Maven and JDK Support](lathe-wider-maven-support.md) D7), so:
+([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) D7), so:
 
 - the Gradle daemon may run on JDK 17 or newer — Gradle 9's own minimum, and Gradle 8.8+ runs on 17;
 - test workers that toolchains run on JDK 17 load `lathe-junit` (also Java 17), so test capture works under toolchains;
@@ -381,7 +381,7 @@ Two registration styles, mirroring Maven's "build extension in the POM" vs "core
 | `.lathe/` exists | overrides the property opt-out (not the absolute kills) |
 
 **Fail-fast requirements check — the counterpart of the Maven side's
-[D3](lathe-wider-maven-support.md#d3--fail-fast-clearly-on-an-unsupported-build-decided-2026-10-18) (decided 2026-10-18).**
+[D3](../done/lathe-wider-maven-support.md#d3--fail-fast-clearly-on-an-unsupported-build-decided-2026-10-18) (decided 2026-10-18).**
 The settings plugin checks before any project is configured, as `afterProjectsRead` does for Maven: it collects every unmet requirement and,
 if there is one, stops the build with one message naming each problem, its fix, and how to build without Lathe. No configuration, no partial support.
 
@@ -495,7 +495,7 @@ and the fidelity claims are all under test.
 ## Slicing
 
 0. **Prerequisites** — the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) (done);
-   the JDK 17 floor ([Wider Maven and JDK Support](lathe-wider-maven-support.md) slice 0);
+   the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0);
    [Multi-OS](lathe-multi-os.md) A0–A3 with the Maven-free `lathe-install` (before slice 2).
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the non-cacheable capture
    finalizer on `JavaCompile` → `ModuleConfigData`, bytecode mirror, stamps. Delivers full **code

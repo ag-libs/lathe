@@ -303,8 +303,9 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
 
 - Guides (editor-agnostic): [how Lathe works](docs/guide/how-it-works.md) ·
   [installation](docs/guide/installation.md) · [run configuration](docs/guide/run-configuration.md) ·
-  [test capture](docs/guide/test-capture.md)
-- Editor references: [Neovim](docs/guide/editors/neovim.md)
+  [test capture](docs/guide/test-capture.md) · [OpenJDK](docs/guide/openjdk.md)
+- Editor references: [Neovim](docs/guide/editors/neovim.md) · [VS Code](docs/guide/editors/vscode.md) ·
+  [Emacs (Eglot)](docs/guide/editors/emacs.md) · [Zed](docs/guide/editors/zed.md)
 - AI agents: [MCP server guide](docs/guide/ai-agents.md)
 - Project: [status](docs/status.md) · [roadmap](docs/roadmap.md) ·
   [design index](docs/design-index.md) · [architecture](docs/lathe-design.md)
