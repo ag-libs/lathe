@@ -15,7 +15,7 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 
 1. [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) — **done (2026-10-11).**
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
-2. [Multi-OS](lathe-multi-os.md) Phase A, slices A0–A3 — portable launchers, `SyncCommand`, portable data and names.
+2. [Multi-OS](lathe-multi-os.md) Phase A, slices A2 and A1 — the sync script rendered from the build, and portable launchers (the rest of Phase A can follow).
    Before this design's slice 2; slice 1 can run alongside.
 3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
    Before slice 1, so the plugin is written against Java 17 from the start.
@@ -35,7 +35,7 @@ Results are folded into the sections below and summarized in [Spike results](#sp
 No showstopper was found; both Gradle versions behaved identically.
 
 **Multi-OS:** the [Multi-OS Design](lathe-multi-os.md) changes the launcher and sync files below.
-They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync logic moves into a build-neutral `SyncCommand` that the Gradle front-end feeds through `.lathe/lathe-sync.args`.
+They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync script runs the tool that ran the build, written into it as a literal; the Gradle front-end renders it from the same template as Maven, with its own goals and module pattern ([Multi-OS](lathe-multi-os.md) D3).
 Its Phase A (A0–A3) should land before this design's slice 2, so `latheSync` writes portable files from the start.
 
 ## Goal
@@ -62,7 +62,7 @@ know Maven exists. The entire Maven integration exists to *produce* these files:
 | `.lathe/workspace.json` | `WorkspaceManifestData` (incl. `outputs`, `buildFiles`) | `sync` goal (`WorkspaceManifestWriter`) |
 | `.lathe/java-home`, `.lathe/jvm.args` | plain text | `sync` goal |
 | `.lathe/style.json` | `WorkspaceStyle` | `sync` goal (`WorkspaceStyleWriter`, from Spotless config) |
-| `.lathe/lathe-sync.{sh,cmd}`, `lathe-sync.args` | sync trampoline + build invocation ([Multi-OS](lathe-multi-os.md) D3) | `sync` goal |
+| `.lathe/lathe-sync.{sh,cmd}` | sync script running the tool that ran the build ([Multi-OS](lathe-multi-os.md) D3) | `sync` goal |
 | `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}` | generated launchers ([Multi-OS](lathe-multi-os.md)) | `sync` goal |
 | `.lathe/lathe.lock` | build lock, heartbeated, stale after 2 minutes (`LatheLock`) | Maven extension (whole build) |
 
@@ -124,7 +124,7 @@ They move into `lathe-install`, which then depends only on `lathe-core`:
 - `ParamsWriter` and the mirror/stamp writer take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
 - `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values.
 
-This is done with [Multi-OS](lathe-multi-os.md) A2, which puts `SyncCommand` into `lathe-install` and touches the same code.
+This is done with [Multi-OS](lathe-multi-os.md) A2, which renders the sync script from the recorded tool and touches the same code.
 
 **New:** a `lathe-gradle-plugin` module (a **settings plugin** + a **project plugin** + a `latheSync`
 task), depending on `lathe-core` and resolving `lathe-test-runner`/`lathe-junit` at sync time — the
@@ -231,7 +231,7 @@ absolute paths. Instead, in capture mode only, the plugin sets
 `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }`.
 Spiked with build and configuration caches on: two consecutive capture-only runs both forked, and the
 real `test` task kept its own cache entry (`FROM-CACHE` / `UP-TO-DATE` as usual).
-The sync invocation (`.lathe/lathe-sync.args`, read by [Multi-OS](lathe-multi-os.md) D3's `SyncCommand`) additionally passes `--no-build-cache`,
+The sync script ([Multi-OS](lathe-multi-os.md) D3) additionally passes `--no-build-cache`,
 so a cached `compileJava` does not skip compiler capture either,
 and `--no-configuration-cache`, so formatter-version observation runs (see [Formatter](#formatter-stylejson)).
 

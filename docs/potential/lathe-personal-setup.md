@@ -5,7 +5,7 @@ This document records a design discussion held on 2026-10-18: the goals, the fac
 It is meant to be picked up again later. Where the discussion leaned towards an option, that is noted, but nothing here is approved.
 
 Related designs:
-- [Multi-OS Design](../planned/lathe-multi-os.md): the build-neutral `SyncCommand` (D3, decided) and the tool resolver (D9).
+- [Multi-OS Design](../planned/lathe-multi-os.md): the sync script that runs the tool that ran the build (D3, decided 2026-10-19) and the tool resolver (D9).
 - [Wider Maven Support](../done/lathe-wider-maven-support.md): the Maven 3.6.3 floor, the Plexus-descriptor fix, and detect-and-explain for unsupported setups.
 - [VS Code client](../planned/lathe-vscode-client.md): §7 first-run UX and §8 protocol handshake.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the existing coordinate-invoked front-end this design would reuse.
@@ -71,7 +71,7 @@ Consequently, pre-flight is about **detecting and explaining**, not installing.
 With real users mostly on older Maven, `-Dmaven.ext.class.path` would be the main path, and `~/.m2/extensions.xml` an optional upgrade on 3.10+.
 On Maven before 3.9, either path only works once the extension is registered through a Plexus descriptor (Wider Maven Support D1). Under the old Sisu index it is silently dropped.
 
-**How the activation would persist across syncs:** the build records how Lathe was loaded (the `-D` value is visible in the session's user properties) as an activation line in `.lathe/lathe-sync.args`. `SyncCommand` replays it on every later sync, whether started from an editor, a terminal or Neovim.
+**How the activation would persist across syncs:** the build records how Lathe was loaded (the `-D` value is visible in the session's user properties) and renders it into the sync script along with the tool that ran the build (multi-OS D3). Every later sync replays it, whether started from an editor, a terminal or Neovim.
 
 ```
 --tool maven
@@ -85,13 +85,13 @@ On Maven before 3.9, either path only works once the extension is registered thr
 
 ### Option A — jars bundled in the editor extension
 
-The `.vsix` bundles `lathe-maven-extension`, `lathe-core` and `lathe-install`, copies them to `~/.cache/lathe/bootstrap/<version>/`, and starts `SyncCommand` directly for the first sync.
+The `.vsix` bundles `lathe-maven-extension`, `lathe-core` and `lathe-install`, copies them to `~/.cache/lathe/bootstrap/<version>/`, and runs the first build itself, with the activation flags, so that build renders the sync script.
 
 - **Pros:** works offline for the bootstrap step; the extension controls the version exactly.
 - **Cons:**
   - VS Code-only. Neovim, Zed and Emacs would need their own copies or nothing.
   - The extension downloads nothing itself, but it ships Java artifacts inside a Node package.
-  - To start the first `SyncCommand`, the extension must find a JDK 21 itself.
+  - To run the first sync, before any sync script exists, the extension must find a JDK 17+ and the build tool itself.
 
 ### Option B — a Maven goal invoked by coordinates (the OpenJDK pattern)
 
@@ -102,7 +102,7 @@ mvn io.github.ag-libs:lathe-maven-plugin:setup
 or with `./mvnw` / `mvnw.cmd`, and optionally pinned (`…:0.1.22:setup`). The goal would:
 
 1. Resolve `lathe-maven-extension` and `lathe-core` at its own version **through the user's Maven** (`settings.xml`, proxies, mirrors), the same way `ServerInstaller` resolves the server today, and copy them to the bootstrap cache.
-2. Write `.lathe/`: the sync trampoline, `lathe-sync.args` with the activation line, and `.lathe/.gitignore` (`*`).
+2. Write `.lathe/`: the sync script with the activation flags, and `.lathe/.gitignore` (`*`).
 3. Run the first sync as a **nested Maven build** with the activation.
 4. Optionally, on Maven 3.10+, offer `~/.m2/extensions.xml` instead.
 
@@ -137,9 +137,9 @@ The essential difference: OpenJDK reads a *finished* `make` build, while Maven's
 
 ### The sync entry converges across front-ends
 
-With `SyncCommand` (multi-OS D3), every front-end's sync becomes an entry in `.lathe/lathe-sync.args`:
+With multi-OS D3, every front-end's sync is the same script template, run with the recorded tool; what differs is what the front-end renders into it:
 
-| Front-end | Sync entry |
+| Front-end | Rendered into the sync script |
 |---|---|
 | OpenJDK | `goal io.github.ag-libs:lathe-openjdk-maven-plugin:<v>:sync -Dlathe.buildDir=…` |
 | Maven, team mode | `build process-test-classes` (the build activates Lathe itself) |
@@ -228,4 +228,4 @@ All of them fit into one session in a sandbox like the 2026-10-18 Maven 3.6.3 sp
 ## Milestone candidate
 
 Untriaged.
-The earliest it would make sense: after Wider Maven Support slice 1 (the extension loads on old Maven) and multi-OS Phase A (`SyncCommand`), and alongside the VS Code client's Marketplace / Open VSX publish.
+The earliest it would make sense: after Wider Maven Support slice 1 (the extension loads on old Maven) and multi-OS Phase A (the recorded-tool sync script), and alongside the VS Code client's Marketplace / Open VSX publish.

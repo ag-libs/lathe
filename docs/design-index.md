@@ -351,7 +351,7 @@ reused):
 - [Personal Setup](potential/lathe-personal-setup.md) — **potential, no decisions.** Records the
   2026-10-18 discussion on using Lathe without changing the project, in VS Code/Cursor, Neovim, Zed,
   Emacs and the terminal. Covers personal vs team mode; activation via `-Dmaven.ext.class.path` (Maven
-  3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by `SyncCommand`; option A (jars in the `.vsix`) vs
+  3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by the generated sync script; option A (jars in the `.vsix`) vs
   option B (a coordinate-invoked setup goal, the OpenJDK front-end's pattern); per-editor journeys;
   detect-and-explain; open questions and spikes.
 - [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
