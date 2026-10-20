@@ -13,7 +13,9 @@ public record WorkspaceManifestData(
     List<DependencyData> dependencySources,
     List<String> buildFiles,
     List<ResourceRootData> resourceRoots,
-    List<OutputData> outputs) {
+    List<OutputData> outputs,
+    // The tool that ran the last build (the sync script runs it too), for the formatter's %MVN%.
+    String buildTool) {
 
   public WorkspaceManifestData {
     ValidCheck.check()

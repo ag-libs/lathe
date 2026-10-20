@@ -43,6 +43,7 @@
             <lathe.version>@project.version@</lathe.version>
             <user.home>${user.home}</user.home>
             <lathe.cache>${lathe.cache}</lathe.cache>
+            <maven.home>${maven.home}</maven.home>
           </systemPropertyVariables>
         </configuration>
       </plugin>

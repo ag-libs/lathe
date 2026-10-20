@@ -60,7 +60,7 @@ final class MainLaunchWriter {
 
   private MainLaunchData deriveLaunch(final MavenProject project, final String workingDir) {
     final List<String> runtimeElements = runtimeClasspath(project);
-    final String javaHome = System.getProperty("java.home");
+    final String javaHome = System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
     final Path moduleInfo = moduleInfoSource(project);
     if (moduleInfo == null) {
       return new MainLaunchData(

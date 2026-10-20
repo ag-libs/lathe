@@ -256,10 +256,8 @@ public final class ServerInstaller {
 
   // Picks the JDK for the server's in-process compiler: LATHE_JAVA_HOME, else the build JDK in
   // .lathe/java-home (relative to the server cwd = workspace root), else PATH java. Shared by both
-  // launchers. In a method body, not a field, so the plugin descriptor's QDOX parser skips the
-  // block.
-  // Shared with the sync script, which runs the build on the same JDK the server launcher picks.
-  public static String javaResolvePrologue() {
+  // launchers; a method body rather than a field, so the plugin descriptor's QDOX parser skips it.
+  private static String javaResolvePrologue() {
     return """
         jhome="${LATHE_JAVA_HOME:-}"
         if [ -z "$jhome" ] && [ -r .lathe/java-home ]; then

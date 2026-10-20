@@ -12,18 +12,20 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class FileCommandFormatEngineTest {
 
   private static final Function<Path, Optional<String>> NO_MODULE = file -> Optional.empty();
+  private static final Supplier<Optional<Path>> NO_TOOL = Optional::empty;
 
   @TempDir private Path root;
 
   private FileCommandFormatEngine engine(final List<String> command) {
     return new FileCommandFormatEngine(
-        command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT, NO_MODULE);
+        command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT, NO_MODULE, NO_TOOL);
   }
 
   @Test
@@ -66,7 +68,8 @@ class FileCommandFormatEngineTest {
             List.of("sh", "-c", "printf %MODULE% > %FILE%"),
             root,
             FileCommandFormatEngine.DEFAULT_TIMEOUT,
-            file -> file.startsWith(sub) ? Optional.of("sub") : Optional.empty());
+            file -> file.startsWith(sub) ? Optional.of("sub") : Optional.empty(),
+            NO_TOOL);
 
     assertThat(echoModule.format("x", sub.resolve("Foo.java"))).isEqualTo("sub");
     assertThat(echoModule.format("x", root.resolve("Root.java"))).isEqualTo(".");
@@ -83,7 +86,8 @@ class FileCommandFormatEngineTest {
   @Test
   void format_exceedsTimeout_throws() {
     final var slow =
-        new FileCommandFormatEngine(List.of("sleep", "5"), root, Duration.ofMillis(200), NO_MODULE);
+        new FileCommandFormatEngine(
+            List.of("sleep", "5"), root, Duration.ofMillis(200), NO_MODULE, NO_TOOL);
 
     assertThatThrownBy(() -> slow.format("x", root.resolve("F.java")))
         .isInstanceOf(IOException.class)
@@ -91,26 +95,22 @@ class FileCommandFormatEngineTest {
   }
 
   @Test
-  void mavenExecutable_prefersMvndThenWrapperThenMvn() throws Exception {
-    final Path binDir = root.resolve("bin");
-    Files.createDirectories(binDir);
-    final Path mvnd = binDir.resolve("mvnd");
-    Files.writeString(mvnd, "#!/bin/sh\n");
-    mvnd.toFile().setExecutable(true);
+  void format_mvnToken_runsTheRecordedBuildTool_failingWhenNoneIsRecorded() throws Exception {
+    final Path tool = root.resolve("tool");
+    Files.writeString(tool, "#!/bin/sh\nprintf 'by tool' > \"$1\"\n");
+    assertThat(tool.toFile().setExecutable(true)).isTrue();
+    final var recorded =
+        new FileCommandFormatEngine(
+            List.of("%MVN%", "%FILE%"),
+            root,
+            FileCommandFormatEngine.DEFAULT_TIMEOUT,
+            NO_MODULE,
+            () -> Optional.of(tool));
 
-    // mvnd on PATH wins even when a wrapper exists.
-    final Path wrapper = root.resolve("mvnw");
-    Files.writeString(wrapper, "#!/bin/sh\n");
-    wrapper.toFile().setExecutable(true);
-    assertThat(FileCommandFormatEngine.mavenExecutable(root, binDir.toString())).isEqualTo("mvnd");
-
-    // No mvnd on PATH: the project's ./mvnw wrapper.
-    assertThat(FileCommandFormatEngine.mavenExecutable(root, ""))
-        .isEqualTo(wrapper.toAbsolutePath().toString());
-
-    // Neither: plain mvn.
-    Files.delete(wrapper);
-    assertThat(FileCommandFormatEngine.mavenExecutable(root, "")).isEqualTo("mvn");
+    assertThat(recorded.format("x", root.resolve("F.java"))).isEqualTo("by tool");
+    assertThatThrownBy(() -> engine(List.of("%MVN%", "%FILE%")).format("x", root.resolve("F.java")))
+        .isInstanceOf(IOException.class)
+        .hasMessageContaining("%MVN%");
   }
 
   @Test
@@ -120,11 +120,14 @@ class FileCommandFormatEngineTest {
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
             () ->
-                new FileCommandFormatEngine(List.of("mvn"), null, Duration.ofSeconds(1), NO_MODULE))
+                new FileCommandFormatEngine(
+                    List.of("mvn"), null, Duration.ofSeconds(1), NO_MODULE, NO_TOOL))
         .as("null workspace root")
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
-            () -> new FileCommandFormatEngine(List.of("mvn"), root, Duration.ZERO, NO_MODULE))
+            () ->
+                new FileCommandFormatEngine(
+                    List.of("mvn"), root, Duration.ZERO, NO_MODULE, NO_TOOL))
         .as("non-positive timeout")
         .isInstanceOf(ValidationException.class);
   }

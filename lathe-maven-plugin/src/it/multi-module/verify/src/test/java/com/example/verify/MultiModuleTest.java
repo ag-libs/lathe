@@ -97,16 +97,17 @@ class MultiModuleTest {
             "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED");
   }
 
-  // Its behavior (goal, scope, tool, JDK) is covered by SyncScriptWriterTest, which runs it.
+  // Its behavior (goal, scope, tool, JDK) is covered by SyncScriptTest, which runs it.
   @Test
-  void sync_syncScript_writtenExecutable() throws IOException {
+  void sync_syncScript_runsTheMavenThatRanThisBuild() throws IOException {
     final var script = lathe("lathe-sync.sh");
     assertThat(script).isRegularFile().isExecutable();
     assertThat(read(script))
         .startsWith("#!/bin/sh\n")
+        .contains("tool='%s/bin/mvn'".formatted(System.getProperty("maven.home")))
         .contains("-Dmaven.build.cache.enabled=false")
         .contains("-am\"")
-        .doesNotContain("-amd");
+        .doesNotContain(" -amd");
   }
 
   // --- sync: workspace.json ---

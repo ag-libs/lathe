@@ -111,6 +111,7 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `buildFiles` | workspace-relative build files the server watches for changes |
 | `resourceRoots` | resource directories, their build output, and owning module (`ResourceRootData`) |
 | `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
+| `buildTool` | absolute path of the tool that ran the last build (the one `lathe-sync.sh` runs); the formatter's `%MVN%` |
 
 Each `outputs` entry is a workspace-relative `path` (an output directory or a packaged jar), the owning `module` (`""` for the root), and its `tree`.
 The server and launch planner rewrite a listed path to `.lathe/<module>/<tree>`; an unlisted path, such as a jar committed in the repo, is used as written.
@@ -159,6 +160,8 @@ server and MCP remediation messages name it.
 A front-end that cannot honor `--tests` or modules accepts and ignores them with a note on stderr.
 Full specification: [Sync Launcher](planned/lathe-sync-launcher.md).
 
+The script runs the tool that ran the last build, on that build's JDK, both written in as absolute paths; it chooses nothing at runtime, and stops with a hint to rebuild if the tool is gone.
+Every front-end renders it from one model, `lathe-install`'s `SyncScript` ([Multi-OS](planned/lathe-multi-os.md) D3).
 Maven writes it from `lathe:sync` on a full reactor.
 
 ### `java-home`

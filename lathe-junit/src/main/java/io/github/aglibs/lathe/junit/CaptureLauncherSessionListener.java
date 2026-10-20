@@ -37,7 +37,7 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
     final Path moduleDir = root.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
     final TestLaunchData data =
         LaunchCapture.toLaunchData(
-            System.getProperty("java.home"),
+            System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
             System.getProperty("java.class.path", ""),
             ManagementFactory.getRuntimeMXBean().getInputArguments(),
             ownJarLocation().orElse(null),

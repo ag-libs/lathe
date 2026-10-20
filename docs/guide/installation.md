@@ -332,7 +332,7 @@ Engines you can select there:
 - `command` pipes the buffer through the command (10 s timeout).
 - `command-file` writes the buffer to a hidden temporary file beside the edited one (so Spotless's
   includes still match it), runs the command, and reads the result back (60 s timeout).
-  Its tokens: `%MVN%` → `mvnd` if on the `PATH`, else `./mvnw`, else `mvn`; `%MODULE%` → the edited
+  Its tokens: `%MVN%` → the Maven that ran your last build (`mvnd`, the wrapper's Maven or `mvn`); `%MODULE%` → the edited
   file's module directory; `%FILE%` → the temporary file.
   Running Maven per save takes seconds; with `mvnd` it is well under a second.
 - Both run from the workspace root, format whole files only, and pay process startup on every format.

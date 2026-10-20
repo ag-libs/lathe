@@ -1389,6 +1389,10 @@ final class WorkspaceSession {
 
   // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
   // root module.
+  Optional<Path> buildTool() {
+    return manifest.buildTool();
+  }
+
   Optional<String> moduleRelOf(final Path file) {
     return workspace
         .moduleSourceFor(file)

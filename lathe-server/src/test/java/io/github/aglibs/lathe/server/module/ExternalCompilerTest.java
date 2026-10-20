@@ -234,7 +234,8 @@ class ExternalCompilerTest {
             deps,
             List.of(),
             List.of(),
-            List.of()),
+            List.of(),
+            null),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -261,7 +262,8 @@ class ExternalCompilerTest {
             deps,
             List.of(),
             List.of(),
-            List.of()),
+            List.of(),
+            null),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 
@@ -281,7 +283,8 @@ class ExternalCompilerTest {
             List.of(),
             List.of(),
             List.of(),
-            List.of()),
+            List.of(),
+            null),
         latheDir.resolve(LatheLayout.WORKSPACE_JSON));
   }
 

@@ -52,7 +52,12 @@ public final class SyncMojo extends AbstractMojo {
         getLog().info("[discover] build %s selected".formatted(buildPath));
       }
 
-      OpenJdkSync.sync(buildPath, Path.of(workspaceRoot), PluginProps.version(), getLog()::info);
+      OpenJdkSync.sync(
+          buildPath,
+          Path.of(workspaceRoot),
+          PluginProps.version(),
+          session.getSystemProperties(),
+          getLog()::info);
       installServer();
     } catch (final IOException e) {
       throw new MojoExecutionException("lathe openjdk sync failed", e);
