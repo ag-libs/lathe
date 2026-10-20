@@ -1,0 +1,5 @@
+# One line ending on every OS: a Windows checkout would otherwise get CRLF and fail the formatter
+# checks. Windows batch scripts are the exception, since cmd.exe misparses labels in LF files.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf

@@ -220,6 +220,10 @@
                   <include>**/*.md</include>
                   <include>**/*.sh</include>
                 </includes>
+                <!-- Generated scripts and test output (invoker fixtures' .lathe/) are not sources. -->
+                <excludes>
+                  <exclude>**/target/**</exclude>
+                </excludes>
                 <trimTrailingWhitespace/>
                 <endWithNewline/>
               </format>
