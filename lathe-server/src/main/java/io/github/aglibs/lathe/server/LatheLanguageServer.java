@@ -297,7 +297,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
         command,
         workingDir,
         FileCommandFormatEngine.DEFAULT_TIMEOUT,
-        textDocumentService::moduleRelOf);
+        textDocumentService::moduleRelOf,
+        textDocumentService::buildTool);
   }
 
   // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,

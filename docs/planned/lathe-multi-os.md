@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; B0 and A2 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -111,6 +111,9 @@ The violations are concentrated:
 | R6 | `%MVN%` looks for `mvnd` and `mvnw` without extensions and falls back to bare `mvn`. | `FileCommandFormatEngine.java:83-106` | Maven-driven formatting fails | — |
 | R6 | Run/test classpaths are passed inline. | `lathe-core` `launch/LaunchPlan.java:162-177`, `run/Launcher.java:29` | `CreateProcess error=206` on real projects | — |
 | E4 | Replacing a read-only file; `ATOMIC_MOVE` over a file held open; deleting a tree Defender is scanning. | `FileUtil.extractEntry:290-305`, `FileUtil.moveReplacing`, `LatheCompiler.replaceDir`, `ZipCache` | Reopening a resource fails; intermittent sync failures | — |
+| E4 | *Found by B0.* `deleteDir` calls `setWritable(true)` on every path, and on Windows that returns false for any directory, so it always throws. | `FileUtil.deleteDir`, `FileUtil.setWritable` | `lathe:sync` fails extracting dependency sources; about 394 test errors through `TempSourceCompiler.close` | — |
+| E4 | *Found by B0.* Some code path keeps a jar open after reading it. | `WorkspaceManifestTest` cleanup fails on `greeter.jar` | A running server could block `mvn clean` | — |
+| R5 | *Found by B0.* No `.gitattributes`: a Windows checkout gets CRLF, and Spotless's `*.sh` check also scans generated scripts under `target/`. | repo root, Spotless config | Prettier and `spotless:check` fail the build before any test runs | — |
 | R8 | CI runs `ubuntu-latest` only. *macOS resolved: a `macos-latest` row (JDK 25) since `5a169ce3`.* | `.github/workflows/ci.yml` | No coverage | — |
 
 Things that look risky but are fine:
@@ -264,6 +267,10 @@ The renderers (D2) turn these into the host dialect: POSIX first, since it exist
 
 Java has accepted argfiles since JDK 9; Lathe requires 17.
 
+- **Encoding (B0):** the Java launcher reads an argfile in the platform's ANSI code page (`native.encoding`, e.g. cp1252), not UTF-8: a UTF-8 argfile under `C:\Users\Jöran\…` fails with "module not found", a cp1252 one works.
+  So argfiles are written in `native.encoding`, and a path that charset can't encode fails sync loudly instead of producing a broken launcher.
+- **Limit:** a path outside the ANSI code page (a Cyrillic user name under a Western locale) can't work at all: Java sees `????` for it, and Maven reports success while silently never loading Lathe's extension, so Lathe can't even report it. This is documented, not fixed ([Non-goals](#non-goals)).
+
 ### D6 — Canonical URIs at the boundary
 
 `LatheUri.canonical(String uri)` returns `toPath(uri).toUri().toString()` for a `file:` URI, which is the form the server builds everywhere else. Any other URI passes through unchanged.
@@ -293,6 +300,8 @@ The schema records normalize these fields in their compact constructors, so no w
 This makes a committed `lathe-run.json` work across OSes.
 Absolute paths stay native: they are machine-specific anyway.
 
+B0 confirmed this is a live bug on Windows, not only a portability nicety: one compile-stamp map held both `com/example/Foo.java` and `com\example\Foo.java`, which breaks staleness detection, and `workspace.json` held `core\\target\\classes`.
+
 ### D9 — One tool resolver
 
 E3 lives in `lathe-core` and answers one question for the processes the **server** starts: how to start tool X here.
@@ -320,7 +329,7 @@ The Windows form is needed because Node, since the CVE-2024-27980 fix, refuses t
 `/d` skips AutoRun, so a user's `cmd` profile can't write to stdout and corrupt the protocol.
 `/s` with the doubled quotes keeps paths with spaces intact.
 
-The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`) and when stdin closes (`LatheServer.java:42`), so killing `cmd.exe` doesn't leave `java.exe` behind.
+The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`) and when stdin closes (`LatheServer.java:42`). B0 confirmed that killing `cmd.exe` leaves no `java.exe` behind, but only because the client closes the pipes when `cmd.exe` exits (Node does): a client that kept stdin open would leak `java.exe`.
 
 ### D12 — Enforcement
 
@@ -429,11 +438,12 @@ Each slice can be merged on its own.
 
 **Order (decided 2026-10-20):** Multi-OS closes before Gradle starts, and the sync script generator is build-neutral from the start, so Gradle only fills in the model later.
 
-1. **B0**, the Windows spike, first: it needs no production code and can amend this design before anything is built on it.
-2. **A2**, the sync script from the build: the working Maven script is the template.
-3. **A1**, launcher models and server argfiles, on the same renderer.
-4. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
-5. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
+1. **B0**, the Windows spike, first: it needs no production code and can amend this design before anything is built on it. *Done.*
+2. **A2**, the sync script from the build: the working Maven script is the template. *Done.*
+3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows.
+4. **A1**, launcher models and server argfiles, on the same renderer.
+5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
+6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
 `lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
 
@@ -460,10 +470,15 @@ Each slice can be merged on its own.
 - D3: the sync script rendered from today's Maven script as the template, with the build's tool and JDK as literals and a check that the tool still exists.
 - `workspace.json` gets `buildTool`, which the formatter's `%MVN%` reads instead of searching.
 
+*Done (2026-10-20).* As built:
+- `SyncScript` in `lathe-install` holds the model and renders itself (`posix()`; B1 adds `cmd()` beside it). `LatheLayout.Maven.runningTool` picks `<mvnd.home>/bin/mvnd` over `<maven.home>/bin/mvn`, since under mvnd `maven.home` is the Maven it embeds (checked on mvnd 1.0.3). The Maven and OpenJDK front-ends both use it.
+- `SyncScriptTest` runs rendered Maven-, Gradle- and OpenJDK-shaped scripts against a stub tool under a path with a space and a quote, instead of comparing golden text: no arguments, `--tests`, modules, both, ignored arguments, and a missing tool.
+- The invoker fixture checks that the script names the Maven that ran it, and a second invocation runs `-pl app -pl core -am`, so every CI row's Maven, 3.6.3 included, confirms repeated `-pl`. Running the script inside the invoker build would start a nested build under the running build's lock.
+- On equalsverifier, the generated script ran scoped and with `--tests` with `JAVA_HOME` unset and `PATH` stripped to `/usr/bin:/bin`.
+
 **Exit:**
 - `lathe-sync.sh` chooses no tool and resolves no JDK: it runs the tool that ran the build, and fails clearly when that's gone.
-- Golden tests cover the rendered script for a plain, a wrapper and an mvnd build, with and without modules and `--tests`.
-- The invoker fixture runs the generated script, scoped and with `--tests`.
+- The rendered script's behavior is tested for a plain, a wrapper and an mvnd build, with and without modules and `--tests`.
 
 #### A3 — Data and names
 
@@ -487,6 +502,13 @@ Each slice can be merged on its own.
 
 **Exit:** a deliberately introduced symlink, `:` file name or bare `ProcessBuilder` fails Linux CI.
 
+#### A6 — Windows build blockers (found by B0)
+
+- `FileUtil.deleteDir` makes only files writable, never directories.
+- `.gitattributes` (`* text=auto eol=lf`, `*.cmd text eol=crlf`), and Spotless with Unix line endings and `target/**` excluded.
+
+**Exit:** with these two, B0 showed the full build passing on Windows, the multi-module fixture's sync and the names guard included.
+
 ### Phase B — Windows
 
 #### B0 — Spike on a Windows CI runner
@@ -507,11 +529,20 @@ It uses a throwaway branch and workflow on `windows-latest`:
 
 **Exit:** D1, D5 and D11 hold, or this document is amended.
 
+*Done (2026-10-20)* on `windows-latest` (Windows Server 2025, Temurin 21, Maven 3.9.16; runs [1](https://github.com/ag-libs/lathe/actions/runs/39380397451), [2](https://github.com/ag-libs/lathe/actions/runs/39381674675), throwaway branch `spike/b0-windows`):
+- **D1 holds.** `cmd` passes stdio straight to `java.exe` (no stray bytes); CRLF and `set /p` work. `chcp 65001` is required for a non-ASCII literal on a desktop console (cp850 without it: `J??ran`); the runner's console is already UTF-8 and hides this, so B1's CI emulates one.
+- **D5 holds for quoting and `;`, not for encoding:** amended above.
+- **D11 holds,** with a space and `ö` in the path; wording amended above.
+- **D3 holds:** `call "<maven.home>\bin\mvn.cmd"` works, the wrapper too; under mvnd `maven.home` is the embedded Maven and the client is `<mvnd.home>\bin\mvnd.exe`. A `cmd` sync script sketch worked from `cmd` and PowerShell.
+- **`-pl`:** backslash module paths and repeated `-pl` work on 3.9.16 and 3.6.3.
+- **Today's build:** besides A6's two blockers, the failures are D8, E4 handles and POSIX-only test fixtures, as the audit expected, plus five unexplained cases B1 looks at (`ExternalCompilerTest` manifest `Class-Path`, `ModuleNameDiscoveryTest`, `CompletionImportAndPackageTest`, `WorkspaceManifestTest.externalSourceRoot`, `FileUtilTest.unzip` with absolute entries).
+
 #### B1 — Windows edge
 
 - E1 Windows dialect, the `cmd` renderers (launchers and the sync script), E3/E4 Windows branches.
 - D9 for the server's own process starts: `LaunchPlan`, the formatter and external commands go through E3, including the D5 launch argfile for Windows' command-line limit.
-- Add `windows-latest` to the CI matrix: build, the portable test subset, the invoker run with the names guard, and the stdio smoke against the launcher `lathe:sync` generates.
+- Add `windows-latest` to the CI matrix: build, the portable test subset, the invoker run with the names guard, and the stdio smoke against the launcher `lathe:sync` generates. The smoke also runs under an emulated desktop console code page (cp850), since the runner's UTF-8 console hides `chcp` mistakes.
+- The server launcher passes `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8`: B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.
 
 **Exit:** all three CI rows green; `.lathe\lathe-sync.cmd` works from `cmd` and PowerShell.
 
@@ -527,7 +558,7 @@ It uses a throwaway branch and workflow on `windows-latest`:
 
 - Watch for E4 retries in Windows CI logs.
 - Test-run argfiles on Dropwizard and Helidon.
-- `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8` for launched JVMs.
+- `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8` for launched run/test JVMs (the server launcher has it since B1).
 
 **Exit:** **human session 2** passes.
 
@@ -607,6 +638,7 @@ A human re-check is needed only when a change touches the launchers, a client's 
 - **A VS Code handler for the `lathe/sync` notification.** It's missing on every OS, and belongs to the [VS Code client](lathe-vscode-client.md) parity work.
 - **Non-UTF-8 source encodings in the server.** R5 forbids default-charset APIs, but honoring the project's `-encoding` is a separate feature.
 - **PowerShell scripts** (D1).
+- **Paths outside the ANSI code page** (D5): Java and Maven can't use them, and Maven doesn't even report it. Documented in the Windows installation notes.
 - **Neovim and Emacs on Windows** (decided 2026-10-19). Cursor (with VS Code) and Zed are the Windows clients; Neovim and Emacs stay Linux and macOS only, and their docs say so.
 
 ### Available today: WSL
@@ -616,7 +648,8 @@ Until Phase B ships, a Windows user can run Lathe unchanged through VS Code's Re
 ## Risks
 
 - **Defender and indexer locks** make output-mirror refreshes flaky on Windows. E4 retries mitigate this; watch Windows CI for `post-compile step failed`.
-- **Non-ASCII user profiles** depend on `chcp 65001` and on how the Java launcher decodes argfiles, both checked in B0. The fallback is to put the cache path in through `%USERPROFILE%` rather than as a literal.
+- **Non-ASCII user profiles** work within the ANSI code page, given `chcp 65001` and argfiles in `native.encoding` (B0); outside it they can't work (D5, Non-goals).
+- **Jar handles** a running server keeps open could block `mvn clean` on Windows (E4, found by B0).
 - **Path length:** bounded by the R1 guard. See [Directory layout](#directory-layout).
 - **macOS quirks** that CI shows: a case-insensitive filesystem combined with Java's case-sensitive `Path` equality, and `/var` → `/private/var` for temp directories.
   The symlinked temp path already surfaced two bugs, both fixed with the macOS row: the server misnamed written classes when the workspace path goes through a symlink (`5d034fe9`),

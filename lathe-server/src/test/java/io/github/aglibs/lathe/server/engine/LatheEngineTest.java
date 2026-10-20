@@ -209,7 +209,16 @@ class LatheEngineTest {
     Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
     Json.write(
         new WorkspaceManifestData(
-            "0", tmp.toString(), null, List.of(), null, List.of(), List.of(), List.of(), List.of()),
+            "0",
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            null),
         tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
     engine = new LatheEngine(tmp);
 

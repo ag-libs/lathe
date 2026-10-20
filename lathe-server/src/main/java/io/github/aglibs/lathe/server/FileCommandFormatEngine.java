@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -20,13 +20,15 @@ import java.util.logging.Logger;
 // source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
 // The name is a dotfile so file-trees/fuzzy-finders that hide dotfiles (neo-tree, oil, Telescope)
 // do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
-// Tokens: %MVN% -> mvnd/mvnw/mvn, %FILE% -> temp path, %MODULE% -> the file's module or ".", as
-// moduleOf (the workspace's module registry) names it.
+// Tokens: %MVN% -> buildTool, the tool that ran the last build (never searched for), %FILE% -> temp
+// path, %MODULE% -> the file's module or ".", as moduleOf (the workspace's module registry) names
+// it.
 record FileCommandFormatEngine(
     List<String> command,
     Path workspaceRoot,
     Duration timeout,
-    Function<Path, Optional<String>> moduleOf)
+    Function<Path, Optional<String>> moduleOf,
+    Supplier<Optional<Path>> buildTool)
     implements FormatEngine {
 
   private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
@@ -38,6 +40,7 @@ record FileCommandFormatEngine(
         .notEmpty(command, "command")
         .notNull(workspaceRoot, "workspaceRoot")
         .notNull(moduleOf, "moduleOf")
+        .notNull(buildTool, "buildTool")
         .assertTrue(
             timeout != null && timeout.compareTo(Duration.ZERO) > 0, "timeout must be positive")
         .validate();
@@ -66,10 +69,23 @@ record FileCommandFormatEngine(
     }
   }
 
-  private List<String> resolve(final Path file) {
+  private List<String> resolve(final Path file) throws IOException {
     final String absolute = file.toAbsolutePath().toString();
     final String module = moduleOf.apply(file).orElse(".");
-    final String maven = mavenExecutable(workspaceRoot, System.getenv("PATH"));
+    // Only a command that names %MVN% needs a recorded build tool.
+    final boolean usesMaven =
+        command.stream().anyMatch(arg -> arg.contains(LatheFlags.FORMAT_MVN_TOKEN));
+    final String maven =
+        usesMaven
+            ? buildTool
+                .get()
+                .map(Path::toString)
+                .orElseThrow(
+                    () ->
+                        new IOException(
+                            "%s needs the tool of a Lathe-enabled build; run one first"
+                                .formatted(LatheFlags.FORMAT_MVN_TOKEN)))
+            : "";
     return command.stream()
         .map(
             arg ->
@@ -77,35 +93,6 @@ record FileCommandFormatEngine(
                     .replace(LatheFlags.FORMAT_FILE_TOKEN, absolute)
                     .replace(LatheFlags.FORMAT_MODULE_TOKEN, module))
         .toList();
-  }
-
-  // %MVN% -> the fastest/most-faithful Maven in the server env: the mvnd daemon, else the project's
-  // ./mvnw wrapper, else plain mvn. Package-private (with an explicit PATH) for tests.
-  static String mavenExecutable(final Path workspaceRoot, final String path) {
-    if (onPath("mvnd", path)) {
-      return "mvnd";
-    }
-
-    final Path wrapper = workspaceRoot.resolve("mvnw");
-    if (Files.isExecutable(wrapper)) {
-      return wrapper.toAbsolutePath().toString();
-    }
-
-    return "mvn";
-  }
-
-  private static boolean onPath(final String name, final String path) {
-    if (path == null) {
-      return false;
-    }
-
-    for (final String dir : path.split(File.pathSeparator)) {
-      if (!dir.isEmpty() && Files.isExecutable(Path.of(dir, name))) {
-        return true;
-      }
-    }
-
-    return false;
   }
 
   private void run(final List<String> argv) throws IOException, InterruptedException {

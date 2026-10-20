@@ -229,7 +229,8 @@ public final class TestCompiler {
                 List.of(),
                 List.of(),
                 List.of(),
-                List.of());
+                List.of(),
+                null);
     final List<OutputData> outputs =
         Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList();
     Json.write(
@@ -242,7 +243,8 @@ public final class TestCompiler {
             existing.dependencySources(),
             existing.buildFiles(),
             existing.resourceRoots(),
-            outputs),
+            outputs,
+            existing.buildTool()),
         manifestFile);
   }
 

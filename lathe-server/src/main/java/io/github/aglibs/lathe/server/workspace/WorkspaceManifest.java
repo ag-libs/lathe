@@ -44,6 +44,7 @@ public final class WorkspaceManifest {
   // The user-facing remediation when workspace.json has another schema version; null when it
   // matches or is absent.
   private final String schemaMismatch;
+  private final Path buildTool;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -57,7 +58,8 @@ public final class WorkspaceManifest {
       final List<Path> runnerClasspath,
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
-      final String schemaMismatch) {
+      final String schemaMismatch,
+      final Path buildTool) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -70,6 +72,7 @@ public final class WorkspaceManifest {
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
     this.schemaMismatch = schemaMismatch;
+    this.buildTool = buildTool;
   }
 
   public static WorkspaceManifest empty() {
@@ -89,7 +92,8 @@ public final class WorkspaceManifest {
         List.of(),
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
-        schemaMismatch);
+        schemaMismatch,
+        null);
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -157,7 +161,8 @@ public final class WorkspaceManifest {
           runnerClasspath,
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
-          null);
+          null,
+          data.buildTool() != null ? Path.of(data.buildTool()) : null);
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -187,6 +192,10 @@ public final class WorkspaceManifest {
 
   public ReactorRewrite reactorRewrite() {
     return reactorRewrite;
+  }
+
+  public Optional<Path> buildTool() {
+    return Optional.ofNullable(buildTool);
   }
 
   public Optional<String> schemaMismatch() {

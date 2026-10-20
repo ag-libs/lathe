@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Properties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -45,17 +46,20 @@ class OpenJdkSyncTest {
   @Test
   void sync_builtModuleAndTool_writesPinnedScriptAndBatchMarkersAndReleasesLock()
       throws IOException {
-    OpenJdkSync.sync(build, root, "1.2.3", message -> {});
+    OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {});
 
     final Path script = latheDir.resolve(LatheLayout.SYNC_SCRIPT);
     assertThat(script).isExecutable();
     assertThat(Files.readString(script))
         .contains("lathe-openjdk-maven-plugin:1.2.3:sync")
         .contains("-Dlathe.buildDir=%s".formatted(build.toAbsolutePath()))
+        .contains("tool='/opt/maven/bin/mvn'")
+        .contains("export JAVA_HOME='/boot'")
         .doesNotContain("java-home")
         .doesNotContain("make ");
     final var manifest =
         Json.read(latheDir.resolve(LatheLayout.WORKSPACE_JSON), WorkspaceManifestData.class);
+    assertThat(manifest.buildTool()).isEqualTo("/opt/maven/bin/mvn");
     assertThat(manifest.buildFiles())
         .containsExactly(
             "build/linux-x86_64-server-release/jdk/modules/java.base/_the.java.base_batch",
@@ -68,9 +72,17 @@ class OpenJdkSyncTest {
     // A directory where workspace.json goes makes the write fail after the lock is taken.
     Files.createDirectories(latheDir.resolve(LatheLayout.WORKSPACE_JSON).resolve("blocker"));
 
-    assertThatThrownBy(() -> OpenJdkSync.sync(build, root, "1.2.3", message -> {}))
+    assertThatThrownBy(() -> OpenJdkSync.sync(build, root, "1.2.3", bootMaven(), message -> {}))
         .isInstanceOf(IOException.class);
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
+  }
+
+  // The Maven that runs the goal, on the boot JDK; never the JDK being built.
+  private static Properties bootMaven() {
+    final var properties = new Properties();
+    properties.setProperty("maven.home", "/opt/maven");
+    properties.setProperty("java.home", "/boot");
+    return properties;
   }
 
   private static void write(final Path file, final String content) throws IOException {

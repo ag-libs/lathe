@@ -30,6 +30,8 @@ public final class LatheFlags {
   public static final String FORMAT_FILE_TOKEN = "%FILE%";
   public static final String FORMAT_MODULE_TOKEN = "%MODULE%";
   public static final String FORMAT_MVN_TOKEN = "%MVN%";
+  // Stands for each module name in a sync script's per-module arguments.
+  public static final String SYNC_MODULE_TOKEN = "{module}";
 
   // Spotless step options carried in FormatterSpec.options, named as in the Spotless POM config.
   // Sync fills unset ones from the step's own default<Option>() (a step without one does not

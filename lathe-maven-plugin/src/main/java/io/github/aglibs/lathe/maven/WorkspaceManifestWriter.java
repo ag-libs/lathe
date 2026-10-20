@@ -30,7 +30,8 @@ final class WorkspaceManifestWriter {
       final List<String> runnerClasspath,
       final List<String> buildFiles,
       final List<ResourceRootData> resourceRoots,
-      final List<OutputData> outputs) {
+      final List<OutputData> outputs,
+      final Path buildTool) {
     final var data =
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -41,7 +42,8 @@ final class WorkspaceManifestWriter {
             dependencySources.stream().map(DependencySource::toData).toList(),
             buildFiles,
             resourceRoots,
-            outputs);
+            outputs,
+            buildTool.toString());
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
     final var newContent = Json.toJson(data);

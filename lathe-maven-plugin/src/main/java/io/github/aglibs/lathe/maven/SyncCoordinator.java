@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
+import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
@@ -85,6 +86,7 @@ final class SyncCoordinator {
           serverInstaller.resolveRunnerClasspath(externalArtifacts).stream()
               .map(Path::toString)
               .toList();
+      final SyncScript syncScript = SyncScriptWriter.script(session.getSystemProperties());
       new WorkspaceManifestWriter(log)
           .write(
               workspaceRoot,
@@ -94,7 +96,8 @@ final class SyncCoordinator {
               runnerClasspath,
               buildFiles,
               ModuleResourcesReader.read(workspaceRoot, projects),
-              ReactorProjects.outputs(workspaceRoot, projects));
+              ReactorProjects.outputs(workspaceRoot, projects),
+              syncScript.tool());
       final MavenProject rootProject = session.getTopLevelProject();
       final var formatterResolver =
           new FormatterResolver(
@@ -109,7 +112,7 @@ final class SyncCoordinator {
               projects,
               session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
               style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
-      new SyncScriptWriter(log).write(workspaceRoot);
+      new SyncScriptWriter(log).write(workspaceRoot, syncScript);
     }
   }
 

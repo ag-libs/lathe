@@ -549,6 +549,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return session.moduleRelOf(file);
   }
 
+  Optional<Path> buildTool() {
+    return session.buildTool();
+  }
+
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
       final String uri, final List<Range> ranges) {
     final FormatEngine engine = formatEngine;

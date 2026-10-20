@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Properties;
 
 public final class LatheLayout {
 
@@ -34,6 +35,8 @@ public final class LatheLayout {
   public static final String CACHE_SCHEMA_VERSION = "4";
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
+  public static final String JAVA_HOME_PROPERTY = "java.home";
+  public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
@@ -133,6 +136,22 @@ public final class LatheLayout {
     static final String MVN = "mvn";
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+    static final String MVND = "mvnd";
+    // Every sync script's Maven run: no download progress in the output the user reads.
+    public static final String NO_TRANSFER_PROGRESS = "--no-transfer-progress";
+    static final String MAVEN_HOME_PROPERTY = "maven.home";
+    static final String MVND_HOME_PROPERTY = "mvnd.home";
+
+    // The Maven that runs this build, for the sync script to run again. Under mvnd, maven.home is
+    // the Maven it embeds, so mvnd.home's client wins; plain Maven and the wrapper set maven.home.
+    public static Path runningTool(final Properties systemProperties) {
+      final String mvndHome = systemProperties.getProperty(MVND_HOME_PROPERTY);
+      if (mvndHome != null) {
+        return Path.of(mvndHome, BIN_DIR, MVND);
+      }
+
+      return Path.of(systemProperties.getProperty(MAVEN_HOME_PROPERTY), BIN_DIR, MVN);
+    }
 
     // Hands each compile's scope from the extension to the compiler shim, which sees only an output
     // directory: system properties cross their classloaders in the one Maven JVM, and the key is
