@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; B0 and A2 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; B0, A2 and A6 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -440,7 +440,7 @@ Each slice can be merged on its own.
 
 1. **B0**, the Windows spike, first: it needs no production code and can amend this design before anything is built on it. *Done.*
 2. **A2**, the sync script from the build: the working Maven script is the template. *Done.*
-3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows.
+3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows. *Done.*
 4. **A1**, launcher models and server argfiles, on the same renderer.
 5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
@@ -505,9 +505,11 @@ Each slice can be merged on its own.
 #### A6 — Windows build blockers (found by B0)
 
 - `FileUtil.deleteDir` makes only files writable, never directories.
-- `.gitattributes` (`* text=auto eol=lf`, `*.cmd text eol=crlf`), and Spotless with Unix line endings and `target/**` excluded.
+- `.gitattributes` (`* text=auto eol=lf`, `*.cmd text eol=crlf`), and Spotless with `target/**` excluded.
 
 **Exit:** with these two, B0 showed the full build passing on Windows, the multi-module fixture's sync and the names guard included.
+
+*Done (2026-10-20, PR #29).* As built, Spotless needs no `lineEndings` setting: its default policy follows `.gitattributes`. Run 3 of the spike, with the fix, confirmed it on `windows-latest`: no `setWritable` errors, `lathe-server` errors down from 392 to 2, and `spotless:check` and Prettier passing.
 
 ### Phase B — Windows
 
