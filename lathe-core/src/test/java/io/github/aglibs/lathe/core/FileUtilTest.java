@@ -114,10 +114,12 @@ final class FileUtilTest {
   }
 
   @Test
-  void deleteDir_nestedTree_deletesRecursively() throws IOException {
+  void deleteDir_nestedTreeWithReadOnlyFile_deletesRecursively() throws IOException {
     final Path nested = tempDir.resolve("tree/a/b");
     Files.createDirectories(nested);
     Files.writeString(nested.resolve("file.txt"), "content");
+    // Like an extracted source file.
+    assertThat(nested.resolve("file.txt").toFile().setReadOnly()).isTrue();
 
     FileUtil.deleteDir(tempDir.resolve("tree"));
 

@@ -240,7 +240,12 @@ public final class FileUtil {
     try (final var walk = Files.walk(dir)) {
       final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
       for (final var path : sorted) {
-        setWritable(path);
+        // Extracted sources are read-only files, which Windows refuses to delete. Directories are
+        // never made read-only, and on Windows setWritable always fails for one.
+        if (!Files.isDirectory(path)) {
+          setWritable(path);
+        }
+
         Files.delete(path);
       }
     }
