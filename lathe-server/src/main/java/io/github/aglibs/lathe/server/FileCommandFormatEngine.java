@@ -20,9 +20,8 @@ import java.util.logging.Logger;
 // source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
 // The name is a dotfile so file-trees/fuzzy-finders that hide dotfiles (neo-tree, oil, Telescope)
 // do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
-// Tokens: %MVN% -> buildTool, the tool that ran the last build (never searched for), %FILE% -> temp
-// path, %MODULE% -> the file's module or ".", as moduleOf (the workspace's module registry) names
-// it.
+// Tokens: %MVN% -> buildTool, the tool that ran the last build (never searched for); %FILE% ->
+// the temp path; %MODULE% -> the file's module or ".", as moduleOf (the module registry) names it.
 record FileCommandFormatEngine(
     List<String> command,
     Path workspaceRoot,

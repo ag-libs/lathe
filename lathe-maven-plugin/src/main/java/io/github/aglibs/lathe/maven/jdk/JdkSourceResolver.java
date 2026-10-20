@@ -43,7 +43,8 @@ public final class JdkSourceResolver {
   }
 
   private static Path resolveHome(final String javaHome) {
-    final String raw = javaHome != null ? javaHome : System.getProperty("java.home");
+    final String raw =
+        javaHome != null ? javaHome : System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
     if (raw == null) {
       return null;
     }
