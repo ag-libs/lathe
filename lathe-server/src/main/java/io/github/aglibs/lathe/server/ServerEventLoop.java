@@ -79,18 +79,33 @@ final class ServerEventLoop {
     }
   }
 
-  // Await termination so no in-flight worker task can outlive close() and race the caller's
-  // teardown. The fixed-rate change scan walks and writes under the workspace root, so a returning
-  // close() that left it running would let a test's @TempDir delete race a live scan.
-  void close() {
-    executor.shutdownNow();
+  // Runs `last` (closing what the loop's tasks use) as the loop's final task: it stops the executor
+  // before returning, so nothing queued behind it ever runs against what it closed. Then awaits
+  // termination, so no in-flight task can outlive close() and race the caller's teardown -- the
+  // fixed-rate change scan walks and writes under the workspace root, so a test's @TempDir delete
+  // would race a live scan.
+  void close(final Runnable last) {
     try {
-      if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-        LOG.warning(
-            () -> "[worker] shutdown timed out after %ds".formatted(SHUTDOWN_TIMEOUT_SECONDS));
+      submit(
+              () -> {
+                try {
+                  last.run();
+                } finally {
+                  executor.shutdownNow();
+                }
+
+                return null;
+              })
+          .join();
+    } finally {
+      try {
+        if (!executor.awaitTermination(SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          LOG.warning(
+              () -> "[worker] shutdown timed out after %ds".formatted(SHUTDOWN_TIMEOUT_SECONDS));
+        }
+      } catch (final InterruptedException e) {
+        Thread.currentThread().interrupt();
       }
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
     }
   }
 

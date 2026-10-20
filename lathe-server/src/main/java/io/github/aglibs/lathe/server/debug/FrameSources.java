@@ -4,11 +4,11 @@ import com.sun.jdi.AbsentInformationException;
 import com.sun.jdi.Location;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Resolves a suspended JDI frame's location to Lathe's source file and the module worker that owns
@@ -17,11 +17,12 @@ import java.util.Optional;
  */
 final class FrameSources {
 
-  private final WorkspaceModuleRegistry workspace;
+  private final Function<Path, Optional<CompilationWorker>> workerFor;
   private final List<Path> sourceRoots;
 
-  FrameSources(final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
-    this.workspace = workspace;
+  FrameSources(
+      final Function<Path, Optional<CompilationWorker>> workerFor, final List<Path> sourceRoots) {
+    this.workerFor = workerFor;
     this.sourceRoots = List.copyOf(sourceRoots);
   }
 
@@ -50,6 +51,6 @@ final class FrameSources {
 
   /** The module worker that owns {@code file}, if the file maps to a known module source. */
   Optional<CompilationWorker> workerFor(final Path file) {
-    return workspace.moduleSourceFor(file).map(workspace::workerFor);
+    return workerFor.apply(file);
   }
 }

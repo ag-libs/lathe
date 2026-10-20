@@ -128,17 +128,13 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return;
     }
 
-    if (session != null) {
-      worker
-          .submit(
-              () -> {
-                session.close();
-                return null;
-              })
-          .join();
-    }
-
-    worker.close();
+    // On the loop, as the last thing it runs: connect() assigns the session there.
+    worker.close(
+        () -> {
+          if (session != null) {
+            session.close();
+          }
+        });
   }
 
   @Override

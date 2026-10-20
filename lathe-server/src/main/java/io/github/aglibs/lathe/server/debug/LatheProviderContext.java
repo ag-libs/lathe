@@ -7,9 +7,11 @@ import com.microsoft.java.debug.core.adapter.ISourceLookUpProvider;
 import com.microsoft.java.debug.core.adapter.IVirtualMachineManagerProvider;
 import com.microsoft.java.debug.core.adapter.ProviderContext;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * The seam between Lathe and Microsoft java-debug: it supplies Lathe's implementations of the
@@ -30,17 +32,17 @@ public final class LatheProviderContext extends ProviderContext {
   }
 
   public LatheProviderContext(
-      final WorkspaceModuleRegistry workspace,
+      final Function<Path, Optional<CompilationWorker>> workerFor,
       final List<Path> sourceRoots,
       final WorkspaceTypeIndex typeIndex) {
     registerCommon();
     registerProvider(
-        IEvaluationProvider.class, new LatheEvaluationProvider(workspace, sourceRoots));
+        IEvaluationProvider.class, new LatheEvaluationProvider(workerFor, sourceRoots));
     registerProvider(
-        ISourceLookUpProvider.class, new LatheSourceLookUpProvider(workspace, sourceRoots));
+        ISourceLookUpProvider.class, new LatheSourceLookUpProvider(workerFor, sourceRoots));
     registerProvider(
         ICompletionsProvider.class,
-        new LatheCompletionsProvider(workspace, sourceRoots, typeIndex));
+        new LatheCompletionsProvider(workerFor, sourceRoots, typeIndex));
   }
 
   private void registerCommon() {

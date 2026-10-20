@@ -8,7 +8,6 @@ import com.microsoft.java.debug.core.protocol.Types;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -16,6 +15,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.logging.Logger;
 
 /**
@@ -31,12 +31,12 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
 
   private static final Logger LOG = Logger.getLogger(LatheSourceLookUpProvider.class.getName());
 
-  private final WorkspaceModuleRegistry workspace;
+  private final Function<Path, Optional<CompilationWorker>> workerFor;
   private final List<Path> sourceRoots;
 
   public LatheSourceLookUpProvider(
-      final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
-    this.workspace = workspace;
+      final Function<Path, Optional<CompilationWorker>> workerFor, final List<Path> sourceRoots) {
+    this.workerFor = workerFor;
     this.sourceRoots = List.copyOf(sourceRoots);
   }
 
@@ -111,9 +111,8 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   }
 
   private Optional<String> classNameAt(final String uri, final int line) {
-    return workspace
-        .moduleSourceFor(LatheUri.toPath(uri))
-        .map(workspace::workerFor)
+    return workerFor
+        .apply(LatheUri.toPath(uri))
         .flatMap(worker -> worker.enclosingBinaryName(uri, line).join());
   }
 

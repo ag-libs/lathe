@@ -8,10 +8,11 @@ import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CompletionContext;
@@ -47,10 +48,10 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
   private final WorkspaceTypeIndex typeIndex;
 
   LatheCompletionsProvider(
-      final WorkspaceModuleRegistry workspace,
+      final Function<Path, Optional<CompilationWorker>> workerFor,
       final List<Path> sourceRoots,
       final WorkspaceTypeIndex typeIndex) {
-    this.frames = new FrameSources(workspace, sourceRoots);
+    this.frames = new FrameSources(workerFor, sourceRoots);
     this.typeIndex = typeIndex;
   }
 

@@ -580,12 +580,19 @@ final class WorkspaceSession {
             .toList();
     final var host =
         DapHost.start(
-            new LatheProviderContext(workspace, debugSourceRoots, typeIndex),
+            new LatheProviderContext(this::debugWorkerFor, debugSourceRoots, typeIndex),
             () -> worker.execute(() -> cancelRun(token)));
     activeDebugHosts.put(token, host);
     LOG.info(
         () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
     return new DebugStartResult(host.port(), jdwpPort);
+  }
+
+  // Called on the debug adapter's threads: reads the workspace on the event loop like every other
+  // access, and always the current registry, since a sync replaces it mid-session. Cancelled (so
+  // the debugger request fails) once the session has closed.
+  private Optional<CompilationWorker> debugWorkerFor(final Path file) {
+    return worker.submit(() -> workspace.moduleSourceFor(file).map(workspace::workerFor)).join();
   }
 
   private static void assertLaunchComplete(final CompletenessResult gate) {
