@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +18,7 @@ class ServerEventLoopTest {
 
   @AfterEach
   void close() {
-    worker.close();
+    worker.close(() -> {});
   }
 
   @Test
@@ -109,5 +110,24 @@ class ServerEventLoopTest {
         });
     assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
+  }
+
+  @Test
+  void close_runsLastOnTheLoop_droppingEverythingQueuedBehindIt() {
+    final var loop = new ServerEventLoop();
+    final var ranOn = new AtomicReference<String>();
+    final var late = new AtomicInteger();
+
+    loop.close(
+        () -> {
+          ranOn.set(Thread.currentThread().getName());
+          // Queued while the final task runs, so behind it: neither may ever run.
+          loop.execute(late::incrementAndGet);
+          loop.schedule(URI, 0, late::incrementAndGet);
+        });
+
+    assertThat(ranOn.get()).isEqualTo("lathe-worker");
+    assertThat(late.get()).isZero();
+    assertThat(loop.submit(() -> 1)).isCancelled();
   }
 }

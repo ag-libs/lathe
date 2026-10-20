@@ -2,12 +2,15 @@ package io.github.aglibs.lathe.server.debug;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -24,13 +27,15 @@ final class LatheSourceLookUpProviderTest {
     Files.writeString(coreFile, "package com.example.core;\npublic final class StringUtils {}\n");
 
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final Function<Path, Optional<CompilationWorker>> workerFor =
+        file -> registry.moduleSourceFor(file).map(registry::workerFor);
 
-    final var wholeReactor = new LatheSourceLookUpProvider(registry, List.of(appRoot, coreRoot));
+    final var wholeReactor = new LatheSourceLookUpProvider(workerFor, List.of(appRoot, coreRoot));
     assertThat(wholeReactor.getSourceFileURI("com.example.core.StringUtils", null))
         .isEqualTo(coreFile.toUri().toString());
 
     // Launched-module-only roots (the bug): the cross-module class has no source.
-    final var launchedModuleOnly = new LatheSourceLookUpProvider(registry, List.of(appRoot));
+    final var launchedModuleOnly = new LatheSourceLookUpProvider(workerFor, List.of(appRoot));
     assertThat(launchedModuleOnly.getSourceFileURI("com.example.core.StringUtils", null)).isNull();
   }
 }

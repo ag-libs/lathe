@@ -15,16 +15,17 @@ import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
@@ -60,8 +61,9 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   // view, so it is refreshed after each invocation (see reloadFrames / DB-6).
   private volatile IStackFrameManager stackFrames;
 
-  LatheEvaluationProvider(final WorkspaceModuleRegistry workspace, final List<Path> sourceRoots) {
-    this.frames = new FrameSources(workspace, sourceRoots);
+  LatheEvaluationProvider(
+      final Function<Path, Optional<CompilationWorker>> workerFor, final List<Path> sourceRoots) {
+    this.frames = new FrameSources(workerFor, sourceRoots);
   }
 
   @Override
