@@ -103,14 +103,16 @@ class SyncScriptTest {
             () ->
                 new SyncScript(Path.of("mvn"), jdk, FIXED, goals, List.of(), List.of(), List.of()))
         .as("relative tool")
-        .isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("tool must be an absolute path");
     assertThatThrownBy(() -> new SyncScript(tool, jdk, FIXED, goals, List.of(), module, List.of()))
         .as("modules without --tests goals")
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
             () -> new SyncScript(tool, jdk, FIXED, goals, goals, List.of("-pl"), List.of()))
         .as("module args without the module token")
-        .isInstanceOf(ValidationException.class);
+        .isInstanceOf(ValidationException.class)
+        .hasMessageContaining("moduleArgs must contain {module}");
     assertThatThrownBy(
             () ->
                 new SyncScript(

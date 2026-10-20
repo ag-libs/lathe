@@ -28,17 +28,24 @@ public record SyncScript(
     moduleArgs = List.copyOf(moduleArgs);
     afterModules = List.copyOf(afterModules);
     ValidCheck.check()
-        .assertTrue(tool != null && tool.isAbsolute(), "tool")
-        .assertTrue(javaHome != null && javaHome.isAbsolute(), "javaHome")
+        .notNull(tool, "tool")
+        .when(tool != null, v -> v.assertTrue(tool.isAbsolute(), "tool must be an absolute path"))
+        .notNull(javaHome, "javaHome")
+        .when(
+            javaHome != null,
+            v -> v.assertTrue(javaHome.isAbsolute(), "javaHome must be an absolute path"))
         .notEmpty(goals, "goals")
-        .assertTrue(testsGoals.isEmpty() == moduleArgs.isEmpty(), "testsGoals and moduleArgs")
         .assertTrue(
-            moduleArgs.isEmpty() || moduleArgs.contains(LatheFlags.SYNC_MODULE_TOKEN), "moduleArgs")
+            testsGoals.isEmpty() == moduleArgs.isEmpty(),
+            "testsGoals and moduleArgs must be both set or both empty")
+        .assertTrue(
+            moduleArgs.isEmpty() || moduleArgs.contains(LatheFlags.SYNC_MODULE_TOKEN),
+            "moduleArgs must contain %s".formatted(LatheFlags.SYNC_MODULE_TOKEN))
         .assertTrue(
             Stream.of(goals, testsGoals, moduleArgs, afterModules)
                 .flatMap(List::stream)
                 .noneMatch(arg -> arg.isBlank() || arg.chars().anyMatch(Character::isWhitespace)),
-            "unquoted args")
+            "args other than fixedArgs are not quoted, so they must not contain whitespace")
         .validate();
   }
 
