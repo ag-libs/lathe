@@ -229,6 +229,86 @@ python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 
 ---
 
+## EG-056 — Private method called only from a private constructor is hinted unused
+
+**Status: documented**
+
+### Observed behaviour
+
+User report: a `private static` method whose only call site is in the class's constructor gets the
+`lathe.unused` hint ("Unused private method '…'").
+Reproduced when the constructor is `private`, the usual shape for factory and singleton classes.
+The hint is wrong in every compile mode (FAST, OPEN, FULL), on open and after a save.
+
+```java
+public class Foo {
+  private final int size;
+
+  private Foo() {
+    this.size = defaultSize();   // the only use
+  }
+
+  private static int defaultSize() {   // hinted "Unused private method 'defaultSize'"
+    return 10;
+  }
+
+  public static Foo create() {
+    return new Foo();
+  }
+}
+```
+
+With a `public` or package-private constructor there is no false hint, whether the file goes through
+a single-file compile or the multi-file open batch (`SourceAnalysisSession.compileOpenBatch`).
+
+The reported class has exactly this shape: a private constructor, called from public static
+factory methods, is the only caller of a `private static` helper.
+The report also said the hint goes away after an edit and a save.
+That did not reproduce: a plain `didSave` with no edit keeps the hint, so the hint most likely
+cleared because of what the edit changed.
+
+```bash
+# multi-module invoker workspace, with the class above in core/src/main/java/com/example/core/
+printf 'diag\nsave\ndiag\n' | python3 dev/explore.py core/src/main/java/com/example/core/Foo.java
+# [HINT ] 10:22  Unused private method 'defaultSize' [unused]   (before and after save)
+```
+
+### Root cause
+
+In `UnusedDeclarationScanner.markReference`, a reference to a private method from inside another
+method records a call *edge* when `enclosingPrivateMethod()` returns a private enclosing method;
+otherwise it marks the callee directly reached.
+`enclosingPrivateMethod()` only checks the `PRIVATE` modifier, so a `private` constructor counts too,
+and the call becomes an edge `Foo() → defaultSize()`.
+But only `ElementKind.METHOD` elements are collected into `privateMethods`, and only directly reached
+methods start the BFS in `reachableMethods()`.
+The constructor is never a BFS root, so the edge is never followed and the callee stays unreached.
+
+### Proposed direction
+
+Record a call edge only when the enclosing method is itself a tracked candidate.
+In `enclosingPrivateMethod()`, return the element only if `privateMethods.containsKey(element)`,
+otherwise null (directly reached).
+Then any constructor, private or not, is a reachability root.
+Edge sources and unused candidates come from the same set, so the two can't disagree again.
+Trade-off: an uncalled private constructor still roots its callees.
+That is acceptable, since private constructors are deliberately never hinted
+(`compile_privateNoArgConstructor_noHint`).
+Initializer blocks and field initializers already go through the `ClassTree` → null path.
+
+Rejected alternative: track private constructors as candidates and count `new Foo()` calls.
+It is more precise but larger, and it would start hinting the conventional `private Utility() {}`.
+
+### Regression targets
+
+None yet.
+Candidates:
+`UnusedDeclarationScannerTest.compile_privateMethodReachedOnlyFromConstructor_noHint`
+(private and public constructor, including a private-to-private chain from the constructor), and
+`UnusedDeclarationScannerTest.compile_unusedPrivateMethodBesidePrivateConstructor_reportsHint`.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
