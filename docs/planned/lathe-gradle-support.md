@@ -15,15 +15,15 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 
 1. [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) — **done (2026-10-11).**
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
-2. [Multi-OS](lathe-multi-os.md) Phase A, slices A2 and A1 — the sync script rendered from the build, and portable launchers (the rest of Phase A can follow).
-   Before this design's slice 2; slice 1 can run alongside.
+2. [Multi-OS](lathe-multi-os.md), all of it — decided 2026-10-20: Multi-OS closes before Gradle starts.
+   Its sync script model (D3) is build-neutral and already golden-tested with a Gradle-shaped model, so Gradle fills the model in rather than writing script logic.
 3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
    Before slice 1, so the plugin is written against Java 17 from the start.
-4. **A Maven-free `lathe-install`** (see [What is reused vs new](#what-is-reused-vs-new)) — done as part of Multi-OS A2, which moves sync logic into `lathe-install` anyway.
+4. **A Maven-free `lathe-install`** (see [What is reused vs new](#what-is-reused-vs-new)) — this design's slice 0 (moved here from Multi-OS on 2026-10-20, since only Gradle needs it).
 
 **Decided 2026-10-18** (details in the sections below):
 
-- **Order:** Multi-OS Phase A (A0–A3) before slice 2; Windows itself (Phase B) is decided later, on demand.
+- **Order:** all of Multi-OS, Windows included, before slice 0 (*revised 2026-10-20*; first decided as Multi-OS Phase A before slice 2).
 - **Shared sync code lives in `lathe-install`, made free of Maven.** Maven-specific adapters stay in `lathe-maven-plugin`.
 - **Formatter version is observed** from Spotless's own dependency resolution; a committed `lathe-style.json` always wins; options come from Spotless's defaults with a one-time notice. No "latest" fallback.
 - **Lathe artifacts come from a repository the reactor fills**, never `~/.m2` (the trap the invoker suite hit as 7a).
@@ -36,7 +36,7 @@ No showstopper was found; both Gradle versions behaved identically.
 
 **Multi-OS:** the [Multi-OS Design](lathe-multi-os.md) changes the launcher and sync files below.
 They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync script runs the tool that ran the build, written into it as a literal; the Gradle front-end renders it from the same template as Maven, with its own goals and module pattern ([Multi-OS](lathe-multi-os.md) D3).
-Its Phase A (A0–A3) should land before this design's slice 2, so `latheSync` writes portable files from the start.
+It closes before this design starts, so `latheSync` writes portable files from the start.
 
 ## Goal
 
@@ -124,7 +124,7 @@ They move into `lathe-install`, which then depends only on `lathe-core`:
 - `ParamsWriter` and the mirror/stamp writer take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
 - `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values.
 
-This is done with [Multi-OS](lathe-multi-os.md) A2, which renders the sync script from the recorded tool and touches the same code.
+This is this design's slice 0. Multi-OS already puts the sync script model and renderers into `lathe-install` without Maven imports, so slice 0 moves the rest.
 
 **New:** a `lathe-gradle-plugin` module (a **settings plugin** + a **project plugin** + a `latheSync`
 task), depending on `lathe-core` and resolving `lathe-test-runner`/`lathe-junit` at sync time — the
@@ -494,13 +494,13 @@ and the fidelity claims are all under test.
 
 ## Slicing
 
-0. **Prerequisites** — the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) (done);
-   the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0);
-   [Multi-OS](lathe-multi-os.md) A0–A3 with the Maven-free `lathe-install` (before slice 2).
+0. **A Maven-free `lathe-install`** — the logging and artifact-resolver interfaces, and the build-neutral sync work moved in from `lathe-maven-plugin` (see [What is reused vs new](#what-is-reused-vs-new)).
+   Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
+   the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](lathe-multi-os.md).
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the non-cacheable capture
    finalizer on `JavaCompile` → `ModuleConfigData`, bytecode mirror, stamps. Delivers full **code
    intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter** — `latheSync`. Completes the editor
+2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `--tests`, a repeatable `--module` task option). Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
 4. **Test launch (in-fork)** — reuse `lathe-junit` + worker-jar filter; capture-only (always-run, never-cached) via `latheSync`.

@@ -362,8 +362,21 @@ exit /b %ERRORLEVEL%
 
 ### Sync (`lathe-maven-plugin`, `lathe-install`)
 
-- The front-end takes the tool and the JDK from the running build (D3), and writes the tool to `workspace.json`'s `buildTool` too.
-- `SyncScriptWriter` renders today's script from the front-end's goals and module flag, with the tool and JDK as literals instead of choosing them. It keeps the `--tests` switch, `-am`, `-Dmaven.build.cache.enabled=false`, and echoing the command to stderr.
+- **One build-neutral model and one renderer per dialect, in `lathe-install`.** A front-end only fills the model in; it never writes script text. The renderers import no Maven types, so the Gradle plugin uses them unchanged.
+  `SyncScriptWriter` (Maven) and `OpenJdkSync.writeSyncScript` (OpenJDK) both become "build the model, call the renderer".
+
+  | Field | Maven | Gradle (later) | OpenJDK |
+  |---|---|---|---|
+  | tool, absolute, from the running build | `<maven.home>/bin/mvn`, or the mvnd client | `gradlew`, or `<gradleHome>/bin/gradle` | `<maven.home>/bin/mvn` |
+  | JDK, the build's `java.home` | ✓ | ✓ | ✓ |
+  | fixed flags | `--no-transfer-progress -Dmaven.build.cache.enabled=false` | `--no-build-cache --no-configuration-cache` | `--no-transfer-progress` |
+  | goals | `process-test-classes` | `latheSync` | `<coords>:sync -Dlathe.buildDir=…` |
+  | `--tests` goals | `test -Dlathe.capture.only=true -DfailIfNoTests=false` | a `latheSync` task option | not supported: "arguments ignored" |
+  | module flag, before each module | `-pl` | `--module`, a repeatable `latheSync` task option | not supported |
+  | after the modules | `-am` | nothing: `latheSync` adds upstream itself | — |
+
+  "Not supported" is modeled explicitly, not as an empty-string sentinel. The Gradle column is an assumption that the [Gradle design](lathe-gradle-support.md) confirms; the golden tests include a Gradle-shaped model so the template is proven before Gradle starts.
+- The front-end writes the tool to `workspace.json`'s `buildTool` too, for the formatter's `%MVN%`.
 - `LatheLayout.SYNC_SCRIPT_COMMAND` and `scopedSyncCommand` get the name from E1, so every fix-it hint shows the host's command.
 
 ### Editor clients
@@ -402,16 +415,10 @@ That makes it a beneficiary of this design rather than a separate porting job:
 
 ### Sequencing with Gradle
 
-The two efforts overlap mostly in `lathe-install` and the sync script, so the order matters:
-
-| Order | Work | Why here |
-|---|---|---|
-| 1 | Multi-OS **A2, A1** (the sync script from the build, launcher models), then A2b, A3 and A0 | Gradle slice 2 (`latheSync`, server install) should render its sync script from the same template from the start, instead of another copy of POSIX-only logic. |
-| 2 | Gradle **slices 1–2** (compiler capture, `latheSync`) | Gradle slice 1 is independent and can run in parallel with A0–A3. |
-| 3 | Multi-OS **A4–A5** (URIs, text, enforcement on) | Independent of Gradle. With enforcement on, Gradle code is checked by the same rules as everything else. |
-| 4 | Multi-OS **Phase B** (Windows), then Gradle **slices 3–5** in either order | The Windows CI row runs the Maven invoker tests and the Gradle TestKit tests side by side. |
-
-The result: the first Windows release supports both Maven and Gradle projects, with no Windows-specific work on the Gradle side beyond recording `gradlew.bat`.
+Decided 2026-10-20: **Multi-OS closes first** (Phases A and B), then Gradle starts.
+Gradle doesn't wait on a rework: the sync script model (D3) is build-neutral, and its golden tests include a Gradle-shaped model.
+So Gradle's sync script, launchers and Windows support come from filling in the model and recording `gradlew.bat`, not from new script logic.
+Gradle's first slice makes `lathe-install` free of Maven, so the Gradle plugin can load it.
 
 ## Delivery plan
 
@@ -420,9 +427,15 @@ The result: the first Windows release supports both Maven and Gradle projects, w
 
 Each slice can be merged on its own.
 
-**Order (decided 2026-10-19):** the sync script first, since the working Maven script is the template:
-A2 (the Maven script rendered from the build) → A1 (launcher models and argfiles) → Gradle slice 2 renders its script from the same template → B1 adds the `cmd` renderer.
-B0 runs alongside from the start; A2b, A3, A4 and A0/A5 fit in independently.
+**Order (decided 2026-10-20):** Multi-OS closes before Gradle starts, and the sync script generator is build-neutral from the start, so Gradle only fills in the model later.
+
+1. **B0**, the Windows spike, first: it needs no production code and can amend this design before anything is built on it.
+2. **A2**, the sync script from the build: the working Maven script is the template.
+3. **A1**, launcher models and server argfiles, on the same renderer.
+4. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
+5. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
+
+`lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
 
 ### Phase A — Portable core
 
@@ -451,15 +464,6 @@ B0 runs alongside from the start; A2b, A3, A4 and A0/A5 fit in independently.
 - `lathe-sync.sh` chooses no tool and resolves no JDK: it runs the tool that ran the build, and fails clearly when that's gone.
 - Golden tests cover the rendered script for a plain, a wrapper and an mvnd build, with and without modules and `--tests`.
 - The invoker fixture runs the generated script, scoped and with `--tests`.
-
-#### A2b — `lathe-install` without Maven
-
-- `lathe-install` becomes Maven-free (decided 2026-10-18 with [Gradle support](lathe-gradle-support.md#what-is-reused-vs-new)):
-  a small logging interface replaces Maven's `Log`, artifact resolution goes behind an interface whose Maven implementation stays in `lathe-maven-plugin`,
-  and the build-neutral sync work (JDK sources, type index, `workspace.json`, the sync script) moves in from `lathe-maven-plugin`.
-  The Maven plugin and the Gradle plugin then share it without loading Maven's API.
-
-**Exit:** `lathe-install` has no Maven dependency.
 
 #### A3 — Data and names
 
