@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -235,6 +236,14 @@ public final class FileUtil {
         Files.move(target, previous, StandardCopyOption.ATOMIC_MOVE);
       } catch (final NoSuchFileException e) {
         // No copy to replace yet.
+      } catch (final FileSystemException e) {
+        // Windows denies renaming a directory another caller is renaming at that moment.
+        if (attempt == MOVE_ATTEMPTS) {
+          throw e;
+        }
+
+        pause(attempt);
+        continue;
       }
 
       try {
@@ -249,11 +258,23 @@ public final class FileUtil {
         if (attempt == MOVE_ATTEMPTS) {
           throw e;
         }
+
+        pause(attempt);
       } finally {
         if (Files.exists(previous)) {
           deleteDir(previous);
         }
       }
+    }
+  }
+
+  // Gives the other caller time to finish its rename, a little longer on each attempt.
+  private static void pause(final int attempt) throws IOException {
+    try {
+      Thread.sleep(10L * attempt);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new InterruptedIOException("interrupted while retrying a move");
     }
   }
 
@@ -376,8 +397,10 @@ public final class FileUtil {
   private static boolean extractZipEntry(
       final Path destDir, final ZipInputStream in, final ZipEntry entry) throws IOException {
     final Path entryPath = Path.of(entry.getName());
+    // A rooted entry (/x) is placed under destDir: on Windows /x has a root but no drive, so it is
+    // not "absolute" there, yet resolving it would still leave destDir.
     final Path relative =
-        entryPath.isAbsolute() ? entryPath.getRoot().relativize(entryPath) : entryPath;
+        entryPath.getRoot() != null ? entryPath.getRoot().relativize(entryPath) : entryPath;
     if (relative.getNameCount() == 0) {
       return false;
     }

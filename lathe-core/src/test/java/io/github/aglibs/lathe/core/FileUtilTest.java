@@ -15,6 +15,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 final class FileUtilTest {
@@ -100,11 +102,13 @@ final class FileUtilTest {
     assertThat(skipped).isZero();
   }
 
-  // On Linux '\' is an ordinary file-name character, so it stays inside its name.
+  // On Windows '\' separates names and becomes '/'; on Linux it is an ordinary file-name
+  // character, so it stays inside its name.
   @Test
   void slashed_relativePath_joinsNamesWithSlash_keepingABackslashInsideAName() {
     assertThat(FileUtil.slashed(Path.of("core", "src", "Foo.java"))).isEqualTo("core/src/Foo.java");
-    assertThat(FileUtil.slashed(Path.of("odd\\name", "Foo.java"))).isEqualTo("odd\\name/Foo.java");
+    assertThat(FileUtil.slashed(Path.of("odd\\name", "Foo.java")))
+        .isEqualTo(Platform.WINDOWS ? "odd/name/Foo.java" : "odd\\name/Foo.java");
     assertThat(FileUtil.slashed(tempDir.relativize(tempDir))).isEmpty();
   }
 
@@ -258,10 +262,18 @@ final class FileUtilTest {
     assertThat(FileUtil.writeIfChanged(dir, file, "a\n", false)).isFalse();
     assertThat(FileUtil.writeIfChanged(dir, file, "b\n", false)).isTrue();
     assertThat(file).hasContent("b");
+  }
+
+  @Test
+  @DisabledOnOs(value = OS.WINDOWS, disabledReason = "Windows has no executable bit")
+  void writeIfChanged_sameContentNotYetExecutable_rewritesItExecutable() throws IOException {
+    final Path file = tempDir.resolve("launcher");
+    assertThat(FileUtil.writeIfChanged(tempDir, file, "b\n", false)).isTrue();
+
     // Same content but not yet executable: rewritten so the launcher can run.
-    assertThat(FileUtil.writeIfChanged(dir, file, "b\n", true)).isTrue();
+    assertThat(FileUtil.writeIfChanged(tempDir, file, "b\n", true)).isTrue();
     assertThat(Files.isExecutable(file)).isTrue();
-    assertThat(FileUtil.writeIfChanged(dir, file, "b\n", true)).isFalse();
+    assertThat(FileUtil.writeIfChanged(tempDir, file, "b\n", true)).isFalse();
   }
 
   // Workspaces synced by older versions hold launcher symlinks; the replacement must not write

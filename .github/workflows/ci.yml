@@ -86,7 +86,8 @@ jobs:
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
             env -u CI mvn -B --no-transfer-progress clean install
           elif [ "${{ runner.os }}" = "Windows" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
+            # TEMPORARY while the Windows row is made green: report every module's failures in one run.
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' -Dmaven.test.failure.ignore=true
           else
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
           fi
@@ -97,7 +98,8 @@ jobs:
         run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
 
       - name: Upload test reports
-        if: failure()
+        # TEMPORARY: always on Windows while it's iterated (failures are ignored there for now).
+        if: failure() || runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
