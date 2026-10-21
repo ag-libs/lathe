@@ -87,6 +87,8 @@ class McpClient:
 
 
 def _default_launcher() -> Path:
+    if os.environ.get("LATHE_MCP_LAUNCHER"):
+        return Path(os.environ["LATHE_MCP_LAUNCHER"])
     cache = os.environ.get("LATHE_CACHE", str(Path.home() / ".cache" / "lathe"))
     servers = Path(cache) / "servers"
     snapshots = sorted(servers.glob("*-SNAPSHOT/lathe-mcp-launcher.sh"))
@@ -106,7 +108,7 @@ def _print_text(result: dict):
 
 
 def main(argv):
-    launcher = Path(os.environ.get("LATHE_MCP_LAUNCHER", str(_default_launcher())))
+    launcher = _default_launcher()
     workspace = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
     client = McpClient(launcher, workspace)
     try:

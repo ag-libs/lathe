@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -501,6 +502,30 @@ class LatheEngineTest {
 
     assertThat(engine.diagnostics(fx.caller()))
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+  }
+
+  @Test
+  void verifyChange_referrerWithOnlyAHint_reportsClean() throws Exception {
+    final Path callee =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Callee.java",
+            "package com.example; class Callee { void greet() {} }");
+    final Path caller =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Caller.java",
+            "package com.example; class Caller { void run(Callee c) { c.greet(); } private void"
+                + " unused() {} }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    engine = new LatheEngine(tmp);
+    assertThat(engine.diagnostics(caller))
+        .as("the referrer has an unused-method hint")
+        .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Hint);
+
+    final LatheVerifyChange verify = engine.verifyChange(List.of(callee));
+
+    assertThat(verify.perModule()).isEmpty();
   }
 
   @Test

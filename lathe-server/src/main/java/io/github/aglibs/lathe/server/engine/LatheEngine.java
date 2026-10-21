@@ -40,6 +40,7 @@ import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -446,8 +447,13 @@ public final class LatheEngine {
     return new LatheVerifyChange(null, perModule, downstream, suggestedSync);
   }
 
+  // Hints (unused code) say nothing about whether the change compiles, and an agent reads any count
+  // as something to fix.
   private List<Diagnostic> diagnose(final List<Path> files) {
-    return files.stream().flatMap(file -> compileFromDisk(file).stream()).toList();
+    return files.stream()
+        .flatMap(file -> compileFromDisk(file).stream())
+        .filter(diagnostic -> diagnostic.getSeverity() != DiagnosticSeverity.Hint)
+        .toList();
   }
 
   /**

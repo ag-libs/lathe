@@ -18,6 +18,9 @@ All files live in `dev/` and are never shipped with the distribution.
 | `jdtls.py` | `JdtlsClient` preset — runs Eclipse jdtls on Corretto 25 for differential testing |
 | `jdtls_diff.py` | Differential tester — drives Lathe and jdtls over identical probes, reports divergences |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
+| `mcp.py` | Minimal MCP stdio client (`McpClient`) and CLI for the Lathe MCP server |
+| `mcp_battery.py` | MCP smoke on a real workspace: every tool, break → verify → repair, rename round-trip |
+| `editor-smoke.sh` | Headless editor smoke on real workspaces, in your own Neovim config |
 
 ---
 
@@ -97,6 +100,28 @@ Only `python3` is required — no Neovim, no nvim-dap. On failure it prints the 
 (the DAP host and source-lookup path) to show the cause. Because debug puts the java-debug jars on
 the server's module path, the fixture's launcher must come from a freshly installed server, so the
 harness builds by default; `SKIP_BUILD=1` reuses whatever is already built.
+
+---
+
+## Release smoke on real workspaces — mcp_battery.py, editor-smoke.sh
+
+Two batteries for checking a server build against Dropwizard, EqualsVerifier and Helidon clones before
+a release.
+Sync each workspace with the build under test first (`mvn process-test-classes`; Helidon's HEAD
+needs JDK 27, Dropwizard JDK 25).
+
+```bash
+# MCP: every tool once, a break/verify/repair cycle, and a cross-module rename round-trip
+python3 -I dev/mcp_battery.py ~/git/dropwizard dropwizard
+
+# Editor: navigation, references, completion while typing, diagnostics, format, dependency
+# sources and neotest, driven inside your own Neovim config with this checkout's Lua client
+dev/editor-smoke.sh ~/git                    # all three; or name some: ~/git helidon
+```
+
+Both print one `PASS`/`FAIL` line per check and exit 1 if any check fails.
+`mcp_battery.py` restores every file it touched; the editor smoke never writes a file.
+`mcp_battery.py` uses the launcher `mcp.py` picks: `LATHE_MCP_LAUNCHER`, else the newest cached server.
 
 ---
 

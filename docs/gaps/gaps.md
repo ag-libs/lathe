@@ -311,7 +311,7 @@ Candidates:
 
 ## EG-057 — Symbol search matches CamelHumps only in reactor types, not in JDK and dependency types
 
-**Status: documented**
+**Status: deferred — Target: backlog** (by design since EG-005; the docs that claimed more are corrected).
 
 ### Observed behaviour
 
@@ -320,24 +320,34 @@ On Dropwizard, through both `workspace/symbol` and MCP `search_symbols`:
 | Query | Result |
 |---|---|
 | `DiSuRe` | `DiscoverableSubtypeResolver` (reactor) — humps match |
-| `ConcurrentHashMap` | found (JDK) |
-| `ConcHashMap` | nothing |
-| `CHM` | `CHMaxFragmentLengthConsumer`, `CHMaxFragmentLengthProducer` (literal prefix), not `ConcurrentHashMap` |
+| `ConcurrentHashMap` | found (JDK), by prefix |
+| `ConcHashMap` | nothing: no humps match for a JDK type |
+| `CHM` | `CHMaxFragmentLengthConsumer`, `CHMaxFragmentLengthProducer` (JDK, by prefix), not `ConcurrentHashMap` |
 
-The MCP tool describes the query as "Symbol name (CamelHumps supported)", so an agent expects
-`ConcHashMap` to find the JDK class.
-IntelliJ's Search Everywhere, which the Neovim workspace-symbol picker mirrors, matches both.
+For reactor types, all-capitals queries are humps patterns too (`ASF` finds `AbstractServerFactory`).
 
-### Fix direction
+### Root cause
 
-Not yet traced: find where JDK/dependency type-index shards are queried, and whether they use a
-prefix lookup instead of `CamelCaseMatcher`.
-Decide whether an all-capitals query is a humps pattern (`CHM` → `ConcurrentHashMap`) or a prefix.
+Not a bug: `WorkspaceTypeIndex.searchCamelCase` filters to `reactorBinaryNames` on purpose.
+EG-005 added humps as a layer on top of the prefix search for reactor types only, so it would not
+touch the prefix contract that completion and the import quick fix rely on.
+JDK and dependency types match by name prefix only.
+
+The defect was in the docs: the README, `docs/status.md`, `docs/guide/ai-agents.md` and the
+`search_symbols` tool's `query` description said CamelHumps worked "across reactor, dependencies,
+JDK". They now say prefix everywhere, CamelHumps for reactor types.
+
+### If it is ever wanted
+
+Humps over JDK and dependency types means scanning their whole index for every query, which the
+reactor-only layer avoids (it runs on each keystroke of an editor's symbol picker).
+Measure that cost on a large workspace first, and keep it out of `search()` so completion and the
+import quick fix keep their prefix contract.
+IntelliJ's Search Everywhere matches humps everywhere, so the demand would come from there.
 
 ### Regression targets
 
-None yet.
-
+None: the behaviour is unchanged; only the docs and the tool description were corrected.
 ---
 
 ## Implementation notes
@@ -881,7 +891,7 @@ Candidate: `LatheEngineTest.verifyChange_afterRenameBreaksDependents_reportsThem
 
 ## MC-5 — `verify_change` counts unused-code hints as diagnostics after recompile
 
-**Status: documented**
+**Status: in-progress** (on `fix/release-smoke-followups`).
 
 ### Observed behaviour
 
@@ -892,16 +902,21 @@ On Helidon, the same check on an unmodified `MediaType.java` reports "1 diagnost
 `Hint [46:50] Unused parameter 'it'`.
 An agent reads the count as something to fix, though nothing changed and nothing is wrong.
 
-### Fix direction
+### Fix
 
-Leave hints (and probably warnings in files the change set did not touch) out of `verify_change`'s
-count and listing, or report them under a separate label after the errors.
-`get_diagnostics` on a single file can keep showing them.
+`LatheEngine.diagnose`, which every `verify_change` check goes through, drops `Hint` diagnostics, so
+the count, the text and the structured result agree.
+Warnings stay: a project compiled with `-Werror` fails on them.
+`get_diagnostics` on a single file still shows hints.
+
+The same review capped the "N module(s) depend on your change" list in the text at ten names plus
+"and N more" (Helidon's `common/media-type` names 142); the structured result keeps every name.
 
 ### Regression targets
 
-None yet.
-Candidate: `LatheEngineTest.verifyChange_referrerWithOnlyHints_reportsClean`.
+- `LatheEngineTest.verifyChange_referrerWithOnlyAHint_reportsClean` (fails without the filter); the
+  error side stays covered by `verifyChange_externalEditBreaksSibling_reportsDiagnostic`.
+- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`.
 
 ---
 
