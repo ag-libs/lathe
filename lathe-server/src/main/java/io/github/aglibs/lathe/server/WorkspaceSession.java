@@ -832,7 +832,8 @@ final class WorkspaceSession {
           .filter(WorkspaceSession::isResource)
           .map(
               file ->
-                  ResourceEntry.reactor(dir.relativize(file).toString(), module, file.toString()))
+                  ResourceEntry.reactor(
+                      FileUtil.slashed(dir.relativize(file)), module, file.toString()))
           .toList();
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resources] walk %s failed".formatted(dir));
@@ -1408,7 +1409,12 @@ final class WorkspaceSession {
   }
 
   private static String moduleRel(final Path workspaceRoot, final ModuleSourceConfig config) {
-    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()).toString();
+    return FileUtil.slashed(
+        workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()));
+  }
+
+  private String moduleRelForDir(final Path moduleDir) {
+    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
   void onOpen(final String uri, final String content, final int version) {
@@ -3122,7 +3128,7 @@ final class WorkspaceSession {
       return 0;
     }
 
-    final Set<String> orphans = tree.orphans();
+    final Set<Path> orphans = tree.orphans();
     if (orphans.isEmpty()) {
       return 0;
     }
@@ -3144,8 +3150,7 @@ final class WorkspaceSession {
     return config.sourceRoots().stream().filter(root -> !config.isGenerated(root)).toList();
   }
 
-  private static void pruneOrphanStamps(
-      final ModuleSourceConfig config, final Set<String> orphans) {
+  private static void pruneOrphanStamps(final ModuleSourceConfig config, final Set<Path> orphans) {
     try {
       CompiledStamps.prune(config.moduleDir(), config.sourceTree(), orphans);
     } catch (final IOException e) {
@@ -3928,10 +3933,6 @@ final class WorkspaceSession {
     }
   }
 
-  private String moduleRelForDir(final Path moduleDir) {
-    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir).toString();
-  }
-
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
   // resource edit is picked up without Maven. The copy bumps the destination mtime, so the next
   // pass
@@ -4026,9 +4027,7 @@ final class WorkspaceSession {
   // root, and the tree's stamps -- so its stale and orphaned sources follow without a further
   // file-system call (a scan repeated every few seconds; such calls are costly on macOS).
   record TreeState(
-      ModuleSourceConfig config,
-      Map<Path, Map<Path, Long>> sourcesByRoot,
-      Map<String, Long> stamps) {
+      ModuleSourceConfig config, Map<Path, Map<Path, Long>> sourcesByRoot, Map<Path, Long> stamps) {
     TreeState {
       ValidCheck.check()
           .notNull(config, "config")
@@ -4061,15 +4060,13 @@ final class WorkspaceSession {
                           source ->
                               !source
                                   .getValue()
-                                  .equals(
-                                      stamps.get(
-                                          root.getKey().relativize(source.getKey()).toString())))
+                                  .equals(stamps.get(root.getKey().relativize(source.getKey()))))
                       .map(Map.Entry::getKey))
           .toList();
     }
 
     // Stamped sources no longer on disk: their classes are left in the mirror.
-    Set<String> orphans() {
+    Set<Path> orphans() {
       return stamps.keySet().stream()
           .filter(
               rel ->
@@ -4422,7 +4419,7 @@ final class WorkspaceSession {
     }
 
     final var sw = Stopwatch.start();
-    final var rel = root.relativize(savedSource).toString();
+    final Path rel = root.relativize(savedSource);
     try {
       CompiledStamps.record(config.moduleDir(), config.sourceTree(), rel, mtime);
       LOG.fine(() -> "[stamp] recorded %s %dms".formatted(rel, sw.elapsedMs()));

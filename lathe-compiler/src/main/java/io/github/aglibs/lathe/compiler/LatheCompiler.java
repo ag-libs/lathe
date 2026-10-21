@@ -162,7 +162,7 @@ public final class LatheCompiler implements Compiler {
       throws IOException {
     final var genSources = config.getGeneratedSourcesDirectory();
     final Path genRoot = genSources != null ? genSources.toPath().normalize() : null;
-    final var stamps = new HashMap<String, Long>();
+    final var stamps = new HashMap<Path, Long>();
     final List<String> locations = config.getSourceLocations();
     for (final var location : locations != null ? locations : List.<String>of()) {
       final var root = Path.of(location);
@@ -173,9 +173,7 @@ public final class LatheCompiler implements Compiler {
       try (final var walk = Files.walk(root)) {
         stamps.putAll(
             walk.filter(FileUtil::isJavaFile)
-                .collect(
-                    Collectors.toMap(
-                        source -> root.relativize(source).toString(), LatheCompiler::mtime)));
+                .collect(Collectors.toMap(root::relativize, LatheCompiler::mtime)));
       }
     }
 

@@ -23,6 +23,10 @@ The server discovers modules by walking `.lathe/`; there is no module list.
 `<moduleRel>` is the module's path relative to the workspace root, and the empty string for the root module, whose files sit directly in `.lathe/`.
 It need not mirror a real directory: OpenJDK uses flat names (`java.base`, a build-tool batch name).
 
+Every relative path saved in `.lathe/` is `/`-separated on every OS: `<moduleRel>`, compile-stamp keys, `workspace.json` `buildFiles` and `outputs` paths, resource roots, and the run-config `module`.
+So a `.lathe/` written on Windows reads the same elsewhere, and a committed `lathe-run.json` works across OSes.
+Readers resolve them with `Path.resolve`, which accepts `/` on Windows; absolute paths stay native.
+
 A module has one or two **source trees**, named `classes` (main) and `test-classes` (test).
 The names are Lathe's, not Maven's: every front-end uses them, whatever its build calls the outputs.
 The front-end assigns the tree by scope (main or test), never from the build's directory names.

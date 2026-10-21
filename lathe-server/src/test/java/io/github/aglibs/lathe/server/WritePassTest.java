@@ -102,8 +102,8 @@ class WritePassTest extends ServiceTestBase {
 
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .as("stamps: the good file written, the broken one left stale")
-        .containsEntry("com/example/Good.java", 5_000L)
-        .containsEntry("com/example/Broken.java", 1_000L);
+        .containsEntry(Path.of("com/example/Good.java"), 5_000L)
+        .containsEntry(Path.of("com/example/Broken.java"), 1_000L);
     assertThat(service.notesFuture(List.of()).get(5, TimeUnit.SECONDS).notCompiled())
         .as("the broken file stays recorded though the rest of its tree was written after it")
         .singleElement()
@@ -137,8 +137,8 @@ class WritePassTest extends ServiceTestBase {
 
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .as("both written together once B's write takes the failed A along")
-        .containsEntry("com/example/A.java", 5_000L)
-        .containsEntry("com/example/B.java", 6_000L);
+        .containsEntry(Path.of("com/example/A.java"), 5_000L)
+        .containsEntry(Path.of("com/example/B.java"), 6_000L);
   }
 
   @Test
@@ -244,15 +244,15 @@ class WritePassTest extends ServiceTestBase {
         .contains("addedB");
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .as("stamps during the build: the reported A written, the external C left for later")
-        .containsEntry("com/example/A.java", 5_000L)
-        .containsEntry("com/example/C.java", 1_000L);
+        .containsEntry(Path.of("com/example/A.java"), 5_000L)
+        .containsEntry(Path.of("com/example/C.java"), 1_000L);
     verify(client, never()).notifyProgress(argThat(WritePassTest::isRecompileBegin));
 
     LatheLock.release(lock);
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
         .as("after the build, the external change catches up")
-        .containsEntry("com/example/C.java", 5_000L);
+        .containsEntry(Path.of("com/example/C.java"), 5_000L);
   }
 
   @Test
@@ -266,7 +266,7 @@ class WritePassTest extends ServiceTestBase {
     service.reconcileNow(true).get(5, TimeUnit.SECONDS);
 
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry("com/example/Foo.java", 5_000L);
+        .containsEntry(Path.of("com/example/Foo.java"), 5_000L);
   }
 
   @Test
@@ -289,8 +289,8 @@ class WritePassTest extends ServiceTestBase {
 
     assertThat(classesDir.resolve("shapes/Square.class")).exists();
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry("shapes/Shape.java", 5_000L)
-        .containsEntry("shapes/Square.java", 5_000L);
+        .containsEntry(Path.of("shapes/Shape.java"), 5_000L)
+        .containsEntry(Path.of("shapes/Square.java"), 5_000L);
   }
 
   @Test
@@ -334,9 +334,9 @@ class WritePassTest extends ServiceTestBase {
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/api"), "classes"))
-        .containsEntry("com/example/api/Api.java", 5_000L);
+        .containsEntry(Path.of("com/example/api/Api.java"), 5_000L);
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
-        .containsEntry("com/example/app/App.java", 5_000L);
+        .containsEntry(Path.of("com/example/app/App.java"), 5_000L);
   }
 
   @Test
@@ -375,7 +375,7 @@ class WritePassTest extends ServiceTestBase {
 
     // Recompiled in-process (its stamp advanced to the source's mtime) and not prompted for Maven.
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry("com/example/Foo.java", 5_000L);
+        .containsEntry(Path.of("com/example/Foo.java"), 5_000L);
     verify(client, never()).showMessageRequest(any());
     // The in-process recompile reports a self-clearing progress task (begin "recompiling" + end).
     verify(client, timeout(5_000).atLeastOnce())
@@ -399,7 +399,7 @@ class WritePassTest extends ServiceTestBase {
     // A failed compile must not stamp the source fresh: it stays stale so a later batch retries it
     // once its dependency lands, instead of leaving a stale mirror class marked up to date.
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry("com/example/Foo.java", 1_000L);
+        .containsEntry(Path.of("com/example/Foo.java"), 1_000L);
   }
 
   @Test
@@ -453,7 +453,9 @@ class WritePassTest extends ServiceTestBase {
         "package com.example; class Foo {}",
         sourceMtime);
     CompiledStamps.writeAll(
-        tmp.resolve(".lathe/module"), "classes", Map.of("com/example/Foo.java", stampMtime));
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of(Path.of("com/example/Foo.java"), stampMtime));
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 

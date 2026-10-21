@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
@@ -166,7 +167,7 @@ public final class ReactorProjects {
 
   private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
     final Build build = project.getBuild();
-    final String module = workspaceRoot.relativize(project.getBasedir().toPath()).toString();
+    final String module = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
     final Path buildDir = Path.of(build.getDirectory());
     final String finalName = build.getFinalName();
     return Stream.of(
@@ -180,7 +181,7 @@ public final class ReactorProjects {
         .map(
             output ->
                 new OutputData(
-                    workspaceRoot.relativize(output.getKey()).toString(),
+                    FileUtil.slashed(workspaceRoot.relativize(output.getKey())),
                     module,
                     output.getValue()));
   }
@@ -199,7 +200,7 @@ public final class ReactorProjects {
   }
 
   public static String moduleRel(final Path workspaceRoot, final MavenProject project) {
-    final String rel = workspaceRoot.relativize(project.getBasedir().toPath()).toString();
+    final String rel = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
     return rel.isEmpty() ? "." : rel;
   }
 

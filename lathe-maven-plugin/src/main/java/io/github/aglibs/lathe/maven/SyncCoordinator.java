@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
@@ -80,7 +81,7 @@ final class SyncCoordinator {
     } else {
       final List<String> buildFiles =
           projects.stream()
-              .map(p -> workspaceRoot.relativize(p.getFile().toPath()).toString())
+              .map(p -> FileUtil.slashed(workspaceRoot.relativize(p.getFile().toPath())))
               .toList();
       final List<String> runnerClasspath =
           serverInstaller.resolveRunnerClasspath(externalArtifacts).stream()

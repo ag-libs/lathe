@@ -223,11 +223,11 @@ class SaveTest extends ServiceTestBase {
                   assertThat(tasks.stream().mapToInt(Integer::intValue).sum())
                       .as("files written")
                       .isEqualTo(files.size()));
-      final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+      final Map<Path, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
       for (final Path file : files) {
         assertThat(stamps)
             .containsEntry(
-                tmp.resolve("module/src/main/java").relativize(file).toString(),
+                tmp.resolve("module/src/main/java").relativize(file),
                 Files.getLastModifiedTime(file).toMillis());
       }
     }

@@ -7,14 +7,18 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
-// Per-source compile stamps (root-relative path -> mtime), one map per module source tree.
+// Per-source compile stamps (source-root-relative path -> mtime), one map per module source tree.
+// Callers work with Paths; the file holds them '/'-separated, so it reads the same on every OS.
 public final class CompiledStamps {
 
   private CompiledStamps() {}
 
   // Missing or corrupt file -> empty map: the scan then reads every source stale (self-healing).
-  public static Map<String, Long> load(final Path moduleDir, final String sourceTree) {
+  // A file Windows wrote before stamps were '/'-separated may hold one source under both
+  // spellings; the first wins.
+  public static Map<Path, Long> load(final Path moduleDir, final String sourceTree) {
     final var path = stampsPath(moduleDir, sourceTree);
     if (!Files.exists(path)) {
       return Map.of();
@@ -22,30 +26,43 @@ public final class CompiledStamps {
 
     try {
       final CompiledStampsData data = Json.read(path, CompiledStampsData.class);
-      return data != null ? data.stamps() : Map.of();
+      if (data == null) {
+        return Map.of();
+      }
+
+      return data.stamps().entrySet().stream()
+          .collect(
+              Collectors.toUnmodifiableMap(
+                  entry -> Path.of(entry.getKey()),
+                  Map.Entry::getValue,
+                  (first, ignored) -> first));
     } catch (final IOException | RuntimeException e) {
       return Map.of();
     }
   }
 
   public static void writeAll(
-      final Path moduleDir, final String sourceTree, final Map<String, Long> stamps)
+      final Path moduleDir, final String sourceTree, final Map<Path, Long> stamps)
       throws IOException {
-    Json.write(new CompiledStampsData(stamps), stampsPath(moduleDir, sourceTree));
+    final Map<String, Long> saved =
+        stamps.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    entry -> FileUtil.slashed(entry.getKey()), Map.Entry::getValue));
+    Json.write(new CompiledStampsData(saved), stampsPath(moduleDir, sourceTree));
   }
 
   public static void record(
-      final Path moduleDir, final String sourceTree, final String relPath, final long mtime)
+      final Path moduleDir, final String sourceTree, final Path relPath, final long mtime)
       throws IOException {
-    final var current = new HashMap<String, Long>(load(moduleDir, sourceTree));
+    final var current = new HashMap<>(load(moduleDir, sourceTree));
     current.put(relPath, mtime);
     writeAll(moduleDir, sourceTree, current);
   }
 
-  public static void prune(
-      final Path moduleDir, final String sourceTree, final Set<String> relPaths)
+  public static void prune(final Path moduleDir, final String sourceTree, final Set<Path> relPaths)
       throws IOException {
-    final var current = new HashMap<String, Long>(load(moduleDir, sourceTree));
+    final var current = new HashMap<>(load(moduleDir, sourceTree));
     if (!current.keySet().removeAll(relPaths)) {
       return;
     }

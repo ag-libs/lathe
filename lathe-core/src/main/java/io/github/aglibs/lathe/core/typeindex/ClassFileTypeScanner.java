@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core.typeindex;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.InputStream;
@@ -142,7 +143,7 @@ public final class ClassFileTypeScanner {
   }
 
   private static String classEntryName(final Path root, final Path file) {
-    return root.relativize(file).toString().replace('\\', '/');
+    return FileUtil.slashed(root.relativize(file));
   }
 
   private static List<TypeIndexEntry> sorted(final Stream<TypeIndexEntry> entries) {

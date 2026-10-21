@@ -182,7 +182,7 @@ public final class TestCompiler {
     CompiledStamps.writeAll(
         latheModuleDir,
         "classes",
-        sources.keySet().stream().collect(Collectors.toMap(rel -> rel, rel -> mtimeMillis)));
+        sources.keySet().stream().collect(Collectors.toMap(Path::of, rel -> mtimeMillis)));
     writeModuleParams(
         workspaceRoot,
         moduleName,

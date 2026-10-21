@@ -81,7 +81,7 @@ public final class OpenJdkSync {
       // notices a rebuilt module or tool and prompts a re-sync.
       final List<String> buildFiles =
           Stream.concat(moduleCmdlines.stream(), toolCmdlines.stream())
-              .map(cmdline -> workspaceRoot.relativize(batchFile(cmdline, "")).toString())
+              .map(cmdline -> FileUtil.slashed(workspaceRoot.relativize(batchFile(cmdline, ""))))
               .toList();
       final SyncScript syncScript = syncScript(buildDir, serverVersion, systemProperties);
       writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
@@ -239,14 +239,13 @@ public final class OpenJdkSync {
 
   // filelist -> {sourceRoot-relative path -> mtime}, keyed as LatheCompiler.writeCompiledStamps
   // does.
-  private static Map<String, Long> stampsFor(final List<Path> sources, final List<Path> roots)
+  private static Map<Path, Long> stampsFor(final List<Path> sources, final List<Path> roots)
       throws IOException {
-    final var stamps = new HashMap<String, Long>();
+    final var stamps = new HashMap<Path, Long>();
     for (final Path source : sources) {
       final Optional<Path> root = rootOf(source, roots);
       if (root.isPresent()) {
-        stamps.put(
-            root.get().relativize(source).toString(), Files.getLastModifiedTime(source).toMillis());
+        stamps.put(root.get().relativize(source), Files.getLastModifiedTime(source).toMillis());
       }
     }
     return stamps;

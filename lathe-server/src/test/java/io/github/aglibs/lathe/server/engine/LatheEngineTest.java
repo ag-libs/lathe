@@ -319,7 +319,8 @@ class LatheEngineTest {
     assertThat(apiClasses.resolve("Renamed.class")).exists();
     assertThat(apiClasses.resolve("Api.class")).doesNotExist();
     assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
-        .containsEntry("com/example/app/App.java", Files.getLastModifiedTime(app).toMillis());
+        .containsEntry(
+            Path.of("com/example/app/App.java"), Files.getLastModifiedTime(app).toMillis());
     assertThat(tmp.resolve(".lathe/lathe.lock")).doesNotExist();
   }
 
@@ -342,11 +343,11 @@ class LatheEngineTest {
     engine.rename(files.get(0), pos.getLine(), pos.getCharacter(), "welcome");
 
     // Every touched file is compiled and stamped before rename returns, not deferred to a sync.
-    final Map<String, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+    final Map<Path, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
     for (final Path file : files) {
       assertThat(stamps)
           .containsEntry(
-              tmp.resolve("module/src/main/java").relativize(file).toString(),
+              tmp.resolve("module/src/main/java").relativize(file),
               Files.getLastModifiedTime(file).toMillis());
     }
   }
@@ -484,7 +485,7 @@ class LatheEngineTest {
       CompiledStamps.record(
           moduleDir,
           "classes",
-          sourceRoot.relativize(source).toString(),
+          sourceRoot.relativize(source),
           Files.getLastModifiedTime(source).toMillis());
     }
   }

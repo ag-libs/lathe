@@ -100,6 +100,14 @@ final class FileUtilTest {
     assertThat(skipped).isZero();
   }
 
+  // On Linux '\' is an ordinary file-name character, so it stays inside its name.
+  @Test
+  void slashed_relativePath_joinsNamesWithSlash_keepingABackslashInsideAName() {
+    assertThat(FileUtil.slashed(Path.of("core", "src", "Foo.java"))).isEqualTo("core/src/Foo.java");
+    assertThat(FileUtil.slashed(Path.of("odd\\name", "Foo.java"))).isEqualTo("odd\\name/Foo.java");
+    assertThat(FileUtil.slashed(tempDir.relativize(tempDir))).isEmpty();
+  }
+
   @Test
   void touch_existingFile_bumpsMtimeKeepsContent_missingFileThrows() throws IOException {
     final Path file = Files.writeString(tempDir.resolve("workspace.json"), "{}");

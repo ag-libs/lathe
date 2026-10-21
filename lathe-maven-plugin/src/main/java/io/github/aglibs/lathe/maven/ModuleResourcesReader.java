@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import java.nio.file.Path;
 import java.util.List;
@@ -31,7 +32,7 @@ final class ModuleResourcesReader {
       final MavenProject project,
       final List<Resource> resources,
       final String outputDirectory) {
-    final var output = workspaceRoot.relativize(Path.of(outputDirectory)).toString();
+    final String output = FileUtil.slashed(workspaceRoot.relativize(Path.of(outputDirectory)));
     return resources.stream().map(resource -> toRoot(workspaceRoot, project, resource, output));
   }
 
@@ -41,7 +42,7 @@ final class ModuleResourcesReader {
       final Resource resource,
       final String output) {
     final Path directory = project.getBasedir().toPath().resolve(resource.getDirectory());
-    final var relative = workspaceRoot.relativize(directory).toString();
+    final String relative = FileUtil.slashed(workspaceRoot.relativize(directory));
     final String targetPath = resource.getTargetPath() != null ? resource.getTargetPath() : "";
     final String module = ReactorProjects.moduleRel(workspaceRoot, project);
     return new ResourceRootData(relative, output, targetPath, resource.isFiltering(), module);

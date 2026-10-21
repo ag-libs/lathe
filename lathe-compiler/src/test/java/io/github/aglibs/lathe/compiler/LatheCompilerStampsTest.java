@@ -36,7 +36,8 @@ final class LatheCompilerStampsTest {
 
     assertThat(CompiledStamps.load(latheModuleDir, "classes"))
         .containsOnly(
-            Map.entry("com/example/Foo.java", 100L), Map.entry("com/example/Bar.java", 200L));
+            Map.entry(Path.of("com/example/Foo.java"), 100L),
+            Map.entry(Path.of("com/example/Bar.java"), 200L));
   }
 
   private static void write(final Path path, final long mtime) throws Exception {

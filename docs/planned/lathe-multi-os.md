@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; B0, A1, A2 and A6 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; B0, A1, A2, A3 and A6 done; A0 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -296,7 +296,7 @@ Old directories are simply orphaned (`rm -rf ~/.cache/lathe/deps/*:*` reclaims t
 
 `moduleRel`, compile-stamp keys, resource names and run-config `module` fields are stored with `/` on every OS.
 Readers resolve them with `Path.resolve`, which accepts `/` on Windows.
-The schema records normalize these fields in their compact constructors, so no writer can get it wrong.
+Values stay `Path`s in memory; one helper, `FileUtil.slashed`, writes the `/` form where they are saved.
 This makes a committed `lathe-run.json` work across OSes.
 Absolute paths stay native: they are machine-specific anyway.
 
@@ -442,7 +442,7 @@ Each slice can be merged on its own.
 2. **A2**, the sync script from the build: the working Maven script is the template. *Done.*
 3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows. *Done.*
 4. **A1**, launcher models and server argfiles, on the same renderer. *Done.*
-5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
+5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement). *A3 done.*
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
 `lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
@@ -497,9 +497,21 @@ Each slice can be merged on its own.
 #### A3 — Data and names
 
 - D7 nested dependency cache; skip `META-INF/maven/`. *Done.*
-- D8 `/` in persisted relative paths, normalized in the schema records.
+- D8 `/` in persisted relative paths. *Done (2026-10-21).*
 
-**Exit:** the names guard passes on the fixtures and on Dropwizard and Helidon, with the path-length bound recorded here. *Met for D7 (2026-10-19, numbers under [path length](#directory-layout)); D8 still open.*
+**Exit:** the names guard passes on the fixtures and on Dropwizard and Helidon, with the path-length bound recorded here. *Met for D7 (2026-10-19, numbers under [path length](#directory-layout)).*
+
+*D8 as built:*
+- Relative paths stay `Path` values in memory and are compared as `Path`s; they become `/`-separated strings only where they are saved, through one helper, `FileUtil.slashed`.
+  It joins a path's names with `/`, so a Linux file name that contains `\` stays intact, unlike replacing `\` with `/`.
+- `CompiledStamps` takes and returns `Path` keys, saving them `/`-separated and parsing them back with `Path.of`.
+  The server's staleness scan compares `root.relativize(source)` with them directly, so the Windows map that held one source under both spellings can't recur.
+- The saved strings use the helper: `workspace.json` `buildFiles` and `outputs`, resource roots, the test-launch module, and the server's module name, which feeds sync commands, notes and the run-config `module`.
+  `ClassFileTypeScanner`'s hand-written `replace('\\', '/')` uses it too.
+- Not done as D8 first said: the schema records don't normalize their fields.
+  A record can't tell a Windows `\` from a Linux file name containing one, and the server's runtime comparisons need the same helper anyway.
+- On Linux and macOS nothing changes, and no schema bump is needed.
+  The Windows CI row (B1) is the proof; the tests B0 saw fail on Windows (`WritePassTest`, the staleness scan) cover it.
 
 #### A4 — URIs and text
 

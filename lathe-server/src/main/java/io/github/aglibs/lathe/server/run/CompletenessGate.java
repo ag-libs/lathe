@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
@@ -48,7 +49,7 @@ public final class CompletenessGate {
     final var reasons = new ArrayList<String>();
     for (final Map.Entry<Path, Set<String>> entry : touched.entrySet()) {
       final Path moduleDir = entry.getKey();
-      final String moduleRel = latheDir.relativize(moduleDir).toString();
+      final String moduleRel = FileUtil.slashed(latheDir.relativize(moduleDir));
       final Set<String> sourceTrees = entry.getValue();
       reasons.addAll(
           LatheLock.awaitAndRead(

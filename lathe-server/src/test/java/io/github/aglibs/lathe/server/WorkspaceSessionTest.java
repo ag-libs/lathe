@@ -100,7 +100,9 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Live.class"), "");
     Files.writeString(outputDir.resolve("Ghost.class"), "");
     Files.writeString(outputDir.resolve("Ghost$Inner.class"), "");
-    writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
+    writeStamps(
+        Map.of(
+            Path.of("com/example/Live.java"), 2_000L, Path.of("com/example/Ghost.java"), 1_000L));
 
     final int removed =
         WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
@@ -110,14 +112,14 @@ class WorkspaceSessionTest {
     assertThat(outputDir.resolve("Ghost$Inner.class")).doesNotExist();
     assertThat(outputDir.resolve("Live.class")).exists();
     assertThat(CompiledStamps.load(config.moduleDir(), config.sourceTree()))
-        .containsOnlyKeys("com/example/Live.java");
+        .containsOnlyKeys(Path.of("com/example/Live.java"));
   }
 
   @Test
   void deleteOrphanedClassOutputs_allSourcesPresent_noOpKeepsStamps() throws Exception {
     writeJava("Live", 2_000L);
     Files.writeString(outputDir.resolve("Live.class"), "");
-    writeStamps(Map.of("com/example/Live.java", 2_000L));
+    writeStamps(Map.of(Path.of("com/example/Live.java"), 2_000L));
 
     final int removed =
         WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
@@ -125,7 +127,7 @@ class WorkspaceSessionTest {
     assertThat(removed).isZero();
     assertThat(outputDir.resolve("Live.class")).exists();
     assertThat(CompiledStamps.load(config.moduleDir(), config.sourceTree()))
-        .containsOnlyKeys("com/example/Live.java");
+        .containsOnlyKeys(Path.of("com/example/Live.java"));
   }
 
   @Test
@@ -240,11 +242,11 @@ class WorkspaceSessionTest {
     writeJava("Fresh", 2_000L); // stamp matches its mtime → up to date, ignored
     writeStamps(
         Map.of(
-            "com/example/Edited.java",
+            Path.of("com/example/Edited.java"),
             1_000L,
-            "com/example/Restored.java",
+            Path.of("com/example/Restored.java"),
             4_000L,
-            "com/example/Fresh.java",
+            Path.of("com/example/Fresh.java"),
             2_000L));
 
     final var scan = staleModules(config);
@@ -259,7 +261,7 @@ class WorkspaceSessionTest {
   void staleModules_missingClassButStampPresent_notStale() throws Exception {
     // A mismatched source whose class never lands at the derived path — a matching stamp is fresh.
     writeJava("Mismatch", 3_000L);
-    writeStamps(Map.of("com/example/Mismatch.java", 3_000L));
+    writeStamps(Map.of(Path.of("com/example/Mismatch.java"), 3_000L));
 
     final var scan = staleModules(config);
 
@@ -269,7 +271,9 @@ class WorkspaceSessionTest {
   @Test
   void staleModules_orphanStampForDeletedSource_ignored() throws Exception {
     writeJava("Live", 2_000L);
-    writeStamps(Map.of("com/example/Live.java", 2_000L, "com/example/Ghost.java", 1_000L));
+    writeStamps(
+        Map.of(
+            Path.of("com/example/Live.java"), 2_000L, Path.of("com/example/Ghost.java"), 1_000L));
 
     final var scan = staleModules(config);
 
@@ -408,7 +412,7 @@ class WorkspaceSessionTest {
     return TestCompiler.writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), "", mtime);
   }
 
-  private void writeStamps(final Map<String, Long> stamps) throws IOException {
+  private void writeStamps(final Map<Path, Long> stamps) throws IOException {
     CompiledStamps.writeAll(config.moduleDir(), config.sourceTree(), stamps);
   }
 

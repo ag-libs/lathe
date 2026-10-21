@@ -25,6 +25,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -142,6 +144,16 @@ public final class FileUtil {
       deleteDir(dest);
     }
     copyDir(src, dest);
+  }
+
+  // A relative path as saved in .lathe/: its names joined with '/' on every OS, so a file written
+  // on
+  // Windows reads the same elsewhere. Joining names, not replacing '\', leaves a Linux file name
+  // that contains '\' intact.
+  public static String slashed(final Path relative) {
+    return StreamSupport.stream(relative.spliterator(), false)
+        .map(Path::toString)
+        .collect(Collectors.joining("/"));
   }
 
   // Writes content atomically (creating dir) unless target already holds it; returns whether it
