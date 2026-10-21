@@ -75,7 +75,8 @@ public final class TestCompiler {
 
   private TestCompiler() {}
 
-  private static Path jarOf(final Class<?> type) {
+  // Where a class was loaded from: its jar, or its classes directory.
+  public static Path jarOf(final Class<?> type) {
     try {
       return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
     } catch (final URISyntaxException e) {

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.io.UncheckedIOException;
 
 public final class IOUtil {
@@ -20,6 +21,17 @@ public final class IOUtil {
       return supplier.get();
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
+    }
+  }
+
+  // A wait between I/O retries or polls. An interrupt keeps the thread's flag and ends the wait as
+  // an InterruptedIOException, which the caller's IOException handling already covers.
+  public static void sleep(final long millis) throws InterruptedIOException {
+    try {
+      Thread.sleep(millis);
+    } catch (final InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new InterruptedIOException("interrupted while waiting");
     }
   }
 

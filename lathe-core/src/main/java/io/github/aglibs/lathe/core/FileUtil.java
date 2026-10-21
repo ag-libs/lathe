@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -35,6 +34,7 @@ import java.util.zip.ZipInputStream;
 public final class FileUtil {
 
   private static final int MOVE_ATTEMPTS = 5;
+  private static final long RETRY_PAUSE_MS = 10;
 
   private FileUtil() {}
 
@@ -148,8 +148,7 @@ public final class FileUtil {
   }
 
   // A relative path as saved in .lathe/: its names joined with '/' on every OS, so a file written
-  // on
-  // Windows reads the same elsewhere. Joining names, not replacing '\', leaves a Linux file name
+  // on Windows reads the same elsewhere. Joining names, not replacing '\', leaves a Linux file name
   // that contains '\' intact.
   public static String slashed(final Path relative) {
     return StreamSupport.stream(relative.spliterator(), false)
@@ -237,12 +236,13 @@ public final class FileUtil {
       } catch (final NoSuchFileException e) {
         // No copy to replace yet.
       } catch (final FileSystemException e) {
-        // Windows denies renaming a directory another caller is renaming at that moment.
+        // Windows denies renaming a directory another caller is renaming at that moment: give it
+        // time to finish, a little longer on each attempt.
         if (attempt == MOVE_ATTEMPTS) {
           throw e;
         }
 
-        pause(attempt);
+        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
         continue;
       }
 
@@ -259,22 +259,12 @@ public final class FileUtil {
           throw e;
         }
 
-        pause(attempt);
+        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
       } finally {
         if (Files.exists(previous)) {
           deleteDir(previous);
         }
       }
-    }
-  }
-
-  // Gives the other caller time to finish its rename, a little longer on each attempt.
-  private static void pause(final int attempt) throws IOException {
-    try {
-      Thread.sleep(10L * attempt);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new InterruptedIOException("interrupted while retrying a move");
     }
   }
 

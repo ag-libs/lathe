@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,22 +21,18 @@ public final class TestProcess {
   }
 
   public static Path java() {
-    return Path.of(System.getProperty("java.home"), "bin", "java");
+    return Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY), LatheLayout.BIN_DIR, "java");
   }
 
   // What follows the tool in a template whose tool is this JDK's java (%MVN%).
   public static List<String> toolArgs(final String... args) {
-    return Stream.concat(Stream.of("-cp", classes(), TestProcess.class.getName()), Stream.of(args))
+    return Stream.concat(
+            Stream.of(
+                "-cp",
+                TestCompiler.jarOf(TestProcess.class).toString(),
+                TestProcess.class.getName()),
+            Stream.of(args))
         .toList();
-  }
-
-  private static String classes() {
-    try {
-      return Path.of(TestProcess.class.getProtectionDomain().getCodeSource().getLocation().toURI())
-          .toString();
-    } catch (final URISyntaxException e) {
-      throw new IllegalStateException(e);
-    }
   }
 
   // upper [file]: uppercases the file in place, else stdin to stdout. name file: writes the file's

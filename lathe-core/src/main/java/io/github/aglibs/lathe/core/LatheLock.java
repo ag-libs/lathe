@@ -41,7 +41,7 @@ public final class LatheLock {
 
   private static void awaitClear(final Path lockFile) throws IOException {
     while (isHeld(lockFile)) {
-      sleep();
+      IOUtil.sleep(POLL_INTERVAL_MS);
     }
   }
 
@@ -55,14 +55,6 @@ public final class LatheLock {
       return Stopwatch.start().startMs() - modifiedMs < STALE_MS;
     } catch (final NoSuchFileException e) {
       return false;
-    }
-  }
-
-  private static void sleep() {
-    try {
-      Thread.sleep(POLL_INTERVAL_MS);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
     }
   }
 }
