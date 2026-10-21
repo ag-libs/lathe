@@ -97,7 +97,7 @@ Cross-cutting: every located result carries a source snippet and an origin (reac
 - LSP4J threads capture immutable inputs and enqueue work.
 - `DocumentRegistry` owns open-document generations and stale-result validation.
 - `DiagnosticPublisher` owns diagnostic publication and semantic-token refresh requests.
-- `ReferenceCandidateIndex` maps Java identifier tokens to source files for reference search.
+- `ReferenceCandidateIndex` maps Java identifier tokens to source files for reference search; each write pass syncs it with files changed on disk outside the editor.
 - `CompilationAdmission` bounds concurrent javac tasks across reference search and interactive compilation.
 - `WorkspaceTypeIndex` merges dependency/JDK shards with reactor output entries for type discovery.
 - `WorkspaceTypeIndex` also provides immutable direct-supertype, direct-subtype, and transitive-subtype queries.

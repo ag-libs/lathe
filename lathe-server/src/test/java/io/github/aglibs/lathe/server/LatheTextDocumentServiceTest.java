@@ -47,8 +47,6 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.ReferenceContext;
-import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
@@ -596,18 +594,5 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         source, "package com.example; class Foo { private void target() { target(); } }");
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
     return source;
-  }
-
-  private static ReferenceParams referenceParams(
-      final Path source,
-      final String content,
-      final int offset,
-      final Either<String, Integer> token) {
-    final var params = new ReferenceParams();
-    params.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
-    params.setPosition(offsetToPosition(content, offset));
-    params.setContext(new ReferenceContext(true));
-    params.setWorkDoneToken(token);
-    return params;
   }
 }

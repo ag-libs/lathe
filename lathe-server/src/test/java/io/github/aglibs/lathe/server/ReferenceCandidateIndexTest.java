@@ -2,6 +2,8 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,6 +14,15 @@ import org.junit.jupiter.api.io.TempDir;
 class ReferenceCandidateIndexTest {
 
   @TempDir Path root;
+
+  // A module whose generated sources live under the .lathe mirror (the searched, fresh copy).
+  private ModuleSourceConfig withGeneratedSources(final Path src) {
+    return TestCompiler.moduleConfig(
+        root.resolve(".lathe/module"),
+        root.resolve("target/classes"),
+        src,
+        root.resolve("target/generated-sources/annotations"));
+  }
 
   private String uri(final Path file) {
     return file.toUri().toString();
@@ -171,12 +182,7 @@ class ReferenceCandidateIndexTest {
         src.resolve("Entity.java"), "class Entity { String requestId() { return null; } }");
     // EG-052: the generated companion lives under the .lathe mirror (the searched, fresh copy);
     // originalGenSourcesDir points at Maven's target/ copy only to flag "has generated sources".
-    final var config =
-        TestCompiler.moduleConfig(
-            root.resolve(".lathe/module"),
-            root.resolve("target/classes"),
-            src,
-            root.resolve("target/generated-sources/annotations"));
+    final var config = withGeneratedSources(src);
     final var gen = Files.createDirectories(config.generatedSourcesDir());
     Files.writeString(
         gen.resolve("EntityBuilder.java"),
@@ -186,5 +192,53 @@ class ReferenceCandidateIndexTest {
 
     assertThat(index.candidateUris("EntityBuilder")).isNotEmpty();
     assertThat(index.candidateUris("build")).isNotEmpty();
+  }
+
+  @Test
+  void syncFromDisk_changedNewAndDeletedFiles_followDiskButOpenFileKeepsBuffer()
+      throws IOException {
+    final var src = Files.createDirectories(root.resolve("src"));
+    final var changed =
+        TestCompiler.writeAt(src.resolve("A.java"), "class A { void oldMethod() {} }", 1_000L);
+    final var deleted =
+        TestCompiler.writeAt(src.resolve("B.java"), "class B { void goneMethod() {} }", 1_000L);
+    final var open =
+        TestCompiler.writeAt(src.resolve("C.java"), "class C { void diskMethod() {} }", 1_000L);
+    final var index = ReferenceCandidateIndex.build(List.of(TestCompiler.moduleConfig(root, src)));
+    index.update(uri(open), "class C { void bufferMethod() {} }");
+
+    TestCompiler.writeAt(changed, "class A { void newMethod() {} }", 2_000L);
+    Files.delete(deleted);
+    final var added =
+        TestCompiler.writeAt(src.resolve("D.java"), "class D { void addedMethod() {} }", 2_000L);
+    TestCompiler.writeAt(open, "class C { void otherDiskMethod() {} }", 2_000L);
+    index.syncFromDisk(FileUtil.fileMtimes(src, FileUtil::isJavaFile), uri(open)::equals);
+
+    assertThat(index.candidateUris("oldMethod")).isEmpty();
+    assertThat(index.candidateUris("newMethod")).containsExactly(uri(changed));
+    assertThat(index.candidateUris("goneMethod")).isEmpty();
+    assertThat(index.candidateUris("addedMethod")).containsExactly(uri(added));
+    assertThat(index.candidateUris("bufferMethod")).containsExactly(uri(open));
+    assertThat(index.candidateUris("otherDiskMethod")).isEmpty();
+  }
+
+  @Test
+  void syncFromDisk_unchangedMtimeOrGeneratedSource_leavesTokensAlone() throws IOException {
+    final var src = Files.createDirectories(root.resolve("src"));
+    final var file =
+        TestCompiler.writeAt(src.resolve("A.java"), "class A { void indexedMethod() {} }", 1_000L);
+    final var config = withGeneratedSources(src);
+    final var gen = Files.createDirectories(config.generatedSourcesDir());
+    Files.writeString(gen.resolve("ABuilder.java"), "class ABuilder { void generatedMethod() {} }");
+    final var index = ReferenceCandidateIndex.build(List.of(config));
+
+    // Same mtime: the content is not read again, so the rewrite stays invisible.
+    TestCompiler.writeAt(file, "class A { void rewrittenMethod() {} }", 1_000L);
+    // The pass scans only non-generated roots; a generated source missing from it is not deleted.
+    index.syncFromDisk(FileUtil.fileMtimes(src, FileUtil::isJavaFile), uri -> false);
+
+    assertThat(index.candidateUris("indexedMethod")).containsExactly(uri(file));
+    assertThat(index.candidateUris("rewrittenMethod")).isEmpty();
+    assertThat(index.candidateUris("generatedMethod")).isNotEmpty();
   }
 }

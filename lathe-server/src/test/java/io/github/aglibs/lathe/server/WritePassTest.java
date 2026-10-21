@@ -382,6 +382,38 @@ class WritePassTest extends ServiceTestBase {
   }
 
   @Test
+  void reconcileNow_callersChangedExternally_referencesFollowDisk() throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    service.initialize(tmp);
+    awaitStartup();
+    final String dep = Files.readString(fx.dep());
+    openDoc(fx.dep(), dep);
+    final Path user = fx.users().get(0);
+    assertThat(referencingFiles(fx.dep(), dep)).contains(user);
+
+    // Written outside the editor: neither file is ever opened. The new caller sits in another
+    // package, so only the candidate index can lead the search to it.
+    Files.writeString(user, "package com.example;\nclass User0 { int u() { return 2; } }\n");
+    final Path added =
+        Files.createDirectories(fx.dep().getParent().resolveSibling("other")).resolve("Added.java");
+    Files.writeString(
+        added,
+        "package com.other;\nclass Added { int a() { return new com.example.Dep().v(); } }\n");
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+
+    assertThat(referencingFiles(fx.dep(), dep)).contains(added).doesNotContain(user);
+  }
+
+  private List<Path> referencingFiles(final Path file, final String content) throws Exception {
+    return service
+        .references(referenceParams(file, content, content.indexOf("v()"), null))
+        .get(10, TimeUnit.SECONDS)
+        .stream()
+        .map(location -> LatheUri.toPath(location.getUri()))
+        .toList();
+  }
+
+  @Test
   void reconcileNow_compileFails_doesNotAdvanceStamp() throws Exception {
     writeStaleModule(1_000L, 1_000L);
     service.initialize(tmp);

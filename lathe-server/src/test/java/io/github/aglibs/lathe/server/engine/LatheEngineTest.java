@@ -252,6 +252,44 @@ class LatheEngineTest {
   }
 
   @Test
+  void rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller() throws Exception {
+    final GreetFixture fx = crossPackageGreetFixture();
+    engine = new LatheEngine(tmp);
+    // A query leaves no open document behind to answer the rename back from its old text.
+    engine.diagnostics(fx.caller());
+
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
+    assertThat(Files.readString(fx.caller())).contains("c.welcome()");
+
+    // The renamed caller was written to disk, never opened: only a candidate index that follows
+    // the disk finds it again.
+    final LatheRename back = engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "greet");
+
+    assertThat(back.files())
+        .extracting(LatheFileEdit::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
+    assertThat(Files.readString(fx.callee())).isEqualTo(fx.calleeSource());
+    assertThat(Files.readString(fx.caller())).isEqualTo(fx.callerSource());
+  }
+
+  @Test
+  void references_queriedFileThenEditedOnDisk_findsTheNewUse() throws Exception {
+    final GreetFixture fx = crossPackageGreetFixture();
+    engine = new LatheEngine(tmp);
+    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    engine.diagnostics(fx.caller());
+    final int before =
+        engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).total();
+
+    Files.writeString(
+        fx.caller(), fx.callerSource().replace("c.greet();", "c.greet(); c.greet();"));
+
+    assertThat(engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).total())
+        .isEqualTo(before + 1);
+  }
+
+  @Test
   void rename_methodAlsoCalledFromGeneratedSource_leavesTheGeneratedSourceAlone() throws Exception {
     final GreetFixture fx = greetFixture();
     // An annotation processor's output that calls the method: it regenerates from the renamed
@@ -516,6 +554,20 @@ class LatheEngineTest {
         "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
     final Path caller =
         TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    return new GreetFixture(callee, caller, calleeSource, callerSource);
+  }
+
+  // Public Callee.greet() called from Caller in another package, so only the reactor-wide
+  // candidate index (no same-package scan) leads a search from Callee to Caller.
+  private GreetFixture crossPackageGreetFixture() throws Exception {
+    final String calleeSource =
+        "package com.example;\npublic class Callee {\n  public void greet() {}\n}\n";
+    final Path callee =
+        TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", calleeSource);
+    final String callerSource =
+        "package com.other;\nclass Caller { void run(com.example.Callee c) { c.greet(); } }\n";
+    final Path caller = TestCompiler.writeModuleSource(tmp, "com/other/Caller.java", callerSource);
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }

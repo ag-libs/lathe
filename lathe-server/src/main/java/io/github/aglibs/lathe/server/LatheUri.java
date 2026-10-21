@@ -12,6 +12,10 @@ public final class LatheUri {
     return Path.of(URI.create(uri));
   }
 
+  public static String fromPath(final Path path) {
+    return canonical(path.toUri().toString());
+  }
+
   // The one URI a file has inside the server: the form Path.toUri gives, as the server builds its
   // own. A client may encode the same file differently (VS Code writes @ as %40, + as %2B, and a
   // lower-case Windows drive), and the server keys documents by the URI string, so every client

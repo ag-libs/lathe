@@ -78,6 +78,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     fileRenameSupported = supported;
   }
 
+  // On the worker like all session state; queued after connect, so it is set before initialize.
+  public void setDocumentsFollowDisk(final boolean follow) {
+    worker.execute(() -> session.setDocumentsFollowDisk(follow));
+  }
+
   void cancelProgress(final WorkDoneProgressCancelParams params) {
     progressReporter.cancel(params.getToken());
   }

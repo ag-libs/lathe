@@ -126,6 +126,8 @@ public final class LatheEngine {
     service.connect(new NoopLanguageClient());
     // The engine moves files itself, so a public type's rename can move its declaring file.
     service.setFileRenameSupported(true);
+    // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
+    service.setDocumentsFollowDisk(true);
     service.initialize(workspaceRoot);
   }
 
@@ -498,7 +500,7 @@ public final class LatheEngine {
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
     await(service.reconcileForVerify());
-    final var uri = file.toUri().toString();
+    final var uri = LatheUri.fromPath(file);
     final String content = IOUtil.unchecked(() -> Files.readString(file));
     return await(service.diagnosticsFuture(uri, content, VERSION));
   }
