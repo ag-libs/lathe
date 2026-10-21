@@ -1,6 +1,7 @@
 package com.example.verify;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.BufferedReader;
@@ -14,6 +15,8 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.Timeout.ThreadMode;
 
 /**
  * Smoke test for the MCP launcher. Spawns the MCP launcher script (the classpath launcher) and
@@ -21,6 +24,8 @@ import org.junit.jupiter.api.Test;
  * initializes, the tools are exposed, and in-process javac — running as unnamed-module code on the
  * classpath — answers {@code get_diagnostics}.
  */
+// A message the server can't parse gets no reply, and a blocked read would hang the fixture build.
+@Timeout(value = 60, unit = SECONDS, threadMode = ThreadMode.SEPARATE_THREAD)
 class McpSmokeTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
@@ -28,7 +33,7 @@ class McpSmokeTest {
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
           .resolve(System.getProperty("lathe.version"))
-          .resolve(Scripts.name("lathe-mcp-launcher"));
+          .resolve(Os.script("lathe-mcp-launcher"));
 
   private static Process process;
   private static OutputStream toServer;
@@ -36,6 +41,7 @@ class McpSmokeTest {
   private static int nextId = 1;
 
   @BeforeAll
+  @Timeout(value = 60, unit = SECONDS, threadMode = ThreadMode.SEPARATE_THREAD)
   static void start() throws Exception {
     final var pb = new ProcessBuilder(LAUNCHER.toString());
     pb.directory(ROOT.toFile());
@@ -59,7 +65,7 @@ class McpSmokeTest {
   @AfterAll
   static void stop() {
     if (process != null) {
-      Scripts.stop(process);
+      Os.stop(process);
     }
   }
 
@@ -78,7 +84,7 @@ class McpSmokeTest {
         request(
             "tools/call",
             "{\"name\":\"get_diagnostics\",\"arguments\":{\"file\":\"%s\"}}"
-                .formatted(greeter));
+                .formatted(Os.json(greeter)));
 
     assertThat(response).contains("Greeter.java").doesNotContain("\"isError\":true");
   }
@@ -93,7 +99,7 @@ class McpSmokeTest {
         request(
             "tools/call",
             "{\"name\":\"find_references\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
-                .formatted(stringUtils, pos[0], pos[1]));
+                .formatted(Os.json(stringUtils), pos[0], pos[1]));
 
     assertThat(response).contains("Main.java").doesNotContain("\"isError\":true");
   }
@@ -115,7 +121,7 @@ class McpSmokeTest {
               "tools/call",
               ("{\"name\":\"rename_symbol\",\"arguments\":"
                       + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"newName\":\"upperCase\"}}")
-                  .formatted(stringUtils, pos[0], pos[1]));
+                  .formatted(Os.json(stringUtils), pos[0], pos[1]));
 
       assertThat(response)
           .contains("StringUtils.java")
@@ -143,7 +149,7 @@ class McpSmokeTest {
             "tools/call",
             ("{\"name\":\"call_hierarchy\",\"arguments\":"
                     + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"direction\":\"incoming\"}}")
-                .formatted(stringUtils, pos[0], pos[1]));
+                .formatted(Os.json(stringUtils), pos[0], pos[1]));
 
     assertThat(response).contains("Main.java").doesNotContain("\"isError\":true");
   }
@@ -158,7 +164,7 @@ class McpSmokeTest {
         request(
             "tools/call",
             "{\"name\":\"find_implementations\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
-                .formatted(greeter, pos[0], pos[1]));
+                .formatted(Os.json(greeter), pos[0], pos[1]));
 
     assertThat(response).contains("CasualGreeter").doesNotContain("\"isError\":true");
   }
@@ -172,7 +178,7 @@ class McpSmokeTest {
         request(
             "tools/call",
             "{\"name\":\"describe_symbol\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
-                .formatted(stringUtils, pos[0], pos[1]));
+                .formatted(Os.json(stringUtils), pos[0], pos[1]));
 
     assertThat(response).contains("upper").doesNotContain("\"isError\":true");
   }
@@ -193,7 +199,7 @@ class McpSmokeTest {
     final String response =
         request(
             "tools/call",
-            "{\"name\":\"run_test\",\"arguments\":{\"file\":\"%s\"}}".formatted(helloTest));
+            "{\"name\":\"run_test\",\"arguments\":{\"file\":\"%s\"}}".formatted(Os.json(helloTest)));
 
     assertThat(response).contains("PASS").doesNotContain("\"isError\":true");
   }

@@ -1,13 +1,16 @@
 package com.example.verify;
 
-// Lathe writes cmd scripts on Windows and sh scripts elsewhere.
-final class Scripts {
+import java.nio.file.Path;
+
+// What the fixture's checks need to know about the OS they run on.
+final class Os {
 
   static final boolean WINDOWS = System.getProperty("os.name").startsWith("Windows");
 
-  private Scripts() {}
+  private Os() {}
 
-  static String name(final String base) {
+  // Lathe writes cmd scripts on Windows and sh scripts elsewhere.
+  static String script(final String base) {
     return base + (WINDOWS ? ".cmd" : ".sh");
   }
 
@@ -16,5 +19,10 @@ final class Scripts {
   static void stop(final Process launcher) {
     launcher.descendants().forEach(ProcessHandle::destroyForcibly);
     launcher.destroyForcibly();
+  }
+
+  // A path as it reads inside a JSON string: a Windows path's backslashes are escaped.
+  static String json(final Path path) {
+    return path.toString().replace("\\", "\\\\");
   }
 }
