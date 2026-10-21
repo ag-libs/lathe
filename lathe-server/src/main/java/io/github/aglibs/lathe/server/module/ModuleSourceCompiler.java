@@ -46,6 +46,9 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private final JavacRunner runner;
   private final Path tempDir;
   private final List<String> compilerArgs;
+  // Full compiles' processor path (the only compiles that run processors): the build's, else the
+  // classpath, where javac finds them by default. generate() closes the loader javac opens over it.
+  private final List<Path> processorPath;
 
   ModuleSourceCompiler(
       final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
@@ -54,7 +57,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       this.tempDir = Files.createTempDirectory("lathe-");
       this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm, compilationAdmission);
-      initLocations();
+      final List<Path> classpath = initLocations();
+      this.processorPath =
+          config.processorPath().isEmpty() ? classpath : config.remappedProcessorPath();
+      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH (full)=%s".formatted(processorPath));
       this.compilerArgs =
           processPatchModules(
               hoistFileManagerOptions(dropForkedLauncherArgs(config.compilerArgs()), fm), fm);
@@ -91,6 +97,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
     final var options = buildOptions(config, compilerArgs, CompileMode.FULL);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
+    JavaSourceCompiler.setProcessorPath(fm, processorPath);
     try {
       final CompilerResult result =
           runner.compileBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
@@ -112,6 +119,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
                           JavacDiagnosticMapper.filterAndMap(
                               entry.getValue(), contentByUri.get(entry.getKey())))));
     } finally {
+      JavaSourceCompiler.setProcessorPath(fm, List.of());
       IOUtil.unchecked(fm::flush);
     }
   }
@@ -227,7 +235,8 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     }
   }
 
-  private void initLocations() throws IOException {
+  // Returns the classpath it set, empty when it sets none.
+  private List<Path> initLocations() throws IOException {
     // MODULE_SYSTEM has no bytecode mirror: write throwaway output under the temp dir, not .lathe/.
     final var classOutput =
         config.analysisMode() == AnalysisMode.MODULE_SYSTEM
@@ -245,7 +254,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     // MODULE_SYSTEM resolves dependencies from the host JDK's module system plus the --patch-module
     // overlay, so it sets no class/module path (no mirror) — unlike the Maven classpath model.
     if (config.analysisMode() == AnalysisMode.MODULE_SYSTEM) {
-      return;
+      return List.of();
     }
 
     // External output (OpenJDK build tools) resolves siblings from the build's own compiled dir,
@@ -268,11 +277,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       LOG.fine(() -> "[cache] MODULE_PATH=%s".formatted(modulepath));
     }
 
-    if (!config.processorPath().isEmpty()) {
-      final var processorPath = config.remappedProcessorPath();
-      fm.setLocationFromPaths(StandardLocation.ANNOTATION_PROCESSOR_PATH, processorPath);
-      LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH=%s".formatted(processorPath));
-    }
+    return classpath;
   }
 
   // Reused file manager: javac rejects re-applying --module-source-path, so set these once and drop

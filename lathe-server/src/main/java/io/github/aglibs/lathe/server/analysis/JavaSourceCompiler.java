@@ -3,8 +3,10 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.IOUtil;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,6 +19,7 @@ import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
+import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
@@ -25,8 +28,20 @@ public interface JavaSourceCompiler extends AutoCloseable {
 
   JavaCompiler COMPILER = ToolProvider.getSystemJavaCompiler();
 
+  // With an empty processor path, so the plugin and processor lookup javac runs before every parse
+  // searches nothing. Unset, javac searches the classpath through a class loader that only
+  // call()/generate() close: analysis-only tasks would leave every classpath jar open until GC,
+  // which on Windows blocks a build from replacing them. A compile that runs processors sets the
+  // path it needs for its run (ModuleSourceCompiler's full compiles).
   static StandardJavaFileManager createFileManager() {
-    return COMPILER.getStandardFileManager(null, null, null);
+    final StandardJavaFileManager fm = COMPILER.getStandardFileManager(null, null, null);
+    setProcessorPath(fm, List.of());
+    return fm;
+  }
+
+  static void setProcessorPath(final StandardJavaFileManager fm, final List<Path> processorPath) {
+    IOUtil.unchecked(
+        () -> fm.setLocationFromPaths(StandardLocation.ANNOTATION_PROCESSOR_PATH, processorPath));
   }
 
   CompilerResult compile(String uri, String content, CompileMode mode);
