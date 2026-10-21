@@ -59,6 +59,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
             "--module-path",
@@ -150,6 +152,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Xmx512m",
             "--module-path",
             os("/workspace/.lathe/app/classes"),
@@ -186,6 +190,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "--class-path",
             String.join(File.pathSeparator, os("/workspace/.lathe/app/classes"), os("/m2/lib.jar")),
             "com.example.app.Main");
@@ -216,6 +222,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Xmx256m",
             "-Dprofile=prod",
             "--class-path",
@@ -263,6 +271,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "-Dfoo=baz",
             "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
@@ -400,6 +410,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "--module-path",
             os("/workspace/.lathe/app/classes"),
@@ -444,6 +456,8 @@ final class LaunchPlanTest {
     assertThat(args)
         .containsExactly(
             os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "--class-path",
             String.join(
                 File.pathSeparator, os("/workspace/.lathe/app/test-classes"), os("/m2/junit.jar")),

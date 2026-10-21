@@ -600,7 +600,8 @@ B1b, done (2026-10-21): a green `windows-latest` CI row.
 B1c, done (2026-10-21): the server's own process starts.
 - D5 for run/test launches: past 30,000 characters, `Launcher` moves everything after `java` into a temp argfile (`lathe-launch-*.args`, written by `JavaArgfile`) and starts `java @<argfile>`.
   The rule is the same on every OS, so it is tested everywhere; the transcript shows the argfile, which stays on disk, so the command can still be rerun.
-- The server and MCP launchers pass `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8` (JDK 19+; older JDKs ignore them): B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.
+- Every JVM Lathe starts writes stdout and stderr in UTF-8 (`LatheFlags.UTF8_OUTPUT_JVM_ARGS`, JDK 19+; older JDKs ignore them), as Lathe reads them: B0 showed server logs in cp1252.
+  The server and MCP launchers pass them after the stdout guard. Launched runs and tests pass them first, so the build's and the user's own JVM arguments still override them.
 - D9 needed no resolver class: `%MVN%` already runs the recorded tool (A2), `ProcessBuilder` starts a `.cmd` or `.bat` directly, and the argfile lives where launches start. E3 is these three places, not one class.
 - `LaunchSessionTest` starts its processes on the test JDK's `java` (`TestProcess`, formerly the formatter tests' `FakeFormatter`); only the SIGTERM-escalation case stays POSIX, since Windows has no SIGTERM.
 - Moved to B2's human session:
@@ -621,7 +622,6 @@ B1c, done (2026-10-21): the server's own process starts.
 
 - Watch for E4 retries in Windows CI logs.
 - Test-run argfiles on Dropwizard and Helidon.
-- `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8` for launched run/test JVMs (the server launcher has it since B1).
 
 **Exit:** **human session 2** passes.
 
