@@ -541,6 +541,15 @@ roots on workspace load.
 `remove(uri)` handles close and delete.
 `SourceFileScanner` was deleted — the index lookup replaces the per-request disk scan entirely.
 
+Files changed outside the editor (an agent's write, an MCP rename, a branch switch) reach the index
+through the write pass.
+Each pass hands `syncFromDisk` the mtimes it already scanned.
+The index re-reads every closed file whose mtime moved since it was read, indexes new files, and
+drops deleted ones; an open file keeps its buffer's tokens.
+It compares mtimes rather than compile stamps, because the MCP engine stamps the files it writes,
+so an editor's server on the same workspace never finds them stale.
+Generated sources are not synced: only a Maven sync rewrites them, and that rebuilds the index.
+
 ### Slice 7 — Scope Tightening ✅
 
 `SearchScope` has three values: `DECLARING_FILE`, `DECLARING_MODULE`, and `REACTOR_MODULES`.

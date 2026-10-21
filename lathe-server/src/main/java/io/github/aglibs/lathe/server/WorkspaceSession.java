@@ -220,6 +220,9 @@ final class WorkspaceSession {
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
   private final DocumentRegistry docs = new DocumentRegistry();
+  // Set by the in-process engine: its documents are copies of the disk, not editor buffers, so a
+  // change on disk replaces them.
+  private boolean documentsFollowDisk;
   private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
 
@@ -1417,6 +1420,10 @@ final class WorkspaceSession {
     return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
+  void setDocumentsFollowDisk(final boolean follow) {
+    documentsFollowDisk = follow;
+  }
+
   void onOpen(final String uri, final String content, final int version) {
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
@@ -1446,7 +1453,8 @@ final class WorkspaceSession {
     LOG.fine(() -> "[diagnostics] %s".formatted(uri));
     if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
       final var snapshot = docs.put(uri, content, version);
-      candidateIndex.update(uri, content);
+      // The engine read this content from disk: indexed as a disk file, the pass keeps it current.
+      candidateIndex.indexFromDisk(LatheUri.toPath(uri));
       final var result = new CompletableFuture<List<Diagnostic>>();
       submitCompile(
           module,
@@ -1493,7 +1501,7 @@ final class WorkspaceSession {
     writeDiagnostics.remove(uri);
     workspace.dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
-    reindexFromDisk(uri);
+    candidateIndex.indexFromDisk(LatheUri.toPath(uri));
   }
 
   void onSave(final String uri, final String savedContent) {
@@ -2111,17 +2119,14 @@ final class WorkspaceSession {
     return sourceRoots.stream().anyMatch(root -> path.startsWith(root.resolve(packageRel)));
   }
 
-  private void reindexFromDisk(final String uri) {
-    final var path = LatheUri.toPath(uri);
-    if (Files.exists(path)) {
-      try {
-        candidateIndex.update(uri, Files.readString(path));
-      } catch (final IOException e) {
-        LOG.log(Level.WARNING, e, () -> "[candidate-index] re-index failed for %s".formatted(uri));
-        candidateIndex.remove(uri);
-      }
-    } else {
-      candidateIndex.remove(uri);
+  // A document that follows the disk takes the file's new content as a new generation; a query
+  // already running keeps the snapshot it took.
+  private void reloadFromDisk(final Path source) {
+    final String uri = LatheUri.fromPath(source);
+    final OpenDocument open = docs.get(uri);
+    final String content = readSource(source);
+    if (open != null && content != null) {
+      docs.put(uri, content, open.version());
     }
   }
 
@@ -3204,9 +3209,24 @@ final class WorkspaceSession {
     final boolean building = reactorBuildInProgress();
     final var scanned = Stopwatch.start();
     final List<TreeState> trees = workspace.allConfigs().stream().map(TreeState::read).toList();
+    final Map<Path, Long> sourceMtimes =
+        trees.stream()
+            .flatMap(tree -> tree.sourcesByRoot().values().stream())
+            .flatMap(sources -> sources.entrySet().stream())
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
     trees.forEach(this::reconcileDeletedSourcesIn);
     final StaleScan scan = withReported(staleModules(trees));
     final long sourcesMs = scanned.elapsedMs();
+    // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
+    // same workspace never finds them stale.
+    final List<Path> reread =
+        candidateIndex.syncFromDisk(
+            sourceMtimes, uri -> !documentsFollowDisk && docs.get(uri) != null);
+    if (documentsFollowDisk) {
+      reread.forEach(this::reloadFromDisk);
+    }
     final Map<ModuleSourceConfig, List<Path>> batches = claimReady(scan, eager, building);
     final var resourcesScanned = Stopwatch.start();
     final int resources = building ? 0 : reconcileResources();
@@ -3216,10 +3236,7 @@ final class WorkspaceSession {
             "[stale] scanned %d source trees: %d sources %dms, %d resources %dms, stale=%d"
                 .formatted(
                     trees.size(),
-                    trees.stream()
-                        .flatMap(tree -> tree.sourcesByRoot().values().stream())
-                        .mapToInt(Map::size)
-                        .sum(),
+                    sourceMtimes.size(),
                     sourcesMs,
                     resources,
                     resourcesScanned.elapsedMs(),

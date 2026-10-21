@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.mockito.Mockito.mock;
 
 import io.github.aglibs.lathe.core.IOUtil;
@@ -22,10 +23,13 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.FoldingRangeRequestParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
+import org.eclipse.lsp4j.ReferenceContext;
+import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -180,6 +184,19 @@ abstract class ServiceTestBase {
     public void close() {
       COMPILER.removeHandler(this);
     }
+  }
+
+  protected static ReferenceParams referenceParams(
+      final Path source,
+      final String content,
+      final int offset,
+      final Either<String, Integer> token) {
+    final var params = new ReferenceParams();
+    params.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
+    params.setPosition(offsetToPosition(content, offset));
+    params.setContext(new ReferenceContext(true));
+    params.setWorkDoneToken(token);
+    return params;
   }
 
   protected void openDoc(final Path file, final String content) {

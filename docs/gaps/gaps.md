@@ -309,6 +309,37 @@ Candidates:
 
 ---
 
+## EG-057 — Symbol search matches CamelHumps only in reactor types, not in JDK and dependency types
+
+**Status: documented**
+
+### Observed behaviour
+
+On Dropwizard, through both `workspace/symbol` and MCP `search_symbols`:
+
+| Query | Result |
+|---|---|
+| `DiSuRe` | `DiscoverableSubtypeResolver` (reactor) — humps match |
+| `ConcurrentHashMap` | found (JDK) |
+| `ConcHashMap` | nothing |
+| `CHM` | `CHMaxFragmentLengthConsumer`, `CHMaxFragmentLengthProducer` (literal prefix), not `ConcurrentHashMap` |
+
+The MCP tool describes the query as "Symbol name (CamelHumps supported)", so an agent expects
+`ConcHashMap` to find the JDK class.
+IntelliJ's Search Everywhere, which the Neovim workspace-symbol picker mirrors, matches both.
+
+### Fix direction
+
+Not yet traced: find where JDK/dependency type-index shards are queried, and whether they use a
+prefix lookup instead of `CamelCaseMatcher`.
+Decide whether an all-capitals query is a humps pattern (`CHM` → `ConcurrentHashMap`) or a prefix.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -322,7 +353,84 @@ for a release is every gap with `Status: accepted` and the matching `Target` (se
 Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
 reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
-No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## FR-018 — References miss uses written to disk outside the editor: the candidate index never re-reads a changed file
+
+**Status: in-progress** (fix on `fix/disk-reference-index`, together with [MC-6](#mc-6--a-file-an-mcp-tool-touched-stays-a-frozen-open-document-for-the-rest-of-the-session); verified on the three workspaces).
+
+Signal: release smoke of the 0.1.0-SNAPSHOT at `6c3f120` (2026-10-21) on Dropwizard, EqualsVerifier
+and Helidon.
+An MCP `rename_symbol` round-trip (rename, then rename back) left the tree broken on all three.
+
+### Observed behaviour
+
+A file changed on disk by anything but the editor (an agent's write, an MCP `rename_symbol`, a
+`git checkout`) is recompiled within a pass, about 2 s, but reference search keeps answering from
+the file's old text until the server restarts or the workspace reloads.
+
+- **MCP rename round-trip** (Dropwizard, `Duration.toMilliseconds`): the rename writes 52 edits
+  across 15 files.
+  `find_references` on the new name then returns 1 (the declaration) at 0, 5, 15 and 40 s.
+  Renaming back therefore edits only the declaration and leaves 14 files calling a method that no
+  longer exists.
+  The same happens on EqualsVerifier (`Warning.ALL_FIELDS_SHOULD_BE_USED`: 31 edits across 16 files,
+  1 back) and Helidon (`MediaType.text()`: 77 edits across 33 files, 3 back).
+- **External edit over LSP**: appending a `Duration.seconds(1).toMilliseconds()` call to the closed
+  `Jackson.java` is picked up and written (`[react] writing 1 file(s) in dropwizard-jackson:
+  Jackson.java`), but `textDocument/references` on `toMilliseconds` never lists `Jackson.java`
+  (5, 15 and 30 s later).
+- **Editor rename is fine**: the same rename applied the way Neovim does it (`grn` then `:wa`, so
+  every edited file is opened, changed and saved) re-resolves 51/51 references within 10 s.
+
+### Root cause
+
+`ReferenceCandidateIndex` maps identifier tokens to the files that contain them.
+It is built from disk at workspace load and reload, and after that it is updated only from
+document events: `onOpen`, `onChange`, `onClose` (which re-reads the file from disk), and the MCP
+`diagnosticsFuture` warm-up.
+The write pass (`runPass`) that reacts to stale sources recompiles them but never re-indexes them,
+so a file changed on disk keeps its old tokens.
+A use added outside the editor is never a candidate, and a removed or renamed one stays a candidate,
+which is harmless because the candidate is re-checked by javac.
+
+MCP makes this worse in two ways:
+
+- `LatheEngine.writeAndCommit` writes the rename's files directly and reports them through
+  `writeReported`; only the declaring file passes through `diagnosticsFuture`.
+- An editor's server on the same workspace never sees those files as stale, because the engine
+  stamps them.
+  The engine touches `workspace.json` so that server re-scans (`REACTOR_REFRESH`), but that only
+  rebuilds the type index, not the candidate index.
+
+### Fix direction
+
+Keep the candidate index in step with disk from the pass, by file mtime rather than compile stamp:
+
+- The index records the mtime each file was indexed at; content from an open document records none.
+- Each pass already reads every non-generated source's mtime (`TreeState.read`).
+  Hand those to the index: re-read each file that is not open and whose mtime differs, add new
+  files, and drop indexed files under those roots that are gone.
+  This is a map comparison per tick plus a read of only the changed files.
+- Mtime rather than stamp covers both the editor's server (whose stamps the MCP engine already wrote)
+  and the MCP server itself, and also covers branch switches, deletions and new files.
+
+Also check while there: the index builds its URIs with `Path.toUri()` while documents arrive through
+`LatheUri.canonical`, which upper-cases a Windows drive letter, so on Windows one file may be indexed
+under two URIs.
+
+### Regression targets
+
+- `ReferenceCandidateIndexTest.syncFromDisk_changedNewAndDeletedFiles_followDiskButOpenFileKeepsBuffer`
+- `ReferenceCandidateIndexTest.syncFromDisk_unchangedMtimeOrGeneratedSource_leavesTokensAlone`
+- `WritePassTest.reconcileNow_callersChangedExternally_referencesFollowDisk` (fails without the fix:
+  the caller added in another package is missing)
+- `LatheEngineTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller` (fails without
+  the fix: the rename back edits only the declaration)
+
+Verified on Dropwizard with the fixed build: references on the new name right after the MCP rename
+return 52 (was 1), the rename back edits 52 uses across 15 files (was 1) and leaves the tree clean,
+and the external `Jackson.java` call is found within 5 s.
+With MC-6 also fixed, the MCP battery's rename round-trip leaves the tree clean on Dropwizard (52
+edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33).
 
 ---
 
@@ -726,3 +834,148 @@ To be added with the fix:
 - `LatheMcpServerTest.logging_afterToolCall_writesPerCallLineToFile` (positive: a rotating log file is
   created under the resolved logs dir and receives the `[tool] …` line after a call).
 - `LatheMcpServerTest.logging_timestamps_areUtcIso8601` (formatter emits UTC, not local time).
+
+---
+
+## MC-4 — `verify_change` with no files reports a clean tree after a tool's own write broke dependents
+
+**Status: documented**
+
+Signal: the same release smoke as [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file).
+
+### Observed behaviour
+
+After the broken rename-back of FR-018 (Dropwizard: the declaration renamed back, 14 files still
+calling the old name), `verify_change` with no `files` answers "No new diagnostics — the changed
+files compile cleanly." in about 10 ms.
+Passing the 14 dirty files explicitly reports 72 errors.
+
+### Root cause
+
+With no `files`, `verify_change` checks `ReconcileOutcome.reacted()`: the stale sources that its
+own freshen pass found.
+`rename_symbol` has already written and stamped every file it edited (`writeAndCommit` →
+`writeReported`), so nothing is stale when `verify_change` runs, and it checks nothing.
+Even with the changed file named, the check covers that file and its same-module referrers;
+dependents in other modules are only listed as "N module(s) depend on your change", with a
+sync command.
+The rename's own pass recompiled only the file it edited, so the broken callers in other modules were
+never compiled at all.
+
+### Fix direction
+
+FR-018 removes this occurrence, because a correct rename-back edits every caller.
+What remains is a design choice for agent-facing honesty, to decide with that fix:
+
+- Let the engine remember the files its tools wrote since the last `verify_change`, and include them
+  in the no-argument change set.
+- Or have `rename_symbol`'s result state that the edited files were already verified, and how, so an
+  agent does not read a later "clean" as covering the dependents.
+
+### Regression targets
+
+None yet.
+Candidate: `LatheEngineTest.verifyChange_afterRenameBreaksDependents_reportsThem`.
+
+---
+
+## MC-5 — `verify_change` counts unused-code hints as diagnostics after recompile
+
+**Status: documented**
+
+### Observed behaviour
+
+On EqualsVerifier, `verify_change` for an unmodified `Warning.java` answers "11 diagnostic(s) after
+recompile", all of them `Hint`s ("Unused private field …", "Unused exception parameter 'e'") in
+same-module files it pulled in as referrers.
+On Helidon, the same check on an unmodified `MediaType.java` reports "1 diagnostic(s)":
+`Hint [46:50] Unused parameter 'it'`.
+An agent reads the count as something to fix, though nothing changed and nothing is wrong.
+
+### Fix direction
+
+Leave hints (and probably warnings in files the change set did not touch) out of `verify_change`'s
+count and listing, or report them under a separate label after the errors.
+`get_diagnostics` on a single file can keep showing them.
+
+### Regression targets
+
+None yet.
+Candidate: `LatheEngineTest.verifyChange_referrerWithOnlyHints_reportsClean`.
+
+---
+
+## MC-6 — A file an MCP tool touched stays a frozen open document for the rest of the session
+
+**Status: in-progress** (documents follow the disk, on `fix/disk-reference-index`).
+
+Signal: verifying the [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file)
+fix with the MCP battery: the rename round-trip still left one to three files dirty per workspace.
+
+### Observed behaviour
+
+With the FR-018 fix, on Dropwizard:
+
+- `run_test` on `DurationTest.java`, then a rename round-trip of `Duration.toMilliseconds`: the
+  rename writes 52 edits across 15 files, the rename back only 51 across 14, and `DurationTest.java`
+  is left calling the renamed method.
+- `get_diagnostics` on `Jackson.java`, then an external edit that adds a `toMilliseconds()` call to
+  it: `find_references` never lists `Jackson.java`.
+
+Without any earlier tool call touching those files, both cases work.
+
+### Root cause
+
+`LatheEngine.compileFromDisk` registers its target through `diagnosticsFuture`, which `docs.put`s the
+file's current disk content as an open document, and nothing ever closes it.
+From then on the session treats it as an editor buffer: the reference search reads the document
+instead of the disk (`openFile == null ? readDiskCandidate(uri)…`), and the FR-018 sync keeps the
+document's tokens.
+Only a later tool call aimed at that same file refreshes it.
+Every file an agent has queried therefore answers from the text it had at that moment.
+
+### Fix direction
+
+Options, to decide before coding:
+
+1. **Release after each call** (preferred): the engine closes the documents it registered once
+   the tool call ends, so the disk stays the only truth.
+   The cost is small: `compileFromDisk` already recompiles its target on every call.
+   If tool calls can run concurrently, count registrations per file and close a file only when its
+   last user is done.
+2. **Disk-backed documents mode:** a session flag set by the engine that makes the pass re-read
+   registered documents whose mtime moved.
+   This keeps the analysis cache warm, but adds a second document lifecycle to `WorkspaceSession`.
+3. Re-read every registered document before each call: the set grows with every file touched.
+
+Only option 1 would also have given the eviction that [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route)
+suggests after a warmed external file; that stays with MC-1.
+
+### Fix
+
+Neither option 1 nor 3: a session flag, close to option 2.
+Option 1 was built first and dropped in review.
+MCP tool calls really do overlap (mcp-core dispatches requests through `Flux.flatMap` and runs sync
+tools on `Schedulers.boundedElastic`), so releasing documents after each call needed a per-file user
+count shared across those threads, plus a private twin of every engine method.
+
+Instead, `LatheEngine` turns on `setDocumentsFollowDisk(true)`.
+The session then treats its documents as copies of the disk:
+
+- `diagnosticsFuture` indexes its file as a disk file, recording its mtime.
+- In each pass the candidate sync no longer skips open documents, and every document whose file it
+  re-read is replaced with the file's content as a new generation.
+- Every engine call starts with a pass (`reconcileForVerify`), so it answers from the current disk,
+  including after the engine's own rename writes.
+
+All of this state is on the session's single `lathe-worker` thread, so it needs no synchronization.
+A query already running keeps the immutable `OpenDocument` snapshot it took.
+Editor sessions never set the flag, so editor buffers are untouched.
+
+### Regression targets
+
+Both fail with the flag off:
+
+- `LatheEngineTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller`
+- `LatheEngineTest.references_queriedFileThenEditedOnDisk_findsTheNewUse`
+
