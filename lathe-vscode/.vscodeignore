@@ -1,5 +1,6 @@
 .vscode/**
 src/**
+test/**
 node_modules/**
 target/**
 !target/main.js

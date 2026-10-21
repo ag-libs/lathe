@@ -1,14 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ExtensionContext, WorkspaceFolder, window, workspace } from 'vscode';
-import {
-  LanguageClient,
-  LanguageClientOptions,
-  ServerOptions,
-  TransportKind,
-} from 'vscode-languageclient/node';
-
-const LAUNCHER = 'lathe-launcher.sh';
+import { Executable, LanguageClient, LanguageClientOptions } from 'vscode-languageclient/node';
+import { LAUNCHER, launcherCommand } from './launch';
 
 const clients = new Map<string, LanguageClient>();
 let warnedMissing = false;
@@ -28,7 +22,7 @@ export async function deactivate(): Promise<void> {
   clients.clear();
 }
 
-// LATHE_SERVER_DIR dev override wins; else the workspace's per-version .lathe/lathe-launcher.sh.
+// LATHE_SERVER_DIR dev override wins; else the workspace's per-version .lathe launcher.
 function launcherPath(folder: WorkspaceFolder): string {
   const override = process.env.LATHE_SERVER_DIR;
   if (override) {
@@ -48,18 +42,16 @@ function startClient(folder: WorkspaceFolder): void {
     if (!warnedMissing) {
       warnedMissing = true;
       window.showWarningMessage(
-        'Lathe: no launcher at .lathe/lathe-launcher.sh — run a Lathe-enabled build to generate it, then reload the window. If a build already ran, its log says why: Lathe needs Maven 3.6.3+.',
+        `Lathe: no launcher at ${path.join('.lathe', LAUNCHER)} — run a Lathe-enabled build to generate it, then reload the window. If a build already ran, its log says why: Lathe needs Maven 3.6.3+.`,
       );
     }
     return;
   }
 
-  // cwd = workspace folder so the launcher resolves .lathe/java-home relative to it.
-  const serverOptions: ServerOptions = {
-    command: launcher,
-    transport: TransportKind.stdio,
-    options: { cwd: folder.uri.fsPath },
-  };
+  // An Executable, not a spawn of our own: the client then also stops the process if it outlives
+  // shutdown (on Windows with taskkill /T, which takes the JVM under cmd.exe too). The client
+  // passes the options to spawn, so windowsVerbatimArguments reaches it.
+  const serverOptions: Executable = launcherCommand(launcher, folder.uri.fsPath);
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', language: 'java' }],
     workspaceFolder: folder,

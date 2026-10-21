@@ -12,7 +12,7 @@ the other editors. The extension just finds and launches it.
 
 1. **Build your project with Lathe at least once** so the launcher exists. Any `mvn` build populates
    `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
-   `.lathe/lathe-launcher.sh`.
+   `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
 
 2. **Download** the latest `lathe-<version>.vsix` from the
    [Releases page](https://github.com/ag-libs/lathe/releases).
@@ -66,6 +66,12 @@ The extension runs the launcher with the workspace folder as its working directo
 `.lathe/java-home` automatically — no configuration needed. To override (for example to run Lathe
 against an [OpenJDK](../openjdk.md) checkout), set `LATHE_JAVA_HOME` in the environment VS Code is
 launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.
+
+## Windows and Cursor
+
+The extension works the same on Windows, in VS Code and in Cursor (install the `.vsix` with *Extensions → ⋯ → Install from VSIX…*).
+Build the project once with `mvnw.cmd` or `mvn`; the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
+Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or with `set` in the `cmd` window you start `code` or `cursor` from.
 
 ## Not available yet
 

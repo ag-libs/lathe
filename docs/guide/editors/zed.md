@@ -29,6 +29,16 @@ No Lathe plugin, no extra config beyond one file.
    }
    ```
 
+   On Windows, start the `cmd` launcher instead, through `cmd.exe` (`/d` skips the user's AutoRun,
+   whose output would corrupt the protocol):
+
+   ```json
+   "binary": {
+     "path": "cmd.exe",
+     "arguments": ["/d", "/s", "/c", ".lathe\\lathe-launcher.cmd"]
+   }
+   ```
+
 3. Open the project folder in Zed and choose **Trust and Continue** when Zed asks.
    Zed opens unrecognized projects in Restricted Mode, which ignores `.zed/settings.json` and starts no
    language servers until the project is trusted.
