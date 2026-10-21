@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 class LauncherTest {
@@ -32,8 +33,10 @@ class LauncherTest {
   // expands, so the process still sees them all and the transcript names the argfile to rerun.
   @Test
   void launch_commandLinePastTheLimit_runsThroughAnArgfile() throws Exception {
-    final var argv = new ArrayList<>(TestProcess.command("echo", "out:hello"));
-    argv.add(1, "-Dlathe.test.padding=%s".formatted("x".repeat(40_000)));
+    final List<String> command = TestProcess.command("echo", "out:hello");
+    final String padding = "-Dlathe.test.padding=%s".formatted("x".repeat(40_000));
+    final List<String> argv =
+        Stream.concat(Stream.of(command.get(0), padding), command.stream().skip(1)).toList();
 
     final List<TranscriptLine> transcript = launch(argv);
 

@@ -47,7 +47,7 @@ public final class Launcher {
 
   private static List<String> commandLine(final List<String> argv) throws IOException {
     if (String.join(" ", argv).length() <= MAX_COMMAND_LINE) {
-      return argv;
+      return List.copyOf(argv);
     }
 
     final Path argfile =
