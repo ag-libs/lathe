@@ -576,7 +576,17 @@ It uses a throwaway branch and workflow on `windows-latest`:
 
 #### B1 — Windows edge
 
-- E1 Windows dialect, the `cmd` renderers (launchers and the sync script), E3/E4 Windows branches.
+B1a, done (2026-10-21): the OS check and the `cmd` scripts.
+- `Platform.WINDOWS` (`lathe-core`) is the one OS check.
+  `LatheLayout`'s script names follow it (`lathe-launcher.cmd`, `lathe-mcp-launcher.cmd`, `lathe-sync.cmd`), and so do the sync command in every remediation message (`.lathe\lathe-sync.cmd`) and the build tool (`bin\mvn.cmd`, `bin\mvnd.cmd`).
+- `LauncherScript` and `SyncScript` render `cmd()` beside `posix()`, and `render()` picks the host's, so `.lathe/` holds only scripts that run there (D2).
+  As B0 proved: `chcp 65001` first, `set /p` for `java-home`, the argfile through `%~dp0`, `call` and `exit /b`, quoted fixed arguments with `%` doubled, and CRLF.
+  Labels replace parenthesized blocks wherever a path is expanded, since a `)` in one (`Program Files (x86)`) would end the block early.
+- Linux tests check the rendered text; running it is B1b's.
+  Until B2 the clients still look for `lathe-launcher.sh`, so Windows stays unusable in the editor.
+
+B1b, next:
+- E3/E4 Windows branches.
 - D9 for the server's own process starts: `LaunchPlan`, the formatter and external commands go through E3, including the D5 launch argfile for Windows' command-line limit.
 - Add `windows-latest` to the CI matrix: build, the portable test subset, the invoker run with the names guard, and the stdio smoke against the launcher `lathe:sync` generates. The smoke also runs under an emulated desktop console code page (cp850), since the runner's UTF-8 console hides `chcp` mistakes.
 - The server launcher passes `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8`: B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.

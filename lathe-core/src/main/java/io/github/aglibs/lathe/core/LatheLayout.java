@@ -25,9 +25,13 @@ public final class LatheLayout {
   // Removed discovery pointer; kept only so sync can delete a leftover `current` and make an
   // un-upgraded client fail loudly instead of silently running a stale server.
   public static final String LEGACY_CURRENT_LINK = "current";
-  public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
-  public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
-  public static final String SYNC_SCRIPT = "lathe-sync.sh";
+  // Generated scripts are in the host's dialect only: cmd batch files on Windows, POSIX sh
+  // elsewhere.
+  private static final String SYNC_SCRIPT_BASE = "lathe-sync";
+  public static final String LAUNCHER_SCRIPT = scriptName("lathe-launcher", Platform.WINDOWS);
+  public static final String MCP_LAUNCHER_SCRIPT =
+      scriptName("lathe-mcp-launcher", Platform.WINDOWS);
+  public static final String SYNC_SCRIPT = scriptName(SYNC_SCRIPT_BASE, Platform.WINDOWS);
   // The launchers' fixed Java arguments, next to each copy of the launcher that reads them.
   public static final String SERVER_ARGS_FILE = "lathe-server.args";
   public static final String MCP_ARGS_FILE = "lathe-mcp.args";
@@ -67,8 +71,18 @@ public final class LatheLayout {
 
   // What users and agents run to refresh an already-synced workspace: the script the build wrote,
   // which knows the build tool. Every remediation below and the MCP instructions compose it.
-  public static final String SYNC_SCRIPT_COMMAND = "%s/%s".formatted(LATHE_DIR, SYNC_SCRIPT);
+  public static final String SYNC_SCRIPT_COMMAND = syncScriptCommand(Platform.WINDOWS);
   public static final String SYNC_TESTS_FLAG = "--tests";
+
+  public static String scriptName(final String base, final boolean windows) {
+    return "%s.%s".formatted(base, windows ? "cmd" : "sh");
+  }
+
+  // cmd reads a '/' path as a switch, so on Windows the command uses '\'.
+  public static String syncScriptCommand(final boolean windows) {
+    return "%s%s%s"
+        .formatted(LATHE_DIR, windows ? "\\" : "/", scriptName(SYNC_SCRIPT_BASE, windows));
+  }
 
   // Scoped form: refresh the given modules and their upstream.
   public static String scopedSyncCommand(final Collection<String> modules) {
@@ -148,13 +162,14 @@ public final class LatheLayout {
 
     // The Maven that runs this build, for the sync script to run again. Under mvnd, maven.home is
     // the Maven it embeds, so mvnd.home's client wins; plain Maven and the wrapper set maven.home.
-    public static Path runningTool(final Properties systemProperties) {
+    public static Path runningTool(final Properties systemProperties, final boolean windows) {
+      final String suffix = windows ? ".cmd" : "";
       final String mvndHome = systemProperties.getProperty(MVND_HOME_PROPERTY);
       if (mvndHome != null) {
-        return Path.of(mvndHome, BIN_DIR, MVND);
+        return Path.of(mvndHome, BIN_DIR, MVND + suffix);
       }
 
-      return Path.of(systemProperties.getProperty(MAVEN_HOME_PROPERTY), BIN_DIR, MVN);
+      return Path.of(systemProperties.getProperty(MAVEN_HOME_PROPERTY), BIN_DIR, MVN + suffix);
     }
 
     // Hands each compile's scope from the extension to the compiler shim, which sees only an output

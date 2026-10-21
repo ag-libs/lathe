@@ -37,7 +37,7 @@ Run gating and main-class scope recognize only these two names, and the generate
 | Path under `.lathe/` | Format | Need |
 |---|---|---|
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
-| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | executable scripts | required |
+| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` (`.cmd` on Windows) | executable scripts | required |
 | `lathe-server.args`, `lathe-mcp.args` | java @argfiles the launchers read | required |
 | `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
@@ -152,6 +152,8 @@ The server also writes into it: save compiles, resource copies, and stale-class 
 - **OpenJDK** writes none and sets `externalOutput`, so the server reads the build's output in place.
 
 ### `lathe-sync.sh`
+
+On Windows the scripts are `cmd` batch files (`lathe-sync.cmd`, `lathe-launcher.cmd`), rendered from the same templates; `.lathe/` holds only the host's.
 
 An executable script that re-runs this front-end's sync from the workspace root:
 

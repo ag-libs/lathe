@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -54,6 +55,25 @@ class LatheLayoutTest {
     assertThat(dir)
         .isEqualTo(root.resolve("org.example").resolve("lib-core").resolve("1.0-SNAPSHOT"));
     assertThat(root.relativize(dir).toString()).doesNotContain(":");
+  }
+
+  // Each OS gets only its own dialect; cmd reads a '/' path as a switch.
+  @Test
+  void scriptNamesAndTools_followTheOs() {
+    assertThat(LatheLayout.scriptName("lathe-launcher", false)).isEqualTo("lathe-launcher.sh");
+    assertThat(LatheLayout.scriptName("lathe-launcher", true)).isEqualTo("lathe-launcher.cmd");
+    assertThat(LatheLayout.syncScriptCommand(false)).isEqualTo(".lathe/lathe-sync.sh");
+    assertThat(LatheLayout.syncScriptCommand(true)).isEqualTo(".lathe\\lathe-sync.cmd");
+
+    final var maven = new Properties();
+    maven.setProperty("maven.home", "/opt/maven");
+    assertThat(LatheLayout.Maven.runningTool(maven, true))
+        .isEqualTo(Path.of("/opt/maven/bin/mvn.cmd"));
+    maven.setProperty("mvnd.home", "/opt/mvnd");
+    assertThat(LatheLayout.Maven.runningTool(maven, true))
+        .isEqualTo(Path.of("/opt/mvnd/bin/mvnd.cmd"));
+    assertThat(LatheLayout.Maven.runningTool(maven, false))
+        .isEqualTo(Path.of("/opt/mvnd/bin/mvnd"));
   }
 
   @Test

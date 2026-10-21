@@ -95,6 +95,44 @@ class SyncScriptTest {
         .contains("%s not found; run a Lathe-enabled build".formatted(tool));
   }
 
+  // Runs only on Windows (B1b's CI row); here the text carries what B0 proved cmd.exe needs.
+  @Test
+  void cmd_crlfScriptRunsTheBuildsTool_withTestsAndModuleArgs_quotingAndDoublingPercent() {
+    final var maven =
+        new SyncScript(
+            tool,
+            jdk,
+            List.of("--quiet", "-Dlog=100%"),
+            List.of("sync"),
+            List.of("test", "-Dcapture=true"),
+            List.of("-pl", LatheFlags.SYNC_MODULE_TOKEN),
+            List.of("-am"));
+    final String script = maven.cmd();
+    final List<String> lines = List.of(script.split("\r\n"));
+
+    assertThat(script.replace("\r\n", "")).doesNotContain("\n");
+    assertThat(lines)
+        .startsWith("@echo off")
+        .contains(
+            "chcp 65001 >nul",
+            "set \"tool=%s\"".formatted(tool),
+            "set \"goal=sync\"",
+            "if not \"%~1\"==\"--tests\" goto modules",
+            "set \"goal=test -Dcapture=true\"",
+            "set \"scope=%scope% -pl %~1\"",
+            "if defined scope set \"scope=%scope% -am\"",
+            "set \"JAVA_HOME=%s\"".formatted(jdk),
+            "call \"%tool%\" \"--quiet\" \"-Dlog=100%%\" %scope% %goal%",
+            "exit /b %ERRORLEVEL%");
+    // A ')' in an expanded path (Program Files (x86)) would end a parenthesized block early.
+    assertThat(lines).noneMatch(line -> line.contains("(") && line.contains("%"));
+
+    final String openJdk = script(List.of("plugin:sync"), List.of(), List.of(), List.of()).cmd();
+    assertThat(openJdk)
+        .contains("lathe-sync: arguments ignored;")
+        .contains("call \"%tool%\" \"--quiet\" \"-Dcache=false\" plugin:sync");
+  }
+
   @Test
   void constructor_invalidComponents_throw() {
     final List<String> goals = List.of("sync");

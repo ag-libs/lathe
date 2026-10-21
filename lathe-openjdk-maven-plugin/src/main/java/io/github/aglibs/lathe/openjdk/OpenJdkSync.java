@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -88,7 +89,7 @@ public final class OpenJdkSync {
       writeJavaHome(workspaceRoot, explodedJdk);
       final Path latheDir = latheDir(workspaceRoot);
       FileUtil.writeIfChanged(
-          latheDir, latheDir.resolve(LatheLayout.SYNC_SCRIPT), syncScript.posix(), true);
+          latheDir, latheDir.resolve(LatheLayout.SYNC_SCRIPT), syncScript.render(), true);
       log.accept(
           "[sync] %d module(s) + %d tool(s) -> %s"
               .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));
@@ -309,7 +310,7 @@ public final class OpenJdkSync {
   private static SyncScript syncScript(
       final Path buildDir, final String version, final Properties systemProperties) {
     return new SyncScript(
-        LatheLayout.Maven.runningTool(systemProperties),
+        LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
         List.of(
             LatheLayout.Maven.NO_TRANSFER_PROGRESS,

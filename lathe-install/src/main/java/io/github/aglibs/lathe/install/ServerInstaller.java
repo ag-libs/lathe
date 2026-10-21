@@ -74,11 +74,11 @@ public final class ServerInstaller {
       writeLauncher(
           versionDir,
           LatheLayout.LAUNCHER_SCRIPT,
-          new LauncherScript(version, LatheLayout.SERVER_ARGS_FILE).posix());
+          new LauncherScript(version, LatheLayout.SERVER_ARGS_FILE).render());
       writeLauncher(
           versionDir,
           LatheLayout.MCP_LAUNCHER_SCRIPT,
-          new LauncherScript(version, LatheLayout.MCP_ARGS_FILE).posix());
+          new LauncherScript(version, LatheLayout.MCP_ARGS_FILE).render());
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to install server files", e);
     }

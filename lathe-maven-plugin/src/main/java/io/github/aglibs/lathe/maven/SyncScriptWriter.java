@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
 import java.io.IOException;
@@ -26,7 +27,7 @@ final class SyncScriptWriter {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     final var file = latheDir.resolve(LatheLayout.SYNC_SCRIPT);
     try {
-      if (FileUtil.writeIfChanged(latheDir, file, script.posix(), true)) {
+      if (FileUtil.writeIfChanged(latheDir, file, script.render(), true)) {
         log.info("[sync] wrote %s".formatted(file));
       }
     } catch (final IOException e) {
@@ -42,7 +43,7 @@ final class SyncScriptWriter {
   // stays off, since a cache hit skips javac and the test fork, where Lathe captures.
   static SyncScript script(final Properties systemProperties) {
     return new SyncScript(
-        LatheLayout.Maven.runningTool(systemProperties),
+        LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
         List.of(LatheLayout.Maven.NO_TRANSFER_PROGRESS, "-Dmaven.build.cache.enabled=false"),
         List.of(LatheLayout.Maven.SYNC_PHASE),
