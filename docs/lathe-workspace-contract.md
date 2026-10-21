@@ -34,6 +34,7 @@ Run gating and main-class scope recognize only these two names, and the generate
 |---|---|---|
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
 | `lathe-launcher.sh`, `lathe-mcp-launcher.sh` | executable scripts | required |
+| `lathe-server.args`, `lathe-mcp.args` | java @argfiles the launchers read | required |
 | `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
@@ -72,13 +73,15 @@ looked up in `workspace.json`'s `outputs`; any other path is used as written.
 - **OpenJDK** writes the `classes` tree only, with `externalOutput=true`: `MODULE_SYSTEM` for JDK modules, `CLASSPATH` for build tools.
 - The server never writes it.
 
-### `lathe-launcher.sh`, `lathe-mcp-launcher.sh`
+### `lathe-launcher.sh`, `lathe-mcp-launcher.sh`, and their argfiles
 
-Copies of the launcher scripts the front-end installs under `~/.cache/lathe/servers/<version>/` (`ServerInstaller`, `LauncherCopier`, shared by both front-ends).
+Copies of the launcher scripts and their argfiles the front-end installs under `~/.cache/lathe/servers/<version>/` (`ServerInstaller`, `LauncherCopier`, shared by both front-ends).
+A launcher names no jar: it starts Java with the argfile beside it (`lathe-server.args`, `lathe-mcp.args`), which holds the module path or classpath and ends with the entry point, so a copy runs the same as the original.
+Argfiles are written in `native.encoding`, the charset the Java launcher reads them in.
 They are plain files, not symlinks, so `.lathe/` works where links can't be created (Windows without admin rights).
 Every sync rewrites them when their content changes.
 The scripts pick the JVM as `$LATHE_JAVA_HOME`, else the content of `.lathe/java-home`, else `java` on `PATH`,
-then add `@.lathe/jvm.args` when present.
+then add `@.lathe/jvm.args` when present and `$LATHE_JVM_OPTS`, before the argfile.
 `java-home` and `jvm.args` are resolved relative to the working directory, so clients spawn the launcher with the workspace root as cwd.
 
 ### `lathe.lock`, `module.lock`
@@ -236,7 +239,7 @@ The front-end also fills parts of the user cache (`~/.cache/lathe`, or `-Dlathe.
 
 | Path | Content | Written by |
 |---|---|---|
-| `servers/<version>/` | launcher scripts; `latest/` holds copies of the highest version's | front-end |
+| `servers/<version>/` | launcher scripts and their argfiles; `latest/` holds copies of the highest version's | front-end |
 | `deps/<groupId>/<artifactId>/<version>/` | extracted dependency sources (no `META-INF/maven/`), with a `.lathe-source.json` marker | front-end |
 | `jdks/<key>/` | extracted JDK `src.zip` | front-end |
 | `type-index/deps/…`, `type-index/jdks/…` | type-index shards (`TypeIndexFile`) | front-end |

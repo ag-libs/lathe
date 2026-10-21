@@ -19,6 +19,9 @@
     <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
     <!-- The invoker projects build in parallel; -Dinvoker.parallelThreads=1 runs them one by one. -->
     <invoker.parallelThreads>2</invoker.parallelThreads>
+    <!-- The fixtures' Lathe cache, under a path with a space, so the launchers and their argfiles
+         are tested with one. -->
+    <lathe.it.cache>${project.build.directory}/it home/.cache/lathe</lathe.it.cache>
     <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships. -->
     <spotless-lib.version>4.10.4</spotless-lib.version>
   </properties>
@@ -149,10 +152,10 @@
                   <directory>${project.build.directory}/local-repo/io/github/ag-libs</directory>
                 </fileset>
                 <fileset>
-                  <directory>${project.build.directory}/it-home/.cache/lathe/servers</directory>
+                  <directory>${lathe.it.cache}/servers</directory>
                 </fileset>
                 <fileset>
-                  <directory>${project.build.directory}/it-home/.cache/lathe/latest</directory>
+                  <directory>${lathe.it.cache}/latest</directory>
                 </fileset>
               </filesets>
             </configuration>
@@ -180,7 +183,11 @@
           </extraArtifacts>
           <settingsFile>src/it/settings.xml</settingsFile>
           <!-- The projects build in parallel and share the local repository: lock it across processes. -->
-          <mavenOpts>-Dlathe.cache=${project.build.directory}/it-home/.cache/lathe -DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav</mavenOpts>
+          <!-- Passed as its own -D argument: MAVEN_OPTS would split the path at its space. -->
+          <properties>
+            <lathe.cache>${lathe.it.cache}</lathe.cache>
+          </properties>
+          <mavenOpts>-DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav</mavenOpts>
         </configuration>
         <executions>
           <execution>

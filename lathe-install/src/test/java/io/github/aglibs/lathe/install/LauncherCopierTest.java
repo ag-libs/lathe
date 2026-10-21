@@ -16,6 +16,8 @@ class LauncherCopierTest {
 
   private static final List<String> SCRIPTS =
       List.of(LatheLayout.LAUNCHER_SCRIPT, LatheLayout.MCP_LAUNCHER_SCRIPT);
+  private static final List<String> ARGFILES =
+      List.of(LatheLayout.SERVER_ARGS_FILE, LatheLayout.MCP_ARGS_FILE);
 
   private final LauncherCopier copier = new LauncherCopier(new SystemStreamLog());
 
@@ -59,12 +61,23 @@ class LauncherCopierTest {
           versionDir, versionDir.resolve(script), launcher(script, version), true);
     }
 
+    for (final var argfile : ARGFILES) {
+      FileUtil.writeIfChanged(
+          versionDir, versionDir.resolve(argfile), launcher(argfile, version), false);
+    }
+
     return versionDir;
   }
 
   private static void assertCopies(final Path dir, final String version) {
     for (final var script : SCRIPTS) {
       assertThat(dir.resolve(script)).isExecutable().hasContent(launcher(script, version));
+    }
+
+    // A launcher reads the argfile beside it, so every copy carries its pair.
+    for (final var argfile : ARGFILES) {
+      assertThat(dir.resolve(argfile)).hasContent(launcher(argfile, version));
+      assertThat(Files.isExecutable(dir.resolve(argfile))).isFalse();
     }
   }
 

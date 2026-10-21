@@ -28,6 +28,9 @@ public final class LatheLayout {
   public static final String LAUNCHER_SCRIPT = "lathe-launcher.sh";
   public static final String MCP_LAUNCHER_SCRIPT = "lathe-mcp-launcher.sh";
   public static final String SYNC_SCRIPT = "lathe-sync.sh";
+  // The launchers' fixed Java arguments, next to each copy of the launcher that reads them.
+  public static final String SERVER_ARGS_FILE = "lathe-server.args";
+  public static final String MCP_ARGS_FILE = "lathe-mcp.args";
   // Versions every .lathe/ file; bump it on any .lathe/ format change.
   public static final String SCHEMA_VERSION = "5";
   // Versions the ~/.cache/lathe type-index shards and dependency-source markers, separately so a
@@ -36,6 +39,7 @@ public final class LatheLayout {
   public static final String WORKSPACE_JSON = "workspace.json";
   public static final String JAVA_HOME_FILE = "java-home";
   public static final String JAVA_HOME_PROPERTY = "java.home";
+  public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the

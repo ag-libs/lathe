@@ -1,15 +1,19 @@
 package io.github.aglibs.lathe.install;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.JavaArgfile;
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.versioning.ComparableVersion;
 import org.apache.maven.plugin.logging.Log;
@@ -26,10 +30,10 @@ public final class ServerInstaller {
   };
   private static final String[] JAVAC_OPEN_PACKAGES = {"code", "comp"};
 
-  // stdout is the LSP channel; route JVM startup errors and -Xlog output to stderr so they reach
-  // the editor's log.
-  private static final String STDOUT_GUARD_JVM_OPTS =
-      "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr";
+  // java.net.http is not in the default module graph, and lathe-server does not declare it since
+  // it never uses it, but Error Prone (loaded as a classpath javac plugin, -Xplugin:ErrorProne)
+  // references HttpClient when it loads.
+  private static final List<String> COMMON_JVM_ARGS = List.of("--add-modules", "java.net.http");
 
   private final ArtifactResolver artifactResolver;
   private final List<RemoteRepository> remoteRepositories;
@@ -53,17 +57,28 @@ public final class ServerInstaller {
     final String version = PluginProps.version();
     final Path versionDir = LatheLayout.serverVersionDir(version);
 
-    final String modulePath = pathList(resolveServerJars());
-    final String mcpClasspath = pathList(resolveMcpServerJars());
+    final List<Path> serverJars = resolveServerJars();
+    final List<Path> mcpJars = resolveMcpServerJars();
 
     try {
-      Files.createDirectories(versionDir);
+      JavaArgfile.write(
+          versionDir,
+          versionDir.resolve(LatheLayout.SERVER_ARGS_FILE),
+          serverArgs(serverJars),
+          JavaArgfile.NATIVE_CHARSET);
+      JavaArgfile.write(
+          versionDir,
+          versionDir.resolve(LatheLayout.MCP_ARGS_FILE),
+          mcpArgs(mcpJars),
+          JavaArgfile.NATIVE_CHARSET);
       writeLauncher(
-          versionDir, LatheLayout.LAUNCHER_SCRIPT, renderLauncherScript(version, modulePath));
+          versionDir,
+          LatheLayout.LAUNCHER_SCRIPT,
+          new LauncherScript(version, LatheLayout.SERVER_ARGS_FILE).posix());
       writeLauncher(
           versionDir,
           LatheLayout.MCP_LAUNCHER_SCRIPT,
-          renderMcpLauncherScript(version, mcpClasspath));
+          new LauncherScript(version, LatheLayout.MCP_ARGS_FILE).posix());
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to install server files", e);
     }
@@ -124,8 +139,44 @@ public final class ServerInstaller {
             .formatted(isUpdate ? "updated" : "installed", scriptName, launcherScript));
   }
 
+  // Classpath javac plugins (e.g. Error Prone) and a project's pinned formatter run in the unnamed
+  // module and need javac internals exported to it. Those grants are per workspace, in
+  // .lathe/jvm.args, copied from the build's own -J / .mvn/jvm.config flags; the server, a named
+  // module, needs none itself.
+  static List<String> serverArgs(final List<Path> jars) {
+    return Stream.of(
+            COMMON_JVM_ARGS,
+            List.of(
+                "--module-path",
+                pathList(jars),
+                "-m",
+                "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer"))
+        .flatMap(List::stream)
+        .toList();
+  }
+
+  // On the classpath lathe-server's module-info is ignored, so LatheEngine and the in-process javac
+  // it drives run in the unnamed module, which needs jdk.compiler internals exported to it.
+  static List<String> mcpArgs(final List<Path> jars) {
+    return Stream.of(
+            COMMON_JVM_ARGS,
+            javacAccess("--add-exports", JAVAC_EXPORT_PACKAGES),
+            javacAccess("--add-opens", JAVAC_OPEN_PACKAGES),
+            List.of("-cp", pathList(jars), "io.github.aglibs.lathe.mcp.LatheMcpServer"))
+        .flatMap(List::stream)
+        .toList();
+  }
+
+  private static List<String> javacAccess(final String flag, final String... packages) {
+    return Arrays.stream(packages)
+        .flatMap(
+            pkg ->
+                Stream.of(flag, "jdk.compiler/com.sun.tools.javac.%s=ALL-UNNAMED".formatted(pkg)))
+        .toList();
+  }
+
   private static String pathList(final List<Path> jars) {
-    return jars.stream().map(Path::toString).collect(Collectors.joining(":"));
+    return jars.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator));
   }
 
   Path resolveRunnerJar() throws SyncException {
@@ -141,8 +192,7 @@ public final class ServerInstaller {
         PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, PluginProps.version());
   }
 
-  // The full runtime closure of lathe-mcp-server (itself + lathe-server + lathe-core + the MCP
-  // SDK),
+  // The full runtime closure of lathe-mcp-server (itself, lathe-server, lathe-core and the MCP SDK)
   // for the classpath launcher.
   private List<Path> resolveMcpServerJars() throws SyncException {
     return resolveTransitiveJars(
@@ -198,101 +248,5 @@ public final class ServerInstaller {
       final String groupId, final String artifactId, final String version) throws SyncException {
     return artifactResolver.resolveTransitive(
         "%s:%s:%s".formatted(groupId, artifactId, version), remoteRepositories);
-  }
-
-  static String renderLauncherScript(final String version, final String modulePath) {
-    // java.net.http: not in the default module graph and not declared in module-info.java because
-    // lathe-server does not use it directly. Error Prone loads as a classpath javac plugin
-    // (-Xplugin:ErrorProne) and runs inside the lathe-server JVM. Its WellKnownMutability class
-    // references HttpClient at class-load time and throws ClassNotFoundException if java.net.http
-    // is absent from the module graph. jdk.unsupported is declared in module-info.java.
-    //
-    // Classpath javac plugins (e.g. Error Prone) run in the unnamed module and need javac
-    // internals exported to ALL-UNNAMED. Those grants are per workspace, in .lathe/jvm.args, copied
-    // from the build's own -J / .mvn/jvm.config flags; the server itself needs none. A project's
-    // pinned formatter also runs in the unnamed module (an isolated classloader), so lathe:sync
-    // adds the grants it needs to the same file.
-    return """
-        #!/bin/sh
-        %s%s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
-          --add-modules java.net.http \\
-          --module-path %s \\
-          -m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer "$@"
-        """
-        .formatted(
-            versionComment(version),
-            javaResolvePrologue(),
-            jvmArgsPrologue(),
-            STDOUT_GUARD_JVM_OPTS,
-            modulePath);
-  }
-
-  static String renderMcpLauncherScript(final String version, final String classpath) {
-    // Classpath launcher: on the classpath lathe-server's module-info is ignored, so LatheEngine
-    // and
-    // the in-process javac it drives run in the unnamed module, which needs jdk.compiler internals
-    // exported to ALL-UNNAMED. The editor launcher needs none: the server is a named module there.
-    return """
-        #!/bin/sh
-        %s%s%sexec "$java_bin" %s $jvm_args ${LATHE_JVM_OPTS:-} \\
-          --add-modules java.net.http \\
-        %s%s  -cp %s \\
-          io.github.aglibs.lathe.mcp.LatheMcpServer "$@"
-        """
-        .formatted(
-            versionComment(version),
-            javaResolvePrologue(),
-            jvmArgsPrologue(),
-            STDOUT_GUARD_JVM_OPTS,
-            javacAccessLines("--add-exports", "ALL-UNNAMED", JAVAC_EXPORT_PACKAGES),
-            javacAccessLines("--add-opens", "ALL-UNNAMED", JAVAC_OPEN_PACKAGES),
-            classpath);
-  }
-
-  // Workspace copies of a launcher no longer show the version as a symlink target did.
-  private static String versionComment(final String version) {
-    return "# lathe-server %s, generated by lathe:sync; do not edit\n".formatted(version);
-  }
-
-  // Picks the JDK for the server's in-process compiler: LATHE_JAVA_HOME, else the build JDK in
-  // .lathe/java-home (relative to the server cwd = workspace root), else PATH java. Shared by both
-  // launchers; a method body rather than a field, so the plugin descriptor's QDOX parser skips it.
-  private static String javaResolvePrologue() {
-    return """
-        jhome="${LATHE_JAVA_HOME:-}"
-        if [ -z "$jhome" ] && [ -r .lathe/java-home ]; then
-          jhome="$(cat .lathe/java-home)"
-        fi
-        java_bin=java
-        if [ -n "$jhome" ]; then
-          if [ -x "$jhome/bin/java" ]; then
-            java_bin="$jhome/bin/java"
-          else
-            echo "lathe: no bin/java under $jhome; using PATH java" >&2
-          fi
-        fi
-        """;
-  }
-
-  // The workspace's module-access flags written by sync, passed as a java @argfile so the script
-  // never parses them.
-  private static String jvmArgsPrologue() {
-    final var argsFile = "%s/%s".formatted(LatheLayout.LATHE_DIR, LatheLayout.JVM_ARGS_FILE);
-    return """
-        jvm_args=
-        if [ -r %s ]; then
-          jvm_args=@%s
-        fi
-        """
-        .formatted(argsFile, argsFile);
-  }
-
-  private static String javacAccessLines(
-      final String flag, final String target, final String... pkgs) {
-    final var sb = new StringBuilder();
-    for (final var pkg : pkgs) {
-      sb.append("  %s jdk.compiler/com.sun.tools.javac.%s=%s \\\n".formatted(flag, pkg, target));
-    }
-    return sb.toString();
   }
 }

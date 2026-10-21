@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.JavaArgfile;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
@@ -68,8 +68,7 @@ final class JvmArgsWriter {
         return;
       }
 
-      final var content = String.join("\n", args).concat("\n");
-      if (!FileUtil.writeIfChanged(latheDir, argsPath, content, false)) {
+      if (!JavaArgfile.write(latheDir, argsPath, List.copyOf(args), JavaArgfile.NATIVE_CHARSET)) {
         return;
       }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; B0, A2 and A6 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; B0, A1, A2 and A6 done; A0 and A3 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -189,7 +189,7 @@ Both renderers always exist and are golden-tested on Linux.
 
 The launcher, in both dialects, does only this:
 1. Resolve the JDK: `LATHE_JAVA_HOME`, then `.lathe/java-home`, then `java` on `PATH`.
-2. Run `java [@.lathe/jvm.args] $LATHE_JVM_OPTS @<servers/<v>/lathe-server.args> <client args>`.
+2. Run `java <stdout guard> [@.lathe/jvm.args] $LATHE_JVM_OPTS @<lathe-server.args beside the launcher> <client args>`.
 
 ### D3 — The sync script runs the tool that ran the build
 
@@ -441,7 +441,7 @@ Each slice can be merged on its own.
 1. **B0**, the Windows spike, first: it needs no production code and can amend this design before anything is built on it. *Done.*
 2. **A2**, the sync script from the build: the working Maven script is the template. *Done.*
 3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows. *Done.*
-4. **A1**, launcher models and server argfiles, on the same renderer.
+4. **A1**, launcher models and server argfiles, on the same renderer. *Done.*
 5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement).
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
@@ -465,15 +465,29 @@ Each slice can be merged on its own.
 - `.lathe/` contains no links.
 - The launcher completes an LSP handshake from a workspace and a `-Dlathe.cache` whose paths contain a space.
 
+*Done (2026-10-20).* As built:
+- `LauncherScript` (`lathe-install`, beside `SyncScript`) renders both launchers; B1 adds `cmd()`.
+  A launcher names no jar: it starts Java with the argfile **beside it** (`"$(dirname "$0")/lathe-server.args"`), so `LauncherCopier` copies each argfile with its launcher into `latest/` and `.lathe/`, byte for byte (`FileUtil.copyIfChanged`).
+- The stdout guard stays a literal first in the launcher line, before `.lathe/jvm.args` and `LATHE_JVM_OPTS`, so the user's options still win (a `LATHE_JVM_OPTS=-Xlog:…` isn't undone by the guard's `-Xlog:disable`).
+  The argfile holds `--add-modules`, the MCP javac grants, the module path or classpath and the entry point.
+- `JavaArgfile` (`lathe-core`) is the one argfile writer: quoting per the launcher's syntax and `native.encoding`, failing loudly on an argument the charset can't hold.
+  `.lathe/jvm.args` uses it too, though it holds only access flags, never paths.
+  `JavaArgfileTest` lets the real `java` launcher read a quoted value back.
+- The invoker fixtures' cache moved to `target/it home/`, passed as its own `-D` (MAVEN_OPTS would split it): the LSP and MCP smoke tests start the launchers from there, which meets the exit for the cache path.
+  A workspace path with a space is not covered yet.
+
 #### A2 — The sync script from the build
 
 - D3: the sync script rendered from today's Maven script as the template, with the build's tool and JDK as literals and a check that the tool still exists.
 - `workspace.json` gets `buildTool`, which the formatter's `%MVN%` reads instead of searching.
 
 *Done (2026-10-20).* As built:
-- `SyncScript` in `lathe-install` holds the model and renders itself (`posix()`; B1 adds `cmd()` beside it). `LatheLayout.Maven.runningTool` picks `<mvnd.home>/bin/mvnd` over `<maven.home>/bin/mvn`, since under mvnd `maven.home` is the Maven it embeds (checked on mvnd 1.0.3). The Maven and OpenJDK front-ends both use it.
+- `SyncScript` in `lathe-install` holds the model and renders itself (`posix()`; B1 adds `cmd()` beside it).
+  `LatheLayout.Maven.runningTool` picks `<mvnd.home>/bin/mvnd` over `<maven.home>/bin/mvn`, since under mvnd `maven.home` is the Maven it embeds (checked on mvnd 1.0.3).
+  The Maven and OpenJDK front-ends both use it.
 - `SyncScriptTest` runs rendered Maven-, Gradle- and OpenJDK-shaped scripts against a stub tool under a path with a space and a quote, instead of comparing golden text: no arguments, `--tests`, modules, both, ignored arguments, and a missing tool.
-- The invoker fixture checks that the script names the Maven that ran it, and a second invocation runs `-pl app -pl core -am`, so every CI row's Maven, 3.6.3 included, confirms repeated `-pl`. Running the script inside the invoker build would start a nested build under the running build's lock.
+- The invoker fixture checks that the script names the Maven that ran it, and a second invocation runs `-pl app -pl core -am`, so every CI row's Maven, 3.6.3 included, confirms repeated `-pl`.
+  Running the script inside the invoker build would start a nested build under the running build's lock.
 - On equalsverifier, the generated script ran scoped and with `--tests` with `JAVA_HOME` unset and `PATH` stripped to `/usr/bin:/bin`.
 
 **Exit:**
@@ -509,7 +523,8 @@ Each slice can be merged on its own.
 
 **Exit:** with these two, B0 showed the full build passing on Windows, the multi-module fixture's sync and the names guard included.
 
-*Done (2026-10-20, PR #29).* As built, Spotless needs no `lineEndings` setting: its default policy follows `.gitattributes`. Run 3 of the spike, with the fix, confirmed it on `windows-latest`: no `setWritable` errors, `lathe-server` errors down from 392 to 2, and `spotless:check` and Prettier passing.
+*Done (2026-10-20, PR #29).* As built, Spotless needs no `lineEndings` setting: its default policy follows `.gitattributes`.
+Run 3 of the spike, with the fix, confirmed it on `windows-latest`: no `setWritable` errors, `lathe-server` errors down from 392 to 2, and `spotless:check` and Prettier passing.
 
 ### Phase B — Windows
 
@@ -532,10 +547,12 @@ It uses a throwaway branch and workflow on `windows-latest`:
 **Exit:** D1, D5 and D11 hold, or this document is amended.
 
 *Done (2026-10-20)* on `windows-latest` (Windows Server 2025, Temurin 21, Maven 3.9.16; runs [1](https://github.com/ag-libs/lathe/actions/runs/39380397451), [2](https://github.com/ag-libs/lathe/actions/runs/39381674675), throwaway branch `spike/b0-windows`):
-- **D1 holds.** `cmd` passes stdio straight to `java.exe` (no stray bytes); CRLF and `set /p` work. `chcp 65001` is required for a non-ASCII literal on a desktop console (cp850 without it: `J??ran`); the runner's console is already UTF-8 and hides this, so B1's CI emulates one.
+- **D1 holds.** `cmd` passes stdio straight to `java.exe` (no stray bytes); CRLF and `set /p` work.
+  `chcp 65001` is required for a non-ASCII literal on a desktop console (cp850 without it: `J??ran`); the runner's console is already UTF-8 and hides this, so B1's CI emulates one.
 - **D5 holds for quoting and `;`, not for encoding:** amended above.
 - **D11 holds,** with a space and `ö` in the path; wording amended above.
-- **D3 holds:** `call "<maven.home>\bin\mvn.cmd"` works, the wrapper too; under mvnd `maven.home` is the embedded Maven and the client is `<mvnd.home>\bin\mvnd.exe`. A `cmd` sync script sketch worked from `cmd` and PowerShell.
+- **D3 holds:** `call "<maven.home>\bin\mvn.cmd"` works, the wrapper too; under mvnd `maven.home` is the embedded Maven and the client is `<mvnd.home>\bin\mvnd.exe`.
+  A `cmd` sync script sketch worked from `cmd` and PowerShell.
 - **`-pl`:** backslash module paths and repeated `-pl` work on 3.9.16 and 3.6.3.
 - **Today's build:** besides A6's two blockers, the failures are D8, E4 handles and POSIX-only test fixtures, as the audit expected, plus five unexplained cases B1 looks at (`ExternalCompilerTest` manifest `Class-Path`, `ModuleNameDiscoveryTest`, `CompletionImportAndPackageTest`, `WorkspaceManifestTest.externalSourceRoot`, `FileUtilTest.unzip` with absolute entries).
 

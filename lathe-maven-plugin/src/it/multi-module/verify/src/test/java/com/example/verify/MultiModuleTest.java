@@ -66,21 +66,30 @@ class MultiModuleTest {
         assertThat(copy).isExecutable().hasContent(installed);
       }
     }
+
+    // Each launcher reads the argfile beside it, so every copy carries the pair.
+    for (final var argfile : List.of("lathe-server.args", "lathe-mcp.args")) {
+      final var installed = Files.readString(versionDir.resolve(argfile));
+      for (final var copy : List.of(lathe(argfile), LATHE_CACHE.resolve("latest").resolve(argfile))) {
+        assertThat(copy).hasContent(installed);
+      }
+    }
   }
 
+  // The launcher names no jar; its argfile holds the module path and ends with the entry point.
   @Test
-  void sync_launcherContent_containsRequiredJvmArgs() throws IOException {
-    final var launcher =
-        LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
-    final var content = read(launcher);
-    assertThat(content).startsWith("#!/bin/sh\n");
-    assertThat(content).contains("--add-modules java.net.http");
-    assertThat(content).contains("@.lathe/jvm.args");
-    assertThat(content).doesNotContain("=ALL-UNNAMED");
+  void sync_launcherAndArgfile_holdTheRequiredJvmArgs() throws IOException {
+    final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
+    final var launcher = read(versionDir.resolve("lathe-launcher.sh"));
+    assertThat(launcher).startsWith("#!/bin/sh\n");
+    assertThat(launcher).contains("@.lathe/jvm.args", "@\"$(dirname \"$0\")/lathe-server.args\"");
+    assertThat(launcher).doesNotContain(".jar");
+    final var args = Files.readAllLines(versionDir.resolve("lathe-server.args"));
+    assertThat(args).startsWith("--add-modules", "java.net.http", "--module-path");
+    assertThat(args).endsWith("-m", "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
+    assertThat(args).noneMatch(arg -> arg.contains("=ALL-UNNAMED"));
     // A pinned formatter runs from an isolated classloader; nothing targets a formatter module.
-    assertThat(content).doesNotContain("com.google.googlejavaformat");
-    assertThat(content).contains("--module-path");
-    assertThat(content).contains("-m io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
+    assertThat(args).noneMatch(arg -> arg.contains("com.google.googlejavaformat"));
   }
 
   // The build itself declares no module grants; jvm.args holds only what the project's pinned

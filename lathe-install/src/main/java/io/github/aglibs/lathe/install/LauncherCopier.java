@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.install;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -11,12 +10,15 @@ import org.apache.maven.plugin.logging.Log;
 
 // Copies the launchers installed under servers/<version>/ to where clients run them: a workspace's
 // .lathe/, pinned per workspace so no machine-global pointer can drift, and the cache's latest/.
-// Plain files, not symlinks: creating a link needs admin rights on Windows, and a launcher names
-// only absolute jar paths, so a copy runs the same. Shared by the Maven and OpenJDK sync paths.
+// Plain files, not symlinks: creating a link needs admin rights on Windows. A launcher reads the
+// argfile beside it, which names only absolute jar paths, so a copy of the pair runs the same.
+// Shared by the Maven and OpenJDK sync paths.
 public final class LauncherCopier {
 
   private static final List<String> LAUNCHER_SCRIPTS =
       List.of(LatheLayout.LAUNCHER_SCRIPT, LatheLayout.MCP_LAUNCHER_SCRIPT);
+  private static final List<String> ARGFILES =
+      List.of(LatheLayout.SERVER_ARGS_FILE, LatheLayout.MCP_ARGS_FILE);
 
   private final Log log;
 
@@ -49,13 +51,22 @@ public final class LauncherCopier {
 
   private void copy(final Path versionDir, final Path dir) throws IOException {
     for (final var script : LAUNCHER_SCRIPTS) {
-      final var content = Files.readString(versionDir.resolve(script), StandardCharsets.UTF_8);
-      final Path target = dir.resolve(script);
-      if (FileUtil.writeIfChanged(dir, target, content, true)) {
-        log.info("[sync] wrote %s from %s".formatted(target, versionDir.getFileName()));
-      } else {
-        log.debug("[sync] %s unchanged".formatted(target));
-      }
+      copyFile(versionDir, dir, script, true);
+    }
+
+    for (final var argfile : ARGFILES) {
+      copyFile(versionDir, dir, argfile, false);
+    }
+  }
+
+  private void copyFile(
+      final Path versionDir, final Path dir, final String name, final boolean executable)
+      throws IOException {
+    final Path target = dir.resolve(name);
+    if (FileUtil.copyIfChanged(versionDir.resolve(name), dir, target, executable)) {
+      log.info("[sync] wrote %s from %s".formatted(target, versionDir.getFileName()));
+    } else {
+      log.debug("[sync] %s unchanged".formatted(target));
     }
   }
 }

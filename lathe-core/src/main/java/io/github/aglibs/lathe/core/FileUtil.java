@@ -2,6 +2,10 @@ package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileSystemException;
@@ -15,6 +19,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -145,24 +150,57 @@ public final class FileUtil {
   public static boolean writeIfChanged(
       final Path dir, final Path target, final String content, final boolean executable)
       throws IOException {
+    return writeBytesIfChanged(dir, target, utf8(content), executable);
+  }
+
+  public static boolean copyIfChanged(
+      final Path source, final Path dir, final Path target, final boolean executable)
+      throws IOException {
+    return writeBytesIfChanged(dir, target, Files.readAllBytes(source), executable);
+  }
+
+  // The bytes as they are, so a file in any charset (an argfile in native.encoding) is compared
+  // and written unchanged.
+  public static boolean writeBytesIfChanged(
+      final Path dir, final Path target, final byte[] bytes, final boolean executable)
+      throws IOException {
     if (Files.exists(target)
         && !Files.isSymbolicLink(target)
         && (!executable || Files.isExecutable(target))
-        && content.equals(Files.readString(target, StandardCharsets.UTF_8))) {
+        && Arrays.equals(bytes, Files.readAllBytes(target))) {
       return false;
     }
 
     Files.createDirectories(dir);
-    writeAtomically(dir, target, content, executable);
+    writeBytesAtomically(dir, target, bytes, executable);
     return true;
   }
 
   public static void writeAtomically(
       final Path dir, final Path target, final String content, final boolean executable)
       throws IOException {
+    writeBytesAtomically(dir, target, utf8(content), executable);
+  }
+
+  // Strict, like Files.writeString: malformed text fails instead of being written as '?'.
+  private static byte[] utf8(final String content) throws CharacterCodingException {
+    return encode(content, StandardCharsets.UTF_8);
+  }
+
+  public static byte[] encode(final String content, final Charset charset)
+      throws CharacterCodingException {
+    final ByteBuffer encoded = charset.newEncoder().encode(CharBuffer.wrap(content));
+    final var bytes = new byte[encoded.remaining()];
+    encoded.get(bytes);
+    return bytes;
+  }
+
+  private static void writeBytesAtomically(
+      final Path dir, final Path target, final byte[] content, final boolean executable)
+      throws IOException {
     final var tmp = Files.createTempFile(dir, target.getFileName().toString(), ".tmp");
     try {
-      Files.writeString(tmp, content, StandardCharsets.UTF_8);
+      Files.write(tmp, content);
       if (executable) {
         setExecutable(tmp);
       }
