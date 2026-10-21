@@ -137,7 +137,7 @@ class LspSmokeTest {
 
   @AfterAll
   static void stopServer() {
-    serverProcess.destroyForcibly();
+    Scripts.stop(serverProcess);
   }
 
   @AfterEach

@@ -18,6 +18,9 @@ jobs:
   build:
     name: Build & verify (JDK ${{ matrix.java }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A full build takes minutes; a hung test (a leftover process holding a pipe) fails the row
+    # here instead of running until the 6-hour job limit.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -98,12 +101,15 @@ jobs:
         run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
 
       - name: Upload test reports
+        # always(): a timed-out or cancelled run is when the reports matter most.
         # TEMPORARY: always on Windows while it's iterated (failures are ignored there for now).
-        if: failure() || runner.os == 'Windows'
+        if: always() && (!success() || runner.os == 'Windows')
         uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
-          path: '**/target/surefire-reports/'
+          path: |
+            **/target/surefire-reports/
+            lathe-maven-plugin/target/it/**/build.log
           retention-days: 7
 
   invoker-maven:

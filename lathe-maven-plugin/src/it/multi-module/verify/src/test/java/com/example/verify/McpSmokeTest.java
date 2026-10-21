@@ -59,7 +59,7 @@ class McpSmokeTest {
   @AfterAll
   static void stop() {
     if (process != null) {
-      process.destroyForcibly();
+      Scripts.stop(process);
     }
   }
 
