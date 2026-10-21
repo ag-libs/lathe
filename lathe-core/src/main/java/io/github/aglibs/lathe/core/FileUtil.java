@@ -238,13 +238,8 @@ public final class FileUtil {
       } catch (final NoSuchFileException e) {
         // No copy to replace yet.
       } catch (final FileSystemException e) {
-        // Windows denies renaming a directory another caller is renaming at that moment: give it
-        // time to finish, a little longer on each attempt.
-        if (attempt == RETRY_ATTEMPTS) {
-          throw e;
-        }
-
-        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
+        // Windows denies renaming a directory another caller is renaming at that moment.
+        pauseBeforeRetry(attempt, e);
         continue;
       }
 
@@ -257,11 +252,7 @@ public final class FileUtil {
           return;
         }
 
-        if (attempt == RETRY_ATTEMPTS) {
-          throw e;
-        }
-
-        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
+        pauseBeforeRetry(attempt, e);
       } finally {
         if (Files.exists(previous)) {
           deleteDir(previous);
@@ -323,13 +314,19 @@ public final class FileUtil {
       } catch (final NoSuchFileException e) {
         throw e;
       } catch (final FileSystemException e) {
-        if (attempt == RETRY_ATTEMPTS) {
-          throw e;
-        }
-
-        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
+        pauseBeforeRetry(attempt, e);
       }
     }
+  }
+
+  // Rethrows the last attempt's failure; before any other, waits a little longer than last time.
+  private static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
+      throws IOException {
+    if (attempt == RETRY_ATTEMPTS) {
+      throw failure;
+    }
+
+    IOUtil.sleep(RETRY_PAUSE_MS * attempt);
   }
 
   public static int unzip(final Path zipFile, final Path destDir) throws IOException {
