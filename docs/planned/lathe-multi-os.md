@@ -585,11 +585,23 @@ B1a, done (2026-10-21): the OS check and the `cmd` scripts.
 - Linux tests check the rendered text; running it is B1b's.
   Until B2 the clients still look for `lathe-launcher.sh`, so Windows stays unusable in the editor.
 
-B1b, next:
-- E3/E4 Windows branches.
+B1b, done (2026-10-21): a green `windows-latest` CI row.
+- The row builds every module but the Neovim client and runs every test, the invoker fixtures included: their LSP and MCP smoke tests start the server through the `.cmd` launchers `lathe:sync` writes.
+  Tests are portable, not skipped (the rules are in `AGENTS.md`); only behaviour that is OS-specific by nature is disabled on Windows (the executable bit, OpenJDK builds).
+  The job has a 30-minute timeout, and a failed, cancelled or timed-out run uploads the test reports and the fixtures' `build.log`.
+- E4: `FileUtil.moveDirReplacing` retries a rename that fails on a held handle, with a short backoff.
+- The formatter's timeout kills the process tree and waits for it: a `cmd` tool can't exec, so its JVM outlives `cmd.exe`, and Windows keeps a running process's files locked.
+- The five failures B0 couldn't explain:
+  - `ExternalCompilerTest` and `WorkspaceManifestTest.externalSourceRoot`: a server leak. Before every parse javac looks up plugins with a class loader over the processor path, else the whole classpath, and only `call()`/`generate()` close it, which analysis compiles never reach. Every compile left the classpath jars open until GC, so on Windows a build couldn't replace them. File managers now start with an empty processor path; `ModuleSourceCompiler` sets the real one (the build's, else the classpath) only around full compiles, whose `generate()` closes it.
+  - `ModuleNameDiscoveryTest`: test jars written with `\` entry names.
+  - `CompletionImportAndPackageTest`: a module path joined with `:` instead of `File.pathSeparator`.
+  - `FileUtilTest.unzip`: on Windows `/x` has a root but no drive, so a rooted entry is now made relative to its root.
+
+B1c, next:
 - D9 for the server's own process starts: `LaunchPlan`, the formatter and external commands go through E3, including the D5 launch argfile for Windows' command-line limit.
-- Add `windows-latest` to the CI matrix: build, the portable test subset, the invoker run with the names guard, and the stdio smoke against the launcher `lathe:sync` generates. The smoke also runs under an emulated desktop console code page (cp850), since the runner's UTF-8 console hides `chcp` mistakes.
+  `LaunchSessionTest` still starts `sh`, `sleep` and `cat`, found only through Git's tools on the runner's PATH; it moves to the test JDK's `java` with it.
 - The server launcher passes `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8`: B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.
+- The stdio smoke also runs under an emulated desktop console code page (cp850), since the runner's UTF-8 console hides `chcp` mistakes.
 
 **Exit:** all three CI rows green; `.lathe\lathe-sync.cmd` works from `cmd` and PowerShell.
 
