@@ -33,7 +33,7 @@ class LauncherScriptTest {
     builder.environment().put("LATHE_JAVA_HOME", jdk.toString());
     builder.environment().put("LATHE_JVM_OPTS", "-Xmx1g");
     final Process process = builder.start();
-    final String args = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    final var args = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
     assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
     assertThat(args.lines())

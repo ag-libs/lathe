@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.Locale;
 
 public final class LatheUri {
 
@@ -9,6 +10,24 @@ public final class LatheUri {
 
   public static Path toPath(final String uri) {
     return Path.of(URI.create(uri));
+  }
+
+  // The one URI a file has inside the server: the form Path.toUri gives, as the server builds its
+  // own. A client may encode the same file differently (VS Code writes @ as %40, + as %2B, and a
+  // lower-case Windows drive), and the server keys documents by the URI string, so every client
+  // URI passes through here once, where it enters. Anything but a file URI passes unchanged.
+  public static String canonical(final String uri) {
+    if (!isFileUri(uri)) {
+      return uri;
+    }
+
+    final var path = toPath(uri);
+    final Path root = path.getRoot();
+    final Path upperDrive =
+        root == null
+            ? path
+            : Path.of(root.toString().toUpperCase(Locale.ROOT)).resolve(root.relativize(path));
+    return upperDrive.toUri().toString();
   }
 
   /**

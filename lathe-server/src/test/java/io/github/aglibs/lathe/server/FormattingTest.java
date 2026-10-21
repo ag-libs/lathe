@@ -218,8 +218,7 @@ class FormattingTest {
   }
 
   // The profile's settings drive the result (3-space indent here), from either an Eclipse XML
-  // export
-  // or a .prefs file, as Spotless reads them; ranges touch only the requested line.
+  // export or a .prefs file, as Spotless reads them; ranges touch only the requested line.
   @Test
   void format_eclipseJdtProfile_formatsDocumentAndRange(@TempDir final Path profiles)
       throws Exception {
@@ -275,6 +274,12 @@ class FormattingTest {
     assertThat(apply(source, JavaFormatter.format(eclipse, source, FILE).get(0)))
         .isEqualTo(expected);
     assertThat(JavaFormatter.format(eclipse, expected, FILE)).isEmpty();
+    // A CRLF document keeps CRLF, so already-formatted text yields no edit, not a whole rewrite.
+    final String crlfSource = source.replace("\n", "\r\n");
+    final String crlfExpected = expected.replace("\n", "\r\n");
+    assertThat(apply(crlfSource, JavaFormatter.format(eclipse, crlfSource, FILE).get(0)))
+        .isEqualTo(crlfExpected);
+    assertThat(JavaFormatter.format(eclipse, crlfExpected, FILE)).isEmpty();
     assertThat(
             apply(
                 source,

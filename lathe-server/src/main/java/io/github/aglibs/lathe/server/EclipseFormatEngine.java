@@ -23,11 +23,11 @@ import org.w3c.dom.NodeList;
 // The project's pinned Eclipse JDT formatter, loaded from its own jars on first use and called
 // through JDT's public API reflectively, the way Spotless's eclipse step calls it: the profile's
 // settings, the whole compilation unit (a module descriptor for module-info.java), comments
-// included, "\n" line endings. Ranges use the same call with only the requested regions.
+// included, and the source's own line endings, as the Eclipse IDE passes the document's. Ranges use
+// the same call with only the requested regions.
 final class EclipseFormatEngine implements FormatEngine {
 
   private static final String MODULE_INFO = "module-info.java";
-  private static final String LINE_DELIMITER = "\n";
   // An Eclipse formatter export: <profiles><profile><setting id=".." value=".."/>..
   private static final String PROFILES_ELEMENT = "profiles";
   private static final String SETTING_ELEMENT = "setting";
@@ -178,8 +178,12 @@ final class EclipseFormatEngine implements FormatEngine {
         Array.set(regions, i, region.newInstance(range.start(), range.end() - range.start()));
       }
 
+      // The formatter rewrites every line ending it touches to the delimiter it's given; with '\n'
+      // on a CRLF document every line would differ from the editor's, and the edits computed from
+      // the result would replace the whole document instead of the lines it formatted.
+      final String delimiter = source.contains("\r\n") ? "\r\n" : "\n";
       final Object edit =
-          invoke(format, formatter, kind | includeComments, source, regions, 0, LINE_DELIMITER);
+          invoke(format, formatter, kind | includeComments, source, regions, 0, delimiter);
       if (edit == null) {
         throw new IllegalArgumentException("Invalid Java syntax for formatting");
       }

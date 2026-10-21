@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.FoldingRangeRequestParams;
 import org.eclipse.lsp4j.FormattingOptions;
@@ -269,6 +270,30 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(progressCaptor.getAllValues()).extracting(ProgressParams::getToken).contains(token);
     assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
         .isInstanceOf(WorkDoneProgressEnd.class);
+  }
+
+  // VS Code writes '@' as %40, Path.toUri leaves it alone: both spellings must reach one document.
+  @Test
+  void documentSymbol_openedUnderTheClientsEncoding_isFoundUnderTheServersForm() throws Exception {
+    final Path root = tmp.resolve("a@b");
+    final Path sourceRoot = root.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Widget.java");
+    Files.createDirectories(source.getParent());
+    final var content = "package com.example;\nclass Widget { void run() {} }\n";
+    Files.writeString(source, content);
+    TestCompiler.writeModuleParams(root, "module", sourceRoot, null);
+    service.initialize(root);
+    final var serverForm = source.toUri().toString();
+    service.didOpen(
+        new DidOpenTextDocumentParams(
+            new TextDocumentItem(serverForm.replace("@", "%40"), "java", 1, content)));
+
+    final List<Either<SymbolInformation, DocumentSymbol>> symbols =
+        service
+            .documentSymbol(new DocumentSymbolParams(new TextDocumentIdentifier(serverForm)))
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(symbols).isNotEmpty();
   }
 
   @Test

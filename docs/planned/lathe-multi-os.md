@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed; B0, A1, A2, A3 and A6 done; A0 partly done; D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Proposed; Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -77,16 +77,15 @@ The edges are plain classes and `if`s, not interfaces: each has exactly one impl
 | Rule | Statement | Enforced by |
 |---|---|---|
 | **R1 Portable names** | Every file and directory Lathe writes has a name legal on every OS: none of `< > : " \| ? *`, no trailing dot or space, no reserved names (`CON`, `NUL`, …), and a bounded total path length. | The **portable-names guard** in the invoker checks walks `.lathe/` and the test cache. |
-| **R2 No links, no exec bit** | Lathe creates no symlinks or hard links, and no reader depends on the executable bit. Clients test that a launcher *exists*, not that it is executable. | `forbiddenapis` bans `Files.createSymbolicLink` / `createLink`; the contract wording changes. |
+| **R2 No links, no exec bit** | Lathe creates no symlinks or hard links, and no reader depends on the executable bit. Clients test that a launcher *exists*, not that it is executable. | Convention (`AGENTS.md`); the contract wording changes. |
 | **R3 Paths in data** | Absolute paths are OS-native and machine-local. Relative paths that are persisted (`moduleRel`, stamp keys, resource names, run configs) are `/`-separated on every OS. | The compact constructors of the schema records normalize them (the existing "records validate their invariants" rule). |
 | **R4 URIs** | Every URI that enters from a client is canonicalized once, at the protocol boundary. Internally, a file has exactly one URI string. | A single `LatheUri.canonical`, plus a test feeding VS Code-style encoded URIs through every entry point. |
-| **R5 Text** | Files are read and written as UTF-8 explicitly. Generated files have a fixed line ending per type (`.cmd` CRLF; `.sh`, JSON and argfiles LF). Edits to a user's document preserve that document's line ending. | `forbiddenapis` `jdk-unsafe` signatures (default-charset APIs); CRLF cases in the formatter and code-action tests. |
-| **R6 Processes** | No process is started from a bare tool name or with an unbounded inline argument list. Everything goes through E3. | `forbiddenapis` bans `new ProcessBuilder` and `Runtime.exec` outside E3 (`@SuppressForbidden` there). |
+| **R5 Text** | Files are read and written as UTF-8 explicitly. Generated files have a fixed line ending per type (`.cmd` CRLF; `.sh`, JSON and argfiles LF). Argfiles are written in `native.encoding`, the charset the Java launcher reads them in. Formatting keeps the document's line ending; other edits are sent with `\n`, which every client converts to the document's. | Convention (`AGENTS.md`); CRLF cases in the formatter tests. |
+| **R6 Processes** | No process is started from a bare tool name or with an unbounded inline argument list. Everything goes through E3. | Convention (`AGENTS.md`): processes go through E3. |
 | **R7 Thin scripts** | A generated script only resolves the JDK and starts one recorded program: Java with an argfile, or for sync the tool that ran the build ([D3](#d3--the-sync-script-runs-the-tool-that-ran-the-build)) with a `--tests` switch and a per-module flag. Every choice (which tool, which goals) is made in Java when the script is written. | Code review; the renderers are golden-tested per dialect. |
 | **R8 CI per OS** | Each supported OS has a CI row that builds, runs the portable test subset and starts the server. | `.github/workflows/ci.yml` matrix. |
 
-The enforcement is the point of this design.
-Linux CI fails on an R1, R2, R5 or R6 violation before any Windows run, so a developer who never uses Windows still can't break it in those ways.
+The names guard (R1) and the CI OS matrix (R8) run on CI; the other rules are a convention, listed in `AGENTS.md` (decided 2026-10-21, see [D12](#d12--enforcement)).
 
 ## Current state
 
@@ -333,11 +332,10 @@ The server exits on the LSP `exit` notification (`LatheLanguageServer.java:177`)
 
 ### D12 — Enforcement
 
-- **`forbiddenapis` Maven plugin** on the Java modules, with:
-  - the bundled `jdk-unsafe` signatures (default charset and locale);
-  - a short project signatures file: `Files.createSymbolicLink`, `Files.createLink`, `new ProcessBuilder`, `Runtime.exec`, `System.getProperty("os.name")`;
-  - `@SuppressForbidden` allowed only inside the E1/E3 classes.
-  Its version has to fit the Maven 3.6.3 / Java 17 compatibility floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)).
+*Revised 2026-10-21:* no `forbiddenapis`.
+The R2, R5 and R6 rules are written down as a convention in `AGENTS.md` (Portability), each naming the one helper to use.
+A tool can be added later if violations show up.
+
 - **The portable-names guard** (R1) in the invoker verification. *Done, failing:* `MultiModuleTest.sync_writtenNames_portableToEveryOs` walks the fixture's `.lathe/` and the test cache for Windows-illegal characters, a trailing dot or space, reserved device names and paths over 220 characters.
 - **A CI OS matrix** (R8).
 
@@ -442,7 +440,8 @@ Each slice can be merged on its own.
 2. **A2**, the sync script from the build: the working Maven script is the template. *Done.*
 3. **A6**, the Windows build blockers B0 found: without them nothing else can be checked on Windows. *Done.*
 4. **A1**, launcher models and server argfiles, on the same renderer. *Done.*
-5. **A3** (D8), **A4** (URIs, text), then **A0/A5** (enforcement). *A3 done.*
+5. **A3** (D8) and **A4** (URIs, text). *Done.*
+   Enforcement (A0's `forbiddenapis`, A5) was dropped on 2026-10-21: the rules are a convention in `AGENTS.md`, and a tool can be added if violations show up.
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
 `lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
@@ -452,7 +451,8 @@ Each slice can be merged on its own.
 #### A0 — Guards in report mode, macOS in CI
 
 - Add `macos-latest` to the CI matrix. *Done (`5a169ce3`): one row, on JDK 25, since the OS-sensitive parts don't vary by JDK.*
-- Add `forbiddenapis` and the portable-names guard in report-only mode, and list today's violations in this document. *Names guard done, and failing rather than reporting, since D7 left nothing to report. `forbiddenapis` open.*
+- Add the portable-names guard. *Done, failing from the start, since D7 left nothing to report.*
+  (`forbiddenapis` was dropped with D12.)
 
 **Exit:** CI green on Linux and macOS; a known, written-down violation list.
 
@@ -516,17 +516,23 @@ Each slice can be merged on its own.
 #### A4 — URIs and text
 
 - D6 canonical URIs and the `extractJarPath` fix.
-- R5 line-ending preservation in formatting and code actions.
+- R5 line-ending preservation in formatting.
 
 **Fixes today:** paths with `@`, `+` or spaces in VS Code; CRLF format-on-save.
 **Exit:** server tests that use VS Code-encoded URIs and CRLF documents pass.
 
-#### A5 — Turn enforcement on
+*Done (2026-10-21).* As built:
+- `LatheUri.canonical` turns a `file:` URI into the form `Path.toUri` gives, the one the server builds itself, and upper-cases a Windows drive letter by rebuilding the path's root; other URIs pass unchanged.
+  It's applied where a URI enters: the text-document service's 24 reads, the workspace service's hierarchy commands, and the commands' `uri` argument (one helper, `uriArgument`).
+- `extractJarPath` reads the raw, still-encoded part of the jar URI, so a jar under a path with a space maps to its sources; the test fails without the fix.
+- Only the formatter changed for line endings: Eclipse gets the source's own delimiter, as the Eclipse IDE passes the document's, so a CRLF document formats to minimal edits instead of a whole-document rewrite.
+  Code actions and completion edits stay `\n`: every client converts inserted text to the document's line ending (Neovim's `apply_text_edits` turns `\r\n` into `\n`; Emacs buffers are `\n` internally), so sending `\r\n` would at best do nothing.
+- The drive-letter case can only be tested on Windows (B1).
 
-- Switch `forbiddenapis` and the names guard from reporting to failing. *The names guard fails already.*
-- Update the [Workspace Contract](../lathe-workspace-contract.md) (D8, D11) and the status doc.
+#### A5 — Turn enforcement on: dropped
 
-**Exit:** a deliberately introduced symlink, `:` file name or bare `ProcessBuilder` fails Linux CI.
+Dropped on 2026-10-21 with D12: the rules are a convention in `AGENTS.md`.
+The workspace contract already states D8's `/` rule (A3); D11's launch contract changes with B2.
 
 #### A6 — Windows build blockers (found by B0)
 

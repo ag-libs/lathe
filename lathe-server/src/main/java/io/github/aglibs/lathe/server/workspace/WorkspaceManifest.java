@@ -446,7 +446,9 @@ public final class WorkspaceManifest {
       return Optional.empty();
     }
 
-    final var specific = uri.getSchemeSpecificPart();
+    // Raw, still percent-encoded: decoding first would leave a space or '%' in the jar path, which
+    // the file URI it is parsed as then rejects.
+    final String specific = uri.getRawSchemeSpecificPart();
     final int sep = specific.indexOf("!/");
     if (sep < 0) {
       return Optional.empty();

@@ -61,7 +61,7 @@ class MultiModuleTest {
   void sync_launchers_copiedFromVersionDirToWorkspaceAndLatest() throws IOException {
     final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
     for (final var script : List.of("lathe-launcher.sh", "lathe-mcp-launcher.sh")) {
-      final var installed = Files.readString(versionDir.resolve(script));
+      final String installed = Files.readString(versionDir.resolve(script));
       for (final var copy : List.of(lathe(script), LATHE_CACHE.resolve("latest").resolve(script))) {
         assertThat(copy).isExecutable().hasContent(installed);
       }
@@ -69,7 +69,7 @@ class MultiModuleTest {
 
     // Each launcher reads the argfile beside it, so every copy carries the pair.
     for (final var argfile : List.of("lathe-server.args", "lathe-mcp.args")) {
-      final var installed = Files.readString(versionDir.resolve(argfile));
+      final String installed = Files.readString(versionDir.resolve(argfile));
       for (final var copy : List.of(lathe(argfile), LATHE_CACHE.resolve("latest").resolve(argfile))) {
         assertThat(copy).hasContent(installed);
       }
@@ -79,12 +79,12 @@ class MultiModuleTest {
   // The launcher names no jar; its argfile holds the module path and ends with the entry point.
   @Test
   void sync_launcherAndArgfile_holdTheRequiredJvmArgs() throws IOException {
-    final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
-    final var launcher = read(versionDir.resolve("lathe-launcher.sh"));
+    final Path versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
+    final String launcher = read(versionDir.resolve("lathe-launcher.sh"));
     assertThat(launcher).startsWith("#!/bin/sh\n");
     assertThat(launcher).contains("@.lathe/jvm.args", "@\"$(dirname \"$0\")/lathe-server.args\"");
     assertThat(launcher).doesNotContain(".jar");
-    final var args = Files.readAllLines(versionDir.resolve("lathe-server.args"));
+    final List<String> args = Files.readAllLines(versionDir.resolve("lathe-server.args"));
     assertThat(args).startsWith("--add-modules", "java.net.http", "--module-path");
     assertThat(args).endsWith("-m", "io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.LatheServer");
     assertThat(args).noneMatch(arg -> arg.contains("=ALL-UNNAMED"));

@@ -169,12 +169,12 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
-    final String uri = parseListRunnablesArgument(params.getArguments().get(0));
+    final String uri = uriArgument(params.getArguments().get(0));
     return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
   }
 
   private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
-    final String uri = parseListRunnablesArgument(params.getArguments().get(0));
+    final String uri = uriArgument(params.getArguments().get(0));
     return textDocumentService.refreshResourceFuture(uri).thenApply(dest -> dest);
   }
 
@@ -184,7 +184,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     final var at =
         GSON.fromJson((JsonElement) params.getArguments().get(0), TextDocumentPositionParams.class);
     return textDocumentService
-        .instantiationsFuture(at.getTextDocument().getUri(), at.getPosition())
+        .instantiationsFuture(LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition())
         .thenApply(locations -> locations);
   }
 
@@ -192,7 +192,8 @@ final class LatheWorkspaceService implements WorkspaceService {
     final var at =
         GSON.fromJson((JsonElement) params.getArguments().get(0), TextDocumentPositionParams.class);
     return textDocumentService
-        .typeHierarchyExplorerFuture(at.getTextDocument().getUri(), at.getPosition())
+        .typeHierarchyExplorerFuture(
+            LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition())
         .thenApply(result -> result);
   }
 
@@ -251,13 +252,13 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> resolveContext(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .resolveContextFuture(json.get("uri").getAsString())
+        .resolveContextFuture(uriArgument(json))
         .thenApply(context -> context);
   }
 
   private CompletableFuture<Object> dirRunnables(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
-    return textDocumentService.dirRunFuture(json.get("uri").getAsString()).thenApply(plan -> plan);
+    return textDocumentService.dirRunFuture(uriArgument(json)).thenApply(plan -> plan);
   }
 
   private CompletableFuture<Object> testSources(final ExecuteCommandParams params) {
@@ -278,9 +279,7 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
-    return textDocumentService
-        .missingImportsFuture(json.get("uri").getAsString())
-        .thenApply(result -> result);
+    return textDocumentService.missingImportsFuture(uriArgument(json)).thenApply(result -> result);
   }
 
   private static String parseCancelArgument(final Object argument) {
@@ -335,8 +334,8 @@ final class LatheWorkspaceService implements WorkspaceService {
     return json.has(key) && !json.get(key).isJsonNull() ? json.get(key).getAsString() : null;
   }
 
-  private static String parseListRunnablesArgument(final Object argument) {
-    final var json = (JsonObject) argument;
-    return json.get("uri").getAsString();
+  // A command's document URI, canonical like every URI that enters the server (LatheUri).
+  private static String uriArgument(final Object argument) {
+    return LatheUri.canonical(((JsonObject) argument).get("uri").getAsString());
   }
 }

@@ -33,8 +33,7 @@ class JavaArgfileTest {
         new ProcessBuilder(java, "@%s".formatted(file), "-version")
             .redirectErrorStream(true)
             .start();
-    final String output =
-        new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    final var output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
     assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
     assertThat(process.exitValue()).isZero();

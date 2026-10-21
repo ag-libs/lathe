@@ -33,4 +33,15 @@ class LatheUriTest {
     assertThat(LatheUri.isFileUri("")).isFalse();
     assertThat(LatheUri.isFileUri(null)).isFalse();
   }
+
+  // VS Code encodes characters Path.toUri leaves alone; both spellings must name one document.
+  @Test
+  void canonical_clientEncodedFileUri_matchesTheServersOwnForm_otherUrisUnchanged() {
+    final var server = Path.of("/home/user/a@b+c d/Foo.java").toUri().toString();
+
+    assertThat(LatheUri.canonical("file:///home/user/a%40b%2Bc%20d/Foo.java")).isEqualTo(server);
+    assertThat(LatheUri.canonical(server)).isEqualTo(server);
+    assertThat(LatheUri.canonical("untitled:Untitled-1")).isEqualTo("untitled:Untitled-1");
+    assertThat(LatheUri.canonical("file://")).isEqualTo("file://");
+  }
 }

@@ -140,7 +140,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public void didOpen(final DidOpenTextDocumentParams params) {
     final var doc = params.getTextDocument();
-    final var uri = doc.getUri();
+    final String uri = LatheUri.canonical(doc.getUri());
     if (ignoreNonFile(uri, "open")) {
       return;
     }
@@ -153,7 +153,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public void didChange(final DidChangeTextDocumentParams params) {
     final var doc = params.getTextDocument();
-    final var uri = doc.getUri();
+    final String uri = LatheUri.canonical(doc.getUri());
     if (ignoreNonFile(uri, "change")) {
       return;
     }
@@ -165,7 +165,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public void didClose(final DidCloseTextDocumentParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "close")) {
       return;
     }
@@ -175,7 +175,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public void didSave(final DidSaveTextDocumentParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "save")) {
       return;
     }
@@ -203,7 +203,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<CompletionItem>, CompletionList>> completion(
       final CompletionParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final var ctx = params.getContext();
     final var context = ctx != null ? ctx : new CompletionContext(CompletionTriggerKind.Invoked);
@@ -241,7 +241,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(
       final CodeActionParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var context = params.getContext();
     if (ignoreNonFile(uri, "codeAction")) {
       return CompletableFuture.completedFuture(List.of());
@@ -254,7 +254,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<SemanticTokens> semanticTokensFull(final SemanticTokensParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "semanticTokens")) {
       return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
     }
@@ -265,7 +265,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
       final DocumentSymbolParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "documentSymbol")) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -284,7 +284,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<FoldingRange>> foldingRange(
       final FoldingRangeRequestParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "foldingRange")) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -316,7 +316,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<List<? extends Location>> references(final ReferenceParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final var incl = params.getContext().isIncludeDeclaration();
     if (ignoreNonFile(uri, "references")) {
@@ -334,7 +334,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRename(final PrepareRenameParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "prepareRename")) {
       return CompletableFuture.completedFuture(null);
@@ -361,7 +361,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */
   public CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final var newName = params.getNewName();
     if (ignoreNonFile(uri, "rename")) {
@@ -382,7 +382,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(
       final DocumentHighlightParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "documentHighlight")) {
       return CompletableFuture.completedFuture(List.of());
@@ -395,7 +395,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<SignatureHelp> signatureHelp(final SignatureHelpParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "signatureHelp")) {
       return CompletableFuture.completedFuture(null);
@@ -406,7 +406,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   @Override
   public CompletableFuture<Hover> hover(final HoverParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "hover")) {
       return CompletableFuture.completedFuture(null);
@@ -418,7 +418,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definition(final DefinitionParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "definition")) {
       return emptyLocationResult();
@@ -430,7 +430,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declaration(final DeclarationParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "declaration")) {
       return emptyLocationResult();
@@ -442,7 +442,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementation(final ImplementationParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "implementation")) {
       return emptyLocationResult();
@@ -454,7 +454,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
       final CallHierarchyPrepareParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "prepareCallHierarchy")) {
       return CompletableFuture.completedFuture(List.of());
@@ -484,7 +484,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(
       final TypeHierarchyPrepareParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     if (ignoreNonFile(uri, "prepareTypeHierarchy")) {
       return CompletableFuture.completedFuture(List.of());
@@ -517,7 +517,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     if (ignoreNonFile(uri, "formatting")) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -528,13 +528,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
-    return formatRanges(params.getTextDocument().getUri(), List.of(params.getRange()));
+    return formatRanges(
+        LatheUri.canonical(params.getTextDocument().getUri()), List.of(params.getRange()));
   }
 
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangesFormatting(
       final DocumentRangesFormattingParams params) {
-    return formatRanges(params.getTextDocument().getUri(), params.getRanges());
+    return formatRanges(LatheUri.canonical(params.getTextDocument().getUri()), params.getRanges());
   }
 
   // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
@@ -562,7 +563,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(
       final DocumentOnTypeFormattingParams params) {
-    final var uri = params.getTextDocument().getUri();
+    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final String ch = params.getCh();
     final String chCode = ch == null || ch.isEmpty() ? "null" : "0x%X".formatted(ch.codePointAt(0));

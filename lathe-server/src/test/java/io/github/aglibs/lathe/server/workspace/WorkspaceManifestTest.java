@@ -136,14 +136,16 @@ class WorkspaceManifestTest extends SampleFixture {
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
+  // The jar URI is percent-encoded; a space in the path (C:\Users\First Last\.m2) must survive.
   @Test
-  void externalSourceRoot_classpathJar_returnsMappedSourceDir() throws Exception {
+  void externalSourceRoot_classpathJarUnderAPathWithASpace_returnsMappedSourceDir()
+      throws Exception {
     final Path sourceDir = tmp.resolve("sources/greeter");
     final Path greeterSrc = sourceDir.resolve("com/example/Greeter.java");
     Files.createDirectories(greeterSrc.getParent());
     Files.writeString(greeterSrc, "package com.example; public class Greeter {}");
 
-    final Path jar = tmp.resolve("repo/greeter.jar");
+    final Path jar = tmp.resolve("First Last/repo/greeter.jar");
     Files.createDirectories(jar.getParent());
     TestCompiler.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
     writeWorkspaceManifest(
