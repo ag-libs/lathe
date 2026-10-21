@@ -301,7 +301,9 @@ public final class FileUtil {
 
   // Extracted sources are read-only files, which Windows refuses to delete, so the bit is cleared
   // first. Its result goes unchecked: if clearing it fails, the delete fails too and is retried,
-  // and the last failure reported is the delete's own.
+  // and the last failure reported is the delete's own. A path already gone counts as deleted: on
+  // Windows a rename racing another rename of the same directory moves the directory the other
+  // caller set aside, so both moveDirReplacing callers delete the same tree.
   private static void deleteRetrying(final Path path) throws IOException {
     for (int attempt = 1; ; attempt++) {
       if (!Files.isDirectory(path) && !Files.isWritable(path)) {
@@ -309,10 +311,8 @@ public final class FileUtil {
       }
 
       try {
-        Files.delete(path);
+        Files.deleteIfExists(path);
         return;
-      } catch (final NoSuchFileException e) {
-        throw e;
       } catch (final FileSystemException e) {
         pauseBeforeRetry(attempt, e);
       }
