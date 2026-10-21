@@ -32,7 +32,19 @@ jobs:
         include:
           - java: '25'
             os: macos-latest
+          # Windows on the current LTS too: it runs the generated .cmd scripts for real.
+          - java: '25'
+            os: windows-latest
+    defaults:
+      run:
+        # The steps are bash on every OS (Git Bash ships with the Windows runner); the product
+        # itself never needs bash there.
+        shell: bash
     steps:
+      - name: Enable long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -43,7 +55,9 @@ jobs:
 
       - name: Set up Neovim
         # lathe-neovim's run-specs.sh needs nvim on PATH (it hard-fails under CI otherwise). VS Code's
-        # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed.
+        # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed. Neovim
+        # isn't supported on Windows, so its specs don't run there.
+        if: runner.os != 'Windows'
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
@@ -71,6 +85,8 @@ jobs:
               -P '!multi-release-jdk21'
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
             env -u CI mvn -B --no-transfer-progress clean install
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
           else
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
           fi
