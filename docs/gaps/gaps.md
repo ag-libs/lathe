@@ -899,7 +899,7 @@ To be added with the fix:
 
 ## MC-4 — `verify_change` with no files reports a clean tree after a tool's own write broke dependents
 
-**Status: documented**
+**Status: in-progress** (on `fix/verify-change-tool-writes`).
 
 Signal: the same release smoke as [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file).
 
@@ -922,20 +922,27 @@ sync command.
 The rename's own pass recompiled only the file it edited, so the broken callers in other modules were
 never compiled at all.
 
-### Fix direction
+### Fix
 
-FR-018 removes this occurrence, because a correct rename-back edits every caller.
-What remains is a design choice for agent-facing honesty, to decide with that fix:
+FR-018 removed the rename-back occurrence: a rename back now edits every caller.
+What remained: a tool's write that compiles itself, and so is stamped, but breaks a same-module file
+the tool did not edit.
+A subclass declaring `int welcome()` stops compiling when `greet()` is renamed to `welcome()` in its
+superclass, yet it has no use of `greet()`, so the rename never touches it.
+A no-argument `verify_change` then found nothing stale and checked nothing.
 
-- Let the engine remember the files its tools wrote since the last `verify_change`, and include them
-  in the no-argument change set.
-- Or have `rename_symbol`'s result state that the edited files were already verified, and how, so an
-  agent does not read a later "clean" as covering the dependents.
+The session now remembers the files written on report (`writeReported`) since a `verify_change` last
+took them, and a no-argument `verify_change` adds them to the change set, so their same-module
+referrers are compiled too.
+`verify_change` takes the set itself (`takeWrittenSinceVerify`): `reconcileForVerify` runs at the
+start of every engine call, so consuming it there would let a query between the write and the
+verify swallow it.
+The set lives on `lathe-worker` like all session state.
 
 ### Regression targets
 
-None yet.
-Candidate: `LatheEngineTest.verifyChange_afterRenameBreaksDependents_reportsThem`.
+- `LatheEngineTest.verifyChange_noFilesAfterARenameThatBreaksAnUneditedSubclass_reportsIt` (fails
+  without the fix).
 
 ---
 

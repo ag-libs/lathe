@@ -205,6 +205,9 @@ final class WorkspaceSession {
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
   // written, unless reported again after its content was read.
   private final Map<Path, Long> reported = new HashMap<>();
+  // Files written on report since a verify_change last took them: the write stamps them, so that
+  // verify_change's own stale scan would not list them.
+  private final Set<Path> writtenSinceVerify = new HashSet<>();
   private long reportCount;
   // Per open file, the diagnostics of its last write and the content written: merged into its
   // publishes while it still has that content, for what analysis cannot report (annotation
@@ -3455,6 +3458,7 @@ final class WorkspaceSession {
   // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
     changed.forEach(source -> reported.put(source, ++reportCount));
+    writtenSinceVerify.addAll(changed);
     return requestPass(false).thenAccept(stale -> {});
   }
 
@@ -3476,6 +3480,12 @@ final class WorkspaceSession {
 
     return requestPass(true)
         .thenApply(stale -> new ReconcileOutcome(stale, ReconcileOutcome.DeferReason.NONE));
+  }
+
+  List<Path> takeWrittenSinceVerify() {
+    final List<Path> taken = List.copyOf(writtenSinceVerify);
+    writtenSinceVerify.clear();
+    return taken;
   }
 
   // Files to diagnose for verify_change: each changed file plus its same-module callers, by module.

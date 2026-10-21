@@ -529,6 +529,33 @@ class LatheEngineTest {
   }
 
   @Test
+  void verifyChange_noFilesAfterARenameThatBreaksAnUneditedSubclass_reportsIt() throws Exception {
+    final String source = "package com.example;\nclass Callee {\n  void greet() {}\n}\n";
+    final Path callee = TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", source);
+    // No use of greet(): the rename leaves Sub alone, but then its welcome() clashes on the
+    // return type.
+    final Path sub =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Sub.java",
+            "package com.example;\nclass Sub extends Callee {\n  int welcome() { return 1; }\n}\n");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, sub);
+    stampModule(callee, sub);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(source, source.indexOf("greet"));
+    engine.rename(callee, pos.getLine(), pos.getCharacter(), "welcome");
+    // Callee compiled and was stamped by the rename's write, so nothing on disk reads as stale.
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.perModule())
+        .anySatisfy(
+            module ->
+                assertThat(module.diagnostics())
+                    .anyMatch(d -> d.getMessage().getLeft().contains("welcome")));
+  }
+
+  @Test
   void verifyChange_noExternalChange_reportsNoDiagnostics() throws Exception {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());

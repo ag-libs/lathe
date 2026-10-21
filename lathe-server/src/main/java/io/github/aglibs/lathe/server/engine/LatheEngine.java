@@ -428,7 +428,14 @@ public final class LatheEngine {
           outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND);
     }
 
-    final List<Path> changed = files.isEmpty() ? outcome.reacted() : files;
+    // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
+    final List<Path> changed =
+        files.isEmpty()
+            ? Stream.concat(
+                    outcome.reacted().stream(), await(service.takeWrittenSinceVerify()).stream())
+                .distinct()
+                .toList()
+            : files;
     if (changed.isEmpty()) {
       return new LatheVerifyChange(null, List.of(), List.of(), null);
     }

@@ -112,6 +112,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.writeReported(changed)).thenCompose(done -> done);
   }
 
+  /** The files written on report since the last call, for a verify_change given no files. */
+  public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
+    return worker.submit(session::takeWrittenSinceVerify);
+  }
+
   /** The changed files plus their same-module candidate callers, grouped by module rel. */
   public CompletableFuture<Map<String, List<Path>>> verifyTargetsByModule(
       final List<Path> changed) {
