@@ -16,7 +16,9 @@ Schema records live in `lathe-core` under `io.github.aglibs.lathe.core.schema`; 
 
 A directory is a Lathe workspace when it contains a `.lathe/` directory.
 The LSP server takes the root from the editor's workspace folder and treats it as configured when `.lathe/` exists;
-the clients find the root as the nearest ancestor holding `.lathe/`, and attach only when `.lathe/lathe-launcher.sh` is executable.
+the clients find the root as the nearest ancestor holding `.lathe/`, and attach when the launcher for the host OS exists: `.lathe/lathe-launcher.sh` on POSIX, `.lathe\lathe-launcher.cmd` on Windows.
+They start it with the workspace root as working directory.
+On Windows they start it through `%ComSpec% /d /s /c ""<launcher>""` with the arguments passed verbatim: Node and similar runtimes won't start a `.cmd` without a shell, `/d` skips the user's AutoRun (whose output would corrupt the protocol on stdout), and `/s` with the doubled quotes keeps a path with spaces intact.
 
 A **module** is any directory under `.lathe/` that holds an `lsp-params-<tree>.json`.
 The server discovers modules by walking `.lathe/`; there is no module list.

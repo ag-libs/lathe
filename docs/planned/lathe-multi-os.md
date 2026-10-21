@@ -612,9 +612,11 @@ B1c, done (2026-10-21): the server's own process starts.
 
 #### B2 — VS Code and Cursor
 
-- The `extension.ts` branch (D11).
-- A Windows section in `docs/guide/editors/vscode.md` and `installation.md`.
-- The stdio smoke spawns through the extension's own launch code.
+Code-complete (2026-10-21); the exit waits on human session 1.
+- `lathe-vscode/src/launch.ts` holds the launch rule (D11): `lathe-launcher.cmd` on Windows, started as `%ComSpec% /d /s /c ""<path>""` with `windowsVerbatimArguments`, else `lathe-launcher.sh` directly, from the workspace root.
+  The extension hands it to the language client as an `Executable`, not a process of its own, so the client still kills a server that outlives shutdown (`taskkill /T` on Windows, which takes the JVM under `cmd.exe` too).
+- `npm test` (run by Maven after `npm run check`) starts a stub launcher through that same command, the way the client does, from a directory with a space in its name: on the Windows row it runs the `cmd /d /s /c` quoting for real. The real server over the `.cmd` launcher is LspSmokeTest's.
+- The Workspace Contract's attach rule, a Windows and Cursor section in `docs/guide/editors/vscode.md`, and the launcher names in `installation.md`.
 
 **Exit:** CI green, and **human session 1** passes.
 
@@ -627,6 +629,7 @@ B1c, done (2026-10-21): the server's own process starts.
 
 #### B4 — Zed
 
+Code-complete (2026-10-21) with B2; the exit waits on human session 1.
 - The Windows settings in `docs/guide/editors/zed.md`: `binary.path` `cmd.exe` with `["/d", "/s", "/c", ".lathe\\lathe-launcher.cmd"]`.
 - Lands with B2, so human session 1 covers both editors. Its Zed pass: error squiggle, cross-module go to definition, references, rename, and no `java.exe` left after closing.
 

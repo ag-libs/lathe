@@ -19,6 +19,8 @@
     <frontend-maven-plugin.version>2.0.2</frontend-maven-plugin.version>
     <!-- Build toolchain only; the extension's runtime (host) Node is pinned in esbuild.js. -->
     <node.version>v24.14.1</node.version>
+    <!-- -DskipTests skips the npm test step too. -->
+    <skipTests>false</skipTests>
   </properties>
 
   <build>
@@ -62,6 +64,17 @@
             <phase>package</phase>
             <configuration>
               <arguments>run check</arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>npm-test</id>
+            <goals>
+              <goal>npm</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <arguments>test</arguments>
+              <skip>${skipTests}</skip>
             </configuration>
           </execution>
           <execution>

@@ -35,7 +35,8 @@
     "check": "prettier --check . && tsc --noEmit -p ./",
     "format": "prettier --write .",
     "vscode:prepublish": "node esbuild.js --production",
-    "package": "vsce package --no-dependencies -o target"
+    "package": "vsce package --no-dependencies -o target",
+    "test": "node esbuild.js --test && node target/test/launch.test.js"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"
