@@ -176,9 +176,8 @@ final class LaunchSessionTest {
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     // `trap '' TERM` makes the shell ignore the graceful SIGTERM from destroy(); only the escalated
     // SIGKILL (destroyForcibly) can stop it, so onExit resolving proves the escalation fired.
-    // `read`
-    // is a shell builtin (no forked child to inherit and hold the stdout/stderr pipes open), so
-    // killing the shell closes them and the drains complete.
+    // `read` is a shell builtin (no forked child to inherit and hold the stdout/stderr pipes open),
+    // so killing the shell closes them and the drains complete.
     final var session =
         launchSession(new ProcessBuilder("sh", "-c", "trap '' TERM; read _").start(), null);
 

@@ -479,8 +479,7 @@ class LatheEngineTest {
   }
 
   // Record a compile stamp per source so a freshly started engine sees the module as already
-  // synced;
-  // a later writeNewer() edit is then the only thing that reads as changed.
+  // synced; a later writeNewer() edit is then the only thing that reads as changed.
   private void stampModule(final Path... sources) throws Exception {
     final Path moduleDir = tmp.resolve(".lathe/module");
     final Path sourceRoot = tmp.resolve("module/src/main/java");

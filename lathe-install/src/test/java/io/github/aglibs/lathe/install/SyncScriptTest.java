@@ -19,9 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 // Runs the rendered script (the .cmd on Windows) against a stub tool that echoes how it was
-// started,
-// so the tests check behavior (tool, JDK, cwd, arguments), not the script's text. The stub and the
-// JDK live under paths with a space and a quote, which the script must pass through intact.
+// started, so the tests check behavior (tool, JDK, cwd, arguments), not the script's text. The stub
+// and the JDK live under paths with a space and a quote, which the script must pass through intact.
 class SyncScriptTest {
 
   private static final List<String> FIXED = List.of("--quiet", "-Dcache=false");

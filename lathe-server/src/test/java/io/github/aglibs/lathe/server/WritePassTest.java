@@ -35,8 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 
 // The write pass: external changes, startup catch-up, reported files, failures, deletions,
-// resources.
-// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
+// resources. Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
 @Isolated
 class WritePassTest extends ServiceTestBase {
 

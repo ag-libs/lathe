@@ -13,9 +13,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 // Runs the rendered launcher (the .cmd on Windows) on the real JDK, from a launcher dir under a
-// path
-// with a space and a quote, with an argfile beside it that starts PrintLaunch, so the test checks
-// what java is started with, not the text.
+// path with a space and a quote, with an argfile beside it that starts PrintLaunch, so the test
+// checks what java is started with, not the text.
 class LauncherScriptTest {
 
   @TempDir Path tmp;

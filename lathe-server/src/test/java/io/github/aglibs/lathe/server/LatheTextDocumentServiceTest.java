@@ -113,8 +113,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   void didOpen_nonFileUri_ignoredWithoutCrashOrPublish() {
     // Neovim sends file:// for an unnamed [No Name] buffer (e.g. :LatheStart before a file is
-    // open);
-    // it has no source to analyze, so the event is ignored rather than crashing in LatheUri.toPath.
+    // open); it has no source to analyze, so the event is ignored rather than crashing in
+    // LatheUri.toPath.
     assertThatCode(
             () ->
                 service.didOpen(
