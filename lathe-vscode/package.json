@@ -36,7 +36,7 @@
     "format": "prettier --write .",
     "vscode:prepublish": "node esbuild.js --production",
     "package": "vsce package --no-dependencies -o target",
-    "test": "esbuild test/launch.test.ts --bundle --platform=node --format=cjs --outfile=target/test/launch.test.js --log-level=warning && node target/test/launch.test.js"
+    "test": "node esbuild.js --test && node target/test/launch.test.js"
   },
   "dependencies": {
     "vscode-languageclient": "9.0.1"
