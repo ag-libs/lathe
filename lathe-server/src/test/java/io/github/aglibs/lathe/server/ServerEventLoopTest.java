@@ -13,6 +13,10 @@ class ServerEventLoopTest {
 
   private static final String URI = "file:///Foo.java";
   private static final long DELAY_MS = 50;
+  // How long a test waits for a task that should run. The latch returns as soon as it does, so the
+  // deadline costs nothing when the loop works; it only has to outlast a busy CI machine, where
+  // DELAY_MS * 3 once ran out (the server's test classes run in parallel).
+  private static final long AWAIT_MS = 5_000;
 
   private final ServerEventLoop worker = new ServerEventLoop();
 
@@ -32,7 +36,7 @@ class ServerEventLoopTest {
           count.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
@@ -49,7 +53,7 @@ class ServerEventLoopTest {
             latch.countDown();
           });
     }
-    assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
@@ -72,7 +76,7 @@ class ServerEventLoopTest {
           countB.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(countA.get()).isEqualTo(1);
     assertThat(countB.get()).isEqualTo(1);
   }
@@ -108,7 +112,7 @@ class ServerEventLoopTest {
           count.incrementAndGet();
           latch.countDown();
         });
-    assertThat(latch.await(DELAY_MS * 3, TimeUnit.MILLISECONDS)).isTrue();
+    assertThat(latch.await(AWAIT_MS, TimeUnit.MILLISECONDS)).isTrue();
     assertThat(count.get()).isEqualTo(1);
   }
 
