@@ -56,33 +56,34 @@ class JavadocLocatorTest {
         }
         """);
 
-    final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir);
-    final var classElement = parsed.task().getElements().getTypeElement("Documented");
-    assertThat(parsed.trees().getPath(classElement)).isNull();
+    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+      final var classElement = parsed.task().getElements().getTypeElement("Documented");
+      assertThat(parsed.trees().getPath(classElement)).isNull();
 
-    final var fieldElement =
-        classElement.getEnclosedElements().stream()
-            .filter(e -> e.getKind() == ElementKind.FIELD)
-            .findFirst()
-            .orElseThrow();
-    final var methodElement =
-        classElement.getEnclosedElements().stream()
-            .filter(e -> e.getKind() == ElementKind.METHOD)
-            .findFirst()
-            .orElseThrow();
+      final var fieldElement =
+          classElement.getEnclosedElements().stream()
+              .filter(e -> e.getKind() == ElementKind.FIELD)
+              .findFirst()
+              .orElseThrow();
+      final var methodElement =
+          classElement.getEnclosedElements().stream()
+              .filter(e -> e.getKind() == ElementKind.METHOD)
+              .findFirst()
+              .orElseThrow();
 
-    final var locator = new JavadocLocator(parsed.parser());
+      final var locator = new JavadocLocator(parsed.parser());
 
-    final var classDoc = locator.locate(classElement, parsed.trees(), List.of(srcDir));
-    assertThat(classDoc).isPresent();
-    assertThat(JavadocMarkdownPrinter.format(classDoc.get())).contains("well-documented class");
+      final var classDoc = locator.locate(classElement, parsed.trees(), List.of(srcDir));
+      assertThat(classDoc).isPresent();
+      assertThat(JavadocMarkdownPrinter.format(classDoc.get())).contains("well-documented class");
 
-    final var fieldDoc = locator.locate(fieldElement, parsed.trees(), List.of(srcDir));
-    assertThat(fieldDoc).isPresent();
-    assertThat(JavadocMarkdownPrinter.format(fieldDoc.get())).contains("maximum constant");
+      final var fieldDoc = locator.locate(fieldElement, parsed.trees(), List.of(srcDir));
+      assertThat(fieldDoc).isPresent();
+      assertThat(JavadocMarkdownPrinter.format(fieldDoc.get())).contains("maximum constant");
 
-    final var methodDoc = locator.locate(methodElement, parsed.trees(), List.of(srcDir));
-    assertThat(methodDoc).isPresent();
-    assertThat(JavadocMarkdownPrinter.format(methodDoc.get())).contains("Says hello");
+      final var methodDoc = locator.locate(methodElement, parsed.trees(), List.of(srcDir));
+      assertThat(methodDoc).isPresent();
+      assertThat(JavadocMarkdownPrinter.format(methodDoc.get())).contains("Says hello");
+    }
   }
 }

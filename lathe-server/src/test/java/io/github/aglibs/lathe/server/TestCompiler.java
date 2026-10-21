@@ -51,7 +51,9 @@ public final class TestCompiler {
       Trees trees,
       CompilationUnitTree cu,
       StandardJavaFileManager fm,
-      SourceParser parser) {
+      List<Path> classpath,
+      SourceParser parser)
+      implements AutoCloseable {
 
     public ParsedSource {
       ValidCheck.check()
@@ -61,6 +63,13 @@ public final class TestCompiler {
           .notNull(fm, "fm")
           .notNull(parser, "parser")
           .validate();
+      classpath = List.copyOf(classpath);
+    }
+
+    @Override
+    public void close() {
+      parser.close();
+      TestJavac.release(classpath, fm);
     }
   }
 
@@ -339,12 +348,16 @@ public final class TestCompiler {
       final Path... sources)
       throws IOException {
     final var fm = TestJavac.fileManager(classpath, options);
-    Files.createDirectories(classDir);
-    // The shared file manager keeps this output dir afterwards; only compileToDir writes classes.
-    fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
-    JavaSourceCompiler.COMPILER
-        .getTask(null, fm, null, options, null, fm.getJavaFileObjects(sources))
-        .call();
+    try {
+      Files.createDirectories(classDir);
+      // The shared file manager keeps this output dir afterwards; only compileToDir writes classes.
+      fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
+      JavaSourceCompiler.COMPILER
+          .getTask(null, fm, null, options, null, fm.getJavaFileObjects(sources))
+          .call();
+    } finally {
+      TestJavac.release(classpath, fm);
+    }
   }
 
   public static void compileToJar(
@@ -392,6 +405,6 @@ public final class TestCompiler {
                 null, fm, diagnostics, options, null, fm.getJavaFileObjectsFromPaths(sources));
     final CompilationUnitTree cu = task.parse().iterator().next();
     task.analyze();
-    return new ParsedSource(task, Trees.instance(task), cu, fm, new SourceParser());
+    return new ParsedSource(task, Trees.instance(task), cu, fm, classpath, new SourceParser());
   }
 }

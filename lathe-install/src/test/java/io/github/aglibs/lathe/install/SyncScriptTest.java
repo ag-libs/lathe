@@ -204,8 +204,9 @@ class SyncScriptTest {
     command.addAll(List.of(args));
     final var builder = new ProcessBuilder(command).directory(tmp.toFile());
     final Map<String, String> environment = builder.environment();
-    // cmd.exe needs SystemRoot, and chcp from System32.
-    final String systemRoot = environment.get("SystemRoot");
+    // cmd.exe needs SystemRoot, and chcp from System32. System.getenv ignores case on Windows,
+    // where a parent such as Git Bash may pass the name on uppercased.
+    final String systemRoot = System.getenv("SystemRoot");
     environment.clear();
     if (Platform.WINDOWS) {
       environment.put("SystemRoot", systemRoot);
