@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
@@ -142,20 +143,21 @@ final class FileUtilTest {
   }
 
   // A file another process holds for a moment, such as a virus scanner reading one just written,
-  // is deleted once released; one held throughout fails with the delete's own error.
+  // is deleted once released; one held throughout fails with the delete's own error. A
+  // FileInputStream holds it as they do: NIO channels let others delete the file while open.
   @Test
   @EnabledOnOs(value = OS.WINDOWS, disabledReason = "only Windows refuses to delete an open file")
   void deleteDir_fileHeldOpen_deletedOnceReleased_elseFailsWithTheDeleteError() throws Exception {
     final Path released = Files.createDirectories(tempDir.resolve("released"));
     Files.writeString(released.resolve("file.txt"), "content");
-    final var channel = Files.newByteChannel(released.resolve("file.txt"));
+    final var stream = new FileInputStream(released.resolve("file.txt").toFile());
     final CompletableFuture<Void> release =
         CompletableFuture.runAsync(
             () ->
                 IOUtil.unchecked(
                     () -> {
                       IOUtil.sleep(30);
-                      channel.close();
+                      stream.close();
                     }));
 
     FileUtil.deleteDir(released);
@@ -165,7 +167,7 @@ final class FileUtilTest {
 
     final Path held = Files.createDirectories(tempDir.resolve("held"));
     Files.writeString(held.resolve("file.txt"), "content");
-    final var heldOpen = Files.newByteChannel(held.resolve("file.txt"));
+    final var heldOpen = new FileInputStream(held.resolve("file.txt").toFile());
     try {
       assertThatThrownBy(() -> FileUtil.deleteDir(held))
           .isInstanceOf(FileSystemException.class)
