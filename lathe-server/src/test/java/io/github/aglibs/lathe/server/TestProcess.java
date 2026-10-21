@@ -9,32 +9,30 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 
-// A formatter process for the command engines' tests, run on the test JDK's own java so the tests
-// need no shell or Unix tools and run the same on every OS.
-final class FakeFormatter {
+// A child process for tests that start one (formatter commands, run/test launches), run on the
+// test JDK's own java so the tests need no shell or Unix tools and run the same on every OS.
+public final class TestProcess {
 
-  private FakeFormatter() {}
+  private TestProcess() {}
 
   // The java command that runs this class with the given arguments.
-  static List<String> command(final String... args) {
+  public static List<String> command(final String... args) {
     return Stream.concat(Stream.of(java().toString()), toolArgs(args).stream()).toList();
   }
 
-  static Path java() {
+  public static Path java() {
     return Path.of(System.getProperty("java.home"), "bin", "java");
   }
 
   // What follows the tool in a template whose tool is this JDK's java (%MVN%).
-  static List<String> toolArgs(final String... args) {
-    return Stream.concat(
-            Stream.of("-cp", classes(), FakeFormatter.class.getName()), Stream.of(args))
+  public static List<String> toolArgs(final String... args) {
+    return Stream.concat(Stream.of("-cp", classes(), TestProcess.class.getName()), Stream.of(args))
         .toList();
   }
 
   private static String classes() {
     try {
-      return Path.of(
-              FakeFormatter.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+      return Path.of(TestProcess.class.getProtectionDomain().getCodeSource().getLocation().toURI())
           .toString();
     } catch (final URISyntaxException e) {
       throw new IllegalStateException(e);
@@ -44,6 +42,7 @@ final class FakeFormatter {
   // upper [file]: uppercases the file in place, else stdin to stdout. name file: writes the file's
   // own name into it. write text file: writes text into the file. cwd: prints the working
   // directory. exit code: exits with that code, printing nothing. sleep: never finishes in time.
+  // echo out:text err:text ...: prints each text on a line of the stream it names.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);
@@ -52,8 +51,18 @@ final class FakeFormatter {
       case "cwd" -> System.out.print(Path.of("").toRealPath());
       case "exit" -> System.exit(Integer.parseInt(args[1]));
       case "sleep" -> Thread.sleep(5_000);
+      case "echo" -> echo(args);
       default -> throw new IllegalArgumentException(args[0]);
     }
+  }
+
+  private static void echo(final String[] args) {
+    List.of(args).subList(1, args.length).forEach(TestProcess::echoLine);
+  }
+
+  private static void echoLine(final String streamAndText) {
+    final var stream = streamAndText.startsWith("err:") ? System.err : System.out;
+    stream.println(streamAndText.substring(streamAndText.indexOf(':') + 1));
   }
 
   private static void upper(final String[] args) throws IOException {

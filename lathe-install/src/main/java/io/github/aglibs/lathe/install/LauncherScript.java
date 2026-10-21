@@ -8,12 +8,15 @@ import io.github.aglibs.validcheck.ValidCheck;
 // names no jar path and runs the same from servers/<version>/, latest/ and a workspace's .lathe/.
 // The JDK is LATHE_JAVA_HOME, else the build JDK in .lathe/java-home (relative to the server cwd,
 // the workspace root), else PATH java. stdout is the LSP channel, so the guard sends JVM startup
-// errors and -Xlog output to stderr. It comes first, so the workspace's own options win:
-// .lathe/jvm.args, then LATHE_JVM_OPTS. The argfile comes last; it ends with the entry point.
+// errors and -Xlog output to stderr, and both streams are UTF-8: on Windows they would otherwise
+// be the console code page (JDK 19+; older JDKs ignore the properties). The guard comes first, so
+// the workspace's own options win: .lathe/jvm.args, then LATHE_JVM_OPTS. The argfile comes last;
+// it ends with the entry point.
 public record LauncherScript(String version, String argfile) {
 
   private static final String STDOUT_GUARD =
-      "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr";
+      "-XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr"
+          + " -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8";
 
   public LauncherScript {
     ValidCheck.check().notBlank(version, "version").notBlank(argfile, "argfile").validate();

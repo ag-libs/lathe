@@ -597,13 +597,17 @@ B1b, done (2026-10-21): a green `windows-latest` CI row.
   - `CompletionImportAndPackageTest`: a module path joined with `:` instead of `File.pathSeparator`.
   - `FileUtilTest.unzip`: on Windows `/x` has a root but no drive, so a rooted entry is now made relative to its root.
 
-B1c, next:
-- D9 for the server's own process starts: `LaunchPlan`, the formatter and external commands go through E3, including the D5 launch argfile for Windows' command-line limit.
-  `LaunchSessionTest` still starts `sh`, `sleep` and `cat`, found only through Git's tools on the runner's PATH; it moves to the test JDK's `java` with it.
-- The server launcher passes `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8`: B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.
-- The stdio smoke also runs under an emulated desktop console code page (cp850), since the runner's UTF-8 console hides `chcp` mistakes.
+B1c, done (2026-10-21): the server's own process starts.
+- D5 for run/test launches: past 30,000 characters, `Launcher` moves everything after `java` into a temp argfile (`lathe-launch-*.args`, written by `JavaArgfile`) and starts `java @<argfile>`.
+  The rule is the same on every OS, so it is tested everywhere; the transcript shows the argfile, which stays on disk, so the command can still be rerun.
+- The server and MCP launchers pass `-Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8` (JDK 19+; older JDKs ignore them): B0 showed server logs in cp1252. Launched run/test JVMs get the same in B3.
+- D9 needed no resolver class: `%MVN%` already runs the recorded tool (A2), `ProcessBuilder` starts a `.cmd` or `.bat` directly, and the argfile lives where launches start. E3 is these three places, not one class.
+- `LaunchSessionTest` starts its processes on the test JDK's `java` (`TestProcess`, formerly the formatter tests' `FakeFormatter`); only the SIGTERM-escalation case stays POSIX, since Windows has no SIGTERM.
+- Moved to B2's human session:
+  - the cp850 smoke: CI's processes run on pipes without a console, so a desktop console code page can't be emulated there reliably;
+  - `.lathe\lathe-sync.cmd` from PowerShell: PowerShell hands a `.cmd` to `cmd.exe`, which SyncScriptTest already runs, and B0 ran a sync-script sketch from both shells.
 
-**Exit:** all three CI rows green; `.lathe\lathe-sync.cmd` works from `cmd` and PowerShell.
+**Exit:** all three CI rows green; `.lathe\lathe-sync.cmd` works from `cmd` (SyncScriptTest).
 
 #### B2 — VS Code and Cursor
 
@@ -631,11 +635,11 @@ Neovim and Emacs are not supported on Windows ([Non-goals](#non-goals)); decided
 ## Testing strategy
 
 - **Renderers:** golden-text tests for both dialects run on every OS (CRLF endings, quoting, doubled backslashes).
-- **Windows scripts run on Windows CI.** The `windows-latest` row executes the generated `.cmd` launcher and sync script for real, from `cmd` and PowerShell, instead of trusting the golden text alone.
+- **Windows scripts run on Windows CI.** The `windows-latest` row executes the generated `.cmd` launcher and sync script for real, instead of trusting the golden text alone; PowerShell is checked in human session 1.
 - **URIs:** percent-encoding cases (`@`, `+`, space) run everywhere. Drive-letter cases (`file:///c%3A/...` vs `file:///C:/...`) are `@EnabledOnOs(WINDOWS)`, because `Path.of(URI)` treats drive letters differently on POSIX.
-- **CI matrix:** Linux runs the full suite. macOS and Windows run the portable subset, the invoker fixture with the names guard, and the stdio smoke.
+- **CI matrix:** every row runs the full suite and the invoker fixtures, Windows included (since B1b); tests are portable rather than skipped (`AGENTS.md`).
   - Steps use `shell: bash` (Git Bash is preinstalled on the runner) so the workflow stays readable; the product itself never needs bash.
-  - The audit counted 102 `file:///` literals and 23 absolute `/…` paths in `lathe-server` tests, plus `sh -c` fixtures. They're converted when a slice touches them, and the Windows subset grows as they are.
+  - The audit counted 102 `file:///` literals and 23 absolute `/…` paths in `lathe-server` tests, plus `sh -c` fixtures. The ones that broke on Windows were converted in B1b, and the Windows row runs them all.
 - **Invoker tests on Windows CI: yes, with small changes.** See [below](#invoker-tests-on-windows-ci).
 - **What CI can't cover** is the editor UI and the desktop Windows editions; runners are Windows Server 2022/2025. That is what the human sessions are for.
 
@@ -667,6 +671,8 @@ A checklist in the PR:
 - build the `multi-module` fixture with `mvnw.cmd`;
 - an error squiggle, completion, cross-module go to definition, references, rename;
 - format-on-save on a CRLF file;
+- `.lathe\lathe-sync.cmd` from a PowerShell terminal;
+- the server log shows a non-ASCII path correctly with the console on its desktop code page (cp850 or cp437);
 - after closing the window, no `java.exe` left in Task Manager.
 
 A failure is reported with the Lathe output-channel log attached, not with a diagnosis.

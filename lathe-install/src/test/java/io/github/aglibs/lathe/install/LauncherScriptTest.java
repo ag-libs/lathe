@@ -50,6 +50,8 @@ class LauncherScriptTest {
             "-XX:+DisplayVMOutputToStderr",
             "-Xlog:disable",
             "-Xlog:all=warning:stderr",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dlathe.test.workspace=true",
             "-Xmx1g")
         .endsWith("--", "--stdio");
@@ -73,6 +75,7 @@ class LauncherScriptTest {
             "if not defined jhome if exist \".lathe\\java-home\" set /p jhome=<\".lathe\\java-home\"",
             "if exist \".lathe\\jvm.args\" set \"jvm_args=@.lathe\\jvm.args\"",
             "\"%java_bin%\" -XX:+DisplayVMOutputToStderr -Xlog:disable -Xlog:all=warning:stderr"
+                + " -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8"
                 + " %jvm_args% %LATHE_JVM_OPTS% @\"%~dp0lathe-server.args\" %*",
             "exit /b %ERRORLEVEL%");
     // A ')' in an expanded path (Program Files (x86)) would end a parenthesized block early.
