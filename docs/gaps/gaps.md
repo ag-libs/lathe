@@ -350,6 +350,56 @@ IntelliJ's Search Everywhere matches humps everywhere, so the demand would come 
 None: the behaviour is unchanged; only the docs and the tool description were corrected.
 ---
 
+## EG-058 — Module analysis sessions are never released: a reactor-wide search pins every touched module's jars for the session
+
+**Status: deferred — Target: backlog.**
+Waiting for a user report of memory pressure before acting; normal heaps (2 GB and up) are unaffected.
+
+### Observed behaviour
+
+Memory probe against Dropwizard and Helidon at `-Xmx` 1, 2 and 4 GB (read-only requests: cross-module
+references, hover, definition, implementation, call hierarchy, then 100 files opened across modules).
+Live heap after a full GC:
+
+| Measurement | Dropwizard | Helidon |
+|---|---|---|
+| After reference searches | ~550–650 MB | ~560–720 MB |
+| Per additional open file | ~6–7 MB | ~6–7 MB |
+| 100 files open | ~1.16 GB | ~1.0–1.1 GB |
+| Non-heap on top of `-Xmx` (NMT) | ~350 MB | ~900 MB |
+
+Closing every file does not return the heap to its pre-open level:
+Dropwizard drops only to ~920 MB, against ~465 MB before the 100 opens.
+Both projects work fully at 2 GB and 4 GB; at 1 GB both run reference search fine but die once ~80–100
+files are open on top of it.
+
+### Root cause
+
+`CompilationWorker` creates its `SourceAnalysisSession` lazily and keeps it until the workspace closes.
+Each session owns a `ModuleSourceCompiler` with its own `StandardJavaFileManager`, which opens a zip
+filesystem per classpath jar.
+A reference search touches every candidate module, so after one reactor-wide search every touched
+module's file manager, with all its jar indexes, stays for the rest of the session.
+Dropwizard has 233 unique jars but ~4,300 live `ZipFileSystem` instances (each jar opened ~18×),
+almost all still alive after every file is closed; Helidon has 209 unique jars and ~1,700 instances.
+
+### Fix direction
+
+Release a module's session after it has been idle for a while (for example 5 minutes), on the worker's
+own executor; the next request rebuilds it through the existing `contextFactory`.
+This is safe because a cache miss already recompiles (the `AnalysisLru` eviction path), and the
+single-threaded executor orders the release after any in-flight search.
+Cost: the first request into a module idle past the threshold pays a cold start (~0.2–1.6 s), and a
+warm reactor-wide search after a long pause runs at cold speed.
+A count-capped LRU of module sessions would bound memory during a burst as well, but would make every
+large reactor-wide search cold.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
