@@ -46,6 +46,7 @@ final class LatheMcpTools {
   private static final Logger LOG = Logger.getLogger(LatheMcpTools.class.getName());
   private static final int DEFAULT_MAX_RESULTS = 50;
   private static final int MAX_ARG_VALUE_CHARS = 200;
+  private static final int LISTED_MODULES = 10;
 
   private LatheMcpTools() {}
 
@@ -290,7 +291,7 @@ final class LatheMcpTools {
                 """
                 {"type":"object","required":["query"],
                  "properties":{
-                   "query":{"type":"string","description":"Symbol name (CamelHumps supported)."},
+                   "query":{"type":"string","description":"Symbol name or prefix; reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
                    "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}\
                 """)
             .description(
@@ -884,16 +885,21 @@ final class LatheMcpTools {
     return result(head + crossModuleNote(verify), verifyStructured(verify, total), NO_NOTES);
   }
 
-  private static String crossModuleNote(final LatheVerifyChange verify) {
+  // A change to a core module names over a hundred dependents; the count and the sync command carry
+  // what matters, and the structured result keeps every name.
+  static String crossModuleNote(final LatheVerifyChange verify) {
     if (verify.suggestedSync() == null) {
       return "";
     }
 
-    return "%n%n%d module(s) depend on your change (%s); verify them with:%n  %s"
-        .formatted(
-            verify.affectedModules().size(),
-            String.join(", ", verify.affectedModules()),
-            verify.suggestedSync());
+    final List<String> modules = verify.affectedModules();
+    final String listed = modules.stream().limit(LISTED_MODULES).collect(Collectors.joining(", "));
+    final String more =
+        modules.size() > LISTED_MODULES
+            ? ", and %d more".formatted(modules.size() - LISTED_MODULES)
+            : "";
+    return "%n%n%d module(s) depend on your change (%s%s); verify them with:%n  %s"
+        .formatted(modules.size(), listed, more, verify.suggestedSync());
   }
 
   private static Map<String, Object> verifyStructured(

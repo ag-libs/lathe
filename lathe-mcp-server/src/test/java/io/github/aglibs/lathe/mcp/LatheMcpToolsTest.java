@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -16,6 +17,7 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -220,5 +222,24 @@ class LatheMcpToolsTest {
         .contains("\"Not compiled:\"")
         .contains("\"Sync required:\"")
         .doesNotContain("Stale:");
+  }
+
+  @Test
+  void crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest() {
+    final List<String> twelve = IntStream.rangeClosed(1, 12).mapToObj("mod%d"::formatted).toList();
+    final String sync = ".lathe/lathe-sync.sh core";
+
+    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync)))
+        .contains("12 module(s) depend on your change (mod1, mod2,")
+        .contains("mod10, and 2 more)")
+        .doesNotContain("mod11")
+        .endsWith(sync);
+    assertThat(
+            LatheMcpTools.crossModuleNote(
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync)))
+        .contains("2 module(s) depend on your change (a, b);")
+        .doesNotContain("more");
+    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null)))
+        .isEmpty();
   }
 }
