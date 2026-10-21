@@ -65,7 +65,8 @@ final class CompletenessGateTest {
     assertThat(result.reasons()).hasSize(1);
     assertThat(result.reasons().get(0))
         .isEqualTo(
-            "app test classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh app");
+            "app test classes are not compiled into .lathe yet — run %s app"
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test
@@ -78,7 +79,9 @@ final class CompletenessGateTest {
     assertThat(result.complete()).isFalse();
     assertThat(result.reasons()).hasSize(1);
     assertThat(result.reasons().get(0))
-        .isEqualTo("jpms classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh jpms");
+        .isEqualTo(
+            "jpms classes are not compiled into .lathe yet — run %s jpms"
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test
@@ -111,7 +114,8 @@ final class CompletenessGateTest {
 
     assertThat(blocked.reasons())
         .containsExactly(
-            "dep classes are not compiled into .lathe yet — run .lathe/lathe-sync.sh dep");
+            "dep classes are not compiled into .lathe yet — run %s dep"
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(open.complete()).isTrue();
   }
 

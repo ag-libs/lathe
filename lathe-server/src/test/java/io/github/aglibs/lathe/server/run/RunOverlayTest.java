@@ -65,7 +65,8 @@ final class RunOverlayTest {
     assertThat(resolved.env()).containsEntry("APP_ENV", "prod");
     assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/run-dir"));
     assertThat(resolved.argv()).contains("-Dp=1").endsWith("com.example.app.Main", "--flag");
-    assertThat(resolved.argv()).anyMatch(arg -> arg.contains("/workspace/config"));
+    assertThat(resolved.argv())
+        .anyMatch(arg -> arg.contains(Path.of("/workspace/config").toString()));
   }
 
   @Test
@@ -95,7 +96,7 @@ final class RunOverlayTest {
             JdwpOptions.NONE);
 
     assertThat(resolved.cwd()).isEqualTo(Path.of("/abs/dir"));
-    assertThat(resolved.argv()).anyMatch(arg -> arg.contains("/abs/cp"));
+    assertThat(resolved.argv()).anyMatch(arg -> arg.contains(Path.of("/abs/cp").toString()));
   }
 
   @Test

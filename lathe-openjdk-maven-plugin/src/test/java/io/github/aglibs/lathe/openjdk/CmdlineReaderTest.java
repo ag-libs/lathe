@@ -3,7 +3,10 @@ package io.github.aglibs.lathe.openjdk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
+@DisabledOnOs(value = OS.WINDOWS, disabledReason = "OpenJDK builds on Windows are not supported")
 class CmdlineReaderTest {
 
   // javac-server invocation (path-normalised): launcher prefix + interim --add-exports, then the

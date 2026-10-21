@@ -65,27 +65,28 @@ class WorkspaceManifestWriterTest {
     assertThat(data.schemaVersion()).isEqualTo(LatheLayout.SCHEMA_VERSION);
     assertThat(data.buildTool()).isEqualTo(TOOL.toString());
     assertThat(data.workspaceRoot()).isEqualTo(workspaceRoot.toString());
-    assertThat(data.jdk().home().toString()).isEqualTo("/jdk");
+    assertThat(data.jdk().home().toString()).isEqualTo(Path.of("/jdk").toString());
     assertThat(data.jdk().vendor()).isEqualTo("Example Vendor");
     assertThat(data.jdk().version()).isEqualTo("21.0.1");
     assertThat(data.jdk().status()).isEqualTo(SourceStatus.PRESENT);
-    assertThat(data.jdk().sourceDir().toString()).isEqualTo("/cache/jdks/example-vendor-21.0.1");
+    assertThat(data.jdk().sourceDir().toString())
+        .isEqualTo(Path.of("/cache/jdks/example-vendor-21.0.1").toString());
     assertThat(data.jdk().typeIndex().toString())
-        .isEqualTo("/cache/type-index/jdks/example-vendor-21.0.1/index.json");
+        .isEqualTo(Path.of("/cache/type-index/jdks/example-vendor-21.0.1/index.json").toString());
     assertThat(data.dependencySources()).hasSize(1);
     final var entry = data.dependencySources().get(0);
     assertThat(entry.gav()).isEqualTo("com.example:dep:1");
-    assertThat(entry.jar()).isEqualTo("/repo/dep.jar");
+    assertThat(entry.jar()).isEqualTo(Path.of("/repo/dep.jar").toString());
     assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
-    assertThat(entry.dir()).isEqualTo("/cache/dep");
-    assertThat(entry.classpath()).containsExactly("/repo/transitive.jar");
+    assertThat(entry.dir()).isEqualTo(Path.of("/cache/dep").toString());
+    assertThat(entry.classpath()).containsExactly(Path.of("/repo/transitive.jar").toString());
     assertThat(data.buildFiles()).containsExactly("pom.xml");
     assertThat(data.outputs()).containsExactly(output);
 
     // The build JDK is also written as a plain path for the launcher to run the server under.
     final var javaHome =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JAVA_HOME_FILE);
-    assertThat(Files.readString(javaHome)).isEqualTo("/jdk");
+    assertThat(Files.readString(javaHome)).isEqualTo(Path.of("/jdk").toString());
   }
 
   @Test
@@ -187,6 +188,6 @@ class WorkspaceManifestWriterTest {
     assertThat(data.dependencySources()).hasSize(2);
     assertThat(data.dependencySources().get(0).gav()).isEqualTo("com.example:a:1");
     assertThat(data.dependencySources().get(1).gav()).isEqualTo("com.example:b:2");
-    assertThat(data.dependencySources().get(1).jar()).isEqualTo("/repo/b.jar");
+    assertThat(data.dependencySources().get(1).jar()).isEqualTo(Path.of("/repo/b.jar").toString());
   }
 }

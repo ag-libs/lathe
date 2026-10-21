@@ -21,13 +21,12 @@ class ExternalCommandFormatEngineTest {
 
   @Test
   void format_pipesBufferThroughCommand() throws Exception {
-    assertThat(format(List.of("cat"), "class A {}\n")).isEqualTo("class A {}\n");
-    assertThat(format(List.of("tr", "a-z", "A-Z"), "abc")).isEqualTo("ABC");
+    assertThat(format(FakeFormatter.command("upper"), "class A {}\n")).isEqualTo("CLASS A {}\n");
   }
 
   @Test
   void format_processFailure_throwsIOExceptionWithReason() {
-    assertThatThrownBy(() -> format(List.of("false"), "x"))
+    assertThatThrownBy(() -> format(FakeFormatter.command("exit", "1"), "x"))
         .as("non-zero exit")
         .isInstanceOf(IOException.class)
         .hasMessageContaining("exited");
@@ -35,7 +34,7 @@ class ExternalCommandFormatEngineTest {
         .as("command not found carries the command")
         .isInstanceOf(IOException.class)
         .hasMessageContaining("lathe-no-such-command-zz");
-    assertThatThrownBy(() -> format(List.of("true"), "nonempty"))
+    assertThatThrownBy(() -> format(FakeFormatter.command("exit", "0"), "nonempty"))
         .as("empty output")
         .isInstanceOf(IOException.class)
         .hasMessageContaining("no output");
@@ -44,7 +43,8 @@ class ExternalCommandFormatEngineTest {
   @Test
   void format_exceedsTimeout_throws() {
     final var engine =
-        new ExternalCommandFormatEngine(List.of("sleep", "5"), Duration.ofMillis(200), null);
+        new ExternalCommandFormatEngine(
+            FakeFormatter.command("sleep"), Duration.ofMillis(200), null);
 
     assertThatThrownBy(() -> engine.format("x", Path.of("Foo.java")))
         .isInstanceOf(IOException.class)
@@ -55,7 +55,7 @@ class ExternalCommandFormatEngineTest {
   void format_withWorkingDir_runsInThatDirectory(@TempDir final Path dir) throws Exception {
     final var engine =
         new ExternalCommandFormatEngine(
-            List.of("pwd", "-P"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, dir);
+            FakeFormatter.command("cwd"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, dir);
 
     assertThat(engine.format("x", Path.of("Foo.java")).strip())
         .isEqualTo(dir.toRealPath().toString());

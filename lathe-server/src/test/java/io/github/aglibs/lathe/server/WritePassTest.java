@@ -108,7 +108,7 @@ class WritePassTest extends ServiceTestBase {
         .as("the broken file stays recorded though the rest of its tree was written after it")
         .singleElement()
         .asString()
-        .startsWith("module/src/main/java/com/example/Broken.java:1: ");
+        .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Broken.java")));
   }
 
   @Test

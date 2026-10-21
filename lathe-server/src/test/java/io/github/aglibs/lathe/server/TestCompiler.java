@@ -4,6 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
@@ -354,7 +355,8 @@ public final class TestCompiler {
         final var out = new JarOutputStream(Files.newOutputStream(jar))) {
       final List<Path> classFiles = files.filter(Files::isRegularFile).toList();
       for (final Path classFile : classFiles) {
-        final var entry = new JarEntry(classDir.relativize(classFile).toString());
+        // Jar entry names use '/' on every OS.
+        final var entry = new JarEntry(FileUtil.slashed(classDir.relativize(classFile)));
         out.putNextEntry(entry);
         Files.copy(classFile, out);
         out.closeEntry();

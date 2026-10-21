@@ -76,7 +76,7 @@ class LspSmokeTest {
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
           .resolve(System.getProperty("lathe.version"))
-          .resolve("lathe-launcher.sh");
+          .resolve(Scripts.name("lathe-launcher"));
 
   private static Process serverProcess;
   private static LanguageServer server;

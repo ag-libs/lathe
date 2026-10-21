@@ -69,7 +69,8 @@ import org.mockito.ArgumentCaptor;
 // symbols.
 class LatheTextDocumentServiceTest extends ServiceTestBase {
 
-  private static final String URI = "file:///workspace/src/main/java/Foo.java";
+  // Through Path.toUri, the form the server keeps every URI in (on Windows it gains a drive).
+  private static final String URI = Path.of("/workspace/src/main/java/Foo.java").toUri().toString();
 
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() {

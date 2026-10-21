@@ -179,7 +179,7 @@ class LatheEngineTest {
     assertThat(broken.notCompiled())
         .singleElement()
         .asString()
-        .startsWith("module/src/main/java/com/example/Sample.java:1: ")
+        .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Sample.java")))
         .contains("cannot find symbol");
     assertThat(broken.syncRequired()).as("code to fix, not a sync").isEmpty();
 
@@ -201,7 +201,10 @@ class LatheEngineTest {
 
     assertThat(engine.notes(List.of(unsynced)).syncRequired())
         .containsExactly(
-            "newmodule/src/main/java/com/example/Fresh.java is in no synced module — run `.lathe/lathe-sync.sh`");
+            "%s is in no synced module — run `%s`"
+                .formatted(
+                    Path.of("newmodule/src/main/java/com/example/Fresh.java"),
+                    LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test
@@ -226,7 +229,7 @@ class LatheEngineTest {
         .singleElement()
         .asString()
         .contains("another Lathe version")
-        .contains("`.lathe/lathe-sync.sh`");
+        .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test

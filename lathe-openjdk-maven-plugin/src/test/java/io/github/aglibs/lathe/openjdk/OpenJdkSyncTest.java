@@ -12,8 +12,11 @@ import java.nio.file.Path;
 import java.util.Properties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+@DisabledOnOs(value = OS.WINDOWS, disabledReason = "OpenJDK builds on Windows are not supported")
 class OpenJdkSyncTest {
 
   @TempDir private Path root;

@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -41,7 +42,7 @@ class TypeImplementationTest {
           session.typeImplementations(request(content, new Position(0, 12)), index);
 
       assertThat(locations)
-          .extracting(location -> Path.of(location.getUri()).getFileName().toString())
+          .extracting(location -> Path.of(URI.create(location.getUri())).getFileName().toString())
           .containsExactly("Direct.java", "Leaf.java");
     }
   }

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
- * Smoke test for the MCP launcher. Spawns {@code lathe-mcp-launcher.sh} (the classpath launcher) and
+ * Smoke test for the MCP launcher. Spawns the MCP launcher script (the classpath launcher) and
  * drives it over stdio with newline-delimited JSON-RPC, proving the launcher starts, the MCP server
  * initializes, the tools are exposed, and in-process javac — running as unnamed-module code on the
  * classpath — answers {@code get_diagnostics}.
@@ -28,7 +28,7 @@ class McpSmokeTest {
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
           .resolve(System.getProperty("lathe.version"))
-          .resolve("lathe-mcp-launcher.sh");
+          .resolve(Scripts.name("lathe-mcp-launcher"));
 
   private static Process process;
   private static OutputStream toServer;
