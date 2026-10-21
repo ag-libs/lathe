@@ -5,20 +5,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.validcheck.ValidationException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-// Runs the rendered script against a stub tool that echoes how it was started, so the tests check
-// behavior (tool, JDK, cwd, arguments), not the script's text. The stub and the JDK live under
-// paths with a space and a quote, which the script must pass through intact.
+// Runs the rendered script (the .cmd on Windows) against a stub tool that echoes how it was
+// started, so the tests check behavior (tool, JDK, cwd, arguments), not the script's text. The stub
+// and the JDK live under paths with a space and a quote, which the script must pass through intact.
 class SyncScriptTest {
 
   private static final List<String> FIXED = List.of("--quiet", "-Dcache=false");
@@ -31,15 +33,21 @@ class SyncScriptTest {
   @BeforeEach
   void setUp() throws Exception {
     root = Files.createDirectories(tmp.resolve("workspace"));
-    tool = Files.createDirectories(tmp.resolve("o'neil tools")).resolve("build");
+    tool =
+        Files.createDirectories(tmp.resolve("o'neil tools"))
+            .resolve(LatheLayout.scriptName("build", Platform.WINDOWS));
     jdk = Files.createDirectories(tmp.resolve("my jdk"));
     Files.writeString(
-        tool, "#!/bin/sh\necho \"build cwd=$(pwd -P) JAVA_HOME=$JAVA_HOME args=$*\"\n");
+        tool,
+        Platform.WINDOWS
+            ? "@echo off\r\necho build cwd=%CD% JAVA_HOME=%JAVA_HOME% args=%*\r\n"
+            : "#!/bin/sh\necho \"build cwd=$(pwd -P) JAVA_HOME=$JAVA_HOME args=$*\"\n");
     assertThat(tool.toFile().setExecutable(true)).isTrue();
   }
 
   @Test
-  void posix_scopedFrontEnd_runsTheBuildsToolAndJdk_withTestsGoalsAndModuleArgs() throws Exception {
+  void render_scopedFrontEnd_runsTheBuildsToolAndJdk_withTestsGoalsAndModuleArgs()
+      throws Exception {
     final var maven =
         script(
             List.of("sync"),
@@ -48,10 +56,10 @@ class SyncScriptTest {
             List.of("-am"));
 
     final Result full = run(maven);
+    // cmd's %CD% keeps the path the script was started by, short names included.
+    final Path cwd = Platform.WINDOWS ? root : root.toRealPath();
     assertThat(full.stdout())
-        .isEqualTo(
-            "build cwd=%s JAVA_HOME=%s args=--quiet -Dcache=false sync"
-                .formatted(root.toRealPath(), jdk));
+        .isEqualTo("build cwd=%s JAVA_HOME=%s args=--quiet -Dcache=false sync".formatted(cwd, jdk));
     assertThat(full.stderr())
         .isEqualTo("lathe-sync: %s --quiet -Dcache=false sync".formatted(tool));
     assertThat(run(maven, "--tests").stdout())
@@ -73,7 +81,7 @@ class SyncScriptTest {
   }
 
   @Test
-  void posix_frontEndIgnoringArguments_warnsAndRunsTheWholeSync() throws Exception {
+  void render_frontEndIgnoringArguments_warnsAndRunsTheWholeSync() throws Exception {
     final var openJdk = script(List.of("plugin:sync"), List.of(), List.of(), List.of());
 
     final Result result = run(openJdk, "--tests", "java.base");
@@ -83,7 +91,7 @@ class SyncScriptTest {
   }
 
   @Test
-  void posix_toolGone_failsWithTheRegenerateHint() throws Exception {
+  void render_toolGone_failsWithTheRegenerateHint() throws Exception {
     final var script = script(List.of("sync"), List.of(), List.of(), List.of());
     Files.delete(tool);
 
@@ -95,7 +103,7 @@ class SyncScriptTest {
         .contains("%s not found; run a Lathe-enabled build".formatted(tool));
   }
 
-  // Runs only on Windows (B1b's CI row); here the text carries what B0 proved cmd.exe needs.
+  // The render_ tests run the cmd script on Windows; this checks the text for what cmd.exe needs.
   @Test
   void cmd_crlfScriptRunsTheBuildsTool_withTestsAndModuleArgs_quotingAndDoublingPercent() {
     final var maven =
@@ -188,18 +196,29 @@ class SyncScriptTest {
   private Process start(final SyncScript script, final String... args) throws Exception {
     final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
     final Path file = latheDir.resolve(LatheLayout.SYNC_SCRIPT);
-    Files.writeString(file, script.posix());
+    Files.writeString(file, script.render());
     assertThat(file.toFile().setExecutable(true)).isTrue();
     final var command = new ArrayList<String>();
     command.add(file.toString());
     command.addAll(List.of(args));
     final var builder = new ProcessBuilder(command).directory(tmp.toFile());
-    builder.environment().clear();
-    builder.environment().put("PATH", "/usr/bin:/bin");
+    final Map<String, String> environment = builder.environment();
+    // cmd.exe needs SystemRoot, and chcp from System32. System.getenv ignores case on Windows,
+    // where a parent such as Git Bash may pass the name on uppercased.
+    final String systemRoot = System.getenv("SystemRoot");
+    environment.clear();
+    if (Platform.WINDOWS) {
+      environment.put("SystemRoot", systemRoot);
+      environment.put("PATH", Path.of(systemRoot, "System32").toString());
+    } else {
+      environment.put("PATH", "/usr/bin:/bin");
+    }
+
     return builder.start();
   }
 
+  // cmd passes arguments on as written, quoted and with an empty scope's spaces, so neither counts.
   private static String read(final byte[] bytes) {
-    return new String(bytes, StandardCharsets.UTF_8);
+    return new String(bytes, StandardCharsets.UTF_8).replace("\"", "").replaceAll(" +", " ");
   }
 }

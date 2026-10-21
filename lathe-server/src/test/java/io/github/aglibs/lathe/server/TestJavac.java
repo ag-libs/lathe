@@ -10,13 +10,15 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 
 /**
- * The javac file managers test compiles share, one per thread, classpath, and option set.
+ * The javac file managers test compiles use: JDK-only ones shared per thread and option set, and a
+ * fresh one for each classpath.
  *
- * <p>Opening a file manager indexes the JDK image and the classpath, which costs more than
- * compiling a test snippet, so a configuration is opened once per thread and never closed. The
- * classpath is only what the test names: an empty one means JDK only, never the test JVM's own.
- * Options are part of the key because javac applies path options such as {@code --module-path} to
- * the file manager itself.
+ * <p>Opening a file manager indexes the JDK image, which costs more than compiling a test snippet,
+ * so a JDK-only configuration is opened once per thread and never closed. Options are part of the
+ * key because javac applies path options such as {@code --module-path} to the file manager itself.
+ * A classpath is what the test names, under its own temp dir: a manager for it is never reused by
+ * another test, and it holds the classpath's jars open, which Windows won't delete, so its owner
+ * {@link #release releases} it.
  */
 public final class TestJavac {
 
@@ -36,7 +38,19 @@ public final class TestJavac {
 
   public static StandardJavaFileManager fileManager(
       final List<Path> classpath, final List<String> options) {
-    return FILE_MANAGERS.get().computeIfAbsent(new Config(classpath, options), TestJavac::open);
+    final var config = new Config(classpath, options);
+    if (!classpath.isEmpty()) {
+      return open(config);
+    }
+
+    return FILE_MANAGERS.get().computeIfAbsent(config, TestJavac::open);
+  }
+
+  // Closes a manager fileManager opened for a classpath; a JDK-only one is shared and stays open.
+  public static void release(final List<Path> classpath, final StandardJavaFileManager fm) {
+    if (!classpath.isEmpty()) {
+      IOUtil.unchecked(fm::close);
+    }
   }
 
   private static StandardJavaFileManager open(final Config config) {

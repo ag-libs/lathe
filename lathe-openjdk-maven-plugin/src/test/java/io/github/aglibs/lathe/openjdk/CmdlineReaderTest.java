@@ -3,12 +3,14 @@ package io.github.aglibs.lathe.openjdk;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
+@DisabledOnOs(value = OS.WINDOWS, disabledReason = "OpenJDK builds on Windows are not supported")
 class CmdlineReaderTest {
 
   // javac-server invocation (path-normalised): launcher prefix + interim --add-exports, then the
-  // real
-  // javac args after `javacserver.Main --conf=<f>`.
+  // real javac args after `javacserver.Main --conf=<f>`.
   private static final String JAVACSERVER =
       "/boot/bin/java -Xms32M --limit-modules java.base"
           + " --add-exports java.base/jdk.internal.misc=jdk.compiler.interim"
@@ -76,8 +78,7 @@ class CmdlineReaderTest {
   }
 
   // A plain classpath build-tool compile: boot javac, -source/-target, -cp, -d, @filelist. Keeps
-  // the
-  // fidelity flags + the classpath; no patch-module or module-source-path synthesis.
+  // the fidelity flags + the classpath; no patch-module or module-source-path synthesis.
   private static final String BUILD_TOOL =
       "/boot/bin/javac -J-Xms32M -g -Xlint:all -source 27 -target 27 -implicit:none -encoding utf-8"
           + " -Werror --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED"

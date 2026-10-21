@@ -140,6 +140,8 @@ public final class LaunchPlan {
       final List<String> overlayJvmArgs) {
     final var args = new ArrayList<String>();
     args.add(Path.of(javaHome, "bin", "java").toString());
+    // First, so the build's and the user's own JVM arguments still override them.
+    args.addAll(LatheFlags.UTF8_OUTPUT_JVM_ARGS);
     args.addAll(templateJvmArgs);
     args.addAll(overlayJvmArgs);
     return args;

@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.CompiledStamps;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -34,7 +35,32 @@ class SaveTest extends ServiceTestBase {
   @Test
   void didSave_processorReportsOnTheWrite_mergedIntoThePublishUntilTheBufferChanges()
       throws Exception {
-    // Analysis runs without annotation processors, so only the write sees this one's warning.
+    final Path processors = compileNoteProcessor();
+    final Path note = saveWithProcessor(List.of(), List.of(processors));
+
+    // Edited, the buffer no longer holds what was written, so the write's warning no longer
+    // applies.
+    change(note, "package com.example; class Note { private int marker; }", 2);
+    verify(client, timeout(5_000))
+        .publishDiagnostics(
+            argThat(
+                p ->
+                    isFor(p, note)
+                        && hasMessage(p, "'marker'")
+                        && !hasMessage(p, "noted by processor")));
+  }
+
+  // Without a processor path javac finds processors on the classpath, as Maven's build does.
+  @Test
+  void didSave_processorOnTheClasspathOnly_reportsOnTheWrite() throws Exception {
+    final Path processors = compileNoteProcessor();
+
+    saveWithProcessor(List.of(processors), List.of());
+  }
+
+  // A processor warning on every root element. Analysis runs without annotation processors, so
+  // only a write sees it.
+  private Path compileNoteProcessor() throws IOException {
     final Path processorSource =
         TestCompiler.writeAt(
             tmp.resolve("processor-src/proc/NoteProcessor.java"),
@@ -60,6 +86,13 @@ class SaveTest extends ServiceTestBase {
             1_000L);
     final Path processors = tmp.resolve("processors");
     TestCompiler.compileToDir(processors, processorSource);
+    return processors;
+  }
+
+  // Opens and saves a module source whose build runs NoteProcessor from the given paths, and waits
+  // for the write's warning. Returns the saved source.
+  private Path saveWithProcessor(final List<Path> classpath, final List<Path> processorPath)
+      throws Exception {
     final Path note =
         TestCompiler.writeMirroredModule(
                 tmp,
@@ -73,8 +106,8 @@ class SaveTest extends ServiceTestBase {
         "module",
         tmp.resolve("module/src/main/java"),
         null,
-        List.of(),
-        List.of(processors),
+        classpath,
+        processorPath,
         List.of("-processor", "proc.NoteProcessor"));
     service.initialize(tmp);
     awaitStartup();
@@ -85,17 +118,7 @@ class SaveTest extends ServiceTestBase {
     save(note);
     verify(client, timeout(5_000))
         .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
-
-    // Edited, the buffer no longer holds what was written, so the write's warning no longer
-    // applies.
-    change(note, "package com.example; class Note { private int marker; }", 2);
-    verify(client, timeout(5_000))
-        .publishDiagnostics(
-            argThat(
-                p ->
-                    isFor(p, note)
-                        && hasMessage(p, "'marker'")
-                        && !hasMessage(p, "noted by processor")));
+    return note;
   }
 
   @Test

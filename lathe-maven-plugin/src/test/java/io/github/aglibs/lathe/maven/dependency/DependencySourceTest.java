@@ -37,10 +37,12 @@ class DependencySourceTest {
     final var entry = source.toData();
 
     assertThat(entry.gav()).isEqualTo("com.example:lib:1");
-    assertThat(entry.jar()).isEqualTo("/repo/lib.jar");
+    assertThat(entry.jar()).isEqualTo(Path.of("/repo/lib.jar").toString());
     assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
-    assertThat(entry.dir()).isEqualTo("/cache/lib");
-    assertThat(entry.classpath()).containsExactly("/repo/dep-a.jar", "/repo/dep-b.jar");
+    assertThat(entry.dir()).isEqualTo(Path.of("/cache/lib").toString());
+    assertThat(entry.classpath())
+        .containsExactly(
+            Path.of("/repo/dep-a.jar").toString(), Path.of("/repo/dep-b.jar").toString());
   }
 
   @Test
@@ -51,7 +53,7 @@ class DependencySourceTest {
     final var entry = source.toData();
 
     assertThat(entry.gav()).isEqualTo("com.example:absent:1");
-    assertThat(entry.jar()).isEqualTo("/repo/absent.jar");
+    assertThat(entry.jar()).isEqualTo(Path.of("/repo/absent.jar").toString());
     assertThat(entry.status()).isEqualTo(SourceStatus.MISSING);
     assertThat(entry.dir()).isNull();
     assertThat(entry.classpath()).isEmpty();

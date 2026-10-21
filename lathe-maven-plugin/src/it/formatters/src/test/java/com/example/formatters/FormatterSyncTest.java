@@ -43,9 +43,10 @@ class FormatterSyncTest {
 
     assertThat(style).contains("\"engine\": \"eclipse\"");
     assertThat(style).containsPattern("\"version\": \"4\\.\\d+\"");
-    assertThat(style)
-        .contains(
-            "\"file\": \"%s\"".formatted(ROOT.resolve("eclipse-formatter.xml").toAbsolutePath()));
+    // JSON escapes the backslashes of a Windows path.
+    final String profile =
+        ROOT.resolve("eclipse-formatter.xml").toAbsolutePath().toString().replace("\\", "\\\\");
+    assertThat(style).contains("\"file\": \"%s\"".formatted(profile));
     assertThat(style).containsPattern("\"[^\"]+org\\.eclipse\\.jdt\\.core-[^\"]+\\.jar\"");
     assertThat(lathe("jvm.args")).doesNotExist();
   }

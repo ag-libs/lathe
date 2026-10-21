@@ -34,6 +34,7 @@ import java.util.zip.ZipInputStream;
 public final class FileUtil {
 
   private static final int MOVE_ATTEMPTS = 5;
+  private static final long RETRY_PAUSE_MS = 10;
 
   private FileUtil() {}
 
@@ -147,8 +148,7 @@ public final class FileUtil {
   }
 
   // A relative path as saved in .lathe/: its names joined with '/' on every OS, so a file written
-  // on
-  // Windows reads the same elsewhere. Joining names, not replacing '\', leaves a Linux file name
+  // on Windows reads the same elsewhere. Joining names, not replacing '\', leaves a Linux file name
   // that contains '\' intact.
   public static String slashed(final Path relative) {
     return StreamSupport.stream(relative.spliterator(), false)
@@ -235,6 +235,15 @@ public final class FileUtil {
         Files.move(target, previous, StandardCopyOption.ATOMIC_MOVE);
       } catch (final NoSuchFileException e) {
         // No copy to replace yet.
+      } catch (final FileSystemException e) {
+        // Windows denies renaming a directory another caller is renaming at that moment: give it
+        // time to finish, a little longer on each attempt.
+        if (attempt == MOVE_ATTEMPTS) {
+          throw e;
+        }
+
+        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
+        continue;
       }
 
       try {
@@ -249,6 +258,8 @@ public final class FileUtil {
         if (attempt == MOVE_ATTEMPTS) {
           throw e;
         }
+
+        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
       } finally {
         if (Files.exists(previous)) {
           deleteDir(previous);
@@ -376,8 +387,10 @@ public final class FileUtil {
   private static boolean extractZipEntry(
       final Path destDir, final ZipInputStream in, final ZipEntry entry) throws IOException {
     final Path entryPath = Path.of(entry.getName());
+    // A rooted entry (/x) is placed under destDir: on Windows /x has a root but no drive, so it is
+    // not "absolute" there, yet resolving it would still leave destDir.
     final Path relative =
-        entryPath.isAbsolute() ? entryPath.getRoot().relativize(entryPath) : entryPath;
+        entryPath.getRoot() != null ? entryPath.getRoot().relativize(entryPath) : entryPath;
     if (relative.getNameCount() == 0) {
       return false;
     }

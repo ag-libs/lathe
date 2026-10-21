@@ -12,6 +12,11 @@ public final class LatheFlags {
   public static final String RESULTS_SINK = "lathe.results.sink";
   // How often the server scans for files changed outside the editor, in ms (default 2000).
   public static final String SCAN_INTERVAL_MS = "lathe.scanIntervalMs";
+  // For every JVM Lathe starts (its server, launched runs and tests): stdout and stderr in UTF-8,
+  // as Lathe reads them, instead of the console code page on Windows. JDK 19+; older JDKs ignore
+  // the properties.
+  public static final List<String> UTF8_OUTPUT_JVM_ARGS =
+      List.of("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8");
 
   // Client init options {"lathe": {"style": {"formatter": {"engine": "...", "command": [..]}}}} —
   // the global-default style, same shape as the workspace style file; a project file overrides it.

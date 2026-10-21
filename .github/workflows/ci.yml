@@ -18,6 +18,9 @@ jobs:
   build:
     name: Build & verify (JDK ${{ matrix.java }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A full build takes minutes; a hung test (a leftover process holding a pipe) fails the row
+    # here instead of running until the 6-hour job limit.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -32,7 +35,19 @@ jobs:
         include:
           - java: '25'
             os: macos-latest
+          # Windows on the current LTS too: it runs the generated .cmd scripts for real.
+          - java: '25'
+            os: windows-latest
+    defaults:
+      run:
+        # The steps are bash on every OS (Git Bash ships with the Windows runner); the product
+        # itself never needs bash there.
+        shell: bash
     steps:
+      - name: Enable long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -43,7 +58,9 @@ jobs:
 
       - name: Set up Neovim
         # lathe-neovim's run-specs.sh needs nvim on PATH (it hard-fails under CI otherwise). VS Code's
-        # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed.
+        # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed. Neovim
+        # isn't supported on Windows, so its specs don't run there.
+        if: runner.os != 'Windows'
         uses: rhysd/action-setup-vim@v1
         with:
           neovim: true
@@ -71,6 +88,10 @@ jobs:
               -P '!multi-release-jdk21'
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
             env -u CI mvn -B --no-transfer-progress clean install
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
+            # since Cursor on Windows is a target.
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
           else
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
           fi
@@ -81,11 +102,14 @@ jobs:
         run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
 
       - name: Upload test reports
-        if: failure()
+        # always(): a timed-out or cancelled run is when the reports matter most.
+        if: always() && !success()
         uses: actions/upload-artifact@v7
         with:
           name: surefire-reports-jdk${{ matrix.java }}-${{ matrix.os }}
-          path: '**/target/surefire-reports/'
+          path: |
+            **/target/surefire-reports/
+            lathe-maven-plugin/target/it/**/build.log
           retention-days: 7
 
   invoker-maven:

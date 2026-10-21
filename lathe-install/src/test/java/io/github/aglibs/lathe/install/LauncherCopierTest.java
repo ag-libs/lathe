@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.Platform;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,7 +78,8 @@ class LauncherCopierTest {
     // A launcher reads the argfile beside it, so every copy carries its pair.
     for (final var argfile : ARGFILES) {
       assertThat(dir.resolve(argfile)).hasContent(launcher(argfile, version));
-      assertThat(Files.isExecutable(dir.resolve(argfile))).isFalse();
+      // Windows has no executable bit: every file there reads as executable.
+      assertThat(Files.isExecutable(dir.resolve(argfile))).isEqualTo(Platform.WINDOWS);
     }
   }
 

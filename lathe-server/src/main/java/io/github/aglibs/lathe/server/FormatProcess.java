@@ -9,6 +9,8 @@ import java.util.concurrent.TimeUnit;
 // zero exit. The caller configures redirects on the builder (stdin/stdout pipes vs in-place file).
 final class FormatProcess {
 
+  private static final Duration KILL_WAIT = Duration.ofSeconds(5);
+
   private FormatProcess() {}
 
   static void run(final ProcessBuilder builder, final Duration timeout, final List<String> command)
@@ -21,7 +23,11 @@ final class FormatProcess {
     }
 
     if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-      process.destroyForcibly();
+      // A cmd tool (mvn.cmd) can't exec, so the formatter JVM may be a descendant. Killing is
+      // asynchronous, and on Windows a process's files and working directory stay locked until it
+      // has exited, so the caller's scratch-file cleanup waits for that.
+      process.descendants().forEach(ProcessHandle::destroyForcibly);
+      process.destroyForcibly().waitFor(KILL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
       throw new IOException(
           "formatter timed out after %dms: %s".formatted(timeout.toMillis(), command));
     }

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core.launch;
 
+import static io.github.aglibs.lathe.core.launch.TestPaths.os;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -33,11 +34,11 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/workspace/app/target/test-classes", "/m2/junit.jar"),
-            Map.of("com.example.app", "/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/workspace/app/target/test-classes"), os("/m2/junit.jar")),
+            Map.of("com.example.app", os("/workspace/app/target/test-classes")),
             List.of("com.example.app/com.example.app=ALL-UNNAMED"),
             List.of("com.example.app=ALL-UNNAMED"),
             List.of(),
@@ -57,19 +58,21 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
             "--module-path",
-            "/workspace/.lathe/app/classes",
+            os("/workspace/.lathe/app/classes"),
             "--class-path",
             String.join(
                 File.pathSeparator,
-                "/workspace/.lathe/app/test-classes",
-                "/m2/junit.jar",
-                "/cache/lathe-test-runner.jar"),
+                os("/workspace/.lathe/app/test-classes"),
+                os("/m2/junit.jar"),
+                os("/cache/lathe-test-runner.jar")),
             "--patch-module",
-            "com.example.app=/workspace/.lathe/app/test-classes",
+            "com.example.app=%s".formatted(os("/workspace/.lathe/app/test-classes")),
             "--add-opens",
             "com.example.app/com.example.app=ALL-UNNAMED",
             "--add-reads",
@@ -89,10 +92,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/workspace/app/target/test-classes")),
             Map.of(),
             List.of(),
             List.of(),
@@ -127,10 +130,10 @@ final class LaunchPlanTest {
     final var data =
         new MainLaunchData(
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/m2/lib.jar"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/m2/lib.jar")),
             List.of(),
             List.of(),
             List.of(),
@@ -148,12 +151,14 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Xmx512m",
             "--module-path",
-            "/workspace/.lathe/app/classes",
+            os("/workspace/.lathe/app/classes"),
             "--class-path",
-            "/m2/lib.jar",
+            os("/m2/lib.jar"),
             "--add-modules",
             "ALL-MODULE-PATH",
             "-m",
@@ -167,10 +172,10 @@ final class LaunchPlanTest {
     final var data =
         new MainLaunchData(
             LaunchMode.CLASSPATH,
-            "/jdk",
+            os("/jdk"),
             "",
             List.of(),
-            List.of("/workspace/app/target/classes", "/m2/lib.jar"),
+            List.of(os("/workspace/app/target/classes"), os("/m2/lib.jar")),
             List.of(),
             List.of(),
             List.of(),
@@ -184,9 +189,11 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "--class-path",
-            String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/m2/lib.jar"),
+            String.join(File.pathSeparator, os("/workspace/.lathe/app/classes"), os("/m2/lib.jar")),
             "com.example.app.Main");
   }
 
@@ -195,10 +202,10 @@ final class LaunchPlanTest {
     final var data =
         new MainLaunchData(
             LaunchMode.CLASSPATH,
-            "/jdk",
+            os("/jdk"),
             "",
             List.of(),
-            List.of("/workspace/app/target/classes"),
+            List.of(os("/workspace/app/target/classes")),
             List.of(),
             List.of(),
             List.of(),
@@ -207,18 +214,20 @@ final class LaunchPlanTest {
             "");
     final var overlay =
         new LaunchOverlay(
-            List.of("-Dprofile=prod"), List.of("--flag"), List.of("/abs/config"), List.of());
+            List.of("-Dprofile=prod"), List.of("--flag"), List.of(os("/abs/config")), List.of());
 
     final List<String> args =
         LaunchPlan.forMain(data, REWRITE, "com.example.app.Main", overlay, JdwpOptions.NONE);
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Xmx256m",
             "-Dprofile=prod",
             "--class-path",
-            String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/abs/config"),
+            String.join(File.pathSeparator, os("/workspace/.lathe/app/classes"), os("/abs/config")),
             "com.example.app.Main",
             "--flag");
   }
@@ -231,10 +240,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/workspace/app/target/test-classes")),
             Map.of(),
             List.of(),
             List.of(),
@@ -244,7 +253,10 @@ final class LaunchPlanTest {
             "");
     final var overlay =
         new LaunchOverlay(
-            List.of("-Dfoo=baz"), List.of("extra-arg"), List.of("/abs/cp"), List.of("/abs/mp"));
+            List.of("-Dfoo=baz"),
+            List.of("extra-arg"),
+            List.of(os("/abs/cp")),
+            List.of(os("/abs/mp")));
 
     final List<String> args =
         LaunchPlan.forTest(
@@ -258,18 +270,20 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "-Dfoo=baz",
             "-D%s=%s".formatted(LatheFlags.RESULTS_SINK, resultsSink),
             "--module-path",
-            String.join(File.pathSeparator, "/workspace/.lathe/app/classes", "/abs/mp"),
+            String.join(File.pathSeparator, os("/workspace/.lathe/app/classes"), os("/abs/mp")),
             "--class-path",
             String.join(
                 File.pathSeparator,
-                "/workspace/.lathe/app/test-classes",
-                "/cache/lathe-test-runner.jar",
-                "/abs/cp"),
+                os("/workspace/.lathe/app/test-classes"),
+                os("/cache/lathe-test-runner.jar"),
+                os("/abs/cp")),
             LatheLayout.TEST_RUNNER_MAIN_CLASS,
             "--select-class",
             "com.example.app.FooTest",
@@ -284,10 +298,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/workspace/app/target/test-classes")),
             Map.of(),
             List.of(),
             List.of(),
@@ -320,10 +334,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/workspace/app/target/test-classes")),
             Map.of(),
             List.of(),
             List.of(),
@@ -350,10 +364,10 @@ final class LaunchPlanTest {
     final var data =
         new MainLaunchData(
             LaunchMode.CLASSPATH,
-            "/jdk",
+            os("/jdk"),
             "",
             List.of(),
-            List.of("/workspace/app/target/classes"),
+            List.of(os("/workspace/app/target/classes")),
             List.of(),
             List.of(),
             List.of(),
@@ -377,11 +391,11 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
-            List.of("/m2/junit.jar"),
-            Map.of("com.example.app", "/workspace/app/target/test-classes"),
+            List.of(os("/workspace/app/target/classes")),
+            List.of(os("/m2/junit.jar")),
+            Map.of("com.example.app", os("/workspace/app/target/test-classes")),
             List.of("com.example.app/com.example.app=ALL-UNNAMED"),
             List.of("com.example.app=ALL-UNNAMED"),
             List.of(),
@@ -395,14 +409,16 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dfoo=bar",
             "--module-path",
-            "/workspace/.lathe/app/classes",
+            os("/workspace/.lathe/app/classes"),
             "--class-path",
-            "/m2/junit.jar",
+            os("/m2/junit.jar"),
             "--patch-module",
-            "com.example.app=/workspace/.lathe/app/test-classes",
+            "com.example.app=%s".formatted(os("/workspace/.lathe/app/test-classes")),
             "--add-opens",
             "com.example.app/com.example.app=ALL-UNNAMED",
             "--add-reads",
@@ -421,10 +437,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.CLASSPATH,
-            "/jdk",
+            os("/jdk"),
             "",
             List.of(),
-            List.of("/workspace/app/target/test-classes", "/m2/junit.jar"),
+            List.of(os("/workspace/app/target/test-classes"), os("/m2/junit.jar")),
             Map.of(),
             List.of(),
             List.of(),
@@ -439,9 +455,12 @@ final class LaunchPlanTest {
 
     assertThat(args)
         .containsExactly(
-            "/jdk/bin/java",
+            os("/jdk/bin/java"),
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "--class-path",
-            String.join(File.pathSeparator, "/workspace/.lathe/app/test-classes", "/m2/junit.jar"),
+            String.join(
+                File.pathSeparator, os("/workspace/.lathe/app/test-classes"), os("/m2/junit.jar")),
             "com.example.app.Tester");
   }
 
@@ -451,11 +470,11 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
-            List.of("/workspace/app/target/classes"),
+            List.of(os("/workspace/app/target/classes")),
             List.of(),
-            Map.of("com.example.app", "/workspace/app/target/test-classes"),
+            Map.of("com.example.app", os("/workspace/app/target/test-classes")),
             List.of(),
             List.of(),
             List.of(),
@@ -478,10 +497,10 @@ final class LaunchPlanTest {
     final var data =
         new MainLaunchData(
             LaunchMode.CLASSPATH,
-            "/jdk",
+            os("/jdk"),
             "",
             List.of(),
-            List.of("/workspace/app/target/classes"),
+            List.of(os("/workspace/app/target/classes")),
             List.of(),
             List.of(),
             List.of(),
@@ -508,7 +527,7 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
             List.of(workspace.resolve("app/target/classes").toString()),
             List.of(testClasses),
@@ -548,10 +567,10 @@ final class LaunchPlanTest {
         new TestLaunchData(
             "surefire",
             LaunchMode.MODULE,
-            "/jdk",
+            os("/jdk"),
             "com.example.app",
             List.of(workspace.resolve("app/target/classes").toString()),
-            List.of("/m2/junit.jar"),
+            List.of(os("/m2/junit.jar")),
             Map.of("com.example.app", testClasses),
             List.of(),
             List.of("com.example.app=ALL-UNNAMED"),

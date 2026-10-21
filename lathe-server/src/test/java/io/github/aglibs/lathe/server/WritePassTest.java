@@ -35,8 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 
 // The write pass: external changes, startup catch-up, reported files, failures, deletions,
-// resources.
-// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
+// resources. Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
 @Isolated
 class WritePassTest extends ServiceTestBase {
 
@@ -108,7 +107,7 @@ class WritePassTest extends ServiceTestBase {
         .as("the broken file stays recorded though the rest of its tree was written after it")
         .singleElement()
         .asString()
-        .startsWith("module/src/main/java/com/example/Broken.java:1: ");
+        .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Broken.java")));
   }
 
   @Test

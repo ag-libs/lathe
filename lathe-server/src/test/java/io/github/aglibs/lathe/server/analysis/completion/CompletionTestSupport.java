@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.TestCompiler;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -161,7 +162,7 @@ abstract class CompletionTestSupport {
         libSrc.resolve("com/example/lib/LibType.java"));
 
     return new ExampleLib(
-        List.of("--module-path", "%s:%s".formatted(libOut, otherOut)),
+        List.of("--module-path", "%s%s%s".formatted(libOut, File.pathSeparator, otherOut)),
         """
         module com.example.app {
             requires com.example.lib;

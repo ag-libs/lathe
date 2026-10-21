@@ -51,7 +51,7 @@ class MultiModuleTest {
   @Test
   void sync_serverLauncher_installed() {
     final var launcher =
-        LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve("lathe-launcher.sh");
+        LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION).resolve(Os.script("lathe-launcher"));
     assertThat(launcher).exists().isExecutable();
   }
 
@@ -60,7 +60,7 @@ class MultiModuleTest {
   @Test
   void sync_launchers_copiedFromVersionDirToWorkspaceAndLatest() throws IOException {
     final var versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
-    for (final var script : List.of("lathe-launcher.sh", "lathe-mcp-launcher.sh")) {
+    for (final var script : List.of(Os.script("lathe-launcher"), Os.script("lathe-mcp-launcher"))) {
       final String installed = Files.readString(versionDir.resolve(script));
       for (final var copy : List.of(lathe(script), LATHE_CACHE.resolve("latest").resolve(script))) {
         assertThat(copy).isExecutable().hasContent(installed);
@@ -80,9 +80,15 @@ class MultiModuleTest {
   @Test
   void sync_launcherAndArgfile_holdTheRequiredJvmArgs() throws IOException {
     final Path versionDir = LATHE_CACHE.resolve("servers").resolve(LATHE_VERSION);
-    final String launcher = read(versionDir.resolve("lathe-launcher.sh"));
-    assertThat(launcher).startsWith("#!/bin/sh\n");
-    assertThat(launcher).contains("@.lathe/jvm.args", "@\"$(dirname \"$0\")/lathe-server.args\"");
+    final String launcher = read(versionDir.resolve(Os.script("lathe-launcher")));
+    if (Os.WINDOWS) {
+      assertThat(launcher).startsWith("@echo off\r\n");
+      assertThat(launcher).contains("@.lathe\\jvm.args", "@\"%~dp0lathe-server.args\"");
+    } else {
+      assertThat(launcher).startsWith("#!/bin/sh\n");
+      assertThat(launcher).contains("@.lathe/jvm.args", "@\"$(dirname \"$0\")/lathe-server.args\"");
+    }
+
     assertThat(launcher).doesNotContain(".jar");
     final List<String> args = Files.readAllLines(versionDir.resolve("lathe-server.args"));
     assertThat(args).startsWith("--add-modules", "java.net.http", "--module-path");
@@ -109,11 +115,12 @@ class MultiModuleTest {
   // Its behavior (goal, scope, tool, JDK) is covered by SyncScriptTest, which runs it.
   @Test
   void sync_syncScript_runsTheMavenThatRanThisBuild() throws IOException {
-    final var script = lathe("lathe-sync.sh");
+    final var script = lathe(Os.script("lathe-sync"));
     assertThat(script).isRegularFile().isExecutable();
+    final Path tool = Path.of(System.getProperty("maven.home"), "bin", Os.WINDOWS ? "mvn.cmd" : "mvn");
     assertThat(read(script))
-        .startsWith("#!/bin/sh\n")
-        .contains("tool='%s/bin/mvn'".formatted(System.getProperty("maven.home")))
+        .startsWith(Os.WINDOWS ? "@echo off\r\n" : "#!/bin/sh\n")
+        .contains((Os.WINDOWS ? "set \"tool=%s\"" : "tool='%s'").formatted(tool))
         .contains("-Dmaven.build.cache.enabled=false")
         .contains("-am\"")
         .doesNotContain(" -amd");
@@ -147,7 +154,7 @@ class MultiModuleTest {
     assertThat(content).contains("\"org.opentest4j:opentest4j");
     assertThat(content).contains("\"PRESENT\"");
     assertThat(content).contains("\"typeIndex\"");
-    assertThat(content).contains("type-index/jdks");
+    assertThat(content).contains(Os.json(Path.of("type-index/jdks")));
   }
 
   @Test
@@ -312,7 +319,7 @@ class MultiModuleTest {
     assertThat(content).contains("\"mode\": \"MODULE\"");
     assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
     assertThat(content).contains("\"patchModules\"");
-    assertThat(content).contains("jpms/target/test-classes");
+    assertThat(content).contains(Os.json(Path.of("jpms/target/test-classes")));
     assertThat(content).contains("\"addReads\"");
     assertThat(content).contains("\"addOpens\"");
     assertThat(content).contains("lathe.fixture.argLine");
@@ -340,7 +347,7 @@ class MultiModuleTest {
     assertThat(params).exists();
     final var content = read(params);
     assertThat(content).contains("\"test-classes\"");
-    assertThat(content).contains("src/test/java");
+    assertThat(content).contains(Os.json(Path.of("src/test/java")));
     assertThat(content).contains("validcheck");
     assertThat(content).contains("junit-jupiter-api");
     assertThat(content).contains("junit-jupiter-params");
@@ -369,7 +376,7 @@ class MultiModuleTest {
     assertThat(content).contains("\"mode\": \"MODULE\"");
     assertThat(content).contains("\"mainModule\": \"com.example.jpms\"");
     // The launched module's own output leads the module path; its required module follows.
-    assertThat(content).contains("jpms/target/classes");
+    assertThat(content).contains(Os.json(Path.of("jpms/target/classes")));
     assertThat(content).contains("validcheck");
     assertThat(content).contains("\"classPath\": []");
   }
@@ -381,11 +388,11 @@ class MultiModuleTest {
     final var content = read(launch);
     assertThat(content).contains("\"mode\": \"CLASSPATH\"");
     assertThat(content).contains("\"modulePath\": []");
-    assertThat(content).contains("app/target/classes");
+    assertThat(content).contains(Os.json(Path.of("app/target/classes")));
     assertThat(content).contains("slf4j-api");
     // The reactor sibling core is placed by its fresh output, not dropped for lack of an installed
     // jar -- otherwise a cross-module main run fails with NoClassDefFoundError.
-    assertThat(content).contains("core/target/classes");
+    assertThat(content).contains(Os.json(Path.of("core/target/classes")));
     // A classpath launch has no main module; the field is omitted, not blank.
     assertThat(content).doesNotContain("mainModule");
   }

@@ -37,10 +37,11 @@ class LatheLayoutTest {
   @Test
   void syncRemediations_syncedWorkspaceNamesScript_firstSyncNamesBuildCommand() {
     assertThat(LatheLayout.scopedSyncCommand(List.of("app", "core")))
-        .isEqualTo(".lathe/lathe-sync.sh app core");
-    assertThat(LatheLayout.SCHEMA_REMEDIATION).contains("`.lathe/lathe-sync.sh`");
+        .isEqualTo("%s app core".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+    assertThat(LatheLayout.SCHEMA_REMEDIATION)
+        .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(LatheLayout.captureTestsCommand("app"))
-        .isEqualTo(".lathe/lathe-sync.sh --tests app");
+        .isEqualTo("%s --tests app".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     // No script exists before the first sync, so setup names each front-end's first command.
     assertThat(LatheLayout.SETUP_REMEDIATION)
         .contains("`mvn process-test-classes`")

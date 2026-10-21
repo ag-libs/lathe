@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +21,7 @@ class FormatterLoaderTest {
                 FormatterLoader.invoke(
                     FormatterLoaderTest.class.getDeclaredMethod("lacksJavacGrants"), null))
         .isInstanceOf(IllegalStateException.class)
-        .hasMessageContaining("run `.lathe/lathe-sync.sh`")
+        .hasMessageContaining("run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
         .hasCauseInstanceOf(IllegalAccessError.class);
     assertThatThrownBy(
             () ->

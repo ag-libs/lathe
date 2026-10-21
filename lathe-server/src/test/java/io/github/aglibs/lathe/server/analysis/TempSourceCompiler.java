@@ -26,6 +26,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
   private static final List<String> OPTIONS = List.of("-proc:none");
 
   private final Path td;
+  private final List<Path> classpath;
   private final StandardJavaFileManager fm;
 
   public TempSourceCompiler() {
@@ -33,7 +34,8 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
   }
 
   public TempSourceCompiler(final List<Path> extraClasspath) {
-    this.fm = TestJavac.fileManager(extraClasspath, OPTIONS);
+    this.classpath = List.copyOf(extraClasspath);
+    this.fm = TestJavac.fileManager(classpath, OPTIONS);
     this.td = IOUtil.unchecked(() -> Files.createTempDirectory("lathe-test-"));
   }
 
@@ -89,6 +91,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
 
   @Override
   public void close() {
+    TestJavac.release(classpath, fm);
     IOUtil.unchecked(() -> FileUtil.deleteDir(td));
   }
 }

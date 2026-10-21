@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -17,7 +18,8 @@ class ServerInstallerTest {
   @Test
   void serverAndMcpArgs_joinJarsWithThePathSeparator_endWithTheEntryPoint() {
     final List<Path> jars = List.of(Path.of("/m2/a.jar"), Path.of("/m2 dir/b.jar"));
-    final String joined = "/m2/a.jar%s/m2 dir/b.jar".formatted(File.pathSeparator);
+    final String joined =
+        jars.stream().map(Path::toString).collect(Collectors.joining(File.pathSeparator));
 
     assertThat(ServerInstaller.serverArgs(jars))
         .containsExactly(

@@ -76,7 +76,7 @@ class LspSmokeTest {
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
           .resolve(System.getProperty("lathe.version"))
-          .resolve("lathe-launcher.sh");
+          .resolve(Os.script("lathe-launcher"));
 
   private static Process serverProcess;
   private static LanguageServer server;
@@ -137,7 +137,7 @@ class LspSmokeTest {
 
   @AfterAll
   static void stopServer() {
-    serverProcess.destroyForcibly();
+    Os.stop(serverProcess);
   }
 
   @AfterEach

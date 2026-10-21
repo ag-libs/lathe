@@ -46,6 +46,9 @@ public final class LatheLayout {
   public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";
+  // A run/test launch too long for one command line passes its arguments in a temp argfile.
+  public static final String LAUNCH_ARGFILE_PREFIX = "lathe-launch-";
+  public static final String ARGFILE_SUFFIX = ".args";
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";

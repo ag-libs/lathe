@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.TestProcess;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -14,6 +15,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 final class LaunchSessionTest {
@@ -22,6 +25,10 @@ final class LaunchSessionTest {
   private static final Consumer<TranscriptLine> NO_STREAM = line -> {};
   private static final Consumer<TestResult> NO_EVENTS = result -> {};
 
+  private static Process start(final String... args) throws IOException {
+    return new ProcessBuilder(TestProcess.command(args)).start();
+  }
+
   private static LaunchSession launchSession(final Process process, final Path resultsSink) {
     return new LaunchSession(process, resultsSink, NO_STREAM, NO_EVENTS);
   }
@@ -29,7 +36,7 @@ final class LaunchSessionTest {
   @Test
   void onExit_processExitsZero_completesWithZero()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = launchSession(new ProcessBuilder("true").start(), null);
+    final var session = launchSession(start("exit", "0"), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isZero();
   }
@@ -37,7 +44,7 @@ final class LaunchSessionTest {
   @Test
   void onExit_processExitsNonZero_completesWithExitCode()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = launchSession(new ProcessBuilder("false").start(), null);
+    final var session = launchSession(start("exit", "1"), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isEqualTo(1);
   }
@@ -45,8 +52,7 @@ final class LaunchSessionTest {
   @Test
   void onExit_processPrintsStdout_capturesLinesTaggedStdout()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session =
-        launchSession(new ProcessBuilder("sh", "-c", "echo one; echo two").start(), null);
+    final var session = launchSession(start("echo", "out:one", "out:two"), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
         .containsExactly(
@@ -57,8 +63,7 @@ final class LaunchSessionTest {
   @Test
   void onExit_processPrintsStderr_capturesLinesTaggedStderr()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session =
-        launchSession(new ProcessBuilder("sh", "-c", "echo err 1>&2").start(), null);
+    final var session = launchSession(start("echo", "err:err"), null);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).output())
         .containsExactly(new TranscriptLine(TranscriptLine.Stream.STDERR, "err"));
@@ -69,11 +74,7 @@ final class LaunchSessionTest {
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
     final var session =
-        new LaunchSession(
-            new ProcessBuilder("sh", "-c", "echo out; echo err 1>&2").start(),
-            null,
-            streamed::add,
-            NO_EVENTS);
+        new LaunchSession(start("echo", "out:out", "err:err"), null, streamed::add, NO_EVENTS);
 
     session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -95,8 +96,7 @@ final class LaunchSessionTest {
         """,
         StandardCharsets.UTF_8);
     final List<TestResult> streamed = Collections.synchronizedList(new ArrayList<>());
-    final var session =
-        new LaunchSession(new ProcessBuilder("true").start(), sink, NO_STREAM, streamed::add);
+    final var session = new LaunchSession(start("exit", "0"), sink, NO_STREAM, streamed::add);
 
     session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -116,7 +116,7 @@ final class LaunchSessionTest {
         {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
         """,
         StandardCharsets.UTF_8);
-    final var session = launchSession(new ProcessBuilder("true").start(), sink);
+    final var session = launchSession(start("exit", "0"), sink);
 
     final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
@@ -146,7 +146,7 @@ final class LaunchSessionTest {
         {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
         """,
         StandardCharsets.UTF_8);
-    final var session = launchSession(new ProcessBuilder("true").start(), sink);
+    final var session = launchSession(start("exit", "0"), sink);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).testResults()).hasSize(1);
   }
@@ -154,8 +154,7 @@ final class LaunchSessionTest {
   @Test
   void onExit_missingResultsSink_returnsEmptyTestResults(@TempDir final Path dir)
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session =
-        launchSession(new ProcessBuilder("true").start(), dir.resolve("absent.ndjson"));
+    final var session = launchSession(start("exit", "0"), dir.resolve("absent.ndjson"));
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).testResults()).isEmpty();
   }
@@ -163,21 +162,22 @@ final class LaunchSessionTest {
   @Test
   void cancel_runningProcess_completesOnExitNonZero()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
-    final var session = launchSession(new ProcessBuilder("sleep", "30").start(), null);
+    final var session = launchSession(start("sleep"), null);
 
     session.cancel();
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isNotZero();
   }
 
+  // Windows has no SIGTERM: destroy() always kills there, so there is no grace to escalate from.
   @Test
+  @DisabledOnOs(value = OS.WINDOWS, disabledReason = "no SIGTERM on Windows")
   void cancel_processIgnoringSigterm_forceKillsAfterGrace()
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     // `trap '' TERM` makes the shell ignore the graceful SIGTERM from destroy(); only the escalated
     // SIGKILL (destroyForcibly) can stop it, so onExit resolving proves the escalation fired.
-    // `read`
-    // is a shell builtin (no forked child to inherit and hold the stdout/stderr pipes open), so
-    // killing the shell closes them and the drains complete.
+    // `read` is a shell builtin (no forked child to inherit and hold the stdout/stderr pipes open),
+    // so killing the shell closes them and the drains complete.
     final var session =
         launchSession(new ProcessBuilder("sh", "-c", "trap '' TERM; read _").start(), null);
 
@@ -188,7 +188,7 @@ final class LaunchSessionTest {
 
   @Test
   void pid_startedProcess_returnsPositivePid() throws IOException {
-    final var session = launchSession(new ProcessBuilder("sleep", "0").start(), null);
+    final var session = launchSession(start("exit", "0"), null);
 
     assertThat(session.pid()).isPositive();
   }

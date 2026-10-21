@@ -69,7 +69,8 @@ import org.mockito.ArgumentCaptor;
 // symbols.
 class LatheTextDocumentServiceTest extends ServiceTestBase {
 
-  private static final String URI = "file:///workspace/src/main/java/Foo.java";
+  // Through Path.toUri, the form the server keeps every URI in (on Windows it gains a drive).
+  private static final String URI = Path.of("/workspace/src/main/java/Foo.java").toUri().toString();
 
   @Test
   void didChange_rapidKeystrokes_compilesOnlyOnce() {
@@ -112,8 +113,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   void didOpen_nonFileUri_ignoredWithoutCrashOrPublish() {
     // Neovim sends file:// for an unnamed [No Name] buffer (e.g. :LatheStart before a file is
-    // open);
-    // it has no source to analyze, so the event is ignored rather than crashing in LatheUri.toPath.
+    // open); it has no source to analyze, so the event is ignored rather than crashing in
+    // LatheUri.toPath.
     assertThatCode(
             () ->
                 service.didOpen(

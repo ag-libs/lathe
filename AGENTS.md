@@ -291,6 +291,15 @@ Message format: `[operation] uri-or-module detail Xms outcome`
 - Tests run on every supported JDK (17+). A test that needs a newer JDK (a fixture using newer Java
   syntax, a formatter release that needs it) **MUST** say so with `@EnabledForJreRange`, never with a
   hand-written version check. Fixtures compile at the test JDK's level (`TestCompiler.RELEASE`).
+- Tests run on Linux, macOS and Windows (CI has a `windows-latest` row), so they **MUST** be portable:
+    * Build expected paths through `Path` (OS-native; in JSON with the backslashes escaped), join
+      paths with `File.pathSeparator`, and name scripts the way `LatheLayout` does (`.cmd` on Windows).
+    * Start helper processes on the test JDK's own `java` (e.g. `FakeFormatter`), never `sh` or Unix
+      tools, and stop a launcher's whole process tree: a `.cmd` launcher can't exec, so its JVM
+      outlives it.
+    * Close what opens a file before `@TempDir` cleanup: Windows won't delete an open file.
+    * Disable a test with `@DisabledOnOs` only for behaviour that is OS-specific by nature (the
+      executable bit, OpenJDK builds), never to skip a test that is POSIX-only by accident.
 - `lathe-server` test classes run in parallel, so tests **MUST** be parallel-safe: no mutable `static`
   state, compile through `TestJavac` / `TempSourceCompiler`, and mark a class `@Isolated` if it
   observes JVM-wide state (e.g. `CompileLog`, which hears every compile in the JVM).

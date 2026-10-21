@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core.launch;
 
+import static io.github.aglibs.lathe.core.launch.TestPaths.os;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.schema.OutputData;
@@ -27,44 +28,46 @@ final class ReactorRewriteTest {
 
   @Test
   void toLathe_listedOutputs_rewriteToTheirMirror() {
-    assertThat(REWRITE.toLathe("/workspace/app/target/classes"))
-        .isEqualTo("/workspace/.lathe/app/classes");
-    assertThat(REWRITE.toLathe("/workspace/app/target/test-classes"))
-        .isEqualTo("/workspace/.lathe/app/test-classes");
-    assertThat(REWRITE.toLathe("/workspace/app/target/app-1.0.jar"))
-        .isEqualTo("/workspace/.lathe/app/classes");
-    assertThat(REWRITE.toLathe("/workspace/app/target/app-1.0-tests.jar"))
-        .isEqualTo("/workspace/.lathe/app/test-classes");
-    assertThat(REWRITE.toLathe("/workspace/target/classes")).isEqualTo("/workspace/.lathe/classes");
-    assertThat(REWRITE.toLathe("/workspace/lib/build/classes/java/main"))
-        .isEqualTo("/workspace/.lathe/lib/classes");
+    assertThat(REWRITE.toLathe(os("/workspace/app/target/classes")))
+        .isEqualTo(os("/workspace/.lathe/app/classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/app/target/test-classes")))
+        .isEqualTo(os("/workspace/.lathe/app/test-classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/app/target/app-1.0.jar")))
+        .isEqualTo(os("/workspace/.lathe/app/classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/app/target/app-1.0-tests.jar")))
+        .isEqualTo(os("/workspace/.lathe/app/test-classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/target/classes")))
+        .isEqualTo(os("/workspace/.lathe/classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/lib/build/classes/java/main")))
+        .isEqualTo(os("/workspace/.lathe/lib/classes"));
     assertThat(REWRITE.toLathe(Path.of("/workspace/lib/build/libs/lib.jar")))
         .isEqualTo(Path.of("/workspace/.lathe/lib/classes"));
   }
 
   @Test
   void toLathe_unlistedPaths_passThroughUnchanged() {
-    assertThat(REWRITE.toLathe("/home/user/.m2/repo/lib.jar"))
-        .isEqualTo("/home/user/.m2/repo/lib.jar");
+    assertThat(REWRITE.toLathe(os("/home/user/.m2/repo/lib.jar")))
+        .isEqualTo(os("/home/user/.m2/repo/lib.jar"));
     // A jar committed in the repo, and an OpenJDK build-tool output: in the workspace, not listed.
-    assertThat(REWRITE.toLathe("/workspace/libs/vendor.jar"))
-        .isEqualTo("/workspace/libs/vendor.jar");
+    assertThat(REWRITE.toLathe(os("/workspace/libs/vendor.jar")))
+        .isEqualTo(os("/workspace/libs/vendor.jar"));
     assertThat(REWRITE.toLathe(Path.of("/workspace/build/conf/buildtools/tools_classes")))
         .isEqualTo(Path.of("/workspace/build/conf/buildtools/tools_classes"));
-    assertThat(ReactorRewrite.none().toLathe("/workspace/app/target/classes"))
-        .isEqualTo("/workspace/app/target/classes");
+    assertThat(ReactorRewrite.none().toLathe(os("/workspace/app/target/classes")))
+        .isEqualTo(os("/workspace/app/target/classes"));
   }
 
   @Test
   void toLathe_listAndMap_rewriteEachEntryKeepingOrderAndKeys() {
     final List<String> list =
-        REWRITE.toLathe(List.of("/workspace/app/target/classes", "/home/user/.m2/repo/lib.jar"));
+        REWRITE.toLathe(
+            List.of(os("/workspace/app/target/classes"), os("/home/user/.m2/repo/lib.jar")));
     final Map<String, String> map =
-        REWRITE.toLathe(Map.of("com.example.app", "/workspace/app/target/test-classes"));
+        REWRITE.toLathe(Map.of("com.example.app", os("/workspace/app/target/test-classes")));
 
     assertThat(list)
-        .containsExactly("/workspace/.lathe/app/classes", "/home/user/.m2/repo/lib.jar");
+        .containsExactly(os("/workspace/.lathe/app/classes"), os("/home/user/.m2/repo/lib.jar"));
     assertThat(map)
-        .containsExactly(Map.entry("com.example.app", "/workspace/.lathe/app/test-classes"));
+        .containsExactly(Map.entry("com.example.app", os("/workspace/.lathe/app/test-classes")));
   }
 }
