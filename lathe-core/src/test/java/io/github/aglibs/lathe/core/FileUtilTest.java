@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -11,11 +12,13 @@ import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -136,6 +139,40 @@ final class FileUtilTest {
     FileUtil.deleteDir(tempDir.resolve("tree"));
 
     assertThat(tempDir.resolve("tree")).doesNotExist();
+  }
+
+  // A file another process holds for a moment, such as a virus scanner reading one just written,
+  // is deleted once released; one held throughout fails with the delete's own error.
+  @Test
+  @EnabledOnOs(value = OS.WINDOWS, disabledReason = "only Windows refuses to delete an open file")
+  void deleteDir_fileHeldOpen_deletedOnceReleased_elseFailsWithTheDeleteError() throws Exception {
+    final Path released = Files.createDirectories(tempDir.resolve("released"));
+    Files.writeString(released.resolve("file.txt"), "content");
+    final var channel = Files.newByteChannel(released.resolve("file.txt"));
+    final CompletableFuture<Void> release =
+        CompletableFuture.runAsync(
+            () ->
+                IOUtil.unchecked(
+                    () -> {
+                      IOUtil.sleep(30);
+                      channel.close();
+                    }));
+
+    FileUtil.deleteDir(released);
+    release.join();
+
+    assertThat(released).doesNotExist();
+
+    final Path held = Files.createDirectories(tempDir.resolve("held"));
+    Files.writeString(held.resolve("file.txt"), "content");
+    final var heldOpen = Files.newByteChannel(held.resolve("file.txt"));
+    try {
+      assertThatThrownBy(() -> FileUtil.deleteDir(held))
+          .isInstanceOf(FileSystemException.class)
+          .hasMessageContaining("file.txt");
+    } finally {
+      heldOpen.close();
+    }
   }
 
   @Test

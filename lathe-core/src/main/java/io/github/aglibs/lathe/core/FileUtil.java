@@ -33,7 +33,9 @@ import java.util.zip.ZipInputStream;
 
 public final class FileUtil {
 
-  private static final int MOVE_ATTEMPTS = 5;
+  // Windows briefly denies a rename or delete while another process holds the file (a virus
+  // scanner reading one just written), so those are retried, a little longer each time.
+  private static final int RETRY_ATTEMPTS = 5;
   private static final long RETRY_PAUSE_MS = 10;
 
   private FileUtil() {}
@@ -238,7 +240,7 @@ public final class FileUtil {
       } catch (final FileSystemException e) {
         // Windows denies renaming a directory another caller is renaming at that moment: give it
         // time to finish, a little longer on each attempt.
-        if (attempt == MOVE_ATTEMPTS) {
+        if (attempt == RETRY_ATTEMPTS) {
           throw e;
         }
 
@@ -255,7 +257,7 @@ public final class FileUtil {
           return;
         }
 
-        if (attempt == MOVE_ATTEMPTS) {
+        if (attempt == RETRY_ATTEMPTS) {
           throw e;
         }
 
@@ -301,13 +303,31 @@ public final class FileUtil {
     try (final var walk = Files.walk(dir)) {
       final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
       for (final var path : sorted) {
-        // Extracted sources are read-only files, which Windows refuses to delete. Directories are
-        // never made read-only, and on Windows setWritable always fails for one.
-        if (!Files.isDirectory(path)) {
-          setWritable(path);
+        deleteRetrying(path);
+      }
+    }
+  }
+
+  // Extracted sources are read-only files, which Windows refuses to delete, so the bit is cleared
+  // first. Its result goes unchecked: if clearing it fails, the delete fails too and is retried,
+  // and the last failure reported is the delete's own.
+  private static void deleteRetrying(final Path path) throws IOException {
+    for (int attempt = 1; ; attempt++) {
+      if (!Files.isDirectory(path) && !Files.isWritable(path)) {
+        path.toFile().setWritable(true);
+      }
+
+      try {
+        Files.delete(path);
+        return;
+      } catch (final NoSuchFileException e) {
+        throw e;
+      } catch (final FileSystemException e) {
+        if (attempt == RETRY_ATTEMPTS) {
+          throw e;
         }
 
-        Files.delete(path);
+        IOUtil.sleep(RETRY_PAUSE_MS * attempt);
       }
     }
   }
@@ -420,12 +440,6 @@ public final class FileUtil {
   private static void setReadOnly(final Path path) throws IOException {
     if (!path.toFile().setReadOnly()) {
       throw new IOException("Failed to set read-only: %s".formatted(path));
-    }
-  }
-
-  private static void setWritable(final Path path) throws IOException {
-    if (!path.toFile().setWritable(true)) {
-      throw new IOException("Failed to set writable: %s".formatted(path));
     }
   }
 
