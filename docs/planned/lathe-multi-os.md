@@ -2,15 +2,15 @@
 
 ## Status
 
-**Proposed; Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced.** Lathe today is developed on Linux, tested in CI on Linux and macOS, and does not run natively on Windows.
+**Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced. Phase B code-complete (B1a–c, B2, B4, 2026-10-21); B2, B3 and B4 wait on human sessions 1 and 2.** Lathe is developed on Linux and tested in CI on Linux, macOS and Windows (`windows-latest` is an enforcing row); it has not yet been run by a person on Windows.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
 Windows 10 and 11, with Cursor (through the VS Code extension) and Zed as its target clients (decided 2026-10-19), is the first platform added on top of it.
 
 It is based on a read-only audit of the code done on 2026-10-18.
-Nothing in it has been run on Windows yet.
-Claims about Windows behavior are reasoned from the code and documented platform behavior, and the [B0 spike](#b0--spike-on-a-windows-ci-runner) checks the risky ones.
+The full test suite and the invoker fixtures now run on the `windows-latest` CI row, but no person has used it on Windows yet.
+The human sessions in B2–B4 check what CI cannot: the editors themselves.
 
 It supersedes the Windows non-goal notes in
 [Sync Launcher](lathe-sync-launcher.md), [Workspace Java Home](../done/lathe-workspace-java-home.md),
@@ -45,7 +45,7 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 |---|---|---|---|---|
 | Linux | any with Java 17+ | POSIX `sh` | `ubuntu-latest` | supported, tested |
 | macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | supported, tested in CI (JDK 25 row) |
-| Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | **not working** |
+| Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | code-complete, tested in CI; human sessions pending |
 
 Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
 
