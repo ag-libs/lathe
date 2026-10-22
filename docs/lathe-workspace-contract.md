@@ -39,13 +39,13 @@ Run gating and main-class scope recognize only these two names, and the generate
 | Path under `.lathe/` | Format | Need |
 |---|---|---|
 | `<moduleRel>/lsp-params-<tree>.json` | `ModuleConfigData` | required |
-| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` (`.cmd` on Windows) | executable scripts | required |
+| `lathe-launcher.sh`, `lathe-mcp-launcher.sh` (`.cmd` on Windows) | scripts (executable on POSIX) | required |
 | `lathe-server.args`, `lathe-mcp.args` | java @argfiles the launchers read | required |
 | `lathe.lock`, `<moduleRel>/module.lock` | empty file, mtime | required while writing |
 | `workspace.json` | `WorkspaceManifestData` | recommended |
 | `<moduleRel>/lsp-stamps-<tree>.json` | `CompiledStampsData` | recommended |
 | `<moduleRel>/classes/`, `<moduleRel>/test-classes/` | bytecode mirror | recommended, unless `externalOutput` |
-| `lathe-sync.sh` | shell script | recommended |
+| `lathe-sync.sh` (`.cmd` on Windows) | script | recommended |
 | `java-home` | plain text | recommended |
 | `<moduleRel>/generated-sources/`, `<moduleRel>/generated-test-sources/` | sources mirror | optional |
 | `<moduleRel>/test-launch.json` | `TestLaunchData` | optional (test run/debug) |
@@ -155,9 +155,9 @@ The server also writes into it: save compiles, resource copies, and stale-class 
 
 ### `lathe-sync.sh`
 
-On Windows the scripts are `cmd` batch files (`lathe-sync.cmd`, `lathe-launcher.cmd`), rendered from the same templates; `.lathe/` holds only the host's.
+On Windows the scripts are `cmd` batch files (`lathe-sync.cmd`, `lathe-launcher.cmd`, `lathe-mcp-launcher.cmd`), rendered from the same templates; `.lathe/` holds only the host's.
 
-An executable script that re-runs this front-end's sync from the workspace root:
+A script (executable on POSIX) that re-runs this front-end's sync from the workspace root:
 
 ```
 .lathe/lathe-sync.sh [--tests] [module ...]
@@ -260,7 +260,7 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 | File | Maven | OpenJDK |
 |---|---|---|
 | `lsp-params-<tree>.json` | yes | yes, `classes` only |
-| launcher links | yes | yes |
+| launchers and argfiles | yes | yes |
 | `lathe.lock`, `module.lock` | yes | `lathe.lock` only |
 | `workspace.json` | yes, full reactor | yes, `buildFiles` = batch markers |
 | `lsp-stamps-<tree>.json` | yes | yes |

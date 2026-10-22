@@ -160,7 +160,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 
 | Tool                   | What it does                                                         |
 |------------------------|---------------------------------------------------------------------|
-| `get_diagnostics`      | compiler errors/warnings for one file — no Maven                    |
+| `get_diagnostics`      | compiler errors, warnings, and unused-code hints for one file — no Maven |
 | `get_definition`       | resolve a symbol to its definition, incl. dependencies/JDK/generated |
 | `find_references`      | every real use of a symbol across the reactor                       |
 | `find_implementations` | implementers of an interface / overrides of a method                |
@@ -170,7 +170,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
-| `verify_change`        | recompile a change set in-process, report new diagnostics per module + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their same-module referrers in-process, report errors/warnings per module (no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
@@ -181,6 +181,8 @@ model — is in the [AI agents guide](docs/guide/ai-agents.md).
 - **Maven 3.6.3+**, with **`maven-compiler-plugin` 3.6.2+** — verified on Maven 3.6.3, 3.8.8, 3.9, and
   3.10. An older Maven or compiler plugin stops the build with a message naming the fix (see
   [Troubleshooting](#troubleshooting)).
+- **Linux, macOS, or Windows 10/11.** On Windows use VS Code, Cursor, or Zed; the Neovim and Emacs
+  clients are Linux and macOS only. Lathe writes `.cmd` launchers there instead of `.sh`.
 
 Test run and debug have additional requirements (Surefire and JUnit Platform
 versions); see [test-capture.md](docs/guide/test-capture.md).

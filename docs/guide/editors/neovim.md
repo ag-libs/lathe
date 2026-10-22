@@ -3,7 +3,8 @@
 The Neovim client: how to install it and a suggested keymap for every action, so you can wire your own
 config. For *what* each feature does (editor-agnostic), see the
 [feature reference in the README](../../../README.md#features).
-Requires **Neovim 0.12+** and the Java Treesitter parser for indentation (`:TSInstall java`). The
+Requires **Neovim 0.12+** and the Java Treesitter parser for indentation (`:TSInstall java`), on Linux
+or macOS; on Windows, use [VS Code or Cursor](vscode.md) or [Zed](zed.md). The
 default `editor_config` indent profile follows `.editorconfig` via Neovim's native EditorConfig support.
 
 Lathe adds **no key mappings of its own** — it provides LSP endpoints, the `:Lathe*` commands, and a
@@ -81,7 +82,7 @@ Two things changed in 0.1.16, and both need a one-time step:
   A `dir = vim.fn.expand("~/.cache/lathe/current/neovim")` plugin spec stops working, because sync now deletes the machine-global `~/.cache/lathe/current` link.
   Replace it with the `ag-libs/lathe.nvim` spec above.
 - **The server is found through each project's own `.lathe/lathe-launcher.sh`.**
-  A project still pinned to an older `lathe-maven-extension` has no such link, so the server cannot start; the client warns `.lathe/ has no server launcher`.
+  A project still pinned to an older `lathe-maven-extension` has no such launcher, so the server cannot start; the client warns `.lathe/ has no server launcher`.
   Set the extension to 0.1.16 or later and run `mvn process-test-classes`.
 
 Keep every project on 0.1.16 or later: an older sync recreates the `current` link that a newer one removes.
@@ -468,7 +469,8 @@ actively-maintained choice is [nvim-dap-view](https://github.com/igorlfs/nvim-da
 screen; toggle it with `<leader>to` (`require("lathe.neotest").open_output()`), or it opens
 automatically when a run starts.
 The first line (dimmed) is the exact `java` replay command that ran, so you can see and copy what
-executed. stdout and stderr are distinguished, and pressing **`<CR>` or `gF`** on a stack-trace frame
+executed; a very long one (a big classpath) runs as `java @<argfile>`, and the argfile stays on disk
+so the command still works when copied. stdout and stderr are distinguished, and pressing **`<CR>` or `gF`** on a stack-trace frame
 jumps straight to the failing source line.
 Use this docked window rather than neotest's floating output (`:Neotest output`), which shows raw text
 without the source-link navigation.

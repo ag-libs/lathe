@@ -173,6 +173,8 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   other `javac` inputs the language server needs.
 - `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
+- `lathe:sync` also writes `lathe-sync.sh` (`.cmd` on Windows), which re-runs the same build tool and JDK
+  that ran this build, so the editor's "sync" matches the command line you use.
 - `lathe:sync` also writes `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows) here, with the argfiles
   they read (`lathe-server.args`, `lathe-mcp.args`) — copies of the launchers in the machine cache's
   `servers/<version>/` for the server version this project pins. These are what every
@@ -193,8 +195,8 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 
 **On the machine — `~/.cache/lathe/`** (machine-wide, regenerable, override with `-Dlathe.cache=<dir>`):
 
-- `servers/<version>/` — the unpacked language server for that version, shared across every workspace
-  that pins it. Each project's `.lathe/lathe-launcher.sh` (`.cmd` on Windows) is a copy of the matching version's launcher;
+- `servers/<version>/` — the launcher scripts and argfiles for that version (the jars themselves stay
+  in `~/.m2`, which the argfiles name), shared across every workspace that pins it. Each project's `.lathe/lathe-launcher.sh` (`.cmd` on Windows) is a copy of the matching version's launcher;
   version-correct discovery is per-workspace, not through any machine-global pointer.
 - `latest/` — copies of the newest installed server version's launchers. Not used by version-correct clients;
   it exists only for a user-global MCP registration that has no project context (see
@@ -205,6 +207,7 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
   is recorded as missing and simply not navigable.
 - `type-index/` — the symbol index behind workspace symbol search.
+- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); nothing prunes them yet.
 
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.

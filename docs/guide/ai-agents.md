@@ -33,8 +33,9 @@ it two ways:
   .lathe/lathe-mcp-launcher.sh
   ```
 
+  On Windows it is `.lathe\lathe-mcp-launcher.cmd`, started through `cmd /d /s /c`.
   Re-created by every build, so it always matches the project's pinned server and carries no absolute,
-  per-machine path (a committed registration stays portable).
+  per-machine path (a committed registration stays portable across machines of the same OS family).
 
 - **User-global** — a machine-wide copy of the newest installed server version's launcher:
 
@@ -92,8 +93,8 @@ authority.
 
 ## The tools
 
-All results carry a source snippet and an `origin` (reactor / dependency / JDK / generated), never a
-bare `file:line`.
+Every located result carries a source snippet and an `origin` (reactor / dependency / JDK / generated),
+never a bare `file:line`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
@@ -106,9 +107,11 @@ bare `file:line`.
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
+| `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
+| `verify_change` | `files` (optional) | after edits: recompile the changed files and their same-module referrers, and report their errors and warnings per module |
 
-Positions are 1-based. `find_references`, `find_implementations`, and `call_hierarchy` accept an
-optional `maxResults` (default 50); `run_test` takes an optional `scope`
+Positions are 1-based. `find_references`, `find_implementations`, `call_hierarchy`, and
+`search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).
 
 The server also sends routing guidance at connection time (which tool fits which task), so a client
@@ -122,8 +125,8 @@ file after your edit, with no Maven:
 
 - **Single-file** correctness (the file you just edited) is live — in-process `javac`, no Maven.
 - **Other files** you change out of band (any module) are reconciled **in-process, automatically**:
-  Lathe watches the workspace and FULL-recompiles externally changed sources into the mirror in
-  dependency order (a short debounce after the edit settles), so cross-module results refresh without
+  every tool call first runs a write pass that recompiles externally changed sources into the mirror in
+  dependency order, so cross-module results — references and renames included — see them without
   Maven. Deletions are cleaned up too.
 - **Maven is still needed** only for POM / dependency / module-structure changes and for reactor-bound
   code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
@@ -142,9 +145,23 @@ touch a file outside the reactor**.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 
+### Verifying a change
+
+`verify_change` with no arguments checks what changed since the last check: the files changed on disk
+plus the files Lathe's own tools wrote (a rename), each with its same-module referrers.
+Pass `files` to check exactly those instead.
+It reports their compiler errors and warnings grouped by module; unused-code hints are left out
+(`get_diagnostics` on one file still shows them).
+When the change reaches other modules, it names them (up to ten in the text, all of them in the
+structured `affectedModules`) and gives the scoped sync command that builds the rest, e.g.
+`.lathe/lathe-sync.sh core`.
+If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
+it says so and gives that command instead.
+
 ## Usage logging
 
-Every tool call emits one line to the server's stderr:
+Every tool call emits one line to the server's stderr and to a per-session log file,
+`~/.cache/lathe/logs/mcp-<yyyyMMdd-HHmmss>-<pid>.log`:
 
 ```
 [tool] find_references file=/…/Foo.java line=88 column=20 142ms ok
@@ -152,8 +169,9 @@ Every tool call emits one line to the server's stderr:
 ```
 
 This records which tool ran, on what, how long it took, and whether it succeeded — enough to tally
-tool usage over a session. It is always on (no `LATHE_DEBUG` needed); MCP clients typically capture a
-server's stderr in their own logs. Set `LATHE_DEBUG=1` for finer detail.
+tool usage over a session. It is always on (no `LATHE_DEBUG` needed). Read the log file: a client
+such as Claude Code keeps only the server's startup stderr. Nothing prunes old session files yet.
+Set `LATHE_DEBUG=1` for finer detail.
 
 ## Troubleshooting
 

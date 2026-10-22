@@ -17,7 +17,7 @@ generated from.
 
 ## Requirements
 
-- Neovim 0.12+
+- Neovim 0.12+, on Linux or macOS (on Windows, Lathe supports VS Code, Cursor, and Zed instead)
 - The Java Treesitter parser: `:TSInstall java`
 - A Maven project whose build enables the Lathe Maven extension, synced at least once with
   `mvn process-test-classes` — this installs the language server and creates the `.lathe/` workspace.
