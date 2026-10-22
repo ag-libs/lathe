@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,6 +36,23 @@ class WorkspaceModuleRegistryTest {
     final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.allSourceRoots()).contains(src, latheGenerated).doesNotContain(mavenTarget);
+  }
+
+  @Test
+  void allSourceRoots_mavenGeneratedDirListedAsSourceRoot_searchesLatheMirrorOnly()
+      throws Exception {
+    // Older maven-compiler-plugin versions (3.11.0) hand their annotation-processor output dir to
+    // the compiler as a source location, so the params list it among the module's source roots. It
+    // must still not be searched: definition would land on Maven's stale copy, not the mirror.
+    final var src = tmp.resolve("module-a/src/main/java");
+    final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
+    TestCompiler.writeModuleParams(
+        tmp, "module-a", List.of(src, mavenTarget), mavenTarget, List.of(), List.of(), List.of());
+
+    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
+
+    assertThat(registry.allSourceRoots()).containsExactly(src, latheGenerated);
   }
 
   @Test

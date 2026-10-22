@@ -693,7 +693,7 @@ final class WorkspaceSession {
 
   // The real (non-generated) source directory a new file lands in.
   private static Optional<Path> primarySourceRoot(final ModuleSourceConfig config) {
-    return nonGeneratedSourceRoots(config).stream().findFirst();
+    return config.sourceRoots().stream().findFirst();
   }
 
   List<String> modules() {
@@ -3138,7 +3138,7 @@ final class WorkspaceSession {
   // it).
   static int deleteOrphanedClassOutputs(final TreeState tree) {
     final ModuleSourceConfig config = tree.config();
-    final List<Path> roots = nonGeneratedSourceRoots(config);
+    final List<Path> roots = config.sourceRoots();
     if (roots.isEmpty()) {
       return 0;
     }
@@ -3157,12 +3157,6 @@ final class WorkspaceSession {
 
     pruneOrphanStamps(config, orphans);
     return removed;
-  }
-
-  // A module's user source roots -- everything but the annotation-processor output, whose files the
-  // compile regenerates and so must never be scanned or reacted to.
-  private static List<Path> nonGeneratedSourceRoots(final ModuleSourceConfig config) {
-    return config.sourceRoots().stream().filter(root -> !config.isGenerated(root)).toList();
   }
 
   private static void pruneOrphanStamps(final ModuleSourceConfig config, final Set<Path> orphans) {
@@ -4075,7 +4069,7 @@ final class WorkspaceSession {
     static TreeState read(final ModuleSourceConfig config) {
       return new TreeState(
           config,
-          nonGeneratedSourceRoots(config).stream()
+          config.sourceRoots().stream()
               .collect(
                   Collectors.toMap(
                       root -> root, WorkspaceSession::javaSourceMtimes, (first, ignored) -> first)),
@@ -4448,7 +4442,7 @@ final class WorkspaceSession {
   private static void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final long mtime) {
     final var root = sourceRootFor(config, savedSource);
-    if (root == null || config.isGenerated(root)) {
+    if (root == null) {
       return;
     }
 

@@ -279,7 +279,7 @@ public final class TestCompiler {
     writeModuleParams(
         workspaceRoot,
         moduleName,
-        sourceRoot,
+        List.of(sourceRoot),
         generatedSourcesDir,
         classpath,
         List.of(),
@@ -289,7 +289,7 @@ public final class TestCompiler {
   public static void writeModuleParams(
       final Path workspaceRoot,
       final String moduleName,
-      final Path sourceRoot,
+      final List<Path> sourceRoots,
       final Path generatedSourcesDir,
       final List<Path> classpath,
       final List<Path> processorPath,
@@ -302,7 +302,7 @@ public final class TestCompiler {
             "classes",
             latheModuleDir.resolve("classes").toString(),
             generatedSourcesDir != null ? generatedSourcesDir.toString() : null,
-            List.of(sourceRoot.toString()),
+            sourceRoots.stream().map(Path::toString).toList(),
             classpath.stream().map(Path::toString).toList(),
             List.of(),
             processorPath.stream().map(Path::toString).toList(),

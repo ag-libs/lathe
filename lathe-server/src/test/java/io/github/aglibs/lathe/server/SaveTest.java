@@ -104,7 +104,7 @@ class SaveTest extends ServiceTestBase {
     TestCompiler.writeModuleParams(
         tmp,
         "module",
-        tmp.resolve("module/src/main/java"),
+        List.of(tmp.resolve("module/src/main/java")),
         null,
         classpath,
         processorPath,

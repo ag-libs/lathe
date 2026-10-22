@@ -33,7 +33,16 @@ public record ModuleSourceConfig(
     ReactorRewrite reactorRewrite) {
 
   public ModuleSourceConfig {
-    sourceRoots = sourceRoots != null ? List.copyOf(sourceRoots) : List.of();
+    // Older maven-compiler-plugin versions list their processor output among the source locations;
+    // the generated root is always the .lathe mirror (generatedSourcesDir), never Maven's copy.
+    sourceRoots =
+        sourceRoots == null
+            ? List.of()
+            : sourceRoots.stream()
+                .filter(
+                    root ->
+                        originalGenSourcesDir == null || !root.startsWith(originalGenSourcesDir))
+                .toList();
     classpath = classpath != null ? List.copyOf(classpath) : List.of();
     modulepath = modulepath != null ? List.copyOf(modulepath) : List.of();
     processorPath = processorPath != null ? List.copyOf(processorPath) : List.of();
