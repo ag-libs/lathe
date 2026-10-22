@@ -104,18 +104,27 @@ public final class LatheCompiler implements Compiler {
     }
   }
 
-  private void syncOutput(
+  static void syncOutput(
       final CompilerConfiguration config,
       final Path moduleDir,
       final Path moduleRel,
       final CompilerResult result) {
     final var sw = Stopwatch.start();
     try {
-      if (!result.isSuccess() && result.getCompilerMessages().isEmpty()) {
-        throw new IOException("javac returned failure with no diagnostics");
+      ParamsWriter.write(config, moduleDir);
+      // Maven empties its output before a full recompile, so a failed one leaves nothing to mirror:
+      // keep the last good capture and stamps, so changed sources stay stale for the server.
+      if (!result.isSuccess()) {
+        if (result.getCompilerMessages().isEmpty()) {
+          LOG.warn(
+              "[lathe] {} javac failed with no diagnostics; kept the last good capture", moduleRel);
+        } else {
+          LOG.info("[lathe] {} compile failed; kept the last good capture", moduleRel);
+        }
+
+        return;
       }
 
-      ParamsWriter.write(config, moduleDir);
       final String sourceTree = sourceTree(config);
       FileUtil.replaceDir(Path.of(config.getOutputLocation()), moduleDir.resolve(sourceTree));
       mirrorGeneratedSources(config, moduleDir);
