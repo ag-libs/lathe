@@ -7,6 +7,36 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-059 — Rename accepts a JDK or dependency symbol and rewrites every use in the reactor — done
+
+**Status: done — Target: next.**
+
+Probed on EqualsVerifier (JDK 17), on `Class` in `EqualsVerifier.forClass(Class<T> type)`: MCP
+`rename_symbol` → `Klass` applied "448 edit(s) across 107 file(s)" to disk, and LSP `prepareRename`
+and `rename` accepted it the same way.
+Every use of `java.lang.Class` was rewritten to a type that does not exist.
+The MCP guard against editing files outside the reactor did not fire, because only the declaration
+lives outside it.
+Renaming a project method that overrides a JDK one (`toString`) followed `Object.toString` and renamed
+every `toString` in the reactor.
+
+**Resolution.** `WorkspaceSession` refuses the rename, in `prepareRename` and in `rename` (which the
+MCP tool goes through), when the target's declaration, or a method it overrides, has no source in a
+reactor source root, or has one only in generated source (whose processor would regenerate it under
+the old name).
+The refusal is a `RequestFailed` response error that names the symbol and why; `LatheEngine` passes
+its reason through to the MCP tool result.
+A type's canonical name is matched to its top-level file by `TypeSourceLocator.findSourceFileOfCanonicalName`,
+so a nested reactor type stays renameable.
+Not covered: an override in the renamed family that also implements an unrelated method
+([EG-061](gaps.md#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method)).
+
+Regression: `LatheEngineTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
+(JDK type, JDK method, `toString` override),
+`LatheEngineTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
+`LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`,
+`TypeSourceLocatorTest.findSourceFileOfCanonicalName_topLevelNestedOrMissingType_findsTheTopLevelFile`.
+
 ## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done
 
 **Status: done — Target: next.**

@@ -321,30 +321,25 @@ None yet.
 
 ---
 
-## EG-059 — Rename accepts a JDK or dependency symbol and rewrites every use in the reactor
+## EG-061 — Renaming a method also renames an override that implements a second, unrelated method
 
 **Status: documented**
 
 ### Observed behaviour
 
-Probed on EqualsVerifier (JDK 17), on `Class` in `EqualsVerifier.forClass(Class<T> type)`:
-
-| Route | Result |
-|---|---|
-| MCP `rename_symbol` → `Klass` | "Renamed to Klass: 448 edit(s) across 107 file(s)" — applied to disk |
-| LSP `textDocument/prepareRename` | accepts the position (returns the `Class` range) |
-| LSP `textDocument/rename` → `Klass` | a `WorkspaceEdit` over 107 files |
-
-Every use of `java.lang.Class` in the reactor is rewritten to a type that does not exist, so one call
-breaks the whole build.
-The MCP guard ("refuses if it would touch a file outside the reactor") does not fire, because the JDK
-file itself is not edited; only the declaration lives outside the reactor.
+Found while fixing [EG-059](gaps-archive.md#eg-059--rename-accepts-a-jdk-or-dependency-symbol-and-rewrites-every-use-in-the-reactor--done); not yet probed.
+Given `class Impl extends LibBase implements MyIface`, where `MyIface.foo()` and `LibBase.foo()` share a
+signature and `Impl.foo()` overrides both, renaming `MyIface.foo` also renames `Impl.foo`, which then
+no longer overrides `LibBase.foo`.
+The rename refuses a target that itself overrides a method declared outside the project, but not a
+member of its override family that also overrides a method outside the family.
+The same break happens when the second supertype is in the reactor, so it is not specific to
+dependencies.
 
 ### Fix direction
 
-Refuse the rename when the target's declaration is not in a reactor source root (JDK, dependency
-source, or class file), in `prepareRename` and in `rename`, so the LSP and MCP routes share the check.
-The message should say the symbol is declared outside the project.
+During the reference search, collect the overridden declarers of every override the rename edits, and
+refuse when one lies outside the renamed family (or, in the reactor, include its family in the rename).
 
 ### Regression targets
 

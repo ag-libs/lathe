@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.engine;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -54,6 +55,7 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 
 /**
  * In-process facade into the language server for non-editor clients (the MCP server): it drives the
@@ -560,7 +562,12 @@ public final class LatheEngine {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("[engine] request interrupted", e);
     } catch (final ExecutionException | TimeoutException e) {
-      throw new IllegalStateException("[engine] request failed", e);
+      // A request the server refused carries its reason, which the caller must see.
+      final String message =
+          ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused
+              ? refused.getMessage()
+              : "[engine] request failed";
+      throw new IllegalStateException(message, e);
     }
   }
 }

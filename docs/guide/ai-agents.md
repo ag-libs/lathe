@@ -144,6 +144,8 @@ What it still cannot vouch for comes as a note at the end of the result:
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
 touch a file outside the reactor**.
+It also refuses a symbol declared outside the project (JDK or a dependency) or in generated source,
+and a method overriding one, since renaming only its uses would break them; the error says which.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 

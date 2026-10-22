@@ -131,8 +131,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
@@ -1653,17 +1656,55 @@ final class WorkspaceSession {
         .resolveRenameTarget(request)
         .thenApply(
             target -> {
+              if (target == null) {
+                return null;
+              }
+
+              requireRenameable(target);
               // Refuse a type whose declaring file must move when the client cannot apply the file
               // rename, rather than returning a half-rename that leaves a public type in a
               // mismatched file.
-              if (target == null
-                  || (!fileRenameSupported && renameDeclaringFile(target).isPresent())) {
+              if (!fileRenameSupported && renameDeclaringFile(target).isPresent()) {
                 return null;
               }
 
               final Range range = RenameProvider.identifierRange(openFile.content(), pos);
               return range == null ? null : Either3.forFirst(range);
             });
+  }
+
+  // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
+  // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
+  private void requireRenameable(final ReferenceTarget target) {
+    final List<Path> roots = workspace.allSourceRoots();
+    final Optional<Path> declaration =
+        target.kind().isClass() || target.kind().isInterface()
+            ? TypeSourceLocator.findSourceFileOfCanonicalName(target.qualifiedName(), roots)
+            : TypeSourceLocator.findSourceFile(target.qualifiedName(), roots);
+    final List<Optional<Path>> declarations =
+        Stream.concat(
+                Stream.of(declaration),
+                target.overriddenDeclarers().stream()
+                    .map(declarer -> TypeSourceLocator.findSourceFile(declarer, roots)))
+            .toList();
+    if (declarations.stream().anyMatch(Optional::isEmpty)) {
+      throw renameRefused(
+          target, "outside the project (JDK or a dependency), so it cannot be renamed");
+    }
+
+    if (declarations.stream().flatMap(Optional::stream).anyMatch(this::isGeneratedSource)) {
+      throw renameRefused(
+          target, "in generated source; rename the source it is generated from instead");
+    }
+  }
+
+  private static ResponseErrorException renameRefused(
+      final ReferenceTarget target, final String where) {
+    final String message =
+        "`%s` is declared, or overrides a method declared, %s"
+            .formatted(target.simpleName(), where);
+    return new ResponseErrorException(
+        new ResponseError(ResponseErrorCode.RequestFailed, message, null));
   }
 
   // The source file to rename when the target is the file-defining type for its file (so `Foo.java`
@@ -1741,6 +1782,7 @@ final class WorkspaceSession {
                 return CompletableFuture.completedFuture((WorkspaceEdit) null);
               }
 
+              requireRenameable(target);
               return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
                   .thenCompose(
                       searchTarget ->
