@@ -321,6 +321,66 @@ None yet.
 
 ---
 
+## EG-059 — Rename accepts a JDK or dependency symbol and rewrites every use in the reactor
+
+**Status: documented**
+
+### Observed behaviour
+
+Probed on EqualsVerifier (JDK 17), on `Class` in `EqualsVerifier.forClass(Class<T> type)`:
+
+| Route | Result |
+|---|---|
+| MCP `rename_symbol` → `Klass` | "Renamed to Klass: 448 edit(s) across 107 file(s)" — applied to disk |
+| LSP `textDocument/prepareRename` | accepts the position (returns the `Class` range) |
+| LSP `textDocument/rename` → `Klass` | a `WorkspaceEdit` over 107 files |
+
+Every use of `java.lang.Class` in the reactor is rewritten to a type that does not exist, so one call
+breaks the whole build.
+The MCP guard ("refuses if it would touch a file outside the reactor") does not fire, because the JDK
+file itself is not edited; only the declaration lives outside the reactor.
+
+### Fix direction
+
+Refuse the rename when the target's declaration is not in a reactor source root (JDK, dependency
+source, or class file), in `prepareRename` and in `rename`, so the LSP and MCP routes share the check.
+The message should say the symbol is declared outside the project.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-060 — Javadoc rendering joins the first sentence to the body and splits inline code across lines
+
+**Status: documented**
+
+### Observed behaviour
+
+Seen through MCP `describe_symbol` on EqualsVerifier (JDK 17); hover is expected to share the renderer:
+
+| Javadoc source | Rendered |
+|---|---|
+| `Factory method. For general use.` (`EqualsVerifier.forClass`) | `Factory method.For general use.` |
+| `… running Java application. An enum class …` (`java.lang.Class`) | `… running Java application.An enum class …` |
+| `{@code` / `int}` split across two source lines | a code span holding the newline and indent: `` `\n int` `` |
+
+Every Javadoc whose first paragraph has more than one sentence loses the space after its first
+sentence, which looks like the summary sentence and the body being concatenated with no separator.
+
+### Fix direction
+
+Join the first sentence and the body with a space when converting the doc comment to markdown, and
+normalise whitespace inside inline `{@code}`/`{@link}` text.
+Confirm whether LSP hover shares the converter, so one fix covers both.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -393,7 +453,64 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-No active WS gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+## WS-11 — A failed Maven compile empties the module's `.lathe` mirror
+
+**Status: documented**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17), a `lathe-sync.sh equalsverifier-core` whose compile failed (see
+[WS-12](#ws-12--lathe-syncsh-drops-the--d-properties-of-the-build-it-was-generated-from)) left
+`.lathe/equalsverifier-core/classes` with 0 `.class` files.
+Every dependent file then reported false errors — 65 in one test file, starting with
+`cannot find symbol class EqualsVerifier` — through MCP `get_diagnostics`, and so in the editor too,
+until a successful sync.
+
+### Root cause
+
+`LatheCompiler.syncOutput` skips the mirror copy only when javac fails with no diagnostics.
+A failure that reports diagnostics still runs `FileUtil.replaceDir(output, mirror)`.
+maven-compiler-plugin had already cleared `target/classes` for a full recompile ("Recompiling the
+module because of changed source code"), so the empty output replaced the mirror.
+The observed failure was an Error Prone class-loading error; an ordinary compile error should behave
+the same, since javac writes no class files when compilation has errors — not yet probed.
+
+### Fix direction
+
+Leave the mirror untouched when the compile fails, so the editor keeps the last good bytecode and
+reports the build's errors on the files that have them.
+Check how this interacts with the deletion cleanup and compile stamps, which assume the mirror tracks
+the build output.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-12 — `lathe-sync.sh` drops the `-D` properties of the build it was generated from
+
+**Status: documented**
+
+### Observed behaviour
+
+EqualsVerifier synced on JDK 17 only with `-DdisableStaticAnalysis`, because its Error Prone 2.50.0
+needs JDK 21+ to run.
+The generated `.lathe/lathe-sync.sh` runs
+`mvn --no-transfer-progress -Dmaven.build.cache.enabled=false -pl equalsverifier-core -am process-test-classes`
+without that property, so every scripted sync — including the one `verify_change` recommends —
+fails with a compilation error, and through [WS-11](#ws-11--a-failed-maven-compile-empties-the-modules-lathe-mirror)
+empties the mirror.
+
+### Fix direction
+
+Carry the generating build's user properties (and active or deactivated profiles) into the rendered
+script, or document that the script replays only the bare goal and tell the user how to pass extra
+flags.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -658,6 +775,183 @@ To be added with the fix:
 - `LatheMcpServerTest.logging_afterToolCall_writesPerCallLineToFile` (positive: a rotating log file is
   created under the resolved logs dir and receives the `[tool] …` line after a call).
 - `LatheMcpServerTest.logging_timestamps_areUtcIso8601` (formatter emits UTC, not local time).
+
+---
+
+## MC-7 — `verify_change` reports a clean tree while dependent modules are broken
+
+**Status: documented**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17), `forPackage` was renamed on disk in `EqualsVerifier.java` only, so core
+still compiles and `equalsverifier-test` breaks.
+`verify_change` with no arguments answered "No new diagnostics — the changed files compile cleanly",
+plus a sync suggestion for the dependent modules.
+`get_diagnostics` on a dependent test file (`MultipleTypeEqualsVerifierTest.java`) immediately
+returned 26 errors (`cannot find symbol … method forPackage(java.lang.String)`), so the server can see
+the breakage in-process.
+An agent that trusts the headline concludes its change is safe.
+
+### Fix direction
+
+Let `verify_change` also compile the dependent modules' callers of the changed API in-process, as
+`get_diagnostics` already can, or at least lead with "dependent modules not verified" instead of
+"compiles cleanly".
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-8 — The sync command `verify_change` suggests does not build the dependent modules it names
+
+**Status: documented**
+
+### Observed behaviour
+
+`verify_change` says, for example, "3 module(s) depend on your change (equalsverifier-test,
+equalsverifier-test-mockito, equalsverifier-test-signedjar); verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+After a type rename it named `equalsverifier-test-signedjar` but suggested
+`.lathe/lathe-sync.sh equalsverifier-core equalsverifier-test equalsverifier-test-mockito`.
+`lathe-sync.sh` scopes with `-pl <module> -am`, which builds the listed modules and their *upstream*
+dependencies only, so the dependents the message names are never built.
+Running the suggested command built parent, testhelpers and core only.
+
+### Fix direction
+
+Build the dependents: list them in the command, or give `lathe-sync.sh` a way to add `-amd`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled
+
+**Status: documented**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17):
+
+| `file` | Answer |
+|---|---|
+| `/etc/hosts` | "No diagnostics — hosts compiles cleanly." + "Sync required: ../../../etc/hosts is in no synced module — run `.lathe/lathe-sync.sh`" |
+| `pom.xml` | "No diagnostics — pom.xml compiles cleanly." + the same sync hint |
+| a Java file in `equalsverifier-21` (a module the JDK 17 build excludes by profile) | "No diagnostics — … compiles cleanly." + "run `.lathe/lathe-sync.sh`" |
+| a missing `.java` file | a raw `java.nio.file.NoSuchFileException` |
+
+The headline claims a compile that never happened.
+For the JDK-gated module the suggested sync can never include it on this JDK, so the advice cannot
+help.
+A dependent file whose upstream module failed to compile likewise reports "compiles cleanly" with a
+"Not compiled:" note about the upstream file.
+
+### Fix direction
+
+Reject non-Java files and paths outside the workspace with a clear error; for a file in no synced
+module, say it was not compiled (and why) instead of "compiles cleanly", and only suggest a sync when
+the module is in the build's reactor for this JDK.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-10 — Position tools answer for an unrelated symbol when the position is not on one
+
+**Status: documented**
+
+### Observed behaviour
+
+`describe_symbol` in `EqualsVerifier.java`, on the line declaring `forClass`:
+
+| Position | Answer |
+|---|---|
+| column past the end of the line | the enclosing class `EqualsVerifier` |
+| column 0, a whitespace column, or the keyword `public` | the method `forClass` |
+| a line past the end of the file | "No symbol information at that position." |
+
+An agent with an off-by-one column gets a confident answer about the wrong symbol.
+Not yet checked: the other position tools, and LSP hover at the same positions.
+
+### Fix direction
+
+Answer only when the position is on an identifier, and otherwise report that no symbol is at that
+position (as for a line past the end of the file).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-11 — `run_test` does not give the remedy when no test launch was captured
+
+**Status: documented**
+
+### Observed behaviour
+
+For a module whose tests never ran under Lathe, `run_test` answers
+"Test run blocked: no captured test-launch.json for equalsverifier-core".
+The tool description promises the fix — "run `.lathe/lathe-sync.sh --tests <module>` once; it
+reports that if missing" — but the message does not include it.
+
+### Fix direction
+
+Append the exact command, with the module filled in.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-12 — `search_symbols` finds nothing for a fully qualified name
+
+**Status: documented**
+
+### Observed behaviour
+
+`search_symbols` with `nl.jqno.equalsverifier.EqualsVerifier` answers "No symbols matching", while
+`EqualsVerifier` finds it.
+The schema says "Symbol name or prefix", but agents often search by the qualified name they see in
+imports and stack traces.
+
+### Fix direction
+
+Accept a qualified name: match the simple name and filter by the package (or containing type).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-13 — `verify_change` still advises a sync after a change has been fully reverted
+
+**Status: documented**
+
+### Observed behaviour
+
+After a change to `EqualsVerifier.java` was reverted on disk, so the tree matched `HEAD` again,
+`verify_change` still answered "3 module(s) depend on your change …; verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+On a large reactor that sends an agent into a needless Maven run.
+
+### Fix direction
+
+Compare against the last synced state rather than "touched this session", and drop files whose
+content is back to what was synced.
+
+### Regression targets
+
+None yet.
 
 ---
 
