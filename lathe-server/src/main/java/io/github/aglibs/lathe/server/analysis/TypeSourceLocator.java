@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -51,6 +52,18 @@ public final class TypeSourceLocator {
     final String packageName = lastDot >= 0 ? binaryName.substring(0, lastDot) : "";
     final String className = lastDot >= 0 ? binaryName.substring(lastDot + 1) : binaryName;
     return findSourceFile(packageName, className, sourceRoots);
+  }
+
+  // A canonical name nests with `.` as well, so the package boundary is unknown: try each `.` from
+  // the right until one names a top-level type's file.
+  public static Optional<Path> findSourceFileOfCanonicalName(
+      final String canonicalName, final List<Path> sourceRoots) {
+    return Stream.iterate(
+            canonicalName,
+            name -> !name.isEmpty(),
+            name -> name.substring(0, Math.max(name.lastIndexOf('.'), 0)))
+        .flatMap(name -> findSourceFile(name, sourceRoots).stream())
+        .findFirst();
   }
 
   private static Optional<Path> findSourceFile(

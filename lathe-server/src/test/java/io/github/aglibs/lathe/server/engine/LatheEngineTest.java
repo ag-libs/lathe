@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.engine;
 
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
@@ -372,6 +373,62 @@ class LatheEngineTest {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"))
         .noneSatisfy(uri -> assertThat(uri).endsWith("CalleeHelper.java"));
     assertThat(Files.readString(generated)).isEqualTo(generatedSource);
+  }
+
+  @Test
+  void rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          int size(String text) { return text.length(); }
+          @Override public String toString() { return "sample"; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    // A JDK type, a JDK method, and a project method overriding a JDK one.
+    List.of("String text", "length", "toString")
+        .forEach(
+            symbol -> {
+              final var pos = offsetToPosition(source, source.indexOf(symbol));
+              assertThatThrownBy(
+                      () -> engine.rename(file, pos.getLine(), pos.getCharacter(), "renamed"))
+                  .as(symbol)
+                  .hasMessageContaining("outside the project");
+            });
+    assertThat(Files.readString(file)).isEqualTo(source);
+  }
+
+  @Test
+  void rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing()
+      throws Exception {
+    final Path generated =
+        TestCompiler.writeAt(
+            tmp.resolve(".lathe/module")
+                .resolve(LatheLayout.generatedSourcesDir("classes"))
+                .resolve("com/example/SampleBuilder.java"),
+            "package com.example; class SampleBuilder { void name() {} }",
+            1_000L);
+    final String source =
+        "package com.example; class Sample { void run(SampleBuilder b) { b.name(); } }";
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    // After the source, whose write declares the module without generated sources.
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        tmp.resolve("module/src/main/java"),
+        tmp.resolve("module/target/generated-sources/annotations"));
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file, generated);
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(source, source.indexOf("name"));
+    assertThatThrownBy(() -> engine.rename(file, pos.getLine(), pos.getCharacter(), "label"))
+        .hasMessageContaining("generated source");
+    assertThat(Files.readString(file)).isEqualTo(source);
   }
 
   @Test

@@ -176,8 +176,10 @@ final class LatheMcpTools {
                 (respecting overloads and shadowing locals) across every module, never a text \
                 match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
                 and reports exactly which files it changed. Renaming a public top-level type also \
-                renames its file. Refuses if it would touch a file outside the reactor. The changed \
-                files are compiled before it returns, so follow-up queries see the new names. Then \
+                renames its file. Refuses if it would touch a file outside the reactor, or if the \
+                symbol (or a method it overrides) is declared in the JDK, a dependency, or \
+                generated source. The changed files are compiled before it returns, so follow-up \
+                queries see the new names. Then \
                 call verify_change with no arguments to check the rewritten files and their callers, \
                 and run the sync it suggests for other modules.\
                 """)

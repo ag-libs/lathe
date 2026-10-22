@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -44,6 +45,9 @@ import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
+import org.eclipse.lsp4j.PrepareRenameParams;
+import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
@@ -58,7 +62,9 @@ import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.WorkDoneProgressEnd;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.mockito.ArgumentCaptor;
@@ -359,6 +365,33 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                             new Position(0, 6)))
                     .get(5, TimeUnit.SECONDS))
         .doesNotThrowAnyException();
+  }
+
+  @Test
+  void prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason()
+      throws Exception {
+    final Path source = writeWorkspaceSource();
+    final var content =
+        "package com.example; class Foo { static class Inner {} Object target() { return null; } }";
+    Files.writeString(source, content);
+    service.initialize(tmp);
+    openDoc(source, content);
+
+    // A nested type is found by its canonical name, unlike a member's binary one.
+    assertThat(prepareRename(source, content, "Inner").get(5, TimeUnit.SECONDS)).isNotNull();
+    assertThat(prepareRename(source, content, "target").get(5, TimeUnit.SECONDS)).isNotNull();
+    assertThatThrownBy(() -> prepareRename(source, content, "Object").get(5, TimeUnit.SECONDS))
+        .cause()
+        .isInstanceOf(ResponseErrorException.class)
+        .hasMessageContaining("outside the project");
+  }
+
+  private CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
+      prepareRename(final Path source, final String content, final String symbol) {
+    return service.prepareRename(
+        new PrepareRenameParams(
+            new TextDocumentIdentifier(source.toUri().toString()),
+            offsetToPosition(content, content.indexOf(symbol))));
   }
 
   @Test
