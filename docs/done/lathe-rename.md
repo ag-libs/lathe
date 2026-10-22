@@ -89,6 +89,10 @@ Validate the position and return the identifier range, or fail with a clear mess
 3. Guard — reject when any holds:
    - the file is not reactor-owned (`WorkspaceSession.routeCompiler` is not `CompilerRoute.Module`);
      JDK/dependency sources are read-only.
+   - the element is declared, or is a method overriding one declared, outside the reactor's source
+     roots (JDK or a dependency) or in generated source (`WorkspaceSession.requireRenameable`).
+     Renaming only its uses would break every one of them, so `prepareRename` and `rename` both fail
+     with a `RequestFailed` error that says why; the MCP `rename_symbol` tool shares the check.
    - the element does not resolve, or is a non-renameable / synthetic-only kind.
    - the element is an unsupported kind for M2 (see Non-goals — e.g. a package, an enum constant).
    - the element is a **public top-level type** whose file would have to move — deferred (see
@@ -249,7 +253,8 @@ they are deferred to keep the tested surface focused — see Non-goals).
 
 ## Non-goals (explicit, documented)
 
-- Renaming external / JDK / dependency symbols — read-only.
+- Renaming external / JDK / dependency symbols, or symbols declared in generated source — refused
+  (see the `prepareRename` guard).
 - **Package rename** — JDT itself treats this as partial; deferred.
 - **Local/parameter same-scope duplicate detection** — needs a block-scope AST walk rather than an
   element scan; not done (see Conflict detection). Only the illegal-identifier check applies.

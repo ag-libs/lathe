@@ -9,7 +9,7 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 ## EG-059 — Rename accepts a JDK or dependency symbol and rewrites every use in the reactor — done
 
-**Status: done — Target: next.**
+**Status: done — Target: next** (commit c6d84e28).
 
 Probed on EqualsVerifier (JDK 17), on `Class` in `EqualsVerifier.forClass(Class<T> type)`: MCP
 `rename_symbol` → `Klass` applied "448 edit(s) across 107 file(s)" to disk, and LSP `prepareRename`
