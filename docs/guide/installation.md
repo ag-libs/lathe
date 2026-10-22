@@ -343,7 +343,7 @@ Engines you can select there:
 
 `google`, `aosp`, `palantir`, and `eclipse` need the jars sync resolves, so they come from the
 Spotless configuration; naming one in `lathe-style.json` or the editor default without a `classpath`
-leaves formatting off (the server logs `run lathe:sync`).
+leaves formatting off (the server logs `run .lathe/lathe-sync.sh`).
 
 ## Coexisting with another Java language server (jdtls)
 

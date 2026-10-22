@@ -36,7 +36,8 @@ from execution, so nothing actually runs.
 mvn test -Dlathe.capture.only=true
 ```
 
-This is the recommended [first-time setup](installation.md#initialize).
+For the [first run](installation.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
+so every module compiles through Lathe rather than reusing up-to-date output.
 Note `-DskipTests` is **not** a substitute — it skips the fork entirely, so nothing is captured.
 If your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the
 test-free run stays green.

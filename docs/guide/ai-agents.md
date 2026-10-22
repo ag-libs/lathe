@@ -8,12 +8,12 @@ cross-module code intelligence instead of guessing from `grep`.
 The wedge is the operations text search gets wrong on a real reactor: compiler-truth diagnostics on
 the exact build classpath, navigation that follows into dependencies and generated sources, finding
 every real use (and every implementer/override) of a symbol, safe reactor-wide rename, and replaying
-a test without a Maven build.
+a test without a build.
 
 ## Prerequisite: a populated `.lathe/`
 
 The server reads from Lathe's build capture and **refuses to start without it**, exactly like the
-editor. Register the Lathe Maven extension and run a build once at the reactor root — the quickest is:
+editor. For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
 
 ```bash
 mvn process-test-classes
@@ -21,6 +21,8 @@ mvn process-test-classes
 
 That build does two things at once: it writes `.lathe/`, and its `lathe:sync` step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
+For `run_test`, the build must also reach the test phase once, as `mvn clean test
+-Dlathe.capture.only=true` does without running the tests (see [test capture](test-capture.md)).
 
 ## The launcher
 
@@ -43,7 +45,7 @@ it two ways:
   ~/.cache/lathe/latest/lathe-mcp-launcher.sh
   ```
 
-  Use this for a single, user-scoped registration that works across all your projects (a relative
+  (`lathe-mcp-launcher.cmd` on Windows.) Use this for a single, user-scoped registration that works across all your projects (a relative
   per-project path does not resolve reliably at user scope). It runs whatever server version you most
   recently installed — fine when your repos track one version; prefer the per-project launcher when
   they are pinned to different Lathe versions.
@@ -98,7 +100,7 @@ never a bare `file:line`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
-| `get_diagnostics` | `file` | compiler errors/warnings for one file, on the real classpath — no Maven |
+| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build |
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |

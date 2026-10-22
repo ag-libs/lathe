@@ -1,16 +1,16 @@
-# Lathe in VS Code
+# Lathe in VS Code and Cursor
 
 Lathe ships a VS Code extension — **Lathe for Java** — a thin client that launches Lathe's
-build-derived language server from your project. You get the standard LSP surface (navigation,
+build-derived language server from your project. The same extension runs in Cursor. You get the standard LSP surface (navigation,
 completion, diagnostics, hover, symbols, rename). It installs from a GitHub release asset for now; a
 Marketplace listing is planned.
 
-The server itself is **not** bundled in the extension — it comes from your Maven build, exactly as for
+The server itself is **not** bundled in the extension — it comes from your build, exactly as for
 the other editors. The extension just finds and launches it.
 
 ## Install
 
-1. **Build your project with Lathe at least once** so the launcher exists. Any `mvn` build populates
+1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) populates
    `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
    `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
 
@@ -32,7 +32,7 @@ disable it for this workspace — two servers attaching to `.java` files will co
 
 ## What works
 
-Resolved from your real Maven build, through VS Code's standard LSP UI:
+Resolved from your real build, through VS Code's standard LSP UI:
 
 | Feature                          | VS Code                                   |
 |----------------------------------|-------------------------------------------|
@@ -46,6 +46,7 @@ Resolved from your real Maven build, through VS Code's standard LSP UI:
 | Code actions (import, stubs, …)  | `Ctrl`+`.`                                |
 | Rename (reactor-wide)            | `F2`                                      |
 | Live diagnostics                 | Problems panel · squiggles                |
+| Formatting (the project's Spotless formatter) | `Shift`+`Alt`+`F` · `editor.formatOnSave` |
 
 ## Read-only dependency sources
 
@@ -63,9 +64,9 @@ reflects the permission (dependency sources then open locked, with a lock icon, 
 ## If the wrong JDK is picked
 
 The extension runs the launcher with the workspace folder as its working directory, so it reads
-`.lathe/java-home` automatically — no configuration needed. To override (for example to run Lathe
-against an [OpenJDK](../openjdk.md) checkout), set `LATHE_JAVA_HOME` in the environment VS Code is
-launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.
+`.lathe/java-home` automatically — no configuration needed, an [OpenJDK](../openjdk.md) checkout
+included (its sync records the JDK it built). To override it, set `LATHE_JAVA_HOME` in the environment
+VS Code is launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.
 
 ## Windows and Cursor
 
@@ -75,6 +76,6 @@ Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or
 
 ## Not available yet
 
-Run/test/debug, scaffolding (`:LatheNew`), and format-on-save are **[Neovim-client](neovim.md)**
+Run/test/debug and scaffolding (`:LatheNew`) are **[Neovim-client](neovim.md)**
 features today — they use Lathe's custom client commands, not the standard LSP surface. Adding them to
 the VS Code extension is [planned](../../planned/lathe-vscode-client.md).

@@ -106,15 +106,15 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 
 ### Distribution (Maven Central beta)
 
-- Publish `lathe-core`, `lathe-compiler`, `lathe-server`, and `lathe-maven-plugin` as beta artifacts
-  (`0.1.0-beta.N`) to Maven Central — source/Javadoc JARs, signatures, checksums, POM/licensing/SCM
+- Publish every reactor module to Maven Central as `0.x.y` releases (the leading 0 marks the beta; no
+  `-beta` qualifier, see [RELEASING.md](../RELEASING.md)) — source/Javadoc JARs, signatures, checksums, POM/licensing/SCM
   metadata, reproducible release automation, and staging verification.
 - Public users install from released coordinates instead of building from source.
 
 ### Onboarding and docs
 
-- Update installation and getting-started from build-from-source to the released Maven coordinates once
-  artifacts publish. Getting-started, troubleshooting, and per-feature limitations are otherwise already
+- Update installation and getting-started from build-from-source to the released Maven coordinates
+  (done). Getting-started, troubleshooting, and per-feature limitations are otherwise already
   covered by the README and the guides it links to.
 
 ### Not in M2
@@ -133,8 +133,9 @@ references are **not** M2 scope — they are in the [Backlog](#backlog).
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
 - Setup, compatibility, and troubleshooting documentation is complete — the README and the guides it
   links to, with install instructions for the released Maven coordinates.
-- VS Code support and general availability (a stable `0.1.0`) are in the [Backlog](#backlog)
-  (unscheduled); run/test and the debugger have shipped as part of the beta.
+- VS Code parity and general availability (a stable `1.0.0`) are in the [Backlog](#backlog)
+  (unscheduled); run/test, the debugger, and a preview VS Code and Cursor extension have shipped as part
+  of the beta.
 
 ---
 
@@ -168,9 +169,9 @@ Unscheduled — the rolling pool that feeds `next` (see [Post-beta release model
 No post-beta release is planned ahead of time; items graduate by feedback signal and are version-named
 when cut. Items are grouped, not ordered.
 
-### General availability (promote the beta to `0.1.0`)
+### General availability (promote the beta to `1.0.0`)
 
-- Promote the Maven Central beta to a stable `0.1.0` under stable coordinates: remove preview/beta
+- Promote the Maven Central beta to a stable `1.0.0` under stable coordinates: remove preview/beta
   terminology; define versioning, compatibility, and support policies and the supported JDK, Maven/mvnd,
   OS, and Neovim versions; add rollback and full release qualification CI (large-workspace, clean-install,
   and upgrade verification).
@@ -206,8 +207,9 @@ when cut. Items are grouped, not ordered.
 
 ### Build-tool front-ends
 
-- Gradle, emitting the same `.lathe/` contract (see [lathe-gradle-support.md](planned/lathe-gradle-support.md));
-  its prerequisite, the [build-tool-agnostic core](done/lathe-build-agnostic-core.md), has shipped.
+- Gradle, emitting the same `.lathe/` contract (see [lathe-gradle-support.md](planned/lathe-gradle-support.md)),
+  the next build front-end, after Multi-OS; its prerequisite, the
+  [build-tool-agnostic core](done/lathe-build-agnostic-core.md), has shipped.
 - OpenJDK jtreg run/test (the OpenJDK code-intelligence front-end has shipped).
 
 ### AI coding agents

@@ -1,6 +1,6 @@
 # lathe.nvim
 
-**A Java language server that works from your Maven build — no project import, no classpath setup.**
+**A Java language server that works from your build — no project import, no classpath setup.**
 
 [![Lathe demo — a zero-config Java IDE from your Maven build](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#demo)
 

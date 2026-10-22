@@ -20,14 +20,14 @@ The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to th
 project uses. Eglot starts the server with the project root as its working directory, so the relative
 path resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 
-Open a Java file in a Maven project Lathe has synced (any `mvn` build populates `.lathe/`), then
+Open a Java file in a project Lathe has synced (a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) populates `.lathe/`), then
 `M-x eglot` — or add `eglot-ensure` to `java-mode-hook` to connect automatically. Eglot picks the
 project's version-control root, which must be the reactor root where `.lathe/` lives.
 
 ## What works
 
 All through Emacs's built-in facilities (Xref, Flymake, ElDoc, `completion-at-point`), resolved from
-your real Maven build:
+your real build:
 
 | Feature                          | Command                                             |
 |----------------------------------|-----------------------------------------------------|
@@ -39,9 +39,10 @@ your real Maven build:
 | Rename (reactor-wide)            | `M-x eglot-rename`                                  |
 | Extract variable / refactors     | `M-x eglot-code-action-extract` · `eglot-code-actions` |
 | Live diagnostics                 | Flymake · `M-x flymake-show-buffer-diagnostics`     |
+| Formatting                       | `M-x eglot-format-buffer`                           |
 
 ## Not available via plain Eglot
 
-Run/test/debug, scaffolding (`:LatheNew`), and format-on-save are **[Neovim-client](neovim.md)**
+Run/test/debug and scaffolding (`:LatheNew`) are **[Neovim-client](neovim.md)**
 features — they use custom client commands, not the standard LSP surface. Call/type-hierarchy and
 semantic-token highlighting depend on a newer Eglot than some Emacs builds ship.

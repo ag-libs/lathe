@@ -38,7 +38,8 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    git push --atomic origin HEAD v0.1.1
    ```
    The **Release to Maven Central** workflow runs: it stamps the version, builds, signs, and publishes
-   all modules. If the `release` environment requires approval, approve the run.
+   all modules, then creates the tag's GitHub release with generated notes and the VS Code extension's
+   `.vsix` attached. If the `release` environment requires approval, approve the run.
 4. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag
@@ -75,7 +76,7 @@ tag, and records the source commit SHA in the mirror commit message.
 
 Its versions **track the server**: the mirror is published on every release, even when the client did
 not change, so each version on Maven Central has a matching mirror tag. See
-[docs/planned/lathe-standalone-nvim-plugin.md](docs/planned/lathe-standalone-nvim-plugin.md) for the
+[docs/done/lathe-standalone-nvim-plugin.md](docs/done/lathe-standalone-nvim-plugin.md) for the
 design and the client↔server protocol.
 
 ## Versioning

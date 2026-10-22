@@ -56,7 +56,7 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 
 ## Backlog — unscheduled, re-triaged after the beta
 
-Everything beyond M2. The next release — general availability (a stable `0.1.0`) — is scheduled only
+Everything beyond M2. The next release — general availability (a stable `1.0.0`) — is scheduled only
 after public-beta feedback (see the [roadmap](roadmap.md)).
 
 **Editing features (deferred from M2):**
@@ -156,9 +156,9 @@ reused):
   `LATHE_PROTOCOL` handshake (server advertises `capabilities.experimental.latheProtocol`, client
   compares at `on_init`, a drift-guard test keeps the Java constant and `version.lua` in lockstep).
 
-**General availability (promote the beta to `0.1.0`):**
+**General availability (promote the beta to `1.0.0`):**
 
-- Promote the Maven Central beta to a stable `0.1.0`: versioning/compatibility/support policies, remove
+- Promote the Maven Central beta to a stable `1.0.0`: versioning/compatibility/support policies, remove
   preview/beta terminology, rollback, and full clean-install/upgrade qualification. (Maven Central *beta*
   publishing itself is M2.)
 - [Launcher JVM Options](done/lathe-launcher-jvm-opts.md) — **shipped.** `LATHE_JVM_OPTS` support; also
@@ -182,25 +182,25 @@ reused):
 
 - [VS Code Client](planned/lathe-vscode-client.md) — **M1 passthrough built** (`lathe-vscode/`,
   `ag-libs.lathe`), two milestones. **M1:** we build the
-  `.vsix` ourselves and hand it to testers (local `.vsix` now; a GitHub release asset once `release.yml`
-  is wired — no Marketplace, no PAT, rides `github.token`). **M2:** go all in — publish to the Marketplace + Open VSX via
+  `.vsix` ourselves and hand it to testers (attached to each GitHub release by `release.yml` — no
+  Marketplace, no PAT, rides `github.token`). **M2:** go all in — publish to the Marketplace + Open VSX via
   a mirror-repo Action (PAT isolated in CI) triggered by a no-PAT `publish-vscode.sh` push, gated on
   naming/trademark ("Java" nominative use + disclaimer) and a first-run UX (run-build nudge + walkthrough)
   to defuse the unbundled-server "nothing happens" trap. Thin `vscode-languageclient` passthrough
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
-  TreeView, CodeLens). Reuses the cache launcher; monorepo source of truth; working-tree E2E via
+  TreeView, CodeLens). Starts the workspace's own `.lathe/` launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
 - [Wider Maven and JDK Support](done/lathe-wider-maven-support.md) — **done (2026-10-19, PR #24).** Maven
   3.6.3+ through a Plexus descriptor (Maven <3.9's Sisu silently dropped the extension) and the 3.6.3 API floor;
   JDK 17+ for every module, the server included, with javac API newer than 17 behind a multi-release jar
   (`CompilerTrees`); an unsupported Maven or `maven-compiler-plugin` stops the build with one clear message;
   CI covers JDK 17–27 and Maven 3.6.3–3.10.
-- [Multi-OS Design](planned/lathe-multi-os.md) — **proposed; macOS CI, no links (D4) and portable cache names (R1) done.** Lathe portable by construction across
+- [Multi-OS Design](planned/lathe-multi-os.md) — **Phase A done; Phase B (Windows) code-complete, with CI on Windows; human sessions pending.** Lathe portable by construction across
   Linux, macOS and Windows 10/11: a portable core plus a five-part platform edge (OS test, script renderers,
   tool resolution, filesystem quirks, client spawn), rules R1–R8 enforced on Linux CI (portable-names
   guard, `forbiddenapis`, OS matrix). No symlinks (done), argfile launchers, sync logic in Java, canonical URIs,
   `/` in persisted relative paths. Phase A makes the core portable (Linux/macOS); Phase B adds Windows
-  (`.cmd` scripts, VS Code/Cursor first). WSL is the interim workaround.
+  (`.cmd` scripts, VS Code/Cursor and Zed; Neovim and Emacs stay Linux/macOS).
 
 **AI coding agents:**
 

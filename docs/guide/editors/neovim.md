@@ -103,7 +103,7 @@ freely.
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
-| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
+| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field · add a `final` field as a constructor parameter) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document or selection (when the workspace resolves a formatter) | `require('lathe').format()` / `:LatheFormat` | — | `<leader>cf` |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
@@ -279,7 +279,7 @@ libxml2` otherwise). If it is missing, Lathe notifies once and does nothing furt
 
 ## Create a new type
 
-`:LatheNew` scaffolds a **class / interface / record / enum / test**, plus **`package-info`** and
+`:LatheNew` scaffolds a **class / interface / record / enum / annotation / test**, plus **`package-info`** and
 **`module-info`**, through the server and opens it. The server writes the file with the package line and
 a skeleton and drops the cursor in the body; it never overwrites — if the target exists it just opens it.
 The Lathe server must be attached, since creation is a Java operation.

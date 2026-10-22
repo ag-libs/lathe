@@ -44,7 +44,7 @@ No Lathe plugin, no extra config beyond one file.
    language servers until the project is trusted.
 
 The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
-project uses; any `mvn` build populates it.
+project uses; a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) writes it.
 Zed starts language servers with the worktree root as their working directory, so the relative path
 resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 Setting `binary.path` replaces the Java extension's own launch command, so Eclipse JDT LS is never
@@ -53,7 +53,7 @@ Zed's UI and logs still label the server `jdtls`.
 
 ## What works
 
-All through Zed's built-in editor features, resolved from your real Maven build:
+All through Zed's built-in editor features, resolved from your real build:
 
 | Feature                          | Zed command                                   |
 |----------------------------------|-----------------------------------------------|
@@ -66,9 +66,10 @@ All through Zed's built-in editor features, resolved from your real Maven build:
 | Rename                           | `editor: rename`                              |
 | Extract variable / refactors     | `editor: toggle code actions`                 |
 | Live diagnostics                 | inline · `diagnostics: deploy`                |
+| Formatting                       | `editor: format` · format on save             |
 
 ## Not available in Zed
 
-Run/test/debug, scaffolding (`:LatheNew`), and format-on-save are **[Neovim-client](neovim.md)**
+Run/test/debug and scaffolding (`:LatheNew`) are **[Neovim-client](neovim.md)**
 features — they use custom client commands, not the standard LSP surface.
 The Java extension's debugger runs inside Eclipse JDT LS, so it does not work with Lathe in its slot.

@@ -1,6 +1,6 @@
 # How Lathe works
 
-Lathe derives everything from your Maven build rather than reconstructing a project model of its own.
+Lathe derives everything from your build rather than reconstructing a project model of its own.
 This document covers the mechanism.
 For installation see [installation.md](installation.md);
 for exactly what each build writes, see
@@ -19,7 +19,7 @@ document describes.
 
 ## Build capture
 
-During a Maven compile, Lathe's compiler integration records the exact `javac` parameters and classpath
+In a Maven build, during the compile, Lathe's compiler integration records the exact `javac` parameters and classpath
 for each module into `.lathe/`, and the `sync` goal writes the workspace manifest (`workspace.json`)
 describing the reactor. The language server reads these files, so diagnostics, completion, and
 navigation reflect the same inputs your build compiled with. Every build refreshes them, so the model
