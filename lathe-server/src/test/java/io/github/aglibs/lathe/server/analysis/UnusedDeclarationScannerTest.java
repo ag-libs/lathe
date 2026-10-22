@@ -123,6 +123,43 @@ class UnusedDeclarationScannerTest {
         .isEmpty();
   }
 
+  @Test
+  void compile_privateMethodsReachedOnlyFromConstructors_noHint() {
+    assertThat(
+            unusedHintsFor(
+                """
+                class Factory {
+                  private Factory() { init(); }
+                  private void init() { helper(); }
+                  private void helper() {}
+                  static Factory create() { return new Factory(); }
+                }
+                class Plain {
+                  Plain() { prepare(); }
+                  private void prepare() {}
+                }
+                """))
+        .isEmpty();
+  }
+
+  @Test
+  void compile_unusedPrivateMethodBesidePrivateConstructor_reportsHint() {
+    final var source =
+        """
+        class Factory {
+          private Factory() {}
+          private void unused() {}
+          static Factory create() { return new Factory(); }
+        }
+        """;
+
+    final List<Diagnostic> hints = unusedHintsFor(source);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.get(0).getRange().getStart())
+        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
+  }
+
   // --- Visibility: only private is flagged ---
 
   @Test

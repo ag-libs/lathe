@@ -231,7 +231,7 @@ python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 
 ## EG-056 — Private method called only from a private constructor is hinted unused
 
-**Status: documented**
+**Status: in-progress** (on `fix/unused-private-method-from-ctor`).
 
 ### Observed behaviour
 
@@ -299,13 +299,18 @@ Initializer blocks and field initializers already go through the `ClassTree` →
 Rejected alternative: track private constructors as candidates and count `new Foo()` calls.
 It is more precise but larger, and it would start hinting the conventional `private Utility() {}`.
 
+### Fix
+
+As proposed: `enclosingPrivateMethod()` returns the enclosing element only if `privateMethods` tracks
+it, so any constructor is a reachability root and its callees, and their private callees, are
+reached.
+
 ### Regression targets
 
-None yet.
-Candidates:
-`UnusedDeclarationScannerTest.compile_privateMethodReachedOnlyFromConstructor_noHint`
-(private and public constructor, including a private-to-private chain from the constructor), and
-`UnusedDeclarationScannerTest.compile_unusedPrivateMethodBesidePrivateConstructor_reportsHint`.
+- `UnusedDeclarationScannerTest.compile_privateMethodsReachedOnlyFromConstructors_noHint` (a private
+  constructor, a private-to-private chain from it, and a package-private constructor; fails without
+  the fix).
+- `UnusedDeclarationScannerTest.compile_unusedPrivateMethodBesidePrivateConstructor_reportsHint`.
 
 ---
 

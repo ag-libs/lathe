@@ -257,10 +257,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     TreePath path = getCurrentPath().getParentPath();
     while (path != null) {
       if (path.getLeaf() instanceof MethodTree) {
+        // Only a tracked private method is an edge source; anything else, a constructor too, is a
+        // root that reaches its callees directly -- an edge from it would never be followed.
         final var element = trees.getElement(path);
-        return (element != null && element.getModifiers().contains(Modifier.PRIVATE))
-            ? element
-            : null;
+        return privateMethods.containsKey(element) ? element : null;
       }
       if (path.getLeaf() instanceof ClassTree) {
         return null;
