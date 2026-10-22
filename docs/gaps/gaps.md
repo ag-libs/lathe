@@ -579,92 +579,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-1 — `describe_symbol` (and position tools) return empty on dependency/JDK source files: the MCP warmup skips the External compile route
-
-**Status: accepted — Target: next (root cause confirmed by code trace; fix is small and localized).**
-
-Re-checked 2026-10-22 on `main`: `describe_symbol` inside the JDK's `TimeUnit.java` still answers
-"No symbol information at that position."
-
-Signal: dogfooding `describe_symbol` while designing [EG-003](gaps-archive.md#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags--done).
-Pointing it at a javac `DocTrees` method to confirm an API returned nothing; the same symbol
-described from a use-site in reactor code returned the full signature + javadoc.
-
-### Observed behaviour
-
-`describe_symbol` aimed at a symbol **in a dependency or JDK source file** (e.g.
-`~/.cache/lathe/jdks/…/jdk.compiler/com/sun/source/util/DocTrees.java`) returns empty
-`{"markup":""}` — on both declarations and references. The identical symbol described from a
-**use-site inside a reactor file** (a `DocTrees` reference in `JavadocLocator.java`) resolves fully:
-
-```
-DocCommentTree getDocCommentTree(TreePath path)
-Returns the doc comment tree, if any, for the Tree node identified by a given TreePath. …
-source: jdk.compiler (JDK 26)
-```
-
-Crucially, **hovering directly inside the same JDK/dep source file works in the editor**, so this is
-an MCP-facade discrepancy, not an inherent "external sources can't be attributed" limitation and not
-a staleness issue.
-
-### Root cause (confirmed by trace)
-
-Every position-based engine tool calls `LatheEngine.compileFromDisk(file)` to register and warm the
-file before issuing the LSP request. `compileFromDisk` routes through
-`WorkspaceSession.diagnosticsFuture`, which switches on `routeCompiler(uri)`:
-
-- `CompilerRoute.Module` → `docs.put(...)` + `submitCompile(...)` — the file is registered and
-  attributed, so the later `hover` finds a cached analysis.
-- `CompilerRoute.External` (dep/JDK sources tracked by the manifest) → short-circuits to
-  `CompletableFuture.completedFuture(List.of())` — **no `docs.put`, no compile**.
-
-So the external file is never attributed, and `service.hover(...)` returns null → empty markup. The
-editor path (`WorkspaceSession.onOpen`) compiles **unconditionally** via
-`workspace.externalWorker()`, which is why the same hover works in the editor. `External` genuinely
-has a compiling worker (`routeCompiler` maps it to `externalWorker()`), so attribution is available —
-the warmup just doesn't use it.
-
-### Fix direction (small)
-
-Give the `External` route the same register-and-compile the `Module` route already gets in
-`diagnosticsFuture`, using `external.worker()`:
-
-```java
-case CompilerRoute.External external -> {
-  final var snapshot = docs.put(uri, content, version);
-  candidateIndex.update(uri, content);
-  final var result = new CompletableFuture<List<Diagnostic>>();
-  submitCompile(
-      external, snapshot, CompileMode.OPEN, (ignored, response) -> result.complete(response.diagnostics()));
-  yield result;
-}
-```
-
-`submitCompile` already accepts a `CompilerRoute` (`onSave` passes an `External` route through it), so
-this is localized — external files attribute and cache exactly as the editor's `onOpen` does, and
-every position tool that pre-warms via `compileFromDisk` benefits (`describe_symbol`,
-`get_definition`/`get_diagnostics` on external paths). The `Missing` route stays empty. Consider
-evicting the warmed external document after the one-shot engine call so read-only dep/JDK files do not
-accumulate in the open-document set.
-
-### Probe commands
-
-```bash
-# Via MCP (returns empty today; expected: rendered signature + javadoc):
-#   describe_symbol file=~/.cache/lathe/jdks/…/com/sun/source/util/DocTrees.java line=110 column=36
-# Contrast (already works): describe_symbol at a `DocTrees` use-site in a reactor .java file.
-```
-
-### Regression targets
-
-To be added with the fix:
-
-- `LatheEngineTest.describe_dependencyOrJdkSourceFile_returnsSignatureAndJavadoc` (positive: a symbol
-  in a manifest-tracked external source resolves to its rendered signature + javadoc).
-- `LatheEngineTest.describe_fileOutsideAnyModuleAndManifest_returnsEmpty` (negative: a `Missing`-route
-  file stays empty).
-
----
 
 ## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink
 
@@ -673,7 +587,7 @@ To be added with the fix:
 Re-checked 2026-10-22: `~/.cache/lathe/logs` held 612 session files (3.2 MB) with nothing pruning
 them, and `logging.properties` still formats local time.
 
-Signal: attempting to read the server's per-call logs to diagnose [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route)
+Signal: attempting to read the server's per-call logs to diagnose [MC-1](gaps-archive.md#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route--done)
 — the logs were nowhere to be found despite the server emitting them.
 
 ### Observed behaviour

@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
@@ -151,6 +153,56 @@ class LatheEngineTest {
     final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter());
 
     assertThat(markup).contains("greet");
+  }
+
+  @Test
+  void describe_methodInADependencySource_returnsSignatureAndJavadoc() throws Exception {
+    final Path sourceDir = tmp.resolve("sources/lib");
+    final String source =
+        """
+        package com.lib;
+
+        public class Lib {
+          /** Doubles the given amount. */
+          public int twice(int amount) {
+            return amount * 2;
+          }
+        }
+        """;
+    final Path lib = sourceDir.resolve("com/lib/Lib.java");
+    Files.createDirectories(lib.getParent());
+    Files.writeString(lib, source);
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(
+                new DependencyData(
+                    "com.lib:lib:1",
+                    tmp.resolve("repo/lib.jar").toString(),
+                    SourceStatus.PRESENT,
+                    sourceDir.toString(),
+                    List.of(),
+                    null)),
+            List.of(),
+            List.of(),
+            List.of(),
+            null),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(source, source.indexOf("twice"));
+
+    assertThat(engine.describe(lib, pos.getLine(), pos.getCharacter()))
+        .contains("twice(int amount)")
+        .contains("Doubles the given amount.");
+    assertThat(engine.diagnostics(lib))
+        .as("a dependency's diagnostics are not the agent's")
+        .isEmpty();
   }
 
   @Test

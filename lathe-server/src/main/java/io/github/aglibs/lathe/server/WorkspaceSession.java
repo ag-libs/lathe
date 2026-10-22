@@ -1454,20 +1454,27 @@ final class WorkspaceSession {
   CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     LOG.fine(() -> "[diagnostics] %s".formatted(uri));
-    if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
-      final var snapshot = docs.put(uri, content, version);
-      // The engine read this content from disk: indexed as a disk file, the pass keeps it current.
-      candidateIndex.indexFromDisk(LatheUri.toPath(uri));
-      final var result = new CompletableFuture<List<Diagnostic>>();
-      submitCompile(
-          module,
-          snapshot,
-          CompileMode.OPEN,
-          (ignored, response) -> result.complete(response.diagnostics()));
-      return result;
+    final CompilerRoute route = routeCompiler(uri);
+    if (route instanceof CompilerRoute.Missing) {
+      return CompletableFuture.completedFuture(List.of());
     }
 
-    return CompletableFuture.completedFuture(List.of());
+    // A dependency or JDK source is registered and compiled too, as the editor's open does, so the
+    // engine's queries on it find an analysis; its diagnostics are not the agent's to fix.
+    final boolean reactor = route instanceof CompilerRoute.Module;
+    final var snapshot = docs.put(uri, content, version);
+    if (reactor) {
+      // The engine read this content from disk: indexed as a disk file, the pass keeps it current.
+      candidateIndex.indexFromDisk(LatheUri.toPath(uri));
+    }
+
+    final var result = new CompletableFuture<List<Diagnostic>>();
+    submitCompile(
+        route,
+        snapshot,
+        CompileMode.OPEN,
+        (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()));
+    return result;
   }
 
   void onChange(final String uri, final String content, final int version) {

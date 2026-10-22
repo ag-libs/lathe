@@ -9825,7 +9825,7 @@ deliberately not added.
 
 **Status: done — Target: next** (commit 00f06ae8).
 
-Signal: the same release smoke as [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file).
+Signal: the same release smoke as [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file--done).
 
 ### Observed behaviour
 
@@ -9905,7 +9905,7 @@ The same review capped the "N module(s) depend on your change" list in the text 
 
 **Status: done — Target: next** (PR #35).
 
-Signal: verifying the [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file)
+Signal: verifying the [FR-018](#fr-018--references-miss-uses-written-to-disk-outside-the-editor-the-candidate-index-never-re-reads-a-changed-file--done)
 fix with the MCP battery: the rename round-trip still left one to three files dirty per workspace.
 
 ### Observed behaviour
@@ -9944,7 +9944,7 @@ Options, to decide before coding:
    This keeps the analysis cache warm, but adds a second document lifecycle to `WorkspaceSession`.
 3. Re-read every registered document before each call: the set grows with every file touched.
 
-Only option 1 would also have given the eviction that [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route)
+Only option 1 would also have given the eviction that [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route--done)
 suggests after a warmed external file; that stays with MC-1.
 
 ### Fix
@@ -9974,3 +9974,92 @@ Both fail with the flag off:
 
 - `LatheEngineTest.rename_thenRenameBack_afterAQueryOnTheCaller_restoresTheCaller`
 - `LatheEngineTest.references_queriedFileThenEditedOnDisk_findsTheNewUse`
+
+---
+
+## MC-1 — `describe_symbol` (and position tools) return empty on dependency/JDK source files: the MCP warmup skips the External compile route — done
+
+**Status: done — Target: next** (on `main`).
+
+Signal: dogfooding `describe_symbol` while designing [EG-003](gaps-archive.md#eg-003--hover-returns-null-on-positions-inside-javadoc-type-reference-tags--done).
+Pointing it at a javac `DocTrees` method to confirm an API returned nothing; the same symbol
+described from a use-site in reactor code returned the full signature + javadoc.
+
+### Observed behaviour
+
+`describe_symbol` aimed at a symbol **in a dependency or JDK source file** (e.g.
+`~/.cache/lathe/jdks/…/jdk.compiler/com/sun/source/util/DocTrees.java`) returns empty
+`{"markup":""}` — on both declarations and references. The identical symbol described from a
+**use-site inside a reactor file** (a `DocTrees` reference in `JavadocLocator.java`) resolves fully:
+
+```
+DocCommentTree getDocCommentTree(TreePath path)
+Returns the doc comment tree, if any, for the Tree node identified by a given TreePath. …
+source: jdk.compiler (JDK 26)
+```
+
+Crucially, **hovering directly inside the same JDK/dep source file works in the editor**, so this is
+an MCP-facade discrepancy, not an inherent "external sources can't be attributed" limitation and not
+a staleness issue.
+
+### Root cause (confirmed by trace)
+
+Every position-based engine tool calls `LatheEngine.compileFromDisk(file)` to register and warm the
+file before issuing the LSP request. `compileFromDisk` routes through
+`WorkspaceSession.diagnosticsFuture`, which switches on `routeCompiler(uri)`:
+
+- `CompilerRoute.Module` → `docs.put(...)` + `submitCompile(...)` — the file is registered and
+  attributed, so the later `hover` finds a cached analysis.
+- `CompilerRoute.External` (dep/JDK sources tracked by the manifest) → short-circuits to
+  `CompletableFuture.completedFuture(List.of())` — **no `docs.put`, no compile**.
+
+So the external file is never attributed, and `service.hover(...)` returns null → empty markup. The
+editor path (`WorkspaceSession.onOpen`) compiles **unconditionally** via
+`workspace.externalWorker()`, which is why the same hover works in the editor. `External` genuinely
+has a compiling worker (`routeCompiler` maps it to `externalWorker()`), so attribution is available —
+the warmup just doesn't use it.
+
+### Fix direction (small)
+
+Give the `External` route the same register-and-compile the `Module` route already gets in
+`diagnosticsFuture`, using `external.worker()`:
+
+```java
+case CompilerRoute.External external -> {
+  final var snapshot = docs.put(uri, content, version);
+  candidateIndex.update(uri, content);
+  final var result = new CompletableFuture<List<Diagnostic>>();
+  submitCompile(
+      external, snapshot, CompileMode.OPEN, (ignored, response) -> result.complete(response.diagnostics()));
+  yield result;
+}
+```
+
+`submitCompile` already accepts a `CompilerRoute` (`onSave` passes an `External` route through it), so
+this is localized — external files attribute and cache exactly as the editor's `onOpen` does, and
+every position tool that pre-warms via `compileFromDisk` benefits (`describe_symbol`,
+`get_definition`/`get_diagnostics` on external paths). The `Missing` route stays empty. Consider
+evicting the warmed external document after the one-shot engine call so read-only dep/JDK files do not
+accumulate in the open-document set.
+
+### Probe commands
+
+```bash
+# Via MCP (returns empty today; expected: rendered signature + javadoc):
+#   describe_symbol file=~/.cache/lathe/jdks/…/com/sun/source/util/DocTrees.java line=110 column=36
+# Contrast (already works): describe_symbol at a `DocTrees` use-site in a reactor .java file.
+```
+
+### Fix
+
+`WorkspaceSession.diagnosticsFuture` registers and compiles every route but `Missing`, through the
+same `submitCompile` path, so an engine query on a dependency or JDK source finds an analysis.
+Only a reactor (`Module`) source is indexed and reports its diagnostics; an external one reports none,
+as the editor publishes none for read-only sources.
+Checked on Dropwizard: `describe_symbol` on `TimeUnit.toMillis` inside the JDK source now returns its
+signature and Javadoc (was "No symbol information at that position.").
+
+### Regression targets
+
+- `LatheEngineTest.describe_methodInADependencySource_returnsSignatureAndJavadoc` (fails without the
+  fix; also checks that the dependency reports no diagnostics).
