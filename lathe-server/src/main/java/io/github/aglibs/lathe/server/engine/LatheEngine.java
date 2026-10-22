@@ -414,12 +414,12 @@ public final class LatheEngine {
 
   /**
    * Recompile the change set in-process against the captured classpath (no reactor build) and
-   * report the resulting compiler diagnostics, grouped by module. With no {@code files}, the change
-   * set is detected from disk (sources newer than their last compile); otherwise it is those files.
-   * When the change reaches other modules, {@link LatheVerifyChange#suggestedSync()} carries the
-   * scoped sync that builds the remainder — Lathe never runs the build. If the in-process recompile
-   * cannot be trusted (a pending build-file sync, or a running build), the result is deferred to a
-   * full sync.
+   * report the errors and warnings of those files and their same-module referrers, grouped by
+   * module. With no {@code files}, the change set is what changed on disk plus what the tools wrote
+   * themselves since the last such check; otherwise it is those files. When the change reaches
+   * other modules, {@link LatheVerifyChange#suggestedSync()} carries the scoped sync that builds
+   * the remainder — Lathe never runs the build. If the in-process recompile cannot be trusted (a
+   * pending build-file sync, or a running build), the result is deferred to a full sync.
    */
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());

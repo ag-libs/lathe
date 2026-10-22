@@ -42,24 +42,21 @@ public final class LatheMcpServer {
       - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
       every override/implementation, and all call sites across modules, and nothing that merely \
       shares the name; grep/sed cannot do this safely.
-      - Finding all uses / call sites of a symbol before changing it — especially a common or \
-      overloaded name where text search is ambiguous: use find_references (resolves overloads and \
-      inheritance, excludes same-named unrelated symbols). For a rare, distinctive name a plain \
-      grep is fine and cheaper.
-      - Resolving or jumping to a definition, especially into dependencies, the JDK, or generated \
-      sources: use get_definition (grep cannot follow into non-source).
-      - Tracing who calls a method (or what it calls) to scope the impact of a change: use \
-      call_hierarchy — it follows the real cross-module call graph, which text search cannot.
+      - Finding all uses of a symbol before changing it, especially a common or overloaded name: \
+      use find_references (resolves overloads and inheritance). For a rare, distinctive name grep \
+      is fine and cheaper.
+      - Jumping to a definition, especially into dependencies, the JDK, or generated sources: use \
+      get_definition (grep cannot follow into non-source).
+      - Tracing who calls a method, or what it calls: use call_hierarchy (the real cross-module call \
+      graph, which text search cannot follow).
       - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
-      - Finding a type or symbol by name across the reactor, dependencies, and the JDK: use \
-      search_symbols.
+      - Finding a type by name (reactor, dependencies, JDK): use search_symbols.
       - Finding the implementations of an interface, or the overrides of a method (the declarations \
       themselves, not their call sites): use find_implementations.
-      - Checking whether a file still compiles after an edit: use get_diagnostics (one file, no \
-      full build).
-      - Checking whether a specific test, class, or package passes after an edit: use run_test — it \
-      replays just that against the compiled classpath, no full build; prefer it over the build's \
-      own test command for a single target.
+      - Checking that edits still compile, no full build: get_diagnostics for one file; \
+      verify_change (no arguments) after a multi-file edit or a rename.
+      - Checking whether a test, class, or package passes after an edit: use run_test (replays just \
+      that; prefer it over the build's own test command).
 
       Every tool first compiles the files you changed, so answers reflect your edits. A result may \
       end with notes: "Not compiled:" lists files whose code does not compile, with the error -- fix \

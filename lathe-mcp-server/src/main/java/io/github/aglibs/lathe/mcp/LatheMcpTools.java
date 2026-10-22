@@ -78,8 +78,8 @@ final class LatheMcpTools {
                 """)
             .description(
                 """
-                Compiler-accurate errors and warnings for a Java file, exactly as javac sees \
-                them on the real build classpath. Call after editing a file to check whether \
+                Compiler-accurate errors and warnings (plus unused-code hints) for a Java file, \
+                exactly as javac sees them on the real build classpath. Call after editing a file to check whether \
                 it compiles — no whole-project build.\
                 """)
             .build();
@@ -177,8 +177,9 @@ final class LatheMcpTools {
                 match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
                 and reports exactly which files it changed. Renaming a public top-level type also \
                 renames its file. Refuses if it would touch a file outside the reactor. The changed \
-                files are compiled before it returns, so follow-up queries see the new names. After \
-                a cross-module rename, rebuild the reactor to confirm it still compiles.\
+                files are compiled before it returns, so follow-up queries see the new names. Then \
+                call verify_change with no arguments to check the rewritten files and their callers, \
+                and run the sync it suggests for other modules.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -296,7 +297,7 @@ final class LatheMcpTools {
                 """)
             .description(
                 """
-                Find a type or symbol by name across the whole reactor, its dependencies, and the \
+                Find a type by name across the whole reactor, its dependencies, and the \
                 JDK — returning each with its kind, container, and a declaration snippet. Use to \
                 locate a type when you know its name but not its file.\
                 """)
@@ -380,15 +381,16 @@ final class LatheMcpTools {
                 """
                 {"type":"object",
                  "properties":{"files":{"type":"array","items":{"type":"string"},
-                   "description":"Optional absolute paths of changed .java files; omit to auto-detect from disk."}}}\
+                   "description":"Optional absolute paths of changed .java files; omit to check what changed on disk plus what Lathe's tools wrote (e.g. rename_symbol) since the last check."}}}\
                 """)
             .description(
                 """
-                After editing Java files, recompile just the changed set in-process against the real \
-                classpath — no full build — and report the new compiler diagnostics grouped by \
-                module. Detects the change set from disk automatically, or pass `files` to scope it. \
-                When the change reaches other modules it returns the exact scoped sync command to \
-                verify the remainder. Use it to confirm your edits still compile before a build.\
+                After editing Java files, recompile the changed files and their same-module callers \
+                in-process against the real classpath — no full build — and report their errors and \
+                warnings grouped by module (unused-code hints left out). With no `files` it checks \
+                what changed on disk plus what Lathe's own tools wrote, such as a rename. When the \
+                change reaches other modules it names them and returns the exact scoped sync command \
+                to verify the remainder. Use it to confirm your edits still compile before a build.\
                 """)
             .build();
     return SyncToolSpecification.builder()
