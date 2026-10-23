@@ -15,10 +15,12 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 
 1. [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) — **done (2026-10-11).**
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
-2. [Multi-OS](../done/lathe-multi-os.md), all of it — decided 2026-10-20: Multi-OS closes before Gradle starts.
-   Its sync script model (D3) is build-neutral and already golden-tested with a Gradle-shaped model, so Gradle fills the model in rather than writing script logic.
-3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
-   Before slice 1, so the plugin is written against Java 17 from the start.
+2. [Multi-OS](../done/lathe-multi-os.md), all of it — **done (2026-10-23).** Decided 2026-10-20: Multi-OS closes before Gradle starts.
+   Its sync script model (D3) is build-neutral, so Gradle fills the model in rather than writing script logic —
+   after one fix before slice 2: the model splices module options before the goals, which Gradle rejects for a
+   task option (see [The sync command](#the-sync-command)).
+3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — **done (2026-10-19, PR #24):** every module targets Java 17.
+   So the plugin is written against Java 17 from the start.
 4. **A Maven-free `lathe-install`** (see [What is reused vs new](#what-is-reused-vs-new)) — this design's slice 0 (moved here from Multi-OS on 2026-10-20, since only Gradle needs it).
 
 **Decided 2026-10-18** (details in the sections below):
