@@ -237,7 +237,7 @@ simply want to tune heap or GC — set `LATHE_JVM_OPTS` in the environment your 
 It is expanded after `.lathe/jvm.args` and ahead of Lathe's own arguments:
 
 ```bash
-export LATHE_JVM_OPTS="-Xmx4g -XX:+UseZGC"
+export LATHE_JVM_OPTS="-Xmx4g"
 # or grant access the build does not declare:
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```

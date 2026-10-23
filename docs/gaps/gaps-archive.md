@@ -8279,6 +8279,47 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-11 — A failed Maven compile empties the module's `.lathe` mirror — done
+
+**Status: done — Target: next** (commit 3b31205a).
+
+A single failed `mvn` run left Lathe broken after the code was fixed.
+maven-compiler-plugin empties `target/classes` before a full recompile ("Recompiling the module
+because of changed source code"), and `LatheCompiler.syncOutput` copied that empty output over the
+module's `.lathe` mirror — it skipped only javac failures with no diagnostics — and rewrote the compile
+stamps.
+Every dependent lost the module's types (false `cannot find symbol` errors), and because the stamps
+claimed every source freshly compiled, the server never rebuilt the missing classes in-process.
+First seen through a sync that failed on Error Prone; confirmed with an ordinary type error.
+
+Spike on EqualsVerifier (JDK 17): a type error in `equalsverifier-core`, a failing
+`mvn process-test-classes`, then the error fixed and saved in the editor, with a server running:
+
+| Step | Before the fix (mirror / dependent errors) | After the fix |
+|---|---|---|
+| failing Maven build | 161 → 0 classes / 4 false errors | 161 / 0 (core shows only its real error) |
+| error fixed in the editor, +5 s and +35 s | 1 / 4 | 161 / 0 |
+| server restarted | 1 / 4 | 161 / 0 |
+
+### Resolution
+
+`syncOutput` writes the params on every compile (a module that fails on its first sync must still
+load), but after a failed compile keeps the class mirror, the generated-sources mirror and the compile
+stamps: dependents keep resolving against the last good bytecode, and the sources changed since then
+stay stale, so the server recompiles them in-process.
+It logs "compile failed; kept the last good capture" (WARN when javac failed without diagnostics)
+instead of "capture complete".
+A Gradle front-end must keep the same rule: Gradle's `compileJava` also clears its outputs on a full
+recompile.
+
+### Regression targets
+
+- `LatheCompilerSyncOutputTest.syncOutput_failedCompile_writesParamsKeepsMirrorsAndStamps`
+  (failed before the fix).
+- `LatheCompilerSyncOutputTest.syncOutput_successfulCompile_replacesMirrorsAndStamps`.
+
+---
+
 ## WS-1 — Reactor mirror and type index go silently stale after a source change or branch switch
 
 **Status: done — Target: M2.**

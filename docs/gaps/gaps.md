@@ -323,7 +323,7 @@ None yet.
 
 ## EG-061 — Renaming a method also renames an override that implements a second, unrelated method
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -448,44 +448,11 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-11 — A failed Maven compile empties the module's `.lathe` mirror
-
-**Status: documented**
-
-### Observed behaviour
-
-On EqualsVerifier (JDK 17), a `lathe-sync.sh equalsverifier-core` whose compile failed (see
-[WS-12](#ws-12--lathe-syncsh-drops-the--d-properties-of-the-build-it-was-generated-from)) left
-`.lathe/equalsverifier-core/classes` with 0 `.class` files.
-Every dependent file then reported false errors — 65 in one test file, starting with
-`cannot find symbol class EqualsVerifier` — through MCP `get_diagnostics`, and so in the editor too,
-until a successful sync.
-
-### Root cause
-
-`LatheCompiler.syncOutput` skips the mirror copy only when javac fails with no diagnostics.
-A failure that reports diagnostics still runs `FileUtil.replaceDir(output, mirror)`.
-maven-compiler-plugin had already cleared `target/classes` for a full recompile ("Recompiling the
-module because of changed source code"), so the empty output replaced the mirror.
-The observed failure was an Error Prone class-loading error; an ordinary compile error should behave
-the same, since javac writes no class files when compilation has errors — not yet probed.
-
-### Fix direction
-
-Leave the mirror untouched when the compile fails, so the editor keeps the last good bytecode and
-reports the build's errors on the files that have them.
-Check how this interacts with the deletion cleanup and compile stamps, which assume the mirror tracks
-the build output.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-12 — `lathe-sync.sh` drops the `-D` properties of the build it was generated from
 
-**Status: documented**
+**Status: deferred — Target: backlog.**
+Not a regression: no version of the script has replayed the build's flags (the 0.1.22 script ran
+`"$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope $goal` too).
 
 ### Observed behaviour
 
@@ -494,14 +461,20 @@ needs JDK 21+ to run.
 The generated `.lathe/lathe-sync.sh` runs
 `mvn --no-transfer-progress -Dmaven.build.cache.enabled=false -pl equalsverifier-core -am process-test-classes`
 without that property, so every scripted sync — including the one `verify_change` recommends —
-fails with a compilation error, and through [WS-11](#ws-11--a-failed-maven-compile-empties-the-modules-lathe-mirror)
-empties the mirror.
+fails with a compilation error, which before the
+[WS-11](gaps-archive.md#ws-11--a-failed-maven-compile-empties-the-modules-lathe-mirror--done) fix
+also emptied the mirror.
 
 ### Fix direction
 
-Carry the generating build's user properties (and active or deactivated profiles) into the rendered
-script, or document that the script replays only the bare goal and tell the user how to pass extra
-flags.
+Preferred: do not replay the command line, and document that flags every build needs belong in the
+build tool's persistent configuration — `.mvn/maven.config` (or `MAVEN_ARGS` on Maven 3.9+, set per
+shell, so `cmd` and PowerShell differ on Windows), and for the planned Gradle front-end
+`gradle.properties` or `~/.gradle/gradle.properties`; a failed scripted sync could point there.
+Replaying is unsafe because every Lathe-enabled build rewrites the script: per-invocation flags
+(`-Dtest=…`, `-DskipTests`, Gradle's `-x test`) would stick and silently narrow or disable capture,
+and secrets passed as `-D`/`-P` (signing keys, tokens) would be written to `.lathe/` and echoed by
+`lathe-sync: $*`.
 
 ### Regression targets
 
@@ -775,7 +748,7 @@ To be added with the fix:
 
 ## MC-7 — `verify_change` reports a clean tree while dependent modules are broken
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -802,7 +775,7 @@ None yet.
 
 ## MC-8 — The sync command `verify_change` suggests does not build the dependent modules it names
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -817,7 +790,14 @@ Running the suggested command built parent, testhelpers and core only.
 
 ### Fix direction
 
-Build the dependents: list them in the command, or give `lathe-sync.sh` a way to add `-amd`.
+Build the suggestion from the downstream modules, not the changed ones: `LatheEngine.verifyChange`
+passes `targets.keySet()` to `LatheLayout.scopedSyncCommand`, while `LatheVerifyChange` documents the
+command as the sync that builds the dependents.
+The script stays `-am`-only by design (`SyncScriptWriter`: "callers that need dependents name them"),
+and naming the dependents builds the changed module too.
+Above a few dozen dependents (Helidon's `common/media-type` has 142) suggest the unscoped full sync:
+`-am` over that many modules is the whole reactor anyway, and the list would overflow the 8,191-character
+Windows `cmd` command line.
 
 ### Regression targets
 
@@ -827,7 +807,7 @@ None yet.
 
 ## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -860,7 +840,7 @@ None yet.
 
 ## MC-10 — Position tools answer for an unrelated symbol when the position is not on one
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -888,7 +868,7 @@ None yet.
 
 ## MC-11 — `run_test` does not give the remedy when no test launch was captured
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -909,7 +889,7 @@ None yet.
 
 ## MC-12 — `search_symbols` finds nothing for a fully qualified name
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 
@@ -930,7 +910,7 @@ None yet.
 
 ## MC-13 — `verify_change` still advises a sync after a change has been fully reverted
 
-**Status: documented**
+**Status: deferred — Target: backlog**
 
 ### Observed behaviour
 

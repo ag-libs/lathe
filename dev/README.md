@@ -109,6 +109,8 @@ Two batteries for checking a server build against Dropwizard, EqualsVerifier and
 a release.
 Sync each workspace with the build under test first (`mvn process-test-classes`; Helidon's HEAD
 needs JDK 27, Dropwizard JDK 25).
+`mcp_battery.py`'s two `run_test` checks also need a captured test launch: run its test module once
+with `.lathe/lathe-sync.sh --tests <module>` (or `mvn test` on one test class).
 
 ```bash
 # MCP: every tool once, a break/verify/repair cycle, and a cross-module rename round-trip
