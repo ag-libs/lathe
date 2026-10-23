@@ -5,7 +5,7 @@ This document records a design discussion held on 2026-10-18: the goals, the fac
 It is meant to be picked up again later. Where the discussion leaned towards an option, that is noted, but nothing here is approved.
 
 Related designs:
-- [Multi-OS Design](../planned/lathe-multi-os.md): the sync script that runs the tool that ran the build (D3, decided 2026-10-19) and the tool resolver (D9).
+- [Multi-OS Design](../done/lathe-multi-os.md): the sync script that runs the tool that ran the build (D3, decided 2026-10-19) and the tool resolver (D9).
 - [Wider Maven Support](../done/lathe-wider-maven-support.md): the Maven 3.6.3 floor, the Plexus-descriptor fix, and detect-and-explain for unsupported setups.
 - [VS Code client](../planned/lathe-vscode-client.md): §7 first-run UX and §8 protocol handshake.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the existing coordinate-invoked front-end this design would reuse.

@@ -15,7 +15,7 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 
 1. [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) — **done (2026-10-11).**
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
-2. [Multi-OS](lathe-multi-os.md), all of it — decided 2026-10-20: Multi-OS closes before Gradle starts.
+2. [Multi-OS](../done/lathe-multi-os.md), all of it — decided 2026-10-20: Multi-OS closes before Gradle starts.
    Its sync script model (D3) is build-neutral and already golden-tested with a Gradle-shaped model, so Gradle fills the model in rather than writing script logic.
 3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — every module targets Java 17.
    Before slice 1, so the plugin is written against Java 17 from the start.
@@ -49,8 +49,8 @@ No showstopper. Three findings changed the design: the module-path split follows
 plexus-java's; Error Prone's flags are in `forkOptions.jvmArgumentProviders`; and the Isolated-Projects-safe
 plugin has three coding constraints. All are in the sections below and the [Spike results](#spike-results).
 
-**Multi-OS:** the [Multi-OS Design](lathe-multi-os.md) changes the launcher and sync files below.
-They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync script runs the tool that ran the build, written into it as a literal; the Gradle front-end renders it from the same template as Maven, with its own goals and module pattern ([Multi-OS](lathe-multi-os.md) D3).
+**Multi-OS:** the [Multi-OS Design](../done/lathe-multi-os.md) changes the launcher and sync files below.
+They become generated host-dialect scripts (`.sh` / `.cmd`, no symlinks), and the sync script runs the tool that ran the build, written into it as a literal; the Gradle front-end renders it from the same template as Maven, with its own goals and module pattern ([Multi-OS](../done/lathe-multi-os.md) D3).
 It closes before this design starts, so `latheSync` writes portable files from the start.
 
 ## Goal
@@ -77,8 +77,8 @@ know Maven exists. The entire Maven integration exists to *produce* these files:
 | `.lathe/workspace.json` | `WorkspaceManifestData` (incl. `outputs`, `buildFiles`) | `sync` goal (`WorkspaceManifestWriter`) |
 | `.lathe/java-home`, `.lathe/jvm.args` | plain text | `sync` goal |
 | `.lathe/style.json` | `WorkspaceStyle` | `sync` goal (`WorkspaceStyleWriter`, from Spotless config) |
-| `.lathe/lathe-sync.{sh,cmd}` | sync script running the tool that ran the build ([Multi-OS](lathe-multi-os.md) D3) | `sync` goal |
-| `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}`, and their `lathe-server.args`, `lathe-mcp.args` | generated launchers and the argfiles they read ([Multi-OS](lathe-multi-os.md)) | `sync` goal |
+| `.lathe/lathe-sync.{sh,cmd}` | sync script running the tool that ran the build ([Multi-OS](../done/lathe-multi-os.md) D3) | `sync` goal |
+| `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}`, and their `lathe-server.args`, `lathe-mcp.args` | generated launchers and the argfiles they read ([Multi-OS](../done/lathe-multi-os.md)) | `sync` goal |
 | `.lathe/<module>/{generated-sources,generated-test-sources}` | annotation-processor output mirror | compiler shim |
 | `.lathe/lathe.lock` | build lock, heartbeated, stale after 2 minutes (`LatheLock`) | Maven extension (whole build) |
 | `.lathe/<module>/module.lock` | held while a module's capture is written | compiler shim |
@@ -368,7 +368,7 @@ absolute paths. Instead, in capture mode only, the plugin sets
 `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }`.
 Spiked with build and configuration caches on: two consecutive capture-only runs both forked, and the
 real `test` task kept its own cache entry (`FROM-CACHE` / `UP-TO-DATE` as usual).
-The sync script ([Multi-OS](lathe-multi-os.md) D3) passes `--no-configuration-cache`, so formatter-version
+The sync script ([Multi-OS](../done/lathe-multi-os.md) D3) passes `--no-configuration-cache`, so formatter-version
 observation runs (see [Formatter](#formatter-stylejson)).
 It does not need `--no-build-cache` (the first draft passed it): a `FROM-CACHE` `compileJava` still runs its
 capture task (spiked 2026-10-23), so a sync keeps the speed of the build cache.
@@ -627,7 +627,7 @@ The split mirrors Maven's `process-test-classes` vs capture-only `test` (*decide
 Force a clean recapture if the build cache masks staleness: `./gradlew clean latheSync`.
 
 **The rendered `.lathe/lathe-sync.{sh,cmd}` (decided 2026-10-23).**
-It fills in the [Multi-OS](lathe-multi-os.md) D3 model, with three Gradle-specific points:
+It fills in the [Multi-OS](../done/lathe-multi-os.md) D3 model, with three Gradle-specific points:
 
 - **Module options go after the task.** A task option must follow its task (`latheSync --module app`), and
   Gradle rejects one placed before it. The D3 model today splices `moduleArgs` *before* the goals —
@@ -746,7 +746,7 @@ and a capture-only test run on Gradle 9.
 0. **A Maven-free `lathe-install`** — the logging and artifact-resolver interfaces, and the build-neutral sync work moved in from `lathe-maven-plugin` and `lathe-compiler` (the full list is in [What is reused vs new](#what-is-reused-vs-new)).
    Pure moves behind the existing Maven tests: no behaviour change, the invoker suite stays green.
    Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
-   the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](lathe-multi-os.md).
+   the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](../done/lathe-multi-os.md).
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
    tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`.
    Its TestKit suite includes the cache-key check and the configuration cache stored and reused. Delivers full **code

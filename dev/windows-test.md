@@ -2,7 +2,7 @@
 
 A manual check of a pre-release on a real Windows machine: install, build, then use Lathe in VS Code (or Cursor) and Zed.
 About 30 minutes.
-It is human session 1 of the [Multi-OS design](../docs/planned/lathe-multi-os.md#human-validation).
+It is human session 1 of the [Multi-OS design](../docs/done/lathe-multi-os.md#human-validation).
 
 Write down the Windows version (`winver`) and the pre-release version under test.
 

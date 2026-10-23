@@ -2,7 +2,10 @@
 
 ## Status
 
-**Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced. Phase B code-complete (B1a–c, B2, B4, 2026-10-21); B2, B3 and B4 wait on human sessions 1 and 2.** Lathe is developed on Linux and tested in CI on Linux, macOS and Windows (`windows-latest` is an enforcing row); it has not yet been run by a person on Windows.
+**Done (2026-10-23).** Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced; Phase B done (B1a–c, B2, B3, B4).
+Lathe is developed on Linux and tested in CI on Linux, macOS and Windows (`windows-latest` is an enforcing row).
+[Human session 1](#human-validation) passed on 2026-10-23 against the 0.1.23 release, on JDK 27: build, VS Code and Zed (diagnostics, completion, cross-module definition, references, rename, formatting once the sample declares a formatter, no leftover `java.exe`), the sync script from PowerShell, and a non-ASCII path in the console log.
+Session 2 (a non-developer with Cursor on the other Windows version) was not run: the maintainer judged session 1 and CI sufficient.
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
@@ -13,8 +16,8 @@ The full test suite and the invoker fixtures now run on the `windows-latest` CI 
 The human sessions in B2–B4 check what CI cannot: the editors themselves.
 
 It supersedes the Windows non-goal notes in
-[Sync Launcher](lathe-sync-launcher.md), [Workspace Java Home](../done/lathe-workspace-java-home.md),
-[Standalone Neovim Plugin](../done/lathe-standalone-nvim-plugin.md) and
+[Sync Launcher](../planned/lathe-sync-launcher.md), [Workspace Java Home](lathe-workspace-java-home.md),
+[Standalone Neovim Plugin](lathe-standalone-nvim-plugin.md) and
 [Shared Workspace Server](../potential/lathe-shared-workspace-server.md),
 and it changes the [Workspace Contract](../lathe-workspace-contract.md) (launcher files, the "executable" check, persisted relative paths).
 
@@ -47,7 +50,7 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 | macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | supported, tested in CI (JDK 25 row) |
 | Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | code-complete, tested in CI; human sessions pending |
 
-Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
+Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
 
 Windows 10 is a full target, not legacy.
 Microsoft ended its mainstream support in October 2025, but in mid-2026 it still ran on about 28–30% of desktop Windows PCs (StatCounter), and companies, where developer laptops live, upgrade later than consumers.
@@ -234,7 +237,7 @@ The `cmd` rendering has the same shape: `if not exist "%tool%"` for the check, a
 
 **The template is today's script.** The working Maven `lathe-sync.sh` stays the reference: the front-end supplies only its goals, its `--tests` goals, its module flag and its fixed flags.
 - **Maven:** `process-test-classes`; `test -Dlathe.capture.only=true -DfailIfNoTests=false`; `-pl <module>` plus `-am`; `--no-transfer-progress -Dmaven.build.cache.enabled=false`.
-- **Gradle:** `latheSync`, with its own `--tests` form, module pattern and `--no-build-cache` ([Gradle support](lathe-gradle-support.md)).
+- **Gradle:** `latheSync`, with its own `--tests` form, module pattern and `--no-build-cache` ([Gradle support](../planned/lathe-gradle-support.md)).
 - **OpenJDK:** its own goal, invoked by plugin coordinates. It supplies no `--tests` goals and no module flag, so the script keeps today's "arguments ignored" message. It gains the literals too: today it runs a bare `mvn` from `PATH` without `JAVA_HOME`, which in a JDK development shell can mean Maven on the unreleased JDK just built.
 
 The renderers (D2) turn these into the host dialect: POSIX first, since it exists, then Gradle on the same renderer, then `cmd`.
@@ -382,14 +385,14 @@ exit /b %ERRORLEVEL%
   | module flag, before each module | `-pl` | `--module`, a repeatable `latheSync` task option | not supported |
   | after the modules | `-am` | nothing: `latheSync` adds upstream itself | — |
 
-  "Not supported" is modeled explicitly, not as an empty-string sentinel. The Gradle column is an assumption that the [Gradle design](lathe-gradle-support.md) confirms; the golden tests include a Gradle-shaped model so the template is proven before Gradle starts.
+  "Not supported" is modeled explicitly, not as an empty-string sentinel. The Gradle column is an assumption that the [Gradle design](../planned/lathe-gradle-support.md) confirms; the golden tests include a Gradle-shaped model so the template is proven before Gradle starts.
 - The front-end writes the tool to `workspace.json`'s `buildTool` too, for the formatter's `%MVN%`.
 - `LatheLayout.SYNC_SCRIPT_COMMAND` and `scopedSyncCommand` get the name from E1, so every fix-it hint shows the host's command.
 
 ### Editor clients
 
 - **VS Code / Cursor** (`extension.ts`): the launcher name and spawn shape come from `process.platform` (D11). That's the only change.
-  Cursor installs the same `.vsix`; Open VSX publishing stays in the [VS Code client M2 plan](lathe-vscode-client.md).
+  Cursor installs the same `.vsix`; Open VSX publishing stays in the [VS Code client M2 plan](../planned/lathe-vscode-client.md).
 - **Zed:** a Windows target. Its project settings already start the launcher through a shell (`/bin/sh -c "exec .lathe/lathe-launcher.sh"`); on Windows they use the D11 form, `cmd.exe /d /s /c .lathe\lathe-launcher.cmd`. Zed can't run on a CI runner, so a human session checks it.
 - **Neovim, Emacs:** not on Windows ([Non-goals](#non-goals)). On Linux and macOS they keep today's launch, so they need no change.
 
@@ -408,7 +411,7 @@ exit /b %ERRORLEVEL%
 
 ## Gradle front-end
 
-[Gradle support](lathe-gradle-support.md) is proposed and spiked. Its central constraint is that the Gradle front-end writes the **same `.lathe/` contract**.
+[Gradle support](../planned/lathe-gradle-support.md) is proposed and spiked. Its central constraint is that the Gradle front-end writes the **same `.lathe/` contract**.
 That makes it a beneficiary of this design rather than a separate porting job:
 
 - **Most of it is portable for free.** The Gradle plugin builds on `lathe-core` and `lathe-install`. The schema records' path normalization (D8), the portable cache names (D7), the launcher renderers (D2), the argfiles (D5) and the tool resolver (D9) all come with them.
@@ -444,7 +447,7 @@ Each slice can be merged on its own.
    Enforcement (A0's `forbiddenapis`, A5) was dropped on 2026-10-21: the rules are a convention in `AGENTS.md`, and a tool can be added if violations show up.
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
-`lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
+`lathe-install` without Maven (formerly A2b) moved to the [Gradle design](../planned/lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
 
 ### Phase A — Portable core
 
@@ -703,7 +706,7 @@ A human re-check is needed only when a change touches the launchers, a client's 
 
 - **OpenJDK workspaces on Windows.** Building OpenJDK on Windows already requires Cygwin. The OpenJDK front-end's sync still uses the same script template on POSIX.
 - **Sharing one `.lathe/` between Windows and WSL.** Absolute paths are machine-local (R3). Only committed, shared files (`lathe-run.json`, `lathe-style.json`) must be portable, and D8 makes them so.
-- **A VS Code handler for the `lathe/sync` notification.** It's missing on every OS, and belongs to the [VS Code client](lathe-vscode-client.md) parity work.
+- **A VS Code handler for the `lathe/sync` notification.** It's missing on every OS, and belongs to the [VS Code client](../planned/lathe-vscode-client.md) parity work.
 - **Non-UTF-8 source encodings in the server.** R5 forbids default-charset APIs, but honoring the project's `-encoding` is a separate feature.
 - **PowerShell scripts** (D1).
 - **Paths outside the ANSI code page** (D5): Java and Maven can't use them, and Maven doesn't even report it. Documented in the Windows installation notes.

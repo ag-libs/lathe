@@ -1050,7 +1050,7 @@ the roadmap defines scope and the status document defines current behavior.
 It then copies that version's launchers into each workspace as `.lathe/lathe-launcher.sh` and
 `.lathe/lathe-mcp-launcher.sh`: plain files rather than symlinks, which Windows only creates with admin rights.
 A launcher reads the argfile beside it (copied too), which names only absolute jar paths, so a copy of the pair runs exactly like the original.
-On Windows the launchers are `.cmd` files; see [Multi-OS](planned/lathe-multi-os.md). The `servers/<version>/` tree is immutable and shared across every workspace that
+On Windows the launchers are `.cmd` files; see [Multi-OS](done/lathe-multi-os.md). The `servers/<version>/` tree is immutable and shared across every workspace that
 pins the same version; version-correct discovery is per-workspace, not through any machine-global
 pointer. The one exception is `~/.cache/lathe/latest/`, best-effort copies of the newest installed
 version's launchers for a user-global MCP registration that has no project context; sync also deletes a leftover

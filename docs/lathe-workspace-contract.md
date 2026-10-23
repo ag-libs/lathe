@@ -172,7 +172,7 @@ A front-end that cannot honor `--tests` or modules accepts and ignores them with
 Full specification: [Sync Launcher](planned/lathe-sync-launcher.md).
 
 The script runs the tool that ran the last build, on that build's JDK, both written in as absolute paths; it chooses nothing at runtime, and stops with a hint to rebuild if the tool is gone.
-Every front-end renders it from one model, `lathe-install`'s `SyncScript` ([Multi-OS](planned/lathe-multi-os.md) D3).
+Every front-end renders it from one model, `lathe-install`'s `SyncScript` ([Multi-OS](done/lathe-multi-os.md) D3).
 Maven writes it from `lathe:sync` on a full reactor.
 
 ### `java-home`

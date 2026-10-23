@@ -190,7 +190,7 @@ against the `multi-module` invoker workspace — both use the checkout build dir
       `this.items = List.copyOf(items)`).
     * No nullable annotations (`@Nullable`, `@NonNull`).
 - **Portability (Linux, macOS, Windows)** — no tool enforces these; follow them by convention
-  (design: [Multi-OS](docs/planned/lathe-multi-os.md)):
+  (design: [Multi-OS](docs/done/lathe-multi-os.md)):
     * **Relative paths stay `Path` values.** Compare them as `Path`s; turn one into a string only
       where it is saved, through `FileUtil.slashed` (`/` on every OS).
     * **Every URI from a client goes through `LatheUri.canonical`** where it enters the server, so a

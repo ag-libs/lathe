@@ -171,7 +171,7 @@ And any failure that leaves no `.lathe/` looks the same from the editor: "nothin
 The client and sync scripts close this gap:
 
 - **Before a build Lathe starts** (sync script, guided setup): determine the effective Maven version from the wrapper's `distributionUrl` in `.mvn/wrapper/maven-wrapper.properties`, or from `mvn -v`. If it's below 3.6.3, say so before running: *"Lathe needs Maven 3.6.3 or newer; this project uses 3.5.4 (from .mvn/wrapper). Upgrade the wrapper: …"*
-  With the [Multi-OS](../planned/lathe-multi-os.md) D3 decision, this check lives once, in `SyncCommand`.
+  With the [Multi-OS](lathe-multi-os.md) D3 decision, this check lives once, in `SyncCommand`.
 - **After a build, if `.lathe/` is still missing**, the client's existing "run the build" nudge adds what to check:
   *"If you already built: Lathe needs Maven 3.6.3+ (`mvn -v`) and prints `[lathe]` lines in the build log; if there are none, the extension didn't load. See the troubleshooting guide."*
 - **Version-skew protection** (an old `.mvn/extensions.xml` pin) is unchanged and out of scope here.
@@ -260,7 +260,7 @@ So CI **covers each axis instead of every combination** (a full cross product wo
 | Invoker suite only | **17** | **3.6.3** | Linux | Lathe built on 3.9, the fixtures run with 3.6.3 |
 | Invoker suite only | 21 | **3.8.8** | Linux | same |
 | Invoker suite only | 21 | **3.10** | Linux | same |
-| *(later)* Full build and tests | 25 | 3.9 | Windows | [Multi-OS](../planned/lathe-multi-os.md) Phase B |
+| *(later)* Full build and tests | 25 | 3.9 | Windows | [Multi-OS](lathe-multi-os.md) Phase B |
 
 About 8 jobs of about 3 minutes, all on every push and pull request; no nightly or separate compatibility workflow.
 Two more settings:
@@ -309,7 +309,7 @@ Approved 2026-10-18. Each slice builds and passes every test on its own and is o
 - **S5 — Fail fast, clearly** (D3): one requirements check for the Maven version and every module's compiler plugin, stopping the build with one message; the `old-compiler` fixture.
   **Exit:** a compiler plugin 3.1 project stops before compiling, with Lathe's message.
 - **S6 — Tell the user** (D6 and D5's post-build hint): the client nudge text and the docs (README and installation guide to Java 17+ and Maven 3.6.3+, plus troubleshooting built around D3's message).
-  D5's **pre-flight check** waits for `SyncCommand` ([Multi-OS](../planned/lathe-multi-os.md) A2) instead of going into today's shell script.
+  D5's **pre-flight check** waits for `SyncCommand` ([Multi-OS](lathe-multi-os.md) A2) instead of going into today's shell script.
   **Exit:** each case in the D6 table produces its message, and the docs show the new floors.
   *As built:* README requirements (Java 17+, Maven 3.6.3+ with compiler plugin 3.6.2+, the CI-verified versions) and two troubleshooting entries
   (no `[lathe]` lines in the build log means the extension didn't load; D3's message and its fixes); the Neovim and VS Code nudges add one sentence pointing at the build log and the Maven floor.
@@ -320,7 +320,7 @@ Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1
 
 ## Relationship to other designs
 
-- **[Multi-OS Design](../planned/lathe-multi-os.md):** the CI matrix grows along three axes: OS, Maven version, and JDK.
+- **[Multi-OS Design](lathe-multi-os.md):** the CI matrix grows along three axes: OS, Maven version, and JDK.
   Its platform table's "Java 21+" becomes "Java 17+" once D7 lands. D5's pre-flight check lives in `SyncCommand` (multi-OS D3) and uses its tool resolver (D9) to find the wrapper.
 - **[Personal Setup](../potential/lathe-personal-setup.md) (potential):** with real users on older Maven, `-Dmaven.ext.class.path` (works since Maven 3.0.2) is the main personal-mode path, and `~/.m2/extensions.xml` (Maven 3.10+) the minority path. D1 matters for personal mode too: the extension must load on old Maven whichever way it is registered.
 - **[Gradle support](../planned/lathe-gradle-support.md):** benefits from D7.
