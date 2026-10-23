@@ -256,9 +256,21 @@ The working directory is the project directory, which is what `LaunchCapture` de
 `LaunchCapture`'s existing arg parser (`--module-path`, `--patch-module`, `--add-*`) is otherwise reused
 verbatim.
 
-Capture is driven by `latheSync --with-tests` running the `test` task in **capture-only** mode (the reused
+Capture is driven by `latheSync -Plathe.capture.only=true` running the `test` task in **capture-only** mode (the reused
 `CaptureOnlyPostDiscoveryFilter` skips executing tests; the listener still fires) — exactly Maven's
 `-Dlathe.capture.only=true` fork.
+
+**Switching to capture-only — a project property, not a task option (decided 2026-10-23).**
+Every project's plugin reads `lathe.capture.only` through `providers.gradleProperty` while the build is configured (a configuration-cache input), and when it is `true` configures its own real `test` task:
+
+- `systemProperty("lathe.capture.only", "true")`, which the worker's `CaptureOnlyPostDiscoveryFilter` reads;
+- `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }` (see the cache interaction below), and `failOnNoDiscoveredTests = false` if slice 4 needs it;
+- a dependency from `latheSync` on the `test` task, so the one command runs them.
+
+A task option (`latheSync --with-tests`, the first draft of this decision) cannot do this: Gradle applies it to `latheSync` alone, after every project's `test` task is configured, and under Isolated Projects the root may not configure other projects' tasks anyway.
+The property keeps Maven's flag name (`LatheFlags.CAPTURE_ONLY`), passed with `-P` like `-Plathe.disabled`; it also stays clear of Gradle's own `Test --tests` filter option.
+
+The real `test` task is reconfigured, not copied: a separate `Test` task built from `test`'s settings would reconstruct the launch, missing whatever a build or plugin adds in `doFirst` actions or argument providers it does not copy.
 
 **Getting the listener into the fork (decided 2026-10-23).**
 As the Maven extension adds `lathe-junit` as a test dependency of every module, the project plugin adds it to `testRuntimeOnly` of every project with the `java` plugin.
@@ -470,22 +482,21 @@ if there is one, stops the build with one message naming each problem, its fix, 
 ### The sync command
 
 ```bash
-./gradlew latheSync --with-tests   # first time, and when test setup changes
-./gradlew latheSync                # refresh
+./gradlew latheSync -Plathe.capture.only=true   # first time, and when test setup changes
+./gradlew latheSync                             # refresh
 ```
 
 `latheSync` depends on `compileJava` + `compileTestJava` for every subproject, so one command captures
 compiler options + annotation processing (main & test), mirrors bytecode, derives `main-launch.json`,
 resolves `-sources`/JDK sources, writes `workspace.json`, and installs the server + client into
 `~/.cache/lathe/`.
-`--with-tests` also runs each `test` task in capture-only mode and captures `test-launch.json` (in-fork —
-**no tests execute**).
-The split mirrors Maven's `process-test-classes` vs capture-only `test` (*decided 2026-10-23*), and the option
-is not named `--tests`, which Gradle's own `Test` task uses for a test filter.
+With `-Plathe.capture.only=true` it also runs each `test` task in capture-only mode and captures
+`test-launch.json` (in-fork — **no tests execute**; see [Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)).
+The split mirrors Maven's `process-test-classes` vs capture-only `test` (*decided 2026-10-23*).
 
 | Maven | Gradle |
 |---|---|
-| `mvn clean test -Dlathe.capture.only=true` | `./gradlew latheSync --with-tests` |
+| `mvn clean test -Dlathe.capture.only=true` | `./gradlew latheSync -Plathe.capture.only=true` |
 | `mvn process-test-classes` (refresh) | `./gradlew latheSync` |
 | auto-refresh on `mvn test`/`verify`/`install` | auto-refresh on `./gradlew build`/`test`/`assemble` |
 
@@ -498,7 +509,8 @@ It fills in the [Multi-OS](lathe-multi-os.md) D3 model, with three Gradle-specif
   Gradle rejects one placed before it. The D3 model today splices `moduleArgs` *before* the goals —
   `SyncScriptTest`'s Gradle-shaped case expects `--module app --module core latheSync` — so the model gains a
   way to place them after the goals (a change to `SyncScript` and its test, made before slice 2).
-  Its `testsGoals` for Gradle are `latheSync --with-tests`.
+  Its `testsGoals` for Gradle are `latheSync -Plathe.capture.only=true`, the counterpart of Maven's
+  `test -Dlathe.capture.only=true`.
 - **It replays how the build was launched.** A build registered through an init script that is not in
   `~/.gradle/init.d/` was started with `--init-script <file>`; the script passes the same flag, or the
   replayed build runs without Lathe. The same holds for the `-P` / `-D` properties the build needed (the
@@ -590,10 +602,10 @@ cache and Isolated Projects enabled.
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
    action on `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`. Delivers full **code
    intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `--with-tests`, a repeatable `--module` task option placed after the task, the replayed init scripts and properties); the per-project `latheFacts` merge. Completes the editor
+2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed init scripts and properties); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
-4. **Test launch (in-fork)** — `lathe-junit` on every project's `testRuntimeOnly` + worker-jar filter; capture-only (always-run, never-cached) via `latheSync --with-tests`.
+4. **Test launch (in-fork)** — `lathe-junit` on every project's `testRuntimeOnly` + worker-jar filter; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
    First confirms Gradle 9's no-tests failure and, if needed, sets `failOnNoDiscoveredTests = false` in capture mode.
    Delivers test run/debug/replay for non-modular **and** any modular test whose directives are real JVM
    args (the common case).
@@ -645,7 +657,8 @@ cache and Isolated Projects enabled.
 9. **Readiness review** — *decided 2026-10-23:* the capture action keeps the last good capture on a failed
    compile and does all of `syncOutput`; `.lathe/<module>` is the project directory; the mirror stays (no
    `externalOutput`); `jvm.args` comes from the compile's fork options and `org.gradle.jvmargs`; `lathe-junit`
-   goes on every `testRuntimeOnly`; `latheSync --with-tests` captures tests; the sync script places module
+   goes on every `testRuntimeOnly`; `latheSync -Plathe.capture.only=true` captures tests (a project property, since a task option cannot
+   reconfigure other projects' `test` tasks); the sync script places module
    options after the task and replays init scripts and properties; per-project `latheFacts` merged at the root
    keep Isolated Projects safe; build logic is in `buildFiles`; composite builds of Java projects are out.
    Each is detailed in its section.
