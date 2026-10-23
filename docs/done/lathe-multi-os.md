@@ -2,18 +2,18 @@
 
 ## Status
 
-**Done (2026-10-23).** Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced; Phase B done (B1a–c, B2, B3, B4).
+**Done (2026-10-23).** Phase A done (B0, A1, A2, A3, A4, A6; enforcement dropped); D4 (no links) done; R1 enforced; Phase B done (B1a–c, B2, B4); B3 dropped with human session 2 (see [B3](#b3--hardening-and-first-users)).
 Lathe is developed on Linux and tested in CI on Linux, macOS and Windows (`windows-latest` is an enforcing row).
 [Human session 1](#human-validation) passed on 2026-10-23 against the 0.1.23 release, on JDK 27: build, VS Code and Zed (diagnostics, completion, cross-module definition, references, rename, formatting once the sample declares a formatter, no leftover `java.exe`), the sync script from PowerShell, and a non-ASCII path in the console log.
 Session 2 (a non-developer with Cursor on the other Windows version) was not run: the maintainer judged session 1 and CI sufficient.
+Of Windows 10 and 11, only the maintainer's machine was checked by hand; the other version is supported on CI evidence only (`windows-latest` is a Windows Server build).
 This document defines how Lathe becomes **portable by construction**:
 OS differences are confined to a small, named platform edge;
 everything else is OS-neutral, and checks enforce it.
 Windows 10 and 11, with Cursor (through the VS Code extension) and Zed as its target clients (decided 2026-10-19), is the first platform added on top of it.
 
 It is based on a read-only audit of the code done on 2026-10-18.
-The full test suite and the invoker fixtures now run on the `windows-latest` CI row, but no person has used it on Windows yet.
-The human sessions in B2–B4 check what CI cannot: the editors themselves.
+The full test suite and the invoker fixtures run on the `windows-latest` CI row, and human session 1 checked what CI cannot, the editors themselves, on the maintainer's Windows machine.
 
 It supersedes the Windows non-goal notes in
 [Sync Launcher](../planned/lathe-sync-launcher.md), [Workspace Java Home](lathe-workspace-java-home.md),
@@ -48,7 +48,7 @@ Most of the work this needs is also a fix for real Linux and macOS bugs (paths w
 |---|---|---|---|---|
 | Linux | any with Java 17+ | POSIX `sh` | `ubuntu-latest` | supported, tested |
 | macOS | 13+ (Intel, Apple silicon) | POSIX `sh` | `macos-latest` | supported, tested in CI (JDK 25 row) |
-| Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | code-complete, tested in CI; human sessions pending |
+| Windows | 10 (1903+), 11 (x64, arm64) | `cmd` batch | `windows-latest` | supported: tested in CI; checked by hand on one machine (session 1), the other version on CI evidence only |
 
 Common to all: Java 17+, Maven 3.6.3+ (both floors from [Wider Maven and JDK Support](lathe-wider-maven-support.md)), no administrator rights, no extra shell or toolchain (no Git Bash, MSYS2, Cygwin or WSL on Windows).
 
@@ -615,7 +615,7 @@ B1c, done (2026-10-21): the server's own process starts.
 
 #### B2 — VS Code and Cursor
 
-Code-complete (2026-10-21); the exit waits on human session 1.
+Done (2026-10-23): human session 1 passed.
 - `lathe-vscode/src/launch.ts` holds the launch rule (D11): `lathe-launcher.cmd` on Windows, started as `%ComSpec% /d /s /c ""<path>""` with `windowsVerbatimArguments`, else `lathe-launcher.sh` directly, from the workspace root.
   The extension hands it to the language client as an `Executable`, not a process of its own, so the client still kills a server that outlives shutdown (`taskkill /T` on Windows, which takes the JVM under `cmd.exe` too).
 - `npm test` (run by Maven after `npm run check`) starts a stub launcher through that same command, the way the client does, from a directory with a space in its name: on the Windows row it runs the `cmd /d /s /c` quoting for real. The real server over the `.cmd` launcher is LspSmokeTest's.
@@ -625,14 +625,18 @@ Code-complete (2026-10-21); the exit waits on human session 1.
 
 #### B3 — Hardening and first users
 
+**Dropped (2026-10-23)** with human session 2, its exit; neither task has a record:
 - Watch for E4 retries in Windows CI logs.
+  The retry code shipped (3d040afd, PR #33), but no one has checked the logs.
+  It stays an **ongoing watch item**: a Windows CI failure in file deletion or replacement is the first place to look.
 - Test-run argfiles on Dropwizard and Helidon.
+  The argfile feature shipped (1ddbe409) and its unit tests run on every OS, but it was not tried on those two projects.
 
-**Exit:** **human session 2** passes.
+**Exit (not run):** human session 2 passes.
 
 #### B4 — Zed
 
-Code-complete (2026-10-21) with B2; the exit waits on human session 1.
+Done (2026-10-23) with B2: human session 1 passed.
 - The Windows settings in `docs/guide/editors/zed.md`: `binary.path` `cmd.exe` with `["/d", "/s", "/c", ".lathe\\lathe-launcher.cmd"]`.
 - Lands with B2, so human session 1 covers both editors. Its Zed pass: error squiggle, cross-module go to definition, references, rename, and no `java.exe` left after closing.
 
@@ -730,4 +734,6 @@ Until Phase B ships, a Windows user can run Lathe unchanged through VS Code's Re
 ## Open questions
 
 1. ~~Should Neovim, Emacs and Zed on Windows be a goal for this effort?~~ *Resolved 2026-10-19: Zed yes (B4), Neovim and Emacs no.*
-2. Which Windows versions do the maintainer's and the friend's machines run? That decides whether a Windows 10 VM is needed.
+2. ~~Which Windows versions do the maintainer's and the friend's machines run? That decides whether a Windows 10 VM is needed.~~
+   *Resolved 2026-10-23: session 2 was dropped, so no VM.*
+   *Only the maintainer's machine was checked by hand; the other Windows version is supported on CI evidence only (`windows-latest`, a Windows Server build).*
