@@ -190,6 +190,9 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Starts the workspace's own `.lathe/` launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
+- [New Java Project (VS Code)](planned/lathe-vscode-new-project.md) — **proposed.** A
+  `Lathe: New Java Project` command for beginners: writes a minimal Lathe-enabled Maven project from
+  inline templates (no archetype), opens it, and runs the first build in a terminal. VS Code and Maven only.
 - [Wider Maven and JDK Support](done/lathe-wider-maven-support.md) — **done (2026-10-19, PR #24).** Maven
   3.6.3+ through a Plexus descriptor (Maven <3.9's Sisu silently dropped the extension) and the 3.6.3 API floor;
   JDK 17+ for every module, the server included, with javac API newer than 17 behind a multi-release jar
