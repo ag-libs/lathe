@@ -10,9 +10,10 @@ It needs the pre-release published: on Maven Central, and its `lathe-<version>.v
 
 ## 1. Install
 
-- **Java 21:** the Temurin 21 LTS MSI from [adoptium.net](https://adoptium.net/temurin/releases/?os=windows&version=21).
+- **Java 17:** the Temurin 17 LTS MSI from [adoptium.net](https://adoptium.net/temurin/releases/?os=windows&version=17) — the oldest JDK Lathe runs on.
   In the installer, enable **Set JAVA_HOME variable** (off by default); **Add to PATH** is on.
-  Check in a new `cmd` window: `java -version` prints 21, and `echo %JAVA_HOME%` prints its folder.
+  Check in a new `cmd` window: `java -version` prints 17, and `echo %JAVA_HOME%` prints its folder.
+  With time to spare, repeat steps 3 and 4 on Temurin 21.
 - **VS Code** (or Cursor) and, optionally, **Zed**.
 - No Maven: the sample project brings the Maven Wrapper.
 
@@ -45,6 +46,10 @@ mvnw.cmd -B verify
 - [ ] **References:** `Shift`+`F12` on `greet` lists the call in `Main.java`.
 - [ ] **Rename:** `F2` on `greet` → `hello`; both files change. Rename it back with `F2`.
 - [ ] **Format, CRLF:** in `Greeter.java` click **LF** in the status bar and pick **CRLF**, indent one line wrongly, then `Shift`+`Alt`+`F`. Only that line changes and the file stays CRLF.
+- [ ] **Rename refused outside the project:** `F2` on `String` is refused with a message that it is declared outside the project, and no file changes.
+- [ ] **A failed build keeps Lathe working:** with VS Code open, add `int x = "a";` to `Greeter.java` and save, then run `mvnw.cmd -B verify` in `cmd` (it fails).
+  Back in `Main.java`, `greet` still resolves and only `Greeter.java` shows the error.
+  Remove the line and save: everything is clean again without another build.
 - [ ] **No leftover server:** close VS Code. Task Manager → **Details** shows no `java.exe`.
 
 **Cursor:** install the same `.vsix` the same way, then repeat the diagnostics and go-to-definition checks.
