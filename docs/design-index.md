@@ -190,6 +190,11 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Starts the workspace's own `.lathe/` launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
+- [Run and Test in VS Code](planned/lathe-vscode-run-test.md) — **approved, spikes first.** Test
+  Explorer (lazy per-file discovery, run at every level, live `lathe/testEvent` results, failure
+  locations, output, cancel) and `main()` CodeLens + named configs, all client-side over the existing
+  `lathe.run.*` commands; working-tree E2E with `@vscode/test-electron` against the `multi-module`
+  invoker fixture. Debugging deferred.
 - [New Java Project (VS Code)](planned/lathe-vscode-new-project.md) — **proposed.** A
   `Lathe: New Java Project` command for beginners: writes a minimal Lathe-enabled Maven project from
   inline templates (no archetype), opens it, and runs the first build in a terminal. VS Code and Maven only.
