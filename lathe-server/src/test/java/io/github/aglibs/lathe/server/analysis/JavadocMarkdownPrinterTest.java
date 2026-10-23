@@ -102,7 +102,11 @@ class JavadocMarkdownPrinterTest {
         parseMethodDoc(
             "class T {\n /**\n  * <pre>{@code\n  * first();\n  * second();\n  * }</pre>\n  */\n"
                 + " void m() {} }");
-    assertThat(JavadocMarkdownPrinter.format(tree)).contains("first();\nsecond();");
+    final String result = JavadocMarkdownPrinter.format(tree);
+    // javac 17 and 21 keep the space after each comment `*` (25 drops it): allow leading
+    // whitespace.
+    assertThat(result).containsPattern("first\\(\\);\\n\\s*second\\(\\);");
+    assertThat(result.lines()).noneMatch(line -> line.strip().equals("`"));
   }
 
   @Test

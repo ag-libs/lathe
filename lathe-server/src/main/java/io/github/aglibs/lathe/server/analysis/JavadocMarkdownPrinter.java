@@ -117,7 +117,8 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     // block's layout is meaningful.
     final String body = node.getBody().getBody();
     final String text = inPre ? body : body.strip().replaceAll("\\s+", " ");
-    sb.append(node.getKind() == DocTree.Kind.CODE ? "`%s`".formatted(text) : text);
+    // A <pre> block is already fenced; backticks there would show literally.
+    sb.append(node.getKind() == DocTree.Kind.CODE && !inPre ? "`%s`".formatted(text) : text);
     return null;
   }
 
