@@ -78,6 +78,37 @@ class JavadocMarkdownPrinterTest {
     assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("Use <T>.");
   }
 
+  // javac splits the first sentence from the rest and drops the whitespace between them.
+  @Test
+  void format_multiSentenceDescription_keepsSpaceBetweenSentences() throws IOException {
+    final var tree =
+        parseMethodDoc("class T { /** Factory method. For general use. */ void m() {} }");
+    assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("Factory method. For general use.");
+    assertThat(JavadocMarkdownPrinter.mainDescription(tree))
+        .isEqualTo("Factory method. For general use.");
+  }
+
+  @Test
+  void format_inlineCodeWrappedAcrossLines_collapsesToOneSpan() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            "class T {\n /** Types ({@code\n  * int}, {@code long}). */\n void m() {} }");
+    assertThat(JavadocMarkdownPrinter.format(tree)).isEqualTo("Types (`int`, `long`).");
+  }
+
+  @Test
+  void format_codeBlockInPre_keepsLineBreaks() throws IOException {
+    final var tree =
+        parseMethodDoc(
+            "class T {\n /**\n  * <pre>{@code\n  * first();\n  * second();\n  * }</pre>\n  */\n"
+                + " void m() {} }");
+    final String result = JavadocMarkdownPrinter.format(tree);
+    // javac 17 and 21 keep the space after each comment `*` (25 drops it): allow leading
+    // whitespace.
+    assertThat(result).containsPattern("first\\(\\);\\n\\s*second\\(\\);");
+    assertThat(result.lines()).noneMatch(line -> line.strip().equals("`"));
+  }
+
   @Test
   void format_linkTagWithoutLabel_rendersAsCode() throws IOException {
     final var tree = parseMethodDoc("class T { /** See {@link String#length()}. */ void m() {} }");

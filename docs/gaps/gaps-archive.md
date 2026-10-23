@@ -7,6 +7,39 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-060 — Javadoc rendering joins the first sentence to the body and splits inline code across lines — done
+
+**Status: done — Target: next** (commit 9afdca4d).
+
+Found through MCP `describe_symbol` on EqualsVerifier (JDK 17); hover and signature help share the
+renderer:
+
+| Javadoc source | Rendered before the fix |
+|---|---|
+| `Factory method. For general use.` (`EqualsVerifier.forClass`) | `Factory method.For general use.` |
+| `… running Java application. An enum class …` (`java.lang.Class`) | `… running Java application.An enum class …` |
+| `{@code` / `int}` split across two source lines | a code span holding the newline and indent: `` `\n int` `` |
+
+### Resolution
+
+`JavadocMarkdownPrinter` printed the first sentence and then the body, but javac splits the two at
+the sentence boundary and drops the whitespace between them; it now prints
+`DocCommentTree.getFullBody()`, the unsplit original, in `format()` and `mainDescription()`.
+Inline `{@code}`/`{@literal}` text outside `<pre>` has its whitespace runs collapsed; inside `<pre>`
+it keeps its layout.
+Verified end to end: `describe_symbol` on `forClass` and `java.lang.Class` renders both sentences
+intact.
+
+### Regression targets
+
+- `JavadocMarkdownPrinterTest.format_multiSentenceDescription_keepsSpaceBetweenSentences`
+  (failed before the fix).
+- `JavadocMarkdownPrinterTest.format_inlineCodeWrappedAcrossLines_collapsesToOneSpan` (failed before
+  the fix).
+- `JavadocMarkdownPrinterTest.format_codeBlockInPre_keepsLineBreaks`.
+
+---
+
 ## EG-059 — Rename accepts a JDK or dependency symbol and rewrites every use in the reactor — done
 
 **Status: done — Target: next** (commit c6d84e28).
