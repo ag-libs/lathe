@@ -21,6 +21,7 @@ import java.util.Map;
 final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   private final StringBuilder sb = new StringBuilder();
+  private boolean inPre;
 
   private JavadocMarkdownPrinter() {}
 
@@ -30,8 +31,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     }
 
     final var printer = new JavadocMarkdownPrinter();
-    printer.scan(tree.getFirstSentence(), null);
-    printer.scan(tree.getBody(), null);
+    printer.scan(tree.getFullBody(), null);
     printer.formatBlockTags(tree.getBlockTags());
     return printer.sb.toString().strip();
   }
@@ -42,8 +42,7 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
     }
 
     final var printer = new JavadocMarkdownPrinter();
-    printer.scan(tree.getFirstSentence(), null);
-    printer.scan(tree.getBody(), null);
+    printer.scan(tree.getFullBody(), null);
     return printer.sb.toString().strip();
   }
 
@@ -114,11 +113,11 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
 
   @Override
   public Void visitLiteral(final LiteralTree node, final Void unused) {
-    if (node.getKind() == DocTree.Kind.CODE) {
-      sb.append("`").append(node.getBody().getBody()).append("`");
-    } else {
-      sb.append(node.getBody().getBody());
-    }
+    // Inline text that wraps a source line keeps the line break and comment indent; only a <pre>
+    // block's layout is meaningful.
+    final String body = node.getBody().getBody();
+    final String text = inPre ? body : body.strip().replaceAll("\\s+", " ");
+    sb.append(node.getKind() == DocTree.Kind.CODE ? "`%s`".formatted(text) : text);
     return null;
   }
 
@@ -134,7 +133,10 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       case "b", "strong" -> sb.append("**");
       case "i", "em" -> sb.append("*");
       case "code" -> sb.append("`");
-      case "pre" -> sb.append("\n```\n");
+      case "pre" -> {
+        inPre = true;
+        sb.append("\n```\n");
+      }
       case "p" -> sb.append("\n\n");
       case "br" -> sb.append("  \n");
       case "li" -> sb.append("- ");
@@ -149,7 +151,10 @@ final class JavadocMarkdownPrinter extends DocTreeScanner<Void, Void> {
       case "b", "strong" -> sb.append("**");
       case "i", "em" -> sb.append("*");
       case "code" -> sb.append("`");
-      case "pre" -> sb.append("\n```");
+      case "pre" -> {
+        inPre = false;
+        sb.append("\n```");
+      }
       case "li" -> sb.append("\n");
       default -> {}
     }
