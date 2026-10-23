@@ -111,7 +111,7 @@ reused):
 - [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
   front-end writes: path, schema record, writer, readers, required/recommended/optional, Maven vs
   OpenJDK coverage, and known issues.
-- [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.14 and 9.8.** A
+- [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.14 and 9.8, readiness-reviewed 2026-10-23.** A
   `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
   typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,
   plexus-java module placement, polyglot Maven-orchestrated build. Decided 2026-10-18, order revised 2026-10-20: after all of Multi-OS and

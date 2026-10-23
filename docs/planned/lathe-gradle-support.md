@@ -29,6 +29,13 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 - **Lathe artifacts come from a repository the reactor fills**, never `~/.m2` (the trap the invoker suite hit as 7a).
 - **JDK 17+:** the plugin targets Java 17, so the Gradle daemon may run on 17; toolchain test workers on 17 load `lathe-junit`.
 
+**Readiness review 2026-10-23** — checked against the code before slice 0; decided:
+
+- The sync script model renders a front-end's module options *before* its goals, which Gradle rejects for a task option; the model gains a flag to put them after (see [The sync command](#the-sync-command)).
+- Slice 0 moves every build-neutral sync class, not only the five first listed (see [What is reused vs new](#what-is-reused-vs-new)).
+- The compiler capture matches `LatheCompiler.syncOutput` in full: it keeps the last good capture when the compile fails, mirrors generated sources, and takes the module lock (see [Capture point A](#capture-point-a--compiler-arguments--annotation-processing)).
+- `jvm.args`, the `lathe-junit` injection, the module directory name, `externalOutput`, Gradle 9's no-tests failure, build-logic `buildFiles`, the sync script's replay of init scripts and properties, and Isolated Projects each get a decision in their section.
+
 **Spiked 2026-10-10** on Gradle 8.14.6 and 9.8.1 (JDK 21) with a throwaway multi-project build
 (a `java-library` project, a plain `java` project, an app with an annotation processor, JUnit 5, Guava, and Spotless).
 Results are folded into the sections below and summarized in [Spike results](#spike-results).
@@ -63,10 +70,12 @@ know Maven exists. The entire Maven integration exists to *produce* these files:
 | `.lathe/java-home`, `.lathe/jvm.args` | plain text | `sync` goal |
 | `.lathe/style.json` | `WorkspaceStyle` | `sync` goal (`WorkspaceStyleWriter`, from Spotless config) |
 | `.lathe/lathe-sync.{sh,cmd}` | sync script running the tool that ran the build ([Multi-OS](lathe-multi-os.md) D3) | `sync` goal |
-| `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}` | generated launchers ([Multi-OS](lathe-multi-os.md)) | `sync` goal |
+| `.lathe/lathe-launcher.{sh,cmd}`, `lathe-mcp-launcher.{sh,cmd}`, and their `lathe-server.args`, `lathe-mcp.args` | generated launchers and the argfiles they read ([Multi-OS](lathe-multi-os.md)) | `sync` goal |
+| `.lathe/<module>/{generated-sources,generated-test-sources}` | annotation-processor output mirror | compiler shim |
 | `.lathe/lathe.lock` | build lock, heartbeated, stale after 2 minutes (`LatheLock`) | Maven extension (whole build) |
+| `.lathe/<module>/module.lock` | held while a module's capture is written | compiler shim |
 
-The full list, with semantics, is the workspace contract document the build-agnostic step writes.
+The authoritative list, with semantics and which files are required, is the [Workspace Contract](../lathe-workspace-contract.md); this table is a summary.
 Gradle names its source trees `classes`/`test-classes` like Maven: they are Lathe's mirror names.
 
 **Therefore Gradle support = a Gradle plugin that emits the same files.** Everything downstream is
@@ -97,6 +106,9 @@ the two decisions below (in-fork test capture; the honest limit on compiler-arg 
 
 - Non-JVM Gradle projects; Kotlin/Groovy/Scala compilation (Java only, as today).
 - Android Gradle Plugin (a separate model; explicit non-goal).
+- Composite builds whose *included builds are Java projects the editor should cover* (`includeBuild("../lib")`):
+  only the main build's projects get a `.lathe/` model. Included builds that only contribute build logic
+  are watched as `buildFiles` (see [Dependency sources & `workspace.json`](#dependency-sources--workspacejson)).
 - Any change to the server, runner, MCP server, clients, or the `.lathe/` schema — the ones that are
   needed land beforehand in the [build-agnostic step](../done/lathe-build-agnostic-core.md).
 
@@ -113,16 +125,23 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 
 | Code | Lives in | Tied to Maven by |
 |---|---|---|
-| JDK sources, type-index shards, `workspace.json`, the sync script, `main-launch.json` | `lathe-maven-plugin` (`JdkSourceSync`, `JdkTypeIndexSync`, `WorkspaceManifestWriter`, `SyncScriptWriter`, `MainLaunchWriter`) | Maven's `Log` (one import each); `MainLaunchWriter` also reads `MavenProject` |
-| Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`) | a `maven-core` / `maven-plugin-api` dependency |
-| `lsp-params-*.json`, the bytecode mirror, compile stamps | `lathe-compiler` (`ParamsWriter`, `LatheCompiler.syncOutput`) | Plexus `CompilerConfiguration` |
+| JDK sources and their type-index shard | `lathe-maven-plugin` (`jdk/JdkSource`, `JdkSourceResolver`, `JdkSourceSync`; `typeindex/JdkTypeIndexSync`, `TypeIndexFiles`) | Maven's `Log` |
+| Dependency `-sources` extraction and type-index shards | `lathe-maven-plugin` (`dependency/DependencySource`, `DependencySourceSync`; `typeindex/DependencyTypeIndexSync`) | Maven's `Log` and artifact types; *resolving* the jars stays per tool (`DependencySourceResolver` on Maven, an artifact view on Gradle) |
+| `workspace.json`, the sync script, `main-launch.json` | `lathe-maven-plugin` (`WorkspaceManifestWriter`, `SyncScriptWriter`, `MainLaunchWriter`) | Maven's `Log`; `MainLaunchWriter` also reads `MavenProject` |
+| Formatter jars and `style.json` | `lathe-maven-plugin` (`FormatterResolver`, `WorkspaceStyleWriter`) | Aether resolution, and the Spotless POM reading, which stays Maven-only |
+| `jvm.args` | `lathe-maven-plugin` (`JvmArgsWriter`) | reads the compiler plugin's POM configuration and `.mvn/jvm.config`; the *writing* moves, the reading stays per tool |
+| Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`, `LauncherCopier`) | a `maven-core` / `maven-plugin-api` dependency |
+| `lsp-params-*.json`, the bytecode and generated-sources mirrors, compile stamps | `lathe-compiler` (`ParamsWriter`, `LatheCompiler.syncOutput`) | Plexus `CompilerConfiguration` |
+
+`ReactorProjects`, `ModuleResourcesReader`, `SyncCoordinator`, and the Mojos read the Maven model and stay in `lathe-maven-plugin`; the Gradle plugin has its own counterparts.
 
 They move into `lathe-install`, which then depends only on `lathe-core`:
 
 - a small logging interface replaces Maven's `Log`;
 - an artifact-resolver interface, with a Maven implementation (Aether, in `lathe-maven-plugin`) and a Gradle one (in the plugin) — two implementations, so the interface earns its place;
-- `ParamsWriter` and the mirror/stamp writer take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
-- `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values.
+- `ParamsWriter` and the mirror/stamp writer (`syncOutput`, including its keep-the-last-good-capture rule on a failed compile) take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
+- `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values;
+- the dependency and JDK source sync, the type-index shards, `WorkspaceStyleWriter`, and `JvmArgsWriter` take the resolved jars and flags as values.
 
 This is this design's slice 0. Multi-OS already puts the sync script model and renderers into `lathe-install` without Maven imports, so slice 0 moves the rest.
 
@@ -137,7 +156,7 @@ direct analog of `lathe-maven-extension` + `lathe-maven-plugin`.
 | `LatheLifecycleParticipant.afterProjectsRead` + `LatheModelInjector` | wire every module before build | **Settings plugin** using `gradle.lifecycle.beforeProject { }` to apply the project plugin to every project (Gradle 8.8+, no fallback) |
 | `lathe:init` (mkdir `.lathe/`) | create dir at reactor root | project-plugin apply / `latheInit` |
 | `lathe:sync` + `SyncCoordinator` (aggregator, `process-test-classes`) | source jars, JDK sources, server install, `workspace.json`, `main-launch.json` | root task **`latheSync`** |
-| `lathe-compiler` (Plexus `Compiler`, `compilerId=lathe`) + `ParamsWriter` | capture compiler args, mirror classes, write stamps | non-cacheable **capture finalizer** on each `JavaCompile` (typed-API capture) |
+| `lathe-compiler` (Plexus `Compiler`, `compilerId=lathe`) + `ParamsWriter` | capture compiler args, mirror classes, write stamps | a **capture action** on each `JavaCompile` (typed-API capture; skipped when the compile fails) |
 | `lathe-junit` (`LauncherSessionListener`, in-fork) | capture test JVM launch | **reused** — same listener in Gradle's test fork (drops `gradle-worker.jar`) |
 | Aether `resolveArtifact(":sources")` | resolve `-sources` jars | `ArtifactView` + `withVariantReselection()` with `DocsType.SOURCES` |
 | plexus-java `LocationManager` | module/classpath split | reused as-is |
@@ -173,9 +192,9 @@ Recording the **compiling** JDK as `.lathe/java-home` matters on Gradle, where t
 the server then runs on the JDK that compiled the code, so its API level matches the build even when the project sets
 `sourceCompatibility` instead of `release` (the toolchains limitation noted in [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), open question 6). **The one genuine reconstruction is the module-path/classpath split**
 (Gradle's `inferModulePath` decision, which it does not expose) — done with plexus-java, the same
-library and logic Maven uses, so the two agree by construction. After the compile, a **non-cacheable
-finalizer** mirrors `destinationDirectory` → `.lathe/<module>/<tree>` and writes stamps — the same
-`syncOutput` shape as `LatheCompiler`. Annotation processing is fully visible: processor **path**
+library and logic Maven uses, so the two agree by construction. After a successful compile, a
+**capture action** mirrors `destinationDirectory` → `.lathe/<module>/<tree>` and writes stamps — the same
+`syncOutput` as `LatheCompiler` (see below). Annotation processing is fully visible: processor **path**
 (`getEffectiveAnnotationProcessorPath`), processor **options** (`getAllCompilerArgs`), and
 **generated-sources output** (`getGeneratedSourceOutputDirectory`), for both main and test.
 
@@ -190,6 +209,30 @@ on the test runtime classpath both are jars (`lib/build/libs/lib.jar`).
 The plugin therefore registers every `destinationDirectory` **and** every `Jar.archiveFile` in the
 `workspace.json` `outputs` map, so the server and `LaunchPlan` resolve both shapes to the mirror.
 Without that map (today's `target/`-shape guessing) neither shape is remapped.
+
+**The capture action does what `LatheCompiler.syncOutput` does — all of it (decided 2026-10-23).**
+It calls the same moved writer (slice 0), so the two tools cannot drift:
+
+- **A failed compile keeps the last good capture.** On failure it writes only `lsp-params` and leaves the mirror, generated sources, and stamps alone.
+  Mirroring a failed compile's output would empty the module's classes and turn every dependent file red (the Maven side's WS-11).
+  A Gradle finalizer task runs even when the task it finalizes fails, and cannot read that task's outcome configuration-cache-safely, so this decides open decision 4 towards a `doLast` action on each `JavaCompile`, which Gradle skips when the compile fails (see [Open decisions](#open-decisions)).
+- It mirrors the annotation-processor output (`getGeneratedSourceOutputDirectory()`) to `generated-sources` / `generated-test-sources`.
+- It holds `.lathe/<module>/module.lock` while it writes, so the server never reads a half-written mirror.
+- `sourceRoots` excludes the annotation-processor output directory, as on Maven: the server reads generated sources from the mirror, never from the build directory.
+  Directories other plugins *generate into and add to `srcDirs`* (OpenAPI, protobuf) are real source roots and stay.
+
+**Module directory = project directory relative to the root (decided 2026-10-23).**
+`.lathe/<module>/` is named after the project directory, as on Maven, not after the Gradle path (`:a:b`).
+`lathe-junit` already derives the module from the test worker's working directory, which is the project directory, so capture and compile land in the same place even for a project whose `projectDir` is remapped in `settings.gradle`.
+
+**Mirror, not `externalOutput` (decided 2026-10-23).**
+The contract lets a front-end set `externalOutput` so the server reads `build/classes` in place.
+Gradle keeps the mirror instead: `./gradlew clean`, a failed compile, and a build running mid-edit must not take the editor's classes away, which is the mirror's whole purpose on Maven too.
+
+**`jvm.args` (decided 2026-10-23).**
+On Maven, `jvm.args` carries the module-access flags that javac plugins such as Error Prone need, read from `-J` compiler args and `.mvn/jvm.config`.
+Gradle's equivalents are `JavaCompile.options.forkOptions.jvmArgs` (a forked compile) and the daemon's `org.gradle.jvmargs` (an in-process compile); the plugin collects the `--add-exports` / `--add-opens` flags from both, the way `JvmArgsWriter` does.
+Error Prone is common on Gradle (`net.ltgt.errorprone`), so without this the server's in-process javac fails on those builds.
 
 ## Capture point B — test launch (`TestLaunchData`), in-fork
 
@@ -213,9 +256,19 @@ The working directory is the project directory, which is what `LaunchCapture` de
 `LaunchCapture`'s existing arg parser (`--module-path`, `--patch-module`, `--add-*`) is otherwise reused
 verbatim.
 
-Capture is driven by `latheSync` running the `test` task in **capture-only** mode (the reused
+Capture is driven by `latheSync --with-tests` running the `test` task in **capture-only** mode (the reused
 `CaptureOnlyPostDiscoveryFilter` skips executing tests; the listener still fires) — exactly Maven's
 `-Dlathe.capture.only=true` fork.
+
+**Getting the listener into the fork (decided 2026-10-23).**
+As the Maven extension adds `lathe-junit` as a test dependency of every module, the project plugin adds it to `testRuntimeOnly` of every project with the `java` plugin.
+It is on the test classpath of every run, not only capture-only ones, which is what makes a plain `./gradlew test` refresh `test-launch.json` (see [End-user setup](#end-user-setup)).
+Capture needs the JUnit Platform (`useJUnitPlatform()`, including JUnit 4 through the vintage engine); a `Test` task on `useJUnit()` or `useTestNG()` opens no launcher session and is not captured — the same stated limitation as Maven's pure-TestNG forks.
+
+**Gradle 9 and a run with no tests (to confirm in slice 4).**
+Gradle 9 fails a `Test` task that discovers no tests, and capture-only filters every test out.
+The spike recorded that the worker forked, not whether the task then succeeded.
+Slice 4 confirms this on 9.x first; if it fails, capture mode also sets `failOnNoDiscoveredTests = false`, alongside the cache settings below.
 
 **Cache interaction — capture mode always runs and is never cached** (spiked).
 The listener only fires when Gradle actually forks the worker; an `UP-TO-DATE` or `FROM-CACHE` `test`
@@ -248,7 +301,8 @@ internals affect replay.
 Main is not run during a build (Maven doesn't either), so this is **derived build-side**, porting
 `MainLaunchWriter` almost verbatim:
 
-- classpath from `sourceSets.main.runtimeClasspath` (reactor siblings resolve to their `classes` dir);
+- classpath from `sourceSets.main.runtimeClasspath`; reactor siblings appear there as their jars (spiked on the test runtime classpath),
+  which `LaunchPlan` maps to the `.lathe/` mirror through the `workspace.json` `outputs` map;
 - module vs classpath split via plexus-java `LocationManager` on the resolved classpath +
   `module-info.java` (byte-identical to Maven);
 - `javaHome` from the resolved `JavaLauncher` (toolchain-aware);
@@ -308,13 +362,21 @@ a Gradle quirk to mirror not fight (gradle#38988).
   query is not configuration-cache safe; `latheSync` either opts out
   (`notCompatibleWithConfigurationCache`) or resolves the missing ones through a detached
   configuration of `group:name:version:sources` dependencies.
-- **JDK sources, server install, type index:** reused from `lathe-core`.
+- **JDK sources, dependency source extraction, type-index shards, server install:** the build-neutral code
+  slice 0 moves into `lathe-install` (it lives in `lathe-maven-plugin` today).
 - **`WorkspaceManifestData`:** `buildFiles` → `settings.gradle(.kts)`, every `build.gradle(.kts)`,
-  `gradle.properties`, and version catalogs; `outputs` → see Capture A; `resourceRoots` → each source
+  `gradle.properties`, version catalogs, and the build logic: `buildSrc/` and every included build that
+  contributes plugins (`pluginManagement { includeBuild(...) }`, the usual `build-logic` convention plugins),
+  since that is where Gradle builds keep their compiler settings; `outputs` → see Capture A; `resourceRoots` → each source
   set's `resources.srcDirs` + output; `runnerClasspath` → `lathe-test-runner` + JUnit Platform jars
   resolved via a detached configuration.
 - **Build lock:** `latheSync` (and any build with Lathe enabled) holds and heartbeats `.lathe/lathe.lock`
   like the Maven extension, through a build service that releases it when the build finishes.
+- **Per-project facts, merged at the root (decided 2026-10-23).** The root `latheSync` must not read other
+  projects' tasks or configurations, or the plugin is no longer Isolated-Projects-safe.
+  Each project's `latheFacts` task writes its own facts (outputs, resource roots, its resolved `-sources`
+  jars) to a file in its `build/` directory and exposes it as an outgoing artifact; the root task consumes those
+  through a dependency on every project and merges them into `workspace.json`.
 
 ## Formatter (`style.json`)
 
@@ -332,7 +394,7 @@ the step **name** is readable, the version and options are not (spiked on Spotle
    (`com.google.googlejavaformat:google-java-format:<version>`, and the palantir / Eclipse equivalents).
    It matches the formatter coordinates *and* the `spotless` configuration-name prefix,
    so a project that uses google-java-format as an ordinary library is not mistaken for its formatter.
-   - `latheSync` depends on each project's `spotless<Format>` task. When nothing changed it is `UP-TO-DATE` and cheap,
+   - Each project's `latheFacts` depends on that project's `spotless<Format>` task. When nothing changed it is `UP-TO-DATE` and cheap,
      and the resolution still happens, because Spotless resolves the formatter to compute the task's inputs.
    - The sync runs with `--no-configuration-cache`: a run that *reuses* the configuration cache skips configuration, so nothing resolves.
 3. **Options** (AOSP style, `reflowLongStrings`, `reorderImports`, `formatJavadoc`) are not observable through public API.
@@ -364,9 +426,11 @@ Projects compiling for older targets through toolchains are fine, as long as the
 Two registration styles, mirroring Maven's "build extension in the POM" vs "core extension in `.mvn/`":
 
 - **Settings plugin** in `settings.gradle(.kts)` — committed / team (analog of the extension in the root
-  POM): `plugins { id("io.github.ag-libs.lathe") version "0.1.12" }`. It reads the gating and, if
+  POM): `plugins { id("io.github.ag-libs.lathe") version "<lathe-version>" }`. It reads the gating and, if
   enabled, wires `gradle.lifecycle.beforeProject { apply(LatheProjectPlugin) }` (no cross-project
-  configuration; Isolated-Projects-safe on 8.8+) and registers `latheSync` on root.
+  configuration; Isolated-Projects-safe on 8.8+, together with the per-project `workspace.json` facts in
+  [Dependency sources & `workspace.json`](#dependency-sources--workspacejson)) and registers `latheSync` on the
+  root and a `latheFacts` task on every project.
 - **Init script** (`~/.gradle/init.d/lathe.init.gradle.kts` or `--init-script`) — personal, zero
   build-file edits, machine-wide (analog of `.mvn/extensions.xml`).
 
@@ -403,25 +467,46 @@ if there is one, stops the build with one message naming each problem, its fix, 
 2. **Git-ignore** — add `.lathe/` to `.gitignore`.
 3. **Opt in** — `mkdir .lathe` (off by default via `lathe.disabled=true` in `gradle.properties`).
 
-**The sync command:**
+### The sync command
 
 ```bash
-./gradlew latheSync
+./gradlew latheSync --with-tests   # first time, and when test setup changes
+./gradlew latheSync                # refresh
 ```
 
-`latheSync` depends on `compileJava` + `compileTestJava` for every subproject and runs the `test` task
-in capture-only mode, so one command: captures compiler options + annotation processing (main & test),
-mirrors bytecode, captures `test-launch.json` (in-fork, capture-only — **no tests execute**), derives
-`main-launch.json`, resolves `-sources`/JDK sources, writes `workspace.json`, and installs the server +
-client into `~/.cache/lathe/`.
+`latheSync` depends on `compileJava` + `compileTestJava` for every subproject, so one command captures
+compiler options + annotation processing (main & test), mirrors bytecode, derives `main-launch.json`,
+resolves `-sources`/JDK sources, writes `workspace.json`, and installs the server + client into
+`~/.cache/lathe/`.
+`--with-tests` also runs each `test` task in capture-only mode and captures `test-launch.json` (in-fork —
+**no tests execute**).
+The split mirrors Maven's `process-test-classes` vs capture-only `test` (*decided 2026-10-23*), and the option
+is not named `--tests`, which Gradle's own `Test` task uses for a test filter.
 
 | Maven | Gradle |
 |---|---|
-| `mvn clean test -Dlathe.capture.only=true` | `./gradlew latheSync` |
+| `mvn clean test -Dlathe.capture.only=true` | `./gradlew latheSync --with-tests` |
 | `mvn process-test-classes` (refresh) | `./gradlew latheSync` |
 | auto-refresh on `mvn test`/`verify`/`install` | auto-refresh on `./gradlew build`/`test`/`assemble` |
 
 Force a clean recapture if the build cache masks staleness: `./gradlew clean latheSync`.
+
+**The rendered `.lathe/lathe-sync.{sh,cmd}` (decided 2026-10-23).**
+It fills in the [Multi-OS](lathe-multi-os.md) D3 model, with three Gradle-specific points:
+
+- **Module options go after the task.** A task option must follow its task (`latheSync --module app`), and
+  Gradle rejects one placed before it. The D3 model today splices `moduleArgs` *before* the goals —
+  `SyncScriptTest`'s Gradle-shaped case expects `--module app --module core latheSync` — so the model gains a
+  way to place them after the goals (a change to `SyncScript` and its test, made before slice 2).
+  Its `testsGoals` for Gradle are `latheSync --with-tests`.
+- **It replays how the build was launched.** A build registered through an init script that is not in
+  `~/.gradle/init.d/` was started with `--init-script <file>`; the script passes the same flag, or the
+  replayed build runs without Lathe. The same holds for the `-P` / `-D` properties the build needed (the
+  Maven side's WS-12): the plugin records the start parameters' init scripts and project and system
+  properties from `gradle.startParameter` and writes them into `fixedArgs`.
+- **It builds only what was asked for.** `--module app` builds `app` and, through task dependencies, what
+  it depends on — not the projects that depend on it, the same limit as Maven's `-pl … -am` (MC-8).
+  A caller that must verify dependents names them.
 
 ## Repository & build integration (polyglot)
 
@@ -491,19 +576,25 @@ Two layers, mirroring the Maven side:
 **Fixture matrix:** single-project, multi-project, an annotation-processor project, a **modular main**,
 and a **modular whitebox test** (with and without GradleX `java-module-testing`) — so the JPMS quadrants
 and the fidelity claims are all under test.
+The readiness-review decisions get their own cases: a compile that fails after a good capture (the mirror
+survives), an Error Prone project (`jvm.args`), init-script registration replayed by `lathe-sync`, convention
+plugins in `buildSrc/` and in an included `build-logic` build (`buildFiles`), and a run with the configuration
+cache and Isolated Projects enabled.
 
 ## Slicing
 
-0. **A Maven-free `lathe-install`** — the logging and artifact-resolver interfaces, and the build-neutral sync work moved in from `lathe-maven-plugin` (see [What is reused vs new](#what-is-reused-vs-new)).
+0. **A Maven-free `lathe-install`** — the logging and artifact-resolver interfaces, and the build-neutral sync work moved in from `lathe-maven-plugin` and `lathe-compiler` (the full list is in [What is reused vs new](#what-is-reused-vs-new)).
+   Pure moves behind the existing Maven tests: no behaviour change, the invoker suite stays green.
    Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
    the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](lathe-multi-os.md).
-1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the non-cacheable capture
-   finalizer on `JavaCompile` → `ModuleConfigData`, bytecode mirror, stamps. Delivers full **code
+1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
+   action on `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`. Delivers full **code
    intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `--tests`, a repeatable `--module` task option). Completes the editor
+2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `--with-tests`, a repeatable `--module` task option placed after the task, the replayed init scripts and properties); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
-4. **Test launch (in-fork)** — reuse `lathe-junit` + worker-jar filter; capture-only (always-run, never-cached) via `latheSync`.
+4. **Test launch (in-fork)** — `lathe-junit` on every project's `testRuntimeOnly` + worker-jar filter; capture-only (always-run, never-cached) via `latheSync --with-tests`.
+   First confirms Gradle 9's no-tests failure and, if needed, sets `failOnNoDiscoveredTests = false` in capture mode.
    Delivers test run/debug/replay for non-modular **and** any modular test whose directives are real JVM
    args (the common case).
 5. **Modular test edge cases** — plugin-awareness + `completeAddOpens` backfill + fallbacks for opaque
@@ -539,15 +630,25 @@ and the fidelity claims are all under test.
    cross-project configuration (Isolated-Projects-safe); the other capture APIs (`JavaCompile`'s destination
    and generated-source directories, effective processor path, compiler args, toolchains) predate it.
    8.14.6 and 9.8.1 are verified by the spike.
-4. **Capture finalizer shape** — per-task finalizer vs one aggregating task; must stay non-cacheable and
-   configuration-cache-safe either way. Reading the `JavaCompile` values through `Provider`s from a
-   separate task is spiked and configuration-cache safe. Test capture (B) is settled: always-run,
-   never-cached in capture mode (not an output declaration).
+4. **Capture finalizer shape** — *leaning (2026-10-23):* a `doLast` action on each `JavaCompile`, because it
+   is skipped when the compile fails (the keep-the-last-good-capture rule), where a finalizer task runs anyway
+   and cannot read the outcome configuration-cache-safely. Still to settle in slice 1: that the action keeps
+   `JavaCompile` cacheable (sync runs with `--no-build-cache`, so a cached compile never skips capture during
+   sync) and is configuration-cache safe. Reading the `JavaCompile` values through `Provider`s is spiked and
+   configuration-cache safe. Test capture (B) is settled: always-run, never-cached in capture mode (not an
+   output declaration).
 5. **Plugin Portal release wiring** — how `com.gradle.plugin-publish` slots into the tag-driven release.
 6. **Formatter discovery** — *decided:* committed `lathe-style.json` wins; otherwise the version is
    observed from Spotless's resolution and options come from Spotless defaults; see [Formatter](#formatter-stylejson).
 7. **Shared sync code** — *decided:* in `lathe-install`, made Maven-free; see [What is reused vs new](#what-is-reused-vs-new).
 8. **JDK** — *decided:* Java 17+; see [JDK requirement](#jdk-requirement).
+9. **Readiness review** — *decided 2026-10-23:* the capture action keeps the last good capture on a failed
+   compile and does all of `syncOutput`; `.lathe/<module>` is the project directory; the mirror stays (no
+   `externalOutput`); `jvm.args` comes from the compile's fork options and `org.gradle.jvmargs`; `lathe-junit`
+   goes on every `testRuntimeOnly`; `latheSync --with-tests` captures tests; the sync script places module
+   options after the task and replays init scripts and properties; per-project `latheFacts` merged at the root
+   keep Isolated Projects safe; build logic is in `buildFiles`; composite builds of Java projects are out.
+   Each is detailed in its section.
 
 ## Spike results
 
