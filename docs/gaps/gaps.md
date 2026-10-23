@@ -347,35 +347,6 @@ None yet.
 
 ---
 
-## EG-060 — Javadoc rendering joins the first sentence to the body and splits inline code across lines
-
-**Status: documented**
-
-### Observed behaviour
-
-Seen through MCP `describe_symbol` on EqualsVerifier (JDK 17); hover is expected to share the renderer:
-
-| Javadoc source | Rendered |
-|---|---|
-| `Factory method. For general use.` (`EqualsVerifier.forClass`) | `Factory method.For general use.` |
-| `… running Java application. An enum class …` (`java.lang.Class`) | `… running Java application.An enum class …` |
-| `{@code` / `int}` split across two source lines | a code span holding the newline and indent: `` `\n int` `` |
-
-Every Javadoc whose first paragraph has more than one sentence loses the space after its first
-sentence, which looks like the summary sentence and the body being concatenated with no separator.
-
-### Fix direction
-
-Join the first sentence and the body with a space when converting the doc comment to markdown, and
-normalise whitespace inside inline `{@code}`/`{@link}` text.
-Confirm whether LSP hover shares the converter, so one fix covers both.
-
-### Regression targets
-
-None yet.
-
----
-
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
