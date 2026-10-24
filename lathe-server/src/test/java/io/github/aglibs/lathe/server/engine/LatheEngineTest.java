@@ -840,6 +840,22 @@ class LatheEngineTest {
   }
 
   @Test
+  void verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync() throws Exception {
+    final Path api = apiReactor(List.of("app"), List.of());
+    engine = new LatheEngine(tmp);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    assertThat(engine.verifyChange(List.of()).suggestedSync()).isNotNull();
+
+    TestCompiler.writeAt(api, API_SOURCE, 20_000L);
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.perModule()).isEmpty();
+    assertThat(verify.suggestedSync())
+        .as("back to what the build compiled: nothing to verify or sync")
+        .isNull();
+  }
+
+  @Test
   void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
     final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
     engine = new LatheEngine(tmp);

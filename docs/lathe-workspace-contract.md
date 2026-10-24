@@ -138,11 +138,12 @@ Without it the server still compiles and navigates the workspace's own code, but
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`
 
-`CompiledStampsData`: source-root-relative path to the source's mtime when it was last compiled into the mirror.
-The server uses it to find sources edited since the last build.
+`CompiledStampsData`: `stamps`, source-root-relative path to the source's mtime when it was last compiled into the mirror, and `built`, the same path to the content fingerprint (size plus CRC32C) the build last compiled.
+The server uses `stamps` to find sources edited since the last build, and `built` so that `verify_change` takes a change put back as no change.
 Without it every source counts as stale, which self-heals but prompts a sync and recompiles on reconcile.
 
-Both front-ends write it next to the params; the server updates it after save compiles and orphan cleanup.
+Both front-ends write it next to the params; the server updates `stamps` after save compiles and orphan cleanup, and leaves `built` as the build wrote it.
+The Maven front-end records `built` on every compile; the OpenJDK one leaves it empty.
 
 ### `<moduleRel>/classes/`, `<moduleRel>/test-classes/`
 

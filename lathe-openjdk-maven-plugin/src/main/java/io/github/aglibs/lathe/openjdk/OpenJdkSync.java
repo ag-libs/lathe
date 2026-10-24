@@ -227,7 +227,9 @@ public final class OpenJdkSync {
       throws IOException {
     Files.createDirectories(latheModuleDir);
     Json.write(config, latheModuleDir.resolve(LatheLayout.paramsFileName(SOURCE_TREE)));
-    CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots));
+    // No compiled content: fingerprinting every JDK source on each sync costs more than
+    // verify_change's revert check is worth there.
+    CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots), Map.of());
   }
 
   // filelist -> {sourceRoot-relative path -> mtime}, keyed as LatheCompiler.writeCompiledStamps

@@ -75,7 +75,7 @@ final class LatheCompilerSyncOutputTest {
     write(
         latheDir.resolve(LatheLayout.generatedSourcesDir(TREE)).resolve("com/example/OldGen.java"),
         0L);
-    CompiledStamps.writeAll(latheDir, TREE, Map.of(FOO_SOURCE, 1L));
+    CompiledStamps.writeAll(latheDir, TREE, Map.of(FOO_SOURCE, 1L), Map.of());
 
     final var config = new CompilerConfiguration();
     config.setOutputLocation(output.toString());

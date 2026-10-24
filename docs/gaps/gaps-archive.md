@@ -10123,6 +10123,38 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-13 — `verify_change` still advises a sync after a change has been fully reverted — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+After a change to `EqualsVerifier.java` was reverted on disk, so the tree matched `HEAD` again,
+`verify_change` still answered "3 module(s) depend on your change …; verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+On a large reactor that sends an agent into a needless Maven run.
+
+Since the [MC-7](gaps-archive.md#mc-7--verify_change-reports-a-clean-tree-while-dependent-modules-are-broken--done)
+fix the pass records every file it writes, so the reverting writes are reported too: a full revert
+now always reads as a change with dependents to build (seen on EqualsVerifier, 2026-10-24).
+
+### Fix
+
+The compile stamps record, beside each source's mtime, the content fingerprint (size plus CRC32C) the
+build last compiled (`CompiledStampsData.built`, written by `CompileCapture` on every Maven compile;
+the server's own writes leave it). `verify_change` drops any changed file whose content is back to
+that (`WorkspaceSession.differingFromBuild`), so a full revert reports nothing and suggests no sync;
+a deleted file stays, as its callers break. The OpenJDK front-end records no built content, so there
+a revert still reads as a change.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync` (fails without
+  the filter)
+- `CompiledStampsTest.writeAllThenLoad_roundTripsAndRecordUpdatesOneMtimeButKeepsWhatTheBuildCompiled`
+
+---
+
 ## MC-7 — `verify_change` reports a clean tree while dependent modules are broken — done
 
 **Status: done — Target: next**

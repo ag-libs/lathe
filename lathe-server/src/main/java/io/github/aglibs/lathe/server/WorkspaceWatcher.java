@@ -110,7 +110,7 @@ final class WorkspaceWatcher {
   // content is not what the sync saw (a touch, or an edit put back, is not a change).
   private boolean differsFromSync(final Path file) {
     final ContentFingerprint synced = syncedContent.get(file);
-    return synced == null || !Optional.of(synced).equals(contentOf(file));
+    return synced == null || !Optional.of(synced).equals(FileUtil.readFingerprint(file));
   }
 
   // A file watched by touch is taken as changed before startup when it is newer than the manifest
@@ -156,15 +156,6 @@ final class WorkspaceWatcher {
     }
 
     return IOUtil.unchecked(() -> Files.readString(manifestPath, StandardCharsets.UTF_8));
-  }
-
-  // Empty when the file cannot be read (deleted, say): it then differs from any synced content.
-  private static Optional<ContentFingerprint> contentOf(final Path file) {
-    try {
-      return Optional.of(FileUtil.fingerprint(file));
-    } catch (final IOException e) {
-      return Optional.empty();
-    }
   }
 
   private static FileStat stat(final Path path) {

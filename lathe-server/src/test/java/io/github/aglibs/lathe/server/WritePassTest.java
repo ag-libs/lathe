@@ -508,7 +508,8 @@ class WritePassTest extends ServiceTestBase {
     CompiledStamps.writeAll(
         tmp.resolve(".lathe/module"),
         "classes",
-        Map.of(Path.of("com/example/Foo.java"), stampMtime));
+        Map.of(Path.of("com/example/Foo.java"), stampMtime),
+        Map.of());
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 

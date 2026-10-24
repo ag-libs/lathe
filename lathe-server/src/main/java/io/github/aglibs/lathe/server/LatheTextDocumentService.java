@@ -128,6 +128,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.downstreamModuleRels(changed));
   }
 
+  public CompletableFuture<List<Path>> differingFromBuild(final List<Path> changed) {
+    return worker.submit(() -> session.differingFromBuild(changed));
+  }
+
   public CompletableFuture<Integer> reactorModuleCount() {
     return worker.submit(() -> session.reactorModuleCount());
   }

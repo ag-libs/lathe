@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -3539,9 +3540,39 @@ final class WorkspaceSession {
     return taken;
   }
 
+  // The changed files whose content is not what the last build compiled: a change put back is no
+  // change, so verify_change neither checks it nor asks for a sync. A deleted file stays, as its
+  // callers break. Each module's stamps are read once.
+  List<Path> differingFromBuild(final List<Path> changed) {
+    final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree = new HashMap<>();
+    final List<Path> differing = new ArrayList<>();
+    for (final Path file : changed) {
+      if (!backToBuilt(file, builtByTree)) {
+        differing.add(file);
+      }
+    }
+
+    return List.copyOf(differing);
+  }
+
+  private boolean backToBuilt(
+      final Path file, final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree) {
+    final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
+    final Path root = config.map(tree -> sourceRootFor(tree, file)).orElse(null);
+    if (root == null || Files.notExists(file)) {
+      return false;
+    }
+
+    final ContentFingerprint built =
+        builtByTree
+            .computeIfAbsent(
+                config.get(), tree -> CompiledStamps.loadBuilt(tree.moduleDir(), tree.sourceTree()))
+            .get(root.relativize(file));
+    return built != null && Optional.of(built).equals(FileUtil.readFingerprint(file));
+  }
+
   // Files to diagnose for verify_change, by module: each changed file, then the files that mention
-  // its type in its module or one downstream of it. The changed files' modules come first, so
-  // capping the callers in order keeps the nearest.
+  // its type in its module or one downstream of it, the changed files' modules first.
   Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
     final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
     changed.forEach(file -> addVerifyTarget(byModule, file));

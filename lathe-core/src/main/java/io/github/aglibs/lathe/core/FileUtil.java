@@ -25,6 +25,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -57,6 +58,15 @@ public final class FileUtil {
     final var crc = new CRC32C();
     crc.update(content);
     return new ContentFingerprint(content.length, crc.getValue());
+  }
+
+  // Empty when the file cannot be read (deleted, say): it then matches no recorded fingerprint.
+  public static Optional<ContentFingerprint> readFingerprint(final Path file) {
+    try {
+      return Optional.of(fingerprint(file));
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
   }
 
   // The top-level type name of a .java source — its file name without the .java suffix.

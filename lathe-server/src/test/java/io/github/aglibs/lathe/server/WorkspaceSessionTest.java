@@ -413,7 +413,7 @@ class WorkspaceSessionTest {
   }
 
   private void writeStamps(final Map<Path, Long> stamps) throws IOException {
-    CompiledStamps.writeAll(config.moduleDir(), config.sourceTree(), stamps);
+    CompiledStamps.writeAll(config.moduleDir(), config.sourceTree(), stamps, Map.of());
   }
 
   @Test

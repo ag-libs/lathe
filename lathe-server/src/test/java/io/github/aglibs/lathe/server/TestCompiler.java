@@ -5,6 +5,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
@@ -193,7 +194,12 @@ public final class TestCompiler {
     CompiledStamps.writeAll(
         latheModuleDir,
         "classes",
-        sources.keySet().stream().collect(Collectors.toMap(Path::of, rel -> mtimeMillis)));
+        sources.keySet().stream().collect(Collectors.toMap(Path::of, rel -> mtimeMillis)),
+        sources.keySet().stream()
+            .collect(
+                Collectors.toMap(
+                    Path::of,
+                    rel -> IOUtil.unchecked(() -> FileUtil.fingerprint(sourceRoot.resolve(rel))))));
     writeModuleParams(
         workspaceRoot,
         moduleName,

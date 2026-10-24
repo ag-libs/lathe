@@ -435,13 +435,15 @@ public final class LatheEngine {
     }
 
     // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
-    final List<Path> changed =
+    final List<Path> touched =
         files.isEmpty()
             ? Stream.concat(
                     outcome.reacted().stream(), await(service.takeWrittenSinceVerify()).stream())
                 .distinct()
                 .toList()
             : files;
+    // A file put back to what the last build compiled is no change.
+    final List<Path> changed = await(service.differingFromBuild(touched));
     if (changed.isEmpty()) {
       return new LatheVerifyChange(null, List.of(), List.of(), null);
     }
