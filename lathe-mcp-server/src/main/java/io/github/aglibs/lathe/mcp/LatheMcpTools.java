@@ -389,12 +389,11 @@ final class LatheMcpTools {
                 """
                 After editing Java files, recompile the changed files and their callers, in their \
                 module and in dependent modules, in-process against the real classpath — no full \
-                build — and report their errors and warnings grouped by module \
-                (unused-code hints left out). With no `files` it checks what changed on disk plus \
-                what Lathe's own tools wrote, such as a rename. When the change reaches other \
-                modules it names them, says how many callers it left unchecked, and returns the \
-                exact sync command that builds them. Use it to confirm your edits still compile \
-                before a build.\
+                build — and report their errors and warnings grouped by module (unused-code hints \
+                left out). With no `files` it checks what changed on disk plus what Lathe's own \
+                tools wrote, such as a rename. When the change reaches other modules it names them \
+                and returns the exact sync command that builds them. Use it to confirm your edits \
+                still compile before a build.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -904,13 +903,10 @@ final class LatheMcpTools {
         modules.size() > LISTED_MODULES
             ? ", and %d more".formatted(modules.size() - LISTED_MODULES)
             : "";
-    final String checked =
-        verify.uncheckedFiles() > 0
-            ? "%d of their callers were not checked here — verify them with"
-                .formatted(verify.uncheckedFiles())
-            : "their callers were checked here; to build them fully, run";
-    return "%n%n%d module(s) depend on your change (%s%s); %s:%n  %s"
-        .formatted(modules.size(), listed, more, checked, verify.suggestedSync());
+    return """
+        %n%n%d module(s) depend on your change (%s%s); their callers were checked here; to build \
+        them fully, run:%n  %s"""
+        .formatted(modules.size(), listed, more, verify.suggestedSync());
   }
 
   private static Map<String, Object> verifyStructured(
@@ -920,7 +916,6 @@ final class LatheMcpTools {
     structured.put(
         "perModule", verify.perModule().stream().map(LatheMcpTools::moduleDiagnosticsMap).toList());
     structured.put("affectedModules", verify.affectedModules());
-    structured.put("uncheckedFiles", verify.uncheckedFiles());
     if (verify.suggestedSync() != null) {
       structured.put("suggestedSync", verify.suggestedSync());
     }

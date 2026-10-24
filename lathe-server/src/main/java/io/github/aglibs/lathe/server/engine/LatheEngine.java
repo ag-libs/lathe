@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
@@ -74,9 +75,6 @@ public final class LatheEngine {
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
   private static final int IMPACT_MAX_RESULTS = 1000;
 
-  // verify_change checks this many callers of the changed files, each a file analysis; the rest it
-  // reports as unchecked and leaves to the suggested sync.
-  private static final int CHECKED_CALLERS = 200;
   private static final int SCOPED_SYNC_MODULES = 30;
 
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
@@ -435,7 +433,7 @@ public final class LatheEngine {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
       return new LatheVerifyChange(
-          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND, 0);
+          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND);
     }
 
     // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
@@ -447,45 +445,28 @@ public final class LatheEngine {
                 .toList()
             : files;
     if (changed.isEmpty()) {
-      return new LatheVerifyChange(null, List.of(), List.of(), null, 0);
+      return new LatheVerifyChange(null, List.of(), List.of(), null);
     }
 
+    final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
-    final Set<Path> unchecked = uncheckedCallers(targets, changed);
-    if (!unchecked.isEmpty()) {
-      LOG.info(
-          () ->
-              "[verify] %d caller(s) left unchecked past the %d-caller cap"
-                  .formatted(unchecked.size(), CHECKED_CALLERS));
-    }
-
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
-            .map(
-                entry ->
-                    new LatheModuleDiagnostics(
-                        entry.getKey(),
-                        diagnose(
-                            entry.getValue().stream()
-                                .filter(file -> !unchecked.contains(file))
-                                .toList())))
+            .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
+    // Every caller is checked, however many: the line shows when that grows costly (a core type's
+    // callers across a large reactor).
+    LOG.info(
+        () ->
+            "[verify] %d file(s) in %d module(s) %dms diags=%d"
+                .formatted(
+                    targets.values().stream().mapToInt(List::size).sum(),
+                    targets.size(),
+                    checked.elapsedMs(),
+                    perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
     final List<String> downstream = await(service.downstreamModuleRels(changed));
-    return new LatheVerifyChange(
-        null, perModule, downstream, syncFor(downstream), unchecked.size());
-  }
-
-  // The callers past the cap, in the order the session ranked them (the changed modules' first);
-  // the changed files themselves are always checked.
-  private static Set<Path> uncheckedCallers(
-      final Map<String, List<Path>> targets, final List<Path> changed) {
-    final Set<Path> changedFiles = Set.copyOf(changed);
-    return targets.values().stream()
-        .flatMap(List::stream)
-        .filter(file -> !changedFiles.contains(file))
-        .skip(CHECKED_CALLERS)
-        .collect(Collectors.toUnmodifiableSet());
+    return new LatheVerifyChange(null, perModule, downstream, syncFor(downstream));
   }
 
   // Naming the dependents builds them and, with -am, the changed modules too; past a few dozen the

@@ -816,7 +816,6 @@ class LatheEngineTest {
     assertThat(verify.suggestedSync())
         .as("builds the dependent, and with -am the changed module too")
         .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app")));
-    assertThat(verify.uncheckedFiles()).isZero();
 
     // Another such edit, but compiled by an unrelated query before verify_change is asked.
     TestCompiler.writeAt(

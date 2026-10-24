@@ -10146,8 +10146,9 @@ within 3–4 s of the same external change.
 `verify_change` now also checks the callers of the changed files in dependent modules: the files that
 mention a changed type (the reactor-wide candidate index) in its module or one downstream of it
 (`WorkspaceSession.verifyTargetsByModule`), the changed files' modules first.
-It checks up to 200 callers, the changed files themselves always; `uncheckedFiles` counts the rest,
-and the text says how many were left to the suggested sync.
+It checks every caller, uncapped, and logs each call (`[verify] <files> file(s) in <modules>
+module(s) <ms>ms diags=<n>`), so a costly one shows in the log rather than being cut short; a broken
+`MediaTypes.java` on Helidon, with 142 dependent modules, took about 12 s.
 It freshens once and then analyzes each target without a pass of its own (`LatheEngine.analyze`).
 
 With no `files`, it now also sees changes an earlier query already compiled: the pass records every
@@ -10161,7 +10162,7 @@ in `equalsverifier-test`.
 
 - `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (fails with same-module callers only, and without the pass recording its writes)
-- `LatheMcpToolsTest.crossModuleNote_callersPastTheCap_saysHowManyWereNotChecked`
+- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`
 
 ---
 
