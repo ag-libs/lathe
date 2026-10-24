@@ -102,9 +102,6 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 ### Development overrides (dogfooding lathe on lathe)
 
-**Paused during the JDK 17 transition:** the root `pom.xml` doesn't enable the extension until a Java 17
-release of Lathe is published, so the repo itself gets no `.lathe/` from its build meanwhile.
-
 The lathe repo enables its own `lathe-maven-extension` in the root `pom.xml`, so Neovim selects the
 **published** server pinned by that extension version — not your working tree. A `lathe-server`
 or Lua-client edit is invisible in the editor until you override:
