@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -227,7 +228,8 @@ class LatheMcpToolsTest {
     final CallToolResult result = call("format_file", Map.of("file", file.toString()));
 
     assertThat(result.isError()).isTrue();
-    assertThat(text(result)).contains("No formatter for this workspace", ".lathe/lathe-sync.sh");
+    assertThat(text(result))
+        .contains("No formatter for this workspace", LatheLayout.SYNC_SCRIPT_COMMAND);
   }
 
   // No module compiles it, so nothing was checked; the note says whether a sync would help.
