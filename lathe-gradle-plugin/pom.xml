@@ -21,6 +21,7 @@
     <lathe.gradle.skip>false</lathe.gradle.skip>
     <lathe.gradle.bin/>
     <lathe.gradle.script>gradle</lathe.gradle.script>
+    <lathe.gradle.daemon>--daemon</lathe.gradle.daemon>
     <!-- The Gradle and JDK the TestKit fixtures run on; empty runs them on the Gradle and JDK that build
          the plugin. The older-Maven CI jobs set these, as they set invoker.mavenHome and invoker.javaHome. -->
     <invoker.javaHome/>
@@ -90,6 +91,7 @@
               <workingDirectory>${project.basedir}</workingDirectory>
               <arguments>
                 <argument>--console=plain</argument>
+                <argument>${lathe.gradle.daemon}</argument>
                 <argument>build</argument>
                 <argument>-PlatheRepo=${project.build.directory}/lathe-repo</argument>
                 <argument>-Plathe.version=${project.version}</argument>
@@ -117,6 +119,20 @@
       </activation>
       <properties>
         <lathe.gradle.bin>${lathe.gradle.home}/bin/</lathe.gradle.bin>
+      </properties>
+    </profile>
+    <!-- On Windows a child process inherits its parent's open handles, so a Gradle daemon that
+         outlives the build keeps this build's output pipe open and Maven waits on it for hours: the
+         build runs in a daemon that exits with it. -->
+    <profile>
+      <id>gradle-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <lathe.gradle.daemon>--no-daemon</lathe.gradle.daemon>
       </properties>
     </profile>
     <!-- A distribution's bin/ holds a POSIX script named gradle beside gradle.bat, so a Gradle home

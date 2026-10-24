@@ -713,8 +713,14 @@ with its own CI job — more idiomatic for Gradle, but two commands / two CI sta
   running Gradle). A call newer than the 8.8 floor must be guarded by a version check; the 8.8 fixture run
   below catches an unguarded one (`NoSuchMethodError`), as the Maven 3.6.3 invoker job catches a too-new Maven
   API.
-- **The TestKit fixtures run on that same Gradle by default** (`GradleRunner.withGradleInstallation`), so every
-  main CI row (each JDK, Linux, macOS, Windows) tests the plugin on the latest Gradle.
+- **The TestKit fixtures run on that same Gradle by default** (`GradleRunner.withGradleInstallation`).
+  Two main CI rows build and test the plugin on the latest Gradle: JDK 21 on Linux, and Windows, where paths and
+  processes differ; the other rows pass `-Dlathe.gradle.skip=true`, since the plugin is plain JVM code
+  (*revised 2026-10-24*: running it in every row added minutes per job for no coverage).
+  The fixtures run as parallel test JVMs, one test class per JVM.
+- **On Windows the build runs with `--no-daemon`, and every fixture daemon idles out after 10 seconds.**
+  A Windows child process inherits its parent's open handles, so a Gradle daemon that outlives the build keeps
+  Maven's output pipe open, and `exec-maven-plugin` waited until the 30-minute job timeout.
 
 **Older Gradle versions run in the existing older-Maven invoker jobs (decided 2026-10-24)**, not in jobs of
 their own and not through `withGradleVersion` inside every build. Each job downloads one Gradle
@@ -732,7 +738,7 @@ invoker run.
 | Maven 3.8.8, JDK 21 | 8.14.6 | the last 8.x |
 | Maven 3.10.0, JDK 21 | 9.0.0 | the 8 → 9 boundary, where Gradle's internals changed (the JPMS spike's GradleX failure was there) |
 
-Every main row covers the latest 9.x. Maven's own build stays on 3.9.16 (3.10.0 has a deployment problem).
+The JDK 21 Linux and Windows rows cover the latest 9.x. Maven's own build stays on 3.9.16 (3.10.0 has a deployment problem).
 
 *Spiked 2026-10-23* with a miniature reactor: a `core` jar module and a `pom`-packaged `gradle-plugin` module
 listed last, depending on `core`, whose directory also holds the Gradle build.

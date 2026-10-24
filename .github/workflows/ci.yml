@@ -81,19 +81,25 @@ jobs:
         #
         # The JDK 17 row runs every test and the invoker fixture builds on JDK 17, and switches off
         # the multi-release test layering, which is for JDK 21+ test runs.
+        #
+        # The Gradle plugin builds in the JDK 21 Linux row and the Windows row only: its code is plain
+        # JVM code, Windows is where paths and processes differ, and the invoker rows run its fixtures
+        # on the older Gradle versions, the floor on JDK 17 included.
+        env:
+          GRADLE: ${{ !((matrix.java == '21' && runner.os == 'Linux') || runner.os == 'Windows') && '-Dlathe.gradle.skip=true' || '' }}
         run: |
           if [ "${{ matrix.java }}" = "17" ]; then
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
               -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
-              -P '!multi-release-jdk21'
+              -P '!multi-release-jdk21' $GRADLE
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install
+            env -u CI mvn -B --no-transfer-progress clean install $GRADLE
           elif [ "${{ runner.os }}" = "Windows" ]; then
             # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
             # since Cursor on Windows is a target.
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
           else
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
       - name: Verify javadoc and sources generate
