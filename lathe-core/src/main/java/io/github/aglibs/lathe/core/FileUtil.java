@@ -186,9 +186,7 @@ public final class FileUtil {
   }
 
   public static void replaceDir(final Path src, final Path dest) throws IOException {
-    if (Files.exists(dest)) {
-      deleteDir(dest);
-    }
+    deleteDir(dest);
     copyDir(src, dest);
   }
 
@@ -345,6 +343,10 @@ public final class FileUtil {
   }
 
   public static void deleteDir(final Path dir) throws IOException {
+    if (!Files.exists(dir)) {
+      return;
+    }
+
     try (final var walk = Files.walk(dir)) {
       final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
       for (final var path : sorted) {

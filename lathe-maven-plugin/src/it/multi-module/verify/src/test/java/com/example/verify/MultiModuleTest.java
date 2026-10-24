@@ -139,6 +139,17 @@ class MultiModuleTest {
         .contains("\"path\": \"health/target/main-classes\"");
   }
 
+  // The root pom seeds captures this build no longer has (stale-captures/): the full sync prunes
+  // them, and health's main tree, which the build still has, stays.
+  @Test
+  void sync_capturesTheBuildNoLongerHas_pruned() {
+    assertThat(lathe("gone/lsp-params-classes.json")).doesNotExist();
+    assertThat(lathe("gone/classes")).doesNotExist();
+    assertThat(lathe("gone/main-launch.json")).doesNotExist();
+    assertThat(lathe("health/lsp-params-test-classes.json")).doesNotExist();
+    assertThat(lathe("health/lsp-params-classes.json")).exists();
+  }
+
   @Test
   void sync_workspaceJson_written() throws IOException {
     final var ws = lathe("workspace.json");

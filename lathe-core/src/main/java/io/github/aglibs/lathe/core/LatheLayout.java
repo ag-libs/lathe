@@ -62,6 +62,7 @@ public final class LatheLayout {
   public static final String TEST_CLASSES_DIR = "test-classes";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
   public static final String STAMPS_FILE_PREFIX = "lsp-stamps-";
+  private static final String JSON_SUFFIX = ".json";
   public static final String DEPENDENCY_SOURCE_FILENAME = ".lathe-source.json";
   public static final String JAR_MAVEN_METADATA_DIR = "META-INF/maven";
   public static final String TYPE_INDEX_FILENAME = "index.json";
@@ -249,11 +250,11 @@ public final class LatheLayout {
   }
 
   public static String paramsFileName(final String sourceTree) {
-    return PARAMS_FILE_PREFIX + sourceTree + ".json";
+    return "%s%s%s".formatted(PARAMS_FILE_PREFIX, sourceTree, JSON_SUFFIX);
   }
 
   public static String compiledStampsFileName(final String sourceTree) {
-    return STAMPS_FILE_PREFIX + sourceTree + ".json";
+    return "%s%s%s".formatted(STAMPS_FILE_PREFIX, sourceTree, JSON_SUFFIX);
   }
 
   // The main and test compile each mirror their annotation-processor output to a scope-specific dir
@@ -264,6 +265,12 @@ public final class LatheLayout {
 
   public static boolean isParamsFile(final Path path) {
     final var name = path.getFileName().toString();
-    return name.startsWith(PARAMS_FILE_PREFIX) && name.endsWith(".json");
+    return name.startsWith(PARAMS_FILE_PREFIX) && name.endsWith(JSON_SUFFIX);
+  }
+
+  // The source tree an lsp-params file describes: lsp-params-<tree>.json.
+  public static String paramsSourceTree(final Path params) {
+    final var name = params.getFileName().toString();
+    return name.substring(PARAMS_FILE_PREFIX.length(), name.length() - JSON_SUFFIX.length());
   }
 }
