@@ -165,6 +165,11 @@ A script (executable on POSIX) that re-runs this front-end's sync from the works
 
 - `--tests` also re-captures test launches without running tests.
 - Modules scope the sync to those modules and their upstream.
+- It runs the bare sync goal: properties and profiles given on the command line of the build that wrote it
+  (`-D`, `-P`) are not replayed, so the script never depends on which build happened to run last.
+  Flags every build of the project needs belong where the build tool reads them on its own: `.mvn/maven.config`
+  or a profile activated by the JDK version (Maven), `gradle.properties` (Gradle); per user, `MAVEN_ARGS`
+  (Maven 3.9+) or `~/.gradle/gradle.properties`.
 
 The Neovim client runs it for the server's sync prompts and `:LatheSync`;
 server and MCP remediation messages name it.

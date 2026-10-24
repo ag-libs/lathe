@@ -419,38 +419,6 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-12 — `lathe-sync.sh` drops the `-D` properties of the build it was generated from
-
-**Status: deferred — Target: backlog.**
-Not a regression: no version of the script has replayed the build's flags (the 0.1.22 script ran
-`"$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope $goal` too).
-
-### Observed behaviour
-
-EqualsVerifier synced on JDK 17 only with `-DdisableStaticAnalysis`, because its Error Prone 2.50.0
-needs JDK 21+ to run.
-The generated `.lathe/lathe-sync.sh` runs
-`mvn --no-transfer-progress -Dmaven.build.cache.enabled=false -pl equalsverifier-core -am process-test-classes`
-without that property, so every scripted sync — including the one `verify_change` recommends —
-fails with a compilation error, which before the
-[WS-11](gaps-archive.md#ws-11--a-failed-maven-compile-empties-the-modules-lathe-mirror--done) fix
-also emptied the mirror.
-
-### Fix direction
-
-Preferred: do not replay the command line, and document that flags every build needs belong in the
-build tool's persistent configuration — `.mvn/maven.config` (or `MAVEN_ARGS` on Maven 3.9+, set per
-shell, so `cmd` and PowerShell differ on Windows), and for the planned Gradle front-end
-`gradle.properties` or `~/.gradle/gradle.properties`; a failed scripted sync could point there.
-Replaying is unsafe because every Lathe-enabled build rewrites the script: per-invocation flags
-(`-Dtest=…`, `-DskipTests`, Gradle's `-x test`) would stick and silently narrow or disable capture,
-and secrets passed as `-D`/`-P` (signing keys, tokens) would be written to `.lathe/` and echoed by
-`lathe-sync: $*`.
-
-### Regression targets
-
-None yet.
-
 ## WS-13 — A build file changed while no server ran is never detected
 
 **Status: documented.**

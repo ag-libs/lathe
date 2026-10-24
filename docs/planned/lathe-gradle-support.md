@@ -37,7 +37,7 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 - Slice 0 moves every build-neutral sync class, not only the five first listed (see [What is reused vs new](#what-is-reused-vs-new)).
 - The compiler capture matches `LatheCompiler.syncOutput` in full: it keeps the last good capture when the compile fails, mirrors generated sources, and takes the module lock (see [Capture point A](#capture-point-a--compiler-arguments--annotation-processing)).
 - A Lathe-enabled build never changes the cache keys of the build's own tasks, so a team's shared build cache keeps working (see [the cache-key rule](#design-principle--leave-the-builds-cache-keys-alone-decided-2026-10-23)); compiler capture is therefore a finalizer task, spiked on 8.14.6 and 9.8.1.
-- `jvm.args`, the `lathe-junit` injection, the module directory name, `externalOutput`, Gradle 9's no-tests failure, build-logic `buildFiles`, the sync script's replay of init scripts and properties, and Isolated Projects each get a decision in their section.
+- `jvm.args`, the `lathe-junit` injection, the module directory name, `externalOutput`, Gradle 9's no-tests failure, build-logic `buildFiles`, the sync script's replay of the registering init script (only), and Isolated Projects each get a decision in their section.
 
 **Spiked 2026-10-10** on Gradle 8.14.6 and 9.8.1 (JDK 21) with a throwaway multi-project build
 (a `java-library` project, a plain `java` project, an app with an annotation processor, JUnit 5, Guava, and Spotless).
@@ -644,15 +644,15 @@ It fills in the [Multi-OS](../done/lathe-multi-os.md) D3 model, with three Gradl
   Gradle-shaped case expects `latheSync --module app --module core`).
   Its `testsGoals` for Gradle are `latheSync -Plathe.capture.only=true`, the counterpart of Maven's
   `test -Dlathe.capture.only=true`.
-- **It replays how the build was launched.** A build registered through an init script that is not in
-  `~/.gradle/init.d/` was started with `--init-script <file>`; the script passes the same flag, or the
-  replayed build runs without Lathe. The same holds for the `-P` / `-D` properties the build needed (the
-  Maven side's WS-12): the plugin records the start parameters' init scripts and project and system
-  properties from `gradle.startParameter` and writes them into `fixedArgs`, leaving out Lathe's own
-  (`lathe.capture.only`, `lathe.disabled`), which the script's modes set.
+- **It replays the init script that registered Lathe, and nothing else from the command line.** A build
+  registered through an init script that is not in `~/.gradle/init.d/` was started with
+  `--init-script <file>`; the script passes the same flag, or the replayed build runs without Lathe.
+  The `-P` / `-D` properties of the build are *not* replayed (*decided 2026-10-24*, as on Maven, WS-12):
+  the script would otherwise depend on whichever build ran last, carry one-off flags (`-x test`, a test
+  filter) into every sync, and write secrets passed as properties to `.lathe/`. Flags every build needs
+  belong in `gradle.properties` or `~/.gradle/gradle.properties`, which Gradle reads on its own.
   *Spiked 2026-10-23:* `getInitScripts()` holds exactly the `--init-script` files (the ones to replay;
-  `getAllInitScripts()` adds the `init.d` ones, which load anyway), and `getProjectProperties()` /
-  `getSystemPropertiesArgs()` hold the `-P` / `-D` values.
+  `getAllInitScripts()` adds the `init.d` ones, which load anyway).
 - **It runs the Gradle that ran the build, on the JDK that ran it.** As Maven records `maven.home/bin/mvn` (the
   distribution the wrapper resolved, not the wrapper), the plugin records the distribution's own launcher,
   `gradle.gradleHomeDir/bin/gradle` (`gradle.bat` on Windows) — the same version, with no wrapper download step.
@@ -761,7 +761,7 @@ and a capture-only test run on Gradle 9.
    tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`.
    Its TestKit suite includes the cache-key check and the configuration cache stored and reused. Delivers full **code
    intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed init scripts and properties); the per-project `latheFacts` merge. Completes the editor
+2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
 4. **Test launch (in-fork)** — `lathe-junit` on the `test` classpath in capture mode + worker-jar filter + `failOnNoDiscoveredTests = false` on Gradle 9+; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
@@ -822,7 +822,7 @@ and a capture-only test run on Gradle 9.
    `externalOutput`); `jvm.args` comes from the compile's fork-option argument providers (where Error Prone puts its flags), its `jvmArgs`, and `org.gradle.jvmargs`; `lathe-junit`
    joins the `test` classpath only in capture mode; `latheSync -Plathe.capture.only=true` captures tests (a project property, since a task option cannot
    reconfigure other projects' `test` tasks); the sync script places module
-   options after the task and replays init scripts and properties; per-project `latheFacts` merged at the root
+   options after the task and replays only `--init-script` (not `-P`/`-D`); per-project `latheFacts` merged at the root
    keep Isolated Projects safe; build logic is in `buildFiles`; composite builds of Java projects are out.
    Each is detailed in its section.
 

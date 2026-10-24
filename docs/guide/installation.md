@@ -175,6 +175,9 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
 - `lathe:sync` also writes `lathe-sync.sh` (`.cmd` on Windows), which re-runs the same build tool and JDK
   that ran this build, so the editor's "sync" matches the command line you use.
+  It runs the plain sync goal, without the `-D` properties or `-P` profiles you passed on the command line.
+  If your build always needs a flag (say, to skip a check that does not run on your JDK), put it in
+  `.mvn/maven.config`, which Maven reads on every run, or in a profile activated by the JDK version.
 - `lathe:sync` also writes `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows) here, with the argfiles
   they read (`lathe-server.args`, `lathe-mcp.args`) — copies of the launchers in the machine cache's
   `servers/<version>/` for the server version this project pins. These are what every
