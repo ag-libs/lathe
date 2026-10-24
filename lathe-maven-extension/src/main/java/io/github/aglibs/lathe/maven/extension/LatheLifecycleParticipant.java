@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -64,13 +65,17 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     startReactorLock(latheDir);
   }
 
+  // The lock is released whatever the top-up throws: in an mvnd daemon a skipped release leaves the
+  // heartbeat holding it, so every server takes the workspace for one being built.
   @Override
   public void afterSessionEnd(final MavenSession session) {
-    if (reactorLockDir != null) {
-      mirrorLateOutputs(reactorLockDir.getParent());
+    try {
+      if (reactorLockDir != null) {
+        mirrorLateOutputs(reactorLockDir.getParent());
+      }
+    } finally {
+      stopReactorLock();
     }
-
-    stopReactorLock();
   }
 
   // Each compile copies its output into the mirror, but a build adds files after compiling: Helidon
@@ -91,7 +96,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
               output.getKey(), output.getValue(), file -> !FileUtil.isClassFile(file));
         }
       }
-    } catch (final IOException e) {
+    } catch (final IOException | UncheckedIOException e) {
       // The server keeps the mirror the compile copied; the next build tries again.
     }
   }

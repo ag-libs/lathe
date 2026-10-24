@@ -10,10 +10,14 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
+import java.util.Set;
 import org.apache.maven.model.Model;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 class LatheLifecycleParticipantTest {
@@ -101,21 +105,10 @@ class LatheLifecycleParticipantTest {
     Files.writeString(mirror.resolve("AptProcessor.class"), "server bytecode");
     final Path neverCompiled = Files.createDirectories(root.resolve("docs/target/classes"));
     Files.writeString(neverCompiled.resolve("notes.txt"), "notes");
-    Json.write(
-        new WorkspaceManifestData(
-            LatheLayout.SCHEMA_VERSION,
-            root.toString(),
-            null,
-            List.of(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(
-                new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR),
-                new OutputData("docs/target/classes", "docs", LatheLayout.CLASSES_DIR)),
-            null),
-        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
+    writeManifest(
+        root,
+        new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR),
+        new OutputData("docs/target/classes", "docs", LatheLayout.CLASSES_DIR));
 
     LatheLifecycleParticipant.mirrorLateOutputs(root);
 
@@ -131,6 +124,42 @@ class LatheLifecycleParticipantTest {
     LatheLifecycleParticipant.mirrorLateOutputs(root);
 
     assertThat(root.resolve(LatheLayout.LATHE_DIR)).doesNotExist();
+  }
+
+  @Test
+  @DisabledOnOs(value = OS.WINDOWS, disabledReason = "POSIX permissions")
+  void afterSessionEnd_topUpFailsReadingTheOutput_buildUnaffectedAndLockReleased(
+      @TempDir final Path root) throws IOException {
+    final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
+    Files.createDirectories(latheDir.resolve("apt/classes"));
+    final Path unreadable = Files.createDirectories(root.resolve("apt/target/classes/sub"));
+    writeManifest(root, new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
+    participant.startReactorLock(latheDir);
+    Files.setPosixFilePermissions(unreadable, Set.of());
+    try {
+      participant.afterSessionEnd(null);
+    } finally {
+      Files.setPosixFilePermissions(unreadable, PosixFilePermissions.fromString("rwx------"));
+    }
+
+    assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  private static void writeManifest(final Path root, final OutputData... outputs)
+      throws IOException {
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            root.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(outputs),
+            null),
+        root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   @Test
