@@ -51,7 +51,8 @@ The neotest adapter relies on this ordering too.
 The events are a best-effort live feed; the response's `testResults` is authoritative (`TestEventParams`).
 Debug launches (`lathe.debug.*`) take the same `token` and stream the same two notifications, so one client-side result path serves both.
 
-Every launch's output starts with **two** `COMMAND` lines: `config: <label>`, then the launch command (`Launcher`).
+Every launch streams **two** `COMMAND` lines first through `lathe/testOutput`: `config: <label>`, then the launch command (`Launcher`).
+The response's `output` holds only the process's own output, without them (found by the slice 0 run test in `LspSmokeTest`).
 
 Test ids are `<binaryClassName>#<method>(<erasedParams>)` (`TestId`, `RunnableScanner`), e.g. `com.example.Outer$Inner#greet(java.lang.String)`.
 A class's id is its binary name; a package's id is its name.
@@ -161,11 +162,12 @@ This reads a JVM type descriptor, a fixed format, not Java source.
 Results for such methods then land on their method, in Neovim as in VS Code.
 
 **F. Follow the build's test-class filter.**
-A module or package run today executes every test class JUnit finds, while `mvn test` runs only the classes Surefire's `includes`/`excludes` select (by default `**/Test*.java`, `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`) and the tags its `groups`/`excludedGroups` select.
-[Run, Test, and Debug](../done/lathe-run-test-debug.md) lists this as a known limitation (§9 there); S7 showed it matters on real projects, so F lifts it, and that document's limitation and `docs/status.md` change when F lands.
+A module or package run today executes every test class JUnit finds, while `mvn test` runs only the classes Surefire's `includes`/`excludes` select (by default `**/Test*.java`, `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`).
+[Run, Test, and Debug](../done/lathe-run-test-debug.md) lists this as a known limitation (§9 there); S7 showed it matters on real projects, so F lifts it for class patterns, and that document's limitation and `docs/status.md` change when F lands.
+Surefire's tag selection (`groups`/`excludedGroups`) is left out on purpose (decided 2026-10-24) and stays a documented limitation.
 Spike S7 found the difference on real projects: Helidon's `config/config` includes only `**/*Test.java`, so three classes `mvn test` never runs are run by Lathe;
 Dropwizard's `dropwizard-testing` has inner `*SubTest` fixtures that fail on purpose and are meant to be driven only by another test, and a Lathe module run reports them as failures.
-The capture records the filter Surefire applied (its include/exclude patterns and tag expressions, as Surefire resolved them), and module runs, package runs and discovery apply it as a JUnit `ClassNameFilter` and `TagFilter`.
+The capture records the class patterns Surefire applied (its include/exclude patterns, as Surefire resolved them), and module runs, package runs and discovery apply them as a JUnit `ClassNameFilter`.
 Running a class or a method explicitly ignores the filter, as IntelliJ does: the user asked for that class.
 How the capture records it is settled when F is built: the in-fork capture listener sees the discovery request Surefire built (one class selector per included class), and the patterns themselves are in the plugin's configuration.
 
@@ -436,9 +438,9 @@ This ports Neovim's `_save_target_for`.
 - Server: `tests.modules` and `tests.discover` against the existing test workspaces, including a module without capture (`blockedReasons`);
   `tests.discover` answers from cache until the module's test classes change, then sends `lathe/testsChanged` once;
   a launched `main()` reading `System.in` exits instead of hanging.
-- Run-path fixes, pinned with the id shapes spike S6 used (kept as a fixture class):
+- Run-path fixes, pinned with the `shapes` module of the `multi-module` fixture (added in slice 0; each slice adds the cases it asserts, §11):
   `TestId` maps `[I`, `[[J` and `[Ljava.lang.String;` to `int[]`, `long[][]` and `java.lang.String[]`, so array and varargs results match their `RunTarget` ids (E);
-  a module run skips a class the captured Surefire patterns exclude and a test the captured tag expression excludes, while running that class explicitly still runs it (F);
+  a module run skips a class the captured Surefire patterns exclude, while running that class explicitly still runs it (F);
   running `Outer` runs `Outer$StaticNested` once and `@Nested` classes once, and skips `Outer$1` (G);
   cancelling a run whose test started a child process (a fixture helper started on the test JDK's own `java`, per the portability rules) leaves neither process alive, on Linux and Windows (H).
 - Neovim: a spec feeds a container-failure result and the two new notifications to the neotest adapter (§3.3).
@@ -517,7 +519,8 @@ With the cursor outside every item's range it does nothing and raises no error, 
    Executing it opens `Run: com.example.app.Main` with `ALICE` and `[exited 0]`.
 7. Test-scope main: the lens on `HelloTester.main` runs it through the module's test launch and prints `tester n=3`.
 
-Cancel and container failures are covered by §8.3: the fixture has no long-running or broken test, and adding one would slow every invoker run.
+Cancel is covered by §8.3: the fixture has no long-running test, and adding one would slow every invoker run.
+Container failures can use the broken classes slice 2 adds to the `shapes` module.
 
 ## 9. Spikes
 
@@ -585,6 +588,25 @@ so Neovim users gain from every phase and the server work is proven by an existi
 **Approval per step.**
 Steps that span several classes or change the wire contract — at least 2, 4, 5, 7, 8 and 9 — each start with a short implementation summary (classes, records, tests) approved before any code, as the project's working rules require.
 The design here is what those summaries implement; it doesn't replace them.
+
+### Neovim release track
+
+Agreed 2026-10-24: the editor-neutral work and its Neovim adoption ship first, as a release of the server and the Neovim plugin only.
+VS Code (phase 3) and [personal setup](../potential/lathe-personal-setup.md) come later.
+The release happens when it works well, not on a date.
+Work happens on the `nvim-run-test` branch, one slice at a time, each with its own approved design summary.
+
+| Slice | Content | Status |
+|---|---|---|
+| 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | built |
+| 1 | Run-path fixes: E, G, H and the closed stdin (D) | next |
+| 2 | Richer results: B and C | |
+| 3 | Neotest: class failures, inline and side-by-side diffs, durations, structured stack frames (§3.4 items 3–6) | |
+| 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |
+| 5 | Surefire's filter (F), after its own design check | |
+| 6 | Whole-module discovery (A), lazy and bounded so neotest's startup doesn't start a JVM per module | |
+| 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7) | |
+| 8 | Release: docs, release notes, the `lathe.nvim` publish; the GitHub release carries no `.vsix` this time | |
 
 ## 12. Open items
 
