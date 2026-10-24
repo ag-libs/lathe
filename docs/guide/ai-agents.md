@@ -186,3 +186,8 @@ Set `LATHE_DEBUG=1` for finer detail.
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
   `Not compiled:`, run the command a `Sync required:` note names; a cold index also needs a moment to
   warm on the first query.
+- **The server uses a lot of memory** — each agent session runs its own server, and with no heap limit
+  each may grow toward a quarter of the machine's memory on a large reactor; cap it with
+  `LATHE_JVM_OPTS` (see [tuning the server JVM](installation.md#tuning-the-server-jvm-lathe_jvm_opts)).
+- **Sync fails after upgrading Lathe, or a "build is running" note never clears** — an mvnd daemon
+  keeps the Lathe extension it first loaded; run `mvnd --stop` after installing a new version.

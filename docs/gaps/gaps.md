@@ -421,7 +421,11 @@ prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive
 
 ## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
 
-**Status: documented.**
+**Status: deferred — Target: backlog.**
+Decision (2026-10-24): Lathe sets no default limit until users report how much memory they want it to
+use; machines with plenty of memory are expected to use it. The installation guide documents capping
+it with `LATHE_JVM_OPTS` (and `-XX:G1PeriodicGCInterval` to return memory when idle), and the agent
+guide's troubleshooting points there. Lathe's own dev tools cap their servers at 2 GB.
 **Affects: the editor and MCP.**
 Found by the MCP-quality probes (2026-10-24) on Helidon.
 
