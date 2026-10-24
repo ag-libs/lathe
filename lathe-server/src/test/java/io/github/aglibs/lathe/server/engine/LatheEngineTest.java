@@ -75,7 +75,7 @@ class LatheEngineTest {
   }
 
   @Test
-  void definition_crossFileInModule_resolvesTargetWithSnippet() throws Exception {
+  void definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine() throws Exception {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
@@ -87,7 +87,8 @@ class LatheEngineTest {
     final LatheLocation target = targets.get(0);
     assertThat(target.uri()).endsWith("Callee.java");
     assertThat(target.origin()).isEqualTo(LatheLocation.Origin.REACTOR);
-    assertThat(target.snippet()).contains("void greet");
+    assertThat(target.path()).isEqualTo(FileUtil.slashed(tmp.relativize(fx.callee())));
+    assertThat(target.snippet()).as("the target line alone").isEqualTo("void greet() {}");
   }
 
   @Test
@@ -161,6 +162,23 @@ class LatheEngineTest {
     final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter());
 
     assertThat(markup).contains("greet");
+  }
+
+  // Line 2 is "  void greet() {}".
+  @Test
+  void onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.onName(fx.callee(), 2, 7)).as("the first letter of greet").isTrue();
+    assertThat(engine.onName(fx.callee(), 2, 11)).as("its last letter").isTrue();
+    assertThat(engine.onName(fx.callee(), 1, 6)).as("Callee").isTrue();
+    assertThat(engine.onName(fx.callee(), 2, 2)).as("the keyword void").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 0)).as("indentation").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 12)).as("the parenthesis").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 40)).as("past the line's end").isFalse();
+    assertThat(engine.onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
   }
 
   @Test
@@ -263,7 +281,7 @@ class LatheEngineTest {
     engine = new LatheEngine(tmp);
     engine.diagnostics(source);
     assertThat(engine.notes(List.of(source)))
-        .isEqualTo(new LatheNotes(List.of(), List.of(), false));
+        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
     engine.diagnostics(source);
@@ -280,23 +298,39 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
   }
 
+  // A sync helps only a file of a module the build compiles; one outside them (a module the build's
+  // profiles or JDK leave out) it cannot.
   @Test
-  void notes_fileInNoSyncedModule_syncRequiredWithTheCommand() throws Exception {
-    TestCompiler.writeModuleSource(
-        tmp, "com/example/Sample.java", "package com.example; class Sample {}");
-    final Path unsynced =
+  void notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules() throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+        List.of(),
+        1_000L);
+    final Path inBuiltModule =
+        TestCompiler.writeAt(
+            tmp.resolve("module/src/it/java/com/example/Probe.java"),
+            "package com.example; class Probe {}",
+            1_000L);
+    final Path outsideTheBuild =
         TestCompiler.writeAt(
             tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
             "package com.example; class Fresh {}",
             1_000L);
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.notes(List.of(unsynced)).syncRequired())
+    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild));
+
+    assertThat(notes.notChecked())
         .containsExactly(
             "%s is in no synced module — run `%s`"
                 .formatted(
-                    Path.of("newmodule/src/main/java/com/example/Fresh.java"),
-                    LatheLayout.SYNC_SCRIPT_COMMAND));
+                    Path.of("module/src/it/java/com/example/Probe.java"),
+                    LatheLayout.SYNC_SCRIPT_COMMAND),
+            "%s is outside the modules the last build compiled, so Lathe cannot check it"
+                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")));
+    assertThat(notes.syncRequired()).isEmpty();
   }
 
   @Test
@@ -716,7 +750,10 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("greet")));
+                    .anyMatch(
+                        d ->
+                            d.path().equals(FileUtil.slashed(tmp.relativize(fx.caller())))
+                                && d.diagnostic().getMessage().getLeft().contains("greet")));
   }
 
   @Test
@@ -733,28 +770,54 @@ class LatheEngineTest {
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
   }
 
+  // A caller's warnings predate the change, and its hints say nothing about whether it compiles:
+  // only the changed file's warning is reported, after the caller's error.
   @Test
-  void verifyChange_referrerWithOnlyAHint_reportsClean() throws Exception {
+  void verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors()
+      throws Exception {
+    final Path old =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Old.java",
+            "package com.example; class Old { @Deprecated(forRemoval = true) static void old() {}"
+                + " }");
     final Path callee =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Callee.java",
-            "package com.example; class Callee { void greet() {} }");
+            "package com.example; class Callee { void greet() { Old.old(); } }");
     final Path caller =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Caller.java",
-            "package com.example; class Caller { void run(Callee c) { c.greet(); } private void"
-                + " unused() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+            "package com.example; class Caller { void run(Callee c) { c.greet(); Old.old(); }"
+                + " private void unused() {} }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), old, callee, caller);
     engine = new LatheEngine(tmp);
     assertThat(engine.diagnostics(caller))
-        .as("the referrer has an unused-method hint")
-        .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Hint);
+        .as("the caller has a removal warning and an unused-method hint")
+        .extracting(Diagnostic::getSeverity)
+        .contains(DiagnosticSeverity.Warning, DiagnosticSeverity.Hint);
 
-    final LatheVerifyChange verify = engine.verifyChange(List.of(callee));
+    assertThat(engine.verifyChange(List.of(callee)).perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .extracting(d -> d.diagnostic().getSeverity())
+                    .containsExactly(DiagnosticSeverity.Warning));
 
-    assertThat(verify.perModule()).isEmpty();
+    writeNewer(callee, "package com.example; class Callee { void welcome() { Old.old(); } }");
+    assertThat(engine.verifyChange(List.of(callee)).perModule())
+        .singleElement()
+        .satisfies(
+            module -> {
+              assertThat(module.diagnostics())
+                  .extracting(d -> d.diagnostic().getSeverity())
+                  .containsExactly(DiagnosticSeverity.Error, DiagnosticSeverity.Warning);
+              assertThat(module.diagnostics().get(0).diagnostic().getMessage().getLeft())
+                  .contains("greet");
+            });
   }
 
   @Test
@@ -781,7 +844,7 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("welcome")));
+                    .anyMatch(d -> d.diagnostic().getMessage().getLeft().contains("welcome")));
   }
 
   @Test
@@ -800,7 +863,8 @@ class LatheEngineTest {
             module -> {
               assertThat(module.module()).isEqualTo("app");
               assertThat(module.diagnostics())
-                  .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol"));
+                  .anyMatch(
+                      d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol"));
             });
     assertThat(verify.affectedModules()).containsExactly("app");
     assertThat(verify.suggestedSync())
@@ -815,7 +879,8 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol")));
+                    .anyMatch(
+                        d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol")));
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
@@ -860,6 +925,16 @@ class LatheEngineTest {
     assertThat(verify.perModule()).isEmpty();
     assertThat(verify.suggestedSync())
         .as("back to what the build compiled: nothing to verify or sync")
+        .isNull();
+
+    // A branch switch and back: a built file deleted (its callers break), then restored as it was.
+    Files.delete(api);
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .singleElement()
+        .satisfies(module -> assertThat(module.module()).isEqualTo("app"));
+    TestCompiler.writeAt(api, API_SOURCE, 30_000L);
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .as("restored as the build compiled it")
         .isNull();
   }
 

@@ -11,8 +11,11 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
@@ -532,6 +535,38 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
+  }
+
+  @Test
+  void runTestFuture_moduleWithoutACapturedLaunch_blockedWithTheCommandThatCapturesIt()
+      throws Exception {
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            tmp.toString(),
+            null,
+            List.of(tmp.resolve("lathe-test-runner.jar").toString()),
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            null),
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
+            .resolve(LatheLayout.WORKSPACE_JSON));
+    service.initialize(tmp);
+
+    final var outcome =
+        service
+            .runTestFuture(
+                "app", List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")), "")
+            .get(5, TimeUnit.SECONDS);
+
+    assertThat(outcome.launched()).isFalse();
+    assertThat(outcome.blockedReasons())
+        .containsExactly(
+            "no captured test launch for app; run `%s` to capture it"
+                .formatted(LatheLayout.captureTestsCommand("app")));
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

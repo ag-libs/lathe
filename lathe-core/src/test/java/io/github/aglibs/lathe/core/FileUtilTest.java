@@ -137,6 +137,33 @@ final class FileUtilTest {
     assertThat(FileUtil.slashed(tempDir.relativize(tempDir))).isEmpty();
   }
 
+  // MCP session logs are named for their start time, so the last in name order are the newest.
+  @Test
+  void deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone() throws IOException {
+    for (final String name :
+        List.of(
+            "mcp-20261001-090000-11.log",
+            "mcp-20261002-090000-12.log",
+            "mcp-20261003-090000-13.log",
+            "lsp.log",
+            "mcp-notes.txt")) {
+      Files.writeString(tempDir.resolve(name), "x");
+    }
+
+    FileUtil.deleteAllButLast(tempDir, LatheLayout::isMcpSessionLog, 2);
+
+    try (final var left = Files.list(tempDir)) {
+      assertThat(left.map(path -> path.getFileName().toString()))
+          .containsExactlyInAnyOrder(
+              "mcp-20261002-090000-12.log",
+              "mcp-20261003-090000-13.log",
+              "lsp.log",
+              "mcp-notes.txt");
+    }
+
+    FileUtil.deleteAllButLast(tempDir.resolve("absent"), LatheLayout::isMcpSessionLog, 2);
+  }
+
   @Test
   void touch_existingFile_bumpsMtimeKeepsContent_missingFileThrows() throws IOException {
     final Path file = Files.writeString(tempDir.resolve("workspace.json"), "{}");

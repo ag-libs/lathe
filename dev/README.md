@@ -22,6 +22,9 @@ All files live in `dev/` and are never shipped with the distribution.
 | `mcp_battery.py` | MCP smoke on a real workspace: every tool, break → verify → repair, rename round-trip |
 | `mcp_staleness.py` | MCP answers after outside changes (file tools, git, a build) on a real workspace |
 | `lsp_staleness.py` | The same outside changes seen by an editor session, polled up to a deadline |
+| `mixed_staleness.py` | An editor and an MCP session on one workspace at once (EqualsVerifier) |
+| `verify_scale.py` | `verify_change` on a type with ~300 callers: time, files checked, server memory (Helidon) |
+| `agent_task.py` | A realistic agent task through MCP only, printing every answer for review (Dropwizard) |
 | `editor-smoke.sh` | Headless editor smoke on real workspaces, in your own Neovim config |
 
 ---
@@ -153,8 +156,22 @@ python3 -I dev/lsp_staleness.py ~/git/equalsverifier equalsverifier
 The MCP probe asks each question once and, if the answer is wrong, again after 3 and 8 s, tagging
 the failure `[LAG]` or `[NEVER]`; the LSP probe polls the diagnostics the server pushes for an open
 file, as an editor shows them.
-Edits to a POM leave it newer than `.lathe/workspace.json`, so the next session asks for a sync even
-after the content is restored: run `.lathe/lathe-sync.sh` before measuring anything else.
+
+Three more look at agents' day-to-day use:
+
+```bash
+python3 -I dev/mixed_staleness.py ~/git/equalsverifier   # editor + agent: rename, saves, mass edit, undo
+python3 -I dev/verify_scale.py ~/git/helidon             # verify_change on GenericType (~300 callers)
+python3 -I dev/agent_task.py ~/git/dropwizard            # find, understand, rename, edit, verify, test, undo
+```
+
+`mixed_staleness.py` acts as Neovim does beside an agent: it reloads a buffer the agent rewrote and
+saves its own edits, and checks both servers' logs for errors. `verify_scale.py` prints each call's
+time, the server's memory, and the `[verify]` log lines. `agent_task.py` judges nothing: it prints every
+answer in full, to read the way an agent would.
+
+The dev clients (`mcp.py`, `lsp.py`) start servers with `LATHE_JVM_OPTS=-Xmx2g` unless the variable is
+set: Lathe itself sets no heap limit.
 
 ---
 

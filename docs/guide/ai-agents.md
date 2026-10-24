@@ -95,24 +95,29 @@ authority.
 
 ## The tools
 
-Every located result carries a source snippet and an `origin` (reactor / dependency / JDK / generated),
-never a bare `file:line`.
+Every located result is one line, `path:line: code`, as grep prints it: the path is relative to the
+workspace, and a result outside the reactor is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
+its URI) or `[GENERATED]`.
+The structured result carries the same, with the full `uri` and `origin`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
-| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build |
+| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, column, direction` | callers (`incoming`) or callees (`outgoing`) of a method, across modules |
-| `search_symbols` | `query` | find a type by name prefix across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
+| `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
-| `verify_change` | `files` (optional) | after edits: recompile the changed files and their same-module referrers, and report their errors and warnings per module |
+| `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
 
-Positions are 1-based. `find_references`, `find_implementations`, `call_hierarchy`, and
+The file tools take an existing `.java` file; any other path answers with an error.
+Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
+a line answers with an error that shows the line, rather than with the enclosing method or class.
+`find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).
 
@@ -139,7 +144,11 @@ What it still cannot vouch for comes as a note at the end of the result:
 - **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
   `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
   Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
-- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, a file in a module that was never synced, or a `.lathe/` written by another Lathe version.
+- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, or a `.lathe/` written by another Lathe version.
+- **`Not checked:`** names a file no module compiles, so nothing about it was checked.
+  For a file of a module the last build compiled, it gives the sync that adds it; for one outside them
+  (a module the build's profiles or JDK leave out) it says Lathe cannot check it, since no sync would.
+  `get_diagnostics` then answers "Foo.java was not checked." rather than reporting no errors.
 - **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
@@ -152,13 +161,18 @@ The changed files are compiled into the mirror before the tool returns, however 
 ### Verifying a change
 
 `verify_change` with no arguments checks what changed since the last check: the files changed on disk
-plus the files Lathe's own tools wrote (a rename), each with its same-module referrers.
+plus the files Lathe's own tools wrote (a rename), each with its callers in its own and in dependent
+modules.
 Pass `files` to check exactly those instead.
-It reports their compiler errors and warnings grouped by module; unused-code hints are left out
-(`get_diagnostics` on one file still shows them).
+It leads with the error count ("No errors — …" or "N error(s)") and lists each diagnostic on one
+grep-style line, errors first: `path:line:column: severity: message`.
+It reports errors and warnings of the changed files, but only errors of their callers, whose warnings
+were there before the change.
+Unused-code hints are left out (`get_diagnostics` on one file still shows them).
 When the change reaches other modules, it names them (up to ten in the text, all of them in the
-structured `affectedModules`) and gives the scoped sync command that builds the rest, e.g.
+structured `affectedModules`) and gives the sync command that builds them, e.g.
 `.lathe/lathe-sync.sh core`.
+With no errors their callers have already compiled, so it says that build is optional.
 If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
 it says so and gives that command instead.
 
@@ -174,7 +188,11 @@ Every tool call emits one line to the server's stderr and to a per-session log f
 
 This records which tool ran, on what, how long it took, and whether it succeeded — enough to tally
 tool usage over a session. It is always on (no `LATHE_DEBUG` needed). Read the log file: a client
-such as Claude Code keeps only the server's startup stderr. Nothing prunes old session files yet.
+such as Claude Code keeps only the server's startup stderr, whose `[startup] … log=<path>` line names
+the file. Each line starts with an ISO-8601 timestamp and its zone offset
+(`2026-10-24T16:21:40.134+0200`), so it lines up with a client's UTC logs.
+A starting server keeps the newest 100 session logs and deletes older ones, with the lock files that
+sessions killed outright leave behind.
 Set `LATHE_DEBUG=1` for finer detail.
 
 ## Troubleshooting
@@ -184,5 +202,10 @@ Set `LATHE_DEBUG=1` for finer detail.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
-  `Not compiled:`, run the command a `Sync required:` note names; a cold index also needs a moment to
+  `Not compiled:`, run the command a `Sync required:` or `Not checked:` note names; a cold index also needs a moment to
   warm on the first query.
+- **The server uses a lot of memory** — each agent session runs its own server, and with no heap limit
+  each may grow toward a quarter of the machine's memory on a large reactor; cap it with
+  `LATHE_JVM_OPTS` (see [tuning the server JVM](installation.md#tuning-the-server-jvm-lathe_jvm_opts)).
+- **Sync fails after upgrading Lathe, or a "build is running" note never clears** — an mvnd daemon
+  keeps the Lathe extension it first loaded; run `mvnd --stop` after installing a new version.

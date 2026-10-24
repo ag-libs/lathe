@@ -33,8 +33,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -69,7 +69,6 @@ public final class LatheEngine {
   private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
-  private static final int SNIPPET_CONTEXT_LINES = 3;
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -201,6 +200,29 @@ public final class LatheEngine {
     return new LatheImplementations(locations.size(), locations.size() > maxResults, capped);
   }
 
+  // An agent's column is easily off by one, and javac answers for the smallest tree around a
+  // position: a method for its modifiers or indentation, the class past a line's end. So the
+  // position tools answer only on a name, checked as text (one word on one line) because javac's
+  // trees give a declaration's span, not its name's.
+  public boolean onName(final Path file, final int line, final int column) {
+    return sourceLine(file, line)
+        .filter(text -> column >= 0 && column < text.length())
+        .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))
+        .map(
+            text ->
+                text.substring(
+                    SourceLocator.identifierStart(text, column),
+                    SourceLocator.identifierEnd(text, column)))
+        .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
+        .filter(word -> !SourceVersion.isKeyword(word))
+        .isPresent();
+  }
+
+  public Optional<String> sourceLine(final Path file, final int line) {
+    final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
+    return line >= 0 && line < lines.size() ? Optional.of(lines.get(line)) : Optional.empty();
+  }
+
   /**
    * The hover markdown for the symbol at {@code line}/{@code column} (0-based) — rendered signature
    * and javadoc — or empty when there is nothing to describe.
@@ -277,8 +299,9 @@ public final class LatheEngine {
             .map(
                 entry -> {
                   final String uri = moves.getOrDefault(entry.getKey(), entry.getKey());
+                  final var path = LatheUri.toPath(uri);
                   return new LatheFileEdit(
-                      uri, origin(LatheUri.toPath(uri)), entry.getValue().size());
+                      uri, displayPath(path, uri), origin(path), entry.getValue().size());
                 })
             .sorted(Comparator.comparing(LatheFileEdit::uri))
             .toList();
@@ -418,15 +441,9 @@ public final class LatheEngine {
         to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
   }
 
-  /**
-   * Recompile the change set in-process against the captured classpath (no reactor build) and
-   * report the errors and warnings of those files and their same-module referrers, grouped by
-   * module. With no {@code files}, the change set is what changed on disk plus what the tools wrote
-   * themselves since the last such check; otherwise it is those files. When the change reaches
-   * other modules, {@link LatheVerifyChange#suggestedSync()} carries the scoped sync that builds
-   * the remainder — Lathe never runs the build. If the in-process recompile cannot be trusted (a
-   * pending build-file sync, or a running build), the result is deferred to a full sync.
-   */
+  // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
+  // sync that would. No files: what changed on disk plus what the tools wrote since the last check.
+  // A pending build-file sync or a running build defers the check to a full sync.
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
@@ -450,9 +467,13 @@ public final class LatheEngine {
 
     final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    final Set<Path> changedSet = Set.copyOf(changed);
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
-            .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
+            .map(
+                entry ->
+                    new LatheModuleDiagnostics(
+                        entry.getKey(), diagnose(entry.getValue(), changedSet)))
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
     // Every caller is checked, however many: the line shows when that grows costly (a core type's
@@ -484,14 +505,27 @@ public final class LatheEngine {
         : LatheLayout.scopedSyncCommand(dependents);
   }
 
-  // Hints (unused code) say nothing about whether the change compiles, and an agent reads any count
-  // as something to fix.
-  // Freshened once by verifyChange, not again for each file.
-  private List<Diagnostic> diagnose(final List<Path> files) {
+  // An agent reads any count as something to fix: a caller's warnings predate the change, and hints
+  // (unused code) say nothing about whether it compiles. Errors first. Freshened once by
+  // verifyChange, not again for each file.
+  private List<LatheDiagnostic> diagnose(final List<Path> files, final Set<Path> changed) {
     return files.stream()
-        .flatMap(file -> analyze(file).stream())
-        .filter(diagnostic -> diagnostic.getSeverity() != DiagnosticSeverity.Hint)
+        .flatMap(file -> reportedIn(file, changed.contains(file)))
+        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
         .toList();
+  }
+
+  private Stream<LatheDiagnostic> reportedIn(final Path file, final boolean changedFile) {
+    final String path = displayPath(file, file.toUri().toString());
+    return analyze(file).stream()
+        .filter(diagnostic -> reported(diagnostic, changedFile))
+        .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
+  }
+
+  private static boolean reported(final Diagnostic diagnostic, final boolean changedFile) {
+    return changedFile
+        ? diagnostic.getSeverity() != DiagnosticSeverity.Hint
+        : diagnostic.getSeverity() == DiagnosticSeverity.Error;
   }
 
   /**
@@ -561,6 +595,7 @@ public final class LatheEngine {
     final var targetPath = LatheUri.toPath(location.getUri());
     return new LatheLocation(
         location.getUri(),
+        displayPath(targetPath, location.getUri()),
         location.getRange(),
         origin(targetPath),
         snippet(targetPath, location.getRange()));
@@ -578,14 +613,19 @@ public final class LatheEngine {
     return LatheLocation.Origin.EXTERNAL;
   }
 
+  // A dependency or JDK source has no workspace path, so it keeps its URI.
+  private String displayPath(final Path target, final String uri) {
+    return target.startsWith(workspaceRoot)
+        ? FileUtil.slashed(workspaceRoot.relativize(target))
+        : uri;
+  }
+
+  // The target line alone: an agent reads the file when it needs more, and every extra line of a
+  // long reference list costs it context.
   private static String snippet(final Path file, final Range range) {
     final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
     final int target = range.getStart().getLine();
-    final int from = Math.max(0, target - SNIPPET_CONTEXT_LINES);
-    final int to = Math.min(lines.size() - 1, target + SNIPPET_CONTEXT_LINES);
-    return IntStream.rangeClosed(from, to)
-        .mapToObj(i -> "%s%d  %s".formatted(i == target ? "> " : "  ", i + 1, lines.get(i)))
-        .collect(Collectors.joining(System.lineSeparator()));
+    return target < lines.size() ? lines.get(target).strip() : "";
   }
 
   private static <T> T await(final CompletableFuture<T> future) {

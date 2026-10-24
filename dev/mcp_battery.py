@@ -92,7 +92,7 @@ def main():
     pos = {"file": str(f), "line": line, "column": col}
     try:
         b.call("get_diagnostics (clean file)", "get_diagnostics", {"file": str(f)},
-               ok=lambda t, r: not r.get("isError") and "No diagnostics" in t)
+               ok=lambda t, r: not r.get("isError") and "No errors or warnings" in t)
         b.call("describe_symbol", "describe_symbol", pos, ok=lambda t, r: cfg["symbol"].rstrip("()") in t)
         b.call("get_definition", "get_definition", pos, ok=lambda t, r: f.name in t)
         if cfg["dep"]:
