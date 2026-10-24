@@ -8338,6 +8338,65 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-15 — Annotation processors built in the reactor never run in-process — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP, including the editor's own save.**
+Found by the external-change staleness probe (2026-10-24) on Helidon, through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+An option (`String latheProbeOpt()` with `@Option.Configured` and `@Option.Default`) was added to
+`common/configurable/.../AllowListConfigBlueprint.java` outside the server, and a test in
+`webserver/webserver` called `AllowListConfig.builder().latheProbeOpt("x")`.
+The pass rewrote `AllowListConfigBlueprint.class`, but `AllowListConfig.java` in
+`.lathe/common/configurable/generated-sources` and its `AllowListConfig*.class` kept the dates of the
+last sync, and the caller kept reporting `cannot find symbol` (also after 8 s).
+Removing the option again was handled correctly, because the stale builder has no such option either.
+
+Editor: the same external edit did not regenerate the builder within 15 s, and neither did an editor
+save of the blueprint (`didChange`, the file written, `didSave`): the mirror's `AllowListConfig.java`
+never gained the option, and an open dependent calling it kept `cannot find symbol`.
+So this is not only an external-change gap; editing a Helidon blueprint in the editor never updates
+its builder without a sync.
+[EG-052](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
+still holds.
+
+### Cause
+
+The write sets `ANNOTATION_PROCESSOR_PATH` from `ModuleSourceConfig.remappedProcessorPath()`, which
+maps reactor processors to their `.lathe/<module>/classes` mirror, e.g. `.lathe/codegen/apt/classes`.
+That mirror holds the classes but not
+`META-INF/services/javax.annotation.processing.Processor`, which exists in
+`codegen/apt/target/classes` because the build generates it (there is no
+`src/main/resources` in `codegen/apt`).
+javac finds no processor, so the write silently compiles without code generation.
+Processors from dependency jars are not remapped, so they presumably still run (not re-verified here).
+
+### Fix
+
+The services file is written by Helidon's services Maven plugin in `process-classes`, from the
+`provides` in `module-info.java`, after the compiler shim has copied the compile's output into the
+mirror; `lathe:sync` runs at the start of the build (in the root project, before any module
+compiles), so it could not add it either.
+The extension's `afterSessionEnd`, which runs after every module, now adds to each mirror the files
+its build output has and the mirror lacks (`LatheLifecycleParticipant.mirrorLateOutputs`, using the
+output-to-mirror map of `workspace.json` through `ReactorRewrite.mirrors()` and the new
+`FileUtil.copyMissing`), never a class, which the server may have rewritten since.
+It is best-effort, before the reactor lock is released, and works with mvnd.
+
+Verified on Helidon after one `.lathe/lathe-sync.sh codegen/apt`: an external blueprint edit and an
+editor save both regenerate `AllowListConfig`, through MCP and the editor.
+Limit: it needs the extension; a manual POM setup still lacks such files.
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.mirrorLateOutputs_fileAddedAfterCompile_copiedIntoTheMirror_classesAndUnmirroredLeftAlone`
+- `LatheLifecycleParticipantTest.mirrorLateOutputs_noManifest_doesNothing`
+- `FileUtilTest.copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone`
+
+---
+
 ## WS-14 — A deleted resource stays in the mirror — done
 
 **Status: done — Target: next.**

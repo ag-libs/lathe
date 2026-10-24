@@ -44,6 +44,10 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".java");
   }
 
+  public static boolean isClassFile(final Path path) {
+    return path.getFileName().toString().endsWith(".class");
+  }
+
   // The top-level type name of a .java source — its file name without the .java suffix.
   public static String javaTypeName(final Path javaFile) {
     final var name = javaFile.getFileName().toString();
@@ -114,7 +118,7 @@ public final class FileUtil {
 
     try (final var walk = Files.walk(root)) {
       return walk.filter(Files::isRegularFile)
-          .filter(path -> path.getFileName().toString().endsWith(".class"))
+          .filter(FileUtil::isClassFile)
           .map(path -> toPackageName(root, path))
           .filter(name -> !name.isEmpty())
           .distinct()
@@ -275,6 +279,21 @@ public final class FileUtil {
         copyEntry(src, dest, source);
       }
     }
+  }
+
+  // Copies each file below src matching keep that dest lacks; files dest already has are left as
+  // they are. Returns how many it copied.
+  public static int copyMissing(final Path src, final Path dest, final Predicate<Path> keep)
+      throws IOException {
+    final List<Path> missing =
+        walkFiles(src, keep).stream()
+            .filter(file -> Files.notExists(dest.resolve(src.relativize(file))))
+            .toList();
+    for (final Path file : missing) {
+      copyFileAtomically(file, dest.resolve(src.relativize(file)));
+    }
+
+    return missing.size();
   }
 
   // Temp file + atomic rename so a concurrent reader (a replay JVM reading .lathe/) never sees a

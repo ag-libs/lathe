@@ -2,11 +2,15 @@ package io.github.aglibs.lathe.maven.extension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.apache.maven.model.Model;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -82,6 +86,51 @@ class LatheLifecycleParticipantTest {
 
     participant.stopReactorLock();
     assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  @Test
+  void mirrorLateOutputs_fileAddedAfterCompile_copiedIntoTheMirror_classesAndUnmirroredLeftAlone(
+      @TempDir final Path root) throws IOException {
+    final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
+    final Path service = Path.of("META-INF/services/javax.annotation.processing.Processor");
+    final Path output = root.resolve("apt/target/classes");
+    Files.createDirectories(output.resolve(service).getParent());
+    Files.writeString(output.resolve(service), "com.example.AptProcessor");
+    Files.writeString(output.resolve("AptProcessor.class"), "build bytecode");
+    final Path mirror = Files.createDirectories(latheDir.resolve("apt/classes"));
+    Files.writeString(mirror.resolve("AptProcessor.class"), "server bytecode");
+    final Path neverCompiled = Files.createDirectories(root.resolve("docs/target/classes"));
+    Files.writeString(neverCompiled.resolve("notes.txt"), "notes");
+    Json.write(
+        new WorkspaceManifestData(
+            LatheLayout.SCHEMA_VERSION,
+            root.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(
+                new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR),
+                new OutputData("docs/target/classes", "docs", LatheLayout.CLASSES_DIR)),
+            null),
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON));
+
+    LatheLifecycleParticipant.mirrorLateOutputs(root);
+
+    assertThat(mirror.resolve(service)).hasContent("com.example.AptProcessor");
+    assertThat(mirror.resolve("AptProcessor.class"))
+        .as("the server may have rewritten it")
+        .hasContent("server bytecode");
+    assertThat(latheDir.resolve("docs")).as("no mirror to top up").doesNotExist();
+  }
+
+  @Test
+  void mirrorLateOutputs_noManifest_doesNothing(@TempDir final Path root) {
+    LatheLifecycleParticipant.mirrorLateOutputs(root);
+
+    assertThat(root.resolve(LatheLayout.LATHE_DIR)).doesNotExist();
   }
 
   @Test

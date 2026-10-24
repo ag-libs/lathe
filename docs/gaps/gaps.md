@@ -419,52 +419,6 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-15 — Annotation processors built in the reactor never run in-process
-
-**Status: documented.**
-**Affects: the editor and MCP, including the editor's own save.**
-Found by the external-change staleness probe (2026-10-24) on Helidon, through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
-
-### Observed behaviour
-
-An option (`String latheProbeOpt()` with `@Option.Configured` and `@Option.Default`) was added to
-`common/configurable/.../AllowListConfigBlueprint.java` outside the server, and a test in
-`webserver/webserver` called `AllowListConfig.builder().latheProbeOpt("x")`.
-The pass rewrote `AllowListConfigBlueprint.class`, but `AllowListConfig.java` in
-`.lathe/common/configurable/generated-sources` and its `AllowListConfig*.class` kept the dates of the
-last sync, and the caller kept reporting `cannot find symbol` (also after 8 s).
-Removing the option again was handled correctly, because the stale builder has no such option either.
-
-Editor: the same external edit did not regenerate the builder within 15 s, and neither did an editor
-save of the blueprint (`didChange`, the file written, `didSave`): the mirror's `AllowListConfig.java`
-never gained the option, and an open dependent calling it kept `cannot find symbol`.
-So this is not only an external-change gap; editing a Helidon blueprint in the editor never updates
-its builder without a sync.
-[EG-052](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
-still holds.
-
-### Cause
-
-The write sets `ANNOTATION_PROCESSOR_PATH` from `ModuleSourceConfig.remappedProcessorPath()`, which
-maps reactor processors to their `.lathe/<module>/classes` mirror, e.g. `.lathe/codegen/apt/classes`.
-That mirror holds the classes but not
-`META-INF/services/javax.annotation.processing.Processor`, which exists in
-`codegen/apt/target/classes` because the build generates it (there is no
-`src/main/resources` in `codegen/apt`).
-javac finds no processor, so the write silently compiles without code generation.
-Processors from dependency jars are not remapped, so they presumably still run (not re-verified here).
-
-### Fix direction
-
-Make the mirror of a module that is used as a processor carry the build's
-`META-INF/services` entries (copied by `lathe:sync` from the build output), or resolve reactor
-processors from the build output instead of the mirror.
-Then confirm an edit to a blueprint regenerates its builder.
-
-### Regression targets
-
-None yet.
-
 ## WS-16 — A source whose content changes while its mtime is put back is not recompiled
 
 **Status: documented.**

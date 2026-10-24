@@ -42,6 +42,27 @@ final class FileUtilTest {
   }
 
   @Test
+  void copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone() throws IOException {
+    final Path src = tempDir.resolve("src");
+    final Path dest = tempDir.resolve("dest");
+    Files.createDirectories(src.resolve("META-INF/services"));
+    Files.createDirectories(src.resolve("com/x"));
+    Files.writeString(src.resolve("META-INF/services/javax.Spi"), "com.x.Impl");
+    Files.writeString(src.resolve("app.conf"), "build");
+    Files.writeString(src.resolve("com/x/App.class"), "build bytecode");
+    Files.createDirectories(dest);
+    Files.writeString(dest.resolve("app.conf"), "mirror");
+
+    final int copied = FileUtil.copyMissing(src, dest, file -> !FileUtil.isClassFile(file));
+
+    assertThat(copied).isEqualTo(1);
+    assertThat(dest.resolve("META-INF/services/javax.Spi")).hasContent("com.x.Impl");
+    assertThat(dest.resolve("app.conf")).as("already there: kept").hasContent("mirror");
+    assertThat(dest.resolve("com/x/App.class")).as("filtered out").doesNotExist();
+    assertThat(FileUtil.copyMissing(tempDir.resolve("absent"), dest, file -> true)).isZero();
+  }
+
+  @Test
   void extractEntry_singleEntry_writesReadOnlyAndNothingElse() throws IOException {
     final Path jar =
         ZipFixture.create(

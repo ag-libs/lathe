@@ -150,7 +150,7 @@ An exact copy of the tree's build output, resources included.
 It feeds the server's cross-module classpath, the reactor type index, and test and main launches.
 The server also writes into it: save compiles, resource copies, and stale-class cleanup keep it current between builds.
 
-- **Maven** replaces it after every compile.
+- **Maven** replaces it after every compile; at the end of the build the extension adds the files a later step wrote to the output and the copy lacks (such as an annotation processor's `META-INF/services` entry written in `process-classes`), never a class.
 - **OpenJDK** writes none and sets `externalOutput`, so the server reads the build's output in place.
 
 ### `lathe-sync.sh`

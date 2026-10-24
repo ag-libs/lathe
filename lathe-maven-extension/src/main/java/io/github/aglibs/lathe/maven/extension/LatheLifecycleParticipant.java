@@ -1,12 +1,17 @@
 package io.github.aglibs.lathe.maven.extension;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -61,7 +66,34 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
   @Override
   public void afterSessionEnd(final MavenSession session) {
+    if (reactorLockDir != null) {
+      mirrorLateOutputs(reactorLockDir.getParent());
+    }
+
     stopReactorLock();
+  }
+
+  // Each compile copies its output into the mirror, but a build adds files after compiling: Helidon
+  // writes its annotation processor's META-INF/services entry in process-classes, and without it
+  // the server's javac runs no processor. Adds what a mirror lacks; never a class, which the server
+  // may have rewritten since. Best-effort: a failure costs that entry, never the build.
+  static void mirrorLateOutputs(final Path workspaceRoot) {
+    try {
+      final WorkspaceManifestData manifest =
+          Json.read(
+              workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+              WorkspaceManifestData.class);
+      final Map<Path, Path> mirrors =
+          ReactorRewrite.of(workspaceRoot, manifest.outputs()).mirrors();
+      for (final Map.Entry<Path, Path> output : mirrors.entrySet()) {
+        if (Files.isDirectory(output.getValue())) {
+          FileUtil.copyMissing(
+              output.getKey(), output.getValue(), file -> !FileUtil.isClassFile(file));
+        }
+      }
+    } catch (final IOException e) {
+      // The server keeps the mirror the compile copied; the next build tries again.
+    }
   }
 
   private static Path reactorRoot(final MavenSession session) {
