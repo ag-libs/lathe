@@ -10,6 +10,14 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   public static final String BUILD_DIR = "lathe.buildDir";
   public static final String RESULTS_SINK = "lathe.results.sink";
+  // Set on a test launch to list the tests it would run, into the results sink, without running
+  // them.
+  public static final String DISCOVER = "lathe.discover";
+  // Lines the test runner prints on stdout around each test, so the server can tell which test's
+  // output follows: the marker, then the class, method and parameter types separated by tabs. The
+  // leading control character keeps a test's own output from ever matching.
+  public static final String TEST_STARTED_MARKER = "\u0001lathe:test-started\t";
+  public static final String TEST_FINISHED_MARKER = "\u0001lathe:test-finished\t";
   // How often the server scans for files changed outside the editor, in ms (default 2000).
   public static final String SCAN_INTERVAL_MS = "lathe.scanIntervalMs";
   // For every JVM Lathe starts (its server, launched runs and tests): stdout and stderr in UTF-8,

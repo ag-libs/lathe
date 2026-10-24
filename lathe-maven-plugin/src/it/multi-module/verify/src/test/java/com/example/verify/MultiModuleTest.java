@@ -2,6 +2,9 @@ package com.example.verify;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -406,5 +409,20 @@ class MultiModuleTest {
     assertThat(content).contains(Os.json(Path.of("core/target/classes")));
     // A classpath launch has no main module; the field is omitted, not blank.
     assertThat(content).doesNotContain("mainModule");
+  }
+
+  // --- test filters (derived by lathe:sync from each module's Surefire includes/excludes) ---
+
+  @Test
+  void sync_shapesTestFilter_recordsTheModulesOwnIncludesAndDefaultExcludes() throws IOException {
+    final JsonObject filter = JsonParser.parseString(read(lathe("shapes/test-filter.json")))
+        .getAsJsonObject();
+
+    assertThat(filter.getAsJsonArray("classNameIncludes").asList())
+        .extracting(JsonElement::getAsString)
+        .containsExactly("(.*\\.)?[^.]*Test");
+    assertThat(filter.getAsJsonArray("classNameExcludes").asList())
+        .extracting(JsonElement::getAsString)
+        .containsExactly("(.*\\.)?[^.]*\\$[^.]*");
   }
 }

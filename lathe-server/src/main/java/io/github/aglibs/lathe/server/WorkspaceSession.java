@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
@@ -19,6 +20,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
@@ -83,6 +85,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -245,6 +248,11 @@ final class WorkspaceSession {
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
+  // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
+  // last one queued: discovery JVMs run one at a time. Both touched on the worker thread only.
+  private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
+  private CompletableFuture<TestDiscovery> lastDiscovery =
+      CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
   private final AtomicBoolean formatFailureReported = new AtomicBoolean();
 
   WorkspaceSession(
@@ -406,7 +414,7 @@ final class WorkspaceSession {
               workspaceRoot,
               manifest.reactorRewrite(),
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               jdwp);
@@ -747,6 +755,40 @@ final class WorkspaceSession {
         .orElse(null);
   }
 
+  // A package or module run executes the classes the build's own test run would (the module's
+  // test-filter.json); a run naming classes or methods runs exactly those.
+  private static List<TestSelection> withTestFilter(
+      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections)
+      throws IOException {
+    return new LaunchReader(workspaceRoot)
+        .testFilter(moduleRel)
+        .map(filter -> withClassNameFilter(selections, filter))
+        .orElse(selections);
+  }
+
+  static List<TestSelection> withClassNameFilter(
+      final List<TestSelection> selections, final TestFilterData filter) {
+    final boolean wide =
+        !selections.isEmpty()
+            && selections.stream()
+                .allMatch(
+                    selection ->
+                        selection.kind() == TestSelectionKind.PACKAGE
+                            || selection.kind() == TestSelectionKind.MODULE);
+    if (!wide) {
+      return selections;
+    }
+
+    return Stream.of(
+            selections.stream(),
+            filter.classNameIncludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_INCLUDE, regex)),
+            filter.classNameExcludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_EXCLUDE, regex)))
+        .flatMap(stream -> stream)
+        .toList();
+  }
+
   // Test selectors to run for a directory, from the real reactor layout, not the path string.
   // A dir inside a module's test tree runs just that package (selectPackage recurses); the
   // source root, or anything above it (module root, src/), runs every test package in one
@@ -792,6 +834,151 @@ final class WorkspaceSession {
     return configs.stream()
         .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
         .toList();
+  }
+
+  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
+
+    CachedDiscovery {
+      ValidCheck.check().notNull(result, "result").validate();
+    }
+  }
+
+  // A module's discovery on disk with the test-classes stamp it was found for, so a new session
+  // reuses it instead of launching a JVM per module again.
+  private record PersistedDiscovery(long stampMillis, TestDiscovery discovery) {
+
+    PersistedDiscovery {
+      ValidCheck.check().notNull(discovery, "discovery").validate();
+    }
+  }
+
+  List<String> testModules() {
+    return testConfigs(workspace.allConfigs()).stream()
+        .map(this::moduleRel)
+        .distinct()
+        .sorted()
+        .toList();
+  }
+
+  // The tests a run of the module would execute, found by a discover-mode launch that runs none of
+  // them. Answered from the cache until the module's test classes change (sync and save compiles
+  // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
+  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
+    final FileTime stamp = testClassesStamp(moduleRel);
+    final CachedDiscovery cached = discoveries.get(moduleRel);
+    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
+      return cached.result();
+    }
+
+    final Path persisted = moduleLatheDir(moduleRel).resolve(LatheLayout.TEST_DISCOVERY_FILE);
+    final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
+    if (stored.isPresent()) {
+      final var result = CompletableFuture.completedFuture(stored.get());
+      discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+      return result;
+    }
+
+    final CompletableFuture<TestDiscovery> result =
+        lastDiscovery
+            .handle((previous, error) -> moduleRel)
+            .thenComposeAsync(this::launchDiscovery, worker::execute)
+            .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
+    lastDiscovery = result;
+    discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+    return result;
+  }
+
+  private CompletableFuture<TestDiscovery> launchDiscovery(final String moduleRel) {
+    final List<TestSelection> selections =
+        moduleRun(workspace.allConfigs(), workspaceRoot, moduleRel).selections().stream()
+            .map(
+                selector ->
+                    new TestSelection(
+                        TestSelectionKind.valueOf(selector.selectorKind()),
+                        selector.selectorValue()))
+            .toList();
+    if (selections.isEmpty()) {
+      return CompletableFuture.completedFuture(new TestDiscovery(moduleRel, List.of(), List.of()));
+    }
+
+    final RunItem overlay =
+        baselineOverlay(moduleRel, RunKind.TEST)
+            .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
+    return startTestRun(moduleRel, selections, "", overlay)
+        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), worker::execute);
+  }
+
+  private TestDiscovery discovery(final String moduleRel, final LaunchOutcome outcome) {
+    final Map<String, String> paths =
+        testSources(moduleRel, outcome.testResults().stream().map(TestResult::className).toList())
+            .stream()
+            .collect(Collectors.toMap(TestSource::className, TestSource::path));
+    return new TestDiscovery(
+        moduleRel, outcome.blockedReasons(), discoveredTests(outcome.testResults(), paths));
+  }
+
+  // One entry per position id: a @Nested class inherited by two outer classes is two JUnit tests
+  // but one position. `paths` maps a class name to its source file, as testSources resolves it.
+  static List<DiscoveredTest> discoveredTests(
+      final List<TestResult> results, final Map<String, String> paths) {
+    return results.stream()
+        .collect(
+            Collectors.toMap(
+                TestResult::positionId,
+                result ->
+                    new DiscoveredTest(
+                        result.positionId(),
+                        result.methodName(),
+                        sourceUri(paths.getOrDefault(result.className(), ""))),
+                (first, again) -> first,
+                LinkedHashMap::new))
+        .values()
+        .stream()
+        .toList();
+  }
+
+  private Path moduleLatheDir(final String moduleRel) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+  }
+
+  // The stored discovery, when it was found for the module's current test classes.
+  static Optional<TestDiscovery> readDiscovery(final Path file, final FileTime stamp) {
+    if (stamp == null || !Files.exists(file)) {
+      return Optional.empty();
+    }
+
+    final PersistedDiscovery persisted =
+        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
+    return persisted.stampMillis() == stamp.toMillis()
+        ? Optional.of(persisted.discovery())
+        : Optional.empty();
+  }
+
+  // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
+  static TestDiscovery writeDiscovery(
+      final Path file, final FileTime stamp, final TestDiscovery discovery) {
+    if (stamp != null && discovery.blockedReasons().isEmpty()) {
+      IOUtil.unchecked(
+          () ->
+              FileUtil.writeIfChanged(
+                  file.getParent(),
+                  file,
+                  Json.toJson(new PersistedDiscovery(stamp.toMillis(), discovery)),
+                  false));
+    }
+
+    return discovery;
+  }
+
+  private static String sourceUri(final String path) {
+    return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
+  }
+
+  private FileTime testClassesStamp(final String moduleRel) {
+    final Path stamps =
+        moduleLatheDir(moduleRel)
+            .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
+    return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
   List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
@@ -1176,7 +1363,7 @@ final class WorkspaceSession {
               workspaceRoot,
               reactorRewrite,
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               JdwpOptions.NONE);

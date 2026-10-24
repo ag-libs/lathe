@@ -25,6 +25,8 @@ class CapturePrunerTest {
     capture("gone", LatheLayout.CLASSES_DIR);
     write(".lathe/a/" + LatheLayout.TEST_LAUNCH_FILE);
     write(".lathe/gone/" + LatheLayout.MAIN_LAUNCH_FILE);
+    write(".lathe/gone/" + LatheLayout.TEST_DISCOVERY_FILE);
+    write(".lathe/a/" + LatheLayout.TEST_FILTER_FILE);
     write(".lathe/" + LatheLayout.WORKSPACE_JSON);
 
     CapturePruner.prune(
@@ -41,6 +43,8 @@ class CapturePrunerTest {
     assertCaptured("gone", LatheLayout.CLASSES_DIR, false);
     assertThat(lathe("a").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
     assertThat(lathe("gone").resolve(LatheLayout.MAIN_LAUNCH_FILE)).doesNotExist();
+    assertThat(lathe("gone").resolve(LatheLayout.TEST_DISCOVERY_FILE)).doesNotExist();
+    assertThat(lathe("a").resolve(LatheLayout.TEST_FILTER_FILE)).exists();
     assertThat(lathe("").resolve(LatheLayout.WORKSPACE_JSON)).exists();
   }
 

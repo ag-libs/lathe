@@ -139,22 +139,40 @@ do
   spec.check("nested class reachable despite untracked enclosing class", by_id["demo.Outer$Inner"] ~= nil, true)
 end
 
--- is_test_file mirrors Surefire's own default include patterns
--- (Test*.java, *Test.java, *Tests.java, *TestCase.java).
+-- is_test_file takes any Java file under a test source root; the server's discovery, with the
+-- build's own test filter, says which hold tests, so a class needs no test-like name.
 do
-  local test_root = "/p/src/test/java/demo/"
-  spec.check("Test*.java matches", adapter.is_test_file(test_root .. "TestFoo.java"), true)
-  spec.check("*Test.java matches", adapter.is_test_file(test_root .. "FooTest.java"), true)
-  spec.check("*Tests.java matches", adapter.is_test_file(test_root .. "FooTests.java"), true)
-  spec.check("*TestCase.java matches", adapter.is_test_file(test_root .. "FooTestCase.java"), true)
-  spec.check("plain class does not match", adapter.is_test_file(test_root .. "Foo.java"), false)
-  spec.check("non-.java file does not match", adapter.is_test_file(test_root .. "FooTest.txt"), false)
-  -- A `Test*`-named class in src/main is a fixture/builder, not a Surefire test: must not match.
-  spec.check(
-    "Test*-named class in src/main is not a test",
-    adapter.is_test_file("/p/src/main/java/demo/TestDataBuilder.java"),
-    false
-  )
+  spec.check("any test-root .java matches", adapter.is_test_file("/p/src/test/java/demo/Foo.java"), true)
+  spec.check("non-.java file does not match", adapter.is_test_file("/p/src/test/java/demo/FooTest.txt"), false)
+  spec.check("src/main class does not match", adapter.is_test_file("/p/src/main/java/demo/TestData.java"), false)
+end
+
+-- _targets_from_discovery: a never-opened file's tree from its module's discovery. Only the tests
+-- whose uri is this file count; each class and every class it is nested in becomes a class target
+-- parented on its outer class or package, all at the top of the file until it is opened.
+do
+  local uri = vim.uri_from_fname(FILE)
+  local targets = adapter._targets_from_discovery({
+    { id = "demo.FooTest#a()", label = "a()", uri = uri },
+    { id = "demo.FooTest$Inner#b(int)", label = "b(int)", uri = uri },
+    { id = "demo.OtherTest#c()", label = "c()", uri = vim.uri_from_fname("/w/OtherTest.java") },
+    { id = "demo.Generated#d()", label = "d()", uri = "" },
+  }, FILE, "app")
+  local by_id = {}
+  for _, target in ipairs(targets) do
+    by_id[target.id] = target
+  end
+
+  spec.check("discovery: this file's tests and classes only", #targets, 4)
+  spec.check("discovery: method under its class", by_id["demo.FooTest$Inner#b(int)"].parentId, "demo.FooTest$Inner")
+  spec.check("discovery: method is a test target", by_id["demo.FooTest#a()"].kind, 1)
+  spec.check("discovery: nested class under its outer class", by_id["demo.FooTest$Inner"].parentId, "demo.FooTest")
+  spec.check("discovery: nested class labelled by simple name", by_id["demo.FooTest$Inner"].label, "Inner")
+  spec.check("discovery: top class under its package", by_id["demo.FooTest"].parentId, "demo")
+  spec.check("discovery: class is a class target", by_id["demo.FooTest"].kind, 2)
+  spec.check("discovery: carries the module", by_id["demo.FooTest"].moduleRel, "app")
+  spec.check("discovery: positioned at the top of the file", by_id["demo.FooTest#a()"].range.start.line, 0)
+  spec.check("discovery: no tests, no targets", #adapter._targets_from_discovery(nil, FILE, "app"), 0)
 end
 
 local function read_file(path)
@@ -666,8 +684,8 @@ end
 do
   local executed = {}
   -- run = fn -> fn() so run_spec's async lathe.run.test body executes and is recorded; the queue and
-  -- future are inert stubs. The client answers runnables.dir with the given plan, records everything.
-  local function install_nio(dir_reply)
+  -- future are inert stubs. The client answers each command with its reply, records everything.
+  local function install_nio(replies)
     executed = {}
     package.loaded["nio"] = {
       control = {
@@ -686,10 +704,7 @@ do
           return {
             { request = { workspace_executeCommand = function(arg)
               executed[#executed + 1] = arg
-              if arg.command == "lathe.runnables.dir" then
-                return nil, dir_reply
-              end
-              return nil
+              return nil, replies[arg.command]
             end } },
           }
         end,
@@ -715,10 +730,12 @@ do
 
   -- Module fan-out: two PACKAGE selectors come back and are run in one launch keyed on the dir node.
   install_nio({
-    moduleRel = "app",
-    selections = {
-      { selectorKind = "PACKAGE", selectorValue = "com.a" },
-      { selectorKind = "PACKAGE", selectorValue = "com.b" },
+    ["lathe.runnables.dir"] = {
+      moduleRel = "app",
+      selections = {
+        { selectorKind = "PACKAGE", selectorValue = "com.a" },
+        { selectorKind = "PACKAGE", selectorValue = "com.b" },
+      },
     },
   })
   local built = adapter.build_spec({ tree = tree })
@@ -736,10 +753,37 @@ do
   spec.check("a runnable dir is not a skip", built.context.skip_reason, nil)
 
   -- Empty reply (reactor root / no tests): honest skip, no launch.
-  install_nio({ moduleRel = "", selections = {} })
+  install_nio({ ["lathe.runnables.dir"] = { moduleRel = "", selections = {} } })
   local skip = adapter.build_spec({ tree = tree })
   spec.check("empty dir reply yields a skip spec", skip.context.skip_reason ~= nil, true)
   spec.check("empty dir reply fires no lathe.run.test", command_arg("lathe.run.test"), nil)
+
+  -- A file whose tests are not discovered yet (just opened) runs the class its path names, in the
+  -- module the server resolves; a file in no module is still an honest skip.
+  local file_tree = {
+    data = function()
+      return { id = FILE, type = "file", name = "FooTest.java", path = FILE }
+    end,
+    iter_nodes = function()
+      return function()
+        return nil
+      end
+    end,
+  }
+  install_nio({ ["lathe.resolveContext"] = { moduleRel = "demo", scope = "test", pkg = "demo" } })
+  adapter.build_spec({ tree = file_tree })
+  local class_run = command_arg("lathe.run.test")
+  spec.check("undiscovered file runs in its module", class_run and class_run.arguments[1].moduleRel, "demo")
+  spec.check(
+    "undiscovered file runs the class its path names",
+    class_run and class_run.arguments[1].selections[1].selectorValue,
+    "demo.FooTest"
+  )
+
+  install_nio({ ["lathe.resolveContext"] = vim.NIL })
+  local no_module = adapter.build_spec({ tree = file_tree })
+  spec.check("file in no module yields a skip spec", no_module.context.skip_reason, "no tests found in this file")
+  spec.check("file in no module fires no lathe.run.test", command_arg("lathe.run.test"), nil)
 
   package.loaded["nio"] = nil
 end
@@ -801,8 +845,12 @@ end
 -- message instead of the run's aggregate.
 do
   local nodes = {
-    ["demo.BrokenTest"] = { id = "demo.BrokenTest", children = { "demo.BrokenTest#neverRuns()" } },
+    ["demo.BrokenTest"] = {
+      id = "demo.BrokenTest",
+      children = { "demo.BrokenTest#neverRuns()", "demo.BrokenTest$Inner#alsoNever()" },
+    },
     ["demo.BrokenTest#neverRuns()"] = { id = "demo.BrokenTest#neverRuns()", children = {} },
+    ["demo.BrokenTest$Inner#alsoNever()"] = { id = "demo.BrokenTest$Inner#alsoNever()", children = {} },
   }
   local class_failure = {
     className = "demo.BrokenTest",
@@ -850,10 +898,132 @@ do
   )
   spec.check("rich failure still maps to its method", results["demo.OtherTest#m()"].status, "failed")
   spec.check(
-    "class failure's quickfix row is named by the class alone",
-    items[1].text,
-    "demo.BrokenTest — java.lang.IllegalStateException: setup exploded"
+    "rich failure's text carries the diff of its values",
+    results["demo.OtherTest#m()"].short,
+    "expected: <a> but was: <b>\n-a\n+b"
   )
+  -- The class's methods never ran: they report the class's error, not the run's "exit=1".
+  spec.check("method of a failed class is failed", results["demo.BrokenTest#neverRuns()"].status, "failed")
+  spec.check(
+    "method of a failed class names the class's error",
+    results["demo.BrokenTest#neverRuns()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  spec.check(
+    "method of a class nested in a failed class is failed too",
+    results["demo.BrokenTest$Inner#alsoNever()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  -- neotest shows diagnostics for test positions only, so the class's diagnostic (its setup line,
+  -- failureLine 9 -> 0-based 8) rides on exactly one of its methods.
+  local carried = 0
+  for _, id in ipairs({ "demo.BrokenTest#neverRuns()", "demo.BrokenTest$Inner#alsoNever()" }) do
+    local errors = results[id].errors
+    if errors then
+      carried = carried + 1
+      spec.check("the carried diagnostic is on the class's setup line", errors[1].line, 8)
+    end
+  end
+  spec.check("one method carries the class's diagnostic", carried, 1)
+  local method_run = adapter.results({
+    context = {
+      position_id = "demo.BrokenTest#neverRuns()",
+      outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = { class_failure } },
+    },
+  }, nil, fake_tree(nodes))
+  spec.check(
+    "running one method of a failed class reports the class's error",
+    method_run["demo.BrokenTest#neverRuns()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  spec.check(
+    "…and carries the class's diagnostic",
+    method_run["demo.BrokenTest#neverRuns()"].errors and method_run["demo.BrokenTest#neverRuns()"].errors[1].line,
+    8
+  )
+  spec.check(
+    "class failure's quickfix row is named by the class alone, with its time",
+    items[1].text,
+    "demo.BrokenTest — java.lang.IllegalStateException: setup exploded (4 ms)"
+  )
+end
+
+-- Each test's output is the lines the server tagged with it; a test without lines of its own shows
+-- the run's whole transcript, as before.
+do
+  local results = adapter.results({
+    context = {
+      position_id = "demo.OutTest",
+      outcome = {
+        launched = true,
+        exitCode = 0,
+        output = {
+          { stream = 0, text = "from a", positionId = "demo.OutTest#a()" },
+          { stream = 0, text = "from setup" },
+          { stream = 1, text = "also from a", positionId = "demo.OutTest#a()" },
+        },
+        testResults = {
+          { positionId = "demo.OutTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.OutTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
+        },
+      },
+    },
+  }, nil, nil)
+
+  spec.check("a test's output holds only its own lines", read_file(results["demo.OutTest#a()"].output), "from a\nalso from a")
+  spec.check(
+    "a test without lines of its own shows the whole transcript",
+    read_file(results["demo.OutTest#b()"].output),
+    "from a\nfrom setup\nalso from a"
+  )
+end
+
+-- The inline diff in a failure's text: line by line, without hunk headers, capped for huge values.
+do
+  spec.check("single-line values diff as one removed and one added line", adapter._value_diff("Alice", "alice"), "-Alice\n+alice")
+  spec.check(
+    "multi-line values keep their unchanged lines as context",
+    adapter._value_diff("one\ntwo\nthree", "one\nTWO\nthree"),
+    " one\n-two\n+TWO\n three"
+  )
+  spec.check("equal values give no diff", adapter._value_diff("same", "same"), nil)
+  local long_expected, long_actual = {}, {}
+  for i = 1, 60 do
+    long_expected[i] = "line " .. i
+    long_actual[i] = "LINE " .. i
+  end
+  local capped = vim.split(adapter._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")), "\n")
+  spec.check("a huge diff is capped at 40 lines plus a hint", #capped, 41)
+  spec.check("the hint says how much is left", capped[41]:match("^… (%d+) more lines") ~= nil, true)
+end
+
+-- open_diff's choice of failure, and the side-by-side tab it opens.
+do
+  local a = { positionId = "demo.T#a()", status = "failed", expected = "1", actual = "2" }
+  local b = { positionId = "demo.T#b()", status = "failed", expected = "x", actual = "y" }
+  local no_values = { positionId = "demo.T#c()", status = "failed" }
+  local passed = { positionId = "demo.T#d()", status = "passed" }
+
+  spec.check("the failure under the cursor wins", adapter._diff_target({ a, b }, "demo.T#b()"), b)
+  spec.check("the only failure with values is taken", adapter._diff_target({ a, no_values, passed }, nil), a)
+  local none, several = adapter._diff_target({ a, b }, "demo.T#d()")
+  spec.check("several failures leave the choice to the user", none, nil)
+  spec.check("…offering each of them", #several, 2)
+  local _, nothing = adapter._diff_target({ no_values, passed }, nil)
+  spec.check("no failure with values offers nothing", #nothing, 0)
+
+  local tabs = #vim.api.nvim_list_tabpages()
+  adapter._show_diff({ positionId = "demo.T#a()", expected = "one\ntwo", actual = "one\nTWO" })
+  local windows = vim.api.nvim_tabpage_list_wins(0)
+  spec.check("the diff opens in a new tab", #vim.api.nvim_list_tabpages(), tabs + 1)
+  spec.check("with two windows", #windows, 2)
+  local function window_text(win)
+    return table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), "\n")
+  end
+  spec.check("expected on the left", window_text(windows[1]), "one\ntwo")
+  spec.check("actual on the right", window_text(windows[2]), "one\nTWO")
+  spec.check("both in diff mode", vim.wo[windows[1]].diff and vim.wo[windows[2]].diff, true)
+  vim.cmd.tabclose()
 end
 
 -- _results_qf_items: the run's executed tests -> quickfix rows. Failures come first and jump to their

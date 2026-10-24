@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,7 +11,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -35,6 +39,10 @@ public final class LaunchSession {
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
+  // The tests running now, from the runner's markers on stdout: touched by the stdout drain only.
+  private final Set<String> runningTests = new HashSet<>();
+  // The one running test, or null for none or several; volatile so the stderr drain sees it too.
+  private volatile String currentTest;
 
   LaunchSession(
       final Process process,
@@ -162,9 +170,11 @@ public final class LaunchSession {
     try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        final var tagged = new TranscriptLine(stream, line);
-        output.add(tagged);
-        onLine.accept(tagged);
+        if (stream != TranscriptLine.Stream.STDOUT || !trackTest(line)) {
+          final var tagged = new TranscriptLine(stream, line, currentTest);
+          output.add(tagged);
+          onLine.accept(tagged);
+        }
       }
     } catch (final IOException e) {
       LOG.log(
@@ -172,6 +182,31 @@ public final class LaunchSession {
     } finally {
       drained.complete(null);
     }
+  }
+
+  // A marker line moves a test in or out of the running set and is not output; any other line is.
+  private boolean trackTest(final String line) {
+    final Optional<String> started = markedTest(line, LatheFlags.TEST_STARTED_MARKER);
+    final Optional<String> finished = markedTest(line, LatheFlags.TEST_FINISHED_MARKER);
+    if (started.isEmpty() && finished.isEmpty()) {
+      return false;
+    }
+
+    started.ifPresent(runningTests::add);
+    finished.ifPresent(runningTests::remove);
+    currentTest = runningTests.size() == 1 ? runningTests.iterator().next() : null;
+    return true;
+  }
+
+  private static Optional<String> markedTest(final String line, final String marker) {
+    if (!line.startsWith(marker)) {
+      return Optional.empty();
+    }
+
+    final String[] parts = line.substring(marker.length()).split("\t", -1);
+    return parts.length == 3
+        ? Optional.of(TestId.positionId(parts[0], parts[1], parts[2]))
+        : Optional.empty();
   }
 
   private List<TestResult> readTestResults() {

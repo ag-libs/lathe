@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.platform.engine.DiscoverySelector;
+import org.junit.platform.engine.Filter;
+import org.junit.platform.engine.discovery.ClassNameFilter;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 
 final class TestSelectorParser {
@@ -20,24 +22,51 @@ final class TestSelectorParser {
   static final String SELECT_METHOD = "--select-method";
   static final String SELECT_PACKAGE = "--select-package";
   static final String SELECT_MODULE = "--select-module";
+  // Class-name regexes narrowing a package or module run to what the build's own test run executes.
+  static final String INCLUDE_CLASS_NAME = "--include-classname";
+  static final String EXCLUDE_CLASS_NAME = "--exclude-classname";
+
+  /** What to run: the selectors, and the class-name filters narrowing them. */
+  record Request(List<DiscoverySelector> selectors, List<Filter<?>> filters) {
+
+    Request {
+      selectors = List.copyOf(selectors);
+      filters = List.copyOf(filters);
+    }
+  }
 
   private TestSelectorParser() {}
 
-  static List<DiscoverySelector> parse(final String[] args) {
-    if (args.length == 0) {
-      throw new IllegalArgumentException("No test selectors provided");
-    }
-
+  static Request parse(final String[] args) {
     final var selectors = new ArrayList<DiscoverySelector>();
+    final var includes = new ArrayList<String>();
+    final var excludes = new ArrayList<String>();
     for (int i = 0; i < args.length; i += 2) {
       if (i + 1 >= args.length) {
         throw new IllegalArgumentException("Missing value for selector %s".formatted(args[i]));
       }
 
-      selectors.addAll(selectors(args[i], args[i + 1]));
+      switch (args[i]) {
+        case INCLUDE_CLASS_NAME -> includes.add(args[i + 1]);
+        case EXCLUDE_CLASS_NAME -> excludes.add(args[i + 1]);
+        default -> selectors.addAll(selectors(args[i], args[i + 1]));
+      }
     }
 
-    return List.copyOf(selectors);
+    if (selectors.isEmpty()) {
+      throw new IllegalArgumentException("No test selectors provided");
+    }
+
+    final var filters = new ArrayList<Filter<?>>();
+    if (!includes.isEmpty()) {
+      filters.add(ClassNameFilter.includeClassNamePatterns(includes.toArray(String[]::new)));
+    }
+
+    if (!excludes.isEmpty()) {
+      filters.add(ClassNameFilter.excludeClassNamePatterns(excludes.toArray(String[]::new)));
+    }
+
+    return new Request(selectors, filters);
   }
 
   private static List<DiscoverySelector> selectors(final String flag, final String value) {

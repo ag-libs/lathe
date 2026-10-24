@@ -10,6 +10,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
@@ -36,6 +37,11 @@ final class ResultsListener implements TestExecutionListener {
   private static final String STATUS_PASSED = "passed";
   private static final String STATUS_FAILED = "failed";
   private static final String STATUS_SKIPPED = "skipped";
+  private static final String STATUS_DISCOVERED = "discovered";
+  // Mirror LatheFlags.TEST_STARTED_MARKER / TEST_FINISHED_MARKER by value: the runner can't
+  // depend on lathe-core. A drift-guard test pins them equal.
+  static final String TEST_STARTED_MARKER = "\u0001lathe:test-started\t";
+  static final String TEST_FINISHED_MARKER = "\u0001lathe:test-finished\t";
   // Where a failure's stack leaves the test's own code for the machinery that called it.
   private static final List<String> MACHINERY =
       List.of(
@@ -45,12 +51,14 @@ final class ResultsListener implements TestExecutionListener {
           "org.junit.jupiter.engine.");
 
   private final Path sink;
+  private final PrintStream stdout;
   private final PrintStream err;
   private final Map<String, Long> startNanos = new ConcurrentHashMap<>();
   private Writer out;
 
-  ResultsListener(final Path sink, final PrintStream err) {
+  ResultsListener(final Path sink, final PrintStream stdout, final PrintStream err) {
     this.sink = sink;
+    this.stdout = stdout;
     this.err = err;
   }
 
@@ -89,10 +97,12 @@ final class ResultsListener implements TestExecutionListener {
   @Override
   public void executionStarted(final TestIdentifier id) {
     startNanos.put(id.getUniqueId(), System.nanoTime());
+    mark(TEST_STARTED_MARKER, id);
   }
 
   @Override
   public void executionFinished(final TestIdentifier id, final TestExecutionResult result) {
+    mark(TEST_FINISHED_MARKER, id);
     final Long start = startNanos.remove(id.getUniqueId());
     final long durationMs = start == null ? -1 : (System.nanoTime() - start) / 1_000_000;
     final boolean failedItself = result.getStatus() != TestExecutionResult.Status.SUCCESSFUL;
@@ -133,6 +143,20 @@ final class ResultsListener implements TestExecutionListener {
             null,
             null,
             List.of()));
+  }
+
+  // On the stream the test's own output goes to, so the server reads them in the order they
+  // happened and can tell which test printed each line.
+  private void mark(final String marker, final TestIdentifier id) {
+    if (id.isContainer() || !(id.getSource().orElse(null) instanceof final MethodSource method)) {
+      return;
+    }
+
+    stdout.println(
+        "%s%s\t%s\t%s"
+            .formatted(
+                marker, method.getClassName(), method.getMethodName(), parameterTypes(method)));
+    stdout.flush();
   }
 
   private void write(final TestRecord record) {
@@ -189,6 +213,30 @@ final class ResultsListener implements TestExecutionListener {
     return value.getValue() instanceof final CharSequence chars
         ? chars.toString()
         : value.getStringRepresentation();
+  }
+
+  /**
+   * A discovered test as a record with status {@code discovered}: a test method, or a template
+   * (parameterized, repeated, factory) listed once; empty for classes and engines.
+   */
+  static Optional<TestRecord> discovered(final TestIdentifier id) {
+    if (!(id.getSource().orElse(null) instanceof final MethodSource method)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new TestRecord(
+            method.getClassName(),
+            method.getMethodName(),
+            parameterTypes(method),
+            STATUS_DISCOVERED,
+            "",
+            -1,
+            -1,
+            id.getDisplayName(),
+            null,
+            null,
+            List.of()));
   }
 
   private static String parameterTypes(final MethodSource method) {

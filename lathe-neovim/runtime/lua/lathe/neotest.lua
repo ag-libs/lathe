@@ -238,8 +238,10 @@ end
 -- the wrong level in the tree (file contains package, not the other way around).
 -- Package-level running is instead bound to the directory node neotest's own tree walk
 -- already creates at the right level -- see build_spec's "dir" handling below.
-local POSITION_TYPE = { [1] = "test", [2] = "namespace" }
-local SELECTOR_KIND = { [1] = "METHOD", [2] = "CLASS" }
+local TEST_METHOD_KIND = 1
+local TEST_CLASS_KIND = 2
+local POSITION_TYPE = { [TEST_METHOD_KIND] = "test", [TEST_CLASS_KIND] = "namespace" }
+local SELECTOR_KIND = { [TEST_METHOD_KIND] = "METHOD", [TEST_CLASS_KIND] = "CLASS" }
 
 local function lathe_client()
   local clients = nio().lsp.get_clients({ name = "lathe" })
@@ -261,13 +263,52 @@ M._live_output_command_rows = output.command_rows
 
 local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
 
+-- A position id's class (`com.x.FooTest$Inner` for `com.x.FooTest$Inner#m()`), and the class a
+-- nested class is declared in; nil past the top.
+local function class_of(id)
+  return id:match("^(.-)#")
+end
+
+local function enclosing_class(class)
+  return class:match("^(.*)%$[^$]+$")
+end
+-- A huge value (a whole JSON document) keeps the failure text readable; open_diff shows all of it.
+local DIFF_MAX_LINES = 40
+
+--- A unified diff of a failure's expected and actual values, line by line, without the hunk headers
+--- (a "…" marks a gap between hunks) and capped at DIFF_MAX_LINES; nil when the two read the same.
+function M._value_diff(expected, actual)
+  local unified = vim.text.diff(expected .. "\n", actual .. "\n", { ctxlen = 3 })
+  if unified == "" then
+    return nil
+  end
+
+  local lines = {}
+  for _, line in ipairs(vim.split(unified, "\n", { trimempty = true })) do
+    if not line:match("^@@") then
+      lines[#lines + 1] = line
+    elseif #lines > 0 then
+      lines[#lines + 1] = "…"
+    end
+  end
+
+  if #lines > DIFF_MAX_LINES then
+    local more = #lines - DIFF_MAX_LINES
+    lines = vim.list_slice(lines, 1, DIFF_MAX_LINES)
+    lines[#lines + 1] = ("… %d more lines: require('lathe.neotest').open_diff() shows both values"):format(more)
+  end
+
+  return table.concat(lines, "\n")
+end
+
 --- One structured per-test result mapped to a neotest.Result. `output` is the run's shared
 --- transcript path, or nil while streaming live (the transcript file is written only once the
 --- run finishes, in results()).
 local function test_result(tr, output)
   local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
   if tr.failureMessage and tr.failureMessage ~= "" then
-    res.short = tr.failureMessage
+    local diff = tr.expected and tr.actual and M._value_diff(tr.expected, tr.actual)
+    res.short = diff and (tr.failureMessage .. "\n" .. diff) or tr.failureMessage
     -- Feed neotest's built-in diagnostic consumer (F1): a failed test becomes a vim.diagnostic on
     -- its failing line. failureLine is a 1-based Java source line, -1 when unresolved; neotest's
     -- error.line is 0-based, and omitting it lets neotest fall back to the position's start line.
@@ -394,25 +435,10 @@ function M.filter_dir(name, rel_path, root)
   return not build_dirs(root)[rel_path]
 end
 
--- The common test-class naming convention: Test*.java, *Test.java, *Tests.java,
--- *TestCase.java. These are Surefire's default includes, and Gradle projects follow the same
--- naming in practice, so it is a pre-filter, not a build rule. A project that overrides its test
--- includes would need the front-end to record them in workspace.json for this adapter to read.
+-- Any Java file under a test source root: which of them hold tests is the server's discovery to say,
+-- with the build's own test filter, so no class-name pattern is guessed here.
 function M.is_test_file(file_path)
-  if not file_path:match("%.java$") then
-    return false
-  end
-  -- Surefire's include patterns apply only within the test source root, but neotest walks the whole
-  -- project -- so gate on src/test/ first, otherwise a `Test*`-named class in src/main (a builder,
-  -- fixture, or config, not a test) is wrongly discovered and swept into package runs.
-  if not file_path:match("/src/test/") then
-    return false
-  end
-  local name = vim.fn.fnamemodify(file_path, ":t:r")
-  return name:match("^Test") ~= nil
-    or name:match("Test$") ~= nil
-    or name:match("Tests$") ~= nil
-    or name:match("TestCase$") ~= nil
+  return file_path:match("%.java$") ~= nil and file_path:match("/src/test/") ~= nil
 end
 
 --- Converts an LSP Range (0-based line/character, on start/end objects) into neotest's
@@ -498,6 +524,69 @@ local function build_tree(file_path, targets)
   end)
 end
 
+-- The module a file belongs to, from the server's reactor layout; nil when it resolves to none.
+local function module_of(client, file_path)
+  local err, context = client.request.workspace_executeCommand({
+    command = "lathe.resolveContext",
+    arguments = { { uri = vim.uri_from_fname(file_path) } },
+  })
+  -- A file in no module answers JSON null (vim.NIL), which cannot be indexed.
+  return not err and type(context) == "table" and context.moduleRel or nil
+end
+
+-- Discovery knows no positions, so a file's tests sit at its top until the file is opened.
+local TOP_OF_FILE = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } }
+
+--- The tests discovery found in one file, as the targets lathe.runnables.list returns for an open
+--- file: a test per method, and its class and every class it is nested in (read off the id), so the
+--- same forest builder nests them. Pure, for the specs.
+function M._targets_from_discovery(tests, file_path, module_rel)
+  local targets, classes = {}, {}
+  local file = vim.fs.normalize(file_path)
+  for _, test in ipairs(tests or {}) do
+    if test.uri ~= "" and vim.fs.normalize(vim.uri_to_fname(test.uri)) == file then
+      local class = class_of(test.id)
+      targets[#targets + 1] =
+        { id = test.id, parentId = class, kind = TEST_METHOD_KIND, label = test.label, moduleRel = module_rel, range = TOP_OF_FILE }
+      while class and not classes[class] do
+        classes[class] = true
+        local outer = enclosing_class(class)
+        targets[#targets + 1] = {
+          id = class,
+          parentId = outer or class:match("^(.*)%.[^.]+$") or "",
+          kind = TEST_CLASS_KIND,
+          label = class:match("([^.$]+)$"),
+          moduleRel = module_rel,
+          range = TOP_OF_FILE,
+        }
+        class = outer
+      end
+    end
+  end
+  return targets
+end
+
+-- A file nobody opened: its tests from the server's discovery of its whole module, which runs no
+-- test and is cached server-side, so neotest's project sweep costs one discovery per module.
+local function discovered_targets(file_path)
+  local client = lathe_client()
+  local module_rel = client and module_of(client, file_path)
+  if not module_rel then
+    return nil
+  end
+
+  local err, discovery = client.request.workspace_executeCommand({
+    command = "lathe.tests.discover",
+    arguments = { { moduleRel = module_rel } },
+  })
+  if err or not discovery then
+    return nil
+  end
+
+  local targets = M._targets_from_discovery(discovery.tests, file_path, module_rel)
+  return #targets > 0 and targets or nil
+end
+
 --- Asks the server for `file_path`'s runnables, or nil when there is no client or no targets; also
 --- returns the buffer's changedtick as of the request (nil for an unloaded file).
 local function request_targets(file_path, bufnr)
@@ -544,6 +633,13 @@ function M.discover_positions(file_path)
   local pending = discovery_inflight[file_path]
   if pending then
     local targets = pending.wait()
+    return targets and build_tree(file_path, targets) or nil
+  end
+
+  -- Not opened: the module's discovery; the file is not marked discovered, so opening it still
+  -- re-discovers it from the open file, with real ranges and unsaved edits.
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    local targets = discovered_targets(file_path)
     return targets and build_tree(file_path, targets) or nil
   end
 
@@ -635,6 +731,18 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
   return spec
 end
 
+--- FQCN for a test source file, or the dotted package for a test source directory, derived from its
+--- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
+--- non-standard-layout node falls back to the aggregate rather than mis-matching.
+local function path_to_qualified(path)
+  local rel = path:match("^.-/src/[^/]+/java/(.*)$")
+  if not rel then
+    return nil
+  end
+
+  return (rel:gsub("%.java$", ""):gsub("/", "."))
+end
+
 function M.build_spec(args)
   local pos = args.tree:data()
   local client = lathe_client()
@@ -713,6 +821,14 @@ function M.build_spec(args)
       module_rel = module_rel or child.lathe_module_rel
     end
   end
+  -- Discovery may not have answered yet (the file was just opened): run the file's class, whose name
+  -- the path gives, rather than skipping the run.
+  local class = #selections == 0 and path_to_qualified(pos.path)
+  module_rel = module_rel or (class and module_of(client, pos.path))
+  if class and module_rel then
+    selections = { { selectorKind = "CLASS", selectorValue = class } }
+  end
+
   if #selections == 0 then
     -- Nothing to debug: there is no selector to launch a suspended JVM for. Notify and bail rather
     -- than hand neotest's dap strategy an empty spec.strategy.
@@ -726,11 +842,9 @@ function M.build_spec(args)
     -- status set at the start of run_tree for this position never gets cleared, so its glyph spins
     -- forever. Return a real no-op spec instead so results() always fires and clears it, with a
     -- message explaining why nothing ran.
-    local reason = vim.fn.bufloaded(pos.path) == 1 and "no tests found in this file"
-      or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
     return {
       command = { "true" },
-      context = { position_id = pos.id, skip_reason = reason, label = pos.name },
+      context = { position_id = pos.id, skip_reason = "no tests found in this file", label = pos.name },
     }
   end
   return run_spec(pos.id, module_rel, selections, client, pos.name, strategy)
@@ -759,22 +873,27 @@ local function transcript_text(lines)
   return table.concat(parts, "\n")
 end
 
+--- An output file per test, holding the transcript lines the server tagged with that test's
+--- positionId; a test with none of its own gets no entry (it shows the run's whole transcript).
+local function per_test_output(lines)
+  local by_id = {}
+  for _, line in ipairs(lines or {}) do
+    if line.positionId then
+      by_id[line.positionId] = by_id[line.positionId] or {}
+      table.insert(by_id[line.positionId], line)
+    end
+  end
+
+  local files = {}
+  for id, test_lines in pairs(by_id) do
+    files[id] = write_output_file(transcript_text(test_lines))
+  end
+  return files
+end
+
 -- Ranks per-test statuses so a container takes the most significant one among the tests it encloses:
 -- any failure dominates, then a pass (a class with passed+skipped tests is passed), then skipped.
 local STATUS_RANK = { skipped = 1, passed = 2, failed = 3 }
-
---- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
---- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
---- non-standard-layout node falls back to the aggregate rather than mis-matching. This name matching
---- (results -> tree nodes) is a client-side concern; deciding what to RUN is server-resolved.
-local function path_to_qualified(path)
-  local rel = path:match("^.-/src/[^/]+/java/(.*)$")
-  if not rel then
-    return nil
-  end
-
-  return (rel:gsub("%.java$", ""):gsub("/", "."))
-end
 
 --- True when `class` (a JUnit binary class name) belongs to `qualifier`: the same class or a nested class
 --- of it when `qualifier` is an FQCN, or any class in the package (or a subpackage) when it is a package.
@@ -785,6 +904,33 @@ local function class_encloses(qualifier, class, is_package)
   end
 
   return class == qualifier or class:sub(1, #qualifier + 1) == qualifier .. "$"
+end
+
+--- A method's status when its class failed itself (its @BeforeAll broke, so the method never ran):
+--- failed, naming the class's error. The class is the id's own or any class it is nested in. nil for
+--- a non-method id, or when no enclosing class failed.
+---
+--- neotest places diagnostics only for test positions, never for a class, so the class's diagnostic
+--- (on its broken setup line) rides on the first of its methods resolved here; `diagnosed` records
+--- the classes already carried, so the line gets one diagnostic, not one per method.
+local function class_failure(id, real, output, diagnosed)
+  local class = class_of(id)
+  while class do
+    local failure = real[class]
+    if failure and failure.status == "failed" then
+      local res = { status = "failed", short = "class failed: " .. (failure.short or ""), output = output }
+      if not diagnosed[class] then
+        diagnosed[class] = true
+        res.errors = failure.errors
+      end
+
+      return res
+    end
+
+    class = enclosing_class(class)
+  end
+
+  return nil
 end
 
 --- Status a container node inherits from the per-test results whose class it encloses, matched by NAME
@@ -1021,6 +1167,7 @@ function M.results(spec, result, tree)
   -- they cover (including the run's own position_id for a single-method run).
   local results = {}
   if ctx.outcome and ctx.outcome.testResults then
+    local outputs = per_test_output(ctx.outcome.output)
     for _, tr in ipairs(ctx.outcome.testResults) do
       local id = tr.positionId
       -- A @ParameterizedTest/@RepeatedTest emits one record per invocation,
@@ -1031,7 +1178,7 @@ function M.results(spec, result, tree)
       -- happened to be written last.
       local existing = results[id]
       if not existing or existing.status ~= "failed" then
-        results[id] = test_result(tr, result.output)
+        results[id] = test_result(tr, outputs[id] or result.output)
       end
     end
   end
@@ -1043,7 +1190,10 @@ function M.results(spec, result, tree)
     real[id] = r
   end
 
-  results[ctx.position_id] = results[ctx.position_id] or result
+  local diagnosed = {}
+  results[ctx.position_id] = results[ctx.position_id]
+    or class_failure(ctx.position_id, real, result.output, diagnosed)
+    or result
 
   -- run_tree marks the whole subtree "running" up front and clears only the ids we return, so every
   -- descendant needs an entry: a container takes the status of the results whose class it encloses (by
@@ -1055,7 +1205,9 @@ function M.results(spec, result, tree)
       local id = node:data().id
       if not results[id] then
         local status = container_status(node, real)
-        results[id] = status and { status = status, output = result.output } or result
+        results[id] = class_failure(id, real, result.output, diagnosed)
+          or (status and { status = status, output = result.output })
+          or result
       end
     end
   end
@@ -1115,6 +1267,9 @@ function M._results_qf_items(results, paths)
     local message = failed and tr.failureMessage and tr.failureMessage ~= "" and tr.failureMessage
       or nil
     local text = message and (id .. " — " .. message:gsub("%s+", " ")) or (id .. " — " .. tr.status)
+    if tr.durationMs and tr.durationMs >= 0 then
+      text = ("%s (%d ms)"):format(text, tr.durationMs)
+    end
     local item = { text = text, type = QF_TYPE[tr.status] or "" }
     local path = paths[tr.className]
     if path and path ~= "" then
@@ -1130,9 +1285,91 @@ function M._results_qf_items(results, paths)
   return vim.list_extend(failures, others)
 end
 
---- Lists the last run's executed tests in the quickfix window, failures first and jumpable -- even
---- tests in files never opened into the summary tree (the tree only shows opened files, but the run
---- executed the whole module). className -> source path is resolved server-side (lathe.testSources,
+--- The failure open_diff compares, from a run's results: the failure with values whose id is
+--- `cursor_id` (the test under the cursor), else the only failure with values. Returns nil and the
+--- candidates when there are several (the caller asks), or none. Pure, so the specs reach it.
+function M._diff_target(results, cursor_id)
+  local candidates = {}
+  for _, tr in ipairs(results or {}) do
+    if tr.status == "failed" and tr.expected ~= nil and tr.actual ~= nil then
+      if tr.positionId == cursor_id then
+        return tr, { tr }
+      end
+
+      candidates[#candidates + 1] = tr
+    end
+  end
+
+  if #candidates == 1 then
+    return candidates[1], candidates
+  end
+
+  return nil, candidates
+end
+
+-- The test method under the cursor, from the buffer's last discovery; nil anywhere else.
+local function cursor_test_id()
+  local cached = discovery_cache[vim.api.nvim_buf_get_name(0)]
+  local line = vim.api.nvim_win_get_cursor(0)[1] - 1
+  for _, t in ipairs(cached and cached.targets or {}) do
+    if t.kind == TEST_METHOD_KIND and t.range and t.range.start.line <= line and line <= t.range["end"].line then
+      return t.id
+    end
+  end
+
+  return nil
+end
+
+local function diff_buffer(name, text)
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(text, "\n"))
+  vim.bo[buf].modifiable = false
+  pcall(vim.api.nvim_buf_set_name, buf, name)
+  vim.cmd.diffthis()
+end
+
+--- Opens a failure's expected and actual values side by side in a new tab, in diff mode, so Neovim
+--- marks the changed lines and the changed text within them.
+function M._show_diff(tr)
+  vim.cmd.tabnew()
+  diff_buffer(("expected: %s"):format(tr.positionId), tr.expected)
+  vim.cmd("rightbelow vnew")
+  diff_buffer(("actual: %s"):format(tr.positionId), tr.actual)
+end
+
+--- Compares a failure's expected and actual values from the last run: the test under the cursor,
+--- else the only such failure, else the one picked from a list. Bind <leader>td.
+function M.open_diff()
+  local target, candidates = M._diff_target(last_run and last_run.results, cursor_test_id())
+  if target then
+    M._show_diff(target)
+    return
+  end
+
+  if #candidates == 0 then
+    vim.notify("No failure with expected and actual values in the last run", vim.log.levels.WARN, {
+      title = "Lathe",
+    })
+    return
+  end
+
+  vim.ui.select(candidates, {
+    prompt = "Compare",
+    format_item = function(tr)
+      return tr.displayName ~= "" and ("%s %s"):format(tr.positionId, tr.displayName) or tr.positionId
+    end,
+  }, function(choice)
+    if choice then
+      M._show_diff(choice)
+    end
+  end)
+end
+
+--- Lists the last run's executed tests in the quickfix window, failures first and jumpable, with each
+--- test's time. className -> source path is resolved server-side (lathe.testSources,
 --- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
 function M.open_results()
   local run = last_run

@@ -355,6 +355,8 @@ It is **optional** — configured separately from `require('lathe').setup()`, li
 | Re-run the first failing test | `require("lathe.neotest").run_first_failed()` | `<leader>tF` |
 | Toggle summary tree | `require("neotest").summary.toggle()` | `<leader>ts` |
 | Open output (docked, navigable) | `require("lathe.neotest").open_output()` | `<leader>to` |
+| Compare a failure's expected and actual side by side | `require("lathe.neotest").open_diff()` | `<leader>td` |
+| List the last run's results, with times (quickfix) | `require("lathe.neotest").open_results()` | `<leader>tq` |
 | Stop / cancel run | `require("lathe.neotest").stop()` | `<leader>tS` |
 
 Stop uses `require("lathe.neotest").stop()`, **not** neotest's `run.stop()`: the replay runs
@@ -362,41 +364,42 @@ server-side, so Lathe cancels it by asking the server to kill the replay JVM (SI
 SIGKILL for a hung test).
 Pass/fail also shows as gutter signs and in the summary tree, and a failing test places a diagnostic on
 its failing assertion line (jump with `]d` / `[d`).
+A failure that compares two values (`assertEquals`, AssertJ's `isEqualTo`, …) shows them as a diff under
+its message, `-` for expected and `+` for actual, line by line for multi-line text and capped at 40
+lines. `open_diff()` opens both values side by side in a new tab, in diff mode, for long or multi-line
+values: the failure under the cursor, else the only one with values, else one you pick.
+When a class's `@BeforeAll` fails, the class shows failed with that error, a diagnostic marks the failing
+setup line, and each of its tests reads `class failed: …` instead of a bare exit code.
+Opening a test's output shows what that test printed, not the whole run's output; a test that printed
+nothing shows the run's output, and the live output buffer always shows everything.
+`open_results()` lists the last run's tests in the quickfix window, failures first, each with its time
+(`— passed (12 ms)`), including tests in files you never opened.
 `run_first_failed()` re-runs the first still-failing test from recent runs; the failing set is
-self-shrinking, so calling it repeatedly walks the failures one at a time as each goes green. It targets
-tests discovered as positions (open the file for a failure from a package run whose file you never
-opened).
+self-shrinking, so calling it repeatedly walks the failures one at a time as each goes green.
 When a run finishes, a one-line notification summarises it —
 `AppServerTest — 12 passed, 1 failed, 2 skipped (1.8s)` — at normal level when everything passed and at
 warning level when any test failed (or the run was blocked or errored), so you see the outcome without
 opening the summary. A debug run reports the same way.
-Discovery is automatic — opening a test file shows its runnables, and add/rename/remove of a `@Test`
-updates on save.
+Discovery is automatic: the summary lists every module's tests, opening a test file places them on
+their lines, and add/rename/remove of a `@Test` updates on save.
+Running a file as soon as it opens, before its tests show, runs its class.
 
 ### Which tests appear in the summary
 
-The neotest summary tree is populated in two stages.
-The adapter first decides which files to hand to neotest: a file is a **test candidate** when it lives
-under a `src/test/` source root and its name matches Surefire's default include patterns —
-`Test*.java`, `*Test.java`, `*Tests.java`, or `*TestCase.java`.
-For each candidate, the server's attributed analysis then reports the actual runnables — methods
-annotated with `@Test`, `@ParameterizedTest`, `@RepeatedTest`, or `@TestFactory`, and the class that
-groups them.
-So what shows up in the summary is the **intersection** of the name pattern and the annotations: a
-name-matching file with no such method contributes nothing, and an annotated method in a non-matching
-file (or under `src/main/`) is not surfaced by neotest.
+The summary shows what `mvn test` would run, without running anything.
+For a file you have not opened, the server asks the JUnit Platform which tests the file's module holds,
+applying the build's own Surefire `<includes>` / `<excludes>`, so a test class needs no test-like name.
+Those tests sit on the file's first line until you open it; the answer is saved under `.lathe/` and
+asked again only after the module's tests compile anew.
+An opened file shows the runnables of its current text instead — methods annotated with `@Test`,
+`@ParameterizedTest`, `@RepeatedTest`, or `@TestFactory`, and the classes that group them — on their
+real lines, unsaved edits included.
 
-This name filter is a neotest-adapter concern — it shapes the summary tree only, not what the server
-can run.
-Two limits follow from it:
-
-- **Project-overridden Surefire `<includes>` / `<excludes>` are not honored yet.**
-  The adapter assumes Surefire's defaults, so a build that customizes them lists a different set in the
-  summary than `mvn test` runs. Reading each module's real patterns at `lathe:sync` is a known future
-  improvement.
+- **A module's tests appear once it has been built** (`lathe:sync` captured its test run).
+  A module whose tests cannot run from the editor lists nothing until you open one of its files.
 - **Integration tests (Failsafe) do not appear.**
-  IT classes (`IT*.java`, `*IT.java`, `*ITCase.java`) fall outside the Surefire name patterns, so the
-  summary never lists them. They are also not runnable from the editor: Lathe captures only the
+  IT classes (`IT*.java`, `*IT.java`, `*ITCase.java`) fall outside Surefire's patterns, so the summary
+  never lists them. They are also not runnable from the editor: Lathe captures only the
   Surefire `test` fork, never the Failsafe fork (`integration-test` / `verify`), so there is no launch
   template to replay them from — run integration tests through Maven. See
   [Test Capture](../test-capture.md).

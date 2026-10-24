@@ -9795,6 +9795,28 @@ missing frame manager is a no-op, and that a reload failure is swallowed rather 
 
 # Neovim client (resolved)
 
+## NV-8 — A neotest run started before a file's discovery finishes reports "no tests found" — done
+
+**Status: done — Target: next.**
+
+Resolution: with nothing discovered under the file, the neotest adapter's `build_spec` runs the class
+the file's path names, in the module `lathe.resolveContext` gives (release track slice 7).
+Regression: `neotest_spec.lua` and the neotest e2e's R7 check.
+
+Found while testing slice 3 of the Neovim release track ([run/test design](../planned/lathe-vscode-run-test.md) §11)
+through neotest's own client: a file run issued right after opening a test file, before the adapter's
+discovery has returned its tests (1–4 s on the `multi-module` fixture, while the server compiles the
+opened file), comes back `skipped` with "no tests found in this file". neotest still holds the file
+position from before discovery, without its tests, and the adapter's `build_spec` skips an empty file.
+A user who runs a file as soon as it opens, before the gutter signs appear, sees nothing run.
+Already the case before slice 3. To be handled with slice 7, which reworks discovery: a file run
+should wait for the file's discovery, or run the file's classes from the server, instead of skipping.
+
+### Regression targets
+
+- A file run on a file with no discovered tests runs its class (`neotest_spec.lua`; the neotest e2e's
+  R7 against the live server).
+
 ## NV-7 — Collapsed import fold pops back open on every save
 
 **Status: done — Target: M2.**

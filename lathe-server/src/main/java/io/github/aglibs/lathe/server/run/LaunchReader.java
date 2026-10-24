@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -29,6 +30,10 @@ public final class LaunchReader {
   // Whether a build has captured the module's test launch, without reading it.
   public boolean testCaptured(final String moduleRel) {
     return Files.exists(moduleDir(moduleRel).resolve(LatheLayout.TEST_LAUNCH_FILE));
+  }
+
+  public Optional<TestFilterData> testFilter(final String moduleRel) throws IOException {
+    return read(moduleRel, LatheLayout.TEST_FILTER_FILE, TestFilterData.class);
   }
 
   private <T> Optional<T> read(final String moduleRel, final String fileName, final Class<T> type)

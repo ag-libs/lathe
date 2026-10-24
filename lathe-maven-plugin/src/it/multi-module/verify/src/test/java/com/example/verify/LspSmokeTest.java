@@ -62,6 +62,21 @@ class LspSmokeTest {
   private static final Path MANIFEST = ROOT.resolve(".lathe/workspace.json");
   private static final Path SHAPES = ROOT.resolve("shapes");
   private static final String ID_SHAPES = "com.example.shapes.IdShapesTest";
+  // Every IdShapesTest method, as its position id: results and discovery must both land on these.
+  private static final List<String> ID_SHAPES_TESTS =
+      List.of(
+          ID_SHAPES + "#plain()",
+          ID_SHAPES + "#printsToStderr()",
+          ID_SHAPES + "#overloaded(java.lang.String)",
+          ID_SHAPES + "#overloaded(int)",
+          ID_SHAPES + "#genericParam(java.util.List)",
+          ID_SHAPES + "#arrayParam(int[])",
+          ID_SHAPES + "#varargsParam(java.lang.String[])",
+          ID_SHAPES + "#enumParam(com.example.shapes.IdShapesTest.Shape)",
+          ID_SHAPES + "#repeated()",
+          ID_SHAPES + "#factory()",
+          ID_SHAPES + "$Inner#innerTest()",
+          ID_SHAPES + "$Inner$Deeper#deeperTest()");
   private static final int TEST_METHOD = 1;
   private static final int STDOUT = 0;
   private static final int STDERR = 1;
@@ -510,20 +525,6 @@ class LspSmokeTest {
     final Path tests = SHAPES.resolve("src/test/java/com/example/shapes");
     final Path idShapes = tests.resolve("IdShapesTest.java");
     session.openDoc(idShapes.toUri().toString(), Files.readString(idShapes));
-    final List<String> landing =
-        List.of(
-            ID_SHAPES + "#plain()",
-            ID_SHAPES + "#printsToStderr()",
-            ID_SHAPES + "#overloaded(java.lang.String)",
-            ID_SHAPES + "#overloaded(int)",
-            ID_SHAPES + "#genericParam(java.util.List)",
-            ID_SHAPES + "#arrayParam(int[])",
-            ID_SHAPES + "#varargsParam(java.lang.String[])",
-            ID_SHAPES + "#enumParam(com.example.shapes.IdShapesTest.Shape)",
-            ID_SHAPES + "#repeated()",
-            ID_SHAPES + "#factory()",
-            ID_SHAPES + "$Inner#innerTest()",
-            ID_SHAPES + "$Inner$Deeper#deeperTest()");
     final int assertLine =
         lineOf(Files.readAllLines(tests.resolve("AssertionsTest.java")), "assertEquals(");
 
@@ -544,11 +545,14 @@ class LspSmokeTest {
 
     assertThat(outcome.get("launched").getAsBoolean()).isTrue();
     assertThat(outcome.get("exitCode").getAsInt()).isNotZero();
-    assertThat(methodIds(idShapes)).containsAll(landing);
+    assertThat(methodIds(idShapes)).containsAll(ID_SHAPES_TESTS);
     assertThat(results)
         .extracting(result -> result.get("positionId").getAsString())
-        .containsAll(landing);
+        .containsAll(ID_SHAPES_TESTS);
     assertThat(results).allMatch(result -> result.get("durationMs").getAsLong() >= 0);
+    // The module's Surefire includes leave this class out, as mvn test does.
+    assertThat(results)
+        .noneMatch(result -> result.get("positionId").getAsString().contains("ExcludedByPattern"));
     assertThat(resultFor(results, "AssertionsTest#singleLine()"))
         .satisfies(
             result -> {
@@ -579,12 +583,45 @@ class LspSmokeTest {
             .toList();
     assertThat(output.subList(0, 2)).allMatch(line -> stream(line) == COMMAND);
     assertThat(text(output.get(0))).startsWith("config: ");
+    // Each line names the test that printed it; the runner's markers never show as output.
+    assertThat(output).noneMatch(line -> text(line).contains("\u0001"));
+    assertThat(output)
+        .filteredOn(line -> text(line).equals("shapes: plain on stdout"))
+        .singleElement()
+        .satisfies(
+            line -> assertThat(line.get("positionId").getAsString()).isEqualTo(ID_SHAPES + "#plain()"));
     assertThat(output)
         .anyMatch(line -> stream(line) == STDOUT && text(line).equals("shapes: plain on stdout"))
         .anyMatch(
             line ->
                 stream(line) == STDERR
                     && text(line).equals("shapes: printsToStderr on stderr"));
+  }
+
+  // A module's tests, listed by a discover launch that runs none of them: what a module run of
+  // shapes executes (its Surefire filter applied), a parameterized method once, each with its file.
+  @Test
+  void testsDiscover_shapesModule_listsWhatAModuleRunWouldExecute() throws Exception {
+    assertThat(session.execute("lathe.tests.modules", Map.of()).getAsJsonArray().asList())
+        .extracting(JsonElement::getAsString)
+        .contains("shapes", "jpms");
+
+    final JsonObject discovery =
+        session.execute("lathe.tests.discover", Map.of("moduleRel", "shapes")).getAsJsonObject();
+    final List<JsonObject> tests = objects(discovery.getAsJsonArray("tests"));
+
+    assertThat(discovery.getAsJsonArray("blockedReasons")).isEmpty();
+    assertThat(tests)
+        .extracting(test -> test.get("id").getAsString())
+        .containsAll(ID_SHAPES_TESTS)
+        .doesNotHaveDuplicates()
+        .noneMatch(id -> id.contains("ExcludedByPattern"));
+    assertThat(tests)
+        .filteredOn(test -> test.get("id").getAsString().startsWith(ID_SHAPES))
+        .allMatch(test -> test.get("uri").getAsString().endsWith("/IdShapesTest.java"));
+    // Asked again with nothing changed, the same answer (from the server's cache).
+    assertThat(session.execute("lathe.tests.discover", Map.of("moduleRel", "shapes")))
+        .isEqualTo(discovery);
   }
 
   private static void awaitCompletionLabel(final String uri, final Position pos, final String label)

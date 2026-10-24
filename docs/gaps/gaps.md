@@ -670,7 +670,9 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-All NV entries to date are resolved in [gaps-archive.md](gaps-archive.md); none are currently open.
+---
+
+No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 
