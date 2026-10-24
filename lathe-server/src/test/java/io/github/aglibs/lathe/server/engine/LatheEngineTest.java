@@ -844,9 +844,17 @@ class LatheEngineTest {
     final Path api = apiReactor(List.of("app"), List.of());
     engine = new LatheEngine(tmp);
     TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    final Path extra =
+        TestCompiler.writeAt(
+            api.resolveSibling("Extra.java"),
+            "package com.example.api;\npublic class Extra {}\n",
+            10_000L);
     assertThat(engine.verifyChange(List.of()).suggestedSync()).isNotNull();
 
+    // The whole change undone: Api back to what the build compiled, and a type the build never saw
+    // deleted again.
     TestCompiler.writeAt(api, API_SOURCE, 20_000L);
+    Files.delete(extra);
     final LatheVerifyChange verify = engine.verifyChange(List.of());
 
     assertThat(verify.perModule()).isEmpty();

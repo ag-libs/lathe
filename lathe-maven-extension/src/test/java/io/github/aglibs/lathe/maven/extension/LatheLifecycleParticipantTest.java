@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven.extension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
@@ -120,10 +121,19 @@ class LatheLifecycleParticipantTest {
   }
 
   @Test
-  void mirrorLateOutputs_noManifest_doesNothing(@TempDir final Path root) {
+  void mirrorLateOutputs_noOrUnreadableManifest_doesNothingAndNeverThrows(@TempDir final Path root)
+      throws IOException {
     LatheLifecycleParticipant.mirrorLateOutputs(root);
-
     assertThat(root.resolve(LatheLayout.LATHE_DIR)).doesNotExist();
+
+    // As another Lathe version wrote it: the build must not fail over the best-effort top-up.
+    final Path latheDir = Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(
+        latheDir.resolve(LatheLayout.WORKSPACE_JSON),
+        "{\"schemaVersion\":\"6\",\"workspaceRoot\":\"x\",\"buildFiles\":\"not a list\"}");
+
+    assertThatCode(() -> LatheLifecycleParticipant.mirrorLateOutputs(root))
+        .doesNotThrowAnyException();
   }
 
   @Test

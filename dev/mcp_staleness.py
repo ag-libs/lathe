@@ -89,12 +89,17 @@ def locate(path: Path, token: str, skip_comments=True):
     raise SystemExit("token %r not in %s" % (token, path))
 
 
+def listed(text: str, name: str) -> bool:
+    """A search_symbols entry for exactly this type ("Name (Class) — pkg"), not one ending in it."""
+    return re.search(r"(^|\s)%s \(" % re.escape(name), text) is not None
+
+
 def found(name):
-    return lambda t: name in t and "No symbols" not in t
+    return lambda t: listed(t, name)
 
 
 def gone(name):
-    return lambda t: "No symbols" in t or name not in t
+    return lambda t: not listed(t, name)
 
 
 def annotated(cfg: dict, content: str) -> str:
@@ -467,7 +472,7 @@ def s_branch_switch(pr: Probe):
     for x in gone_files[:2]:
         name = Path(x).stem
         pr.check("E2 search_symbols drops type deleted by the switch: %s" % name, "search_symbols",
-                 {"query": name}, lambda t, n=name: "No symbols" in t or ("%s (" % n) not in t, settle=True)
+                 {"query": name}, gone(name), settle=True)
     git(pr.ws, "checkout", "HEAD", "--", *at_head)
     for x in changed:
         if x not in at_head:

@@ -3555,20 +3555,27 @@ final class WorkspaceSession {
     return List.copyOf(differing);
   }
 
+  // A deleted file is back to the build only if the build never compiled it either (one created and
+  // deleted since); a tree with no built record (OpenJDK, or stamps from before) cannot tell.
   private boolean backToBuilt(
       final Path file, final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree) {
     final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
     final Path root = config.map(tree -> sourceRootFor(tree, file)).orElse(null);
-    if (root == null || Files.notExists(file)) {
+    if (root == null) {
       return false;
     }
 
-    final ContentFingerprint built =
-        builtByTree
-            .computeIfAbsent(
-                config.get(), tree -> CompiledStamps.loadBuilt(tree.moduleDir(), tree.sourceTree()))
-            .get(root.relativize(file));
-    return built != null && Optional.of(built).equals(FileUtil.readFingerprint(file));
+    final Map<Path, ContentFingerprint> built =
+        builtByTree.computeIfAbsent(
+            config.get(), tree -> CompiledStamps.loadBuilt(tree.moduleDir(), tree.sourceTree()));
+    if (built.isEmpty()) {
+      return false;
+    }
+
+    final ContentFingerprint compiled = built.get(root.relativize(file));
+    return Files.notExists(file)
+        ? compiled == null
+        : compiled != null && Optional.of(compiled).equals(FileUtil.readFingerprint(file));
   }
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that mention

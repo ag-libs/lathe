@@ -9,7 +9,6 @@ import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -95,8 +94,10 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
       ReactorRewrite.of(workspaceRoot, manifest.outputs())
           .mirrors()
           .forEach(LatheLifecycleParticipant::addLateFiles);
-    } catch (final IOException | UncheckedIOException e) {
-      LOG.debug("[mirror] late build output not copied under {}: {}", workspaceRoot, e.toString());
+    } catch (final IOException | RuntimeException e) {
+      // RuntimeException too: a manifest another Lathe version wrote fails to parse, and this
+      // best-effort step must never fail the build.
+      LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
     }
   }
 
