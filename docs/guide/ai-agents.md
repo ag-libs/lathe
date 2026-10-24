@@ -110,7 +110,7 @@ never a bare `file:line`.
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
-| `verify_change` | `files` (optional) | after edits: recompile the changed files and their same-module referrers, and report their errors and warnings per module |
+| `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, per module (callers: errors only) |
 
 Positions are 1-based. `find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
@@ -152,13 +152,17 @@ The changed files are compiled into the mirror before the tool returns, however 
 ### Verifying a change
 
 `verify_change` with no arguments checks what changed since the last check: the files changed on disk
-plus the files Lathe's own tools wrote (a rename), each with its same-module referrers.
+plus the files Lathe's own tools wrote (a rename), each with its callers in its own and in dependent
+modules.
 Pass `files` to check exactly those instead.
-It reports their compiler errors and warnings grouped by module; unused-code hints are left out
-(`get_diagnostics` on one file still shows them).
+It leads with the error count ("No errors — …" or "N error(s)"), lists errors first, and groups the
+diagnostics by module: errors and warnings of the changed files, but only errors of their callers,
+whose warnings were there before the change.
+Unused-code hints are left out (`get_diagnostics` on one file still shows them).
 When the change reaches other modules, it names them (up to ten in the text, all of them in the
-structured `affectedModules`) and gives the scoped sync command that builds the rest, e.g.
+structured `affectedModules`) and gives the sync command that builds them, e.g.
 `.lathe/lathe-sync.sh core`.
+With no errors their callers have already compiled, so it says that build is optional.
 If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
 it says so and gives that command instead.
 

@@ -418,15 +418,9 @@ public final class LatheEngine {
         to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
   }
 
-  /**
-   * Recompile the change set in-process against the captured classpath (no reactor build) and
-   * report the errors and warnings of those files and their same-module referrers, grouped by
-   * module. With no {@code files}, the change set is what changed on disk plus what the tools wrote
-   * themselves since the last such check; otherwise it is those files. When the change reaches
-   * other modules, {@link LatheVerifyChange#suggestedSync()} carries the scoped sync that builds
-   * the remainder — Lathe never runs the build. If the in-process recompile cannot be trusted (a
-   * pending build-file sync, or a running build), the result is deferred to a full sync.
-   */
+  // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
+  // sync that would. No files: what changed on disk plus what the tools wrote since the last check.
+  // A pending build-file sync or a running build defers the check to a full sync.
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
@@ -450,10 +444,15 @@ public final class LatheEngine {
 
     final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    final Set<Path> changedSet = Set.copyOf(changed);
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
-            .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
+            .map(
+                entry ->
+                    new LatheModuleDiagnostics(
+                        entry.getKey(), diagnose(entry.getValue(), changedSet)))
             .filter(module -> !module.diagnostics().isEmpty())
+            .sorted(Comparator.comparing(module -> !hasError(module.diagnostics())))
             .toList();
     // Every caller is checked, however many: the line shows when that grows costly (a core type's
     // callers across a large reactor).
@@ -484,14 +483,28 @@ public final class LatheEngine {
         : LatheLayout.scopedSyncCommand(dependents);
   }
 
-  // Hints (unused code) say nothing about whether the change compiles, and an agent reads any count
-  // as something to fix.
-  // Freshened once by verifyChange, not again for each file.
-  private List<Diagnostic> diagnose(final List<Path> files) {
+  // An agent reads any count as something to fix: a caller's warnings predate the change, and hints
+  // (unused code) say nothing about whether it compiles. Errors first. Freshened once by
+  // verifyChange, not again for each file.
+  private List<Diagnostic> diagnose(final List<Path> files, final Set<Path> changed) {
     return files.stream()
-        .flatMap(file -> analyze(file).stream())
-        .filter(diagnostic -> diagnostic.getSeverity() != DiagnosticSeverity.Hint)
+        .flatMap(
+            file ->
+                analyze(file).stream()
+                    .filter(diagnostic -> reported(diagnostic, changed.contains(file))))
+        .sorted(Comparator.comparing(Diagnostic::getSeverity))
         .toList();
+  }
+
+  private static boolean reported(final Diagnostic diagnostic, final boolean changedFile) {
+    return changedFile
+        ? diagnostic.getSeverity() != DiagnosticSeverity.Hint
+        : diagnostic.getSeverity() == DiagnosticSeverity.Error;
+  }
+
+  private static boolean hasError(final List<Diagnostic> diagnostics) {
+    return diagnostics.stream()
+        .anyMatch(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error);
   }
 
   /**

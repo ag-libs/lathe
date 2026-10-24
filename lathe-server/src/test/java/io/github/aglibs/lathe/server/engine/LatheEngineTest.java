@@ -733,28 +733,53 @@ class LatheEngineTest {
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
   }
 
+  // A caller's warnings predate the change, and its hints say nothing about whether it compiles:
+  // only the changed file's warning is reported, after the caller's error.
   @Test
-  void verifyChange_referrerWithOnlyAHint_reportsClean() throws Exception {
+  void verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors()
+      throws Exception {
+    final Path old =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Old.java",
+            "package com.example; class Old { @Deprecated(forRemoval = true) static void old() {}"
+                + " }");
     final Path callee =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Callee.java",
-            "package com.example; class Callee { void greet() {} }");
+            "package com.example; class Callee { void greet() { Old.old(); } }");
     final Path caller =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Caller.java",
-            "package com.example; class Caller { void run(Callee c) { c.greet(); } private void"
-                + " unused() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+            "package com.example; class Caller { void run(Callee c) { c.greet(); Old.old(); }"
+                + " private void unused() {} }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), old, callee, caller);
     engine = new LatheEngine(tmp);
     assertThat(engine.diagnostics(caller))
-        .as("the referrer has an unused-method hint")
-        .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Hint);
+        .as("the caller has a removal warning and an unused-method hint")
+        .extracting(Diagnostic::getSeverity)
+        .contains(DiagnosticSeverity.Warning, DiagnosticSeverity.Hint);
 
-    final LatheVerifyChange verify = engine.verifyChange(List.of(callee));
+    assertThat(engine.verifyChange(List.of(callee)).perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .extracting(Diagnostic::getSeverity)
+                    .containsExactly(DiagnosticSeverity.Warning));
 
-    assertThat(verify.perModule()).isEmpty();
+    writeNewer(callee, "package com.example; class Callee { void welcome() { Old.old(); } }");
+    assertThat(engine.verifyChange(List.of(callee)).perModule())
+        .singleElement()
+        .satisfies(
+            module -> {
+              assertThat(module.diagnostics())
+                  .extracting(Diagnostic::getSeverity)
+                  .containsExactly(DiagnosticSeverity.Error, DiagnosticSeverity.Warning);
+              assertThat(module.diagnostics().get(0).getMessage().getLeft()).contains("greet");
+            });
   }
 
   @Test

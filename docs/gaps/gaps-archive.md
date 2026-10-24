@@ -10123,6 +10123,94 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-17 — `verify_change` reports unchanged files' old warnings as results, and does not lead with errors — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard and Helidon.
+
+### Observed behaviour
+
+- After a correct rename of `Duration.toMilliseconds` on Dropwizard, `verify_change` answered
+  "5 diagnostic(s) after recompile", all pre-existing Jetty deprecation warnings in callers the rename
+  did not create.
+- After a deliberate type error, it answered "6 diagnostic(s)" with the one error listed between those
+  warnings; the headline did not say "1 error".
+- On Helidon every call, a no-op included, answered "7 diagnostic(s)": `unchecked` warnings in callers.
+
+An agent reads the count as something it caused and must fix.
+
+### Fix
+
+`LatheEngine.diagnose` keeps errors and warnings for the changed files but only errors for the
+callers checked for breakage: a caller's warnings were there before the change.
+Within a module errors come first, and modules with errors come first.
+The text leads with the count that matters: "No errors — the changed files and their callers
+compile." or "N error(s).", plus "M warning(s) in the changed files" when there are any.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors`
+  (fails without the filter or the ordering)
+- `LatheMcpToolsTest.verifyHeadline_errorsAndWarnings_leadsWithErrors`
+
+---
+
+## MC-19 — `verify_change`'s sync suggestion reads as required even when every caller was checked — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+After fixing one caller in `dropwizard-core`, with every caller checked clean, `verify_change` ended
+with "18 module(s) depend on your change …; to build them fully, run: `.lathe/lathe-sync.sh` …".
+Agents tend to run the commands they are given, so a clean check still cost a long build.
+
+### Fix
+
+The cross-module note now depends on the result.
+With no errors: "their callers compile, so a full build is optional: `<sync>`".
+With errors: "fix the errors and re-check, or build them with: `<sync>`".
+A deferred check (a pending build-file sync, a running build) still asks for the sync, as before.
+
+### Regression targets
+
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
+
+---
+
+## MC-16 — `verify_change` has no record of what the build compiled for modules Maven left untouched — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+On Helidon, `common/common` had no `built` entries in its compile stamps: the last sync found the
+module up to date, so Maven did not compile it and the compiler shim, which records `built`, never ran
+there.
+Without that record a source only touched (same content) read as a change: `verify_change` named 211
+dependent modules and suggested a full sync, and a full revert there still read as a change.
+
+### Fix
+
+At the end of a build the extension (`LatheLifecycleParticipant.recordBuilt`) records `built` for each
+source tree of every module the build completed successfully and that has no such record yet
+(`CompiledStamps.recordBuiltIfMissing`).
+Maven compiled nothing there because every source was older than its classes, so each source's
+current content is what was compiled.
+Its mtimes stay; a tree that already has a record is left alone, and a module outside the build or one
+that failed is never touched.
+Like the late-output top-up, it is best-effort: a failure is logged at debug level and never fails the
+build.
+`CompileCapture` and the hook list a tree's sources the same way (`CompiledStamps.sourcesByKey`).
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.recordBuilt_moduleWithoutABuiltRecord_recordsItsSourcesAndKeepsAnExistingRecord`
+
+---
+
 ## MC-13 — `verify_change` still advises a sync after a change has been fully reverted — done
 
 **Status: done — Target: next**
@@ -10198,7 +10286,7 @@ in `equalsverifier-test`.
 
 - `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (fails with same-module callers only, and without the pass recording its writes)
-- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
 
 ---
 
@@ -10465,9 +10553,9 @@ The same review capped the "N module(s) depend on your change" list in the text 
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_referrerWithOnlyAHint_reportsClean` (fails without the filter); the
+- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors` (fails without the filter); the
   error side stays covered by `verifyChange_externalEditBreaksSibling_reportsDiagnostic`.
-- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`.
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`.
 
 ---
 

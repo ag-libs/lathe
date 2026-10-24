@@ -225,21 +225,41 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest() {
+  void crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded() {
     final List<String> twelve = IntStream.rangeClosed(1, 12).mapToObj("mod%d"::formatted).toList();
     final String sync = ".lathe/lathe-sync.sh core";
 
-    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync)))
+    assertThat(
+            LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync), 0))
         .contains("12 module(s) depend on your change (mod1, mod2,")
         .contains("mod10, and 2 more)")
         .doesNotContain("mod11")
         .endsWith(sync);
     assertThat(
             LatheMcpTools.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync)))
-        .contains("2 module(s) depend on your change (a, b); their callers were checked here")
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync), 0))
+        .contains(
+            "2 module(s) depend on your change (a, b); their callers compile, so a full build is optional")
         .doesNotContain("more");
-    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null)))
+    assertThat(
+            LatheMcpTools.crossModuleNote(
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync), 1))
+        .contains("(a, b); fix the errors and re-check, or build them with")
+        .endsWith(sync);
+    assertThat(
+            LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null), 0))
         .isEmpty();
+  }
+
+  @Test
+  void verifyHeadline_errorsAndWarnings_leadsWithErrors() {
+    assertThat(LatheMcpTools.verifyHeadline(0, 0))
+        .isEqualTo("No errors — the changed files and their callers compile.");
+    assertThat(LatheMcpTools.verifyHeadline(0, 7))
+        .isEqualTo(
+            "No errors — the changed files and their callers compile; 7 warning(s) in the changed files.");
+    assertThat(LatheMcpTools.verifyHeadline(2, 1))
+        .isEqualTo("2 error(s); 1 warning(s) in the changed files.");
+    assertThat(LatheMcpTools.verifyHeadline(3, 0)).isEqualTo("3 error(s).");
   }
 }

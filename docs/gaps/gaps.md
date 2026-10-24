@@ -827,55 +827,6 @@ None yet.
 
 ---
 
-## MC-16 — `verify_change` has no record of what the build compiled for modules Maven left untouched
-
-**Status: documented.**
-Found by the MCP-quality probes (2026-10-24) on Helidon.
-
-### Observed behaviour
-
-On Helidon, `common/common` had no `built` entries in its compile stamps: the last sync found the
-module up to date, so Maven did not compile it and the compiler shim, which records `built`, never ran
-there. Without that record a source only touched (same content) reads as a change: `verify_change`
-named 211 dependent modules and suggested a full sync, and a full revert there still reads as a
-change ([MC-13](gaps-archive.md#mc-13--verify_change-still-advises-a-sync-after-a-change-has-been-fully-reverted--done)
-works only where Maven recompiled since).
-
-### Fix direction
-
-At the end of a build, record `built` for every tree that lacks it: Maven compiled nothing there
-because every source was older than its classes, so each source's current content is what was
-compiled. The extension's end-of-build hook already walks every module's mirror.
-
-### Regression targets
-
-None yet.
-
-## MC-17 — `verify_change` reports unchanged files' old warnings as results, and does not lead with errors
-
-**Status: documented.**
-Found by the MCP-quality probes (2026-10-24) on Dropwizard and Helidon.
-
-### Observed behaviour
-
-- After a correct rename of `Duration.toMilliseconds` on Dropwizard, `verify_change` answered
-  "5 diagnostic(s) after recompile", all pre-existing Jetty deprecation warnings in callers the rename
-  did not create.
-- After a deliberate type error, it answered "6 diagnostic(s)" with the one error listed between those
-  warnings; the headline does not say "1 error".
-- On Helidon every call, a no-op included, answered "7 diagnostic(s)": `unchecked` warnings in callers.
-
-An agent reads the count as something it caused and must fix.
-
-### Fix direction
-
-Lead with errors ("1 error" / "no errors"), list them first, and report warnings only for the files
-that changed, not for callers checked for breakage.
-
-### Regression targets
-
-None yet.
-
 ## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines
 
 **Status: documented.**
@@ -891,26 +842,6 @@ find one class. `find_references` shows a seven-line snippet per reference, abou
 
 One line per result by default (name, kind, package or file:line, and the line itself for a
 reference), with snippets only on request or for the first few results.
-
-### Regression targets
-
-None yet.
-
-## MC-19 — `verify_change`'s sync suggestion reads as required even when every caller was checked
-
-**Status: documented.**
-Found by the MCP-quality probes (2026-10-24) on Dropwizard.
-
-### Observed behaviour
-
-After fixing one caller in `dropwizard-core`, with every caller checked clean, `verify_change` ended
-with "18 module(s) depend on your change …; to build them fully, run: `.lathe/lathe-sync.sh` …(18
-modules)". Agents tend to run the commands they are given, so a clean check still costs a long build.
-
-### Fix direction
-
-Say the in-process check is complete and the build optional when every caller compiled clean, and
-recommend the sync only when something could not be checked (a deferral, a "Not compiled" file).
 
 ### Regression targets
 

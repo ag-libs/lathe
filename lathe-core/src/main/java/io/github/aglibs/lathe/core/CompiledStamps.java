@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import io.github.aglibs.lathe.core.schema.CompiledStampsData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,6 +39,46 @@ public final class CompiledStamps {
     Json.write(
         new CompiledStampsData(bySlashed(stamps), bySlashed(built)),
         stampsPath(moduleDir, sourceTree));
+  }
+
+  // A build that found the tree up to date compiled nothing, so the compile never recorded what it
+  // compiled: every source's current content is that, for a tree the build completed. Its mtimes
+  // stay.
+  public static void recordBuiltIfMissing(final Path moduleDir, final ModuleConfigData config)
+      throws IOException {
+    final CompiledStampsData data = read(moduleDir, config.sourceTree());
+    if (!data.built().isEmpty()) {
+      return;
+    }
+
+    writeAll(moduleDir, config.sourceTree(), byPath(data.stamps()), builtOf(sourcesByKey(config)));
+  }
+
+  // Each Java source of the tree by its stamp key (source-root-relative), the annotation-processor
+  // output left out: the scan skips it too, and its files could collide with real sources' keys.
+  public static Map<Path, Path> sourcesByKey(final ModuleConfigData config) {
+    final Path genRoot =
+        config.generatedSourcesDir() != null
+            ? Path.of(config.generatedSourcesDir()).normalize()
+            : null;
+    return config.sourceRoots().stream()
+        .map(Path::of)
+        .filter(root -> !root.normalize().equals(genRoot) && Files.isDirectory(root))
+        .flatMap(
+            root ->
+                IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile)).stream()
+                    .map(source -> Map.entry(root.relativize(source), source)))
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
+  }
+
+  public static Map<Path, ContentFingerprint> builtOf(final Map<Path, Path> sourcesByKey) {
+    return sourcesByKey.entrySet().stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey,
+                entry -> IOUtil.unchecked(() -> FileUtil.fingerprint(entry.getValue()))));
   }
 
   // The server's own write: the mtime only, so what the build compiled stays the reference.

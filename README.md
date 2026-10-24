@@ -79,7 +79,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
-| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their same-module referrers in-process, report errors/warnings per module (no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first per module (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
