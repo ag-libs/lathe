@@ -10,9 +10,12 @@ import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
+import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.dependency.DependencySource;
+import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
@@ -25,6 +28,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -54,6 +58,7 @@ import org.gradle.api.tasks.options.Option;
 public abstract class LatheSyncTask extends DefaultTask {
 
   static final String MODULE_OPTION = "module";
+  private static final String SOURCES_CLASSIFIER = "sources";
 
   @InputFiles
   @PathSensitive(PathSensitivity.NONE)
@@ -125,9 +130,14 @@ public abstract class LatheSyncTask extends DefaultTask {
             Path.of(getGradleHome().get()),
             Path.of(getDaemonJavaHome().get()),
             getInitScripts().get());
+    final List<Map.Entry<DependencyFact, List<String>>> libraries = libraries(facts);
+    final List<DependencySource> librarySources =
+        DependencySourceSync.prepare(
+            libraries.stream().map(LatheSyncTask::source).toList(),
+            libraries.stream().map(library -> jar(library.getKey())).toList());
     WorkspaceManifestWriter.write(
         root,
-        List.of(),
+        librarySources,
         JdkTypeIndexSync.index(jdk),
         PluginProps.version(),
         List.of(),
@@ -148,6 +158,54 @@ public abstract class LatheSyncTask extends DefaultTask {
             .collect(
                 Collectors.toUnmodifiableMap(
                     fact -> Path.of(fact.module()), fact -> Set.copyOf(fact.trees()))));
+  }
+
+  // Each external library once, with the classpath of the first project that compiles against it,
+  // as on Maven; sorted by coordinates, so workspace.json does not change with the facts' order.
+  private static List<Map.Entry<DependencyFact, List<String>>> libraries(
+      final List<ProjectFacts> facts) {
+    return List.copyOf(
+        facts.stream()
+            .flatMap(
+                fact ->
+                    fact.dependencies().stream()
+                        .map(library -> Map.entry(library, fact.dependencyClasspath())))
+            .collect(
+                Collectors.toMap(
+                    library -> library.getKey().gav(),
+                    library -> library,
+                    (first, ignored) -> first,
+                    TreeMap::new))
+            .values());
+  }
+
+  private static DependencySource source(final Map.Entry<DependencyFact, List<String>> entry) {
+    final DependencyFact library = entry.getKey();
+    final List<Path> classpath = entry.getValue().stream().map(Path::of).toList();
+    if (library.sourcesJar() == null) {
+      return DependencySource.missing(library.gav(), Path.of(library.jar()), classpath);
+    }
+
+    return DependencySource.present(
+        library.gav(),
+        Path.of(library.jar()),
+        LatheLayout.artifactDir(
+            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
+            library.group(),
+            library.name(),
+            library.version()),
+        new ResolvedJar(
+            library.group(),
+            library.name(),
+            library.version(),
+            SOURCES_CLASSIFIER,
+            Path.of(library.sourcesJar())),
+        classpath);
+  }
+
+  private static ResolvedJar jar(final DependencyFact library) {
+    return new ResolvedJar(
+        library.group(), library.name(), library.version(), "", Path.of(library.jar()));
   }
 
   // The newest JDK any project compiles with, as the server's: the server then parses what every

@@ -9,16 +9,30 @@ import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.gradle.api.GradleException;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
+import org.gradle.api.artifacts.ArtifactCollection;
 import org.gradle.api.artifacts.Configuration;
+import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.component.ComponentIdentifier;
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier;
+import org.gradle.api.artifacts.dsl.DependencyFactory;
+import org.gradle.api.artifacts.result.DependencyResult;
+import org.gradle.api.artifacts.result.ResolvedArtifactResult;
+import org.gradle.api.artifacts.result.ResolvedComponentResult;
+import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.initialization.IncludedBuild;
@@ -47,6 +61,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String SERVER = "latheServer";
   private static final String MCP_SERVER = "latheMcpServer";
   private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
+  private static final String LIBRARY_SOURCES = "latheLibrarySources";
 
   @Override
   public void apply(final Project project) {
@@ -62,15 +77,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                           project.provider(
                               () ->
                                   Json.toJson(
-                                      new ProjectFacts(
-                                          module(project),
-                                          buildFile(project),
-                                          List.of(),
-                                          List.of(),
-                                          null,
-                                          0,
-                                          List.of(),
-                                          List.of()))));
+                                      ProjectFacts.of(module(project), buildFile(project)))));
                   task.getFactsFile()
                       .set(
                           project
@@ -244,6 +251,101 @@ public class LatheProjectPlugin implements Plugin<Project> {
           task.getMainSources().from(main.getJava());
           task.getTestSources().from(test.getJava());
         });
+    registerLibraries(project, facts, main, test);
+  }
+
+  // The external libraries, from the test compile classpath, which holds main's too, and a
+  // -sources dependency for each: the classifier, as on Maven, not Gradle's documentation variant,
+  // which libraries such as Guava do not declare. Resolved leniently: a library without sources is
+  // not an error.
+  private static void registerLibraries(
+      final Project project,
+      final TaskProvider<LatheFactsTask> facts,
+      final SourceSet main,
+      final SourceSet test) {
+    final Configuration testClasspath =
+        project.getConfigurations().getByName(test.getCompileClasspathConfigurationName());
+    final ArtifactCollection libraries = external(testClasspath);
+    final ArtifactCollection mainLibraries =
+        external(
+            project.getConfigurations().getByName(main.getCompileClasspathConfigurationName()));
+    final Configuration sources = configuration(project, LIBRARY_SOURCES, true);
+    sources.setTransitive(false);
+    final DependencyFactory dependencies = project.getDependencyFactory();
+    sources
+        .getDependencies()
+        .addAllLater(
+            testClasspath
+                .getIncoming()
+                .getResolutionResult()
+                .getRootComponent()
+                .map(root -> sourcesOf(dependencies, root)));
+    final ArtifactCollection librarySources =
+        sources.getIncoming().artifactView(view -> view.lenient(true)).getArtifacts();
+    facts.configure(
+        task -> {
+          task.getLibraries()
+              .set(libraries.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
+          task.getLibraryFiles().from(libraries.getArtifactFiles());
+          task.getLibrarySources()
+              .set(librarySources.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
+          task.getLibraryClasspath().from(mainLibraries.getArtifactFiles());
+        });
+  }
+
+  private static ArtifactCollection external(final Configuration configuration) {
+    return configuration
+        .getIncoming()
+        .artifactView(view -> view.componentFilter(ModuleComponentIdentifier.class::isInstance))
+        .getArtifacts();
+  }
+
+  // A -sources dependency for every external module in the resolved graph. From the graph, not the
+  // artifacts: a classpath can hold the output of the build's own tasks (Caffeine's codeGen), which
+  // the configuration cache would need before those tasks run. A loop: components repeat.
+  private static List<Dependency> sourcesOf(
+      final DependencyFactory dependencies, final ResolvedComponentResult root) {
+    final var modules = new TreeSet<String>();
+    final var visited = new HashSet<ComponentIdentifier>();
+    final var pending = new ArrayDeque<ResolvedComponentResult>(List.of(root));
+    while (!pending.isEmpty()) {
+      final ResolvedComponentResult component = pending.pop();
+      if (!visited.add(component.getId())) {
+        continue;
+      }
+
+      if (component.getId() instanceof ModuleComponentIdentifier id) {
+        modules.add(coordinates(id));
+      }
+
+      for (final DependencyResult dependency : component.getDependencies()) {
+        if (dependency instanceof ResolvedDependencyResult resolved) {
+          pending.push(resolved.getSelected());
+        }
+      }
+    }
+
+    return modules.stream()
+        .<Dependency>map(module -> dependencies.create("%s:sources".formatted(module)))
+        .toList();
+  }
+
+  private static Map<String, String> byCoordinates(final Set<ResolvedArtifactResult> artifacts) {
+    return artifacts.stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                LatheProjectPlugin::coordinates,
+                artifact -> artifact.getFile().getPath(),
+                (first, ignored) -> first));
+  }
+
+  // group:name:version of an external library: the artifact views keep only modules.
+  private static String coordinates(final ResolvedArtifactResult artifact) {
+    return coordinates((ModuleComponentIdentifier) artifact.getId().getComponentIdentifier());
+  }
+
+  private static String coordinates(final ModuleComponentIdentifier id) {
+    return "%s:%s:%s".formatted(id.getGroup(), id.getModule(), id.getVersion());
   }
 
   // Both shapes a sibling takes on another project's classpath, its classes directory and its jar,
@@ -284,6 +386,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
             Stream.of(mainCompile, testCompile)
                 .flatMap(javac -> javac.getOptions().getForkOptions().getAllJvmArgs().stream())
                 .toList()),
+        List.of(),
+        List.of(),
         List.of());
   }
 

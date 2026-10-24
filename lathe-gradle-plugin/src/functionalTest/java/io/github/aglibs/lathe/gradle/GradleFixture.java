@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 import org.gradle.testkit.runner.GradleRunner;
 
@@ -39,6 +41,43 @@ final class GradleFixture {
     Files.createDirectories(path.getParent());
     Files.writeString(path, content, StandardCharsets.UTF_8);
     return this;
+  }
+
+  // A library com.example:<name>:1.0 in a Maven repository under the fixture: its jar and pom, and
+  // a
+  // -sources jar when withSources.
+  GradleFixture mavenLibrary(final String repo, final String name, final boolean withSources)
+      throws IOException {
+    final Path versionDir = dir.resolve(repo).resolve("com/example").resolve(name).resolve("1.0");
+    Files.createDirectories(versionDir);
+    jar(versionDir.resolve("%s-1.0.jar".formatted(name)), "META-INF/%s.txt".formatted(name), name);
+    if (withSources) {
+      jar(
+          versionDir.resolve("%s-1.0-sources.jar".formatted(name)),
+          "com/example/%s/Api.java".formatted(name),
+          "package com.example.%s; public class Api {}".formatted(name));
+    }
+
+    return file(
+        "%s/com/example/%s/1.0/%s-1.0.pom".formatted(repo, name, name),
+        """
+        <project>
+          <modelVersion>4.0.0</modelVersion>
+          <groupId>com.example</groupId>
+          <artifactId>%s</artifactId>
+          <version>1.0</version>
+        </project>
+        """
+            .formatted(name));
+  }
+
+  private static void jar(final Path jar, final String entry, final String content)
+      throws IOException {
+    try (final var out = new JarOutputStream(Files.newOutputStream(jar))) {
+      out.putNextEntry(new JarEntry(entry));
+      out.write(content.getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+    }
   }
 
   // Registers Lathe the personal way, as a user's init script does: from a repository, applied

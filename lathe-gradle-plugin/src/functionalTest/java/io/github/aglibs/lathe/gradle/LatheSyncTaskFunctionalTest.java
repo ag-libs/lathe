@@ -1,17 +1,22 @@
 package io.github.aglibs.lathe.gradle;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -34,8 +39,7 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(second.getOutput()).contains("Configuration cache entry reused.");
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
-    final WorkspaceManifestData workspace =
-        Json.read(lathe.resolve(LatheLayout.WORKSPACE_JSON), WorkspaceManifestData.class);
+    final WorkspaceManifestData workspace = workspace();
     assertThat(workspace.outputs())
         .contains(
             new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
@@ -163,6 +167,53 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(result.getOutput()).contains("LOCK HELD true");
     assertThat(LatheLayout.reactorLockFile(dir.resolve(LatheLayout.LATHE_DIR))).doesNotExist();
+  }
+
+  // A library with a -sources jar and one without, from a Maven repository: the first is recorded
+  // as present and its sources extracted into Lathe's cache, the second as missing; resolved under
+  // a reused configuration cache, with a jar one of the build's own tasks makes on the classpath.
+  @Test
+  void sync_librariesWithAndWithoutSources_recordsThemAndExtractsTheSources() throws Exception {
+    final var fixture =
+        multiProject()
+            .mavenLibrary("repo", "withsrc", true)
+            .mavenLibrary("repo", "nosrc", false)
+            .file(
+                "app/build.gradle.kts",
+                """
+                plugins { java }
+                repositories { maven { url = uri(rootDir.resolve("repo")) } }
+                val extraJar = tasks.register<Jar>("extraJar") {
+                  archiveFileName = "extra.jar"
+                  destinationDirectory = layout.buildDirectory.dir("extra")
+                }
+                dependencies {
+                  implementation(project(":lib"))
+                  implementation("com.example:withsrc:1.0")
+                  testImplementation("com.example:nosrc:1.0")
+                  testImplementation(files(extraJar))
+                }
+                """);
+    fixture.runner("latheSync", "--configuration-cache").build();
+
+    final var second = fixture.runner("latheSync", "--configuration-cache").build();
+
+    assertThat(second.getOutput()).contains("Configuration cache entry reused.");
+    final List<DependencyData> libraries = workspace().dependencySources();
+    assertThat(libraries)
+        .extracting(DependencyData::gav, DependencyData::status)
+        .containsExactlyInAnyOrder(
+            tuple("com.example:nosrc:1.0", SourceStatus.MISSING),
+            tuple("com.example:withsrc:1.0", SourceStatus.PRESENT));
+    final DependencyData withSources =
+        libraries.stream().filter(library -> library.dir() != null).findFirst().orElseThrow();
+    assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
+  }
+
+  private WorkspaceManifestData workspace() throws IOException {
+    return Json.read(
+        dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+        WorkspaceManifestData.class);
   }
 
   private Path params(final String module, final String tree) {

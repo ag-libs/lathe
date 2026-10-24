@@ -10,7 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slices 2a and 2d are done: `latheSync` writes `workspace.json`, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor. 2b (dependency sources) and 2c (formatter) remain.
+Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter) remains.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -474,17 +474,18 @@ the GradleX run showed the test classes directory on the classpath as well as pa
 
 `latheSync` replaces `SyncCoordinator`:
 
-- **`-sources` jars:** `configuration.incoming.artifactView { withVariantReselection(); attributes {
-  DocsType.SOURCES, Category.DOCUMENTATION, … } }` — the modern replacement for the now-legacy
-  `ArtifactResolutionQuery`.
-  *Spiked:* the artifact view resolved most sources jars but **silently skipped Guava 33.4.0**
-  (no error even with `lenient(false)`): its Gradle module metadata declares no matching sources
-  variant, although Central has `guava-33.4.0-jre-sources.jar`. The legacy query found it, on both
-  8.14.6 and 9.8.1 (not deprecated in 9.8.1). So the fallback is **per component** — query the
-  classifier for every component the view left out — not a whole-resolution fallback. The legacy
-  query is not configuration-cache safe; `latheSync` either opts out
-  (`notCompatibleWithConfigurationCache`) or resolves the missing ones through a detached
-  configuration of `group:name:version:sources` dependencies.
+- **`-sources` jars, by classifier (*decided 2026-10-24*, slice 2b).** Each Java project resolves a lenient
+  `latheLibrarySources` configuration holding `group:name:version:sources` for every external module of its test
+  compile classpath (which includes main's): the same classifier lookup as Maven, and the one that found Guava's
+  sources where Gradle's documentation variant (`DocsType.SOURCES`) did not (*spiked*: the artifact view skipped
+  Guava 33.4.0, whose module metadata declares no sources variant). A library without sources is simply missing.
+  Two configuration-cache constraints shape it:
+  - **The coordinates come from the resolved dependency graph**, not from the classpath's artifacts: a classpath can
+    hold the output of the build's own tasks (Caffeine's `codeGen` classes), and the configuration cache would need
+    those artifacts before the tasks run.
+  - **The facts task takes plain `coordinates → path` maps**: Gradle 8.x cannot store resolved artifact results in
+    the configuration cache (9.x can).
+  Probed on Caffeine: 127 libraries, all with sources, Guava included; a definition lands in Guava's extracted source.
 - **JDK sources, dependency source extraction, type-index shards, server install:** the build-neutral code
   slice 0 moves into `lathe-install` (it lives in `lathe-maven-plugin` today).
 - **`WorkspaceManifestData`:** `buildFiles` → `settings.gradle(.kts)`, every `build.gradle(.kts)`,
