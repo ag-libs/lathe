@@ -419,6 +419,38 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
+## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
+
+**Status: deferred — Target: backlog.**
+Decision (2026-10-24): Lathe sets no default limit until users report how much memory they want it to
+use; machines with plenty of memory are expected to use it. The installation guide documents capping
+it with `LATHE_JVM_OPTS` (and `-XX:G1PeriodicGCInterval` to return memory when idle), and the agent
+guide's troubleshooting points there. Lathe's own dev tools cap their servers at 2 GB.
+**Affects: the editor and MCP.**
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+An MCP session on Helidon started at 752 MB RSS; three `verify_change` calls on `GenericType`
+(235–311 caller files in 36–60 modules each) took it to 9.6 GB.
+The launchers pass no `-Xmx`, so on a 60 GB machine the default maximum heap is about 15 GB, and the
+heap grows rather than collects.
+The same workload under `LATHE_JVM_OPTS=-Xmx2g` ran at the same speed (5.5–11 s per call) and stayed
+at about 2.6 GB, so most of the growth is uncollected garbage, not memory Lathe holds.
+An editor server and an MCP server per agent, all day, add up.
+
+### Fix direction
+
+Give the launchers a default heap policy: a cap (absolute, or `-XX:MaxRAMPercentage`), and G1's
+periodic collection (`-XX:G1PeriodicGCInterval`) so an idle server returns memory; keep
+`LATHE_JVM_OPTS` as the override. Measure the cap against the largest probes first.
+Related: [EG-058](#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session)
+(sessions never released), which an uncapped `verify_change` exercises more than before.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Test Execution Gaps (TE)
@@ -603,194 +635,4 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-
-## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink
-
-**Status: accepted — Target: next (durable file sink shipped; rotation/pruning and timestamp format remain).**
-
-Re-checked 2026-10-22: `~/.cache/lathe/logs` held 612 session files (3.2 MB) with nothing pruning
-them, and `logging.properties` still formats local time.
-
-Signal: attempting to read the server's per-call logs to diagnose [MC-1](gaps-archive.md#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route--done)
-— the logs were nowhere to be found despite the server emitting them.
-
-### Observed behaviour
-
-The server emits one `INFO` line per tool call to stderr by default
-(`io.github.aglibs.lathe.level=INFO`), e.g. `[tool] search_symbols query=DocTrees 875ms ok` — verified
-by driving the launcher standalone and reading its stderr. But **neither** Claude Code sink persists
-the server's stderr past the connection handshake:
-
-- `~/.cache/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl` (undocumented) — one
-  `Server stderr:` snapshot at connect, then only client-side `Calling MCP tool` / `completed` lines.
-- `~/.claude/debug/<session>.txt` (documented, via `claude --debug=mcp`) — the same: a single
-  `[ERROR] … Server stderr:` entry at the connect instant, then only client `[DEBUG]` lines.
-
-So every post-handshake server line — all per-call `[tool]`/`[symbol]` INFO, and any FINE under
-`LATHE_DEBUG` — is unobservable through the client.
-
-### Root cause
-
-A client-side capture limitation, and an undocumented one. The MCP spec says stdio stderr is
-"captured by the host application automatically" but specifies no lifetime or size limit; Claude Code
-records only the startup burst. A request for proper per-server logs is open and marked "not planned"
-(anthropics/claude-code#29035). The server therefore cannot rely on the client to surface its logs,
-and today has no file sink of its own — only a `ConsoleHandler` to stderr.
-
-### Fix direction
-
-Give the MCP server a durable, rotating JUL `FileHandler` alongside the existing `ConsoleHandler`:
-
-- Location (Option B): `~/.cache/lathe/logs/mcp-<workspace-slug>.log`, under the global cache dir the
-  server binary already lives in — untouched by `lathe:sync` cleaning `.lathe`, and disambiguated per
-  workspace with a readable slug (mirroring the client's own `-home-…-lathe` scheme). New
-  `LatheLayout.CACHE_LOGS_DIR = "logs"` (no hardcoded dir names); env override `LATHE_LOG_DIR`.
-- Rotation: pattern `mcp-<slug>.%g.log`, `limit≈5MB`, `count=3`, `append=true`, `%u` to stay safe if
-  two servers share a workspace.
-- Level `INFO` default, `FINE` under `LATHE_DEBUG`. Keep `ConsoleHandler` so the startup snapshot the
-  client *does* capture still works.
-- Emit the resolved log-file path in the startup line
-  (`[startup] lathe-mcp-server ready — logging to <path>`) so the one stderr line the client persists
-  points at the full log.
-- Switch the formatter to **UTC / ISO-8601** timestamps (today JUL prints server-local time, e.g.
-  `22:14` vs the client's `20:14` UTC — a needless correlation hazard).
-
-The MCP `logging` protocol capability (`notifications/message`) is deprecated in favour of
-stderr/OpenTelemetry, so a server-owned file plus stderr is the spec-aligned path — not protocol
-logging.
-
-### Delivered — per-session file sink
-
-`LatheMcpServer.main` now attaches an appending JUL `FileHandler` via `LatheLogging.initFile`, writing
-to `~/.cache/lathe/logs/mcp-<start-timestamp>-<pid>.log` (`LatheLayout.mcpSessionLog`), alongside the
-existing `ConsoleHandler`. This differs from the per-workspace-slug design above: one file per server
-process, so concurrent servers never share a file and no `%u` disambiguation is needed.
-
-### Remaining
-
-- **Retention:** nothing rotates or prunes `~/.cache/lathe/logs`; one file accrues per MCP session,
-  indefinitely. Cap the per-file size and prune old session files (e.g. keep the newest N).
-- **Timestamps:** `logging.properties` still formats server-local time; switch to UTC / ISO-8601.
-- **Discoverability:** the startup line (`[startup] pid=… cwd=…`) does not name the log file; include
-  the resolved path so the one stderr snapshot the client persists points at the full log.
-- **Override:** no `LATHE_LOG_DIR` env override for the logs dir.
-
-### Regression targets
-
-To be added with the fix:
-
-- `LatheMcpServerTest.logging_afterToolCall_writesPerCallLineToFile` (positive: a rotating log file is
-  created under the resolved logs dir and receives the `[tool] …` line after a call).
-- `LatheMcpServerTest.logging_timestamps_areUtcIso8601` (formatter emits UTC, not local time).
-
----
-
-## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-On EqualsVerifier (JDK 17):
-
-| `file` | Answer |
-|---|---|
-| `/etc/hosts` | "No diagnostics — hosts compiles cleanly." + "Sync required: ../../../etc/hosts is in no synced module — run `.lathe/lathe-sync.sh`" |
-| `pom.xml` | "No diagnostics — pom.xml compiles cleanly." + the same sync hint |
-| a Java file in `equalsverifier-21` (a module the JDK 17 build excludes by profile) | "No diagnostics — … compiles cleanly." + "run `.lathe/lathe-sync.sh`" |
-| a missing `.java` file | a raw `java.nio.file.NoSuchFileException` |
-
-The headline claims a compile that never happened.
-For the JDK-gated module the suggested sync can never include it on this JDK, so the advice cannot
-help.
-A dependent file whose upstream module failed to compile likewise reports "compiles cleanly" with a
-"Not compiled:" note about the upstream file.
-
-The file itself can get both: on Helidon a new public class in `common/media-type` answered "No
-diagnostics — LatheProbeOne.java compiles cleanly." with "Not compiled: …LatheProbeOne.java:3: Public
-API … is missing stability annotation (@Api.*)". The analysis behind the headline runs without
-annotation processors; the write, since the reactor processors run in-process
-([WS-15](gaps-archive.md#ws-15--annotation-processors-built-in-the-reactor-never-run-in-process--done)),
-runs Helidon's API-stability processor and fails.
-
-### Fix direction
-
-Reject non-Java files and paths outside the workspace with a clear error; for a file in no synced
-module, say it was not compiled (and why) instead of "compiles cleanly", and only suggest a sync when
-the module is in the build's reactor for this JDK.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-10 — Position tools answer for an unrelated symbol when the position is not on one
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-`describe_symbol` in `EqualsVerifier.java`, on the line declaring `forClass`:
-
-| Position | Answer |
-|---|---|
-| column past the end of the line | the enclosing class `EqualsVerifier` |
-| column 0, a whitespace column, or the keyword `public` | the method `forClass` |
-| a line past the end of the file | "No symbol information at that position." |
-
-An agent with an off-by-one column gets a confident answer about the wrong symbol.
-Not yet checked: the other position tools, and LSP hover at the same positions.
-
-### Fix direction
-
-Answer only when the position is on an identifier, and otherwise report that no symbol is at that
-position (as for a line past the end of the file).
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-11 — `run_test` does not give the remedy when no test launch was captured
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-For a module whose tests never ran under Lathe, `run_test` answers
-"Test run blocked: no captured test-launch.json for equalsverifier-core".
-The tool description promises the fix — "run `.lathe/lathe-sync.sh --tests <module>` once; it
-reports that if missing" — but the message does not include it.
-
-### Fix direction
-
-Append the exact command, with the module filled in.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-12 — `search_symbols` finds nothing for a fully qualified name
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-`search_symbols` with `nl.jqno.equalsverifier.EqualsVerifier` answers "No symbols matching", while
-`EqualsVerifier` finds it.
-The schema says "Symbol name or prefix", but agents often search by the qualified name they see in
-imports and stack traces.
-
-### Fix direction
-
-Accept a qualified name: match the simple name and filter by the package (or containing type).
-
-### Regression targets
-
-None yet.
-
----
+None open.

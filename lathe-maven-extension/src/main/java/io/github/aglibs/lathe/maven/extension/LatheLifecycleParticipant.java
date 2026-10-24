@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.maven.extension;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
@@ -7,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,8 +17,10 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
+import org.apache.maven.execution.BuildSuccess;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
 import org.slf4j.Logger;
@@ -75,6 +79,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     try {
       if (reactorLockDir != null) {
         mirrorLateOutputs(reactorLockDir.getParent());
+        recordBuilt(reactorLockDir.getParent(), succeeded(session));
       }
     } finally {
       stopReactorLock();
@@ -98,6 +103,42 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
       // RuntimeException too: a manifest another Lathe version wrote fails to parse, and this
       // best-effort step must never fail the build.
       LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
+    }
+  }
+
+  private static List<Path> succeeded(final MavenSession session) {
+    return session.getProjects().stream()
+        .filter(project -> session.getResult().getBuildSummary(project) instanceof BuildSuccess)
+        .map(project -> project.getBasedir().toPath())
+        .toList();
+  }
+
+  // A module Maven found up to date compiled nothing, so its stamps lack what the build compiled
+  // (a fresh .lathe, or one an older Lathe wrote) and a touch or a revert there reads as a change.
+  // For a module the build completed, its sources hold that content now. Best-effort, like the
+  // late outputs.
+  static void recordBuilt(final Path workspaceRoot, final List<Path> moduleBasedirs) {
+    final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    moduleBasedirs.forEach(
+        basedir -> recordBuiltIn(latheDir.resolve(workspaceRoot.relativize(basedir))));
+  }
+
+  private static void recordBuiltIn(final Path moduleDir) {
+    if (!Files.isDirectory(moduleDir)) {
+      return;
+    }
+
+    try (final Stream<Path> files = Files.list(moduleDir)) {
+      files
+          .filter(LatheLayout::isParamsFile)
+          .forEach(
+              params ->
+                  IOUtil.unchecked(
+                      () ->
+                          CompiledStamps.recordBuiltIfMissing(
+                              moduleDir, Json.read(params, ModuleConfigData.class))));
+    } catch (final IOException | RuntimeException e) {
+      LOG.debug("[stamps] built content not recorded under {}", moduleDir, e);
     }
   }
 

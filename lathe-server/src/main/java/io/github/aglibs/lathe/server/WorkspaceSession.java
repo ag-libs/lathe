@@ -391,8 +391,7 @@ final class WorkspaceSession {
       final TestLaunchData template =
           new LaunchReader(workspaceRoot)
               .test(moduleRel)
-              .orElseThrow(
-                  () -> new IllegalStateException("no captured test-launch.json for " + moduleRel));
+              .orElseThrow(() -> new IllegalStateException(noCapturedLaunch(moduleRel)));
       assertLaunchComplete(
           CompletenessGate.verify(template, workspaceRoot, manifest.reactorRewrite()));
 
@@ -501,10 +500,7 @@ final class WorkspaceSession {
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
       final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
       if (template.isEmpty()) {
-        return MainLaunchPlan.blocked(
-            List.of(
-                "no captured test launch for %s; run `%s` to capture it"
-                    .formatted(moduleRel, LatheLayout.captureTestsCommand(moduleRel))));
+        return MainLaunchPlan.blocked(List.of(noCapturedLaunch(moduleRel)));
       }
 
       final CompletenessResult gate =
@@ -1132,6 +1128,12 @@ final class WorkspaceSession {
     return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
   }
 
+  // With the command that captures it, so a reader (an agent above all) knows the remedy.
+  private static String noCapturedLaunch(final String moduleRel) {
+    return "no captured test launch for %s; run `%s` to capture it"
+        .formatted(moduleRel, LatheLayout.captureTestsCommand(moduleRel));
+  }
+
   private static void launchTest(
       final Path workspaceRoot,
       final ReactorRewrite reactorRewrite,
@@ -1151,8 +1153,7 @@ final class WorkspaceSession {
             () ->
                 "[launch] %s %s blocked no captured test-launch.json"
                     .formatted(moduleRel, selectionLabel(selections)));
-        result.complete(
-            LaunchOutcome.blocked(List.of("no captured test-launch.json for " + moduleRel)));
+        result.complete(LaunchOutcome.blocked(List.of(noCapturedLaunch(moduleRel))));
         return;
       }
 
@@ -3743,20 +3744,26 @@ final class WorkspaceSession {
         buildFilesNotificationPending
             ? Stream.of("build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
             : Stream.empty();
-    final Stream<String> unsynced =
+    final List<String> notChecked =
         files.stream()
             .filter(file -> routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing)
-            .map(
-                file ->
-                    "%s is in no synced module — run `%s`"
-                        .formatted(
-                            workspaceRoot.relativize(file), LatheLayout.SYNC_SCRIPT_COMMAND));
+            .map(this::notCheckedReason)
+            .toList();
     return new LatheNotes(
         notCompiled,
-        Stream.of(pendingBuildFiles, manifest.schemaMismatch().stream(), unsynced)
-            .flatMap(notes -> notes)
-            .toList(),
+        Stream.concat(pendingBuildFiles, manifest.schemaMismatch().stream()).toList(),
+        notChecked,
         reactorBuildInProgress());
+  }
+
+  // A sync gives a module only to a file of the modules the build compiles.
+  private String notCheckedReason(final Path file) {
+    final Path relative = workspaceRoot.relativize(file);
+    return manifest.inBuiltModule(file)
+        ? "%s is in no synced module — run `%s`"
+            .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND)
+        : "%s is outside the modules the last build compiled, so Lathe cannot check it"
+            .formatted(relative);
   }
 
   static Map<Path, Long> withoutFailedCompiles(

@@ -86,6 +86,24 @@ public final class FileUtil {
     }
   }
 
+  // Deletes the files directly in dir that match, all but the last count in name order: the newest,
+  // for names that start with a sortable timestamp.
+  public static void deleteAllButLast(
+      final Path dir, final Predicate<Path> matching, final int count) throws IOException {
+    if (!Files.isDirectory(dir)) {
+      return;
+    }
+
+    final List<Path> files;
+    try (final var list = Files.list(dir)) {
+      files = list.filter(Files::isRegularFile).filter(matching).sorted().toList();
+    }
+
+    for (final Path file : files.subList(0, Math.max(0, files.size() - count))) {
+      Files.deleteIfExists(file);
+    }
+  }
+
   // Every regular file below root matching keep, sorted; empty when root is not a directory.
   public static List<Path> walkFiles(final Path root, final Predicate<Path> keep)
       throws IOException {

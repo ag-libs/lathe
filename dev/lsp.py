@@ -676,7 +676,12 @@ class LatheClient(LspClient):
         root = Path(workspace_root).resolve()
         cmd = [LATHE_LAUNCHER]
         use_debug = debug if debug is not None else bool(os.environ.get("LATHE_DEBUG"))
-        env = {**os.environ, **({"LATHE_DEBUG": "1"} if use_debug else {})}
+        # Lathe sets no heap limit; dev runs cap theirs so probes on large reactors stay light.
+        env = {
+            **os.environ,
+            "LATHE_JVM_OPTS": os.environ.get("LATHE_JVM_OPTS", "-Xmx2g"),
+            **({"LATHE_DEBUG": "1"} if use_debug else {}),
+        }
         return cls._spawn(cmd, env, root, cwd=root)
 
     def _handshake(self, root: Path):
