@@ -60,9 +60,10 @@ public final class LatheMcpServer {
 
       Every tool first compiles the files you changed, so answers reflect your edits. A result may \
       end with notes: "Not compiled:" lists files whose code does not compile, with the error -- fix \
-      the code, no sync helps; "Sync required:" names what only a sync fixes (changed build files, \
-      a module never synced) with the exact command to run, such as `%s`; "A build is running" \
-      means re-query once it ends."""
+      the code, no sync helps; "Sync required:" names what only a sync fixes (changed build files) \
+      with the exact command to run, such as `%s`; "Not checked:" names a file no module \
+      compiles, with the sync that would add it when one can; "A build is running" means \
+      re-query once it ends."""
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
   private LatheMcpServer() {}

@@ -215,7 +215,7 @@ def s_add_use_delete(pr: Probe):
                         "  static int latheProbeInner() { return %s.LatheProbeType.Inner.innerValue(); }\n"
                   % (pkg, pkg))
     pr.check("A2 downstream file using the new type compiles", "get_diagnostics", {"file": str(down)},
-             lambda t: "No diagnostics" in t or ("error" not in t.lower() and "cannot find" not in t))
+             lambda t: t.startswith("No errors or warnings"))
     ul, uc = locate(down, "latheProbeValue()")
     pr.check("A3 get_definition from downstream lands in the new file", "get_definition",
              {"file": str(down), "line": ul, "column": uc}, lambda t: "LatheProbeType.java" in t)

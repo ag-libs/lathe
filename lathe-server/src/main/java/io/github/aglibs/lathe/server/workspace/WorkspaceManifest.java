@@ -50,6 +50,7 @@ public final class WorkspaceManifest {
   // matches or is absent.
   private final String schemaMismatch;
   private final Path buildTool;
+  private final List<Path> builtModuleDirs;
 
   private WorkspaceManifest(
       final Map<Path, String> jarToGav,
@@ -65,7 +66,8 @@ public final class WorkspaceManifest {
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
       final String schemaMismatch,
-      final Path buildTool) {
+      final Path buildTool,
+      final List<Path> builtModuleDirs) {
     this.jarToGav = jarToGav;
     this.jarToSourceDir = jarToSourceDir;
     this.sourceDirToJar = sourceDirToJar;
@@ -80,6 +82,7 @@ public final class WorkspaceManifest {
     this.reactorRewrite = reactorRewrite;
     this.schemaMismatch = schemaMismatch;
     this.buildTool = buildTool;
+    this.builtModuleDirs = builtModuleDirs;
   }
 
   public static WorkspaceManifest empty() {
@@ -101,7 +104,8 @@ public final class WorkspaceManifest {
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
         schemaMismatch,
-        null);
+        null,
+        List.of());
   }
 
   public static WorkspaceManifest load(final Path workspaceRoot) {
@@ -181,7 +185,11 @@ public final class WorkspaceManifest {
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
           null,
-          data.buildTool() != null ? Path.of(data.buildTool()) : null);
+          data.buildTool() != null ? Path.of(data.buildTool()) : null,
+          data.outputs().stream()
+              .map(output -> workspaceRoot.resolve(output.module()).normalize())
+              .distinct()
+              .toList());
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
       return empty();
@@ -215,6 +223,13 @@ public final class WorkspaceManifest {
 
   public Optional<Path> buildTool() {
     return Optional.ofNullable(buildTool);
+  }
+
+  // The modules the last build compiled. A file outside them (a module the build's profiles or JDK
+  // leave out, or no module at all) is one a sync cannot give a module.
+  public boolean inBuiltModule(final Path file) {
+    final Path normalized = file.normalize();
+    return builtModuleDirs.stream().anyMatch(normalized::startsWith);
   }
 
   public Optional<String> schemaMismatch() {

@@ -1,10 +1,12 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
@@ -24,7 +26,10 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -441,6 +446,10 @@ final class LatheMcpTools {
       return error("get_diagnostics requires a 'file' argument");
     }
 
+    if (!isJavaSource(file)) {
+      return error(notAJavaSource(file));
+    }
+
     return guarded(
         "get_diagnostics",
         file,
@@ -501,6 +510,10 @@ final class LatheMcpTools {
     final Path file = filePath(request);
     if (file == null) {
       return error("run_test requires a 'file' argument");
+    }
+
+    if (!isJavaSource(file)) {
+      return error(notAJavaSource(file));
     }
 
     final TestScope scope = testScope(stringArg(request, "scope"));
@@ -600,6 +613,10 @@ final class LatheMcpTools {
     final Integer column = intArg(request, "column");
     if (file == null || line == null || column == null) {
       return error("%s requires 'file', 'line', and 'column' arguments".formatted(tool));
+    }
+
+    if (!isJavaSource(file)) {
+      return error(notAJavaSource(file));
     }
 
     return guarded(
@@ -894,7 +911,7 @@ final class LatheMcpTools {
   }
 
   // verify_change reports its own deferral and diagnostics.
-  private static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), false);
+  private static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
 
   private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {
     if (verify.deferral() != null) {
@@ -912,7 +929,7 @@ final class LatheMcpTools {
     final long errors = errorCount(verify);
     return result(
         verifyHeadline(errors, total - errors)
-            + moduleDiagnosticsLines(verify.perModule())
+            + verifyDiagnosticLines(verify.perModule())
             + crossModuleNote(verify, errors),
         verifyStructured(verify, total),
         NO_NOTES);
@@ -930,7 +947,7 @@ final class LatheMcpTools {
   private static long errorCount(final LatheVerifyChange verify) {
     return verify.perModule().stream()
         .flatMap(module -> module.diagnostics().stream())
-        .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
+        .filter(located -> located.diagnostic().getSeverity() == DiagnosticSeverity.Error)
         .count();
   }
 
@@ -969,19 +986,25 @@ final class LatheMcpTools {
     return structured;
   }
 
-  private static String moduleDiagnosticsLines(final List<LatheModuleDiagnostics> perModule) {
+  // One flat list, errors first: each line's path already starts with its module.
+  private static String verifyDiagnosticLines(final List<LatheModuleDiagnostics> perModule) {
     return perModule.stream()
-        .map(module -> System.lineSeparator() + moduleDiagnosticsLine(module))
+        .flatMap(module -> module.diagnostics().stream())
+        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
+        .map(located -> System.lineSeparator() + locatedDiagnosticLine(located))
         .collect(Collectors.joining());
   }
 
-  private static String moduleDiagnosticsLine(final LatheModuleDiagnostics module) {
-    return "%s:%n%s"
+  // grep-style, like a location: path:line:column: severity: message.
+  static String locatedDiagnosticLine(final LatheDiagnostic located) {
+    final Diagnostic d = located.diagnostic();
+    return "%s:%d:%d: %s: %s"
         .formatted(
-            module.module(),
-            module.diagnostics().stream()
-                .map(LatheMcpTools::diagnosticLine)
-                .collect(Collectors.joining(System.lineSeparator())));
+            located.path(),
+            d.getRange().getStart().getLine() + 1,
+            d.getRange().getStart().getCharacter() + 1,
+            d.getSeverity(),
+            messageText(d));
   }
 
   private static Map<String, Object> moduleDiagnosticsMap(final LatheModuleDiagnostics module) {
@@ -989,7 +1012,13 @@ final class LatheMcpTools {
         "module",
         module.module(),
         "diagnostics",
-        module.diagnostics().stream().map(LatheMcpTools::diagnosticMap).toList());
+        module.diagnostics().stream().map(LatheMcpTools::locatedDiagnosticMap).toList());
+  }
+
+  private static Map<String, Object> locatedDiagnosticMap(final LatheDiagnostic located) {
+    final var map = new LinkedHashMap<String, Object>(diagnosticMap(located.diagnostic()));
+    map.put("path", located.path());
+    return Collections.unmodifiableMap(map);
   }
 
   private static String deferralText(final String reason) {
@@ -1004,18 +1033,31 @@ final class LatheMcpTools {
       final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
     final List<Map<String, Object>> items =
         diagnostics.stream().map(LatheMcpTools::diagnosticMap).toList();
-    final String text =
-        diagnostics.isEmpty()
-            ? "No diagnostics — %s compiles cleanly.".formatted(file.getFileName())
-            : "%d diagnostic(s) in %s:%n%s"
-                .formatted(
-                    diagnostics.size(),
-                    file.getFileName(),
-                    diagnostics.stream()
-                        .map(LatheMcpTools::diagnosticLine)
-                        .collect(Collectors.joining(System.lineSeparator())));
     return result(
-        text, Map.<String, Object>of("file", file.toString(), "diagnostics", items), notes);
+        diagnosticsText(file, diagnostics, notes),
+        Map.<String, Object>of("file", file.toString(), "diagnostics", items),
+        notes);
+  }
+
+  // Never "compiles cleanly": no module may compile the file, and the analysis is not the write
+  // (whose failure the "Not compiled:" note reports).
+  private static String diagnosticsText(
+      final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
+    if (!notes.notChecked().isEmpty()) {
+      return "%s was not checked.".formatted(file.getFileName());
+    }
+
+    if (diagnostics.isEmpty()) {
+      return "No errors or warnings in %s.".formatted(file.getFileName());
+    }
+
+    return "%d diagnostic(s) in %s:%n%s"
+        .formatted(
+            diagnostics.size(),
+            file.getFileName(),
+            diagnostics.stream()
+                .map(LatheMcpTools::diagnosticLine)
+                .collect(Collectors.joining(System.lineSeparator())));
   }
 
   private static CallToolResult definitionResult(
@@ -1071,6 +1113,9 @@ final class LatheMcpTools {
             Optional.of(notes.syncRequired())
                 .filter(reasons -> !reasons.isEmpty())
                 .map(reasons -> "Sync required: %s".formatted(String.join("; ", reasons))),
+            Optional.of(notes.notChecked())
+                .filter(files -> !files.isEmpty())
+                .map(files -> "Not checked: %s".formatted(String.join("; ", files))),
             Optional.of(
                     "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends.")
                 .filter(text -> notes.buildInProgress()))
@@ -1119,6 +1164,18 @@ final class LatheMcpTools {
   private static String messageText(final Diagnostic d) {
     final var message = d.getMessage();
     return message.isLeft() ? message.getLeft() : message.getRight().getValue();
+  }
+
+  // The file tools read a Java source; anything else would get an answer about a file never
+  // compiled.
+  private static boolean isJavaSource(final Path file) {
+    return FileUtil.isJavaFile(file) && Files.isRegularFile(file);
+  }
+
+  private static String notAJavaSource(final Path file) {
+    return FileUtil.isJavaFile(file)
+        ? "%s does not exist".formatted(file)
+        : "%s is not a .java file".formatted(file);
   }
 
   private static Path filePath(final CallToolRequest request) {

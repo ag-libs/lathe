@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
@@ -21,6 +22,8 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
@@ -168,6 +171,51 @@ class LatheMcpToolsTest {
     assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
   }
 
+  // Every file tool reads a Java source: anything else would be answered about a file never
+  // compiled.
+  @Test
+  void fileTools_notAnExistingJavaSource_returnError() throws Exception {
+    final Path pom = Files.writeString(tmp.resolve("pom.xml"), "<project/>");
+    final Path missing = tmp.resolve("Missing.java");
+
+    final CallToolResult onPom = call("get_diagnostics", Map.of("file", pom.toString()));
+    assertThat(onPom.isError()).isTrue();
+    assertThat(text(onPom)).isEqualTo("%s is not a .java file".formatted(pom));
+    assertThat(List.of(describe(missing, 1, 1), describe(pom, 1, 2)))
+        .allSatisfy(result -> assertThat(result.isError()).isTrue());
+    assertThat(text(describe(missing, 1, 1))).isEqualTo("%s does not exist".formatted(missing));
+    assertThat(call("run_test", Map.of("file", pom.toString())).isError()).isTrue();
+  }
+
+  // No module compiles it, so nothing was checked; the note says whether a sync would help.
+  @Test
+  void getDiagnostics_fileNoModuleCompiles_saysItWasNotChecked() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final String answer = text(call("get_diagnostics", Map.of("file", file.toString())));
+
+    assertThat(answer)
+        .startsWith("Loose.java was not checked.")
+        .contains("Not checked: Loose.java is outside the modules the last build compiled")
+        .doesNotContain("No errors");
+  }
+
+  @Test
+  void locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn() {
+    final var diagnostic =
+        new Diagnostic(
+            new Range(new Position(757, 8), new Position(757, 20)),
+            "setMinResponseDataRate(long) has been deprecated",
+            DiagnosticSeverity.Warning,
+            "javac");
+
+    assertThat(
+            LatheMcpTools.locatedDiagnosticLine(
+                new LatheDiagnostic("jetty/src/main/java/Http.java", diagnostic)))
+        .isEqualTo(
+            "jetty/src/main/java/Http.java:758:9: Warning: setMinResponseDataRate(long) has been deprecated");
+  }
+
   @Test
   void getDiagnostics_missingFileArgument_returnsError() {
     final CallToolResult result = call("get_diagnostics", Map.of());
@@ -237,21 +285,25 @@ class LatheMcpToolsTest {
 
   @Test
   void noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay() {
-    assertThat(LatheMcpTools.noteLines(new LatheNotes(List.of(), List.of(), false))).isEmpty();
+    assertThat(LatheMcpTools.noteLines(new LatheNotes(List.of(), List.of(), List.of(), false)))
+        .isEmpty();
     assertThat(
             LatheMcpTools.noteLines(
                 new LatheNotes(
                     List.of("a/A.java:3: cannot find symbol", "b/B.java:1: ';' expected"),
                     List.of("build files changed — run `.lathe/lathe-sync.sh`"),
+                    List.of("x/X.java is outside the modules the last build compiled"),
                     true)))
         .containsExactly(
             "Not compiled: a/A.java:3: cannot find symbol; b/B.java:1: ';' expected — fix the code; cross-module answers use their last good classes.",
             "Sync required: build files changed — run `.lathe/lathe-sync.sh`",
+            "Not checked: x/X.java is outside the modules the last build compiled",
             "A build is running: this answer reflects Lathe's classes from before it; re-query when it ends.");
     assertThat(LatheMcpServer.INSTRUCTIONS)
-        .as("the routing instructions explain both notes")
+        .as("the routing instructions explain every note")
         .contains("\"Not compiled:\"")
         .contains("\"Sync required:\"")
+        .contains("\"Not checked:\"")
         .doesNotContain("Stale:");
   }
 

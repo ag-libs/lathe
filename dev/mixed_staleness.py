@@ -137,7 +137,7 @@ try:
                      "class LatheMixedProbe {\n  Object w = nl.jqno.equalsverifier.Warning.LATHE_EDITOR_ADDED;\n}\n")
     created.append(PROBE)
     out = text_of(agent.call_tool("get_diagnostics", {"file": str(PROBE)}))
-    record("cannot find symbol" not in out and "error" not in out.lower().split("\n")[0],
+    record(out.startswith("No errors or warnings"),
            "X2 agent: sees a constant the editor just saved", out.splitlines()[0][:90])
 
     # X3: a mass outside edit with both servers live (a git pull, say): 30 core files touched.

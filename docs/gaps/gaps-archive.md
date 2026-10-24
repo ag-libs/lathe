@@ -10123,6 +10123,93 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-20 — `verify_change` lists each diagnostic under its module, not its file — done
+
+**Status: done — Target: next**
+Found while reviewing the shorter MCP answers (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+`verify_change` grouped diagnostics by module, each as `Warning [758:9] message`: an agent could not
+tell which file line 758 was in.
+
+### Fix
+
+The engine pairs each diagnostic with its file (`LatheDiagnostic`, the path as on a location), and the
+text lists them on one grep-style line each, errors first across all modules:
+`dropwizard-jetty/src/main/java/…/HttpConnectorFactory.java:758:9: Warning: …`.
+The structured result keeps `perModule` and gives each diagnostic its `path`.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_externalEditBreaksSibling_reportsDiagnostic` (the caller's path)
+- `LatheMcpToolsTest.locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn`
+
+---
+
+## MC-11 — `run_test` does not give the remedy when no test launch was captured — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+For a module whose tests never ran under Lathe, `run_test` answered
+"Test run blocked: no captured test-launch.json for equalsverifier-core", without the command its own
+description promises.
+
+### Fix
+
+The three places that block on a missing test launch (a test run, a test debug, a main class in test
+scope) share one message, which names the command:
+"no captured test launch for M; run `.lathe/lathe-sync.sh --tests M` to capture it".
+The editor's run and debug messages carry it too.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.runTestFuture_moduleWithoutACapturedLaunch_blockedWithTheCommandThatCapturesIt`
+
+---
+
+## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17):
+
+| `file` | Answer |
+|---|---|
+| `/etc/hosts` | "No diagnostics — hosts compiles cleanly." + "Sync required: ../../../etc/hosts is in no synced module — run `.lathe/lathe-sync.sh`" |
+| `pom.xml` | "No diagnostics — pom.xml compiles cleanly." + the same sync hint |
+| a Java file in `equalsverifier-21` (a module the JDK 17 build excludes by profile) | "No diagnostics — … compiles cleanly." + "run `.lathe/lathe-sync.sh`" |
+| a missing `.java` file | a raw `java.nio.file.NoSuchFileException` |
+
+The headline claimed a compile that never happened, and for the JDK-gated module the suggested sync
+could never include it.
+On Helidon a new public class answered "compiles cleanly" while its write failed on Helidon's
+API-stability annotation processor, which the analysis behind the headline does not run.
+
+### Fix
+
+- The file tools (`get_diagnostics`, the position tools, `run_test`) take only an existing `.java`
+  file: "pom.xml is not a .java file", "Foo.java does not exist".
+- A file no module compiles gets its own note, `Not checked:`, instead of a `Sync required:` line.
+  It advises the sync only for a file of a module the last build compiled (the manifest's outputs,
+  `WorkspaceManifest.inBuiltModule`); outside them it says Lathe cannot check the file, since no sync
+  would. A changed build file keeps its own sync note, so a new module still gets the advice.
+- `get_diagnostics` answers "Foo.java was not checked." for such a file, and otherwise "No errors or
+  warnings in Foo.java." instead of "compiles cleanly": the analysis is not the write, whose failure
+  the `Not compiled:` note reports.
+
+### Regression targets
+
+- `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules`
+- `LatheMcpToolsTest.fileTools_notAnExistingJavaSource_returnError`
+- `LatheMcpToolsTest.getDiagnostics_fileNoModuleCompiles_saysItWasNotChecked`
+
+---
+
 ## MC-10 — Position tools answer for an unrelated symbol when the position is not on one — done
 
 **Status: done — Target: next**
@@ -10246,7 +10333,7 @@ An agent reads the count as something it caused and must fix.
 
 `LatheEngine.diagnose` keeps errors and warnings for the changed files but only errors for the
 callers checked for breakage: a caller's warnings were there before the change.
-Within a module errors come first, and modules with errors come first.
+Errors come first.
 The text leads with the count that matters: "No errors — the changed files and their callers
 compile." or "N error(s).", plus "M warning(s) in the changed files" when there are any.
 

@@ -475,7 +475,6 @@ public final class LatheEngine {
                     new LatheModuleDiagnostics(
                         entry.getKey(), diagnose(entry.getValue(), changedSet)))
             .filter(module -> !module.diagnostics().isEmpty())
-            .sorted(Comparator.comparing(module -> !hasError(module.diagnostics())))
             .toList();
     // Every caller is checked, however many: the line shows when that grows costly (a core type's
     // callers across a large reactor).
@@ -509,25 +508,24 @@ public final class LatheEngine {
   // An agent reads any count as something to fix: a caller's warnings predate the change, and hints
   // (unused code) say nothing about whether it compiles. Errors first. Freshened once by
   // verifyChange, not again for each file.
-  private List<Diagnostic> diagnose(final List<Path> files, final Set<Path> changed) {
+  private List<LatheDiagnostic> diagnose(final List<Path> files, final Set<Path> changed) {
     return files.stream()
-        .flatMap(
-            file ->
-                analyze(file).stream()
-                    .filter(diagnostic -> reported(diagnostic, changed.contains(file))))
-        .sorted(Comparator.comparing(Diagnostic::getSeverity))
+        .flatMap(file -> reportedIn(file, changed.contains(file)))
+        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
         .toList();
+  }
+
+  private Stream<LatheDiagnostic> reportedIn(final Path file, final boolean changedFile) {
+    final String path = displayPath(file, file.toUri().toString());
+    return analyze(file).stream()
+        .filter(diagnostic -> reported(diagnostic, changedFile))
+        .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
   }
 
   private static boolean reported(final Diagnostic diagnostic, final boolean changedFile) {
     return changedFile
         ? diagnostic.getSeverity() != DiagnosticSeverity.Hint
         : diagnostic.getSeverity() == DiagnosticSeverity.Error;
-  }
-
-  private static boolean hasError(final List<Diagnostic> diagnostics) {
-    return diagnostics.stream()
-        .anyMatch(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error);
   }
 
   /**

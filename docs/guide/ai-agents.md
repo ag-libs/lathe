@@ -102,7 +102,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
-| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build |
+| `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
@@ -114,6 +114,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, per module (callers: errors only) |
 
+The file tools take an existing `.java` file; any other path answers with an error.
 Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
 a line answers with an error that shows the line, rather than with the enclosing method or class.
 `find_references`, `find_implementations`, `call_hierarchy`, and
@@ -143,7 +144,11 @@ What it still cannot vouch for comes as a note at the end of the result:
 - **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
   `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
   Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
-- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, a file in a module that was never synced, or a `.lathe/` written by another Lathe version.
+- **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, or a `.lathe/` written by another Lathe version.
+- **`Not checked:`** names a file no module compiles, so nothing about it was checked.
+  For a file of a module the last build compiled, it gives the sync that adds it; for one outside them
+  (a module the build's profiles or JDK leave out) it says Lathe cannot check it, since no sync would.
+  `get_diagnostics` then answers "Foo.java was not checked." rather than reporting no errors.
 - **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
 
 `rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
@@ -159,9 +164,10 @@ The changed files are compiled into the mirror before the tool returns, however 
 plus the files Lathe's own tools wrote (a rename), each with its callers in its own and in dependent
 modules.
 Pass `files` to check exactly those instead.
-It leads with the error count ("No errors — …" or "N error(s)"), lists errors first, and groups the
-diagnostics by module: errors and warnings of the changed files, but only errors of their callers,
-whose warnings were there before the change.
+It leads with the error count ("No errors — …" or "N error(s)") and lists each diagnostic on one
+grep-style line, errors first: `path:line:column: severity: message`.
+It reports errors and warnings of the changed files, but only errors of their callers, whose warnings
+were there before the change.
 Unused-code hints are left out (`get_diagnostics` on one file still shows them).
 When the change reaches other modules, it names them (up to ten in the text, all of them in the
 structured `affectedModules`) and gives the sync command that builds them, e.g.

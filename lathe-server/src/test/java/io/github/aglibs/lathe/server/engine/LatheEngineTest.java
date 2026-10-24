@@ -281,7 +281,7 @@ class LatheEngineTest {
     engine = new LatheEngine(tmp);
     engine.diagnostics(source);
     assertThat(engine.notes(List.of(source)))
-        .isEqualTo(new LatheNotes(List.of(), List.of(), false));
+        .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
     engine.diagnostics(source);
@@ -298,23 +298,39 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
   }
 
+  // A sync helps only a file of a module the build compiles; one outside them (a module the build's
+  // profiles or JDK leave out) it cannot.
   @Test
-  void notes_fileInNoSyncedModule_syncRequiredWithTheCommand() throws Exception {
-    TestCompiler.writeModuleSource(
-        tmp, "com/example/Sample.java", "package com.example; class Sample {}");
-    final Path unsynced =
+  void notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules() throws Exception {
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+        List.of(),
+        1_000L);
+    final Path inBuiltModule =
+        TestCompiler.writeAt(
+            tmp.resolve("module/src/it/java/com/example/Probe.java"),
+            "package com.example; class Probe {}",
+            1_000L);
+    final Path outsideTheBuild =
         TestCompiler.writeAt(
             tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
             "package com.example; class Fresh {}",
             1_000L);
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.notes(List.of(unsynced)).syncRequired())
+    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild));
+
+    assertThat(notes.notChecked())
         .containsExactly(
             "%s is in no synced module — run `%s`"
                 .formatted(
-                    Path.of("newmodule/src/main/java/com/example/Fresh.java"),
-                    LatheLayout.SYNC_SCRIPT_COMMAND));
+                    Path.of("module/src/it/java/com/example/Probe.java"),
+                    LatheLayout.SYNC_SCRIPT_COMMAND),
+            "%s is outside the modules the last build compiled, so Lathe cannot check it"
+                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")));
+    assertThat(notes.syncRequired()).isEmpty();
   }
 
   @Test
@@ -734,7 +750,10 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("greet")));
+                    .anyMatch(
+                        d ->
+                            d.path().equals(FileUtil.slashed(tmp.relativize(fx.caller())))
+                                && d.diagnostic().getMessage().getLeft().contains("greet")));
   }
 
   @Test
@@ -785,7 +804,7 @@ class LatheEngineTest {
         .satisfies(
             module ->
                 assertThat(module.diagnostics())
-                    .extracting(Diagnostic::getSeverity)
+                    .extracting(d -> d.diagnostic().getSeverity())
                     .containsExactly(DiagnosticSeverity.Warning));
 
     writeNewer(callee, "package com.example; class Callee { void welcome() { Old.old(); } }");
@@ -794,9 +813,10 @@ class LatheEngineTest {
         .satisfies(
             module -> {
               assertThat(module.diagnostics())
-                  .extracting(Diagnostic::getSeverity)
+                  .extracting(d -> d.diagnostic().getSeverity())
                   .containsExactly(DiagnosticSeverity.Error, DiagnosticSeverity.Warning);
-              assertThat(module.diagnostics().get(0).getMessage().getLeft()).contains("greet");
+              assertThat(module.diagnostics().get(0).diagnostic().getMessage().getLeft())
+                  .contains("greet");
             });
   }
 
@@ -824,7 +844,7 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("welcome")));
+                    .anyMatch(d -> d.diagnostic().getMessage().getLeft().contains("welcome")));
   }
 
   @Test
@@ -843,7 +863,8 @@ class LatheEngineTest {
             module -> {
               assertThat(module.module()).isEqualTo("app");
               assertThat(module.diagnostics())
-                  .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol"));
+                  .anyMatch(
+                      d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol"));
             });
     assertThat(verify.affectedModules()).containsExactly("app");
     assertThat(verify.suggestedSync())
@@ -858,7 +879,8 @@ class LatheEngineTest {
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol")));
+                    .anyMatch(
+                        d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol")));
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
