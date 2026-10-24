@@ -50,13 +50,13 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(dir.resolve(".lathe").resolve(LatheLayout.compiledStampsFileName("classes")))
         .exists();
     final var main = params("", LatheLayout.CLASSES_DIR);
-    assertThat(main.sourceRoots()).containsExactly(dir.resolve("src/main/java").toString());
-    assertThat(main.outputDir()).isEqualTo(dir.resolve("build/classes/java/main").toString());
+    assertThat(main.sourceRoots()).containsExactly(path("src/main/java"));
+    assertThat(main.outputDir()).isEqualTo(path("build/classes/java/main"));
     assertThat(main.release()).containsOnlyDigits();
     assertThat(main.proc()).isEqualTo("none");
     assertThat(main.compilerArgs()).containsExactly("-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
-        .contains(dir.resolve("build/classes/java/main").toString());
+        .contains(path("build/classes/java/main"));
   }
 
   // A processor built in the same build: its output is mirrored for the editor, and a library
@@ -139,9 +139,8 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.proc()).isNull();
     assertThat(app.compilerArgs()).doesNotContain("-proc:none");
     assertThat(app.generatedSourcesDir())
-        .isEqualTo(
-            dir.resolve("app/build/generated/sources/annotationProcessor/java/main").toString());
-    assertThat(app.classpath()).contains(dir.resolve("lib/build/classes/java/main").toString());
+        .isEqualTo(path("app/build/generated/sources/annotationProcessor/java/main"));
+    assertThat(app.classpath()).contains(path("lib/build/classes/java/main"));
   }
 
   @Test
@@ -217,9 +216,14 @@ class LatheCaptureTaskFunctionalTest {
     fixture.runner(":app:classes").build();
 
     final var app = params("app", LatheLayout.CLASSES_DIR);
-    assertThat(app.modulepath()).containsExactly(dir.resolve("lib/build/libs/lib.jar").toString());
-    assertThat(app.classpath())
-        .containsExactly(dir.resolve("plain/build/libs/plain.jar").toString());
+    assertThat(app.modulepath()).containsExactly(path("lib/build/libs/lib.jar"));
+    assertThat(app.classpath()).containsExactly(path("plain/build/libs/plain.jar"));
+  }
+
+  // As Gradle reports it: the real path, which differs from the temp directory's on macOS, where
+  // /var is a link to /private/var.
+  private String path(final String relative) throws IOException {
+    return dir.toRealPath().resolve(relative).toString();
   }
 
   private ModuleConfigData params(final String module, final String sourceTree) throws IOException {
