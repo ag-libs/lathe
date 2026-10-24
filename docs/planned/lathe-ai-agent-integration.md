@@ -15,8 +15,8 @@ stdio, validated live against the private payment reactor.
 - Tools (11): **`get_diagnostics`, `get_definition`, `find_references`, `rename_symbol`, `run_test`,
   `call_hierarchy`, `describe_symbol`, `search_symbols`, `find_implementations`**, plus the paired
   **`analyze_change`** / **`verify_change`** ([Change Impact & Verification](../done/lathe-change-impact-and-verification.md)) — every located
-  result carries source snippets and an `origin` (REACTOR / GENERATED / EXTERNAL). The curated wedge
-  is **feature-complete**.
+  result is one grep-style line, `path:line: code`, tagged with its `origin` when not REACTOR
+  (GENERATED / EXTERNAL). The curated wedge is **feature-complete**.
 - `rename_symbol` applies javac-accurate edits to disk across modules, including a public type's file
   move, and refuses to touch a non-reactor file.
   It writes under the reactor lock and compiles the whole change set into the mirror before returning, however many files it touched,
@@ -32,9 +32,11 @@ stdio, validated live against the private payment reactor.
   on the payment reactor (e.g. incoming `call_hierarchy` on an overloaded method → 97 cross-module
   callers with snippets).
 - **Freshness notes:** every tool first writes the agent's changed files through the write pass; a result
-  then ends with `Not compiled:` (files with compile errors — fix the code) or `Sync required:` (build files
-  changed, a module never synced, a foreign `.lathe/` — with the command), replacing the earlier `Stale:`
-  module list ([One Write Pass](../done/lathe-recompile-simplification.md), 2026-10-11). MCP has no server→model
+  then ends with `Not compiled:` (files with compile errors — fix the code), `Sync required:` (build files
+  changed, a foreign `.lathe/` — with the command) or `Not checked:` (a file no module compiles, with the
+  sync only when one can help), replacing the earlier `Stale:` module list
+  ([One Write Pass](../done/lathe-recompile-simplification.md), 2026-10-11; `Not checked:` since MC-9,
+  2026-10-24). MCP has no server→model
   push, so this rides in the result text (verified with `claude-code-guide`).
 - **Routing instructions** served at `initialize` (task→tool dispatch), mirrored into tool
   descriptions for clients that drop server instructions (claude.ai web).
@@ -85,10 +87,14 @@ The design optimizes for a single measurable outcome, and the decisions below fl
   code intelligence through MCP — their baseline is grep. Claude Code has native Java LSP but a thin,
   generic plugin surface. So: lead with Codex/Gemini (where any javac-accurate intelligence beats
   grep), and beat Claude Code's native path on reactor/dependency/generated/javac accuracy.
-- **Non-negotiable principle — return SOURCE SNIPPETS.** Every result returns the surrounding code
-  (the enclosing declaration, line-numbered, match marked), never a bare `file:line`. Empirically this
-  is the biggest lever in this space (agent pass@1 ≈ 0.67 → 0.83; follow-up reads ≈ 15 → 3 per task).
+- **Non-negotiable principle — return code, not coordinates.** Every result carries the code it
+  points at, never a bare `file:line`. Empirically this is the biggest lever in this space (agent
+  pass@1 ≈ 0.67 → 0.83; follow-up reads ≈ 15 → 3 per task).
   A bridge that returns coordinates loses to one that returns code.
+  *Revised 2026-10-24 ([MC-18](../gaps/gaps-archive.md#mc-18--search_symbols-and-find_references-answers-run-to-hundreds-of-lines--done)):*
+  the code is the target line alone, one grep-style line per result, not the enclosing lines; seven
+  lines a result made one class search 388 lines and 52 references about 350, and an agent that needs
+  the surroundings reads the file.
 - **This is a curated wedge, not a port of the LSP spec.** The LSP surface is the menu, not the spec —
   see [MCP tool surface](#mcp-tool-surface) for what is in and what is deliberately out.
 
@@ -568,8 +574,8 @@ outcomes on a reactor.
 - **Compiler-accurate ground truth** — diagnostics, types, and references are exactly what `javac` saw
   on the exact captured classpath; no reconstructed project model to drift ("green in build, red in
   tool"), and no grep name-collisions or missed cross-module sites.
-- **Snippets, not coordinates** — every answer arrives as readable code, so the agent acts without a
-  follow-up read per result.
+- **Code, not coordinates** — every answer carries the line of code it points at, one line per result,
+  so the agent acts without a follow-up read per result.
 - **Safe multi-module migration** — `find_references` → `rename_symbol` (correct-by-construction
   cross-module edits) → the agent's own `mvn` to verify, with Lathe's `Stale:` advisory flagging when
   a re-sync is needed — a complete loop for the reactor's most common change shape.

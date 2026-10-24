@@ -11,6 +11,12 @@ accessor. `publicApi` was dropped from the KISS cut (no semantic-modifier access
 measurement.
 Since 2026-10-11 `verify_change` drives the [One Write Pass](lathe-recompile-simplification.md) instead of the
 in-process-sync reaction; the notes marked "Since 2026-10-11" below record what changed.
+Since 2026-10-24 (MC-7, MC-13, MC-16, MC-17, MC-19, MC-20 in the [archive](../gaps/gaps-archive.md)) it
+checks callers in dependent modules too, not only intra-module ones; drops a file whose content is back
+to what the build compiled; reports the changed files' errors and warnings but only the callers'
+errors, errors first, one `path:line:column: severity: message` line each; and calls the suggested
+sync optional when nothing failed.
+The steps below describe the original design.
 Code-grounded design for two paired MCP tools — a **pre-edit** impact preview (`analyze_change`) and a
 **post-edit** scoped recompile (`verify_change`) — and the `LatheEngine` methods behind them.
 
