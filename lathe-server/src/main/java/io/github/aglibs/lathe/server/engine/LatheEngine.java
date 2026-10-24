@@ -134,6 +134,7 @@ public final class LatheEngine {
     service.setFileRenameSupported(true);
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
     service.setDocumentsFollowDisk(true);
+    service.useWorkspaceFormatter(workspaceRoot);
     service.initialize(workspaceRoot);
   }
 
@@ -344,6 +345,41 @@ public final class LatheEngine {
     final String content = IOUtil.unchecked(() -> Files.readString(path));
     final String updated = SourceLocator.applyEdits(content, edits);
     IOUtil.unchecked(() -> Files.writeString(path, updated));
+  }
+
+  // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
+  // like a rename. Empty when the file was already formatted.
+  public Optional<LatheFormat> format(final Path file) {
+    if (origin(file) != LatheLocation.Origin.REACTOR) {
+      throw new IllegalStateException(
+          "[format] refusing: %s is not a reactor file".formatted(file));
+    }
+
+    compileFromDisk(file); // the formatter reads the file's document, so register it
+    final String uri = LatheUri.fromPath(file);
+    final List<TextEdit> edits = await(service.formatFuture(uri));
+    if (edits.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final var edit =
+        new LatheFileEdit(uri, displayPath(file, uri), LatheLocation.Origin.REACTOR, edits.size());
+    writeAndCommit(Map.of(uri, edits), Map.of(), List.of(edit));
+    return Optional.of(
+        new LatheFormat(
+            edit.path(), firstLine(edits.get(0)), lastLine(edits.get(edits.size() - 1))));
+  }
+
+  // The formatter answers with one edit spanning what changed; its lines in the formatted file.
+  private static int firstLine(final TextEdit edit) {
+    return edit.getRange().getStart().getLine() + 1;
+  }
+
+  // A replacement ending in a line break ends on the line before it.
+  private static int lastLine(final TextEdit edit) {
+    final String text = edit.getNewText();
+    final long breaks = text.chars().filter(c -> c == '\n').count();
+    return firstLine(edit) + (int) (text.endsWith("\n") ? breaks - 1 : breaks);
   }
 
   /**

@@ -2969,18 +2969,31 @@ final class WorkspaceSession {
     return formatDocument(uri, content -> JavaFormatter.formatRanges(engine, content, ranges));
   }
 
+  // For the agent, which must tell a failure from an already formatted file: a refusal that
+  // carries the formatter's reason.
+  List<TextEdit> formatOrRefuse(final String uri, final FormatEngine engine) {
+    try {
+      return formatted(uri, content -> JavaFormatter.format(engine, content, LatheUri.toPath(uri)));
+    } catch (final Exception e) {
+      if (e instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
+      }
+
+      throw new ResponseErrorException(
+          new ResponseError(
+              ResponseErrorCode.RequestFailed,
+              "Could not format %s: %s"
+                  .formatted(
+                      LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()),
+              null));
+    }
+  }
+
   // Formats the open document's text, reporting the outcome once and swallowing failures.
   private List<? extends TextEdit> formatDocument(final String uri, final DocumentFormat format) {
     final var t = Stopwatch.start();
-    final OpenDocument openFile = docs.get(uri);
-    final String content = openFile != null ? openFile.content() : null;
     try {
-      final List<TextEdit> result = format.apply(content);
-      LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
-      if (!result.isEmpty() && renameTransaction.isMember(uri)) {
-        renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
-      }
-
+      final List<TextEdit> result = formatted(uri, format);
       // Formatting is a synchronous request (format-on-save blocks the editor), so a progress
       // spinner would only paint after the edit; report the outcome once it is done instead. Stay
       // quiet when nothing changed, so saving an already-formatted file does not nag.
@@ -3009,6 +3022,19 @@ final class WorkspaceSession {
 
       return List.of();
     }
+  }
+
+  private List<TextEdit> formatted(final String uri, final DocumentFormat format) throws Exception {
+    final var t = Stopwatch.start();
+    final OpenDocument openFile = docs.get(uri);
+    final String content = openFile != null ? openFile.content() : null;
+    final List<TextEdit> result = format.apply(content);
+    LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
+    if (!result.isEmpty() && renameTransaction.isMember(uri)) {
+      renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
+    }
+
+    return result;
   }
 
   @FunctionalInterface

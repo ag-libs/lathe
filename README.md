@@ -79,10 +79,11 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
+| `format_file`          | format a file in place with the project's pinned formatter, so edits pass Spotless |
 | `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
-Each tool declares the MCP annotations that say whether it writes: only `rename_symbol` and `run_test`
-are not read-only, and only `rename_symbol` is destructive.
+Each tool declares the MCP annotations that say whether it writes: only `rename_symbol`, `run_test`
+and `format_file` are not read-only, and only `rename_symbol` is destructive.
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).

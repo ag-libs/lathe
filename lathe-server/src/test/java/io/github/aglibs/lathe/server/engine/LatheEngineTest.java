@@ -7,11 +7,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.server.FormatterFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -23,10 +27,12 @@ import java.nio.file.attribute.FileTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.io.TempDir;
 
 class LatheEngineTest {
@@ -655,6 +661,69 @@ class LatheEngineTest {
               tmp.resolve("module/src/main/java").relativize(file),
               Files.getLastModifiedTime(file).toMillis());
     }
+  }
+
+  @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
+  void format_pinnedFormatter_rewritesTheChangedLinesOnce_thenAlreadyFormatted() throws Exception {
+    pinGoogleJavaFormat();
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Sample.java",
+            "package com.example;\n\nclass Sample {\n  int n = 1;\n\n  int  twice( ) {return n*2;}\n}\n");
+    engine = new LatheEngine(tmp);
+
+    final Optional<LatheFormat> formatted = engine.format(source);
+
+    assertThat(formatted)
+        .hasValueSatisfying(
+            format -> {
+              assertThat(format.path()).isEqualTo(FileUtil.slashed(tmp.relativize(source)));
+              assertThat(format.firstLine()).isEqualTo(6);
+              assertThat(format.lastLine()).isEqualTo(8);
+            });
+    assertThat(Files.readString(source)).contains("  int twice() {\n    return n * 2;\n  }\n");
+    assertThat(engine.format(source)).isEmpty();
+  }
+
+  @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
+  void format_fileThatDoesNotParse_refusesWithTheReasonAndLeavesItAlone() throws Exception {
+    pinGoogleJavaFormat();
+    final String broken = "package com.example;\nclass Sample { int n = ; }\n";
+    final Path source = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", broken);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessageStartingWith("Could not format Sample.java");
+    assertThat(Files.readString(source)).isEqualTo(broken);
+  }
+
+  @Test
+  void format_noFormatterPinned_refusesWithTheSyncRemedy() throws Exception {
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp, "com/example/Sample.java", "package com.example; class Sample {}");
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessageStartingWith("No formatter for this workspace")
+        .hasMessageContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+  }
+
+  // The style file lathe:sync writes for a project whose Spotless step pins google-java-format.
+  private void pinGoogleJavaFormat() throws Exception {
+    Json.write(
+        new WorkspaceStyleData(
+            new FormatterSpec(
+                LatheFlags.FORMATTER_GOOGLE,
+                List.of(),
+                "",
+                Map.of(),
+                FormatterFixtures.googleJavaFormatClasspath()),
+            null),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE));
   }
 
   @Test

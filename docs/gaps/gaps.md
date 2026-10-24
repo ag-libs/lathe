@@ -680,32 +680,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Spotless runs on `verify`, and an agent's edits rarely match google-java-format, so the build fails
-after a correct change.
-Lathe already runs the project's own pinned formatter in-process for the editor, but MCP has no tool
-for it.
-IntelliJ's MCP server has `reformat_file`
-([IntelliJ MCP server](https://www.jetbrains.com/help/idea/mcp-server.html)).
-
-### Fix direction
-
-A `format_file` tool (and maybe a `files` list) applying the editor's format path to disk, with the
-same write discipline as `rename_symbol` (reactor files only, compiled into the mirror before it
-returns).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all)
 
 **Status: accepted — Target: next**

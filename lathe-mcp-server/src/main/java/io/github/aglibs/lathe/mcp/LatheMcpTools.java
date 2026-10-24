@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
@@ -63,6 +64,12 @@ final class LatheMcpTools {
       ToolAnnotations.builder().readOnlyHint(false).destructiveHint(true).build();
   private static final ToolAnnotations RUNS_CODE =
       ToolAnnotations.builder().readOnlyHint(false).destructiveHint(false).build();
+  private static final ToolAnnotations EDITS_IN_PLACE =
+      ToolAnnotations.builder()
+          .readOnlyHint(false)
+          .destructiveHint(false)
+          .idempotentHint(true)
+          .build();
 
   private LatheMcpTools() {}
 
@@ -78,7 +85,8 @@ final class LatheMcpTools {
         searchSymbols(engine, mapper),
         findImplementations(engine, mapper),
         analyzeChange(engine, mapper),
-        verifyChange(engine, mapper));
+        verifyChange(engine, mapper),
+        formatFile(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -374,6 +382,29 @@ final class LatheMcpTools {
     return spec(tool, request -> handleVerifyChange(engine, request));
   }
 
+  private static SyncToolSpecification formatFile(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "format_file",
+                mapper,
+                """
+                {"type":"object","required":["file"],
+                 "properties":{"file":{"type":"string",
+                   "description":"Absolute path to a .java file in this project."}}}\
+                """)
+            .description(
+                """
+                Format a Java file in place with the formatter the project pins (its Spotless \
+                step: google-java-format, palantir, Eclipse), so your edits pass the build's \
+                formatting check. Returns the lines it rewrote, or says the file was already \
+                formatted. Call after editing a file, before verify_change.\
+                """)
+            .annotations(EDITS_IN_PLACE)
+            .build();
+    return spec(tool, request -> handleFormatFile(engine, request));
+  }
+
   private static SyncToolSpecification spec(
       final Tool tool, final Function<CallToolRequest, CallToolResult> handler) {
     return SyncToolSpecification.builder()
@@ -413,19 +444,10 @@ final class LatheMcpTools {
 
   private static CallToolResult handleDiagnostics(
       final LatheEngine engine, final CallToolRequest request) {
-    final Path file = filePath(request);
-    if (file == null) {
-      return error("get_diagnostics requires a 'file' argument");
-    }
-
-    if (!isJavaSource(file)) {
-      return error(notAJavaSource(file));
-    }
-
-    return guarded(
+    return atFile(
         "get_diagnostics",
-        file,
-        () -> diagnosticsResult(file, engine.diagnostics(file), engine.notes(List.of(file))));
+        request,
+        file -> diagnosticsResult(file, engine.diagnostics(file), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleDefinition(
@@ -479,15 +501,6 @@ final class LatheMcpTools {
 
   private static CallToolResult handleRunTest(
       final LatheEngine engine, final CallToolRequest request) {
-    final Path file = filePath(request);
-    if (file == null) {
-      return error("run_test requires a 'file' argument");
-    }
-
-    if (!isJavaSource(file)) {
-      return error(notAJavaSource(file));
-    }
-
     final TestScope scope = testScope(stringArg(request, "scope"));
     if (scope == null) {
       return error("run_test 'scope' must be one of class, method, package");
@@ -498,10 +511,10 @@ final class LatheMcpTools {
       return error("run_test with scope=method requires a 'method' argument");
     }
 
-    return guarded(
+    return atFile(
         "run_test",
-        file,
-        () -> testRunResult(engine.runTest(file, scope, method), engine.notes(List.of(file))));
+        request,
+        file -> testRunResult(engine.runTest(file, scope, method), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleAnalyzeChange(
@@ -520,6 +533,14 @@ final class LatheMcpTools {
         "verify_change",
         "files",
         () -> verifyChangeResult(engine.verifyChange(fileListArg(request))));
+  }
+
+  private static CallToolResult handleFormatFile(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atFile(
+        "format_file",
+        request,
+        file -> formatResult(file, engine.format(file), engine.notes(List.of(file))));
   }
 
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
@@ -571,6 +592,24 @@ final class LatheMcpTools {
         () ->
             searchResult(
                 query, engine.searchSymbols(query, maxResults(request)), engine.notes(List.of())));
+  }
+
+  // Shared body for the file tools: an existing .java file, then the handler, an engine failure
+  // becoming an isError result.
+  private static CallToolResult atFile(
+      final String tool,
+      final CallToolRequest request,
+      final Function<Path, CallToolResult> handler) {
+    final Path file = filePath(request);
+    if (file == null) {
+      return error("%s requires a 'file' argument".formatted(tool));
+    }
+
+    if (!isJavaSource(file)) {
+      return error(notAJavaSource(file));
+    }
+
+    return guarded(tool, file, () -> handler.apply(file));
   }
 
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
@@ -717,6 +756,33 @@ final class LatheMcpTools {
         Map.<String, Object>of(
             "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
         notes);
+  }
+
+  private static CallToolResult formatResult(
+      final Path file, final Optional<LatheFormat> format, final LatheNotes notes) {
+    return format
+        .map(
+            f ->
+                result(
+                    "Formatted %s: %s changed.".formatted(f.path(), lineSpan(f)),
+                    Map.<String, Object>of(
+                        "formatted", true,
+                        "path", f.path(),
+                        "firstLine", f.firstLine(),
+                        "lastLine", f.lastLine()),
+                    notes))
+        .orElseGet(
+            () ->
+                result(
+                    "%s was already formatted.".formatted(file.getFileName()),
+                    Map.<String, Object>of("formatted", false),
+                    notes));
+  }
+
+  private static String lineSpan(final LatheFormat format) {
+    return format.firstLine() == format.lastLine()
+        ? "line %d".formatted(format.firstLine())
+        : "lines %d–%d".formatted(format.firstLine(), format.lastLine());
   }
 
   private static CallToolResult callHierarchyResult(

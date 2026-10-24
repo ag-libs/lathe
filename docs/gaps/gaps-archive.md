@@ -10123,6 +10123,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Spotless runs on `verify`, and an agent's edits rarely match google-java-format, so the build fails
+after a correct change.
+Lathe already runs the project's own pinned formatter in-process for the editor, but MCP has no tool
+for it.
+IntelliJ's MCP server has `reformat_file`
+([IntelliJ MCP server](https://www.jetbrains.com/help/idea/mcp-server.html)).
+
+### Fix
+
+- `format_file` runs the formatter the project pins, the one the editor's format-on-save runs, and
+  writes the result the way `rename_symbol` does: reactor files only, under the reactor lock,
+  compiled into the mirror before it returns.
+- The formatter choice moved out of `LatheLanguageServer` into `FormatEngines`, so the agent engine
+  reads the same workspace style file (`LatheTextDocumentService.useWorkspaceFormatter`); the
+  editor-only fallback from `initializationOptions` stays in the language server.
+- The editor swallows a formatter failure into "no edits" (format-on-save must not nag); the agent
+  path refuses instead, so a file that does not parse, or a workspace with no formatter (or one whose
+  jars `lathe:sync` has not resolved), is an error, never "already formatted".
+- The answer names the rewritten line range (`Formatted a/Foo.java: lines 6–8 changed.`): the
+  formatter answers with one minimal edit, so an edit count would always be 1.
+- No `files` list: one call per file keeps each answer short, and an agent formats what it edited.
+
+### Regression targets
+
+- `LatheEngineTest.format_pinnedFormatter_rewritesTheChangedLinesOnce_thenAlreadyFormatted`
+- `LatheEngineTest.format_fileThatDoesNotParse_refusesWithTheReasonAndLeavesItAlone`
+- `LatheEngineTest.format_noFormatterPinned_refusesWithTheSyncRemedy`
+- `LatheMcpToolsTest.formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy`
+
+---
+
 ## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes — done
 
 **Status: done — Target: next**

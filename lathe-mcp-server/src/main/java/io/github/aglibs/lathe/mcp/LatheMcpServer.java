@@ -60,6 +60,8 @@ public final class LatheMcpServer {
       themselves, not their call sites): use find_implementations.
       - Checking that edits still compile, no full build: get_diagnostics for one file; \
       verify_change (no arguments) after a multi-file edit or a rename.
+      - Making an edited file pass the build's formatting check (Spotless): use format_file, which \
+      runs the formatter the project pins.
       - Checking whether a test, class, or package passes after an edit: use run_test (replays just \
       that; prefer it over the build's own test command).
 

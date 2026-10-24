@@ -57,6 +57,7 @@ try:
     cut = caller.rindex("}")
     CALLER.write_text(caller[:cut] + "\n    static long latheTaskUse(io.dropwizard.util.Duration d) {\n        return d.toMillisPlus(1);\n    }\n" + caller[cut:])
     ask(client, "7 diagnostics of the edited caller", "get_diagnostics", {"file": str(CALLER)}, 8)
+    ask(client, "7b format the edited caller", "format_file", {"file": str(CALLER)}, 4)
 
     # 8: a deliberate mistake, as agents make them: wrong argument type.
     CALLER.write_text(CALLER.read_text().replace("d.toMillisPlus(1)", 'd.toMillisPlus("1")'))

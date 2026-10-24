@@ -63,7 +63,8 @@ class LatheMcpToolsTest {
             "search_symbols",
             "find_implementations",
             "analyze_change",
-            "verify_change");
+            "verify_change",
+            "format_file");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -84,6 +85,7 @@ class LatheMcpToolsTest {
     assertThat(tool("verify_change").tool().inputSchema().toString()).contains("files");
     assertThat(tool("analyze_change").tool().inputSchema().toString())
         .contains("file", "line", "column");
+    assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
   }
 
   @Test
@@ -103,6 +105,12 @@ class LatheMcpToolsTest {
             "verify_change");
     assertThat(tool("rename_symbol").tool().annotations().destructiveHint()).isTrue();
     assertThat(tool("run_test").tool().annotations().destructiveHint()).isFalse();
+    assertThat(tool("format_file").tool().annotations())
+        .satisfies(
+            hints -> {
+              assertThat(hints.destructiveHint()).isFalse();
+              assertThat(hints.idempotentHint()).isTrue();
+            });
   }
 
   @Test
@@ -204,6 +212,22 @@ class LatheMcpToolsTest {
         .allSatisfy(result -> assertThat(result.isError()).isTrue());
     assertThat(text(describe(missing, 1, 1))).isEqualTo("%s does not exist".formatted(missing));
     assertThat(call("run_test", Map.of("file", pom.toString())).isError()).isTrue();
+    assertThat(text(call("format_file", Map.of("file", missing.toString()))))
+        .isEqualTo("%s does not exist".formatted(missing));
+    assertThat(text(call("format_file", Map.of())))
+        .isEqualTo("format_file requires a 'file' argument");
+  }
+
+  // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
+  // remedy.
+  @Test
+  void formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final CallToolResult result = call("format_file", Map.of("file", file.toString()));
+
+    assertThat(result.isError()).isTrue();
+    assertThat(text(result)).contains("No formatter for this workspace", ".lathe/lathe-sync.sh");
   }
 
   // No module compiles it, so nothing was checked; the note says whether a sync would help.
