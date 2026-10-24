@@ -139,22 +139,40 @@ do
   spec.check("nested class reachable despite untracked enclosing class", by_id["demo.Outer$Inner"] ~= nil, true)
 end
 
--- is_test_file mirrors Surefire's own default include patterns
--- (Test*.java, *Test.java, *Tests.java, *TestCase.java).
+-- is_test_file takes any Java file under a test source root; the server's discovery, with the
+-- build's own test filter, says which hold tests, so a class needs no test-like name.
 do
-  local test_root = "/p/src/test/java/demo/"
-  spec.check("Test*.java matches", adapter.is_test_file(test_root .. "TestFoo.java"), true)
-  spec.check("*Test.java matches", adapter.is_test_file(test_root .. "FooTest.java"), true)
-  spec.check("*Tests.java matches", adapter.is_test_file(test_root .. "FooTests.java"), true)
-  spec.check("*TestCase.java matches", adapter.is_test_file(test_root .. "FooTestCase.java"), true)
-  spec.check("plain class does not match", adapter.is_test_file(test_root .. "Foo.java"), false)
-  spec.check("non-.java file does not match", adapter.is_test_file(test_root .. "FooTest.txt"), false)
-  -- A `Test*`-named class in src/main is a fixture/builder, not a Surefire test: must not match.
-  spec.check(
-    "Test*-named class in src/main is not a test",
-    adapter.is_test_file("/p/src/main/java/demo/TestDataBuilder.java"),
-    false
-  )
+  spec.check("any test-root .java matches", adapter.is_test_file("/p/src/test/java/demo/Foo.java"), true)
+  spec.check("non-.java file does not match", adapter.is_test_file("/p/src/test/java/demo/FooTest.txt"), false)
+  spec.check("src/main class does not match", adapter.is_test_file("/p/src/main/java/demo/TestData.java"), false)
+end
+
+-- _targets_from_discovery: a never-opened file's tree from its module's discovery. Only the tests
+-- whose uri is this file count; each class and every class it is nested in becomes a class target
+-- parented on its outer class or package, all at the top of the file until it is opened.
+do
+  local uri = vim.uri_from_fname(FILE)
+  local targets = adapter._targets_from_discovery({
+    { id = "demo.FooTest#a()", label = "a()", uri = uri },
+    { id = "demo.FooTest$Inner#b(int)", label = "b(int)", uri = uri },
+    { id = "demo.OtherTest#c()", label = "c()", uri = vim.uri_from_fname("/w/OtherTest.java") },
+    { id = "demo.Generated#d()", label = "d()", uri = "" },
+  }, FILE, "app")
+  local by_id = {}
+  for _, target in ipairs(targets) do
+    by_id[target.id] = target
+  end
+
+  spec.check("discovery: this file's tests and classes only", #targets, 4)
+  spec.check("discovery: method under its class", by_id["demo.FooTest$Inner#b(int)"].parentId, "demo.FooTest$Inner")
+  spec.check("discovery: method is a test target", by_id["demo.FooTest#a()"].kind, 1)
+  spec.check("discovery: nested class under its outer class", by_id["demo.FooTest$Inner"].parentId, "demo.FooTest")
+  spec.check("discovery: nested class labelled by simple name", by_id["demo.FooTest$Inner"].label, "Inner")
+  spec.check("discovery: top class under its package", by_id["demo.FooTest"].parentId, "demo")
+  spec.check("discovery: class is a class target", by_id["demo.FooTest"].kind, 2)
+  spec.check("discovery: carries the module", by_id["demo.FooTest"].moduleRel, "app")
+  spec.check("discovery: positioned at the top of the file", by_id["demo.FooTest#a()"].range.start.line, 0)
+  spec.check("discovery: no tests, no targets", #adapter._targets_from_discovery(nil, FILE, "app"), 0)
 end
 
 local function read_file(path)
@@ -666,8 +684,8 @@ end
 do
   local executed = {}
   -- run = fn -> fn() so run_spec's async lathe.run.test body executes and is recorded; the queue and
-  -- future are inert stubs. The client answers runnables.dir with the given plan, records everything.
-  local function install_nio(dir_reply)
+  -- future are inert stubs. The client answers each command with its reply, records everything.
+  local function install_nio(replies)
     executed = {}
     package.loaded["nio"] = {
       control = {
@@ -686,10 +704,7 @@ do
           return {
             { request = { workspace_executeCommand = function(arg)
               executed[#executed + 1] = arg
-              if arg.command == "lathe.runnables.dir" then
-                return nil, dir_reply
-              end
-              return nil
+              return nil, replies[arg.command]
             end } },
           }
         end,
@@ -715,10 +730,12 @@ do
 
   -- Module fan-out: two PACKAGE selectors come back and are run in one launch keyed on the dir node.
   install_nio({
-    moduleRel = "app",
-    selections = {
-      { selectorKind = "PACKAGE", selectorValue = "com.a" },
-      { selectorKind = "PACKAGE", selectorValue = "com.b" },
+    ["lathe.runnables.dir"] = {
+      moduleRel = "app",
+      selections = {
+        { selectorKind = "PACKAGE", selectorValue = "com.a" },
+        { selectorKind = "PACKAGE", selectorValue = "com.b" },
+      },
     },
   })
   local built = adapter.build_spec({ tree = tree })
@@ -736,10 +753,37 @@ do
   spec.check("a runnable dir is not a skip", built.context.skip_reason, nil)
 
   -- Empty reply (reactor root / no tests): honest skip, no launch.
-  install_nio({ moduleRel = "", selections = {} })
+  install_nio({ ["lathe.runnables.dir"] = { moduleRel = "", selections = {} } })
   local skip = adapter.build_spec({ tree = tree })
   spec.check("empty dir reply yields a skip spec", skip.context.skip_reason ~= nil, true)
   spec.check("empty dir reply fires no lathe.run.test", command_arg("lathe.run.test"), nil)
+
+  -- A file whose tests are not discovered yet (just opened) runs the class its path names, in the
+  -- module the server resolves; a file in no module is still an honest skip.
+  local file_tree = {
+    data = function()
+      return { id = FILE, type = "file", name = "FooTest.java", path = FILE }
+    end,
+    iter_nodes = function()
+      return function()
+        return nil
+      end
+    end,
+  }
+  install_nio({ ["lathe.resolveContext"] = { moduleRel = "demo", scope = "test", pkg = "demo" } })
+  adapter.build_spec({ tree = file_tree })
+  local class_run = command_arg("lathe.run.test")
+  spec.check("undiscovered file runs in its module", class_run and class_run.arguments[1].moduleRel, "demo")
+  spec.check(
+    "undiscovered file runs the class its path names",
+    class_run and class_run.arguments[1].selections[1].selectorValue,
+    "demo.FooTest"
+  )
+
+  install_nio({ ["lathe.resolveContext"] = vim.NIL })
+  local no_module = adapter.build_spec({ tree = file_tree })
+  spec.check("file in no module yields a skip spec", no_module.context.skip_reason, "no tests found in this file")
+  spec.check("file in no module fires no lathe.run.test", command_arg("lathe.run.test"), nil)
 
   package.loaded["nio"] = nil
 end

@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
@@ -837,6 +838,15 @@ final class WorkspaceSession {
 
   private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {}
 
+  // A module's discovery on disk with the test-classes stamp it was found for, so a new session
+  // reuses it instead of launching a JVM per module again.
+  private record PersistedDiscovery(long stampMillis, TestDiscovery discovery) {
+
+    PersistedDiscovery {
+      ValidCheck.check().notNull(discovery, "discovery").validate();
+    }
+  }
+
   List<String> testModules() {
     return testConfigs(workspace.allConfigs()).stream()
         .map(this::moduleRel)
@@ -855,10 +865,19 @@ final class WorkspaceSession {
       return cached.result();
     }
 
+    final Path persisted = discoveryFile(moduleRel);
+    final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
+    if (stored.isPresent()) {
+      final var result = CompletableFuture.completedFuture(stored.get());
+      discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+      return result;
+    }
+
     final CompletableFuture<TestDiscovery> result =
         lastDiscovery
             .handle((previous, error) -> moduleRel)
-            .thenComposeAsync(this::launchDiscovery, worker::execute);
+            .thenComposeAsync(this::launchDiscovery, worker::execute)
+            .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
     lastDiscovery = result;
     discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
     return result;
@@ -911,6 +930,42 @@ final class WorkspaceSession {
         .values()
         .stream()
         .toList();
+  }
+
+  private Path discoveryFile(final String moduleRel) {
+    return workspaceRoot
+        .resolve(LatheLayout.LATHE_DIR)
+        .resolve(moduleRel)
+        .resolve(LatheLayout.TEST_DISCOVERY_FILE);
+  }
+
+  // The stored discovery, when it was found for the module's current test classes.
+  static Optional<TestDiscovery> readDiscovery(final Path file, final FileTime stamp) {
+    if (stamp == null || !Files.exists(file)) {
+      return Optional.empty();
+    }
+
+    final PersistedDiscovery persisted =
+        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
+    return persisted.stampMillis() == stamp.toMillis()
+        ? Optional.of(persisted.discovery())
+        : Optional.empty();
+  }
+
+  // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
+  static TestDiscovery writeDiscovery(
+      final Path file, final FileTime stamp, final TestDiscovery discovery) {
+    if (stamp != null && discovery.blockedReasons().isEmpty()) {
+      IOUtil.unchecked(
+          () ->
+              FileUtil.writeIfChanged(
+                  file.getParent(),
+                  file,
+                  Json.toJson(new PersistedDiscovery(stamp.toMillis(), discovery)),
+                  false));
+    }
+
+    return discovery;
   }
 
   private static String sourceUri(final String path) {

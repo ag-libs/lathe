@@ -43,7 +43,8 @@ public final class CapturePruner {
     return latheDir.relativize(params.getParent());
   }
 
-  // The tree's params, stamps and mirrors; for a removed module, its launch captures too.
+  // The tree's params, stamps and mirrors; for a removed module, its launch captures and test
+  // files too.
   private static void delete(final Path params, final boolean moduleRemoved) {
     final Path moduleDir = params.getParent();
     final String tree = LatheLayout.paramsSourceTree(params);
@@ -54,7 +55,11 @@ public final class CapturePruner {
                 Stream.of(
                     params.getFileName().toString(), LatheLayout.compiledStampsFileName(tree)),
                 moduleRemoved
-                    ? Stream.of(LatheLayout.MAIN_LAUNCH_FILE, LatheLayout.TEST_LAUNCH_FILE)
+                    ? Stream.of(
+                        LatheLayout.MAIN_LAUNCH_FILE,
+                        LatheLayout.TEST_LAUNCH_FILE,
+                        LatheLayout.TEST_FILTER_FILE,
+                        LatheLayout.TEST_DISCOVERY_FILE)
                     : Stream.empty())
             .toList();
     files.forEach(file -> IOUtil.unchecked(() -> Files.deleteIfExists(moduleDir.resolve(file))));

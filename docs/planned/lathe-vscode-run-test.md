@@ -80,7 +80,7 @@ The client mirrors these numbers in one place (`runnables.ts`).
 |---|---|
 | `lathe.tests.modules {}` | `[{moduleRel, label}]`: every module with a test source tree. Cheap: read from the reactor layout. |
 | `lathe.tests.discover {moduleRel}` | `{moduleRel, blockedReasons, tests: [{id, label, uri}]}`: one entry per test method, flat; package, class and nesting are read off the `id` as for run results, `label` is the method name, `uri` the source file (empty when it resolves to none). |
-| `lathe/testsChanged {moduleRel}` (notification) | **Not built in slice 6**; added with slice 7 only if a client needs a push. Answers stay fresh without it (below). |
+| `lathe/testsChanged {moduleRel}` (notification) | **Not built**: Neovim did not need it (slice 7); added with VS Code if its tree needs a push. Answers stay fresh without it (below). |
 
 `tests.discover` runs the module's captured test launch with the runner in a new **discover mode**:
 `LauncherFactory.create().discover(request)` with a module-wide selector, and no test executed.
@@ -215,10 +215,13 @@ Cancel first stops the JVM's descendants (`ProcessHandle.descendants()`), then t
 The additions are editor-neutral, and the neotest adapter can use them once they land.
 Each item is adapter work (Lua), delivered right after the server piece it uses (§11).
 
-1. **Whole-module summary.** neotest builds its tree by calling `discover_positions(path)` per test file, and the adapter can answer only for buffers the server has open, so the summary shows only opened files.
+1. **Whole-module summary.** (Done in slice 7.) neotest builds its tree by calling `discover_positions(path)` per test file, and the adapter can answer only for buffers the server has open, so the summary shows only opened files.
    With `lathe.tests.discover`, cached per module, it can answer for every file: the summary shows the whole module at once, runs from it work for unopened files, and a module run's results land on their positions instead of only in the quickfix list.
    An opened file switches to `runnables.list` as today, with real ranges and unsaved edits.
-   `lathe/testsChanged` tells the adapter when to drop a module's cache.
+   The server keeps the cache, saved per module under `.lathe/` with its stamp, so a restart does not rediscover, and the adapter keeps none.
+   An unopened file's positions refresh when neotest asks about the file again (its directory rescans); no `lathe/testsChanged` is sent for Neovim.
+   neotest asks about every Java file under a test source root; the discovery, with the build's own test filter, says which hold tests, so a test class needs no test-like name.
+   A file run on a file with no discovered tests yet (one just opened, gap NV-8) runs the class its path names.
    The limit: neotest needs a range for every position and discovery has none, so an unopened file's positions get a placeholder (the top of the file) until it is opened.
    Approximate method lines from the classes' line-number tables would close that gap; that is a later server addition.
 2. **Per-test output.** (Done in slice 4.) When a run finishes, the adapter writes each test's own lines (by their `positionId`, §3.2 D) to a file of its own, so opening a test's output shows what that test printed instead of the run's whole transcript; a test that printed nothing shows the transcript, as before. The live output buffer is unchanged.
@@ -237,11 +240,13 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    A failure without the two values shows only its message, as today.
 5. **Structured stack frames.** Not pursued for Neovim (decided in slice 3): neotest places a test's diagnostics only in that test's own file, so a helper-class frame can't become one through it, and the output buffer's stack navigation (`stacktrace.lua`) already works from the printed trace, for `main()` runs too. The frames stay on the wire for VS Code's clickable stack traces (§5.3).
 6. **Durations.** (Done in slice 3.) Each row of the results quickfix list (`open_results()`, `<leader>tq`) ends with the test's time; neotest's summary tree has no place for them, and the run's total is in the completion notification.
-7. **A check on open-file discovery.** The adapter waits for a buffer's first `DiagnosticChanged` before asking `runnables.list`, because it can't see when Neovim's LSP client has sent `didOpen`.
+7. **A check on open-file discovery.** (Checked in slice 7; no change.) The adapter waits for a buffer's first `DiagnosticChanged` before asking `runnables.list`, because it can't see when Neovim's LSP client has sent `didOpen`.
    Spike S3 showed the server side needs no more than that `didOpen` was sent: the server handles it before any later request and queues that request behind the open compile,
    so a query sent right after `didOpen` was complete 30 times out of 30.
    It also showed the wait can be fooled: on `didClose` the server publishes empty diagnostics, which can arrive just after a quick reopen and look like the first diagnostics of the new open.
    Worth checking whether the adapter can key on the `didOpen` itself (Neovim's client tracks which buffers it has opened) instead.
+   The check: the stale empty diagnostics are harmless. They count only for a buffer the client has attached, and by then its `didOpen` has been sent, so any discovery that follows is queued behind the open compile, as S3 showed.
+   Keying on the `didOpen` would still need a moment to nudge neotest's re-discovery, which the diagnostics give, so the wait stays.
 
 ## 4. Shape of the client
 
@@ -621,7 +626,7 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | 4 | Output attributed to its test (`TranscriptLine.positionId`, from the runner's markers) and per-test output in neotest (§3.4 item 2); `lathe/testStarted` deferred to VS Code | built |
 | 5 | Surefire's include/exclude filter (F): read at sync, applied to package and module runs | built |
 | 6 | Whole-module discovery (A) on the server: `lathe.tests.modules`, `lathe.tests.discover`, cached by stamp, one discovery JVM at a time | built |
-| 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | |
+| 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | built |
 | 8 | Release: docs, release notes, the `lathe.nvim` publish; the GitHub release carries no `.vsix` this time | |
 
 ## 12. Open items
@@ -633,9 +638,7 @@ What this design leaves open, on purpose:
 | S1 on macOS and Windows | Linux verified; the other two need a CI run on a pushed branch | Phase 3 |
 | Debugging (§10) | Deferred; the wiring is recorded, the design is not written | After phase 3 |
 | TestNG through Surefire's own TestNG provider | Out of scope; what today's runs do on such a module was not checked | — |
-| Neovim open-file discovery trigger (§3.4 item 7) | A check, not a decided change | Phase 2 step 6 |
 | JUnit 4 expected/actual values (`ComparisonFailure`) | Deferred in slice 2: needs JUnit 4 as a dependency of the runner's tests and the fixture; JUnit 4 failures keep their message | When someone asks |
-| Run before discovery finishes in neotest (gap NV-8) | Skipped with "no tests found" | Slice 7 |
 
 Accepted limits, not open items: one id for a `@Nested` class inherited by two outer classes (§3.2 A);
 a placeholder position for tests in unopened files in neotest (§3.4 item 1); no stdin for a `main()` (§6);

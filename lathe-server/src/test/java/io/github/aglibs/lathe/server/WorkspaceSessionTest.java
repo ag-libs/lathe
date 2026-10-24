@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -647,6 +648,26 @@ class WorkspaceSessionTest {
         null,
         List.of(),
         null);
+  }
+
+  // A stored discovery is reused for the test classes it was found for, and only for those; a
+  // blocked one (no capture yet) is not stored.
+  @Test
+  void readDiscovery_storedForTheSameOrOtherTestClasses_reusedOnlyWhenTheStampMatches(
+      @TempDir final Path dir) {
+    final Path file = dir.resolve("module/test-discovery.json");
+    final FileTime stamp = FileTime.fromMillis(1_000);
+    final var discovery =
+        new TestDiscovery("module", List.of(), List.of(new DiscoveredTest("a.T#t()", "t", "")));
+    final var blocked = new TestDiscovery("other", List.of("no capture"), List.of());
+
+    WorkspaceSession.writeDiscovery(file, stamp, discovery);
+    WorkspaceSession.writeDiscovery(dir.resolve("other/test-discovery.json"), stamp, blocked);
+
+    assertThat(WorkspaceSession.readDiscovery(file, stamp)).contains(discovery);
+    assertThat(WorkspaceSession.readDiscovery(file, FileTime.fromMillis(2_000))).isEmpty();
+    assertThat(WorkspaceSession.readDiscovery(file, null)).isEmpty();
+    assertThat(dir.resolve("other/test-discovery.json")).doesNotExist();
   }
 
   // A package or module run takes the build's class-name filter; a run naming a class or a method,

@@ -56,20 +56,23 @@ local function run_position(adapter, subtree)
   return merged
 end
 
---- The dir and file positions neotest synthesizes during its workspace walk are
---- not part of discover_positions' file-rooted tree, so a directory run is
---- exercised with a hand-made dir position matching the shape neotest passes:
---- `data()` returns the dir node and `get_key()` returns nil (a synthesized dir
---- has no discovered subtree here, and results() treats a nil subtree as "no
---- fan-out").
-local function dir_tree(path, package)
-  local data = { id = path, type = "dir", path = path, name = package }
+--- A position with nothing discovered under it, the shape neotest passes for the
+--- dir positions it synthesizes during its workspace walk and for a file whose
+--- discovery has not answered yet: `data()` returns the node, and there is no
+--- subtree (results() treats a nil subtree as "no fan-out").
+local function bare_tree(type, path, name)
+  local data = { id = path, type = type, path = path, name = name }
   return {
     data = function()
       return data
     end,
     get_key = function()
       return nil
+    end,
+    iter_nodes = function()
+      return function()
+        return nil
+      end
     end,
   }
 end
@@ -138,7 +141,7 @@ nio.run(function()
     captured.class_results = adapter.results(class_built, nil, class_subtree)
     captured.class_transcript = class_built.context.outcome and class_built.context.outcome.output
 
-    captured.dir_results = run_position(adapter, dir_tree(package_dir, PACKAGE_ID))
+    captured.dir_results = run_position(adapter, bare_tree("dir", package_dir, PACKAGE_ID))
 
     local file_results = run_position(adapter, tree)
     captured.file_results = file_results
@@ -146,9 +149,22 @@ nio.run(function()
       and file_results[test_file] ~= nil
       and file_results[test_file].output ~= nil
 
+    -- D4: a file nobody opened gets its tree from its module's discovery, which applies the build's
+    -- test filter, so a class `mvn test` would not run yields no tree.
+    local unopened = adapter.discover_positions(SHAPES_DIR .. "/IdShapesTest.java")
+    captured.unopened_ids = {}
+    for _, pos in (unopened and unopened:iter() or function() end) do
+      captured.unopened_ids[pos.id] = pos.type
+    end
+    captured.excluded_tree = adapter.discover_positions(SHAPES_DIR .. "/ExcludedByPatternTests.java")
+
+    -- R7: a file run before the file's discovery answers runs the class its path names.
+    local assertions_file = SHAPES_DIR .. "/AssertionsTest.java"
+    captured.undiscovered_results = run_position(adapter, bare_tree("file", assertions_file, "AssertionsTest.java"))
+
     -- Failures as the real server sends them: one package run of the shapes module. Before the
     -- printing run below, which the console-buffer checks read.
-    captured.shapes_results = run_position(adapter, dir_tree(SHAPES_DIR, SHAPES_PACKAGE))
+    captured.shapes_results = run_position(adapter, bare_tree("dir", SHAPES_DIR, SHAPES_PACKAGE))
 
     -- R6 (stream contract): drive spec.stream directly for a single method and drain it, the exact
     -- interface neotest's runner iterates to mark positions live. It must yield the method's result
@@ -269,6 +285,14 @@ spec.check(
 -- R2: a file run is one consolidated CLASS-selector launch keyed to the file position, so its
 -- result (with output) is reachable from that position.
 spec.check("R2 file run output reachable from file position", captured.file_has_output, true)
+
+local unopened_ids = captured.unopened_ids or {}
+spec.check("D4 unopened file's class discovered", unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest"], "namespace")
+spec.check("D4 unopened file's method discovered", unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest#plain()"], "test")
+spec.check("D4 a class the build's filter excludes has no tree", captured.excluded_tree, nil)
+
+local undiscovered = (captured.undiscovered_results or {})[SHAPES_PACKAGE .. ".AssertionsTest#singleLine()"]
+spec.check("R7 file run before discovery runs its class", undiscovered and undiscovered.status, "failed")
 
 -- F3/F4: a comparison failure's text carries the diff of its values, and a class whose @BeforeAll
 -- broke reports its real error on the class, both straight from the server.

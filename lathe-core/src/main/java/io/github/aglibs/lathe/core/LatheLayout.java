@@ -70,6 +70,7 @@ public final class LatheLayout {
   public static final String TEST_LAUNCH_FILE = "test-launch.json";
   public static final String MAIN_LAUNCH_FILE = "main-launch.json";
   public static final String TEST_FILTER_FILE = "test-filter.json";
+  public static final String TEST_DISCOVERY_FILE = "test-discovery.json";
   public static final String RUN_CONFIG_SHARED_FILE = "lathe-run.json";
   public static final String RUN_CONFIG_LOCAL_FILE = "run.json";
   public static final String STYLE_FILE = "style.json";

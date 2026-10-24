@@ -424,25 +424,10 @@ function M.filter_dir(name, rel_path, root)
   return not build_dirs(root)[rel_path]
 end
 
--- The common test-class naming convention: Test*.java, *Test.java, *Tests.java,
--- *TestCase.java. These are Surefire's default includes, and Gradle projects follow the same
--- naming in practice, so it is a pre-filter, not a build rule. A project that overrides its test
--- includes would need the front-end to record them in workspace.json for this adapter to read.
+-- Any Java file under a test source root: which of them hold tests is the server's discovery to say,
+-- with the build's own test filter, so no class-name pattern is guessed here.
 function M.is_test_file(file_path)
-  if not file_path:match("%.java$") then
-    return false
-  end
-  -- Surefire's include patterns apply only within the test source root, but neotest walks the whole
-  -- project -- so gate on src/test/ first, otherwise a `Test*`-named class in src/main (a builder,
-  -- fixture, or config, not a test) is wrongly discovered and swept into package runs.
-  if not file_path:match("/src/test/") then
-    return false
-  end
-  local name = vim.fn.fnamemodify(file_path, ":t:r")
-  return name:match("^Test") ~= nil
-    or name:match("Test$") ~= nil
-    or name:match("Tests$") ~= nil
-    or name:match("TestCase$") ~= nil
+  return file_path:match("%.java$") ~= nil and file_path:match("/src/test/") ~= nil
 end
 
 --- Converts an LSP Range (0-based line/character, on start/end objects) into neotest's
@@ -528,6 +513,69 @@ local function build_tree(file_path, targets)
   end)
 end
 
+-- The module a file belongs to, from the server's reactor layout; nil when it resolves to none.
+local function module_of(client, file_path)
+  local err, context = client.request.workspace_executeCommand({
+    command = "lathe.resolveContext",
+    arguments = { { uri = vim.uri_from_fname(file_path) } },
+  })
+  -- A file in no module answers JSON null (vim.NIL), which cannot be indexed.
+  return not err and type(context) == "table" and context.moduleRel or nil
+end
+
+-- Discovery knows no positions, so a file's tests sit at its top until the file is opened.
+local TOP_OF_FILE = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } }
+
+--- The tests discovery found in one file, as the targets lathe.runnables.list returns for an open
+--- file: a test per method, and its class and every class it is nested in (read off the id), so the
+--- same forest builder nests them. Pure, for the specs.
+function M._targets_from_discovery(tests, file_path, module_rel)
+  local targets, classes = {}, {}
+  local file = vim.fs.normalize(file_path)
+  for _, test in ipairs(tests or {}) do
+    if test.uri ~= "" and vim.fs.normalize(vim.uri_to_fname(test.uri)) == file then
+      local class = test.id:match("^(.-)#")
+      targets[#targets + 1] =
+        { id = test.id, parentId = class, kind = 1, label = test.label, moduleRel = module_rel, range = TOP_OF_FILE }
+      while class and not classes[class] do
+        classes[class] = true
+        local outer = class:match("^(.*)%$[^$]+$")
+        targets[#targets + 1] = {
+          id = class,
+          parentId = outer or class:match("^(.*)%.[^.]+$") or "",
+          kind = 2,
+          label = class:match("([^.$]+)$"),
+          moduleRel = module_rel,
+          range = TOP_OF_FILE,
+        }
+        class = outer
+      end
+    end
+  end
+  return targets
+end
+
+-- A file nobody opened: its tests from the server's discovery of its whole module, which runs no
+-- test and is cached server-side, so neotest's project sweep costs one discovery per module.
+local function discovered_targets(file_path)
+  local client = lathe_client()
+  local module_rel = client and module_of(client, file_path)
+  if not module_rel then
+    return nil
+  end
+
+  local err, discovery = client.request.workspace_executeCommand({
+    command = "lathe.tests.discover",
+    arguments = { { moduleRel = module_rel } },
+  })
+  if err or not discovery then
+    return nil
+  end
+
+  local targets = M._targets_from_discovery(discovery.tests, file_path, module_rel)
+  return #targets > 0 and targets or nil
+end
+
 --- Asks the server for `file_path`'s runnables, or nil when there is no client or no targets; also
 --- returns the buffer's changedtick as of the request (nil for an unloaded file).
 local function request_targets(file_path, bufnr)
@@ -574,6 +622,13 @@ function M.discover_positions(file_path)
   local pending = discovery_inflight[file_path]
   if pending then
     local targets = pending.wait()
+    return targets and build_tree(file_path, targets) or nil
+  end
+
+  -- Not opened: the module's discovery; the file is not marked discovered, so opening it still
+  -- re-discovers it from the open file, with real ranges and unsaved edits.
+  if not vim.api.nvim_buf_is_loaded(bufnr) then
+    local targets = discovered_targets(file_path)
     return targets and build_tree(file_path, targets) or nil
   end
 
@@ -665,6 +720,18 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
   return spec
 end
 
+--- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
+--- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
+--- non-standard-layout node falls back to the aggregate rather than mis-matching.
+local function path_to_qualified(path)
+  local rel = path:match("^.-/src/[^/]+/java/(.*)$")
+  if not rel then
+    return nil
+  end
+
+  return (rel:gsub("%.java$", ""):gsub("/", "."))
+end
+
 function M.build_spec(args)
   local pos = args.tree:data()
   local client = lathe_client()
@@ -743,6 +810,14 @@ function M.build_spec(args)
       module_rel = module_rel or child.lathe_module_rel
     end
   end
+  -- Discovery may not have answered yet (the file was just opened): run the file's class, whose name
+  -- the path gives, rather than skipping the run.
+  local class = #selections == 0 and path_to_qualified(pos.path)
+  module_rel = module_rel or (class and module_of(client, pos.path))
+  if class and module_rel then
+    selections = { { selectorKind = "CLASS", selectorValue = class } }
+  end
+
   if #selections == 0 then
     -- Nothing to debug: there is no selector to launch a suspended JVM for. Notify and bail rather
     -- than hand neotest's dap strategy an empty spec.strategy.
@@ -756,11 +831,9 @@ function M.build_spec(args)
     -- status set at the start of run_tree for this position never gets cleared, so its glyph spins
     -- forever. Return a real no-op spec instead so results() always fires and clears it, with a
     -- message explaining why nothing ran.
-    local reason = vim.fn.bufloaded(pos.path) == 1 and "no tests found in this file"
-      or ("open " .. vim.fn.fnamemodify(pos.path, ":t") .. " to discover its tests before running")
     return {
       command = { "true" },
-      context = { position_id = pos.id, skip_reason = reason, label = pos.name },
+      context = { position_id = pos.id, skip_reason = "no tests found in this file", label = pos.name },
     }
   end
   return run_spec(pos.id, module_rel, selections, client, pos.name, strategy)
@@ -810,19 +883,6 @@ end
 -- Ranks per-test statuses so a container takes the most significant one among the tests it encloses:
 -- any failure dominates, then a pass (a class with passed+skipped tests is passed), then skipped.
 local STATUS_RANK = { skipped = 1, passed = 2, failed = 3 }
-
---- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
---- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
---- non-standard-layout node falls back to the aggregate rather than mis-matching. This name matching
---- (results -> tree nodes) is a client-side concern; deciding what to RUN is server-resolved.
-local function path_to_qualified(path)
-  local rel = path:match("^.-/src/[^/]+/java/(.*)$")
-  if not rel then
-    return nil
-  end
-
-  return (rel:gsub("%.java$", ""):gsub("/", "."))
-end
 
 --- True when `class` (a JUnit binary class name) belongs to `qualifier`: the same class or a nested class
 --- of it when `qualifier` is an FQCN, or any class in the package (or a subpackage) when it is a package.

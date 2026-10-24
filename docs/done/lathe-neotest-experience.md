@@ -95,6 +95,14 @@ client surface (POSITION_TYPE has no entry for kind 0) remain.
 *Criteria:* a fixture covering each kind produces the expected position for each; `main` is tracked
 as an explicit deferral, not a silent miss.
 
+**D4 — Files nobody opened.** ✅
+The summary lists every test of a module, not only the opened files'.
+*Shipped:* an unopened file's tree comes from the server's discovery of its whole module
+(`lathe.tests.discover`), which applies the build's test filter and is saved per module;
+its tests sit at the top of the file until it is opened, which re-discovers it with real ranges.
+*Criteria:* an unopened fixture file shows its class and methods;
+a class the build's filter excludes shows nothing.
+
 ### 3.2 Running
 
 **R1 — Run at every level.** ✅
@@ -164,6 +172,12 @@ result to neotest via `spec.stream`, so positions mark live (4b). The final auth
 `testResults` still reconcile in `results()`.
 *Criteria:* during a multi-method run, each method's gutter/summary status updates as that method
 completes.
+
+**R7 — Run a file as soon as it opens.** ✅
+A file run issued before the file's discovery answers still runs its tests.
+*Shipped:* with nothing discovered under the file, the adapter runs the class its path names,
+in the module the server resolves for the file.
+*Criteria:* a file run on a file with no discovered tests reports its tests' results.
 
 ### 3.3 Output and following
 
