@@ -11,6 +11,8 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -37,6 +39,36 @@ class IdShapesTest {
   @ValueSource(ints = {1, 2})
   void overloaded(final int value) {
     assertTrue(value > 0);
+  }
+
+  static Stream<int[]> arrays() {
+    return Stream.of(new int[] {1});
+  }
+
+  @ParameterizedTest
+  @MethodSource("arrays")
+  void arrayParam(final int[] values) {
+    assertEquals(1, values.length);
+  }
+
+  static Stream<Arguments> varargs() {
+    return Stream.of(Arguments.of((Object) new String[] {"v"}));
+  }
+
+  @ParameterizedTest
+  @MethodSource("varargs")
+  void varargsParam(final String... values) {
+    assertEquals(1, values.length);
+  }
+
+  enum Shape {
+    ROUND
+  }
+
+  @ParameterizedTest
+  @EnumSource(Shape.class)
+  void enumParam(final Shape shape) {
+    assertEquals(Shape.ROUND, shape);
   }
 
   static Stream<List<String>> lists() {

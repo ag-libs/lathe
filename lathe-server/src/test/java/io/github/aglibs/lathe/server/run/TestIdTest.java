@@ -24,6 +24,19 @@ final class TestIdTest {
     assertThat(TestId.positionId("pkg.Outer$Inner", "t", "")).isEqualTo("pkg.Outer$Inner#t()");
   }
 
+  // JUnit names parameter types as Class.getName does; javac's erasure prints source form.
+  @Test
+  void positionId_jvmFormParameterTypes_matchJavacSourceForm() {
+    assertThat(
+            TestId.positionId(
+                "pkg.Outer$Inner",
+                "t",
+                "[I, [[J, [Ljava.lang.String;, pkg.Outer$Shape, [Lpkg.Outer$Shape;, boolean"))
+        .isEqualTo(
+            "pkg.Outer$Inner#t(int[],long[][],java.lang.String[],pkg.Outer.Shape,"
+                + "pkg.Outer.Shape[],boolean)");
+  }
+
   @Test
   void positionId_blankClassName_isRejected() {
     assertThatThrownBy(() -> TestId.positionId("", "bar", ""))

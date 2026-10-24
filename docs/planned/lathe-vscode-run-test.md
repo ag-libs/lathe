@@ -58,8 +58,8 @@ Test ids are `<binaryClassName>#<method>(<erasedParams>)` (`TestId`, `RunnableSc
 A class's id is its binary name; a package's id is its name.
 Package, class and nesting can therefore be read off any id without asking the server.
 Spike S6 checked the two sides against each other: plain, overloaded, generic (erased to `java.util.List`), repeated, factory, `@Nested` and doubly nested methods all match.
-Array and varargs parameters don't: JUnit reports them in JVM form (`arrayParam([I)`, `varargsParam([Ljava.lang.String;)`) while javac's id says `int[]` and `java.lang.String[]`.
-Their results land on no method today, in Neovim too; §3.2 E fixes that.
+Array, varargs and nested-type parameters didn't: JUnit reports them in JVM form (`arrayParam([I)`, `varargsParam([Ljava.lang.String;)`, `enumParam(pkg.Outer$Shape)`) while javac's id says `int[]`, `java.lang.String[]` and `pkg.Outer.Shape`.
+Their results landed on no method, in Neovim too, until §3.2 E (slice 1).
 Any result that still matches no method is attached to its class (§5.3).
 
 `failureLine` is 1-based and `-1` when no line is known (S6: the assertion on line 74 reported 74).
@@ -151,12 +151,13 @@ A failed or aborted container now produces a record with `methodName` empty and 
 - `lathe/testStarted {token, positionId}` (notification), from the runner's `executionStarted` for a method.
   The runner already flushes its sink per record, so the existing tailer streams it.
   It is a separate notification, not a fourth `status`: the neotest adapter maps an unknown status to `failed` (`neotest.lua:268`).
-- The `Launcher` closes the replay process's stdin right after it starts.
+- The `Launcher` closes the replay process's stdin right after it starts (done in slice 1).
   A `main()` reading `System.in` gets end-of-input at once; today it hangs on an open pipe until it is cancelled.
 
-**E. Array and varargs ids.**
+**E. Array, varargs and nested-type ids.** (Done in slice 1.)
 `TestId.positionId` turns JUnit's JVM-form parameter names into javac's source form before building the id:
-`[I` → `int[]`, `[[J` → `long[][]`, `[Ljava.lang.String;` → `java.lang.String[]` (a varargs parameter is an array).
+`[I` → `int[]`, `[[J` → `long[][]`, `[Ljava.lang.String;` → `java.lang.String[]` (a varargs parameter is an array), and `pkg.Outer$Shape` → `pkg.Outer.Shape` in parameter types.
+The class part of the id keeps its `$`: both sides use the binary name there.
 This reads a JVM type descriptor, a fixed format, not Java source.
 [Structured test results](../done/lathe-structured-test-results.md) flagged array and varargs shapes as the open risk of this mapping, and `TestId`'s own comment records the mismatch; S6 confirmed it.
 Results for such methods then land on their method, in Neovim as in VS Code.
@@ -171,12 +172,14 @@ The capture records the class patterns Surefire applied (its include/exclude pat
 Running a class or a method explicitly ignores the filter, as IntelliJ does: the user asked for that class.
 How the capture records it is settled when F is built: the in-fork capture listener sees the discovery request Surefire built (one class selector per included class), and the patterns themselves are in the plugin's configuration.
 
-**G. Running a class runs its static nested classes.**
+**G. Running a class runs its static nested classes.** (Done in slice 1.)
 JUnit's class selector includes `@Nested` inner classes but not `static` nested ones, so running `Outer` skips `Outer$StaticNested`'s tests (spike S6), although `runnables.list` shows that class under `Outer`, in Neovim as in VS Code.
-`lathe.run.test` adds a class selector for every member class of a selected class, from the module's captured test classes (`Outer$Name.class`; anonymous and local classes, whose names continue with a digit, are skipped).
+The test runner, which has the module's classpath, expands each class selector: it loads the class without initializing it and adds a class selector for every static member class, recursively.
+A class it can't load keeps just its own selector, and JUnit reports it as before.
 JUnit ignores classes without tests and runs each test once even when a `@Nested` class is selected twice (S6: 17 results, no duplicates).
+(The design first had the server list the captured class files; the runner needs no file listing and serves every client the same.)
 
-**H. Cancel stops the whole process tree.**
+**H. Cancel stops the whole process tree.** (Done in slice 1.)
 `LaunchSession.cancel` stops only the replay JVM (`destroy`, then `destroyForcibly` after a grace period).
 Processes the tests or the `main()` started — an embedded server, a forked tool — outlive the cancel and keep their ports and files.
 On Windows this is the common case for a `.cmd`-started tool, and VS Code/Cursor is Lathe's Windows client.
@@ -598,8 +601,8 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 
 | Slice | Content | Status |
 |---|---|---|
-| 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | built |
-| 1 | Run-path fixes: E, G, H and the closed stdin (D) | next |
+| 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | done (PR #43) |
+| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | built |
 | 2 | Richer results: B and C | |
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations, structured stack frames (§3.4 items 3–6) | |
 | 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |

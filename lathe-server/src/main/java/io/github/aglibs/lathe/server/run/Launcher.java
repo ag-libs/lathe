@@ -42,6 +42,9 @@ public final class Launcher {
     }
 
     final Process process = processBuilder.start();
+    // Nothing ever writes to the program's input; closed, a read of System.in ends at once instead
+    // of waiting until the run is cancelled.
+    process.getOutputStream().close();
     return new LaunchSession(process, resultsSink, onLine, onResult);
   }
 

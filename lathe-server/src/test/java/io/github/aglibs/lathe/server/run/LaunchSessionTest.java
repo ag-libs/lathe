@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
@@ -167,6 +168,22 @@ final class LaunchSessionTest {
     session.cancel();
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isNotZero();
+  }
+
+  // What the JVM started would otherwise outlive the cancel, holding its ports and files.
+  @Test
+  void cancel_processWithChild_stopsTheChildToo() throws Exception {
+    final var lines = new LinkedBlockingQueue<String>();
+    final var session =
+        new LaunchSession(start("spawn"), null, line -> lines.add(line.text()), NO_EVENTS);
+    final ProcessHandle child =
+        ProcessHandle.of(Long.parseLong(lines.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)))
+            .orElseThrow();
+
+    session.cancel();
+
+    // The child sleeps 5 s by itself, so ending within 2 s means the cancel stopped it.
+    assertThat(child.onExit().get(2, TimeUnit.SECONDS).isAlive()).isFalse();
   }
 
   // Windows has no SIGTERM: destroy() always kills there, so there is no grace to escalate from.

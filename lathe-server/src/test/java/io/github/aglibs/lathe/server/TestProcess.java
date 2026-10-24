@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
+import java.lang.ProcessBuilder.Redirect;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,7 +39,9 @@ public final class TestProcess {
   // upper [file]: uppercases the file in place, else stdin to stdout. name file: writes the file's
   // own name into it. write text file: writes text into the file. cwd: prints the working
   // directory. exit code: exits with that code, printing nothing. sleep: never finishes in time.
-  // echo out:text err:text ...: prints each text on a line of the stream it names.
+  // echo out:text err:text ...: prints each text on a line of the stream it names. read: prints
+  // what
+  // reading stdin returns. spawn: starts a sleeping child, prints its pid, then sleeps.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);
@@ -48,8 +51,24 @@ public final class TestProcess {
       case "exit" -> System.exit(Integer.parseInt(args[1]));
       case "sleep" -> Thread.sleep(5_000);
       case "echo" -> echo(args);
+      case "read" -> System.out.println(System.in.read());
+      case "spawn" -> spawn();
       default -> throw new IllegalArgumentException(args[0]);
     }
+  }
+
+  // The child runs this class on this process's own class path (command() needs the test class
+  // path). Its output is discarded, so it holds none of this process's pipes open.
+  private static void spawn() throws IOException, InterruptedException {
+    final String classPath = System.getProperty("java.class.path");
+    final Process child =
+        new ProcessBuilder(
+                java().toString(), "-cp", classPath, TestProcess.class.getName(), "sleep")
+            .redirectOutput(Redirect.DISCARD)
+            .redirectError(Redirect.DISCARD)
+            .start();
+    System.out.println(child.pid());
+    Thread.sleep(5_000);
   }
 
   private static void echo(final String[] args) {
