@@ -280,6 +280,10 @@ spec.check(
   single_line and single_line.short and single_line.short:match("\n%-Hello, Alice!\n%+Hello, alice!$") ~= nil,
   true
 )
+-- O9: a test's output holds the lines it printed, not the whole run's.
+local plain = shapes[SHAPES_PACKAGE .. ".IdShapesTest#plain()"]
+local plain_output = plain and plain.output and io.open(plain.output):read("*a")
+spec.check("O9 a test's output is only what it printed", plain_output, "shapes: plain on stdout")
 local broken = shapes[SHAPES_PACKAGE .. ".BrokenSetupTest"]
 spec.check("F4 class with a broken @BeforeAll is failed", broken and broken.status, "failed")
 spec.check(

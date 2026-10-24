@@ -152,11 +152,14 @@ A failed or aborted class container now produces a record with `methodName` empt
 (`TestResult` relaxes its `methodName` check for that case.)
 A failing static initializer is not a class-level failure: JUnit initializes the class when it creates the test instance, inside a method's execution, so that method reports the `ExceptionInInitializerError` (found while building slice 2).
 
-**D. A started event and a closed stdin.**
+**D. Output attributed to its test, and a closed stdin.**
 
-- `lathe/testStarted {token, positionId}` (notification), from the runner's `executionStarted` for a method.
-  The runner already flushes its sink per record, so the existing tailer streams it.
-  It is a separate notification, not a fourth `status`: the neotest adapter maps an unknown status to `failed` (`neotest.lua:268`).
+- Each output line carries the test that printed it (done in slice 4): `TranscriptLine` gains an optional `positionId`, in the streamed `lathe/testOutput` and the final `output` alike.
+  The runner prints a marker line on stdout when a test method starts and when it finishes (`LatheFlags.TEST_STARTED_MARKER` / `TEST_FINISHED_MARKER`: a control character, then the class, method and parameter types, tab-separated).
+  The server reads the markers on the same pipe as the test's own output, so on stdout the attribution is exact; the markers never reach the transcript.
+  A line outside any test, or while several run at once (parallel execution), carries none; on stderr, a separate pipe, the attribution is best-effort, like the ordering.
+  - The approach first designed here, a `lathe/testStarted` notification the client would use to attribute output, was replaced while building slice 4: results reach the server through the results file it polls, output through stdout, so a test's first lines would often have arrived before its start and landed on the previous test.
+  - `lathe/testStarted {token, positionId}` itself, for an editor's "running" state, is deferred to VS Code (phase 3); Neovim doesn't need it. As a separate notification, not a fourth `status`, because the neotest adapter maps an unknown status to `failed`.
 - The `Launcher` closes the replay process's stdin right after it starts (done in slice 1).
   A `main()` reading `System.in` gets end-of-input at once; today it hangs on an open pipe until it is cancelled.
 
@@ -213,7 +216,7 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    `lathe/testsChanged` tells the adapter when to drop a module's cache.
    The limit: neotest needs a range for every position and discovery has none, so an unopened file's positions get a placeholder (the top of the file) until it is opened.
    Approximate method lines from the classes' line-number tables would close that gap; that is a later server addition.
-2. **Per-test output.** `lathe/testStarted` lets the adapter write each test's output to its own file, instead of every test opening the run's whole transcript.
+2. **Per-test output.** (Done in slice 4.) When a run finishes, the adapter writes each test's own lines (by their `positionId`, §3.2 D) to a file of its own, so opening a test's output shows what that test printed instead of the run's whole transcript; a test that printed nothing shows the transcript, as before. The live output buffer is unchanged.
 3. **Container failures.** (Done in slices 2–3.) A failing `@BeforeAll` shows on the class with its real error, and each method under it, also in nested classes and in a run of that one method, reads `class failed: …` instead of "exit=1".
    neotest places diagnostics only for test positions, never for a class, so the class's diagnostic (on its failing setup line) is carried by the first of its methods: one diagnostic, cleared with that method's result.
 4. **Expected/actual as a diff.** (Done in slice 3.) neotest has no diff view, so the adapter offers two, both from `expected`/`actual`:
@@ -347,7 +350,7 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
    Each module launch has its own token; a second run request starts its own launches rather than being dropped or blocking.
 5. At the start, mark every *method* under the included items `enqueued`.
    Containers never get a state of their own (VS Code derives it), except on a container failure (step 7).
-6. `lathe/testStarted` → that method `started`; it is now the run's *current test* for output (below).
+6. `lathe/testStarted` → that method `started` (the notification comes with phase 3, §3.2 D; output is attributed by each line's `positionId`, below).
 7. `lathe/testEvent` → `passed` / `failed` / `skipped` with `durationMs`, on the item with that `positionId`, worst-wins (§5.1).
    - A failure becomes a `TestMessage`.
      With `expected`/`actual` it is `TestMessage.diff(message, expected, actual)`: the Test Results peek then shows VS Code's own diff editor (side by side or inline, changed characters highlighted), with nothing else to build.
@@ -369,10 +372,8 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
 9. `run.end()` once every module has finished.
 
 **Output.**
-`lathe/testOutput` → `run.appendOutput(text + "\r\n", undefined, currentTest)`; the Test Results terminal needs CRLF.
-`currentTest` is the method last `started` and not yet finished, or none.
-JUnit runs a class's methods one at a time unless the project turns on parallel execution, so this attributes output correctly in the common case;
-with parallel execution enabled, output stays attached to the run only.
+`lathe/testOutput` → `run.appendOutput(text + "\r\n", undefined, item)`, where `item` is the test the line's `positionId` names (§3.2 D), or none; the Test Results terminal needs CRLF.
+A line without a `positionId` (outside any test, or with parallel execution) stays attached to the run only.
 `STDERR` (1) lines are wrapped in red ANSI, and the two `COMMAND` (2) lines are dimmed.
 
 **Cancel.**
@@ -576,7 +577,7 @@ so Neovim users gain from every phase and the server work is proven by an existi
 
 1. Server: the small run-path fixes, independent of each other, each a direct Neovim improvement with no adapter change:
    array and varargs ids (§3.2 E), static nested classes (§3.2 G), cancel stopping the process tree (§3.2 H), and the closed stdin (§3.2 D).
-2. Server: container failures, `expected`/`actual`, `stackTrace`, `durationMs`, `displayName` and `lathe/testStarted` (§3.2 B, C and D); runner and server tests (§8.1).
+2. Server: container failures, `expected`/`actual`, `stackTrace`, `durationMs`, `displayName` (§3.2 B and C), and output attributed to its test (§3.2 D); runner and server tests (§8.1).
 3. Neovim: the spec for the new data (§3.3), then the adapter work of §3.4 items 2–6: per-test output, container failures, the inline and side-by-side diffs, structured stack frames, durations.
 4. Capture and server: follow Surefire's test-class filter in module and package runs (§3.2 F).
    This touches the capture side (Maven), so it gets its own small design check first.
@@ -612,7 +613,7 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | done (PR #45) |
 | 2 | Richer results: B and C; JUnit 4 values deferred | done (PR #45, first opened as #46) |
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations (§3.4 items 3, 4, 6; item 5 not pursued) | built |
-| 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |
+| 4 | Output attributed to its test (`TranscriptLine.positionId`, from the runner's markers) and per-test output in neotest (§3.4 item 2); `lathe/testStarted` deferred to VS Code | built |
 | 5 | Surefire's filter (F), after its own design check | |
 | 6 | Whole-module discovery (A), lazy and bounded so neotest's startup doesn't start a JVM per module | |
 | 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | |

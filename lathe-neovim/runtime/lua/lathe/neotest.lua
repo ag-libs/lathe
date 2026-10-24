@@ -789,6 +789,24 @@ local function transcript_text(lines)
   return table.concat(parts, "\n")
 end
 
+--- An output file per test, holding the transcript lines the server tagged with that test's
+--- positionId; a test with none of its own gets no entry (it shows the run's whole transcript).
+local function per_test_output(lines)
+  local by_id = {}
+  for _, line in ipairs(lines or {}) do
+    if line.positionId then
+      by_id[line.positionId] = by_id[line.positionId] or {}
+      table.insert(by_id[line.positionId], line)
+    end
+  end
+
+  local files = {}
+  for id, test_lines in pairs(by_id) do
+    files[id] = write_output_file(transcript_text(test_lines))
+  end
+  return files
+end
+
 -- Ranks per-test statuses so a container takes the most significant one among the tests it encloses:
 -- any failure dominates, then a pass (a class with passed+skipped tests is passed), then skipped.
 local STATUS_RANK = { skipped = 1, passed = 2, failed = 3 }
@@ -1078,6 +1096,7 @@ function M.results(spec, result, tree)
   -- they cover (including the run's own position_id for a single-method run).
   local results = {}
   if ctx.outcome and ctx.outcome.testResults then
+    local outputs = per_test_output(ctx.outcome.output)
     for _, tr in ipairs(ctx.outcome.testResults) do
       local id = tr.positionId
       -- A @ParameterizedTest/@RepeatedTest emits one record per invocation,
@@ -1088,7 +1107,7 @@ function M.results(spec, result, tree)
       -- happened to be written last.
       local existing = results[id]
       if not existing or existing.status ~= "failed" then
-        results[id] = test_result(tr, result.output)
+        results[id] = test_result(tr, outputs[id] or result.output)
       end
     end
   end

@@ -904,6 +904,36 @@ do
   )
 end
 
+-- Each test's output is the lines the server tagged with it; a test without lines of its own shows
+-- the run's whole transcript, as before.
+do
+  local results = adapter.results({
+    context = {
+      position_id = "demo.OutTest",
+      outcome = {
+        launched = true,
+        exitCode = 0,
+        output = {
+          { stream = 0, text = "from a", positionId = "demo.OutTest#a()" },
+          { stream = 0, text = "from setup" },
+          { stream = 1, text = "also from a", positionId = "demo.OutTest#a()" },
+        },
+        testResults = {
+          { positionId = "demo.OutTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.OutTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
+        },
+      },
+    },
+  }, nil, nil)
+
+  spec.check("a test's output holds only its own lines", read_file(results["demo.OutTest#a()"].output), "from a\nalso from a")
+  spec.check(
+    "a test without lines of its own shows the whole transcript",
+    read_file(results["demo.OutTest#b()"].output),
+    "from a\nfrom setup\nalso from a"
+  )
+end
+
 -- The inline diff in a failure's text: line by line, without hunk headers, capped for huge values.
 do
   spec.check("single-line values diff as one removed and one added line", adapter._value_diff("Alice", "alice"), "-Alice\n+alice")

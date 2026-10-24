@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,7 +12,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -35,6 +39,8 @@ public final class LaunchSession {
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
+  // The tests running now, from the runner's markers on stdout; both drain threads read it.
+  private final Set<String> runningTests = ConcurrentHashMap.newKeySet();
 
   LaunchSession(
       final Process process,
@@ -162,9 +168,11 @@ public final class LaunchSession {
     try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        final var tagged = new TranscriptLine(stream, line);
-        output.add(tagged);
-        onLine.accept(tagged);
+        if (!trackTest(line)) {
+          final var tagged = new TranscriptLine(stream, line, currentTest());
+          output.add(tagged);
+          onLine.accept(tagged);
+        }
       }
     } catch (final IOException e) {
       LOG.log(
@@ -172,6 +180,32 @@ public final class LaunchSession {
     } finally {
       drained.complete(null);
     }
+  }
+
+  // A marker line moves a test in or out of the running set and is not output; any other line is.
+  private boolean trackTest(final String line) {
+    final Optional<String> started = markedTest(line, LatheFlags.TEST_STARTED_MARKER);
+    started.ifPresent(runningTests::add);
+    final Optional<String> finished = markedTest(line, LatheFlags.TEST_FINISHED_MARKER);
+    finished.ifPresent(runningTests::remove);
+    return started.isPresent() || finished.isPresent();
+  }
+
+  // The one test running, or null when none or several are (output then belongs to no single test).
+  private String currentTest() {
+    final List<String> running = List.copyOf(runningTests);
+    return running.size() == 1 ? running.get(0) : null;
+  }
+
+  private static Optional<String> markedTest(final String line, final String marker) {
+    if (!line.startsWith(marker)) {
+      return Optional.empty();
+    }
+
+    final String[] parts = line.substring(marker.length()).split("\t", -1);
+    return parts.length == 3
+        ? Optional.of(TestId.positionId(parts[0], parts[1], parts[2]))
+        : Optional.empty();
   }
 
   private List<TestResult> readTestResults() {
