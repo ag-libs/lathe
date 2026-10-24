@@ -16,7 +16,8 @@ Today it is a pure language-client passthrough (`lathe-vscode/src/extension.ts`)
 - **In:** the Test Explorer (discover, run at method / class / package / module level, live results, failure messages, output, cancel);
   running a `main()` from a CodeLens or a command; running a named run config.
 - **Deferred:** debugging (§10), coverage, continuous run, workspace-wide test discovery (§5.2).
-- **Client only.** No server, Neovim or Maven-plugin changes.
+- **Client only.** No server, Neovim-client or Maven-plugin changes
+  (the one exception is the CI check in the Neovim spec runner, §8.2).
   Every server command and notification used here already exists and is editor-neutral
   ([Run, Test, and Debug](../done/lathe-run-test-debug.md), [Named run configs](../done/lathe-named-run-configs.md),
   [Structured test results](../done/lathe-structured-test-results.md), [Test output streaming](../done/lathe-test-output-streaming.md)).
@@ -34,14 +35,18 @@ The server spawns the replay JVM, so the client never starts a Java process or b
 | Run a saved config | `lathe.run.named {name, token}`; list with `lathe.runconfigs.list {}`; save with `lathe.runconfig.save` |
 | Cancel | `lathe.run.cancel {token}` |
 | Per-test result (notification) | `lathe/testEvent {token, result}`, where `result` = `{className, methodName, methodParameterTypes, status, failureMessage, failureLine, positionId}` and `status` ∈ `passed`/`failed`/`skipped` |
-| Output line (notification) | `lathe/testOutput {token, line: {stream, text}}`, where `stream` ∈ `STDOUT`/`STDERR`/`COMMAND` |
+| Output line (notification) | `lathe/testOutput {token, line: {stream, text}}`, where `stream` is the `TranscriptLine.Stream` ordinal (below) |
 
 `LaunchOutcome` is `{launched, blockedReasons, exitCode, output, testResults}`.
 Every `lathe/testEvent` and `lathe/testOutput` of a run arrives before the `lathe.run.*` response, because they share one ordered connection.
 The neotest adapter relies on this ordering too.
+The events are a best-effort live feed; the response's `testResults` is authoritative (`TestEventParams`).
 
-`RunTarget.kind` is serialized as the `RunnableKind` ordinal:
-`MAIN` 0, `TEST_METHOD` 1, `TEST_CLASS` 2, `TEST_PACKAGE` 3, `MAIN_CLASS` 4.
+Enums are serialized as ordinals, not names:
+
+- `RunTarget.kind` (`RunnableKind`): `MAIN` 0, `TEST_METHOD` 1, `TEST_CLASS` 2, `TEST_PACKAGE` 3, `MAIN_CLASS` 4.
+- `TranscriptLine.stream`: `STDOUT` 0, `STDERR` 1, `COMMAND` 2 (as `lathe.output` reads them).
+
 The client mirrors these numbers in one place (`runnables.ts`).
 
 ## 4. Shape of the client
@@ -59,9 +64,16 @@ Each folder already has its own `LanguageClient`, so a controller only ever talk
 
 Server commands are sent with `client.sendRequest(ExecuteCommandRequest.type, …)`, not `vscode.commands.executeCommand`, so the request goes to that folder's server.
 
+**Scope each client to its folder.**
+Today's `documentSelector` (`extension.ts`) is `{scheme: 'file', language: 'java'}` with no path pattern, so in a multi-root window every folder's server receives `didOpen` and publishes diagnostics for every Java file.
+Discovery (§5.2) would then query the wrong server.
+The selector gains `pattern: <folder>/**`, as in Microsoft's multi-server sample, so one file belongs to exactly one client.
+
 **Command-id collision.**
 `vscode-languageclient` registers every command the server advertises (`lathe.run.main`, …) as a VS Code command under the same id.
 The extension's own user-facing commands therefore use a separate prefix, `lathe.editor.*`, e.g. `lathe.editor.runMain`.
+The same registration collides between clients: a second folder's client registers the same ids again and gets "command already exists".
+Spike S5 checks both cases; if the second one fails, the client stops `vscode-languageclient` from registering the server's commands (it never invokes them through `vscode.commands` anyway).
 
 ## 5. Test Explorer
 
@@ -75,6 +87,8 @@ The extension's own user-facing commands therefore use a separate prefix, `lathe
   A method's `id` equals the `positionId` its `lathe/testEvent` carries; neotest depends on the same equality.
 - Parameterized and repeated invocations are a single method item.
   The status is worst-wins across invocations, matching neotest.
+  VS Code keeps whichever state was set last, so the run handler records each item's worst status so far
+  and never moves a `failed` item back to `passed` or `skipped`.
 
 ### 5.2 Discovery
 
@@ -97,6 +111,7 @@ That is a separate design, to do once testers report how much the sparse tree bo
 One `Run` profile (`TestRunProfileKind.Run`, default).
 
 1. Collect `request.include`; when it is undefined, run every module node.
+   With lazy discovery (§5.2) that means every module with at least one opened test file, not every module in the reactor.
 2. Turn each included item into selectors:
    method → `METHOD`, class → `CLASS`, package → `PACKAGE`, all keyed by the item's id.
    A module node calls `runnables.dir` on the module directory (the folder path joined with `moduleRel`).
@@ -110,13 +125,14 @@ One `Run` profile (`TestRunProfileKind.Run`, default).
    The line convention is to be verified (spike S6) against what neotest does with it.
 6. When the `lathe.run.test` response arrives:
    - `launched == false` → every enqueued item is `errored` with `blockedReasons` (e.g. "capture is stale, sync").
-   - Launched with a non-zero exit and items left unreported → those items are `errored` with "no result (exit N)".
+   - Otherwise first apply the response's `testResults` to every item that no `lathe/testEvent` reported, the same way as in step 5, because the live events are best-effort.
+   - Launched with a non-zero exit and items still unreported → those items are `errored` with "no result (exit N)".
    - Otherwise unreported items are left unrun.
 7. `run.end()` once every module has finished.
 
 **Output.**
 `lathe/testOutput` → `run.appendOutput(text + "\r\n")`; the Test Results terminal needs CRLF.
-`STDERR` lines are wrapped in red ANSI, and the `COMMAND` line (the replay command, always first) is dimmed.
+`STDERR` (1) lines are wrapped in red ANSI, and the `COMMAND` (2) line (the replay command, always first) is dimmed.
 Output is attached to the run, not to individual tests: the server doesn't attribute lines to tests.
 
 **Cancel.**
@@ -131,6 +147,8 @@ The main-run path (§6) uses the same map.
 
 - **CodeLens** `▶ Run` on each `MAIN` target's range, computed client-side from `runnables.list` (the server has no CodeLens provider).
   The lens command is `lathe.editor.runMain {moduleRel, mainClass}` (`mainClass` = the target's `parentId`).
+  Neovim also puts a run sign on the `MAIN_CLASS` line.
+  VS Code doesn't add a second lens there: the `main` lens sits a few lines below and runs the same thing, and two identical lenses on one class would be noise.
 - **Command** `Lathe: Run Main` (`lathe.editor.runMain` with no argument) resolves the main at the cursor:
   the main whose method range holds the cursor, else the one whose class does, else the file's only main.
   This ports `lathe.run._main_target_for` into `runnables.ts`.
@@ -163,7 +181,9 @@ the tree built from targets (nesting, parameterized collapse, the reactor-root m
 selector building, with and without excludes;
 cursor → main (method range, class range, single main, none, two mains with the cursor on neither);
 cursor → save request;
-outcome → final states (blocked, non-zero exit with unreported items, clean).
+worst-wins across invocations (a `failed` followed by a `passed` stays `failed`);
+outcome → final states (blocked, a result present only in the response's `testResults`, non-zero exit with unreported items, clean);
+the stream ordinal → rendering (stderr red, command dimmed).
 
 ### 8.2 End-to-end (`@vscode/test-electron`, working-tree server)
 
@@ -176,9 +196,13 @@ This is the first editor E2E against a real Lathe server; the Neovim specs stub 
   Its `.lathe/` launcher points at the working-tree server in the invoker's own cache, so the E2E tests this checkout, not a release.
   `lathe-vscode` is already declared after `lathe-maven-plugin` in the root `pom.xml`, so a reactor build has the fixture ready.
 - Bound to `integration-test` in `lathe-vscode/pom.xml` (`npm run e2e` through `frontend-maven-plugin`), skipped by `skipTests`.
-  Like `run-specs.sh`: it **fails** under CI if the fixture or the display is missing, and **skips with a message** locally.
+  It **fails** under CI if the fixture or the display is missing, and **skips with a message** locally.
+  CI can't be detected through `CI`: the workflow runs Maven as `env -u CI mvn …` so that Lathe stays enabled in the fixture builds, so `CI` is never set inside the build.
+  The check uses `GITHUB_ACTIONS` instead.
+  (`lathe-neovim/test/run-specs.sh` checks `CI` and so never fails in CI today; it moves to the same check.)
   On Linux it runs under `xvfb-run -a`.
-- CI: it runs on every row that builds `lathe-vscode`. Today that is JDK 21 and 25/27 Linux, macOS 25 and Windows 25, so the Windows `.cmd` launcher path gets covered as well.
+- CI: it runs on every row that builds `lathe-vscode`. Today that is JDK 21 Linux, macOS (JDK 25) and Windows (JDK 25), so the Windows `.cmd` launcher path gets covered as well.
+  The JDK 17, 25 and 27 Linux rows exclude the client modules.
 
 **Observing results.**
 VS Code has no stable API for reading another controller's results (`tests.testResults` is proposed API).
@@ -186,7 +210,7 @@ VS Code has no stable API for reading another controller's results (`tests.testR
 `RunRecord` = per-item final state, failure messages with locations, output lines, exit code.
 The tests **trigger** runs through the real UI commands (`testing.runAtCursor`, `testing.runAll`, the CodeLens command), so they exercise the same path a user does.
 
-**Scenarios** (fixture classes: `jpms` `HelloTest` with three `@Test`s and a `@ParameterizedTest`, including one that writes to both streams; `app` `Main` printing `ALICE`; `jpms` `HelloMain`):
+**Scenarios** (fixture classes: `jpms` `HelloTest` with three `@Test`s and a `@ParameterizedTest`, including one that writes to both streams; `app` `Main` printing `ALICE`; `jpms` `HelloTester`, a `main` in test sources):
 
 1. Discovery: opening `HelloTest.java` yields `jpms` → `com.example.jpms` → `HelloTest` → four methods, with the parameterized test as one item.
    `Main.java` (no tests) adds nothing to the tree.
@@ -196,9 +220,11 @@ The tests **trigger** runs through the real UI commands (`testing.runAtCursor`, 
 4. Edit → save → rerun: change `greet_returnsExpectedMessage`'s expected string, save, wait for diagnostics, run.
    The method is `failed`, with a message naming both strings and a location on the assertion line.
    The file is restored and saved in a `finally`.
-5. `testing.runAll`: every fixture test passes, run through the module node (`runnables.dir`).
+5. `testing.runAll` after only `HelloTest.java` was opened: every `jpms` test passes, run through the module node (`runnables.dir`).
+   No other module runs, because none was discovered; in particular the `verify` module's `LspSmokeTest`/`MultiModuleTest` must never start from here.
 6. Main: `vscode.executeCodeLensProvider` on `Main.java` returns a `▶ Run` lens on `main`, and none on `Greeter.java`.
    Executing it gives exit code 0 and `ALICE` in the run's output.
+7. Test-scope main: the lens on `HelloTester.main` runs it through the module's test launch and prints `tester n=3`.
 
 Cancel is covered by unit tests only: the fixture has no long-running test, and adding one would slow every invoker run.
 
@@ -212,7 +238,7 @@ No showstopper has been found; these settle the unknowns that could change the d
 | S2 | Can a test drive a custom controller through `testing.runAtCursor` / `testing.runAll` headlessly, and see the results through the exported handle? | A throwaway controller's run handler fires from both commands, and the test reads its outcome. |
 | S3 | Is the first `publishDiagnostics` (middleware) a reliable "file is open on the server" signal in `vscode-languageclient` 9, so the first `runnables.list` never comes back empty? | 50 cold opens of `HelloTest.java`, each discovering all four methods on the first query. |
 | S4 | Does edit → save → rerun replay the edited test, i.e. does the in-process save compile land on the replay classpath for an already-captured class? | Scenario 4 fails and passes as expected by hand, through the existing Neovim client or `dev/explore.py`. |
-| S5 | Command-id collision: confirm `vscode-languageclient` auto-registers the server's advertised `lathe.*` commands, and that `lathe.editor.*` is free. | A list of registered commands in a running window. |
+| S5 | Command-id collision: confirm `vscode-languageclient` auto-registers the server's advertised `lathe.*` commands, and that `lathe.editor.*` is free. Then open a two-folder window: does the second client fail with "command already exists", and does the folder-scoped `documentSelector` keep each file on one server? | A list of registered commands in a single-folder window; a two-folder window where both clients start and each file is opened on only its own server. |
 | S6 | Ids and lines: does `positionId` equal the method target `id` for nested classes and parameterized tests? Is `failureLine` 1-based, with -1 meaning none? | Checked against `TestId`, `RunnableScanner` and neotest's mapping, and pinned by a unit test. |
 
 S1 and S2 are the risky ones: they decide whether the E2E is feasible as designed.
@@ -233,6 +259,6 @@ Two VS Code constraints to address when this is designed:
 
 1. Spikes S1–S6.
 2. Test Explorer run: lazy discovery, run at every level, live results, failure messages, output, cancel; unit tests and E2E scenarios 1–5.
-3. Run `main()`: CodeLens, command, output channel, stop; E2E scenario 6.
+3. Run `main()`: CodeLens, command, output channel, stop; E2E scenarios 6–7.
 4. Named run configs: run, run last, save.
 5. Update `README.md` / `docs/guide/editors/` (a VS Code cheatsheet) and `docs/status.md` (Run/test: "Implemented (Neovim, VS Code)").
