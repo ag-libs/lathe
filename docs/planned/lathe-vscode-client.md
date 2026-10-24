@@ -87,7 +87,7 @@ against VS Code APIs.
 
 | Lathe capability (nvim module) | Server commands / notifications | VS Code API | Effort |
 |---|---|---|---|
-| Run main/test (`run.lua`) | `run.main/test/named`, `run.cancel`, `runnables.list/dir` | Task API or terminal + `OutputChannel`; **CodeLens** for run-under-cursor | medium — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) |
+| Run main/test (`run.lua`) | `run.main/test/named`, `run.cancel`, `runnables.list/dir` | `Pseudoterminal` per run; **CodeLens** and the editor run button for run-under-cursor | medium — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) |
 | Test runner (`neotest`) | `runnables.list`, `run.test`, `lathe/testEvent`/`testFinished`/`testOutput` | **Test Explorer API** (`TestController`, streaming `TestRun` results) | high — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) |
 | Debug (`dap.lua`) | `debug.main/test/named` | Native **DebugAdapter** + `DebugConfigurationProvider` | high |
 | Run configs | `runconfig.save`, `runconfigs.list` | **QuickPick** + optional `launch.json` contribution | medium |
