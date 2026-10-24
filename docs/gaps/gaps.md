@@ -714,72 +714,6 @@ To be added with the fix:
 
 ---
 
-## MC-7 — `verify_change` reports a clean tree while dependent modules are broken
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-On EqualsVerifier (JDK 17), `forPackage` was renamed on disk in `EqualsVerifier.java` only, so core
-still compiles and `equalsverifier-test` breaks.
-`verify_change` with no arguments answered "No new diagnostics — the changed files compile cleanly",
-plus a sync suggestion for the dependent modules.
-`get_diagnostics` on a dependent test file (`MultipleTypeEqualsVerifierTest.java`) immediately
-returned 26 errors (`cannot find symbol … method forPackage(java.lang.String)`), so the server can see
-the breakage in-process.
-An agent that trusts the headline concludes its change is safe.
-
-Reproduced on all three test workspaces by the external-change staleness probe (2026-10-24):
-an upstream method renamed outside the server, with a caller in another module.
-`get_diagnostics` on the caller reported `cannot find symbol`, then `verify_change` with no arguments
-answered "No new diagnostics — the changed files compile cleanly".
-MCP only: in the editor an open caller in the dependent module republished the `cannot find symbol`
-within 3–4 s of the same external change.
-
-### Fix direction
-
-Let `verify_change` also compile the dependent modules' callers of the changed API in-process, as
-`get_diagnostics` already can, or at least lead with "dependent modules not verified" instead of
-"compiles cleanly".
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-8 — The sync command `verify_change` suggests does not build the dependent modules it names
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-`verify_change` says, for example, "3 module(s) depend on your change (equalsverifier-test,
-equalsverifier-test-mockito, equalsverifier-test-signedjar); verify them with:
-`.lathe/lathe-sync.sh equalsverifier-core`".
-After a type rename it named `equalsverifier-test-signedjar` but suggested
-`.lathe/lathe-sync.sh equalsverifier-core equalsverifier-test equalsverifier-test-mockito`.
-`lathe-sync.sh` scopes with `-pl <module> -am`, which builds the listed modules and their *upstream*
-dependencies only, so the dependents the message names are never built.
-Running the suggested command built parent, testhelpers and core only.
-
-### Fix direction
-
-Build the suggestion from the downstream modules, not the changed ones: `LatheEngine.verifyChange`
-passes `targets.keySet()` to `LatheLayout.scopedSyncCommand`, while `LatheVerifyChange` documents the
-command as the sync that builds the dependents.
-The script stays `-am`-only by design (`MavenSyncScript`: "callers that need dependents name them"),
-and naming the dependents builds the changed module too.
-Above a few dozen dependents (Helidon's `common/media-type` has 142) suggest the unscoped full sync:
-`-am` over that many modules is the whole reactor anyway, and the list would overflow the 8,191-character
-Windows `cmd` command line.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled
 
 **Status: deferred — Target: backlog**
@@ -800,6 +734,13 @@ For the JDK-gated module the suggested sync can never include it on this JDK, so
 help.
 A dependent file whose upstream module failed to compile likewise reports "compiles cleanly" with a
 "Not compiled:" note about the upstream file.
+
+The file itself can get both: on Helidon a new public class in `common/media-type` answered "No
+diagnostics — LatheProbeOne.java compiles cleanly." with "Not compiled: …LatheProbeOne.java:3: Public
+API … is missing stability annotation (@Api.*)". The analysis behind the headline runs without
+annotation processors; the write, since the reactor processors run in-process
+([WS-15](gaps-archive.md#ws-15--annotation-processors-built-in-the-reactor-never-run-in-process--done)),
+runs Helidon's API-stability processor and fails.
 
 ### Fix direction
 
@@ -893,6 +834,10 @@ After a change to `EqualsVerifier.java` was reverted on disk, so the tree matche
 `verify_change` still answered "3 module(s) depend on your change …; verify them with:
 `.lathe/lathe-sync.sh equalsverifier-core`".
 On a large reactor that sends an agent into a needless Maven run.
+
+Since the [MC-7](gaps-archive.md#mc-7--verify_change-reports-a-clean-tree-while-dependent-modules-are-broken--done)
+fix the pass records every file it writes, so the reverting writes are reported too: a full revert
+now always reads as a change with dependents to build (seen on EqualsVerifier, 2026-10-24).
 
 ### Fix direction
 

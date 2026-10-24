@@ -213,8 +213,8 @@ final class WorkspaceSession {
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
   // written, unless reported again after its content was read.
   private final Map<Path, Long> reported = new HashMap<>();
-  // Files written on report since a verify_change last took them: the write stamps them, so that
-  // verify_change's own stale scan would not list them.
+  // Files the pass wrote since a verify_change last took them, reported or caught up from disk: the
+  // write stamps them, so verify_change's own stale scan would not list them. At most every source.
   private final Set<Path> writtenSinceVerify = new HashSet<>();
   private long reportCount;
   // Per open file, the diagnostics of its last write and the content written: merged into its
@@ -3539,42 +3539,58 @@ final class WorkspaceSession {
     return taken;
   }
 
-  // Files to diagnose for verify_change: each changed file plus its same-module callers, by module.
+  // Files to diagnose for verify_change, by module: each changed file, then the files that mention
+  // its type in its module or one downstream of it. The changed files' modules come first, so
+  // capping the callers in order keeps the nearest.
   Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
     final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
-    for (final Path file : changed) {
-      final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
-      if (config.isEmpty()) {
-        continue;
-      }
+    changed.forEach(file -> addVerifyTarget(byModule, file));
+    changed.forEach(file -> referrers(file).forEach(path -> addVerifyTarget(byModule, path)));
+    return Collections.unmodifiableMap(
+        byModule.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> List.copyOf(entry.getValue()),
+                    (first, ignored) -> first,
+                    LinkedHashMap::new)));
+  }
 
-      final Set<Path> targets =
-          byModule.computeIfAbsent(
-              moduleRelForDir(config.get().moduleDir()), k -> new LinkedHashSet<>());
-      targets.add(file);
-      targets.addAll(sameModuleReferrers(file, config.get()));
+  // A deleted file has nothing to diagnose, but its callers still do.
+  private void addVerifyTarget(final Map<String, Set<Path>> byModule, final Path file) {
+    if (Files.notExists(file)) {
+      return;
     }
 
-    return byModule.entrySet().stream()
-        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
+    workspace
+        .moduleSourceFor(file)
+        .ifPresent(
+            config ->
+                byModule
+                    .computeIfAbsent(
+                        moduleRelForDir(config.moduleDir()), k -> new LinkedHashSet<>())
+                    .add(file));
   }
 
   // Matched by type-name token: may over-select (a file that only mentions the name) but never
-  // misses
-  // a real caller; an extra candidate just compiles clean.
-  private List<Path> sameModuleReferrers(final Path file, final ModuleSourceConfig config) {
+  // misses a direct caller; an extra candidate just compiles clean.
+  private List<Path> referrers(final Path file) {
+    final Set<Path> reach =
+        workspace
+            .moduleSourceFor(file)
+            .map(config -> moduleGraph.downstreamModuleDirs(config.moduleDir()))
+            .orElse(Set.of());
     return candidateIndex.candidateUris(FileUtil.javaTypeName(file)).stream()
         .map(LatheUri::toPath)
         .filter(path -> !path.equals(file))
-        .filter(path -> inSameModule(path, config))
+        .filter(
+            path ->
+                workspace
+                    .moduleSourceFor(path)
+                    .map(ModuleSourceConfig::moduleDir)
+                    .filter(reach::contains)
+                    .isPresent())
         .toList();
-  }
-
-  private boolean inSameModule(final Path path, final ModuleSourceConfig config) {
-    return workspace
-        .moduleSourceFor(path)
-        .map(other -> other.moduleDir().equals(config.moduleDir()))
-        .orElse(false);
   }
 
   // Placement (module rel + test/production) for each path that maps to a reactor module. Lets
@@ -3620,6 +3636,9 @@ final class WorkspaceSession {
       return;
     }
 
+    // So verify_change checks what used the deleted types.
+    final Path root = config.sourceRoots().get(0);
+    tree.orphans().forEach(rel -> writtenSinceVerify.add(root.resolve(rel)));
     refreshReactorShard(config);
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
@@ -3928,6 +3947,7 @@ final class WorkspaceSession {
                 source, new FailedWrite(mtime, "internal error, see the server log"));
           }
         });
+    writtenSinceVerify.addAll(mtimes.keySet());
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(

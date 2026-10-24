@@ -71,6 +71,11 @@ public final class LatheEngine {
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
   private static final int IMPACT_MAX_RESULTS = 1000;
 
+  // verify_change checks this many callers of the changed files, each a file analysis; the rest it
+  // reports as unchecked and leaves to the suggested sync.
+  private static final int CHECKED_CALLERS = 200;
+  private static final int SCOPED_SYNC_MODULES = 30;
+
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
 
@@ -427,7 +432,7 @@ public final class LatheEngine {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
       return new LatheVerifyChange(
-          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND);
+          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND, 0);
     }
 
     // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
@@ -439,28 +444,58 @@ public final class LatheEngine {
                 .toList()
             : files;
     if (changed.isEmpty()) {
-      return new LatheVerifyChange(null, List.of(), List.of(), null);
+      return new LatheVerifyChange(null, List.of(), List.of(), null, 0);
     }
 
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    final Set<Path> unchecked = uncheckedCallers(targets, changed);
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
-            .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
+            .map(
+                entry ->
+                    new LatheModuleDiagnostics(
+                        entry.getKey(),
+                        diagnose(
+                            entry.getValue().stream()
+                                .filter(file -> !unchecked.contains(file))
+                                .toList())))
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
     final List<String> downstream = await(service.downstreamModuleRels(changed));
-    final String suggestedSync =
-        downstream.isEmpty()
-            ? null
-            : LatheLayout.scopedSyncCommand(new TreeSet<>(targets.keySet()));
-    return new LatheVerifyChange(null, perModule, downstream, suggestedSync);
+    return new LatheVerifyChange(
+        null, perModule, downstream, syncFor(downstream), unchecked.size());
+  }
+
+  // The callers past the cap, in the order the session ranked them (the changed modules' first);
+  // the changed files themselves are always checked.
+  private static Set<Path> uncheckedCallers(
+      final Map<String, List<Path>> targets, final List<Path> changed) {
+    final Set<Path> changedFiles = Set.copyOf(changed);
+    return targets.values().stream()
+        .flatMap(List::stream)
+        .filter(file -> !changedFiles.contains(file))
+        .skip(CHECKED_CALLERS)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // Naming the dependents builds them and, with -am, the changed modules too; past a few dozen the
+  // scoped build is the whole reactor anyway, and the list could overflow a Windows command line.
+  private static String syncFor(final List<String> dependents) {
+    if (dependents.isEmpty()) {
+      return null;
+    }
+
+    return dependents.size() > SCOPED_SYNC_MODULES
+        ? LatheLayout.SYNC_SCRIPT_COMMAND
+        : LatheLayout.scopedSyncCommand(dependents);
   }
 
   // Hints (unused code) say nothing about whether the change compiles, and an agent reads any count
   // as something to fix.
+  // Freshened once by verifyChange, not again for each file.
   private List<Diagnostic> diagnose(final List<Path> files) {
     return files.stream()
-        .flatMap(file -> compileFromDisk(file).stream())
+        .flatMap(file -> analyze(file).stream())
         .filter(diagnostic -> diagnostic.getSeverity() != DiagnosticSeverity.Hint)
         .toList();
   }
@@ -515,6 +550,10 @@ public final class LatheEngine {
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
     await(service.reconcileForVerify());
+    return analyze(file);
+  }
+
+  private List<Diagnostic> analyze(final Path file) {
     final var uri = LatheUri.fromPath(file);
     final String content = IOUtil.unchecked(() -> Files.readString(file));
     return await(service.diagnosticsFuture(uri, content, VERSION));

@@ -229,17 +229,30 @@ class LatheMcpToolsTest {
     final List<String> twelve = IntStream.rangeClosed(1, 12).mapToObj("mod%d"::formatted).toList();
     final String sync = ".lathe/lathe-sync.sh core";
 
-    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync)))
+    assertThat(
+            LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, sync, 0)))
         .contains("12 module(s) depend on your change (mod1, mod2,")
         .contains("mod10, and 2 more)")
         .doesNotContain("mod11")
         .endsWith(sync);
     assertThat(
             LatheMcpTools.crossModuleNote(
-                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync)))
-        .contains("2 module(s) depend on your change (a, b);")
+                new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync, 0)))
+        .contains("2 module(s) depend on your change (a, b); their callers were checked here")
         .doesNotContain("more");
-    assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null)))
+    assertThat(
+            LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null, 0)))
         .isEmpty();
+  }
+
+  @Test
+  void crossModuleNote_callersPastTheCap_saysHowManyWereNotChecked() {
+    final String sync = ".lathe/lathe-sync.sh app";
+
+    assertThat(
+            LatheMcpTools.crossModuleNote(
+                new LatheVerifyChange(null, List.of(), List.of("app"), sync, 7)))
+        .contains("1 module(s) depend on your change (app); 7 of their callers were not checked")
+        .endsWith(sync);
   }
 }

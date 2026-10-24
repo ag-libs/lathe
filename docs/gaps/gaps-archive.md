@@ -10090,6 +10090,79 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-7 — `verify_change` reports a clean tree while dependent modules are broken — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17), `forPackage` was renamed on disk in `EqualsVerifier.java` only, so core
+still compiles and `equalsverifier-test` breaks.
+`verify_change` with no arguments answered "No new diagnostics — the changed files compile cleanly",
+plus a sync suggestion for the dependent modules.
+`get_diagnostics` on a dependent test file (`MultipleTypeEqualsVerifierTest.java`) immediately
+returned 26 errors (`cannot find symbol … method forPackage(java.lang.String)`), so the server can see
+the breakage in-process.
+An agent that trusts the headline concludes its change is safe.
+
+Reproduced on all three test workspaces by the external-change staleness probe (2026-10-24):
+an upstream method renamed outside the server, with a caller in another module.
+`get_diagnostics` on the caller reported `cannot find symbol`, then `verify_change` with no arguments
+answered "No new diagnostics — the changed files compile cleanly".
+MCP only: in the editor an open caller in the dependent module republished the `cannot find symbol`
+within 3–4 s of the same external change.
+
+### Fix
+
+`verify_change` now also checks the callers of the changed files in dependent modules: the files that
+mention a changed type (the reactor-wide candidate index) in its module or one downstream of it
+(`WorkspaceSession.verifyTargetsByModule`), the changed files' modules first.
+It checks up to 200 callers, the changed files themselves always; `uncheckedFiles` counts the rest,
+and the text says how many were left to the suggested sync.
+It freshens once and then analyzes each target without a pass of its own (`LatheEngine.analyze`).
+
+With no `files`, it now also sees changes an earlier query already compiled: the pass records every
+source it writes or whose classes it drops (design rule 8), not only the files the tools wrote, so a
+deleted type's callers are checked too; a file that no longer exists is not itself diagnosed.
+
+Verified on EqualsVerifier: the probe's upstream rename, after a query had compiled it, is reported
+in `equalsverifier-test`.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+  (fails with same-module callers only, and without the pass recording its writes)
+- `LatheMcpToolsTest.crossModuleNote_callersPastTheCap_saysHowManyWereNotChecked`
+
+---
+
+## MC-8 — The sync command `verify_change` suggests does not build the dependent modules it names — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`verify_change` says, for example, "3 module(s) depend on your change (equalsverifier-test,
+equalsverifier-test-mockito, equalsverifier-test-signedjar); verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+After a type rename it named `equalsverifier-test-signedjar` but suggested
+`.lathe/lathe-sync.sh equalsverifier-core equalsverifier-test equalsverifier-test-mockito`.
+`lathe-sync.sh` scopes with `-pl <module> -am`, which builds the listed modules and their *upstream*
+dependencies only, so the dependents the message names are never built.
+Running the suggested command built parent, testhelpers and core only.
+
+### Fix
+
+The suggestion names the dependent modules (`LatheEngine.syncFor`), so `-pl … -am` builds them and
+the changed modules too; past 30 dependents it is the unscoped `.lathe/lathe-sync.sh`.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+  (asserts `.lathe/lathe-sync.sh app` for a change in `api`)
+
+---
+
 ## MC-15 — `search_symbols` and `find_implementations` miss a type added outside for a few seconds — done
 
 **Status: done — Target: next.**
