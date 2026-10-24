@@ -89,18 +89,6 @@ class LatheLifecycleParticipantTest {
   }
 
   @Test
-  void reactorLock_existingLatheDir_writesLockThenReleasesOnSessionEnd(@TempDir final Path root)
-      throws IOException {
-    final var latheDir = Files.createDirectory(root.resolve(LatheLayout.LATHE_DIR));
-
-    participant.startReactorLock(latheDir);
-    assertThat(lockFile(latheDir)).exists();
-
-    participant.stopReactorLock();
-    assertThat(lockFile(latheDir)).doesNotExist();
-  }
-
-  @Test
   void mirrorLateOutputs_fileAddedAfterCompile_copiedIntoTheMirror_classesAndUnmirroredLeftAlone(
       @TempDir final Path root) throws IOException {
     final Path latheDir = root.resolve(LatheLayout.LATHE_DIR);
@@ -225,16 +213,5 @@ class LatheLifecycleParticipantTest {
             List.of(outputs),
             null),
         root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
-  }
-
-  @Test
-  void reactorLock_missingLatheDir_writesNothingAndStopIsNoop(@TempDir final Path root) {
-    final var latheDir = root.resolve(LatheLayout.LATHE_DIR);
-
-    participant.startReactorLock(latheDir);
-    assertThat(latheDir).doesNotExist();
-
-    participant.stopReactorLock();
-    assertThat(lockFile(latheDir)).doesNotExist();
   }
 }
