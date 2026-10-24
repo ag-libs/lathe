@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.LaunchMode;
+import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -44,13 +46,13 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(dir.resolve(".lathe").resolve(LatheLayout.compiledStampsFileName("classes")))
         .exists();
     final var main = params("", LatheLayout.CLASSES_DIR);
-    assertThat(main.sourceRoots()).containsExactly(path("src/main/java"));
-    assertThat(main.outputDir()).isEqualTo(path("build/classes/java/main"));
+    assertThat(main.sourceRoots()).containsExactly(fixture.path("src/main/java"));
+    assertThat(main.outputDir()).isEqualTo(fixture.path("build/classes/java/main"));
     assertThat(main.release()).containsOnlyDigits();
     assertThat(main.proc()).isEqualTo("none");
     assertThat(main.compilerArgs()).containsExactly("-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
-        .contains(path("build/classes/java/main"));
+        .contains(fixture.path("build/classes/java/main"));
   }
 
   // A processor built in the same build: its output is mirrored for the editor, and a library
@@ -133,8 +135,8 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.proc()).isNull();
     assertThat(app.compilerArgs()).doesNotContain("-proc:none");
     assertThat(app.generatedSourcesDir())
-        .isEqualTo(path("app/build/generated/sources/annotationProcessor/java/main"));
-    assertThat(app.classpath()).contains(path("lib/build/classes/java/main"));
+        .isEqualTo(fixture.path("app/build/generated/sources/annotationProcessor/java/main"));
+    assertThat(app.classpath()).contains(fixture.path("lib/build/classes/java/main"));
   }
 
   @Test
@@ -173,10 +175,12 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(withLathe.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
   }
 
-  // Gradle's rule: a module on the compile classpath goes on the module path, required or not; a
-  // plain jar stays on the classpath. A modular project compiles against its siblings' jars.
+  // Gradle's rule, for the compile and the main run: a module goes on the module path, required or
+  // not, a plain jar on the classpath; the run leads with the app's own classes and names its
+  // module.
+  // A modular project compiles against its siblings' jars.
   @Test
-  void capture_modularMain_splitsModulesFromPlainJars() throws Exception {
+  void capture_modularMain_splitsModulesFromPlainJarsForCompileAndRun() throws Exception {
     final var fixture =
         new GradleFixture(dir)
             .file("settings.gradle.kts", SETTINGS + "include(\"lib\", \"plain\", \"app\")\n")
@@ -207,17 +211,20 @@ class LatheCaptureTaskFunctionalTest {
                 "app/src/main/java/com/example/app/App.java",
                 "package com.example.app; class App { com.example.lib.Lib lib; }\n");
 
-    fixture.runner(":app:classes").build();
+    fixture.runner(":app:classes", ":app:latheMainLaunch").build();
 
     final var app = params("app", LatheLayout.CLASSES_DIR);
-    assertThat(app.modulepath()).containsExactly(path("lib/build/libs/lib.jar"));
-    assertThat(app.classpath()).containsExactly(path("plain/build/libs/plain.jar"));
-  }
-
-  // As Gradle reports it: the real path, which differs from the temp directory's on macOS, where
-  // /var is a link to /private/var.
-  private String path(final String relative) throws IOException {
-    return dir.toRealPath().resolve(relative).toString();
+    assertThat(app.modulepath()).containsExactly(fixture.path("lib/build/libs/lib.jar"));
+    assertThat(app.classpath()).containsExactly(fixture.path("plain/build/libs/plain.jar"));
+    final MainLaunchData launch =
+        Json.read(
+            dir.resolve(".lathe/app").resolve(LatheLayout.MAIN_LAUNCH_FILE), MainLaunchData.class);
+    assertThat(launch.mode()).isEqualTo(LaunchMode.MODULE);
+    assertThat(launch.mainModule()).isEqualTo("com.example.app");
+    assertThat(launch.modulePath())
+        .containsExactly(
+            fixture.path("app/build/classes/java/main"), fixture.path("lib/build/libs/lib.jar"));
+    assertThat(launch.classPath()).contains(fixture.path("plain/build/libs/plain.jar"));
   }
 
   private ModuleConfigData params(final String module, final String sourceTree) throws IOException {

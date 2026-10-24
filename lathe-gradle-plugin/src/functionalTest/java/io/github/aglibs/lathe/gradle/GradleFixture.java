@@ -36,6 +36,12 @@ final class GradleFixture {
     this.dir = dir;
   }
 
+  // A fixture path as Gradle reports it: the real path, which differs from the temp directory's on
+  // macOS (/var is a link to /private/var) and Windows (8.3 short names).
+  String path(final String relative) throws IOException {
+    return dir.toRealPath().resolve(relative).toString();
+  }
+
   GradleFixture file(final String relative, final String content) throws IOException {
     final var path = dir.resolve(relative);
     Files.createDirectories(path.getParent());

@@ -10,7 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete.
+Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete, and slice 3 (main launch) too; slice 4 (test capture) remains.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -401,6 +401,17 @@ Main is not run during a build (Maven doesn't either), so this is **derived buil
   `module-info.java`; see [JPMS](#jpms-java-modules)), so a run matches what Gradle's own `JavaExec` would do;
 - `javaHome` from the resolved `JavaLauncher` (toolchain-aware);
 - for an `application`/`JavaExec` task, enrich from `getMainClass()`, `getJvmArgs()`, `getAllJvmArgs()`.
+
+*Done 2026-10-24 (slice 3):* a `latheMainLaunch` task per Java project, which `latheFacts` depends on, writes
+`.lathe/<module>/main-launch.json` through the shared `MainLaunchWriter`, holding the build lock.
+The classpath is the main source set's `runtimeClasspath` (classes and resources directories, then the runtime
+dependencies, siblings as jars). A modular main is decided by the *compiled* `module-info.class`, whose name
+`ModuleDescriptor.read` gives; the module's classes lead the module path, then every entry Gradle's rule calls a
+module, the rest on the classpath. The JDK is `javaToolchains.launcherFor(java.toolchain)`: Caffeine's library
+launches on the JDK 11 its toolchain names. The `application` enrichment is left out, as Maven's `main-launch.json`
+carries no main class or JVM arguments either.
+Probed: JUnit's engine launches as module `org.junit.jupiter.engine` with its four runtime modules (its
+compile-only `apiguardian` and `jspecify` rightly absent); Caffeine's `simulator` as a classpath app.
 
 ## JPMS (Java modules)
 

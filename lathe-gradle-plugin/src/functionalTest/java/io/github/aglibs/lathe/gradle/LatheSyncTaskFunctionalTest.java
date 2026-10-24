@@ -8,6 +8,8 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
+import io.github.aglibs.lathe.core.schema.LaunchMode;
+import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
@@ -57,6 +59,13 @@ class LatheSyncTaskFunctionalTest {
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
         .contains("latheSync", "--module");
     assertThat(lathe.resolve("app/classes/com/example/app/App.class")).exists();
+    final MainLaunchData launch =
+        Json.read(lathe.resolve("app").resolve(LatheLayout.MAIN_LAUNCH_FILE), MainLaunchData.class);
+    assertThat(launch.mode()).isEqualTo(LaunchMode.CLASSPATH);
+    assertThat(launch.workingDir()).isEqualTo("app");
+    assertThat(launch.classPath())
+        .contains(
+            fixture.path("app/build/classes/java/main"), fixture.path("lib/build/libs/lib.jar"));
   }
 
   // As Maven's -pl: only that module's captures, and the workspace files are left alone.

@@ -46,6 +46,7 @@ import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
+import org.gradle.jvm.toolchain.JavaToolchainService;
 
 // Applied to every project by LatheSettingsPlugin. A Java project gets a capture task per main and
 // test source set, finalizing its compile; the compile itself is left untouched, so its build-cache
@@ -252,6 +253,42 @@ public class LatheProjectPlugin implements Plugin<Project> {
           task.getTestSources().from(test.getJava());
         });
     registerLibraries(project, facts, main, test);
+    final TaskProvider<LatheMainLaunchTask> mainLaunch = registerMainLaunch(project, main);
+    facts.configure(task -> task.dependsOn(mainLaunch));
+  }
+
+  private static TaskProvider<LatheMainLaunchTask> registerMainLaunch(
+      final Project project, final SourceSet main) {
+    final JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
+    final JavaToolchainService toolchains =
+        project.getExtensions().getByType(JavaToolchainService.class);
+    final String module = module(project);
+    return project
+        .getTasks()
+        .register(
+            "latheMainLaunch",
+            LatheMainLaunchTask.class,
+            task -> {
+              final JavaCompile javac =
+                  project.getTasks().named(main.getCompileJavaTaskName(), JavaCompile.class).get();
+              task.getRuntimeClasspath().from(main.getRuntimeClasspath());
+              task.getClassesDir().set(javac.getDestinationDirectory());
+              task.getInferModulePath().set(javac.getModularity().getInferModulePath());
+              task.getJavaHome()
+                  .set(
+                      toolchains
+                          .launcherFor(java.getToolchain())
+                          .map(
+                              launcher ->
+                                  launcher
+                                      .getMetadata()
+                                      .getInstallationPath()
+                                      .getAsFile()
+                                      .getPath()));
+              task.getModule().set(module.isEmpty() ? "." : module);
+              task.getWorkspaceRoot().set(project.getRootDir());
+              useBuildLock(project, task, task.getBuildLock());
+            });
   }
 
   // The external libraries, from the test compile classpath, which holds main's too, and a
