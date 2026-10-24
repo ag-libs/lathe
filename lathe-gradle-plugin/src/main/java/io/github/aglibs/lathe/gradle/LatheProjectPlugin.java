@@ -17,12 +17,15 @@ import org.gradle.api.GradleException;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.attributes.Usage;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.provider.Property;
+import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 import org.gradle.api.tasks.TaskProvider;
@@ -43,6 +46,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String PROJECT_FACTS = "latheProjectFacts";
   private static final String SERVER = "latheServer";
   private static final String MCP_SERVER = "latheMcpServer";
+  private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
 
   @Override
   public void apply(final Project project) {
@@ -65,6 +69,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                                           List.of(),
                                           null,
                                           0,
+                                          List.of(),
                                           List.of()))));
                   task.getFactsFile()
                       .set(
@@ -114,6 +119,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
             LatheSyncTask.class,
             task -> {
               task.setDescription("Syncs the workspace for the Lathe language server.");
+              useBuildLock(project, task, task.getBuildLock());
               task.getFacts()
                   .from(
                       (Callable<List<Object>>)
@@ -155,6 +161,24 @@ public class LatheProjectPlugin implements Plugin<Project> {
             project.getGradle().getIncludedBuilds().stream().map(IncludedBuild::getProjectDir))
         .map(File::getPath)
         .toList();
+  }
+
+  // One service for the whole build, whichever project registers it first.
+  private static void useBuildLock(
+      final Project project, final Task task, final Property<LatheBuildLockService> lock) {
+    final Provider<LatheBuildLockService> service =
+        project
+            .getGradle()
+            .getSharedServices()
+            .registerIfAbsent(
+                BUILD_LOCK_SERVICE,
+                LatheBuildLockService.class,
+                spec ->
+                    spec.getParameters()
+                        .getLatheDir()
+                        .set(new File(project.getRootDir(), LatheLayout.LATHE_DIR)));
+    lock.set(service);
+    task.usesService(service);
   }
 
   private static String factsTaskPath(final Map<String, String> modulePaths, final String module) {
@@ -217,6 +241,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
         task -> {
           task.dependsOn(mainCapture, testCapture);
           task.getFacts().set(project.provider(() -> Json.toJson(javaFacts(project, main, test))));
+          task.getMainSources().from(main.getJava());
+          task.getTestSources().from(test.getJava());
         });
   }
 
@@ -257,7 +283,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
         JvmArgsWriter.accessFlags(
             Stream.of(mainCompile, testCompile)
                 .flatMap(javac -> javac.getOptions().getForkOptions().getAllJvmArgs().stream())
-                .toList()));
+                .toList()),
+        List.of());
   }
 
   private static Stream<ResourceRootData> resourceRoots(
@@ -296,6 +323,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 task -> {
                   final JavaCompile javac = compile.get();
                   task.dependsOn(compile);
+                  useBuildLock(project, task, task.getBuildLock());
                   task.getSourceTree().set(sourceTree);
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());

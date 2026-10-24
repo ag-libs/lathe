@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
@@ -23,6 +24,8 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.gradle.api.DefaultTask;
@@ -43,9 +46,10 @@ import org.gradle.api.tasks.UntrackedTask;
 import org.gradle.api.tasks.options.Option;
 
 // The root project's sync, the counterpart of Maven's lathe:sync: it merges every project's facts
-// into workspace.json and writes the workspace files beside it, and installs the server. With
-// --module it builds only those modules' captures and leaves the workspace files as the last full
-// sync wrote them, as Maven does under -pl.
+// into workspace.json, writes the workspace files beside it, prunes the captures of source trees
+// the build no longer has, and installs the server. With --module it builds only those modules'
+// captures and leaves the workspace files as the last full sync wrote them, as Maven does under
+// -pl.
 @UntrackedTask(because = "It refreshes the workspace files and the server install every run.")
 public abstract class LatheSyncTask extends DefaultTask {
 
@@ -86,8 +90,13 @@ public abstract class LatheSyncTask extends DefaultTask {
       description = "Syncs only this module (its directory); repeatable.")
   public abstract ListProperty<String> getModules();
 
+  // Asked for as the task starts, so the build holds .lathe/lathe.lock from here until it ends.
+  @Internal
+  public abstract Property<LatheBuildLockService> getBuildLock();
+
   @TaskAction
   public void sync() throws IOException {
+    getBuildLock().get();
     final Path root = getWorkspaceRoot().get().getAsFile().toPath();
     final var installer =
         new ServerInstaller(
@@ -133,6 +142,12 @@ public abstract class LatheSyncTask extends DefaultTask {
                 Stream.of(getDaemonJvmArgs().getOrElse("").split("\\s+")))
             .toList());
     script.write(root);
+    CapturePruner.prune(
+        root,
+        facts.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    fact -> Path.of(fact.module()), fact -> Set.copyOf(fact.trees()))));
   }
 
   // The newest JDK any project compiles with, as the server's: the server then parses what every

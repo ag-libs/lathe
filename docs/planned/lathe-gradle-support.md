@@ -10,7 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slice 2a is done: `latheSync` writes `workspace.json`, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and a synced project works in the editor; 2b (dependency sources), 2c (formatter) and 2d (build lock) remain.
+Slices 2a and 2d are done: `latheSync` writes `workspace.json`, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor. 2b (dependency sources) and 2c (formatter) remain.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -496,8 +496,16 @@ the GradleX run showed the test classes directory on the classpath as well as pa
   (`junit-platform-launcher` at its `junit-platform-commons` version, `junit-jupiter-engine` at its
   `junit-jupiter-api` version), as `ServerInstaller.resolveJUnitSupportJars` does on Maven — a launcher that
   does not match the project's engine breaks replay.
-- **Build lock:** `latheSync` (and any build with Lathe enabled) holds and heartbeats `.lathe/lathe.lock`
-  like the Maven extension, through a build service that releases it when the build finishes.
+- **Build lock:** any build with Lathe enabled holds `.lathe/lathe.lock` with the Maven extension's `BuildLock`
+  (`lathe-core`), through a shared build service. Gradle creates the service when the first task that writes
+  `.lathe/` (a capture, or `latheSync`) starts, and closes it, releasing the lock, when the build finishes;
+  nothing writes `.lathe/` before that. A first-ever build, before `.lathe/` exists, holds none, as on Maven.
+- **Pruning:** a full `latheSync` deletes the captures of source trees the build no longer has, with the shared
+  `CapturePruner` ([workspace contract](../lathe-workspace-contract.md)); `--module` never prunes.
+  A project's trees are those whose source set has Java sources, decided when its `latheFacts` runs, after the
+  compiles and any generator: the configuration cache computes the other facts before generators run, so a
+  generated-only source set would look empty there. The rule is exact, unlike Maven's, which also keeps a tree
+  whose output directory exists.
 - **Per-project facts, merged at the root (decided 2026-10-23).** The root `latheSync` must not read other
   projects' tasks or configurations, or the plugin is no longer Isolated-Projects-safe.
   Each project's `latheFacts` task writes its own facts (outputs, resource roots, its resolved `-sources`

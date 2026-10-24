@@ -111,8 +111,13 @@ public abstract class LatheCaptureTask extends DefaultTask {
     return getModuleDir().file(getSourceTree().map(LatheLayout::compiledStampsFileName));
   }
 
+  // Asked for as the task starts, so the build holds .lathe/lathe.lock from here until it ends.
+  @Internal
+  public abstract Property<LatheBuildLockService> getBuildLock();
+
   @TaskAction
   public void capture() throws IOException {
+    getBuildLock().get();
     final Path moduleDir = getModuleDir().get().getAsFile().toPath();
     final ModuleConfigData config = moduleConfig();
     final Path lock = LatheLayout.moduleLockFile(moduleDir);
