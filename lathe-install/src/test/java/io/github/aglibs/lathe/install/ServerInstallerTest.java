@@ -84,7 +84,8 @@ class ServerInstallerTest {
       @Override
       public Path resolve(final String coordinates) {
         resolved.add(coordinates);
-        return Path.of("%s.jar".formatted(coordinates));
+        // ':' is not allowed in a Windows file name.
+        return Path.of("%s.jar".formatted(coordinates.replace(':', '_')));
       }
 
       @Override
