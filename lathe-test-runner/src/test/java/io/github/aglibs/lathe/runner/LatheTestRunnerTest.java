@@ -83,6 +83,8 @@ final class LatheTestRunnerTest {
   @Test
   void inlinedWireLiterals_matchLatheCoreSourceOfTruth() {
     assertThat(LatheTestRunner.RESULTS_SINK).isEqualTo(LatheFlags.RESULTS_SINK);
+    assertThat(ResultsListener.TEST_STARTED_MARKER).isEqualTo(LatheFlags.TEST_STARTED_MARKER);
+    assertThat(ResultsListener.TEST_FINISHED_MARKER).isEqualTo(LatheFlags.TEST_FINISHED_MARKER);
     assertThat(TestSelectorParser.SELECT_CLASS).isEqualTo(TestSelectionKind.CLASS.runnerFlag());
     assertThat(TestSelectorParser.SELECT_METHOD).isEqualTo(TestSelectionKind.METHOD.runnerFlag());
     assertThat(TestSelectorParser.SELECT_PACKAGE).isEqualTo(TestSelectionKind.PACKAGE.runnerFlag());

@@ -8,7 +8,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.Json;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -116,6 +120,28 @@ final class ResultsListenerTest {
     assertThat(template.get("status").getAsString()).isEqualTo("failed");
   }
 
+  // Markers around each test on stdout, the stream its own output goes to, so the server can tell
+  // which test printed a line; containers get none.
+  @Test
+  void execute_eachTest_printsStartedAndFinishedMarkersAroundItsOutput(@TempDir final Path dir) {
+    final var stdout = new ByteArrayOutputStream();
+    final var out = new PrintStream(stdout, true, StandardCharsets.UTF_8);
+    final var original = System.out;
+    System.setOut(out);
+    try {
+      execute(PrintingFixture.class, new ResultsListener(dir.resolve("sink"), out, System.err));
+    } finally {
+      System.setOut(original);
+    }
+
+    final String fields = "%s\tprints\t".formatted(PrintingFixture.class.getName());
+    assertThat(stdout.toString(StandardCharsets.UTF_8).lines().toList())
+        .containsExactly(
+            ResultsListener.TEST_STARTED_MARKER + fields,
+            "printed by the test",
+            ResultsListener.TEST_FINISHED_MARKER + fields);
+  }
+
   @Test
   void toJson_specialCharactersAndOptionalValues_singleLineWithAbsentValuesLeftOut() {
     final var frame = new TestRecord.Frame("pkg.C", "m", "C.java", 7);
@@ -175,14 +201,20 @@ final class ResultsListenerTest {
 
   private static List<JsonObject> run(final Path dir, final Class<?> fixture) throws IOException {
     final Path sink = dir.resolve("%s.ndjson".formatted(fixture.getSimpleName()));
+    execute(
+        fixture,
+        new ResultsListener(sink, new PrintStream(OutputStream.nullOutputStream()), System.err));
+    return Files.readAllLines(sink).stream()
+        .map(line -> Json.fromJson(line, JsonObject.class))
+        .toList();
+  }
+
+  private static void execute(final Class<?> fixture, final ResultsListener listener) {
     final var request =
         LauncherDiscoveryRequestBuilder.request()
             .selectors(DiscoverySelectors.selectClass(fixture))
             .build();
-    LauncherFactory.create().execute(request, new ResultsListener(sink, System.err));
-    return Files.readAllLines(sink).stream()
-        .map(line -> Json.fromJson(line, JsonObject.class))
-        .toList();
+    LauncherFactory.create().execute(request, listener);
   }
 
   private static JsonObject recordFor(final List<JsonObject> records, final String methodName) {
@@ -285,4 +317,12 @@ final class BrokenTemplateFixture {
   @ParameterizedTest
   @MethodSource("broken")
   void broken_param(final String value) {}
+}
+
+final class PrintingFixture {
+
+  @Test
+  void prints() {
+    System.out.println("printed by the test");
+  }
 }

@@ -370,6 +370,8 @@ lines. `open_diff()` opens both values side by side in a new tab, in diff mode, 
 values: the failure under the cursor, else the only one with values, else one you pick.
 When a class's `@BeforeAll` fails, the class shows failed with that error, a diagnostic marks the failing
 setup line, and each of its tests reads `class failed: …` instead of a bare exit code.
+Opening a test's output shows what that test printed, not the whole run's output; a test that printed
+nothing shows the run's output, and the live output buffer always shows everything.
 `open_results()` lists the last run's tests in the quickfix window, failures first, each with its time
 (`— passed (12 ms)`), including tests in files you never opened.
 `run_first_failed()` re-runs the first still-failing test from recent runs; the failing set is

@@ -45,7 +45,7 @@ public final class LatheTestRunner {
 
     final var summary = new SummaryGeneratingListener();
     final var launcher = LauncherFactory.create();
-    launcher.execute(request, listeners(summary, err));
+    launcher.execute(request, listeners(summary, out, err));
     final TestExecutionSummary result = summary.getSummary();
     printFailures(result, out);
     return result.getTotalFailureCount() == 0 ? EXIT_OK : EXIT_FAILURE;
@@ -77,13 +77,13 @@ public final class LatheTestRunner {
   }
 
   private static TestExecutionListener[] listeners(
-      final SummaryGeneratingListener summary, final PrintStream err) {
+      final SummaryGeneratingListener summary, final PrintStream out, final PrintStream err) {
     final String sink = System.getProperty(RESULTS_SINK);
     if (sink == null) {
       return new TestExecutionListener[] {summary};
     }
 
-    return new TestExecutionListener[] {summary, new ResultsListener(Path.of(sink), err)};
+    return new TestExecutionListener[] {summary, new ResultsListener(Path.of(sink), out, err)};
   }
 
   private static LauncherDiscoveryRequest discoveryRequest(final String[] args) {

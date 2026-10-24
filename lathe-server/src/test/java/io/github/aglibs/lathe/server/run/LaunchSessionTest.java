@@ -182,6 +182,24 @@ final class LaunchSessionTest {
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isNotZero();
   }
 
+  // The runner's markers say which test is running; they are not output, and each line carries the
+  // test it belongs to, or none outside a test or while two run at once.
+  @Test
+  void onExit_markedOutput_tagsEachLineWithTheTestRunningThen() throws Exception {
+    final List<TranscriptLine> streamed = Collections.synchronizedList(new ArrayList<>());
+    final var session = new LaunchSession(start("marked"), null, streamed::add, NO_EVENTS);
+
+    final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+
+    final var expected =
+        List.of(
+            new TranscriptLine(TranscriptLine.Stream.STDOUT, "in a", "pkg.T#a()"),
+            new TranscriptLine(TranscriptLine.Stream.STDOUT, "between"),
+            new TranscriptLine(TranscriptLine.Stream.STDOUT, "in both"));
+    assertThat(outcome.output()).containsExactlyElementsOf(expected);
+    assertThat(streamed).containsExactlyElementsOf(expected);
+  }
+
   // What the JVM started would otherwise outlive the cancel, holding its ports and files.
   @Test
   void cancel_processWithChild_stopsTheChildToo() throws Exception {
