@@ -776,34 +776,11 @@ class LatheEngineTest {
   @Test
   void verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt()
       throws Exception {
-    final Path api =
-        TestCompiler.writeMirroredModule(
-                tmp,
-                "api",
-                Map.of(
-                    "com/example/api/Api.java",
-                    "package com.example.api;\npublic class Api { public int a() { return 1; } }\n"),
-                List.of(),
-                1_000L)
-            .get(0);
-    final Path app =
-        TestCompiler.writeMirroredModule(
-                tmp,
-                "app",
-                Map.of(
-                    "com/example/app/App.java",
-                    "package com.example.app;\nimport com.example.api.Api;\n"
-                        + "class App { int u() { return new Api().a(); } }\n"),
-                List.of("api"),
-                1_000L)
-            .get(0);
+    final Path api = apiReactor(List.of("app"), List.of());
     engine = new LatheEngine(tmp);
 
     // The agent renames a() in api only, with its own file tool: app no longer compiles.
-    TestCompiler.writeAt(
-        api,
-        "package com.example.api;\npublic class Api { public int b() { return 1; } }\n",
-        10_000L);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
     final LatheVerifyChange verify = engine.verifyChange(List.of());
 
     assertThat(verify.perModule())
@@ -820,10 +797,7 @@ class LatheEngineTest {
         .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app")));
 
     // Another such edit, but compiled by an unrelated query before verify_change is asked.
-    TestCompiler.writeAt(
-        api,
-        "package com.example.api;\npublic class Api { public int c() { return 1; } }\n",
-        20_000L);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "c()"), 20_000L);
     engine.diagnostics(api);
 
     assertThat(engine.verifyChange(List.of()).perModule())
@@ -834,7 +808,7 @@ class LatheEngineTest {
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
-    engine.diagnostics(app);
+    engine.searchSymbols("Api", 10);
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()

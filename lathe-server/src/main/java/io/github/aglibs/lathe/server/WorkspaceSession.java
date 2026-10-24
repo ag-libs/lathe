@@ -3562,13 +3562,11 @@ final class WorkspaceSession {
       return;
     }
 
-    workspace
-        .moduleSourceFor(file)
+    moduleDirOf(file)
         .ifPresent(
-            config ->
+            dir ->
                 byModule
-                    .computeIfAbsent(
-                        moduleRelForDir(config.moduleDir()), k -> new LinkedHashSet<>())
+                    .computeIfAbsent(moduleRelForDir(dir), k -> new LinkedHashSet<>())
                     .add(file));
   }
 
@@ -3576,21 +3574,16 @@ final class WorkspaceSession {
   // misses a direct caller; an extra candidate just compiles clean.
   private List<Path> referrers(final Path file) {
     final Set<Path> reach =
-        workspace
-            .moduleSourceFor(file)
-            .map(config -> moduleGraph.downstreamModuleDirs(config.moduleDir()))
-            .orElse(Set.of());
+        moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of());
     return candidateIndex.candidateUris(FileUtil.javaTypeName(file)).stream()
         .map(LatheUri::toPath)
         .filter(path -> !path.equals(file))
-        .filter(
-            path ->
-                workspace
-                    .moduleSourceFor(path)
-                    .map(ModuleSourceConfig::moduleDir)
-                    .filter(reach::contains)
-                    .isPresent())
+        .filter(path -> moduleDirOf(path).filter(reach::contains).isPresent())
         .toList();
+  }
+
+  private Optional<Path> moduleDirOf(final Path file) {
+    return workspace.moduleSourceFor(file).map(ModuleSourceConfig::moduleDir);
   }
 
   // Placement (module rel + test/production) for each path that maps to a reactor module. Lets
@@ -3621,10 +3614,9 @@ final class WorkspaceSession {
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
-            .map(workspace::moduleSourceFor)
+            .map(this::moduleDirOf)
             .flatMap(Optional::stream)
-            .map(ModuleSourceConfig::moduleDir)
-            .collect(Collectors.toSet());
+            .collect(Collectors.toUnmodifiableSet());
     return changedModuleDirs.stream()
         .flatMap(dir -> moduleGraph.downstreamModuleDirs(dir).stream())
         .filter(dir -> !changedModuleDirs.contains(dir))

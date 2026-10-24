@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.maven.extension;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -12,7 +13,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -20,6 +20,8 @@ import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Injects the Lathe build wiring into the reactor model via {@link LatheModelInjector}, and holds a
@@ -30,6 +32,8 @@ import org.apache.maven.project.MavenProject;
 // an
 // ASM that cannot read Java 17 class files and would skip the participant without a word.
 public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParticipant {
+
+  private static final Logger LOG = LoggerFactory.getLogger(LatheLifecycleParticipant.class);
 
   // Refresh well inside LatheLock's staleness window so a live build never looks crashed, while a
   // real crash (heartbeat thread dies with the JVM) self-heals within that window.
@@ -88,16 +92,19 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
           Json.read(
               workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
               WorkspaceManifestData.class);
-      final Map<Path, Path> mirrors =
-          ReactorRewrite.of(workspaceRoot, manifest.outputs()).mirrors();
-      for (final Map.Entry<Path, Path> output : mirrors.entrySet()) {
-        if (Files.isDirectory(output.getValue())) {
-          FileUtil.copyMissing(
-              output.getKey(), output.getValue(), file -> !FileUtil.isClassFile(file));
-        }
-      }
+      ReactorRewrite.of(workspaceRoot, manifest.outputs())
+          .mirrors()
+          .forEach(LatheLifecycleParticipant::addLateFiles);
     } catch (final IOException | UncheckedIOException e) {
-      // The server keeps the mirror the compile copied; the next build tries again.
+      LOG.debug("[mirror] late build output not copied under {}: {}", workspaceRoot, e.toString());
+    }
+  }
+
+  // Only into a mirror the compile created: a module never compiled has no mirror to complete.
+  private static void addLateFiles(final Path output, final Path mirror) {
+    if (Files.isDirectory(mirror)) {
+      IOUtil.unchecked(
+          () -> FileUtil.copyMissing(output, mirror, file -> !FileUtil.isClassFile(file)));
     }
   }
 

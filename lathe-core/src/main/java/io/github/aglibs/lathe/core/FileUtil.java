@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
@@ -285,14 +286,10 @@ public final class FileUtil {
   // they are. Returns how many it copied.
   public static int copyMissing(final Path src, final Path dest, final Predicate<Path> keep)
       throws IOException {
+    final UnaryOperator<Path> target = file -> dest.resolve(src.relativize(file));
     final List<Path> missing =
-        walkFiles(src, keep).stream()
-            .filter(file -> Files.notExists(dest.resolve(src.relativize(file))))
-            .toList();
-    for (final Path file : missing) {
-      copyFileAtomically(file, dest.resolve(src.relativize(file)));
-    }
-
+        walkFiles(src, keep).stream().filter(file -> Files.notExists(target.apply(file))).toList();
+    missing.forEach(file -> IOUtil.unchecked(() -> copyFileAtomically(file, target.apply(file))));
     return missing.size();
   }
 
