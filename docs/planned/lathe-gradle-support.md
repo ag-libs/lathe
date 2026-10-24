@@ -9,7 +9,8 @@ replays from `.lathe/`). This document designs an equivalent **Gradle** front-en
 identical `.lathe/` contract, so every downstream component — the language server, `lathe-test-runner`,
 the MCP server, and all editor clients — works unchanged.
 
-No Gradle code exists yet. This is a design, sliced for incremental delivery.
+**In progress:** slice 1a (the `lathe-gradle-plugin` module, its build, and CI) is done; the plugin does nothing yet.
+This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
 
@@ -719,6 +720,8 @@ with its own CI job — more idiomatic for Gradle, but two commands / two CI sta
 their own and not through `withGradleVersion` inside every build. Each job downloads one Gradle
 distribution, as it downloads its Maven, and passes `-Dlathe.gradle.fixturesHome=<dir>` — the counterpart
 of `-Dinvoker.mavenHome` — which the Maven module forwards so the TestKit fixtures run on that installation.
+The fixtures also run on the JDK that `-Dinvoker.javaHome` names (written as `org.gradle.java.home` into each
+fixture's `gradle.properties`), so the JDK 17 rows, which build on JDK 21, test on 17.
 Those jobs skip unit tests (`-Dmaven.test.skip.exec=true`); the module forwards that too, so Gradle skips its
 `test` task but still runs the fixtures, kept in their own `functionalTest` task as the Maven fixtures are an
 invoker run.
@@ -784,11 +787,14 @@ and a capture-only test run on Gradle 9.
    *Done 2026-10-24* (slices A, 0a–0d): `lathe-install` depends only on `lathe-core` and the provided SLF4J API.
    Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
    the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](../done/lathe-multi-os.md).
-1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
-   tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`.
-   Its TestKit suite includes the cache-key check and the configuration cache stored and reused. Delivers full **code
-   intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
+1. **Compiler capture (main + test)**, in three reviewed steps:
+   1a, the `lathe-gradle-plugin` module, its Maven-orchestrated build, and CI;
+   1b, the settings/project plugin, gating, and the fail-fast requirements check;
+   1c, the capture tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps.
+   Its TestKit suite includes the cache-key check and the configuration cache stored and reused.
+   It fills `.lathe/<module>/` for main and test; the editor can use it once slice 2 adds the workspace files.
+2. **`workspace.json` + `jvm.args` + `.lathe/java-home` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`;
+   `jvm.args` and `java-home` are workspace-wide (the union of the access flags, the highest compiling JDK), so they come with the per-project `latheFacts` merge, which Isolated Projects requires (*decided 2026-10-24*); the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
 4. **Test launch (in-fork)** — `lathe-junit` on the `test` classpath in capture mode + worker-jar filter + `failOnNoDiscoveredTests = false` on Gradle 9+; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.

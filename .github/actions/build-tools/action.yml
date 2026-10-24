@@ -1,6 +1,7 @@
 name: Build tools
 description: >-
-  The JDK a CI row tests on, JDK 21 to build when that is 17, and the Maven that builds Lathe.
+  The JDK a CI row tests on, JDK 21 to build when that is 17, and the Maven and Gradle that build
+  Lathe.
 inputs:
   java:
     description: The JDK the row runs its tests on.
@@ -28,3 +29,9 @@ runs:
       uses: stCarolas/setup-maven@v5
       with:
         maven-version: 3.9.16
+
+    - name: Set up Gradle 9.8.2
+      # Builds lathe-gradle-plugin and runs its fixtures, unless a job points them at an older Gradle.
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        gradle-version: 9.8.2

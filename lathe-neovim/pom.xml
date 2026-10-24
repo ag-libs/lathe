@@ -15,10 +15,6 @@
   <description>Neovim client (Lua). Runs the headless specs during the build; published to
     ag-libs/lathe.nvim by publish-nvim.sh.</description>
 
-  <properties>
-    <exec-maven-plugin.version>3.6.4</exec-maven-plugin.version>
-  </properties>
-
   <build>
     <plugins>
       <plugin>

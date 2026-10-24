@@ -40,6 +40,8 @@
     <module>lathe-openjdk-maven-plugin</module>
     <module>lathe-neovim</module>
     <module>lathe-vscode</module>
+    <!-- Last, so it stays after the modules its Gradle build consumes, also under -T. -->
+    <module>lathe-gradle-plugin</module>
   </modules>
 
   <scm>
@@ -85,6 +87,8 @@
     <validcheck.version>0.11.0</validcheck.version>
     <java-debug.version>0.53.1</java-debug.version>
     <mcp-sdk.version>2.1.0</mcp-sdk.version>
+    <exec-maven-plugin.version>3.6.4</exec-maven-plugin.version>
+    <maven-invoker-plugin.version>3.10.1</maven-invoker-plugin.version>
 
     <!-- Maven plugin/extension API, shared by lathe-install and the three Maven front-ends: the
          Maven floor Lathe supports, so a newer API is a compile error, not a runtime surprise. -->
@@ -437,16 +441,18 @@
               <autoPublish>true</autoPublish>
               <waitUntil>published</waitUntil>
               <!--
-                The Neovim and VS Code clients are editor plugins, not library
-                artifacts: they are distributed through their own channels (the
-                lathe.nvim mirror and the VS Code Marketplace / Open VSX), not
-                Maven Central. They are pom-only modules whose presence in the
-                aggregated bundle breaks the Central deployment. Exclude them by
-                artifactId so vscode still drives the final publish of the rest.
+                The Neovim and VS Code clients and the Gradle plugin are not
+                library artifacts: they are distributed through their own channels
+                (the lathe.nvim mirror, the VS Code Marketplace / Open VSX, and the
+                Gradle Plugin Portal), not Maven Central. They are pom-only modules
+                whose presence in the aggregated bundle breaks the Central
+                deployment. Exclude them by artifactId so the last module still
+                drives the final publish of the rest.
               -->
               <excludeArtifacts>
                 <excludeArtifact>lathe-neovim</excludeArtifact>
                 <excludeArtifact>lathe-vscode</excludeArtifact>
+                <excludeArtifact>lathe-gradle-plugin</excludeArtifact>
               </excludeArtifacts>
             </configuration>
           </plugin>

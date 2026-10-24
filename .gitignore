@@ -1,5 +1,6 @@
 target/
 .lathe/
+.gradle/
 .idea/
 __pycache__/
 .worktrees/
