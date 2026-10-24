@@ -117,7 +117,7 @@ position (R2). `dir → package` stays in Lua (it works and is not the pain poin
 ## 6. Reviewable deliverables
 
 Each is its own commit series and is gated green by extending the Phase-1 harness
-(`dev/neotest-e2e.sh`) with a spec for the behavior it lands.
+(`lathe-neovim/test/e2e/run-e2e.sh`) with a spec for the behavior it lands.
 
 1. **stdout/stderr split** *(done — `d6037c3`)* — `ReplayLauncher` stops merging; `ReplaySession`
    dual-drains into `List<TranscriptLine>`; `ReplayOutcome.output` reshaped; server tests and the Lua

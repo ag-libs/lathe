@@ -14,6 +14,7 @@
     <module>app</module>
     <module>health</module>
     <module>jpms</module>
+    <module>shapes</module>
     <module>verify</module>
   </modules>
 

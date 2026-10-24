@@ -15,6 +15,18 @@
   <description>Neovim client (Lua). Runs the headless specs during the build; published to
     ag-libs/lathe.nvim by publish-nvim.sh.</description>
 
+  <dependencies>
+    <!-- Build order only: the e2e needs the multi-module fixture lathe-maven-plugin's invoker builds,
+         and a parallel build (mvnd, -T) would otherwise run this module first. -->
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-maven-plugin</artifactId>
+      <version>${project.version}</version>
+      <type>maven-plugin</type>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
       <plugin>
@@ -33,6 +45,22 @@
               <executable>bash</executable>
               <arguments>
                 <argument>${project.basedir}/test/run-specs.sh</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <!-- After the specs: the real adapter against a live server, over the multi-module fixture
+               lathe-maven-plugin's invoker built earlier in the reactor. -->
+          <execution>
+            <id>neotest-e2e</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>integration-test</phase>
+            <configuration>
+              <skip>${skipTests}</skip>
+              <executable>bash</executable>
+              <arguments>
+                <argument>${project.basedir}/test/e2e/run-e2e.sh</argument>
               </arguments>
             </configuration>
           </execution>

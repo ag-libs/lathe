@@ -11,7 +11,7 @@ All files live in `dev/` and are never shipped with the distribution.
 |---|---|
 | `nvim.sh` | Build server + open Neovim with Lathe attached |
 | `check-nvim.sh` | Headless Neovim smoke check for the Lathe runtime |
-| `neotest-e2e.sh` | Headless end-to-end check of the neotest adapter against a live server + real replay |
+| *(moved)* | The neotest end-to-end check now lives in `lathe-neovim/test/e2e/` and runs in the build (below) |
 | `debug-e2e.sh` | Headless end-to-end check of the debug attach flow (DAP over JDWP) against a live server + real replay |
 | `debug_probe.py` | Raw DAP client the debug harness drives (launch → attach → breakpoint → inspect → resume) |
 | `lsp.py` | Python LSP client library (`LspClient` base + `LatheClient` preset) and CLI diagnostics tool |
@@ -52,7 +52,7 @@ Requirements and behaviour:
 
 ---
 
-## neotest-e2e.sh — end-to-end neotest adapter harness
+## The neotest end-to-end check (moved to `lathe-neovim/test/e2e/`)
 
 Drives the real neotest adapter (`lathe.neotest`) through a headless Neovim against a live Lathe
 server and a real replay run over the built `multi-module` invoker fixture — discovery, run, and
@@ -61,15 +61,19 @@ per-test results as a user would drive them. It is the red/green signal the
 assertion names the acceptance-criterion id (D1, D3, R1, R3, …) it covers, and known gaps are
 printed as `pend` rather than failing until the behaviour is built.
 
+It runs in `lathe-neovim`'s `integration-test` phase, after the headless specs, so CI runs it on
+the rows that install Neovim. By hand:
+
 ```bash
 # one-time: build the fixture so .lathe/ and the launcher cache exist
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module
+mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=multi-module
 
-./dev/neotest-e2e.sh
+lathe-neovim/test/e2e/run-e2e.sh
 ```
 
-Assumes `nvim` plus the `neotest`, `nvim-nio`, and `plenary.nvim` plugins are installed. The driver
-is `dev/neotest-e2e/driver.lua`; it reuses `spec_helper.lua` from the plugin's Neovim spec suite.
+It clones `neotest`, `nvim-nio` and `plenary.nvim` at the commits `lathe-neovim/test/e2e/plugins.txt`
+pins, into `lathe-neovim/target/`. The driver is `lathe-neovim/test/e2e/driver.lua`; it reuses
+`spec_helper.lua` from the plugin's Neovim spec suite.
 
 ---
 

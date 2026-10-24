@@ -81,7 +81,7 @@ save-compile. Even a `didChange`-only edit (no save) is reflected, since the ser
 content live.
 *Criteria:* after an edit that adds a `@Test` method and a save, the new method appears as a
 position without reopening the file.
-*Validated:* `dev/neotest-e2e/verify_d2.lua` drives add / rename / remove (each with a save) plus
+*Validated:* `lathe-neovim/test/e2e/verify_d2.lua` drives add / rename / remove (each with a save) plus
 add-without-save against the live server over the multi-module fixture — all reflected.
 
 **D3 — All runnable kinds.** ✅
