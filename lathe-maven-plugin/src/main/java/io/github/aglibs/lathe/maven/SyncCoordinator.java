@@ -78,10 +78,9 @@ final class SyncCoordinator {
                 repositorySystem, session.getRepositorySession(), remoteRepos));
     final Path versionDir = serverInstaller.install();
     LauncherCopier.copyToWorkspace(workspaceRoot, versionDir);
-    final var mainLaunchWriter =
-        new MainLaunchWriter(
-            new LocationManager(), ReactorProjects.reactorOutputDirs(projects), log);
-    projects.forEach(project -> mainLaunchWriter.write(workspaceRoot, project));
+    final var mainLaunch =
+        new MavenMainLaunch(new LocationManager(), ReactorProjects.reactorOutputDirs(projects));
+    projects.forEach(project -> mainLaunch.write(workspaceRoot, project));
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");
     } else {

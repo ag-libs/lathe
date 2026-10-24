@@ -1,10 +1,7 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.schema.LaunchMode;
-import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.install.MainLaunchWriter;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,36 +12,23 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
-import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.languages.java.jpms.LocationManager;
 import org.codehaus.plexus.languages.java.jpms.ResolvePathsRequest;
 import org.codehaus.plexus.languages.java.jpms.ResolvePathsResult;
 
-/**
- * Derives the runtime launch shape for a {@code main} run and writes it to {@code
- * .lathe/<moduleRel>/main-launch.json}. Unlike {@code test-launch.json}, no {@code main} launch
- * happens during a build to ride, so the template is derived Maven-side: runtime-scope membership
- * from the project's resolved artifacts, and module-path/class-path placement from {@code
- * plexus-java} — the same library Surefire uses, so the derived placement matches the captured test
- * placement by construction. A dependency on a reactor sibling is placed by that sibling's compiled
- * output rather than a repository jar, so the run uses fresh classes and works even when the
- * sibling is neither installed nor packaged. The template is main-class-agnostic; the concrete
- * class is appended by the server at launch time.
- */
-final class MainLaunchWriter {
+// A module's main-run launch, derived here since no main run happens during a build: membership
+// from the resolved runtime artifacts, placement from plexus-java (as Surefire, so it matches the
+// captured tests), and reactor siblings as their compiled output, installed or not.
+final class MavenMainLaunch {
 
   private final LocationManager locationManager;
   private final Map<String, String> reactorOutputByGa;
-  private final Log log;
 
-  MainLaunchWriter(
-      final LocationManager locationManager,
-      final Map<String, String> reactorOutputByGa,
-      final Log log) {
+  MavenMainLaunch(
+      final LocationManager locationManager, final Map<String, String> reactorOutputByGa) {
     this.locationManager = locationManager;
     this.reactorOutputByGa = Map.copyOf(reactorOutputByGa);
-    this.log = log;
   }
 
   void write(final Path workspaceRoot, final MavenProject project) {
@@ -52,29 +36,14 @@ final class MainLaunchWriter {
       return;
     }
 
+    // The main run's working directory is the module basedir, where Maven/exec would run it.
     final String moduleRel = ReactorProjects.moduleRel(workspaceRoot, project);
-    // The main run's working directory is the module basedir (relative to the workspace root),
-    // matching where Maven/exec would run it — moduleRel is exactly that.
-    persist(workspaceRoot, moduleRel, deriveLaunch(project, moduleRel));
-  }
-
-  private MainLaunchData deriveLaunch(final MavenProject project, final String workingDir) {
     final List<String> runtimeElements = runtimeClasspath(project);
     final String javaHome = System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
     final Path moduleInfo = moduleInfoSource(project);
     if (moduleInfo == null) {
-      return new MainLaunchData(
-          LaunchMode.CLASSPATH,
-          javaHome,
-          null,
-          List.of(),
-          runtimeElements,
-          List.of(),
-          List.of(),
-          List.of(),
-          List.of(),
-          List.of(),
-          workingDir);
+      MainLaunchWriter.writeClasspath(workspaceRoot, moduleRel, javaHome, runtimeElements);
+      return;
     }
 
     // plexus-java partitions dependencies only; the launched module's own output is never in that
@@ -86,18 +55,13 @@ final class MainLaunchWriter {
     final List<String> modulePath =
         Stream.concat(Stream.of(outputDir), placement.getModulepathElements().keySet().stream())
             .toList();
-    return new MainLaunchData(
-        LaunchMode.MODULE,
+    MainLaunchWriter.writeModule(
+        workspaceRoot,
+        moduleRel,
         javaHome,
         placement.getMainModuleDescriptor().name(),
         modulePath,
-        List.copyOf(placement.getClasspathElements()),
-        List.of(),
-        List.of(),
-        List.of(),
-        List.of(),
-        List.of(),
-        workingDir);
+        List.copyOf(placement.getClasspathElements()));
   }
 
   private static boolean samePath(final String entry, final String other) {
@@ -121,7 +85,7 @@ final class MainLaunchWriter {
         Optional.ofNullable(project.getBuild().getOutputDirectory()).stream();
     final Stream<String> dependencies =
         project.getArtifacts().stream()
-            .filter(MainLaunchWriter::isRuntimeClasspathArtifact)
+            .filter(MavenMainLaunch::isRuntimeClasspathArtifact)
             .map(this::runtimeElement)
             .filter(Objects::nonNull);
     return Stream.concat(output, dependencies).distinct().toList();
@@ -151,22 +115,5 @@ final class MainLaunchWriter {
         .filter(Files::exists)
         .findFirst()
         .orElse(null);
-  }
-
-  private void persist(
-      final Path workspaceRoot, final String moduleRel, final MainLaunchData data) {
-    final Path moduleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
-    final Path launchFile = moduleDir.resolve(LatheLayout.MAIN_LAUNCH_FILE);
-    final String newContent = Json.toJson(data);
-    try {
-      if (!FileUtil.writeIfChanged(moduleDir, launchFile, newContent, false)) {
-        return;
-      }
-
-      log.debug("[sync] main-launch %s written".formatted(moduleRel));
-    } catch (final IOException e) {
-      throw new SyncException(
-          "lathe:sync failed to write main-launch template for %s".formatted(moduleRel), e);
-    }
   }
 }

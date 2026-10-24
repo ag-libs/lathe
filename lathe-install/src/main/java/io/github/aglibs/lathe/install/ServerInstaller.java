@@ -198,14 +198,8 @@ public final class ServerInstaller {
         PluginProps.groupId(), PluginProps.MCP_SERVER_ARTIFACT_ID, PluginProps.version());
   }
 
-  /**
-   * The runner jar plus whatever JUnit Platform launcher/engine jars the replay JVM needs.
-   * Surefire's own JUnit Platform provider carries junit-platform-launcher (and auto-detects the
-   * matching engine, e.g. junit-jupiter-engine) as a provider-internal dependency -- it never
-   * touches the project's own classpath, so captured test-launch.json never records it. Resolved
-   * here, at sync time, against whatever JUnit Platform/Jupiter version the reactor actually uses,
-   * so the versions match what the project resolved rather than a hardcoded pin.
-   */
+  // The runner plus the JUnit launcher and engine for replay: the build's test runner brings its
+  // own launcher, so the captured classpath lacks it. Resolved at the project's JUnit versions.
   public List<Path> resolveRunnerClasspath(final Collection<String> externalCoordinates)
       throws SyncException {
     final var classpath = new ArrayList<Path>();
