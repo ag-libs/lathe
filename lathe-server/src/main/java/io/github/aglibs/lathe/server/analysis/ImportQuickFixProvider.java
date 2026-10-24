@@ -7,7 +7,6 @@ import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -49,7 +48,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
     edit.setChanges(
         Map.of(
             request.uri(),
-            List.of(new TextEdit(insertionRange, "import %s;\n".formatted(fqName)))));
+            List.of(MissingImportsResult.importEdit(insertionRange, List.of(fqName)))));
     action.setEdit(edit);
     return action;
   }

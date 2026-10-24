@@ -3,20 +3,14 @@ package io.github.aglibs.lathe.server;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.WorkspaceStyle;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
-import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionOptions;
@@ -206,103 +200,16 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   // The workspace style file wins when it declares a formatter; otherwise the client's
   // initializationOptions.lathe.style.formatter. "none", unknown, or absent disables formatting.
   private FormatEngine resolveFormatEngine(final InitializeParams params, final Path workingDir) {
-    final FormatterSpec spec = workspaceFormatterSpec(workingDir);
+    final FormatterSpec spec = FormatEngines.workspaceSpec(workingDir);
     if (spec != null) {
-      return engineFor(spec, workingDir);
+      return FormatEngines.forSpec(spec, workingDir, textDocumentService);
     }
 
     return initOptionFormatEngine(params, workingDir);
   }
 
-  private static FormatterSpec workspaceFormatterSpec(final Path workingDir) {
-    if (workingDir == null) {
-      return null;
-    }
-
-    try {
-      final WorkspaceStyleData style = WorkspaceStyle.read(workingDir);
-      return style != null ? style.formatter() : null;
-    } catch (final IOException e) {
-      LOG.warning(() -> "[initialize] malformed style file: %s".formatted(e.getMessage()));
-      return null;
-    }
-  }
-
-  private FormatEngine engineFor(final FormatterSpec spec, final Path workingDir) {
-    return switch (spec.engine()) {
-      case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
-          pinned(
-              spec,
-              () ->
-                  gjfEngine(
-                      spec, GjfFormatEngine.Family.GOOGLE, spec.engine().toUpperCase(Locale.ROOT)));
-      case LatheFlags.FORMATTER_PALANTIR ->
-          pinned(
-              spec,
-              () ->
-                  gjfEngine(
-                      spec, GjfFormatEngine.Family.PALANTIR, LatheFlags.FORMAT_STYLE_PALANTIR));
-      case LatheFlags.FORMATTER_ECLIPSE ->
-          pinned(
-              spec,
-              () ->
-                  new EclipseFormatEngine(
-                      spec.options().getOrDefault(LatheFlags.FORMAT_FILE, ""), spec.classpath()));
-      case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
-      case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
-      default -> null;
-    };
-  }
-
-  // The project's pinned formatter is unavailable until lathe:sync has resolved its jars.
-  private static FormatEngine pinned(
-      final FormatterSpec spec, final Supplier<FormatEngine> engine) {
-    if (spec.classpath().isEmpty()) {
-      LOG.warning(
-          () ->
-              "[initialize] %s formatter has no resolved classpath; run %s"
-                  .formatted(spec.engine(), LatheLayout.SYNC_SCRIPT_COMMAND));
-      return null;
-    }
-
-    return engine.get();
-  }
-
-  // The style is the Spotless step's, else the engine's own (a hand-written style file may omit
-  // it).
-  private static FormatEngine gjfEngine(
-      final FormatterSpec spec, final GjfFormatEngine.Family family, final String defaultStyle) {
-    return new GjfFormatEngine(
-        family,
-        spec.options().getOrDefault(LatheFlags.FORMAT_STYLE, defaultStyle),
-        spec.options(),
-        spec.classpath());
-  }
-
-  private static FormatEngine commandEngine(final List<String> command, final Path workingDir) {
-    if (command.isEmpty()) {
-      return null;
-    }
-
-    return new ExternalCommandFormatEngine(
-        command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
-  }
-
-  private FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
-    if (command.isEmpty() || workingDir == null) {
-      return null;
-    }
-
-    return new FileCommandFormatEngine(
-        command,
-        workingDir,
-        FileCommandFormatEngine.DEFAULT_TIMEOUT,
-        textDocumentService::moduleRelOf,
-        textDocumentService::buildTool);
-  }
-
   // The global-default formatter from initializationOptions.lathe.style.formatter, same {engine,
-  // command} shape as the file, so it flows through engineFor too.
+  // command} shape as the file, so it flows through FormatEngines.forSpec too.
   private FormatEngine initOptionFormatEngine(
       final InitializeParams params, final Path workingDir) {
     final JsonObject formatter = initOptionFormatter(params);
@@ -315,7 +222,10 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
       return null;
     }
 
-    return engineFor(new FormatterSpec(engine.getAsString(), commandOf(formatter)), workingDir);
+    return FormatEngines.forSpec(
+        new FormatterSpec(engine.getAsString(), commandOf(formatter)),
+        workingDir,
+        textDocumentService);
   }
 
   private static JsonObject initOptionFormatter(final InitializeParams params) {

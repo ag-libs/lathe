@@ -57,6 +57,14 @@ try:
     cut = caller.rindex("}")
     CALLER.write_text(caller[:cut] + "\n    static long latheTaskUse(io.dropwizard.util.Duration d) {\n        return d.toMillisPlus(1);\n    }\n" + caller[cut:])
     ask(client, "7 diagnostics of the edited caller", "get_diagnostics", {"file": str(CALLER)}, 8)
+    ask(client, "7b format the edited caller", "format_file", {"file": str(CALLER)}, 4)
+    # 7c: the agent uses types without importing them, as agents do: one with a single match, one
+    # ambiguous (java.util.Date, java.sql.Date). Put back afterwards, so the later steps stay clean.
+    before = CALLER.read_text()
+    cut = before.rindex("}")
+    CALLER.write_text(before[:cut] + "\n    static Object latheTaskImports() {\n        return new ConcurrentHashMap<Date, String>();\n    }\n" + before[cut:])
+    ask(client, "7c add the missing imports", "fix_imports", {"file": str(CALLER)}, 6)
+    CALLER.write_text(before)
 
     # 8: a deliberate mistake, as agents make them: wrong argument type.
     CALLER.write_text(CALLER.read_text().replace("d.toMillisPlus(1)", 'd.toMillisPlus("1")'))
