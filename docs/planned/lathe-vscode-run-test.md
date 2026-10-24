@@ -118,33 +118,39 @@ The other two listed classes Surefire's include patterns leave out; F makes disc
 Not covered: TestNG run through Surefire's own TestNG provider rather than the JUnit Platform.
 The JUnit Platform runner finds nothing there, so discovery lists no tests for such a module; what its runs do today was not checked.
 
-**B. Richer results** (backs §5.3). `TestResult` gains fields; the runner's NDJSON record carries them:
+**B. Richer results** (backs §5.3; done in slice 2). `TestResult` gains fields; the runner's NDJSON record carries them:
 
 | Field | Meaning |
 |---|---|
 | `durationMs` | Wall time of the test, from the runner's start and finish callbacks; `-1` when unknown. |
-| `displayName` | JUnit's display name, e.g. `[2] name=Bob` for one parameterized invocation, so a collapsed item's message can say which invocation failed. |
+| `displayName` | JUnit's display name, e.g. `[2] "b"` for one parameterized invocation (JUnit 6 quotes string arguments), so a collapsed item's message can say which invocation failed. |
 | `expected`, `actual` | The two compared values as strings, for a diff view; present only when the failure carries both (below). |
-| `stackTrace` | `[{className, methodName, fileName, line}]`, cut at the first frame of JUnit, the runner or reflection. |
+| `stackTrace` | `[{className, methodName, fileName, line}]` of the top-level exception, cut where JUnit called into the test: at the first reflection (`jdk.internal.reflect.`, `java.lang.reflect.`), `org.junit.platform.` or `org.junit.jupiter.engine.` frame. The assertion's own frames and the test method stay. |
 
 Where `expected`/`actual` come from — the same sources IntelliJ's "Click to see difference" uses:
 
 | Failure | Thrown by | Read as |
 |---|---|---|
 | `org.opentest4j.AssertionFailedError` | JUnit 5 `assertEquals`, AssertJ `isEqualTo` (opentest4j is always on the JUnit Platform's classpath), Truth | `isExpectedDefined()` and `isActualDefined()`, then `getExpected().getStringRepresentation()` / `getActual()…` |
-| `org.junit.ComparisonFailure` | JUnit 4 `assertEquals(String, String)` through the vintage engine | `getExpected()` / `getActual()`, by reflection: JUnit 4 may not be on the classpath |
-| Anything else | Hamcrest `assertThat`, `assertTrue`, custom assertions | No values, so no diff: only the message |
+| `org.junit.ComparisonFailure` | JUnit 4 `assertEquals(String, String)` through the vintage engine | **Deferred** (decided 2026-10-24): it needs JUnit 4 as a dependency of the runner's tests and of the fixture; JUnit 4 failures keep their message |
+| Anything else | Hamcrest `assertThat`, `fail()`, custom assertions | No values, so no diff: only the message |
 
-The string representation is the value's `toString()`, so two records or POJOs compare by their `toString()` output, as in IntelliJ.
+JUnit's own `assertTrue` does carry values (`expected: <true> but was: <false>`), so it gets a (trivial) diff too.
+
+A value that is text arrives as it is; anything else as JUnit represents it (an object's `toString()`, an array's elements), so two records or POJOs compare by their `toString()` output, as in IntelliJ.
+AssertJ hands over its own formatted representation instead of the raw value, so its strings arrive quoted (`"Alice"`); they are kept as they come, quotes on both sides of a diff being harmless.
+The runner reads opentest4j directly: it is a `provided` dependency, present in every JUnit Platform test run.
+Durations are measured with `System.nanoTime()`: the runner rides the user's test classpath and can't use `lathe-core`'s `Stopwatch`.
 The runner never parses `expected: <a> but was: <b>` out of the message: Microsoft's Java test extension does, and it breaks on multi-line strings (§13).
 The message itself is unchanged.
 
-**C. Container failures.**
-`ResultsListener` today ignores every container, so a failing `@BeforeAll`, a class initializer or a broken `@MethodSource` never reaches the client.
+**C. Container failures.** (Done in slice 2.)
+`ResultsListener` ignored every container, so a failing `@BeforeAll` or a broken `@MethodSource` never reached the client.
 The run then looks like "no result (exit 1)" and the actual error is lost.
 Spike S6 confirmed it: a class whose `@BeforeAll` throws ran with exit 1, no `lathe/testEvent` and an empty `testResults`; the error appeared only as plain text in the output.
-A failed or aborted container now produces a record with `methodName` empty and `positionId` = the class id.
+A failed or aborted class container now produces a record with `methodName` empty and `positionId` = the class id; a parameterized template that fails as a whole (its arguments couldn't be produced) produces one on its method.
 (`TestResult` relaxes its `methodName` check for that case.)
+A failing static initializer is not a class-level failure: JUnit initializes the class when it creates the test instance, inside a method's execution, so that method reports the `ExceptionInInitializerError` (found while building slice 2).
 
 **D. A started event and a closed stdin.**
 
@@ -208,7 +214,7 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    The limit: neotest needs a range for every position and discovery has none, so an unopened file's positions get a placeholder (the top of the file) until it is opened.
    Approximate method lines from the classes' line-number tables would close that gap; that is a later server addition.
 2. **Per-test output.** `lathe/testStarted` lets the adapter write each test's output to its own file, instead of every test opening the run's whole transcript.
-3. **Container failures.** A failing `@BeforeAll` or class initializer shows on the class with its real error, instead of every method reading "no result (exit 1)".
+3. **Container failures.** A failing `@BeforeAll` shows on the class with its real error, instead of every method reading "no result (exit 1)". (Since slice 2 the class node already shows it; marking the methods under it is this item.)
 4. **Expected/actual as a diff.** neotest has no diff view, so the adapter offers two, both from `expected`/`actual`:
    - **Inline**, always visible: the failure's short text gets a unified diff of the two values (Neovim's built-in diff function), highlighted as a diff.
      Multi-line values are diffed line by line; the inline diff is capped (a few dozen lines) and says how to see the rest.
@@ -434,9 +440,9 @@ This ports Neovim's `_save_target_for`.
 
 - Runner: discover mode lists a fixture's tests (nested, inherited, parameterized as one entry) without running them;
   records carry `durationMs`, `displayName` and a cut `stackTrace`;
-  `expected`/`actual` are present for a JUnit 5 `assertEquals`, an AssertJ `isEqualTo` and a JUnit 4 `ComparisonFailure` (vintage),
-  multi-line values arrive intact, and an `assertTrue` failure or a message that merely looks like `expected: <a> but was: <b>` carries none;
-  a failing `@BeforeAll` and a failing static initializer each produce a container record;
+  `expected`/`actual` are present for a JUnit 5 `assertEquals` and an AssertJ `isEqualTo`,
+  multi-line values arrive intact, and a `fail()` carries none;
+  a failing `@BeforeAll` produces a class record, a broken `@MethodSource` a record on its method, and a failing static initializer stays the method's failure;
   a started record precedes each method's result.
 - Server: `tests.modules` and `tests.discover` against the existing test workspaces, including a module without capture (`blockedReasons`);
   `tests.discover` answers from cache until the module's test classes change, then sends `lathe/testsChanged` once;
@@ -602,8 +608,8 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | Slice | Content | Status |
 |---|---|---|
 | 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | done (PR #43) |
-| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | built |
-| 2 | Richer results: B and C | |
+| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | built (PR #45) |
+| 2 | Richer results: B and C; JUnit 4 values deferred | built |
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations, structured stack frames (§3.4 items 3–6) | |
 | 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |
 | 5 | Surefire's filter (F), after its own design check | |

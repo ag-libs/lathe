@@ -1109,7 +1109,8 @@ local QF_TYPE = { failed = "E", skipped = "W", passed = "" }
 function M._results_qf_items(results, paths)
   local failures, others = {}, {}
   for _, tr in ipairs(results or {}) do
-    local id = tr.className .. "#" .. tr.methodName
+    -- A class's own failure (its @BeforeAll broke) has no method: named by the class alone.
+    local id = tr.methodName == "" and tr.className or (tr.className .. "#" .. tr.methodName)
     local failed = tr.status == "failed"
     local message = failed and tr.failureMessage and tr.failureMessage ~= "" and tr.failureMessage
       or nil

@@ -392,7 +392,20 @@ class WorkspaceSessionTest {
         LaunchOutcome.completed(
             0,
             List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
-            List.of(new TestResult("com.example.Foo", "bar", "", "passed", "", -1, null)));
+            List.of(
+                new TestResult(
+                    "com.example.Foo",
+                    "bar",
+                    "",
+                    "passed",
+                    "",
+                    -1,
+                    -1,
+                    "bar()",
+                    null,
+                    null,
+                    List.of(),
+                    null)));
 
     assertThat(WorkspaceSession.finishedOutcome(completed, null)).isSameAs(completed);
   }

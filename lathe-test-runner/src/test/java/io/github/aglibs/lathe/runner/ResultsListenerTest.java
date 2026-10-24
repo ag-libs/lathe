@@ -1,16 +1,25 @@
 package io.github.aglibs.lathe.runner;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import io.github.aglibs.lathe.core.Json;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -19,64 +28,126 @@ import org.junit.platform.launcher.core.LauncherFactory;
 final class ResultsListenerTest {
 
   @Test
-  void execute_mixedFixture_writesOneRecordPerMethod(@TempDir final Path dir) throws IOException {
-    final List<String> lines = runFixture(dir, MixedFixture.class);
-
-    assertThat(lines).hasSize(4);
-  }
-
-  @Test
-  void execute_passingMethod_recordsPassedNoFailureLine(@TempDir final Path dir)
+  void execute_mixedFixture_recordsEachMethodWithStatusMessageAndLine(@TempDir final Path dir)
       throws IOException {
-    final String line = lineFor(runFixture(dir, MixedFixture.class), "passing_test");
+    final List<JsonObject> records = run(dir, MixedFixture.class);
 
-    assertThat(line).contains("\"status\":\"passed\"").contains("\"failureLine\":-1");
+    assertThat(records).hasSize(4);
+    assertThat(recordFor(records, "passing_test").get("status").getAsString()).isEqualTo("passed");
+    assertThat(recordFor(records, "passing_test").get("failureLine").getAsInt()).isEqualTo(-1);
+    assertThat(recordFor(records, "disabled_test").get("status").getAsString())
+        .isEqualTo("skipped");
+    assertThat(recordFor(records, "aborted_test").get("status").getAsString()).isEqualTo("skipped");
+    final JsonObject failing = recordFor(records, "failing_test");
+    assertThat(failing.get("status").getAsString()).isEqualTo("failed");
+    assertThat(failing.get("failureMessage").getAsString()).contains("boom failure");
+    assertThat(failing.get("failureLine").getAsInt()).isPositive();
   }
 
+  // Duration, display name and a stack cut where JUnit called into the test.
   @Test
-  void execute_failingMethod_recordsFailedWithMessageAndLine(@TempDir final Path dir)
+  void execute_failingMethod_recordsDurationDisplayNameAndCutStack(@TempDir final Path dir)
       throws IOException {
-    final String line = lineFor(runFixture(dir, MixedFixture.class), "failing_test");
+    final JsonObject failing = recordFor(run(dir, MixedFixture.class), "failing_test");
 
-    assertThat(line).contains("\"status\":\"failed\"").contains("boom failure");
-    assertThat(failureLineOf(line)).isPositive();
+    assertThat(failing.get("durationMs").getAsLong()).isNotNegative();
+    assertThat(failing.get("displayName").getAsString()).isEqualTo("failing_test()");
+    final List<JsonObject> frames = objects(failing.getAsJsonArray("stackTrace"));
+    assertThat(frames).isNotEmpty();
+    assertThat(frames.get(0).get("className").getAsString())
+        .isEqualTo(MixedFixture.class.getName());
+    assertThat(frames.get(0).get("methodName").getAsString()).isEqualTo("failing_test");
+    assertThat(frames.get(0).get("fileName").getAsString()).isEqualTo("ResultsListenerTest.java");
+    assertThat(frames)
+        .extracting(frame -> frame.get("className").getAsString())
+        .noneMatch(className -> className.startsWith("org.junit.platform."))
+        .noneMatch(className -> className.startsWith("jdk.internal.reflect."));
   }
 
   @Test
-  void execute_disabledMethod_recordsSkipped(@TempDir final Path dir) throws IOException {
-    final String line = lineFor(runFixture(dir, MixedFixture.class), "disabled_test");
-
-    assertThat(line).contains("\"status\":\"skipped\"");
-  }
-
-  @Test
-  void execute_abortedMethod_recordsSkipped(@TempDir final Path dir) throws IOException {
-    final String line = lineFor(runFixture(dir, MixedFixture.class), "aborted_test");
-
-    assertThat(line).contains("\"status\":\"skipped\"");
-  }
-
-  @Test
-  void execute_parameterizedFixture_recordsInvocationsNotTheTemplateContainer(
+  void execute_parameterizedFixture_recordsEachInvocationNamedNotTheTemplate(
       @TempDir final Path dir) throws IOException {
-    final List<String> lines = runFixture(dir, ParameterizedFixture.class);
+    final List<JsonObject> records = run(dir, ParameterizedFixture.class);
 
-    final long paramRecords =
-        lines.stream().filter(line -> line.contains("\"methodName\":\"param_test\"")).count();
-    assertThat(paramRecords).isEqualTo(2);
-    assertThat(lines).hasSize(3);
+    assertThat(records).hasSize(3);
+    assertThat(records)
+        .filteredOn(record -> record.get("methodName").getAsString().equals("param_test"))
+        .extracting(record -> record.get("displayName").getAsString())
+        .containsExactly("[1] \"a\"", "[2] \"b\"");
+  }
+
+  // The values come from the failure itself, never from its message: a plain fail() has none.
+  @Test
+  void execute_comparisonFailures_recordExpectedAndActualOnlyWhenTheFailureHasThem(
+      @TempDir final Path dir) throws IOException {
+    final List<JsonObject> records = run(dir, ComparisonFixture.class);
+
+    assertThat(recordFor(records, "single_line").get("expected").getAsString()).isEqualTo("Alice");
+    assertThat(recordFor(records, "single_line").get("actual").getAsString()).isEqualTo("alice");
+    assertThat(recordFor(records, "multi_line").get("expected").getAsString())
+        .isEqualTo("one\ntwo");
+    assertThat(recordFor(records, "multi_line").get("actual").getAsString()).isEqualTo("one\nTWO");
+    // AssertJ hands over its own formatted representation, quotes included; kept as it comes.
+    assertThat(recordFor(records, "assertj").get("expected").getAsString()).isEqualTo("\"Alice\"");
+    assertThat(recordFor(records, "assertj").get("actual").getAsString()).isEqualTo("\"alice\"");
+    assertThat(recordFor(records, "no_values").has("expected")).isFalse();
+    assertThat(recordFor(records, "no_values").has("actual")).isFalse();
+  }
+
+  // A class whose @BeforeAll fails gets a record of its own (empty method name); a parameterized
+  // method whose arguments can't be produced gets one on the method. A failing static initializer
+  // is the method's failure: JUnit initializes the class when it creates the test instance.
+  @Test
+  void execute_containerFailures_recordTheClassOrTemplateThatFailed(@TempDir final Path dir)
+      throws IOException {
+    final JsonObject setup = single(run(dir, BrokenSetupFixture.class));
+    final JsonObject init = single(run(dir, BrokenInitFixture.class));
+    final JsonObject template = single(run(dir, BrokenTemplateFixture.class));
+
+    assertThat(setup.get("className").getAsString()).isEqualTo(BrokenSetupFixture.class.getName());
+    assertThat(setup.get("methodName").getAsString()).isEmpty();
+    assertThat(setup.get("status").getAsString()).isEqualTo("failed");
+    assertThat(setup.get("failureMessage").getAsString()).contains("setup exploded");
+    assertThat(setup.get("failureLine").getAsInt()).isPositive();
+    assertThat(init.get("methodName").getAsString()).isEqualTo("never_runs");
+    assertThat(init.get("status").getAsString()).isEqualTo("failed");
+    assertThat(init.get("failureMessage").getAsString()).contains("ExceptionInInitializerError");
+    assertThat(template.get("methodName").getAsString()).isEqualTo("broken_param");
+    assertThat(template.get("status").getAsString()).isEqualTo("failed");
   }
 
   @Test
-  void toJson_specialCharacters_escapedOnSingleLine() {
-    final var record =
-        new TestRecord("pkg.C", "m", "", "failed", "he said \"hi\"\nback\\slash\ttab", 7);
+  void toJson_specialCharactersAndOptionalValues_singleLineWithAbsentValuesLeftOut() {
+    final var frame = new TestRecord.Frame("pkg.C", "m", "C.java", 7);
+    final var withValues =
+        new TestRecord(
+            "pkg.C",
+            "m",
+            "",
+            "failed",
+            "he said \"hi\"\nback\\slash\ttab",
+            7,
+            12,
+            "m()",
+            "a\nb",
+            "a\nc",
+            List.of(frame));
+    final var withoutValues =
+        new TestRecord("pkg.C", "m", "", "passed", "", -1, 3, "m()", null, null, List.of());
 
-    final String json = ResultsListener.toJson(record);
+    final String json = ResultsListener.toJson(withValues);
+    final JsonObject parsed = Json.fromJson(json, JsonObject.class);
 
     assertThat(json).doesNotContain("\n", "\t");
-    assertThat(json).contains("\\\"hi\\\"").contains("\\nback\\\\slash\\ttab");
-    assertThat(json).contains("\"failureLine\":7");
+    assertThat(parsed.get("failureMessage").getAsString())
+        .isEqualTo("he said \"hi\"\nback\\slash\ttab");
+    assertThat(parsed.get("durationMs").getAsLong()).isEqualTo(12);
+    assertThat(parsed.get("expected").getAsString()).isEqualTo("a\nb");
+    assertThat(parsed.getAsJsonArray("stackTrace").get(0).getAsJsonObject().get("line").getAsInt())
+        .isEqualTo(7);
+    assertThat(ResultsListener.toJson(withoutValues))
+        .doesNotContain("\"expected\"", "\"actual\"")
+        .contains("\"stackTrace\":[]");
   }
 
   @Test
@@ -102,29 +173,32 @@ final class ResultsListenerTest {
     assertThat(ResultsListener.failureLine(null, "pkg.FooTest")).isEqualTo(-1);
   }
 
-  private static List<String> runFixture(final Path dir, final Class<?> fixture)
-      throws IOException {
-    final Path sink = dir.resolve("results.ndjson");
+  private static List<JsonObject> run(final Path dir, final Class<?> fixture) throws IOException {
+    final Path sink = dir.resolve("%s.ndjson".formatted(fixture.getSimpleName()));
     final var request =
         LauncherDiscoveryRequestBuilder.request()
             .selectors(DiscoverySelectors.selectClass(fixture))
             .build();
     LauncherFactory.create().execute(request, new ResultsListener(sink, System.err));
-    return Files.readAllLines(sink);
+    return Files.readAllLines(sink).stream()
+        .map(line -> Json.fromJson(line, JsonObject.class))
+        .toList();
   }
 
-  private static String lineFor(final List<String> lines, final String methodName) {
-    return lines.stream()
-        .filter(line -> line.contains("\"methodName\":\"%s\"".formatted(methodName)))
+  private static JsonObject recordFor(final List<JsonObject> records, final String methodName) {
+    return records.stream()
+        .filter(record -> record.get("methodName").getAsString().equals(methodName))
         .findFirst()
         .orElseThrow(() -> new AssertionError("no record for " + methodName));
   }
 
-  private static int failureLineOf(final String line) {
-    final String marker = "\"failureLine\":";
-    final int start = line.indexOf(marker) + marker.length();
-    final int end = line.indexOf('}', start);
-    return Integer.parseInt(line.substring(start, end));
+  private static JsonObject single(final List<JsonObject> records) {
+    assertThat(records).hasSize(1);
+    return records.get(0);
+  }
+
+  private static List<JsonObject> objects(final JsonArray array) {
+    return array.asList().stream().map(JsonElement::getAsJsonObject).toList();
   }
 }
 
@@ -156,4 +230,59 @@ final class ParameterizedFixture {
   @ParameterizedTest
   @ValueSource(strings = {"a", "b"})
   void param_test(final String value) {}
+}
+
+final class ComparisonFixture {
+
+  @Test
+  void single_line() {
+    assertEquals("Alice", "alice");
+  }
+
+  @Test
+  void multi_line() {
+    assertEquals("one\ntwo", "one\nTWO");
+  }
+
+  @Test
+  void assertj() {
+    assertThat("alice").isEqualTo("Alice");
+  }
+
+  @Test
+  void no_values() {
+    fail("no comparison");
+  }
+}
+
+final class BrokenSetupFixture {
+
+  @BeforeAll
+  static void setUp() {
+    throw new IllegalStateException("setup exploded");
+  }
+
+  @Test
+  void never_runs() {}
+}
+
+final class BrokenInitFixture {
+
+  private static final int VALUE = Integer.parseInt("not a number");
+
+  @Test
+  void never_runs() {
+    assertEquals(0, VALUE);
+  }
+}
+
+final class BrokenTemplateFixture {
+
+  static Stream<String> broken() {
+    throw new IllegalStateException("no arguments");
+  }
+
+  @ParameterizedTest
+  @MethodSource("broken")
+  void broken_param(final String value) {}
 }

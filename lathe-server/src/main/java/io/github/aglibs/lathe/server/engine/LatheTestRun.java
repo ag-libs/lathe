@@ -49,8 +49,10 @@ public record LatheTestRun(
         failures);
   }
 
+  // A class's own failure (its @BeforeAll broke) has no method, so it is named by the class alone.
   private static LatheTestFailure toFailure(final TestResult r) {
-    return new LatheTestFailure(
-        "%s#%s".formatted(r.className(), r.methodName()), r.failureMessage(), r.failureLine());
+    final String name =
+        r.methodName().isEmpty() ? r.className() : "%s#%s".formatted(r.className(), r.methodName());
+    return new LatheTestFailure(name, r.failureMessage(), r.failureLine());
   }
 }
