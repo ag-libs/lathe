@@ -454,7 +454,9 @@ None yet.
 ## WS-13 — A build file changed while no server ran is never detected
 
 **Status: documented.**
-Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon,
+through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
 
 ### Observed behaviour
 
@@ -464,13 +466,16 @@ No `[watcher] build files changed` line was logged and no sync was requested, so
 a mirror built for the old POM.
 The same edit made while the server runs is detected within one tick.
 
+Editor: a live POM edit raised the "Build files changed" sync prompt within 0.5 s; an edit made before
+the server started raised no prompt within 15 s, on all three workspaces.
+MCP: neither case yields a note, the live one because of MC-14.
+
 ### Cause
 
 `WorkspaceWatcher.updateBuildFiles` takes its fingerprint baseline (mtime and size) from the build
 files as they are at startup, so a change made before startup is part of the baseline.
 The startup pass checks sources against their compile stamps, but nothing compares build files against
 the state the last sync saw.
-It affects the editor and MCP alike.
 
 ### Fix direction
 
@@ -484,7 +489,9 @@ None yet.
 ## WS-14 — A deleted resource stays in the mirror
 
 **Status: documented.**
-Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard.
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard through
+MCP, and on all three test workspaces through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
 
 ### Observed behaviour
 
@@ -493,12 +500,14 @@ asserts `getClass().getResource("/latheprobe.txt") != null` passed through MCP `
 After the resource was deleted, the same test still passed, after waiting 8 s as well:
 `.lathe/<module>/test-classes/latheprobe.txt` was still there.
 
+Editor: the added resource was copied into the mirror within 1 s; after the delete the mirror copy was
+still there 15 s later, so the editor's test runs and the debugger see it too.
+
 ### Cause
 
 The pass copies changed resources (`WorkspaceSession.reconcileResources` → `copyIfStale`), but only
 copies; nothing removes the mirror copy of a resource whose source is gone, unlike classes, whose
 deleted sources are dropped in the pass's first step.
-It affects the editor's test runs, the debugger, and MCP alike.
 
 ### Fix direction
 
@@ -513,7 +522,8 @@ None yet.
 ## WS-15 — Annotation processors built in the reactor never run in-process
 
 **Status: documented.**
-Found by the external-change staleness probe (2026-10-24) on Helidon.
+**Affects: the editor and MCP, including the editor's own save.**
+Found by the external-change staleness probe (2026-10-24) on Helidon, through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
 
 ### Observed behaviour
 
@@ -525,6 +535,14 @@ The pass rewrote `AllowListConfigBlueprint.class`, but `AllowListConfig.java` in
 last sync, and the caller kept reporting `cannot find symbol` (also after 8 s).
 Removing the option again was handled correctly, because the stale builder has no such option either.
 
+Editor: the same external edit did not regenerate the builder within 15 s, and neither did an editor
+save of the blueprint (`didChange`, the file written, `didSave`): the mirror's `AllowListConfig.java`
+never gained the option, and an open dependent calling it kept `cannot find symbol`.
+So this is not only an external-change gap; editing a Helidon blueprint in the editor never updates
+its builder without a sync.
+[EG-052](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
+still holds.
+
 ### Cause
 
 The write sets `ANNOTATION_PROCESSOR_PATH` from `ModuleSourceConfig.remappedProcessorPath()`, which
@@ -534,7 +552,7 @@ That mirror holds the classes but not
 `codegen/apt/target/classes` because the build generates it (there is no
 `src/main/resources` in `codegen/apt`).
 javac finds no processor, so the write silently compiles without code generation.
-Processors from dependency jars are unaffected.
+Processors from dependency jars are not remapped, so they presumably still run (not re-verified here).
 
 ### Fix direction
 
@@ -550,13 +568,16 @@ None yet.
 ## WS-16 — A source whose content changes while its mtime is put back is not recompiled
 
 **Status: documented.**
-Found by the external-change staleness probe (2026-10-24) on all three test workspaces; an edge case.
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on all three test workspaces, through MCP and
+through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s); an edge case.
 
 ### Observed behaviour
 
 A source was changed and its previous mtime restored (as `cp -p`, `rsync -t`, or extracting an
 archive does).
 Dependents kept compiling against the old classes, also after 8 s.
+Editor: an open dependent kept its clean diagnostics for 10 s, and the mirror class kept the old method.
 
 ### Cause
 
@@ -858,6 +879,8 @@ Reproduced on all three test workspaces by the external-change staleness probe (
 an upstream method renamed outside the server, with a caller in another module.
 `get_diagnostics` on the caller reported `cannot find symbol`, then `verify_change` with no arguments
 answered "No new diagnostics — the changed files compile cleanly".
+MCP only: in the editor an open caller in the dependent module republished the `cannot find symbol`
+within 3–4 s of the same external change.
 
 ### Fix direction
 
@@ -1033,6 +1056,7 @@ None yet.
 ## MC-14 — A changed build file never yields "Sync required"
 
 **Status: documented.**
+**Affects: MCP only.** The editor raises its sync prompt for the same edit within 0.5 s.
 Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
 
 ### Observed behaviour
@@ -1066,6 +1090,7 @@ None yet.
 ## MC-15 — `search_symbols` and `find_implementations` miss a type added outside for a few seconds
 
 **Status: documented.**
+**Affects: MCP only.**
 Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
 
 ### Observed behaviour
@@ -1081,6 +1106,12 @@ A new type file was written outside the server, then queried at once:
 The pass had already written the class into the mirror (and `get_diagnostics`, `get_definition`,
 and `find_references` saw it at once), so only these two tools lag.
 An agent that creates a type and searches for it right away is told it does not exist.
+
+The editor server lags the same way, but there it is expected: `workspace/symbol` and
+`textDocument/implementation` caught up within 3–4 s of the external write, the latency of the
+reconcile tick that every external change has in the editor (an open dependent also took 3–8 s to
+republish).
+It is a gap only for MCP, which promises that answers reflect the disk at query time.
 
 ### Cause
 
