@@ -826,25 +826,3 @@ Accept a qualified name: match the simple name and filter by the package (or con
 None yet.
 
 ---
-
-## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines
-
-**Status: documented.**
-Found by the MCP-quality probes (2026-10-24) on Dropwizard.
-
-### Observed behaviour
-
-`search_symbols "Duration"` returned 50 symbols with a four-line source snippet each: 388 lines to
-find one class. `find_references` shows a seven-line snippet per reference, about 350 lines for
-`Duration.toMilliseconds`' 52 uses. Every line costs an agent context.
-
-### Fix direction
-
-One line per result by default (name, kind, package or file:line, and the line itself for a
-reference), with snippets only on request or for the first few results.
-
-### Regression targets
-
-None yet.
-
----

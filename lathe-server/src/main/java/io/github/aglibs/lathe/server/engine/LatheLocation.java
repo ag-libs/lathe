@@ -3,8 +3,9 @@ package io.github.aglibs.lathe.server.engine;
 import io.github.aglibs.validcheck.ValidCheck;
 import org.eclipse.lsp4j.Range;
 
-/** A navigation target plus a source snippet and where it resolved — code, not a bare file:line. */
-public record LatheLocation(String uri, Range range, Origin origin, String snippet) {
+// A navigation target with its source line and where it resolved: code, not a bare file:line. The
+// path is workspace-relative for a reactor or generated file, the URI for a dependency or the JDK.
+public record LatheLocation(String uri, String path, Range range, Origin origin, String snippet) {
 
   /** Where a target resolved — the differentiator over a text search that cannot follow these. */
   public enum Origin {
@@ -16,6 +17,7 @@ public record LatheLocation(String uri, Range range, Origin origin, String snipp
   public LatheLocation {
     ValidCheck.check()
         .notNull(uri, "uri")
+        .notNull(path, "path")
         .notNull(range, "range")
         .notNull(origin, "origin")
         .notNull(snippet, "snippet")

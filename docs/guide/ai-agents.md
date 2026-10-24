@@ -95,8 +95,10 @@ authority.
 
 ## The tools
 
-Every located result carries a source snippet and an `origin` (reactor / dependency / JDK / generated),
-never a bare `file:line`.
+Every located result is one line, `path:line: code`, as grep prints it: the path is relative to the
+workspace, and a result outside the reactor is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
+its URI) or `[GENERATED]`.
+The structured result carries the same, with the full `uri` and `origin`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|

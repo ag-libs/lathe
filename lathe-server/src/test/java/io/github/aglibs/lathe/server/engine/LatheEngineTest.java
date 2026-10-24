@@ -75,7 +75,7 @@ class LatheEngineTest {
   }
 
   @Test
-  void definition_crossFileInModule_resolvesTargetWithSnippet() throws Exception {
+  void definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine() throws Exception {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
@@ -87,7 +87,8 @@ class LatheEngineTest {
     final LatheLocation target = targets.get(0);
     assertThat(target.uri()).endsWith("Callee.java");
     assertThat(target.origin()).isEqualTo(LatheLocation.Origin.REACTOR);
-    assertThat(target.snippet()).contains("void greet");
+    assertThat(target.path()).isEqualTo(FileUtil.slashed(tmp.relativize(fx.callee())));
+    assertThat(target.snippet()).as("the target line alone").isEqualTo("void greet() {}");
   }
 
   @Test

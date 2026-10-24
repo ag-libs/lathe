@@ -113,10 +113,10 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
         .toList();
   }
 
-  // A module Maven found up to date compiled nothing, so its stamps lack the content the build
-  // compiled (a fresh .lathe, or one an older Lathe wrote), and every edit to it later reads as
-  // unverified. Its sources hold that content now, for a module the build completed. Best-effort,
-  // like the late outputs.
+  // A module Maven found up to date compiled nothing, so its stamps lack what the build compiled
+  // (a fresh .lathe, or one an older Lathe wrote) and a touch or a revert there reads as a change.
+  // For a module the build completed, its sources hold that content now. Best-effort, like the
+  // late outputs.
   static void recordBuilt(final Path workspaceRoot, final List<Path> moduleBasedirs) {
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     moduleBasedirs.forEach(

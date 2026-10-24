@@ -33,7 +33,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -69,7 +68,6 @@ public final class LatheEngine {
   private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
-  private static final int SNIPPET_CONTEXT_LINES = 3;
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -277,8 +275,9 @@ public final class LatheEngine {
             .map(
                 entry -> {
                   final String uri = moves.getOrDefault(entry.getKey(), entry.getKey());
+                  final var path = LatheUri.toPath(uri);
                   return new LatheFileEdit(
-                      uri, origin(LatheUri.toPath(uri)), entry.getValue().size());
+                      uri, displayPath(path, uri), origin(path), entry.getValue().size());
                 })
             .sorted(Comparator.comparing(LatheFileEdit::uri))
             .toList();
@@ -574,6 +573,7 @@ public final class LatheEngine {
     final var targetPath = LatheUri.toPath(location.getUri());
     return new LatheLocation(
         location.getUri(),
+        displayPath(targetPath, location.getUri()),
         location.getRange(),
         origin(targetPath),
         snippet(targetPath, location.getRange()));
@@ -591,14 +591,19 @@ public final class LatheEngine {
     return LatheLocation.Origin.EXTERNAL;
   }
 
+  // A dependency or JDK source has no workspace path, so it keeps its URI.
+  private String displayPath(final Path target, final String uri) {
+    return target.startsWith(workspaceRoot)
+        ? FileUtil.slashed(workspaceRoot.relativize(target))
+        : uri;
+  }
+
+  // The target line alone: an agent reads the file when it needs more, and every extra line of a
+  // long reference list costs it context.
   private static String snippet(final Path file, final Range range) {
     final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
     final int target = range.getStart().getLine();
-    final int from = Math.max(0, target - SNIPPET_CONTEXT_LINES);
-    final int to = Math.min(lines.size() - 1, target + SNIPPET_CONTEXT_LINES);
-    return IntStream.rangeClosed(from, to)
-        .mapToObj(i -> "%s%d  %s".formatted(i == target ? "> " : "  ", i + 1, lines.get(i)))
-        .collect(Collectors.joining(System.lineSeparator()));
+    return target < lines.size() ? lines.get(target).strip() : "";
   }
 
   private static <T> T await(final CompletableFuture<T> future) {

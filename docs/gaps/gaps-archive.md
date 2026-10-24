@@ -10123,6 +10123,38 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+`search_symbols "Duration"` returned 50 symbols with a source snippet of up to seven lines each: 388 lines to
+find one class.
+`find_references` showed the same snippet per reference, about 350 lines for
+`Duration.toMilliseconds`' 52 uses.
+Every line costs an agent context.
+
+### Fix
+
+Every located result is one line in grep's form, `path:line: code`, which agents already read.
+The engine's snippet is the target line alone, and `LatheLocation` and `LatheFileEdit` carry a
+`path` beside the URI: workspace-relative for reactor and generated files, the URI for a dependency or
+the JDK, which have no workspace path.
+Only results outside the reactor are tagged (`[EXTERNAL]`, `[GENERATED]`).
+A symbol is its name, kind and container followed by `path:line`; a rename lists each file by its path.
+This covers references, implementations, definitions, call hierarchies and the impact analysis's
+override family alike, since all of them render through one line.
+An agent that needs the surrounding code reads the file at that line.
+
+### Regression targets
+
+- `LatheEngineTest.definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine`
+- `LatheMcpToolsTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`
+
+---
+
 ## MC-17 — `verify_change` reports unchanged files' old warnings as results, and does not lead with errors — done
 
 **Status: done — Target: next**

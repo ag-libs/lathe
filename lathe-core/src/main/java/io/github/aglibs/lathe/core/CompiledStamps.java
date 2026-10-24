@@ -41,9 +41,8 @@ public final class CompiledStamps {
         stampsPath(moduleDir, sourceTree));
   }
 
-  // A build that found the tree up to date compiled nothing, so the compile never recorded what it
-  // compiled: every source's current content is that, for a tree the build completed. Its mtimes
-  // stay.
+  // A build that found the tree up to date compiled nothing, so nothing recorded what was compiled:
+  // for a tree the build completed, that is each source's current content. The mtimes stay.
   public static void recordBuiltIfMissing(final Path moduleDir, final ModuleConfigData config)
       throws IOException {
     final CompiledStampsData data = read(moduleDir, config.sourceTree());

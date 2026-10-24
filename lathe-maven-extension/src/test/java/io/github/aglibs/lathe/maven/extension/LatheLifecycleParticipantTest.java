@@ -168,9 +168,8 @@ class LatheLifecycleParticipantTest {
     assertThat(lockFile(latheDir)).doesNotExist();
   }
 
-  // Maven found app up to date and compiled nothing, so its stamps lack what the build compiled;
-  // lib
-  // has its record from a compile; docs has no mirror.
+  // Maven found app up to date, so its stamps lack what the build compiled; lib has its record from
+  // a compile; docs has no mirror.
   @Test
   void recordBuilt_moduleWithoutABuiltRecord_recordsItsSourcesAndKeepsAnExistingRecord(
       @TempDir final Path root) throws IOException {

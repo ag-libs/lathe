@@ -108,8 +108,8 @@ final class LatheMcpTools {
             .description(
                 """
                 Resolve the symbol at a position to its definition — across modules and into \
-                dependency, JDK, and generated sources — returning each target with a source \
-                snippet, not just a file:line.\
+                dependency, JDK, and generated sources — returning each target as \
+                `path:line: code`, its source line included.\
                 """)
             .build();
     return SyncToolSpecification.builder()
@@ -139,7 +139,7 @@ final class LatheMcpTools {
                 """
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
-                modules, and returns each use with a source snippet. It finds uses a plain grep \
+                modules, and returns each use as one `path:line: code` line. It finds uses a plain grep \
                 misses or misattributes — a symbol reached through a variable, or one of several \
                 overloads that share a name — and excludes unrelated symbols that merely share the \
                 name, so you need not re-check with grep. Use before changing or removing a symbol, \
@@ -246,7 +246,7 @@ final class LatheMcpTools {
                 """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
                 whole reactor — javac-accurate, following the real call graph (resolving overrides \
-                and cross-module edges) with a snippet per call. Use to scope the impact of a \
+                and cross-module edges), one `path:line: code` line per call. Use to scope the impact of a \
                 change; text search cannot follow calls.\
                 """)
             .build();
@@ -301,7 +301,7 @@ final class LatheMcpTools {
             .description(
                 """
                 Find a type by name across the whole reactor, its dependencies, and the \
-                JDK — returning each with its kind, container, and a declaration snippet. Use to \
+                JDK — returning each with its kind, container, and `path:line`. Use to \
                 locate a type when you know its name but not its file.\
                 """)
             .build();
@@ -331,7 +331,7 @@ final class LatheMcpTools {
             .description(
                 """
                 Find the implementations of the interface — or the overrides of the method — at a \
-                position, across the whole reactor, javac-accurate and with a snippet each. This is \
+                position, across the whole reactor, javac-accurate, one `path:line: code` line each. This is \
                 the "who implements X / what overrides this" question text search cannot answer: it \
                 follows the type hierarchy across modules and includes anonymous and nested \
                 implementers a name grep cannot find.\
@@ -758,8 +758,8 @@ final class LatheMcpTools {
 
   private static String symbolLine(final LatheSymbol symbol) {
     final String where = symbol.container().isBlank() ? "" : " — %s".formatted(symbol.container());
-    return "%s (%s)%s%n%s"
-        .formatted(symbol.name(), symbol.kind(), where, symbol.location().snippet());
+    return "%s (%s)%s  %s"
+        .formatted(symbol.name(), symbol.kind(), where, position(symbol.location()));
   }
 
   private static Map<String, Object> symbolMap(final LatheSymbol symbol) {
@@ -774,8 +774,7 @@ final class LatheMcpTools {
   }
 
   private static String callLine(final String arrow, final LatheCall call) {
-    return "%s %s [%s]%n%s"
-        .formatted(arrow, call.name(), call.location().origin(), call.location().snippet());
+    return "%s %s  %s".formatted(arrow, call.name(), locationLine(call.location()));
   }
 
   private static Map<String, Object> callMap(final LatheCall call) {
@@ -1007,8 +1006,22 @@ final class LatheMcpTools {
         .collect(Collectors.joining(System.lineSeparator()));
   }
 
-  private static String locationLine(final LatheLocation location) {
-    return "→ %s [%s]%n%s".formatted(location.uri(), location.origin(), location.snippet());
+  // grep-style, the form an agent already reads: one line per location.
+  static String locationLine(final LatheLocation location) {
+    return "%s: %s".formatted(position(location), location.snippet());
+  }
+
+  private static String position(final LatheLocation location) {
+    return "%s:%d%s"
+        .formatted(
+            location.path(),
+            location.range().getStart().getLine() + 1,
+            originTag(location.origin()));
+  }
+
+  // Most answers are reactor code, so only the exceptions are tagged.
+  private static String originTag(final LatheLocation.Origin origin) {
+    return origin == LatheLocation.Origin.REACTOR ? "" : " [%s]".formatted(origin);
   }
 
   private static CallToolResult result(
@@ -1051,7 +1064,7 @@ final class LatheMcpTools {
   }
 
   private static String fileEditLine(final LatheFileEdit f) {
-    return "  %s [%s] — %d edit(s)".formatted(f.uri(), f.origin(), f.editCount());
+    return "  %s%s — %d edit(s)".formatted(f.path(), originTag(f.origin()), f.editCount());
   }
 
   private static Map<String, Object> fileEditMap(final LatheFileEdit f) {

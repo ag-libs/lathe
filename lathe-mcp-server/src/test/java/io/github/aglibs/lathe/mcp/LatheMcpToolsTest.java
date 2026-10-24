@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.json.McpJsonDefaults;
@@ -18,6 +19,8 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -261,5 +264,30 @@ class LatheMcpToolsTest {
     assertThat(LatheMcpTools.verifyHeadline(2, 1))
         .isEqualTo("2 error(s); 1 warning(s) in the changed files.");
     assertThat(LatheMcpTools.verifyHeadline(3, 0)).isEqualTo("3 error(s).");
+  }
+
+  // A reactor file carries no tag (most answers are reactor code); anything else says where it is.
+  @Test
+  void locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor() {
+    final var line = new Range(new Position(411, 8), new Position(411, 20));
+
+    assertThat(
+            LatheMcpTools.locationLine(
+                new LatheLocation(
+                    "file:///ws/app/src/main/java/App.java",
+                    "app/src/main/java/App.java",
+                    line,
+                    LatheLocation.Origin.REACTOR,
+                    "client.connect();")))
+        .isEqualTo("app/src/main/java/App.java:412: client.connect();");
+    assertThat(
+            LatheMcpTools.locationLine(
+                new LatheLocation(
+                    "jar:file:///repo/lib-sources.jar!/Lib.java",
+                    "jar:file:///repo/lib-sources.jar!/Lib.java",
+                    line,
+                    LatheLocation.Origin.EXTERNAL,
+                    "void connect() {")))
+        .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412 [EXTERNAL]: void connect() {");
   }
 }
