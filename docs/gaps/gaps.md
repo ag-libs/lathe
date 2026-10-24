@@ -419,6 +419,34 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
+## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
+
+**Status: documented.**
+**Affects: the editor and MCP.**
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+An MCP session on Helidon started at 752 MB RSS; three `verify_change` calls on `GenericType`
+(235–311 caller files in 36–60 modules each) took it to 9.6 GB.
+The launchers pass no `-Xmx`, so on a 60 GB machine the default maximum heap is about 15 GB, and the
+heap grows rather than collects.
+The same workload under `LATHE_JVM_OPTS=-Xmx2g` ran at the same speed (5.5–11 s per call) and stayed
+at about 2.6 GB, so most of the growth is uncollected garbage, not memory Lathe holds.
+An editor server and an MCP server per agent, all day, add up.
+
+### Fix direction
+
+Give the launchers a default heap policy: a cap (absolute, or `-XX:MaxRAMPercentage`), and G1's
+periodic collection (`-XX:G1PeriodicGCInterval`) so an idle server returns memory; keep
+`LATHE_JVM_OPTS` as the override. Measure the cap against the largest probes first.
+Related: [EG-058](#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session)
+(sessions never released), which an uncapped `verify_change` exercises more than before.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Test Execution Gaps (TE)
@@ -788,6 +816,97 @@ imports and stack traces.
 ### Fix direction
 
 Accept a qualified name: match the simple name and filter by the package (or containing type).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-16 — `verify_change` has no record of what the build compiled for modules Maven left untouched
+
+**Status: documented.**
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+On Helidon, `common/common` had no `built` entries in its compile stamps: the last sync found the
+module up to date, so Maven did not compile it and the compiler shim, which records `built`, never ran
+there. Without that record a source only touched (same content) reads as a change: `verify_change`
+named 211 dependent modules and suggested a full sync, and a full revert there still reads as a
+change ([MC-13](gaps-archive.md#mc-13--verify_change-still-advises-a-sync-after-a-change-has-been-fully-reverted--done)
+works only where Maven recompiled since).
+
+### Fix direction
+
+At the end of a build, record `built` for every tree that lacks it: Maven compiled nothing there
+because every source was older than its classes, so each source's current content is what was
+compiled. The extension's end-of-build hook already walks every module's mirror.
+
+### Regression targets
+
+None yet.
+
+## MC-17 — `verify_change` reports unchanged files' old warnings as results, and does not lead with errors
+
+**Status: documented.**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard and Helidon.
+
+### Observed behaviour
+
+- After a correct rename of `Duration.toMilliseconds` on Dropwizard, `verify_change` answered
+  "5 diagnostic(s) after recompile", all pre-existing Jetty deprecation warnings in callers the rename
+  did not create.
+- After a deliberate type error, it answered "6 diagnostic(s)" with the one error listed between those
+  warnings; the headline does not say "1 error".
+- On Helidon every call, a no-op included, answered "7 diagnostic(s)": `unchecked` warnings in callers.
+
+An agent reads the count as something it caused and must fix.
+
+### Fix direction
+
+Lead with errors ("1 error" / "no errors"), list them first, and report warnings only for the files
+that changed, not for callers checked for breakage.
+
+### Regression targets
+
+None yet.
+
+## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines
+
+**Status: documented.**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+`search_symbols "Duration"` returned 50 symbols with a four-line source snippet each: 388 lines to
+find one class. `find_references` shows a seven-line snippet per reference, about 350 lines for
+`Duration.toMilliseconds`' 52 uses. Every line costs an agent context.
+
+### Fix direction
+
+One line per result by default (name, kind, package or file:line, and the line itself for a
+reference), with snippets only on request or for the first few results.
+
+### Regression targets
+
+None yet.
+
+## MC-19 — `verify_change`'s sync suggestion reads as required even when every caller was checked
+
+**Status: documented.**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+After fixing one caller in `dropwizard-core`, with every caller checked clean, `verify_change` ended
+with "18 module(s) depend on your change …; to build them fully, run: `.lathe/lathe-sync.sh` …(18
+modules)". Agents tend to run the commands they are given, so a clean check still costs a long build.
+
+### Fix direction
+
+Say the in-process check is complete and the build optional when every caller compiled clean, and
+recommend the sync only when something could not be checked (a deferral, a "Not compiled" file).
 
 ### Regression targets
 
