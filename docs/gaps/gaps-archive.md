@@ -9989,6 +9989,57 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-15 — `search_symbols` and `find_implementations` miss a type added outside for a few seconds — done
+
+**Status: done — Target: next.**
+**Affects: MCP only.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A new type file was written outside the server, then queried at once:
+
+| Query | First answer | 3 s later |
+|---|---|---|
+| `search_symbols LatheProbeType` | "No symbols matching" | found |
+| `search_symbols` for a type just renamed by renaming its file | "No symbols matching" | found |
+| `find_implementations` on an interface, with a new implementing class | the old list | includes it |
+
+The pass had already written the class into the mirror (and `get_diagnostics`, `get_definition`,
+and `find_references` saw it at once), so only these two tools lag.
+An agent that creates a type and searches for it right away is told it does not exist.
+
+The editor server lags the same way, but there it is expected: `workspace/symbol` and
+`textDocument/implementation` caught up within 3–4 s of the external write, the latency of the
+reconcile tick that every external change has in the editor (an open dependent also took 3–8 s to
+republish).
+It is a gap only for MCP, which promises that answers reflect the disk at query time.
+
+### Cause
+
+The [one-pass design](../done/lathe-recompile-simplification.md#threads-and-state) rebuilds the
+reactor type index after the pass on a pooled thread; the engine waits for the pass
+(`reconcileForVerify`) but not for that rebuild.
+
+### Fix
+
+`rebuildReactorIndex` keeps a future (`reactorIndexRebuilt`) completed on the session thread once its
+rebuild is applied or superseded, and the engine's freshen step (`reconcileForVerify`) waits for it
+after the pass.
+The wait is chained through the session thread (`thenComposeAsync(…, worker::execute)`): a pass that
+ran as another's follow-up completes the caller's future before its own `endPass`, which starts the
+rebuild, so reading the future right in that callback would see the previous one.
+The failure was deterministic, not a narrow race: the probe's "3 s" was its retry interval.
+The editor keeps the non-blocking rebuild.
+
+### Regression targets
+
+Fails without the wait:
+
+- `LatheEngineTest.searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery`
+
+---
+
 ## MC-14 — A changed build file never yields "Sync required" — done
 
 **Status: done — Target: next.**

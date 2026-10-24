@@ -203,6 +203,9 @@ final class WorkspaceSession {
   private final Set<Path> refreshScope = new HashSet<>();
   private boolean reactorIndexStale;
   private long reactorIndexBuilds;
+  // Done once the last rebuild is applied (or superseded): MCP answers wait for it, so a type the
+  // pass just wrote is already searchable.
+  private CompletableFuture<Void> reactorIndexRebuilt = CompletableFuture.completedFuture(null);
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
   // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
@@ -3078,6 +3081,8 @@ final class WorkspaceSession {
     final WorkspaceTypeIndex base = typeIndex;
     final List<List<TypeIndexEntry>> shards = List.copyOf(reactorShards.values());
     final long build = ++reactorIndexBuilds;
+    final var rebuilt = new CompletableFuture<Void>();
+    reactorIndexRebuilt = rebuilt;
     CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
         .whenComplete(
             (index, error) ->
@@ -3088,6 +3093,8 @@ final class WorkspaceSession {
                       } else if (typeIndex == base && build == reactorIndexBuilds) {
                         typeIndex = index;
                       }
+
+                      rebuilt.complete(null);
                     }));
   }
 
@@ -3516,7 +3523,12 @@ final class WorkspaceSession {
         buildFilesNotificationPending
             ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
             : ReconcileOutcome.DeferReason.NONE;
-    return requestPass(true).thenApply(stale -> new ReconcileOutcome(stale, deferral));
+    // On the worker after the pass's own completion chain, which starts the index rebuild.
+    return requestPass(true)
+        .thenComposeAsync(
+            stale ->
+                reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
+            worker::execute);
   }
 
   List<Path> takeWrittenSinceVerify() {

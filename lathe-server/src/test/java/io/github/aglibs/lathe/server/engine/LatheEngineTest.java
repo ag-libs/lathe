@@ -210,6 +210,37 @@ class LatheEngineTest {
   }
 
   @Test
+  void searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery()
+      throws Exception {
+    final String ifaceSource = "package com.example;\ninterface Greeter {\n  void greet();\n}\n";
+    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
+    final Path impl =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/EnGreeter.java",
+            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    stampModule(iface, impl);
+    engine = new LatheEngine(tmp);
+    assertThat(engine.searchSymbols("FrGreeter", 50)).isEmpty();
+
+    // An agent writes a new implementation with its own file tool, then queries at once.
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/FrGreeter.java",
+        "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
+
+    assertThat(engine.searchSymbols("FrGreeter", 50))
+        .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
+    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
+    assertThat(
+            engine
+                .findImplementations(iface, pos.getLine(), pos.getCharacter(), 50)
+                .implementations())
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("FrGreeter.java"));
+  }
+
+  @Test
   void searchSymbols_byName_findsReactorType() throws Exception {
     greetFixture();
     engine = new LatheEngine(tmp);
