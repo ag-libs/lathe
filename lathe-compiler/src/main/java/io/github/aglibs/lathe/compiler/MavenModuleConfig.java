@@ -1,47 +1,40 @@
 package io.github.aglibs.lathe.compiler;
 
-import io.github.aglibs.lathe.core.Json;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
-import java.io.IOException;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
 
-final class ParamsWriter {
+// The lsp-params record for one maven-compiler-plugin compile, read off its Plexus configuration.
+final class MavenModuleConfig {
 
-  private ParamsWriter() {}
+  private MavenModuleConfig() {}
 
-  static void write(final CompilerConfiguration config, final Path latheModuleDir)
-      throws IOException {
-    final String sourceTree = LatheCompiler.sourceTree(config);
+  static ModuleConfigData of(final CompilerConfiguration config) {
     final var genSources = config.getGeneratedSourcesDirectory();
-    final var moduleConfig =
-        new ModuleConfigData(
-            sourceTree,
-            config.getOutputLocation(),
-            genSources != null ? genSources.toString() : null,
-            nullToEmpty(config.getSourceLocations()),
-            nullToEmpty(config.getClasspathEntries()),
-            nullToEmpty(config.getModulepathEntries()),
-            nullToEmpty(config.getProcessorPathEntries()),
-            config.getReleaseVersion(),
-            config.getSourceEncoding() != null ? config.getSourceEncoding() : "UTF-8",
-            config.isParameters(),
-            enablePreview(config),
-            config.getProc(),
-            compilerArgs(config),
-            AnalysisMode.CLASSPATH,
-            false);
-    Json.write(moduleConfig, latheModuleDir.resolve(LatheLayout.paramsFileName(sourceTree)));
+    return new ModuleConfigData(
+        LatheCompiler.sourceTree(config),
+        config.getOutputLocation(),
+        genSources != null ? genSources.toString() : null,
+        nullToEmpty(config.getSourceLocations()),
+        nullToEmpty(config.getClasspathEntries()),
+        nullToEmpty(config.getModulepathEntries()),
+        nullToEmpty(config.getProcessorPathEntries()),
+        config.getReleaseVersion(),
+        config.getSourceEncoding() != null ? config.getSourceEncoding() : "UTF-8",
+        config.isParameters(),
+        enablePreview(config),
+        config.getProc(),
+        compilerArgs(config),
+        AnalysisMode.CLASSPATH,
+        false);
   }
 
   private static List<String> compilerArgs(final CompilerConfiguration config) {
     return config.getCustomCompilerArgumentsEntries().stream()
-        .flatMap(ParamsWriter::streamCompilerArg)
+        .flatMap(MavenModuleConfig::streamCompilerArg)
         .toList();
   }
 

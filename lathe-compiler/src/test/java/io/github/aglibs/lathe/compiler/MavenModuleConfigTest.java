@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.install.CompileCapture;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -12,7 +13,7 @@ import org.codehaus.plexus.compiler.CompilerConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class ParamsWriterTest {
+class MavenModuleConfigTest {
 
   @TempDir Path tmp;
 
@@ -31,7 +32,7 @@ class ParamsWriterTest {
     config.setSourceEncoding("UTF-8");
     config.setReleaseVersion("25");
 
-    ParamsWriter.write(config, latheModuleDir);
+    CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
     final var result =
         Json.read(
@@ -56,7 +57,7 @@ class ParamsWriterTest {
     final String key = LatheLayout.Maven.treeProperty(outputDir.toString());
     System.setProperty(key, LatheLayout.CLASSES_DIR);
     try {
-      ParamsWriter.write(config, latheModuleDir);
+      CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
       final var result =
           Json.read(
@@ -80,7 +81,7 @@ class ParamsWriterTest {
     config.setWorkingDirectory(moduleRoot.toFile());
     config.setOutputLocation(moduleRoot.resolve("target/classes").toString());
 
-    ParamsWriter.write(config, latheModuleDir);
+    CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
     final var result =
         Json.read(
@@ -105,7 +106,7 @@ class ParamsWriterTest {
     config.addClasspathEntry("/path/to/dep-b.jar");
     config.addClasspathEntry("/path/to/dep-c.jar");
 
-    ParamsWriter.write(config, latheModuleDir);
+    CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
     final var result =
         Json.read(
@@ -126,7 +127,7 @@ class ParamsWriterTest {
     config.addCompilerCustomArgument("--module-version", "27.0.0-SNAPSHOT");
     config.addCompilerCustomArgument("-Werror", null);
 
-    ParamsWriter.write(config, latheModuleDir);
+    CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
     final var result =
         Json.read(
@@ -147,7 +148,7 @@ class ParamsWriterTest {
     config.addClasspathEntry("/b.jar");
     config.addClasspathEntry("/a.jar");
 
-    ParamsWriter.write(config, latheModuleDir);
+    CompileCapture.writeParams(latheModuleDir, MavenModuleConfig.of(config));
 
     final var jsonFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
     assertThat(Files.exists(jsonFile)).isTrue();

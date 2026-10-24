@@ -1,19 +1,15 @@
 package io.github.aglibs.lathe.compiler;
 
-import io.github.aglibs.lathe.core.CompiledStamps;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.install.CompileCapture;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import org.codehaus.plexus.compiler.Compiler;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
 import org.codehaus.plexus.compiler.CompilerException;
@@ -111,7 +107,8 @@ public final class LatheCompiler implements Compiler {
       final CompilerResult result) {
     final var sw = Stopwatch.start();
     try {
-      ParamsWriter.write(config, moduleDir);
+      final ModuleConfigData moduleConfig = MavenModuleConfig.of(config);
+      CompileCapture.writeParams(moduleDir, moduleConfig);
       // Maven empties its output before a full recompile, so a failed one leaves nothing to mirror:
       // keep the last good capture and stamps, so changed sources stay stale for the server.
       if (!result.isSuccess()) {
@@ -125,12 +122,7 @@ public final class LatheCompiler implements Compiler {
         return;
       }
 
-      final String sourceTree = sourceTree(config);
-      FileUtil.replaceDir(Path.of(config.getOutputLocation()), moduleDir.resolve(sourceTree));
-      mirrorGeneratedSources(config, moduleDir);
-
-      writeCompiledStamps(config, moduleDir, sourceTree);
-
+      CompileCapture.mirror(moduleDir, moduleConfig);
       LOG.info(
           "[lathe] {} {} capture complete {}ms",
           moduleRel,
@@ -141,20 +133,6 @@ public final class LatheCompiler implements Compiler {
     }
   }
 
-  // Mirror the compile's annotation-processor output into the module's .lathe dir, to a
-  // scope-specific target so the test compile does not overwrite the main compile's sources.
-  static void mirrorGeneratedSources(final CompilerConfiguration config, final Path moduleDir)
-      throws IOException {
-    final var genSources = config.getGeneratedSourcesDirectory();
-    if (genSources == null || !Files.isDirectory(genSources.toPath())) {
-      return;
-    }
-
-    FileUtil.replaceDir(
-        genSources.toPath(),
-        moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree(config))));
-  }
-
   // The compile's scope as the extension declared it for this output directory; without the
   // extension (or for an output that is neither the main nor the test one), the directory's leaf.
   static String sourceTree(final CompilerConfiguration config) {
@@ -162,39 +140,6 @@ public final class LatheCompiler implements Compiler {
     return System.getProperty(
         LatheLayout.Maven.treeProperty(outputLocation),
         Path.of(outputLocation).getFileName().toString());
-  }
-
-  // A compile stamp per source (root-relative path -> mtime), excluding the annotation-processor
-  // output (the scan skips it too, and its files could collide with real sources on their key).
-  static void writeCompiledStamps(
-      final CompilerConfiguration config, final Path moduleDir, final String sourceTree)
-      throws IOException {
-    final var genSources = config.getGeneratedSourcesDirectory();
-    final Path genRoot = genSources != null ? genSources.toPath().normalize() : null;
-    final var stamps = new HashMap<Path, Long>();
-    final List<String> locations = config.getSourceLocations();
-    for (final var location : locations != null ? locations : List.<String>of()) {
-      final var root = Path.of(location);
-      if (root.normalize().equals(genRoot) || !Files.isDirectory(root)) {
-        continue;
-      }
-
-      try (final var walk = Files.walk(root)) {
-        stamps.putAll(
-            walk.filter(FileUtil::isJavaFile)
-                .collect(Collectors.toMap(root::relativize, LatheCompiler::mtime)));
-      }
-    }
-
-    CompiledStamps.writeAll(moduleDir, sourceTree, stamps);
-  }
-
-  private static long mtime(final Path path) {
-    try {
-      return Files.getLastModifiedTime(path).toMillis();
-    } catch (final IOException e) {
-      return 0L;
-    }
   }
 
   private Optional<LatheContext> resolveLatheContext(final CompilerConfiguration config) {

@@ -19,6 +19,11 @@
       <artifactId>lathe-core</artifactId>
     </dependency>
     <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-install</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.codehaus.plexus</groupId>
       <artifactId>plexus-compiler-api</artifactId>
     </dependency>

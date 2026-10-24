@@ -55,7 +55,7 @@ Which file answers which question:
 | `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
 | `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
 
-Build order: `lathe-core` → `lathe-compiler` → `lathe-server` → `lathe-install` → `lathe-install-maven` →
+Build order: `lathe-core` → `lathe-install` → `lathe-compiler` → `lathe-server` → `lathe-install-maven` →
 `lathe-maven-plugin`.
 
 `lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and

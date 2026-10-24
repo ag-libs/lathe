@@ -164,7 +164,7 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 | Formatter jars and `style.json` | *writing moved to `lathe-install` (slice 0c-5):* `StyleWriter`. *Still in `lathe-maven-plugin`:* `MavenStyle` (detection from the Spotless POM) and `FormatterResolver` | Spotless POM reading and Aether resolution stay Maven-only. `FormatterResolver`'s Spotless defaults and Eclipse lockfile jars may serve Gradle too; they move in Gradle slice 2, once Gradle's formatter flow gives them a second caller |
 | `jvm.args` | *writing and flag parsing moved to `lathe-install` (slice 0c-5):* `JvmArgsWriter` | *none left;* collecting the flags stays per tool (`MavenJvmArgs`: compiler `-J` args, `.mvn/jvm.config`, `MAVEN_OPTS`) |
 | Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`, `LauncherCopier`) | *no longer (slice 0b):* Aether moved to `lathe-install-maven`, Maven's `ComparableVersion` became the JDK's `ModuleDescriptor.Version`, and the runner classpath takes `group:artifact:version` strings |
-| `lsp-params-*.json`, the bytecode and generated-sources mirrors, compile stamps | `lathe-compiler` (`ParamsWriter`, `LatheCompiler.syncOutput`) | Plexus `CompilerConfiguration` |
+| `lsp-params-*.json`, the bytecode and generated-sources mirrors, compile stamps | *moved to `lathe-install` (slice 0d):* `CompileCapture` (`writeParams`, `mirror`), taking `ModuleConfigData` | *none left;* `lathe-compiler` keeps the thin adapter `MavenModuleConfig.of(CompilerConfiguration)` and the keep-the-last-good-capture order in `LatheCompiler.syncOutput` |
 
 `ReactorProjects`, `ModuleResourcesReader`, `SyncCoordinator`, and the Mojos read the Maven model and stay in `lathe-maven-plugin`; the Gradle plugin has its own counterparts.
 
@@ -754,6 +754,7 @@ and a capture-only test run on Gradle 9.
 
 0. **A Maven-free `lathe-install`** — the logging and artifact-resolver interfaces, and the build-neutral sync work moved in from `lathe-maven-plugin` and `lathe-compiler` (the full list is in [What is reused vs new](#what-is-reused-vs-new)).
    Pure moves behind the existing Maven tests: no behaviour change, the invoker suite stays green.
+   *Done 2026-10-24* (slices A, 0a–0d): `lathe-install` depends only on `lathe-core` and the provided SLF4J API.
    Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
    the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](../done/lathe-multi-os.md).
 1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
