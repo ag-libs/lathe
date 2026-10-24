@@ -1677,15 +1677,9 @@ final class WorkspaceSession {
   // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
   private void requireRenameable(final ReferenceTarget target) {
     final List<Path> roots = workspace.allSourceRoots();
-    final Optional<Path> declaration =
-        target.kind().isClass() || target.kind().isInterface()
-            ? TypeSourceLocator.findSourceFileOfCanonicalName(target.qualifiedName(), roots)
-            : TypeSourceLocator.findSourceFile(target.qualifiedName(), roots);
     final List<Optional<Path>> declarations =
-        Stream.concat(
-                Stream.of(declaration),
-                target.overriddenDeclarers().stream()
-                    .map(declarer -> TypeSourceLocator.findSourceFile(declarer, roots)))
+        Stream.concat(Stream.of(target.qualifiedName()), target.overriddenDeclarers().stream())
+            .map(binaryName -> TypeSourceLocator.findSourceFile(binaryName, roots))
             .toList();
     if (declarations.stream().anyMatch(Optional::isEmpty)) {
       throw renameRefused(

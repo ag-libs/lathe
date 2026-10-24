@@ -7,6 +7,33 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-062 — Find-references and rename find nothing for a non-private nested type — done
+
+**Status: done — Target: next.**
+
+Found while fixing EG-059 and confirmed on `main` (2026-10-24): with
+`package com.example; class Outer { static class Inner {} }` and a user `class User { Outer.Inner a; }`,
+find-references on `Inner` returned 0 and renaming it, from the declaration or from the use, edited
+nothing. A `private` nested type worked, because its search stays in its own file.
+
+**Cause.** A type's reference target named it canonically (`com.example.Outer.Inner`), a member's owner
+by its binary name (`com.example.Outer$Inner`), and the reference planner split the type's name at its
+last `.` into a package: `com.example.Outer`. Its same-package filter then looked in a directory that
+does not exist, dropping the declaring file and every user, and its import tokens missed
+`import com.example.Outer;` followed by `Outer.Inner`. Other consumers already treated the name as
+binary (the subtype lookup for implementations, the functional-interface family, module scoping), so
+nested types were mis-handled there too.
+
+**Resolution.** Type targets carry their binary name like member targets, and match on it; a top-level
+type's binary name is its canonical name, so only nested types change. The planner spells import tokens
+as source does (`$` → `.`) and adds each enclosing type, so `import com.example.Outer;` finds the users
+of `Outer.Inner`. The canonical-name lookup EG-059 had added for nested types is gone; every target
+resolves to its file the same way.
+
+Regression: `LatheEngineTest.references_nestedType_findsUsesInItsPackageAndInAPackageImportingTheOuterType`,
+`LatheEngineTest.rename_nestedType_renamesTheDeclarationAndEveryUse`,
+`LatheEngineTest.findImplementations_nestedInterface_findsTheImplementingClass`.
+
 ## EG-060 — Javadoc rendering joins the first sentence to the body and splits inline code across lines — done
 
 **Status: done — Target: next** (commit 9afdca4d).
@@ -59,16 +86,15 @@ reactor source root, or has one only in generated source (whose processor would 
 the old name).
 The refusal is a `RequestFailed` response error that names the symbol and why; `LatheEngine` passes
 its reason through to the MCP tool result.
-A type's canonical name is matched to its top-level file by `TypeSourceLocator.findSourceFileOfCanonicalName`,
-so a nested reactor type stays renameable.
+A nested reactor type stays renameable: its file is found from its binary name (`Outer$Inner`), which
+since EG-062 every reference target carries (that change replaced a canonical-name lookup added here).
 Not covered: an override in the renamed family that also implements an unrelated method
 ([EG-061](gaps.md#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method)).
 
 Regression: `LatheEngineTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
 (JDK type, JDK method, `toString` override),
 `LatheEngineTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
-`LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`,
-`TypeSourceLocatorTest.findSourceFileOfCanonicalName_topLevelNestedOrMissingType_findsTheTopLevelFile`.
+`LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`.
 
 ## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done
 

@@ -431,6 +431,51 @@ class LatheEngineTest {
     assertThat(Files.readString(file)).isEqualTo(source);
   }
 
+  // A nested type is found by its binary name (Outer$Inner): from the same package, and from
+  // another package that imports only the outer type and spells it Outer.Inner.
+  @Test
+  void references_nestedType_findsUsesInItsPackageAndInAPackageImportingTheOuterType()
+      throws Exception {
+    final NestedFixture fx = nestedFixture();
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(fx.outerSource(), fx.outerSource().indexOf("Inner"));
+    final LatheReferences references =
+        engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
+
+    assertThat(references.references())
+        .extracting(LatheLocation::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("User.java"))
+        .anySatisfy(uri -> assertThat(uri).endsWith("Other.java"));
+  }
+
+  @Test
+  void rename_nestedType_renamesTheDeclarationAndEveryUse() throws Exception {
+    final NestedFixture fx = nestedFixture();
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(fx.userSource(), fx.userSource().indexOf("Inner"));
+    engine.rename(fx.user(), pos.getLine(), pos.getCharacter(), "Nested");
+
+    assertThat(Files.readString(fx.outer())).contains("class Nested").doesNotContain("Inner");
+    assertThat(Files.readString(fx.user())).contains("Outer.Nested a");
+    assertThat(Files.readString(fx.other())).contains("Outer.Nested b");
+  }
+
+  @Test
+  void findImplementations_nestedInterface_findsTheImplementingClass() throws Exception {
+    final NestedFixture fx = nestedFixture();
+    engine = new LatheEngine(tmp);
+
+    final var pos = offsetToPosition(fx.outerSource(), fx.outerSource().indexOf("Listener"));
+    final LatheImplementations implementations =
+        engine.findImplementations(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
+
+    assertThat(implementations.implementations())
+        .extracting(LatheLocation::uri)
+        .anySatisfy(uri -> assertThat(uri).endsWith("Other.java"));
+  }
+
   @Test
   void rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass()
       throws Exception {
@@ -732,6 +777,36 @@ class LatheEngineTest {
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }
+
+  // Outer declares a nested class and a nested interface; User uses the class from its package,
+  // Other from another package through an import of Outer only, and implements the interface.
+  private NestedFixture nestedFixture() throws Exception {
+    final String outerSource =
+        """
+        package com.example;
+        public class Outer {
+          public static class Inner {}
+          public interface Listener {}
+        }
+        """;
+    final Path outer = TestCompiler.writeModuleSource(tmp, "com/example/Outer.java", outerSource);
+    final String userSource = "package com.example; class User { Outer.Inner a; }";
+    final Path user = TestCompiler.writeModuleSource(tmp, "com/example/User.java", userSource);
+    final Path other =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/other/Other.java",
+            """
+            package com.other;
+            import com.example.Outer;
+            class Other implements Outer.Listener { Outer.Inner b; }
+            """);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), outer, user, other);
+    return new NestedFixture(outer, user, other, outerSource, userSource);
+  }
+
+  private record NestedFixture(
+      Path outer, Path user, Path other, String outerSource, String userSource) {}
 
   private record GreetFixture(Path callee, Path caller, String calleeSource, String callerSource) {}
 }

@@ -80,18 +80,24 @@ final class ReferenceCandidatePlanner {
 
     final Path packageRel = packageRelForPackageName(targetPkg);
 
-    // Collect all possible import spelling candidates by walking up qualified name prefixes
+    // Collect all possible import spelling candidates by walking up qualified name prefixes, as
+    // source spells them (Outer.Inner); importing an enclosing type also brings a nested one in.
+    final var sourceName = qualName.replace('$', '.');
     final Stream.Builder<String> tokensBuilder = Stream.builder();
-    tokensBuilder.add(qualName);
-    tokensBuilder.add(qualName + ".*");
+    tokensBuilder.add(sourceName);
+    tokensBuilder.add(sourceName + ".*");
 
-    String current = qualName;
+    String current = sourceName;
     while (true) {
       final int dot = current.lastIndexOf('.');
       if (dot <= 0) {
         break;
       }
       current = current.substring(0, dot);
+      if (current.length() > targetPkg.length()) {
+        tokensBuilder.add(current);
+      }
+
       if (current.indexOf('.') > 0) {
         tokensBuilder.add(current + ".*");
       }

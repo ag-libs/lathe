@@ -85,11 +85,18 @@ public record ReferenceTarget(
             : -1;
 
     return switch (kind) {
-      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> {
-        final var te = (TypeElement) element;
-        yield new ReferenceTarget(
-            kind, te.getQualifiedName().toString(), simpleName, null, scope, List.of(), false, -1);
-      }
+      // Binary, as for members (Outer$Inner), so a nested type's package is everything before the
+      // last '.'.
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
+          new ReferenceTarget(
+              kind,
+              elements.getBinaryName((TypeElement) element).toString(),
+              simpleName,
+              null,
+              scope,
+              List.of(),
+              false,
+              -1);
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;
         final var owner = (TypeElement) ee.getEnclosingElement();
@@ -284,10 +291,8 @@ public record ReferenceTarget(
     }
 
     return switch (kind) {
-      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> {
-        final var te = (TypeElement) element;
-        yield qualifiedName.equals(te.getQualifiedName().toString());
-      }
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
+          qualifiedName.equals(elements.getBinaryName((TypeElement) element).toString());
 
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;

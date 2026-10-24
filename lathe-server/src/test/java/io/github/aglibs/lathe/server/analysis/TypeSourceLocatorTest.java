@@ -54,22 +54,6 @@ class TypeSourceLocatorTest {
   }
 
   @Test
-  void findSourceFileOfCanonicalName_topLevelNestedOrMissingType_findsTheTopLevelFile()
-      throws IOException {
-    final var outer = write("com/example/Outer.java", "package com.example; class Outer {}");
-    final var unnamed = write("Main.java", "class Main {}");
-    final List<Path> roots = List.of(sourceRoot);
-
-    assertThat(TypeSourceLocator.findSourceFileOfCanonicalName("com.example.Outer", roots))
-        .contains(outer);
-    assertThat(TypeSourceLocator.findSourceFileOfCanonicalName("com.example.Outer.Inner", roots))
-        .contains(outer);
-    assertThat(TypeSourceLocator.findSourceFileOfCanonicalName("Main", roots)).contains(unnamed);
-    assertThat(TypeSourceLocator.findSourceFileOfCanonicalName("java.util.Map.Entry", roots))
-        .isEmpty();
-  }
-
-  @Test
   void locate_missingSourceOrUnsupportedLocalClass_returnsEmpty() throws IOException {
     write(
         "com/example/Outer.java",
