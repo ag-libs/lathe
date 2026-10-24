@@ -468,7 +468,9 @@ def s_branch_switch(pr: Probe):
     pr.check("E1 [info] verify_change{} after a source-only switch to %s" % ref, "verify_change", {},
              lambda t: True, show=True)
     pr.record(True, "E1 catch-up wall time", "%.1fs" % (time.monotonic() - t0))
-    gone_files = [x for x in at_head if x not in existing]
+    # Only types of modules the build synced: one outside it (Helidon's builder/tests) is never indexed.
+    gone_files = [x for x in at_head if x not in existing
+                  and (pr.ws / ".lathe" / x.split("/src/")[0]).is_dir()]
     for x in gone_files[:2]:
         name = Path(x).stem
         pr.check("E2 search_symbols drops type deleted by the switch: %s" % name, "search_symbols",
