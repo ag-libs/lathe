@@ -47,6 +47,14 @@ class LauncherTest {
         .isEqualTo(new TranscriptLine(TranscriptLine.Stream.STDOUT, "hello"));
   }
 
+  // A run never writes to the program's input, so a read of it ends instead of waiting forever.
+  @Test
+  void launch_programReadingStdin_getsEndOfInput() throws Exception {
+    final List<TranscriptLine> transcript = launch(TestProcess.command("read"));
+
+    assertThat(transcript).last().isEqualTo(new TranscriptLine(TranscriptLine.Stream.STDOUT, "-1"));
+  }
+
   private static List<TranscriptLine> launch(final List<String> argv) throws Exception {
     final List<TranscriptLine> transcript = Collections.synchronizedList(new ArrayList<>());
     final LaunchSession session =

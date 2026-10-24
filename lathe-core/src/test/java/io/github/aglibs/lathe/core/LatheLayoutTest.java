@@ -35,6 +35,14 @@ class LatheLayoutTest {
   }
 
   @Test
+  void paramsSourceTree_paramsFileName_givesTheTreeBack() {
+    assertThat(LatheLayout.paramsSourceTree(Path.of(LatheLayout.paramsFileName("test-classes"))))
+        .isEqualTo("test-classes");
+    assertThat(LatheLayout.isParamsFile(Path.of(LatheLayout.compiledStampsFileName("classes"))))
+        .isFalse();
+  }
+
+  @Test
   void syncRemediations_syncedWorkspaceNamesScript_firstSyncNamesBuildCommand() {
     assertThat(LatheLayout.scopedSyncCommand(List.of("app", "core")))
         .isEqualTo("%s app core".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));

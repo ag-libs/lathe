@@ -34,6 +34,17 @@ The names are Lathe's, not Maven's: every front-end uses them, whatever its buil
 The front-end assigns the tree by scope (main or test), never from the build's directory names.
 Run gating and main-class scope recognize only these two names, and the generated-sources mirror name is derived from them.
 
+**A full sync prunes what the build no longer has.**
+Since the server discovers modules by walking `.lathe/`, a capture the build stopped producing would otherwise stay a module, compiled with stale settings.
+After a full sync, `.lathe/` holds only the source trees of the build's current modules (`CapturePruner` in `lathe-install`):
+
+- a tree the module no longer has loses its `lsp-params-<tree>.json`, its stamps, its class mirror and its generated-sources mirror;
+- a module the build no longer has loses all its trees and its `main-launch.json` and `test-launch.json`.
+
+It deletes files, never a module directory, because modules nest (`.lathe/a/` holds `.lathe/a/b/`).
+A scoped sync (`-pl`, a forced one included) never prunes: it sees part of the build.
+On Maven a tree is current when its compile source roots hold Java, or its output directory exists from an earlier build: the sync runs on the root project before its modules build, so a source root a plugin adds in this build is not listed yet.
+
 ## Files
 
 | Path under `.lathe/` | Format | Need |
@@ -193,7 +204,7 @@ Without it the launchers fall back to `java` on `PATH`.
 
 A copy of the build's annotation-processor output for the tree (`generated-sources` for `classes`, `generated-test-sources` for `test-classes`).
 Navigation and the module router use it; the server regenerates into it when processors run on save.
-Maven copies it when the build produced one.
+Maven copies it when the build produced one, and removes it when a compile produced none, so a removed processor's types leave the editor too.
 
 ### `<moduleRel>/test-launch.json`
 

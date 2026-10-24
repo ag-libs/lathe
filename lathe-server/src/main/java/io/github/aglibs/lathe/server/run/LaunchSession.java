@@ -78,14 +78,19 @@ public final class LaunchSession {
   }
 
   public void cancel() {
+    // What the JVM started (an embedded server, a forked tool) would outlive it, holding its ports
+    // and files. Taken first: once the JVM is gone its children are no longer its descendants.
+    final List<ProcessHandle> descendants = process.descendants().toList();
+    descendants.forEach(ProcessHandle::destroy);
     process.destroy();
     process
         .onExit()
         .orTimeout(CANCEL_GRACE_MS, TimeUnit.MILLISECONDS)
-        .whenComplete((exited, error) -> forceKillIfAlive());
+        .whenComplete((exited, error) -> forceKillIfAlive(descendants));
   }
 
-  private void forceKillIfAlive() {
+  private void forceKillIfAlive(final List<ProcessHandle> descendants) {
+    descendants.forEach(ProcessHandle::destroyForcibly);
     if (process.isAlive()) {
       LOG.fine(() -> "[cancel] pid=%d force-kill (ignored SIGTERM)".formatted(process.pid()));
       process.destroyForcibly();

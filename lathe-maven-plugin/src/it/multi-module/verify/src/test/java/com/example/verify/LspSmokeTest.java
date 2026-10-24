@@ -517,6 +517,9 @@ class LspSmokeTest {
             ID_SHAPES + "#overloaded(java.lang.String)",
             ID_SHAPES + "#overloaded(int)",
             ID_SHAPES + "#genericParam(java.util.List)",
+            ID_SHAPES + "#arrayParam(int[])",
+            ID_SHAPES + "#varargsParam(java.lang.String[])",
+            ID_SHAPES + "#enumParam(com.example.shapes.IdShapesTest.Shape)",
             ID_SHAPES + "#repeated()",
             ID_SHAPES + "#factory()",
             ID_SHAPES + "$Inner#innerTest()",
@@ -545,13 +548,26 @@ class LspSmokeTest {
     assertThat(results)
         .extracting(result -> result.get("positionId").getAsString())
         .containsAll(landing);
-    assertThat(results)
-        .filteredOn(result -> result.get("positionId").getAsString().endsWith("#singleLine()"))
-        .singleElement()
+    assertThat(results).allMatch(result -> result.get("durationMs").getAsLong() >= 0);
+    assertThat(resultFor(results, "AssertionsTest#singleLine()"))
         .satisfies(
             result -> {
               assertThat(result.get("status").getAsString()).isEqualTo("failed");
               assertThat(result.get("failureLine").getAsInt()).isEqualTo(assertLine);
+              assertThat(result.get("expected").getAsString()).isEqualTo("Hello, Alice!");
+              assertThat(result.get("actual").getAsString()).isEqualTo("Hello, alice!");
+              assertThat(objects(result.getAsJsonArray("stackTrace")))
+                  .anyMatch(frame -> frame.get("methodName").getAsString().equals("singleLine"));
+            });
+    assertThat(resultFor(results, "AssertionsTest#multiLine()").get("actual").getAsString())
+        .isEqualTo("line1\nLINE2");
+    assertThat(resultFor(results, "AssertionsTest#noValues()").has("expected")).isFalse();
+    // A class whose @BeforeAll broke reports on the class itself.
+    assertThat(resultFor(results, "com.example.shapes.BrokenSetupTest"))
+        .satisfies(
+            result -> {
+              assertThat(result.get("status").getAsString()).isEqualTo("failed");
+              assertThat(result.get("failureMessage").getAsString()).contains("setup exploded");
             });
 
     // Every result also streamed live under this run's token, before the response.
@@ -633,6 +649,13 @@ class LspSmokeTest {
       }
     }
     throw new AssertionError("pattern not found: " + linePattern);
+  }
+
+  private static JsonObject resultFor(final List<JsonObject> results, final String idSuffix) {
+    return results.stream()
+        .filter(result -> result.get("positionId").getAsString().endsWith(idSuffix))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("no result for " + idSuffix));
   }
 
   private static List<String> methodIds(final Path file) throws Exception {

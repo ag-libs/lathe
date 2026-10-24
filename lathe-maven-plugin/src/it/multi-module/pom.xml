@@ -58,4 +58,40 @@
       </plugin>
     </plugins>
   </build>
+  <!-- The first invoker build only (invoker.profiles.1): seeds captures this build no longer has,
+       before the root's lathe:sync prunes them, a module not in the reactor and a test tree for
+       health, which has no tests; MultiModuleTest checks they are gone. The second build is partial,
+       so it would keep them for the client tests that run against this fixture later. -->
+  <profiles>
+    <profile>
+      <id>seed-stale-captures</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>seed-stale-captures</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>initialize</phase>
+                <configuration>
+                  <outputDirectory>${project.basedir}/.lathe</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>stale-captures</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

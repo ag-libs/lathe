@@ -81,6 +81,23 @@ class CompileCaptureTest {
         .isEqualTo(config);
   }
 
+  // A processor removed from the build leaves no output: its generated types leave the editor too.
+  @Test
+  void mirror_compileWithoutProcessorOutput_removesTheEarlierGeneratedMirror() throws Exception {
+    final Path moduleDir = latheModuleDir();
+    final Path gen = tmp.resolve("target/generated-sources/annotations");
+    write("target/generated-sources/annotations/com/example/Gen.java", 1L);
+    Files.createDirectories(tmp.resolve("target/classes"));
+    CompileCapture.mirror(moduleDir, config("classes", gen, List.of()));
+    final Path mirrored =
+        moduleDir.resolve(LatheLayout.GENERATED_SOURCES).resolve("com/example/Gen.java");
+    assertThat(mirrored).exists();
+
+    CompileCapture.mirror(moduleDir, config("classes", null, List.of()));
+
+    assertThat(moduleDir.resolve(LatheLayout.GENERATED_SOURCES)).doesNotExist();
+  }
+
   private Path latheModuleDir() throws Exception {
     return Files.createDirectories(tmp.resolve(".lathe/module-a"));
   }

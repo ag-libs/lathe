@@ -347,6 +347,51 @@ None yet.
 
 ---
 
+## EG-063 — A dependency without a sources jar has no source to navigate to
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Definition, hover javadoc and the MCP location answers rely on extracted sources jars.
+A dependency that publishes none leaves an editor and an agent with nothing to read.
+IntelliJ's MCP `read_file` serves decompiled classes, LSP4J-MCP has `decompile_class`, and vscode-java
+decompiles too.
+
+### Fix direction
+
+A decompiler fallback (for example an embedded Vineflower) writing a read-only source into the cache
+for a class with no source; mark such answers as decompiled.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-064 — No code lens: reference counts and run/debug actions above declarations
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+jdtls offers reference and implementation counts as code lenses, and vscode-java 1.56 added them for
+fields. Run and Debug lenses above test methods and `main` would also give the VS Code client run/test
+without client-side work; today its run/test is Neovim-only.
+
+### Fix direction
+
+`textDocument/codeLens` from the runnables and the reference counts, resolved lazily
+(`codeLens/resolve`) so a large file does not pay for every count up front.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -635,4 +680,303 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-None open.
+## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes
+
+**Status: accepted — Target: next**
+Found by the agent-tooling landscape review (2026-10-24); see
+[the landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
+
+### Gap
+
+The MCP spec (2025-03-26 onward) lets a tool declare `annotations`: `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`
+([tools spec](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
+Lathe registers its tools with none.
+Reports say Claude Code's plan mode allows only MCP tools that declare `readOnlyHint` and runs them in
+parallel, and that Codex auto-approves read-only tools; neither is confirmed against official docs yet.
+
+### Fix direction
+
+Declare `readOnlyHint` on the read tools (diagnostics, definition, references, implementations, call
+hierarchy, describe, search, analyze_change, verify_change), `destructiveHint` on `rename_symbol`, and
+neither on `run_test`, which runs code but writes no source.
+Check what the client does with them before claiming any effect in the guide.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check
+
+**Status: accepted — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Spotless runs on `verify`, and an agent's edits rarely match google-java-format, so the build fails
+after a correct change.
+Lathe already runs the project's own pinned formatter in-process for the editor, but MCP has no tool
+for it.
+IntelliJ's MCP server has `reformat_file`
+([IntelliJ MCP server](https://www.jetbrains.com/help/idea/mcp-server.html)).
+
+### Fix direction
+
+A `format_file` tool (and maybe a `files` list) applying the editor's format path to disk, with the
+same write discipline as `rename_symbol` (reactor files only, compiled into the mirror before it
+returns).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all)
+
+**Status: accepted — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Missing imports are the most common error an agent makes in Java.
+The LSP side computes the fixes (single-name import quick fix, whole-file `lathe.missingImports`
+([CA-7](#ca-7--pasting-code-with-unresolved-types-requires-per-symbol-quick-fixes-no-whole-file-add-missing-imports)),
+add-throws), but MCP only reports the errors, so the agent guesses the import.
+gopls's `go_diagnostics` returns the fixes with the diagnostics and tells the agent to apply them and
+re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/gopls/internal/mcp/instructions.md)).
+
+### Fix direction
+
+A `fix_imports` tool applying the unambiguous imports and listing the ambiguous names with their
+candidates; then consider listing other available fixes beside `get_diagnostics` results.
+Reuse `ImportCandidates`; write like `rename_symbol`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-24 — No file outline tool: an agent reads a whole file to learn its structure
+
+**Status: accepted — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Claude Code's LSP tool (`documentSymbol`), Serena (`get_symbols_overview`,
+[Serena tools](https://oraios.github.io/serena/01-about/035_tools.html)) and Java MCP servers such as
+LSP4J-MCP (`document_symbols`) give an agent a file's members in a few hundred tokens.
+Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for it.
+
+### Fix direction
+
+An `outline` tool over the existing document-symbol scanner: one line per member, nested by type,
+with its `path:line` and signature, in the grep-style form of the other answers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on
+
+**Status: accepted — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+gopls tells agents to call `go_workspace` first; IntelliJ's MCP server has `get_project_modules` and
+`get_project_dependencies`.
+Lathe holds the same facts in `.lathe/` — modules, source roots, inter-module dependencies, release
+level, which modules have a captured test launch, the sync command — but an agent has to guess them
+from POMs.
+
+### Fix direction
+
+A `workspace_summary` tool returning those facts compactly, from the manifest and the module registry;
+the server's routing instructions suggest calling it first.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-26 — `search_symbols` finds types only, not methods or fields
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+IntelliJ's `search_symbol` finds classes, methods and fields, and gopls's `go_search` searches all
+symbols. For "where is method X declared" Lathe has nothing, so the agent greps.
+
+### Fix direction
+
+Needs a member-name index; reactor members first (the reactor bytecode and shards hold most of the
+data), dependencies later. Design first: index size and freshness on Helidon.
+Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-27 — No view of a type's API by name: members, supertypes and the first javadoc line
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+To learn what a dependency's `Builder` offers, an agent must locate and read its source.
+gopls's `go_package_api` and Serena's `find_symbol(depth=1)` answer that in one call.
+Lathe's `describe_symbol` needs a position, and MCP has no type hierarchy.
+
+### Fix direction
+
+A `describe_type` tool taking a (qualified) type name: its supertypes, and each member's signature with
+its first javadoc line, from javac's `Elements` — so it works for a dependency without sources too.
+It also covers the type hierarchy MCP lacks.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-28 — `rename_symbol` does not say what text it left unchanged
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+A rename changes the code that resolves to the symbol, and the javadoc references, but not the name in
+string literals, comments, `META-INF/services` files or framework XML.
+An agent believes the rename is complete.
+A study of agent renames found location-only LSP renames missed such text in most multi-file renames
+([arXiv 2608.13568](https://arxiv.org/abs/2608.13568); figures not checked).
+
+### Fix direction
+
+After the rename, list the remaining occurrences of the old name (qualified name for resources) in
+reactor files as "not renamed — review", without editing them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-29 — No tool maps a stack trace to source
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+A failing test or a log gives an agent a stack trace; each frame names a class and a line, not a file.
+LSP4J-MCP has `resolve_stack_trace`. Lathe's editor already resolves stack frames through the type
+index, including package-private dependency types.
+
+### Fix direction
+
+A `resolve_stack_trace` tool turning each frame into a `path:line: code` line (reactor, generated,
+dependency and JDK sources), and `run_test` failures could use it for their frames.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-30 — Position tools need an exact column, which agents get wrong
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
+now makes them retry, at the cost of a round trip.
+mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
+symbols by name path (`Class/method`).
+
+### Fix direction
+
+Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
+the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-31 — `get_definition` cannot return the definition's body
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+`get_definition` returns one line; reading a dependency or JDK method then takes a second read of a
+cache path. mcp-language-server's `definition` returns the implementation, and Serena's
+`find_symbol` has `include_body`.
+
+### Fix direction
+
+An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-32 — Nothing makes an agent run `verify_change` before it reports done
+
+**Status: documented**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+An agent that skips `verify_change` finishes with code that does not compile.
+Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hook for exactly this
+([Pyrefly blog](https://pyrefly.org/blog/pyrefly-agentic-loop/)).
+
+### Fix direction
+
+Document an `AGENTS.md` / `CLAUDE.md` snippet and a hook recipe in the agent guide.
+A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
+a later, separate step.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-33 — Tools return structured content but declare no `outputSchema`
+
+**Status: deferred — Target: backlog**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
+([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
+structured content without one. It helps programmatic clients, not models, so it waits for a client
+that needs it.
+
+### Regression targets
+
+None yet.

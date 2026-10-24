@@ -664,7 +664,19 @@ class LatheEngineTest {
             0,
             List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
             List.of(
-                new TestResult("com.example.FooTest", "passes", "", "passed", "", -1, null),
+                new TestResult(
+                    "com.example.FooTest",
+                    "passes",
+                    "",
+                    "passed",
+                    "",
+                    -1,
+                    -1,
+                    "passes()",
+                    null,
+                    null,
+                    List.of(),
+                    null),
                 new TestResult(
                     "com.example.FooTest",
                     "fails",
@@ -672,24 +684,55 @@ class LatheEngineTest {
                     "failed",
                     "java.lang.AssertionError: boom",
                     42,
+                    -1,
+                    "fails()",
+                    null,
+                    null,
+                    List.of(),
                     null),
-                new TestResult("com.example.FooTest", "skips", "", "skipped", "", -1, null)));
+                new TestResult(
+                    "com.example.FooTest",
+                    "skips",
+                    "",
+                    "skipped",
+                    "",
+                    -1,
+                    -1,
+                    "skips()",
+                    null,
+                    null,
+                    List.of(),
+                    null),
+                // A class whose @BeforeAll broke: its own record, without a method.
+                new TestResult(
+                    "com.example.BrokenTest",
+                    "",
+                    "",
+                    "failed",
+                    "setup exploded",
+                    9,
+                    -1,
+                    "BrokenTest",
+                    null,
+                    null,
+                    List.of(),
+                    null)));
 
     final LatheTestRun run = LatheTestRun.from(outcome);
 
     assertThat(run.launched()).isTrue();
-    assertThat(run.total()).isEqualTo(3);
+    assertThat(run.total()).isEqualTo(4);
     assertThat(run.passed()).isEqualTo(1);
-    assertThat(run.failed()).isEqualTo(1);
+    assertThat(run.failed()).isEqualTo(2);
     assertThat(run.skipped()).isEqualTo(1);
     assertThat(run.failures())
-        .singleElement()
-        .satisfies(
+        .anySatisfy(
             f -> {
               assertThat(f.test()).isEqualTo("com.example.FooTest#fails");
               assertThat(f.summary()).contains("boom");
               assertThat(f.line()).isEqualTo(42);
-            });
+            })
+        .anySatisfy(f -> assertThat(f.test()).isEqualTo("com.example.BrokenTest"));
   }
 
   @Test

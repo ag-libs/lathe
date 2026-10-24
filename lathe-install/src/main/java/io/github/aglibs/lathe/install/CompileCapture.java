@@ -31,16 +31,18 @@ public final class CompileCapture {
   }
 
   // To a scope-specific target, so the test compile does not overwrite the main compile's sources.
+  // A compile without processor output removes the mirror, so an earlier processor's types do not
+  // linger in the editor.
   private static void mirrorGeneratedSources(final Path moduleDir, final ModuleConfigData config)
       throws IOException {
+    final Path mirror = moduleDir.resolve(LatheLayout.generatedSourcesDir(config.sourceTree()));
     if (config.generatedSourcesDir() == null
         || !Files.isDirectory(Path.of(config.generatedSourcesDir()))) {
+      FileUtil.deleteDir(mirror);
       return;
     }
 
-    FileUtil.replaceDir(
-        Path.of(config.generatedSourcesDir()),
-        moduleDir.resolve(LatheLayout.generatedSourcesDir(config.sourceTree())));
+    FileUtil.replaceDir(Path.of(config.generatedSourcesDir()), mirror);
   }
 
   // A stamp per source (root-relative path -> mtime) and the content compiled.

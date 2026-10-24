@@ -58,8 +58,8 @@ Test ids are `<binaryClassName>#<method>(<erasedParams>)` (`TestId`, `RunnableSc
 A class's id is its binary name; a package's id is its name.
 Package, class and nesting can therefore be read off any id without asking the server.
 Spike S6 checked the two sides against each other: plain, overloaded, generic (erased to `java.util.List`), repeated, factory, `@Nested` and doubly nested methods all match.
-Array and varargs parameters don't: JUnit reports them in JVM form (`arrayParam([I)`, `varargsParam([Ljava.lang.String;)`) while javac's id says `int[]` and `java.lang.String[]`.
-Their results land on no method today, in Neovim too; §3.2 E fixes that.
+Array, varargs and nested-type parameters didn't: JUnit reports them in JVM form (`arrayParam([I)`, `varargsParam([Ljava.lang.String;)`, `enumParam(pkg.Outer$Shape)`) while javac's id says `int[]`, `java.lang.String[]` and `pkg.Outer.Shape`.
+Their results landed on no method, in Neovim too, until §3.2 E (slice 1).
 Any result that still matches no method is attached to its class (§5.3).
 
 `failureLine` is 1-based and `-1` when no line is known (S6: the assertion on line 74 reported 74).
@@ -118,45 +118,52 @@ The other two listed classes Surefire's include patterns leave out; F makes disc
 Not covered: TestNG run through Surefire's own TestNG provider rather than the JUnit Platform.
 The JUnit Platform runner finds nothing there, so discovery lists no tests for such a module; what its runs do today was not checked.
 
-**B. Richer results** (backs §5.3). `TestResult` gains fields; the runner's NDJSON record carries them:
+**B. Richer results** (backs §5.3; done in slice 2). `TestResult` gains fields; the runner's NDJSON record carries them:
 
 | Field | Meaning |
 |---|---|
 | `durationMs` | Wall time of the test, from the runner's start and finish callbacks; `-1` when unknown. |
-| `displayName` | JUnit's display name, e.g. `[2] name=Bob` for one parameterized invocation, so a collapsed item's message can say which invocation failed. |
+| `displayName` | JUnit's display name, e.g. `[2] "b"` for one parameterized invocation (JUnit 6 quotes string arguments), so a collapsed item's message can say which invocation failed. |
 | `expected`, `actual` | The two compared values as strings, for a diff view; present only when the failure carries both (below). |
-| `stackTrace` | `[{className, methodName, fileName, line}]`, cut at the first frame of JUnit, the runner or reflection. |
+| `stackTrace` | `[{className, methodName, fileName, line}]` of the top-level exception, cut where JUnit called into the test: at the first reflection (`jdk.internal.reflect.`, `java.lang.reflect.`), `org.junit.platform.` or `org.junit.jupiter.engine.` frame. The assertion's own frames and the test method stay. |
 
 Where `expected`/`actual` come from — the same sources IntelliJ's "Click to see difference" uses:
 
 | Failure | Thrown by | Read as |
 |---|---|---|
 | `org.opentest4j.AssertionFailedError` | JUnit 5 `assertEquals`, AssertJ `isEqualTo` (opentest4j is always on the JUnit Platform's classpath), Truth | `isExpectedDefined()` and `isActualDefined()`, then `getExpected().getStringRepresentation()` / `getActual()…` |
-| `org.junit.ComparisonFailure` | JUnit 4 `assertEquals(String, String)` through the vintage engine | `getExpected()` / `getActual()`, by reflection: JUnit 4 may not be on the classpath |
-| Anything else | Hamcrest `assertThat`, `assertTrue`, custom assertions | No values, so no diff: only the message |
+| `org.junit.ComparisonFailure` | JUnit 4 `assertEquals(String, String)` through the vintage engine | **Deferred** (decided 2026-10-24): it needs JUnit 4 as a dependency of the runner's tests and of the fixture; JUnit 4 failures keep their message |
+| Anything else | Hamcrest `assertThat`, `fail()`, custom assertions | No values, so no diff: only the message |
 
-The string representation is the value's `toString()`, so two records or POJOs compare by their `toString()` output, as in IntelliJ.
+JUnit's own `assertTrue` does carry values (`expected: <true> but was: <false>`), so it gets a (trivial) diff too.
+
+A value that is text arrives as it is; anything else as JUnit represents it (an object's `toString()`, an array's elements), so two records or POJOs compare by their `toString()` output, as in IntelliJ.
+AssertJ hands over its own formatted representation instead of the raw value, so its strings arrive quoted (`"Alice"`); they are kept as they come, quotes on both sides of a diff being harmless.
+The runner reads opentest4j directly: it is a `provided` dependency, present in every JUnit Platform test run.
+Durations are measured with `System.nanoTime()`: the runner rides the user's test classpath and can't use `lathe-core`'s `Stopwatch`.
 The runner never parses `expected: <a> but was: <b>` out of the message: Microsoft's Java test extension does, and it breaks on multi-line strings (§13).
 The message itself is unchanged.
 
-**C. Container failures.**
-`ResultsListener` today ignores every container, so a failing `@BeforeAll`, a class initializer or a broken `@MethodSource` never reaches the client.
+**C. Container failures.** (Done in slice 2.)
+`ResultsListener` ignored every container, so a failing `@BeforeAll` or a broken `@MethodSource` never reached the client.
 The run then looks like "no result (exit 1)" and the actual error is lost.
 Spike S6 confirmed it: a class whose `@BeforeAll` throws ran with exit 1, no `lathe/testEvent` and an empty `testResults`; the error appeared only as plain text in the output.
-A failed or aborted container now produces a record with `methodName` empty and `positionId` = the class id.
+A failed or aborted class container now produces a record with `methodName` empty and `positionId` = the class id; a parameterized template that fails as a whole (its arguments couldn't be produced) produces one on its method.
 (`TestResult` relaxes its `methodName` check for that case.)
+A failing static initializer is not a class-level failure: JUnit initializes the class when it creates the test instance, inside a method's execution, so that method reports the `ExceptionInInitializerError` (found while building slice 2).
 
 **D. A started event and a closed stdin.**
 
 - `lathe/testStarted {token, positionId}` (notification), from the runner's `executionStarted` for a method.
   The runner already flushes its sink per record, so the existing tailer streams it.
   It is a separate notification, not a fourth `status`: the neotest adapter maps an unknown status to `failed` (`neotest.lua:268`).
-- The `Launcher` closes the replay process's stdin right after it starts.
+- The `Launcher` closes the replay process's stdin right after it starts (done in slice 1).
   A `main()` reading `System.in` gets end-of-input at once; today it hangs on an open pipe until it is cancelled.
 
-**E. Array and varargs ids.**
+**E. Array, varargs and nested-type ids.** (Done in slice 1.)
 `TestId.positionId` turns JUnit's JVM-form parameter names into javac's source form before building the id:
-`[I` → `int[]`, `[[J` → `long[][]`, `[Ljava.lang.String;` → `java.lang.String[]` (a varargs parameter is an array).
+`[I` → `int[]`, `[[J` → `long[][]`, `[Ljava.lang.String;` → `java.lang.String[]` (a varargs parameter is an array), and `pkg.Outer$Shape` → `pkg.Outer.Shape` in parameter types.
+The class part of the id keeps its `$`: both sides use the binary name there.
 This reads a JVM type descriptor, a fixed format, not Java source.
 [Structured test results](../done/lathe-structured-test-results.md) flagged array and varargs shapes as the open risk of this mapping, and `TestId`'s own comment records the mismatch; S6 confirmed it.
 Results for such methods then land on their method, in Neovim as in VS Code.
@@ -171,12 +178,14 @@ The capture records the class patterns Surefire applied (its include/exclude pat
 Running a class or a method explicitly ignores the filter, as IntelliJ does: the user asked for that class.
 How the capture records it is settled when F is built: the in-fork capture listener sees the discovery request Surefire built (one class selector per included class), and the patterns themselves are in the plugin's configuration.
 
-**G. Running a class runs its static nested classes.**
+**G. Running a class runs its static nested classes.** (Done in slice 1.)
 JUnit's class selector includes `@Nested` inner classes but not `static` nested ones, so running `Outer` skips `Outer$StaticNested`'s tests (spike S6), although `runnables.list` shows that class under `Outer`, in Neovim as in VS Code.
-`lathe.run.test` adds a class selector for every member class of a selected class, from the module's captured test classes (`Outer$Name.class`; anonymous and local classes, whose names continue with a digit, are skipped).
+The test runner, which has the module's classpath, expands each class selector: it loads the class without initializing it and adds a class selector for every static member class, recursively.
+A class it can't load keeps just its own selector, and JUnit reports it as before.
 JUnit ignores classes without tests and runs each test once even when a `@Nested` class is selected twice (S6: 17 results, no duplicates).
+(The design first had the server list the captured class files; the runner needs no file listing and serves every client the same.)
 
-**H. Cancel stops the whole process tree.**
+**H. Cancel stops the whole process tree.** (Done in slice 1.)
 `LaunchSession.cancel` stops only the replay JVM (`destroy`, then `destroyForcibly` after a grace period).
 Processes the tests or the `main()` started — an embedded server, a forked tool — outlive the cancel and keep their ports and files.
 On Windows this is the common case for a `.cmd`-started tool, and VS Code/Cursor is Lathe's Windows client.
@@ -205,7 +214,7 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    The limit: neotest needs a range for every position and discovery has none, so an unopened file's positions get a placeholder (the top of the file) until it is opened.
    Approximate method lines from the classes' line-number tables would close that gap; that is a later server addition.
 2. **Per-test output.** `lathe/testStarted` lets the adapter write each test's output to its own file, instead of every test opening the run's whole transcript.
-3. **Container failures.** A failing `@BeforeAll` or class initializer shows on the class with its real error, instead of every method reading "no result (exit 1)".
+3. **Container failures.** A failing `@BeforeAll` shows on the class with its real error, instead of every method reading "no result (exit 1)". (Since slice 2 the class node already shows it; marking the methods under it is this item.)
 4. **Expected/actual as a diff.** neotest has no diff view, so the adapter offers two, both from `expected`/`actual`:
    - **Inline**, always visible: the failure's short text gets a unified diff of the two values (Neovim's built-in diff function), highlighted as a diff.
      Multi-line values are diffed line by line; the inline diff is capped (a few dozen lines) and says how to see the rest.
@@ -431,9 +440,9 @@ This ports Neovim's `_save_target_for`.
 
 - Runner: discover mode lists a fixture's tests (nested, inherited, parameterized as one entry) without running them;
   records carry `durationMs`, `displayName` and a cut `stackTrace`;
-  `expected`/`actual` are present for a JUnit 5 `assertEquals`, an AssertJ `isEqualTo` and a JUnit 4 `ComparisonFailure` (vintage),
-  multi-line values arrive intact, and an `assertTrue` failure or a message that merely looks like `expected: <a> but was: <b>` carries none;
-  a failing `@BeforeAll` and a failing static initializer each produce a container record;
+  `expected`/`actual` are present for a JUnit 5 `assertEquals` and an AssertJ `isEqualTo`,
+  multi-line values arrive intact, and a `fail()` carries none;
+  a failing `@BeforeAll` produces a class record, a broken `@MethodSource` a record on its method, and a failing static initializer stays the method's failure;
   a started record precedes each method's result.
 - Server: `tests.modules` and `tests.discover` against the existing test workspaces, including a module without capture (`blockedReasons`);
   `tests.discover` answers from cache until the module's test classes change, then sends `lathe/testsChanged` once;
@@ -598,9 +607,9 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 
 | Slice | Content | Status |
 |---|---|---|
-| 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | built |
-| 1 | Run-path fixes: E, G, H and the closed stdin (D) | next |
-| 2 | Richer results: B and C | |
+| 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | done (PR #43) |
+| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | built (PR #45) |
+| 2 | Richer results: B and C; JUnit 4 values deferred | built |
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations, structured stack frames (§3.4 items 3–6) | |
 | 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |
 | 5 | Surefire's filter (F), after its own design check | |

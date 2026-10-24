@@ -18,6 +18,22 @@ final class TestSelectorParserTest {
     assertSelector(TestSelectionKind.CLASS, "com.example.T", ClassSelector.class);
   }
 
+  // Static nested classes, at any depth, are selected with their outer class; an inner class is
+  // left to JUnit, which reaches it only when it is @Nested.
+  @Test
+  void parse_classWithStaticNestedClasses_selectsThemAlongside() {
+    final var selectors =
+        TestSelectorParser.parse(
+            new String[] {TestSelectionKind.CLASS.runnerFlag(), Outer.class.getName()});
+
+    assertThat(selectors)
+        .map(selector -> ((ClassSelector) selector).getClassName())
+        .containsExactly(
+            Outer.class.getName(),
+            Outer.StaticNested.class.getName(),
+            Outer.StaticNested.Deeper.class.getName());
+  }
+
   @Test
   void parse_methodSelector_returnsMethodSelector() {
     assertSelector(TestSelectionKind.METHOD, "com.example.T#m", MethodSelector.class);
@@ -46,6 +62,16 @@ final class TestSelectorParserTest {
     assertThatThrownBy(() -> TestSelectorParser.parse(new String[] {"--select-unknown", "x"}))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessage("Unknown selector --select-unknown");
+  }
+
+  static final class Outer {
+
+    static final class StaticNested {
+
+      static final class Deeper {}
+    }
+
+    final class Inner {}
   }
 
   private static void assertSelector(

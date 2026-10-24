@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
@@ -105,6 +106,11 @@ final class SyncCoordinator {
           ModuleResourcesReader.read(workspaceRoot, projects),
           ReactorProjects.outputs(workspaceRoot, projects),
           syncScript.tool());
+      // The whole reactor only: a forced sync under -pl sees part of it.
+      if (!isPartialReactor()) {
+        CapturePruner.prune(workspaceRoot, ReactorProjects.sourceTrees(workspaceRoot, projects));
+      }
+
       final MavenProject rootProject = session.getTopLevelProject();
       final var formatterResolver =
           new FormatterResolver(
