@@ -89,6 +89,10 @@ final class LatheTestRunnerTest {
     assertThat(TestSelectorParser.SELECT_METHOD).isEqualTo(TestSelectionKind.METHOD.runnerFlag());
     assertThat(TestSelectorParser.SELECT_PACKAGE).isEqualTo(TestSelectionKind.PACKAGE.runnerFlag());
     assertThat(TestSelectorParser.SELECT_MODULE).isEqualTo(TestSelectionKind.MODULE.runnerFlag());
+    assertThat(TestSelectorParser.INCLUDE_CLASS_NAME)
+        .isEqualTo(TestSelectionKind.CLASS_NAME_INCLUDE.runnerFlag());
+    assertThat(TestSelectorParser.EXCLUDE_CLASS_NAME)
+        .isEqualTo(TestSelectionKind.CLASS_NAME_EXCLUDE.runnerFlag());
   }
 
   private static int runClass(final Class<?> testClass) {

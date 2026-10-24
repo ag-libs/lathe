@@ -81,6 +81,7 @@ final class SyncCoordinator {
     final var mainLaunch =
         new MavenMainLaunch(new LocationManager(), ReactorProjects.reactorOutputDirs(projects));
     projects.forEach(project -> mainLaunch.write(workspaceRoot, project));
+    projects.forEach(project -> MavenTestFilter.write(workspaceRoot, project));
     if (isPartialReactor() && !LatheFlags.isForcedSync()) {
       log.debug("[sync] partial reactor (-pl) — skipping workspace.json write");
     } else {

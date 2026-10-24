@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.runner;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.util.List;
+import org.junit.platform.engine.Filter;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.TestExecutionListener;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
@@ -87,8 +88,10 @@ public final class LatheTestRunner {
   }
 
   private static LauncherDiscoveryRequest discoveryRequest(final String[] args) {
-    final var builder = LauncherDiscoveryRequestBuilder.request();
-    builder.selectors(TestSelectorParser.parse(args));
-    return builder.build();
+    final TestSelectorParser.Request request = TestSelectorParser.parse(args);
+    return LauncherDiscoveryRequestBuilder.request()
+        .selectors(request.selectors())
+        .filters(request.filters().toArray(Filter<?>[]::new))
+        .build();
   }
 }
