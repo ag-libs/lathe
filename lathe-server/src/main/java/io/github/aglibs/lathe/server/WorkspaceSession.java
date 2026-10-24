@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
@@ -203,13 +204,18 @@ final class WorkspaceSession {
   private final Set<Path> refreshScope = new HashSet<>();
   private boolean reactorIndexStale;
   private long reactorIndexBuilds;
+  // Done once the last rebuild is applied (or superseded): MCP answers wait for it, so a type the
+  // pass just wrote is already searchable.
+  private CompletableFuture<Void> reactorIndexRebuilt = CompletableFuture.completedFuture(null);
+  // The resource files the last pass found, so the next one can drop the copies of deleted ones.
+  private Set<Path> scannedResources = Set.of();
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
   // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
   // written, unless reported again after its content was read.
   private final Map<Path, Long> reported = new HashMap<>();
-  // Files written on report since a verify_change last took them: the write stamps them, so that
-  // verify_change's own stale scan would not list them.
+  // Files the pass wrote since a verify_change last took them, reported or caught up from disk: the
+  // write stamps them, so verify_change's own stale scan would not list them. At most every source.
   private final Set<Path> writtenSinceVerify = new HashSet<>();
   private long reportCount;
   // Per open file, the diagnostics of its last write and the content written: merged into its
@@ -276,7 +282,7 @@ final class WorkspaceSession {
         WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
-    watcher.updateBuildFiles(manifest.buildFiles());
+    watcher.updateBuildFiles(manifest.buildFiles(), manifest.buildFileFingerprints());
     final long scanIntervalMs = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
     worker.scheduleAtFixedRate(
         scanIntervalMs > 0 ? scanIntervalMs : DEFAULT_SCAN_INTERVAL_MS, this::checkForChanges);
@@ -3078,6 +3084,8 @@ final class WorkspaceSession {
     final WorkspaceTypeIndex base = typeIndex;
     final List<List<TypeIndexEntry>> shards = List.copyOf(reactorShards.values());
     final long build = ++reactorIndexBuilds;
+    final var rebuilt = new CompletableFuture<Void>();
+    reactorIndexRebuilt = rebuilt;
     CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
         .whenComplete(
             (index, error) ->
@@ -3088,6 +3096,8 @@ final class WorkspaceSession {
                       } else if (typeIndex == base && build == reactorIndexBuilds) {
                         typeIndex = index;
                       }
+
+                      rebuilt.complete(null);
                     }));
   }
 
@@ -3499,24 +3509,29 @@ final class WorkspaceSession {
     return requestPass(false).thenAccept(stale -> {});
   }
 
-  // The engine's freshen step, before every MCP query and verify_change: an eager pass, never a
-  // prompt. If an in-process recompile can't be trusted (a build-file sync pending, or a running
-  // build) it returns a DeferReason so the caller falls back to the build. The outcome lists every
-  // stale source, including one that failed unchanged since and so was not recompiled. Runs on
-  // the worker.
+  // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
+  // a build file the agent just edited is seen now rather than on the next tick, then an eager
+  // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
+  // carries a DeferReason so verify_change falls back to the build. The outcome lists every stale
+  // source, including one that failed unchanged since and so was not recompiled. Runs on the
+  // worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    checkForChanges();
     if (reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
           new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS));
     }
 
-    if (buildFilesNotificationPending) {
-      return CompletableFuture.completedFuture(
-          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_FILES_PENDING));
-    }
-
+    final ReconcileOutcome.DeferReason deferral =
+        buildFilesNotificationPending
+            ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
+            : ReconcileOutcome.DeferReason.NONE;
+    // On the worker after the pass's own completion chain, which starts the index rebuild.
     return requestPass(true)
-        .thenApply(stale -> new ReconcileOutcome(stale, ReconcileOutcome.DeferReason.NONE));
+        .thenComposeAsync(
+            stale ->
+                reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
+            worker::execute);
   }
 
   List<Path> takeWrittenSinceVerify() {
@@ -3525,42 +3540,88 @@ final class WorkspaceSession {
     return taken;
   }
 
-  // Files to diagnose for verify_change: each changed file plus its same-module callers, by module.
-  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
-    final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
+  // The changed files whose content is not what the last build compiled: a change put back is no
+  // change, so verify_change neither checks it nor asks for a sync. A deleted file stays, as its
+  // callers break. Each module's stamps are read once.
+  List<Path> differingFromBuild(final List<Path> changed) {
+    final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree = new HashMap<>();
+    final List<Path> differing = new ArrayList<>();
     for (final Path file : changed) {
-      final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
-      if (config.isEmpty()) {
-        continue;
+      if (!backToBuilt(file, builtByTree)) {
+        differing.add(file);
       }
-
-      final Set<Path> targets =
-          byModule.computeIfAbsent(
-              moduleRelForDir(config.get().moduleDir()), k -> new LinkedHashSet<>());
-      targets.add(file);
-      targets.addAll(sameModuleReferrers(file, config.get()));
     }
 
-    return byModule.entrySet().stream()
-        .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, e -> List.copyOf(e.getValue())));
+    return List.copyOf(differing);
+  }
+
+  // A deleted file is back to the build only if the build never compiled it either (one created and
+  // deleted since); a tree with no built record (OpenJDK, or stamps from before) cannot tell.
+  private boolean backToBuilt(
+      final Path file, final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree) {
+    final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
+    final Path root = config.map(tree -> sourceRootFor(tree, file)).orElse(null);
+    if (root == null) {
+      return false;
+    }
+
+    final Map<Path, ContentFingerprint> built =
+        builtByTree.computeIfAbsent(
+            config.get(), tree -> CompiledStamps.loadBuilt(tree.moduleDir(), tree.sourceTree()));
+    if (built.isEmpty()) {
+      return false;
+    }
+
+    final ContentFingerprint compiled = built.get(root.relativize(file));
+    return Files.notExists(file)
+        ? compiled == null
+        : compiled != null && Optional.of(compiled).equals(FileUtil.readFingerprint(file));
+  }
+
+  // Files to diagnose for verify_change, by module: each changed file, then the files that mention
+  // its type in its module or one downstream of it, the changed files' modules first.
+  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
+    final Map<String, Set<Path>> byModule = new LinkedHashMap<>();
+    changed.forEach(file -> addVerifyTarget(byModule, file));
+    changed.forEach(file -> referrers(file).forEach(path -> addVerifyTarget(byModule, path)));
+    return Collections.unmodifiableMap(
+        byModule.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    Map.Entry::getKey,
+                    entry -> List.copyOf(entry.getValue()),
+                    (first, ignored) -> first,
+                    LinkedHashMap::new)));
+  }
+
+  // A deleted file has nothing to diagnose, but its callers still do.
+  private void addVerifyTarget(final Map<String, Set<Path>> byModule, final Path file) {
+    if (Files.notExists(file)) {
+      return;
+    }
+
+    moduleDirOf(file)
+        .ifPresent(
+            dir ->
+                byModule
+                    .computeIfAbsent(moduleRelForDir(dir), k -> new LinkedHashSet<>())
+                    .add(file));
   }
 
   // Matched by type-name token: may over-select (a file that only mentions the name) but never
-  // misses
-  // a real caller; an extra candidate just compiles clean.
-  private List<Path> sameModuleReferrers(final Path file, final ModuleSourceConfig config) {
+  // misses a direct caller; an extra candidate just compiles clean.
+  private List<Path> referrers(final Path file) {
+    final Set<Path> reach =
+        moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of());
     return candidateIndex.candidateUris(FileUtil.javaTypeName(file)).stream()
         .map(LatheUri::toPath)
         .filter(path -> !path.equals(file))
-        .filter(path -> inSameModule(path, config))
+        .filter(path -> moduleDirOf(path).filter(reach::contains).isPresent())
         .toList();
   }
 
-  private boolean inSameModule(final Path path, final ModuleSourceConfig config) {
-    return workspace
-        .moduleSourceFor(path)
-        .map(other -> other.moduleDir().equals(config.moduleDir()))
-        .orElse(false);
+  private Optional<Path> moduleDirOf(final Path file) {
+    return workspace.moduleSourceFor(file).map(ModuleSourceConfig::moduleDir);
   }
 
   // Placement (module rel + test/production) for each path that maps to a reactor module. Lets
@@ -3583,13 +3644,17 @@ final class WorkspaceSession {
 
   // The reactor remainder a cross-module change may break: modules that transitively depend on the
   // changed ones. verify_change hands these to `mvn`, not recompile (codegen/AP are Maven's job).
+  int reactorModuleCount() {
+    return (int)
+        workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+  }
+
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
-            .map(workspace::moduleSourceFor)
+            .map(this::moduleDirOf)
             .flatMap(Optional::stream)
-            .map(ModuleSourceConfig::moduleDir)
-            .collect(Collectors.toSet());
+            .collect(Collectors.toUnmodifiableSet());
     return changedModuleDirs.stream()
         .flatMap(dir -> moduleGraph.downstreamModuleDirs(dir).stream())
         .filter(dir -> !changedModuleDirs.contains(dir))
@@ -3606,6 +3671,9 @@ final class WorkspaceSession {
       return;
     }
 
+    // So verify_change checks what used the deleted types.
+    final Path root = config.sourceRoots().get(0);
+    tree.orphans().forEach(rel -> writtenSinceVerify.add(root.resolve(rel)));
     refreshReactorShard(config);
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
@@ -3914,6 +3982,7 @@ final class WorkspaceSession {
                 source, new FailedWrite(mtime, "internal error, see the server log"));
           }
         });
+    writtenSinceVerify.addAll(mtimes.keySet());
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
@@ -3998,27 +4067,42 @@ final class WorkspaceSession {
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
-  // resource edit is picked up without Maven. The copy bumps the destination mtime, so the next
-  // pass
-  // sees it as fresh — no dedupe state needed.
-  // Returns how many resources were checked.
+  // resource edit is picked up without Maven; the copy bumps the destination mtime, so the next
+  // pass sees it as fresh. Remove the copy of a resource deleted since the last pass. Returns how
+  // many resources were checked.
   private int reconcileResources() {
-    int checked = 0;
-    for (final Path sourceDir : manifest.resourceSourceDirs()) {
-      checked += copyStaleResourcesUnder(sourceDir);
-    }
-
-    return checked;
+    final Map<Path, Long> resources =
+        manifest.resourceSourceDirs().stream()
+            .flatMap(sourceDir -> resourceMtimesUnder(sourceDir).entrySet().stream())
+            .collect(
+                Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
+    resources.forEach(this::copyIfStale);
+    // Only files the last scan saw: a copy with no source may be the build's own output.
+    final Set<Path> deleted =
+        scannedResources.stream()
+            .filter(file -> !resources.containsKey(file) && Files.notExists(file))
+            .collect(Collectors.toUnmodifiableSet());
+    deleted.forEach(
+        file -> manifest.resourceDestination(file).ifPresent(dest -> deleteResource(file, dest)));
+    scannedResources = resources.keySet();
+    return resources.size();
   }
 
-  private int copyStaleResourcesUnder(final Path sourceDir) {
+  private Map<Path, Long> resourceMtimesUnder(final Path sourceDir) {
     try {
-      final Map<Path, Long> resources = FileUtil.fileMtimes(sourceDir, file -> true);
-      resources.forEach(this::copyIfStale);
-      return resources.size();
+      return FileUtil.fileMtimes(sourceDir, file -> true);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
-      return 0;
+      return Map.of();
+    }
+  }
+
+  private void deleteResource(final Path file, final Path dest) {
+    try {
+      Files.deleteIfExists(dest);
+      LOG.info(() -> "[resource] %s deleted → removed %s".formatted(file, dest));
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resource] delete failed for %s".formatted(dest));
     }
   }
 
@@ -4228,6 +4312,13 @@ final class WorkspaceSession {
         promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
         requestPass(false);
       }
+      // A prompt already shown stays (answering it still syncs), but MCP stops asking for a sync
+      // and the next change prompts again.
+      case BUILD_FILES_RESTORED -> {
+        buildFilesNotificationPending = false;
+        pendingSyncModules = List.of();
+        requestPass(false);
+      }
       // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
       case NO_CHANGE -> requestPass(false);
     }
@@ -4289,7 +4380,7 @@ final class WorkspaceSession {
   private void reloadWorkspace() {
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
-      watcher.updateBuildFiles(newManifest.buildFiles());
+      watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());
       buildFilesNotificationPending = false;
     }
 

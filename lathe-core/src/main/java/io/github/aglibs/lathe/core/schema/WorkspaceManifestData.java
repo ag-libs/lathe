@@ -11,7 +11,7 @@ public record WorkspaceManifestData(
     List<String> runnerClasspath,
     JdkSourceData jdk,
     List<DependencyData> dependencySources,
-    List<String> buildFiles,
+    List<BuildFileData> buildFiles,
     List<ResourceRootData> resourceRoots,
     List<OutputData> outputs,
     // The tool that ran the last build (the sync script runs it too), for the formatter's %MVN%.

@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.LatheTextDocumentService;
@@ -30,6 +31,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -63,6 +65,8 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
  * out-of-process edits, and returns results directly instead of over JSON-RPC.
  */
 public final class LatheEngine {
+
+  private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int SNIPPET_CONTEXT_LINES = 3;
@@ -431,36 +435,61 @@ public final class LatheEngine {
     }
 
     // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
-    final List<Path> changed =
+    final List<Path> touched =
         files.isEmpty()
             ? Stream.concat(
                     outcome.reacted().stream(), await(service.takeWrittenSinceVerify()).stream())
                 .distinct()
                 .toList()
             : files;
+    // A file put back to what the last build compiled is no change.
+    final List<Path> changed = await(service.differingFromBuild(touched));
     if (changed.isEmpty()) {
       return new LatheVerifyChange(null, List.of(), List.of(), null);
     }
 
+    final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(entry -> new LatheModuleDiagnostics(entry.getKey(), diagnose(entry.getValue())))
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
+    // Every caller is checked, however many: the line shows when that grows costly (a core type's
+    // callers across a large reactor).
+    LOG.info(
+        () ->
+            "[verify] %d file(s) in %d module(s) %dms diags=%d"
+                .formatted(
+                    targets.values().stream().mapToInt(List::size).sum(),
+                    targets.size(),
+                    checked.elapsedMs(),
+                    perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
     final List<String> downstream = await(service.downstreamModuleRels(changed));
-    final String suggestedSync =
-        downstream.isEmpty()
-            ? null
-            : LatheLayout.scopedSyncCommand(new TreeSet<>(targets.keySet()));
-    return new LatheVerifyChange(null, perModule, downstream, suggestedSync);
+    return new LatheVerifyChange(
+        null, perModule, downstream, syncFor(downstream, await(service.reactorModuleCount())));
+  }
+
+  // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
+  // included (not -amd: it adds dependents without their own upstream, which broke on Helidon).
+  // Past half the reactor that is nearly a full build anyway, and the list could approach the
+  // 8,191-character Windows command line.
+  private static String syncFor(final List<String> dependents, final int reactorModules) {
+    if (dependents.isEmpty()) {
+      return null;
+    }
+
+    return dependents.size() * 2 > reactorModules
+        ? LatheLayout.SYNC_SCRIPT_COMMAND
+        : LatheLayout.scopedSyncCommand(dependents);
   }
 
   // Hints (unused code) say nothing about whether the change compiles, and an agent reads any count
   // as something to fix.
+  // Freshened once by verifyChange, not again for each file.
   private List<Diagnostic> diagnose(final List<Path> files) {
     return files.stream()
-        .flatMap(file -> compileFromDisk(file).stream())
+        .flatMap(file -> analyze(file).stream())
         .filter(diagnostic -> diagnostic.getSeverity() != DiagnosticSeverity.Hint)
         .toList();
   }
@@ -515,6 +544,10 @@ public final class LatheEngine {
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
     await(service.reconcileForVerify());
+    return analyze(file);
+  }
+
+  private List<Diagnostic> analyze(final Path file) {
     final var uri = LatheUri.fromPath(file);
     final String content = IOUtil.unchecked(() -> Files.readString(file));
     return await(service.diagnosticsFuture(uri, content, VERSION));

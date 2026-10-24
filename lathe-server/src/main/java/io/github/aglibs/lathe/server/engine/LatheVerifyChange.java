@@ -10,8 +10,9 @@ import java.util.List;
  * <p>{@code deferral} is non-null when the in-process recompile was refused (a pending build-file
  * sync, or a running build); the caller should then run {@code suggestedSync} rather than trust an
  * empty diagnostic set. When it ran, {@code deferral} is null, {@code affectedModules} names the
- * downstream modules a cross-module change may break, and {@code suggestedSync} is the scoped sync
- * that builds and verifies them (or null when nothing is downstream).
+ * downstream modules a cross-module change may break, and {@code suggestedSync} is the sync that
+ * builds and verifies them (or null when nothing is downstream). {@code perModule} covers the
+ * changed files and their callers in their own and in dependent modules.
  */
 public record LatheVerifyChange(
     String deferral,

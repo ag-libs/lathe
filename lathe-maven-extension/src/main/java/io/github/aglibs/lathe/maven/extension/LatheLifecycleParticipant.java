@@ -1,8 +1,13 @@
 package io.github.aglibs.lathe.maven.extension;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,6 +19,8 @@ import org.apache.maven.AbstractMavenLifecycleParticipant;
 import org.apache.maven.MavenExecutionException;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.project.MavenProject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Injects the Lathe build wiring into the reactor model via {@link LatheModelInjector}, and holds a
@@ -24,6 +31,8 @@ import org.apache.maven.project.MavenProject;
 // an
 // ASM that cannot read Java 17 class files and would skip the participant without a word.
 public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParticipant {
+
+  private static final Logger LOG = LoggerFactory.getLogger(LatheLifecycleParticipant.class);
 
   // Refresh well inside LatheLock's staleness window so a live build never looks crashed, while a
   // real crash (heartbeat thread dies with the JVM) self-heals within that window.
@@ -59,9 +68,45 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     startReactorLock(latheDir);
   }
 
+  // The lock is released whatever the top-up throws: in an mvnd daemon a skipped release leaves the
+  // heartbeat holding it, so every server takes the workspace for one being built.
   @Override
   public void afterSessionEnd(final MavenSession session) {
-    stopReactorLock();
+    try {
+      if (reactorLockDir != null) {
+        mirrorLateOutputs(reactorLockDir.getParent());
+      }
+    } finally {
+      stopReactorLock();
+    }
+  }
+
+  // Each compile copies its output into the mirror, but a build adds files after compiling: Helidon
+  // writes its annotation processor's META-INF/services entry in process-classes, and without it
+  // the server's javac runs no processor. Adds what a mirror lacks; never a class, which the server
+  // may have rewritten since. Best-effort: a failure costs that entry, never the build.
+  static void mirrorLateOutputs(final Path workspaceRoot) {
+    try {
+      final WorkspaceManifestData manifest =
+          Json.read(
+              workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+              WorkspaceManifestData.class);
+      ReactorRewrite.of(workspaceRoot, manifest.outputs())
+          .mirrors()
+          .forEach(LatheLifecycleParticipant::addLateFiles);
+    } catch (final IOException | RuntimeException e) {
+      // RuntimeException too: a manifest another Lathe version wrote fails to parse, and this
+      // best-effort step must never fail the build.
+      LOG.debug("[mirror] late build output not copied under {}", workspaceRoot, e);
+    }
+  }
+
+  // Only into a mirror the compile created: a module never compiled has no mirror to complete.
+  private static void addLateFiles(final Path output, final Path mirror) {
+    if (Files.isDirectory(mirror)) {
+      IOUtil.unchecked(
+          () -> FileUtil.copyMissing(output, mirror, file -> !FileUtil.isClassFile(file)));
+    }
   }
 
   private static Path reactorRoot(final MavenSession session) {

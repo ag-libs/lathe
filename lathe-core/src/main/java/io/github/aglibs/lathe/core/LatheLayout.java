@@ -36,7 +36,7 @@ public final class LatheLayout {
   public static final String SERVER_ARGS_FILE = "lathe-server.args";
   public static final String MCP_ARGS_FILE = "lathe-mcp.args";
   // Versions every .lathe/ file; bump it on any .lathe/ format change.
-  public static final String SCHEMA_VERSION = "5";
+  public static final String SCHEMA_VERSION = "6";
   // Versions the ~/.cache/lathe type-index shards and dependency-source markers, separately so a
   // .lathe/ format change does not force rebuilding every cache.
   public static final String CACHE_SCHEMA_VERSION = "4";

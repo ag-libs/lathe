@@ -450,6 +450,28 @@ class WritePassTest extends ServiceTestBase {
     assertThat(Files.readString(freshDest)).isEqualTo("keep"); // up to date → untouched
   }
 
+  @Test
+  void reconcile_resourceDeletedOnDisk_removesItsCopy_keepsOtherFilesInTheMirror()
+      throws Exception {
+    final Path resDir = tmp.resolve("app/src/main/resources");
+    final Path gone = TestCompiler.writeAt(resDir.resolve("gone.conf"), "gone", 9_000L);
+    TestCompiler.writeAt(resDir.resolve("kept.conf"), "kept", 9_000L);
+    final Path generated =
+        writeResourceDest("META-INF/services/com.example.Spi", "com.example.Impl", 1_000L);
+    writeResourceWorkspace("app/src/main/resources", "app/target/classes");
+    service.initialize(tmp);
+    awaitWorkerIdle();
+    final Path goneCopy = tmp.resolve(".lathe/app/classes/gone.conf");
+    assertThat(goneCopy).exists();
+
+    Files.delete(gone);
+    service.reconcileNow().get(5, TimeUnit.SECONDS);
+
+    assertThat(goneCopy).doesNotExist();
+    assertThat(tmp.resolve(".lathe/app/classes/kept.conf")).hasContent("kept");
+    assertThat(generated).as("not a resource the server copied").exists();
+  }
+
   private Path writeResourceDest(final String name, final String content, final long mtime)
       throws Exception {
     return TestCompiler.writeAt(tmp.resolve(".lathe/app/classes").resolve(name), content, mtime);
@@ -486,7 +508,8 @@ class WritePassTest extends ServiceTestBase {
     CompiledStamps.writeAll(
         tmp.resolve(".lathe/module"),
         "classes",
-        Map.of(Path.of("com/example/Foo.java"), stampMtime));
+        Map.of(Path.of("com/example/Foo.java"), stampMtime),
+        Map.of());
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
   }
 

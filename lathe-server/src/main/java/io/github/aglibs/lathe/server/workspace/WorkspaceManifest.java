@@ -3,6 +3,8 @@ package io.github.aglibs.lathe.server.workspace;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.LatheUri;
@@ -38,6 +40,9 @@ public final class WorkspaceManifest {
   private final Map<Path, List<Path>> sourceDirToClasspath;
   private final List<Path> typeIndexShardPaths;
   private final List<Path> buildFiles;
+  // The content the sync saw, for the build files watched by content (POMs); OpenJDK's touch-only
+  // batch markers have none.
+  private final Map<Path, ContentFingerprint> buildFileFingerprints;
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
   private final ReactorRewrite reactorRewrite;
@@ -55,6 +60,7 @@ public final class WorkspaceManifest {
       final Map<Path, List<Path>> sourceDirToClasspath,
       final List<Path> typeIndexShardPaths,
       final List<Path> buildFiles,
+      final Map<Path, ContentFingerprint> buildFileFingerprints,
       final List<Path> runnerClasspath,
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
@@ -68,6 +74,7 @@ public final class WorkspaceManifest {
     this.sourceDirToClasspath = sourceDirToClasspath;
     this.typeIndexShardPaths = typeIndexShardPaths;
     this.buildFiles = buildFiles;
+    this.buildFileFingerprints = buildFileFingerprints;
     this.runnerClasspath = runnerClasspath;
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
@@ -89,6 +96,7 @@ public final class WorkspaceManifest {
         Map.of(),
         List.of(),
         List.of(),
+        Map.of(),
         List.of(),
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
@@ -146,7 +154,17 @@ public final class WorkspaceManifest {
                       : Stream.empty())
               .toList();
       final List<Path> resolvedBuildFiles =
-          data.buildFiles().stream().map(workspaceRoot::resolve).toList();
+          data.buildFiles().stream()
+              .map(buildFile -> workspaceRoot.resolve(buildFile.path()))
+              .toList();
+      final Map<Path, ContentFingerprint> buildFileFingerprints =
+          data.buildFiles().stream()
+              .filter(buildFile -> buildFile.fingerprint() != null)
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      buildFile -> workspaceRoot.resolve(buildFile.path()),
+                      BuildFileData::fingerprint,
+                      (first, ignored) -> first));
       final List<Path> runnerClasspath = data.runnerClasspath().stream().map(Path::of).toList();
       final var reactorRewrite = ReactorRewrite.of(workspaceRoot, data.outputs());
       return new WorkspaceManifest(
@@ -158,6 +176,7 @@ public final class WorkspaceManifest {
           sourceDirToClasspath,
           typeIndexShardPaths,
           resolvedBuildFiles,
+          buildFileFingerprints,
           runnerClasspath,
           ResourceRootIndex.build(workspaceRoot, reactorRewrite, data.resourceRoots()),
           reactorRewrite,
@@ -236,6 +255,10 @@ public final class WorkspaceManifest {
 
   public List<Path> buildFiles() {
     return buildFiles;
+  }
+
+  public Map<Path, ContentFingerprint> buildFileFingerprints() {
+    return buildFileFingerprints;
   }
 
   public List<Path> runnerClasspath() {

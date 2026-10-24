@@ -155,7 +155,7 @@ editing files — Lathe reconciles in-process automatically, recompiling the cha
 order and cleaning up deletions with no build. Only **build-file / module-structure** changes prompt a
 full refresh, which runs `.lathe/lathe-sync.sh` — a script the build writes, so the editor never needs to
 know your build tool. Run it yourself any time: `.lathe/lathe-sync.sh` refreshes everything,
-`.lathe/lathe-sync.sh app core` only those modules (with their upstream and dependents), and `--tests` also
+`.lathe/lathe-sync.sh app core` only those modules (with their upstream), and `--tests` also
 re-captures test launches without running the tests. It prints the exact build command first.
 
 ## OpenJDK

@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.install.SyncScript;
@@ -226,7 +227,9 @@ public final class OpenJdkSync {
       throws IOException {
     Files.createDirectories(latheModuleDir);
     Json.write(config, latheModuleDir.resolve(LatheLayout.paramsFileName(SOURCE_TREE)));
-    CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots));
+    // No compiled content: fingerprinting every JDK source on each sync costs more than
+    // verify_change's revert check is worth there.
+    CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots), Map.of());
   }
 
   // filelist -> {sourceRoot-relative path -> mtime}, keyed as LatheCompiler.writeCompiledStamps
@@ -279,7 +282,8 @@ public final class OpenJdkSync {
             List.of(),
             null,
             List.of(),
-            buildFiles,
+            // Watched by touch, not content: make only touches a marker after its module compiles.
+            buildFiles.stream().map(rel -> new BuildFileData(rel, null)).toList(),
             List.of(),
             List.of(),
             buildTool.toString());

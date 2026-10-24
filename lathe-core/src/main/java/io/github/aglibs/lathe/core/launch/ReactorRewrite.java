@@ -40,6 +40,11 @@ public final class ReactorRewrite {
     return NONE;
   }
 
+  // Each reactor build output with the mirror it stands for.
+  public Map<Path, Path> mirrors() {
+    return mirrors;
+  }
+
   public Path toLathe(final Path path) {
     return mirrors.getOrDefault(path.normalize(), path);
   }

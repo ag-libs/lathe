@@ -1,8 +1,10 @@
 package io.github.aglibs.lathe.install;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -38,7 +40,7 @@ public final class WorkspaceManifestWriter {
             runnerClasspath,
             jdkSource.toData(),
             dependencySources.stream().map(DependencySource::toData).toList(),
-            buildFiles,
+            fingerprinted(workspaceRoot, buildFiles),
             resourceRoots,
             outputs,
             buildTool.toString());
@@ -56,6 +58,18 @@ public final class WorkspaceManifestWriter {
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
     }
+  }
+
+  // The content each POM had when Maven read it, so the server asks for a sync only when one
+  // really changed, not when it was merely touched or put back.
+  private static List<BuildFileData> fingerprinted(
+      final Path workspaceRoot, final List<String> buildFiles) {
+    return buildFiles.stream()
+        .map(
+            rel ->
+                new BuildFileData(
+                    rel, IOUtil.unchecked(() -> FileUtil.fingerprint(workspaceRoot.resolve(rel)))))
+        .toList();
   }
 
   // The build JDK, as a plain path the launcher reads to run the server's javac at the project's

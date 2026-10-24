@@ -20,6 +20,8 @@ All files live in `dev/` and are never shipped with the distribution.
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 | `mcp.py` | Minimal MCP stdio client (`McpClient`) and CLI for the Lathe MCP server |
 | `mcp_battery.py` | MCP smoke on a real workspace: every tool, break → verify → repair, rename round-trip |
+| `mcp_staleness.py` | MCP answers after outside changes (file tools, git, a build) on a real workspace |
+| `lsp_staleness.py` | The same outside changes seen by an editor session, polled up to a deadline |
 | `editor-smoke.sh` | Headless editor smoke on real workspaces, in your own Neovim config |
 
 ---
@@ -124,6 +126,31 @@ dev/editor-smoke.sh ~/git                    # all three; or name some: ~/git he
 Both print one `PASS`/`FAIL` line per check and exit 1 if any check fails.
 `mcp_battery.py` restores every file it touched; the editor smoke never writes a file.
 `mcp_battery.py` uses the launcher `mcp.py` picks: `LATHE_MCP_LAUNCHER`, else the newest cached server.
+
+---
+
+## Staleness after outside changes — mcp_staleness.py, lsp_staleness.py
+
+Change a real workspace the way an agent's file tools, git or a build would, then check that every
+answer reflects the disk: types added, renamed, moved and deleted (nested and secondary ones too),
+a broken upstream file, a POM edit (live and while no server ran), a test resource added and
+deleted, a test edited before `run_test`, a Helidon blueprint whose builder must be regenerated, a
+build running meanwhile, two sessions, and a source-only branch switch.
+They target the same Dropwizard, EqualsVerifier and Helidon clones as the release smoke above, and
+restore every file they touch.
+
+```bash
+python3 -I dev/mcp_staleness.py ~/git/helidon helidon             # every scenario
+python3 -I dev/mcp_staleness.py ~/git/dropwizard dropwizard add verify
+LATHE_PROBE_OLD_REF=HEAD~150 python3 -I dev/mcp_staleness.py ~/git/dropwizard dropwizard branch
+python3 -I dev/lsp_staleness.py ~/git/equalsverifier equalsverifier
+```
+
+The MCP probe asks each question once and, if the answer is wrong, again after 3 and 8 s, tagging
+the failure `[LAG]` or `[NEVER]`; the LSP probe polls the diagnostics the server pushes for an open
+file, as an editor shows them.
+Edits to a POM leave it newer than `.lathe/workspace.json`, so the next session asks for a sync even
+after the content is restored: run `.lathe/lathe-sync.sh` before measuring anything else.
 
 ---
 

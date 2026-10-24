@@ -63,7 +63,7 @@ Other threads never read or write it; they exchange messages:
 - the session thread hands a tree's worker an immutable request (the sources to write or analyze);
 - the worker runs javac on its own thread, with its own tree-local cache, and posts an immutable result back to the session thread;
 - timers (the reconcile tick, the rename idle commit and unapplied drop) post to the session thread;
-- the MCP engine requests a pass and waits on the returned future from its own thread;
+- the MCP engine requests a pass and waits on the returned future from its own thread, and then on the type-index rebuild the pass started, so a type it just wrote is already searchable;
 - the reactor type index is rebuilt once after the passes, on a pooled thread from an immutable snapshot, and applied on the session thread only if the index is still the one it was built from — a rebuild takes 100–200 ms on a large reactor and would otherwise hold back the publishes queued behind it.
 
 The session thread never blocks: a pass is a chain of these messages, each tree's result posting the next step.

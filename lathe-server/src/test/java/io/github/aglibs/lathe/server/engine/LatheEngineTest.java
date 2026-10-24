@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -28,6 +30,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LatheEngineTest {
+
+  private static final String BUILD_FILES_NOTE =
+      "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
+  private static final String API_SOURCE =
+      "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
 
   @TempDir private Path tmp;
   private LatheEngine engine;
@@ -207,6 +214,37 @@ class LatheEngineTest {
   }
 
   @Test
+  void searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery()
+      throws Exception {
+    final String ifaceSource = "package com.example;\ninterface Greeter {\n  void greet();\n}\n";
+    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
+    final Path impl =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/EnGreeter.java",
+            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    stampModule(iface, impl);
+    engine = new LatheEngine(tmp);
+    assertThat(engine.searchSymbols("FrGreeter", 50)).isEmpty();
+
+    // An agent writes a new implementation with its own file tool, then queries at once.
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/FrGreeter.java",
+        "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
+
+    assertThat(engine.searchSymbols("FrGreeter", 50))
+        .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
+    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
+    assertThat(
+            engine
+                .findImplementations(iface, pos.getLine(), pos.getCharacter(), 50)
+                .implementations())
+        .anySatisfy(loc -> assertThat(loc.uri()).endsWith("FrGreeter.java"));
+  }
+
+  @Test
   void searchSymbols_byName_findsReactorType() throws Exception {
     greetFixture();
     engine = new LatheEngine(tmp);
@@ -263,20 +301,7 @@ class LatheEngineTest {
 
   @Test
   void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
-    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
-    Json.write(
-        new WorkspaceManifestData(
-            "0",
-            tmp.toString(),
-            null,
-            List.of(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            null),
-        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    writeManifest("0", List.of());
     engine = new LatheEngine(tmp);
 
     assertThat(engine.notes(List.of()).syncRequired())
@@ -284,6 +309,56 @@ class LatheEngineTest {
         .asString()
         .contains("another Lathe version")
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
+  void notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired()).isEmpty();
+
+    Files.writeString(pom, "<project><!-- edited --></project>");
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired())
+        .as("seen by the query itself, not on the next tick")
+        .containsExactly(BUILD_FILES_NOTE);
+
+    writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
+    assertThat(engine.diagnostics(fx.caller()))
+        .as("the agent's edits are still compiled while the sync is pending")
+        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
+    assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
+
+    Files.writeString(pom, "<project/>");
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired())
+        .as("the POM is back to what the sync saw")
+        .isEmpty();
+  }
+
+  @Test
+  void notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
+    TestCompiler.writeAt(pom, "<project/>", 99_000_000_000L);
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired()).as("only touched").isEmpty();
+    engine.close();
+
+    Files.writeString(pom, "<project><!-- edited --></project>");
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller());
+
+    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
   }
 
   @Test
@@ -710,6 +785,48 @@ class LatheEngineTest {
   }
 
   @Test
+  void verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt()
+      throws Exception {
+    final Path api = apiReactor(List.of("app"), List.of());
+    engine = new LatheEngine(tmp);
+
+    // The agent renames a() in api only, with its own file tool: app no longer compiles.
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.perModule())
+        .singleElement()
+        .satisfies(
+            module -> {
+              assertThat(module.module()).isEqualTo("app");
+              assertThat(module.diagnostics())
+                  .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol"));
+            });
+    assertThat(verify.affectedModules()).containsExactly("app");
+    assertThat(verify.suggestedSync())
+        .as("builds the dependent, and with -am the changed module too")
+        .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app")));
+
+    // Another such edit, but compiled by an unrelated query before verify_change is asked.
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "c()"), 20_000L);
+    engine.diagnostics(api);
+
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .anySatisfy(
+            module ->
+                assertThat(module.diagnostics())
+                    .anyMatch(d -> d.getMessage().getLeft().contains("cannot find symbol")));
+
+    // A deleted type: nothing left to diagnose in its file, but its callers break.
+    Files.delete(api);
+    engine.searchSymbols("Api", 10);
+
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .singleElement()
+        .satisfies(module -> assertThat(module.module()).isEqualTo("app"));
+  }
+
+  @Test
   void verifyChange_noExternalChange_reportsNoDiagnostics() throws Exception {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
@@ -720,6 +837,86 @@ class LatheEngineTest {
     assertThat(verify.deferral()).isNull();
     assertThat(verify.perModule()).isEmpty();
     assertThat(verify.suggestedSync()).isNull();
+  }
+
+  @Test
+  void verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync() throws Exception {
+    final Path api = apiReactor(List.of("app"), List.of());
+    engine = new LatheEngine(tmp);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    final Path extra =
+        TestCompiler.writeAt(
+            api.resolveSibling("Extra.java"),
+            "package com.example.api;\npublic class Extra {}\n",
+            10_000L);
+    assertThat(engine.verifyChange(List.of()).suggestedSync()).isNotNull();
+
+    // The whole change undone: Api back to what the build compiled, and a type the build never saw
+    // deleted again.
+    TestCompiler.writeAt(api, API_SOURCE, 20_000L);
+    Files.delete(extra);
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+
+    assertThat(verify.perModule()).isEmpty();
+    assertThat(verify.suggestedSync())
+        .as("back to what the build compiled: nothing to verify or sync")
+        .isNull();
+  }
+
+  @Test
+  void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
+    final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
+    engine = new LatheEngine(tmp);
+
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .as("the dependents, not the changed module: -am builds api along with them")
+        .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app1", "app2")));
+  }
+
+  @Test
+  void verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync() throws Exception {
+    final Path api = apiReactor(List.of("app1", "app2"), List.of());
+    engine = new LatheEngine(tmp);
+
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
+  }
+
+  // An api module, modules that call it, and modules that do not, all compiled into the mirror.
+  private Path apiReactor(final List<String> dependents, final List<String> unrelated)
+      throws Exception {
+    final Path api =
+        TestCompiler.writeMirroredModule(
+                tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L)
+            .get(0);
+    for (final String module : dependents) {
+      TestCompiler.writeMirroredModule(
+          tmp,
+          module,
+          Map.of(
+              "com/example/%s/Use.java".formatted(module),
+              "package com.example.%s;\nclass Use { int u() { return new com.example.api.Api().a(); } }\n"
+                  .formatted(module)),
+          List.of("api"),
+          1_000L);
+    }
+
+    for (final String module : unrelated) {
+      TestCompiler.writeMirroredModule(
+          tmp,
+          module,
+          Map.of(
+              "com/example/%s/Other.java".formatted(module),
+              "package com.example.%s;\nclass Other {}\n".formatted(module)),
+          List.of(),
+          1_000L);
+    }
+
+    return api;
   }
 
   // Record a compile stamp per source so a freshly started engine sees the module as already
@@ -734,6 +931,28 @@ class LatheEngineTest {
           sourceRoot.relativize(source),
           Files.getLastModifiedTime(source).toMillis());
     }
+  }
+
+  private BuildFileData syncedBuildFile(final Path file) throws Exception {
+    return new BuildFileData(FileUtil.slashed(tmp.relativize(file)), FileUtil.fingerprint(file));
+  }
+
+  private void writeManifest(final String schemaVersion, final List<BuildFileData> buildFiles)
+      throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Json.write(
+        new WorkspaceManifestData(
+            schemaVersion,
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            buildFiles,
+            List.of(),
+            List.of(),
+            null),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   private void writeNewer(final Path source, final String content) throws Exception {

@@ -8338,6 +8338,192 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-16 — A source whose content changes while its mtime is put back is not recompiled — non-goal
+
+**Status: non-goal.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on all three test workspaces, through MCP and
+through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s); an edge case.
+
+### Observed behaviour
+
+A source was changed and its previous mtime restored (as `cp -p`, `rsync -t`, or extracting an
+archive does).
+Dependents kept compiling against the old classes, also after 8 s.
+Editor: an open dependent kept its clean diagnostics for 10 s, and the mirror class kept the old method.
+
+### Cause
+
+Staleness is "mtime differs from the compile stamp"
+([compile stamps](../done/lathe-staleness-compile-stamps.md)); content is not compared.
+
+### Decision
+
+Not fixed (2026-10-24).
+Git, editors, and agents' file tools always bump the mtime; only tools that copy timestamps on
+purpose leave it, and a sync then repairs the mirror.
+Recording the size beside the mtime would not catch a same-size edit (the probe's `int a()` →
+`int b()` is one), and hashing every source on each scan would cost far more than the case is worth.
+
+---
+
+## WS-15 — Annotation processors built in the reactor never run in-process — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP, including the editor's own save.**
+Found by the external-change staleness probe (2026-10-24) on Helidon, through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+An option (`String latheProbeOpt()` with `@Option.Configured` and `@Option.Default`) was added to
+`common/configurable/.../AllowListConfigBlueprint.java` outside the server, and a test in
+`webserver/webserver` called `AllowListConfig.builder().latheProbeOpt("x")`.
+The pass rewrote `AllowListConfigBlueprint.class`, but `AllowListConfig.java` in
+`.lathe/common/configurable/generated-sources` and its `AllowListConfig*.class` kept the dates of the
+last sync, and the caller kept reporting `cannot find symbol` (also after 8 s).
+Removing the option again was handled correctly, because the stale builder has no such option either.
+
+Editor: the same external edit did not regenerate the builder within 15 s, and neither did an editor
+save of the blueprint (`didChange`, the file written, `didSave`): the mirror's `AllowListConfig.java`
+never gained the option, and an open dependent calling it kept `cannot find symbol`.
+So this is not only an external-change gap; editing a Helidon blueprint in the editor never updates
+its builder without a sync.
+[EG-052](gaps-archive.md) is a different question (which generated copy navigation resolves to) and
+still holds.
+
+### Cause
+
+The write sets `ANNOTATION_PROCESSOR_PATH` from `ModuleSourceConfig.remappedProcessorPath()`, which
+maps reactor processors to their `.lathe/<module>/classes` mirror, e.g. `.lathe/codegen/apt/classes`.
+That mirror holds the classes but not
+`META-INF/services/javax.annotation.processing.Processor`, which exists in
+`codegen/apt/target/classes` because the build generates it (there is no
+`src/main/resources` in `codegen/apt`).
+javac finds no processor, so the write silently compiles without code generation.
+Processors from dependency jars are not remapped, so they presumably still run (not re-verified here).
+
+### Fix
+
+The services file is written by Helidon's services Maven plugin in `process-classes`, from the
+`provides` in `module-info.java`, after the compiler shim has copied the compile's output into the
+mirror; `lathe:sync` runs at the start of the build (in the root project, before any module
+compiles), so it could not add it either.
+The extension's `afterSessionEnd`, which runs after every module, now adds to each mirror the files
+its build output has and the mirror lacks (`LatheLifecycleParticipant.mirrorLateOutputs`, using the
+output-to-mirror map of `workspace.json` through `ReactorRewrite.mirrors()` and the new
+`FileUtil.copyMissing`), never a class, which the server may have rewritten since.
+It is best-effort, before the reactor lock is released, and works with mvnd.
+
+Verified on Helidon after one `.lathe/lathe-sync.sh codegen/apt`: an external blueprint edit and an
+editor save both regenerate `AllowListConfig`, through MCP and the editor.
+Limit: it needs the extension; a manual POM setup still lacks such files.
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.mirrorLateOutputs_fileAddedAfterCompile_copiedIntoTheMirror_classesAndUnmirroredLeftAlone`
+- `LatheLifecycleParticipantTest.mirrorLateOutputs_noManifest_doesNothing`
+- `FileUtilTest.copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone`
+
+---
+
+## WS-14 — A deleted resource stays in the mirror — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard through
+MCP, and on all three test workspaces through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+A test resource (`src/test/resources/latheprobe.txt`) was added outside the server, and a test that
+asserts `getClass().getResource("/latheprobe.txt") != null` passed through MCP `run_test`, as expected.
+After the resource was deleted, the same test still passed, after waiting 8 s as well:
+`.lathe/<module>/test-classes/latheprobe.txt` was still there.
+
+Editor: the added resource was copied into the mirror within 1 s; after the delete the mirror copy was
+still there 15 s later, so the editor's test runs and the debugger see it too.
+
+### Cause
+
+The pass copies changed resources (`WorkspaceSession.reconcileResources` → `copyIfStale`), but only
+copies; nothing removes the mirror copy of a resource whose source is gone, unlike classes, whose
+deleted sources are dropped in the pass's first step.
+
+### Fix
+
+The pass remembers the resource files its last scan found (`scannedResources`, session-thread state)
+and removes the mirror copy (`manifest.resourceDestination`) of each one that is gone since and does
+not exist on disk.
+It never deletes a mirror file only because it has no source: the mirror also holds the build's own
+output, such as a generated `META-INF/services` entry.
+
+Known limit: the first pass after startup has no earlier scan, so a resource deleted while no server
+ran keeps its copy until a sync.
+
+### Regression targets
+
+Fails without the deletion:
+
+- `WritePassTest.reconcile_resourceDeletedOnDisk_removesItsCopy_keepsOtherFilesInTheMirror`
+
+---
+
+## WS-13 — A build file changed while no server ran is never detected — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon,
+through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+A module `pom.xml` was edited (a comment appended) while no server was running, then a session was
+started and queried.
+No `[watcher] build files changed` line was logged and no sync was requested, so the answers came from
+a mirror built for the old POM.
+The same edit made while the server runs is detected within one tick.
+
+Editor: a live POM edit raised the "Build files changed" sync prompt within 0.5 s; an edit made before
+the server started raised no prompt within 15 s, on all three workspaces.
+MCP: neither case yielded a note (the live one was
+[MC-14](#mc-14--a-changed-build-file-never-yields-sync-required--done)).
+
+### Cause
+
+`WorkspaceWatcher.updateBuildFiles` takes its fingerprint baseline (mtime and size) from the build
+files as they are at startup, so a change made before startup is part of the baseline.
+The startup pass checks sources against their compile stamps, but nothing compares build files against
+the state the last sync saw.
+
+### Fix
+
+`WorkspaceWatcher.updateBuildFiles` baselines a build file newer than `workspace.json` as unseen,
+so the first poll reports `BUILD_FILES_CHANGED` and the existing reaction follows: the editor's sync
+prompt on the first tick, and through the MCP freshen step (which polls the watcher since the
+[MC-14](#mc-14--a-changed-build-file-never-yields-sync-required--done) fix) a "Sync required" note on
+the first query.
+That first version compared mtimes, so a POM merely touched, or edited and put back (a branch switch
+and back, a probe's revert), asked for a sync until the next full sync — a scoped `-pl` sync does not
+rewrite `workspace.json`.
+It now compares content: `lathe:sync` records each POM's fingerprint (size and CRC32C, schema 6) as
+`buildFiles[].fingerprint`, and the watcher re-fingerprints a POM whose mtime or size moved, counting it
+changed only while its content differs from the synced one; when every changed POM is back, it reports
+`BUILD_FILES_RESTORED` and the session drops the pending sync (MCP's note goes; the next change
+prompts again). A POM changed while no server ran is caught the same way at startup, by content.
+OpenJDK's `_the.<batch>_batch` markers, which `make` only touches, carry no fingerprint and keep the
+touch watch, startup included (newer than `workspace.json`).
+
+### Regression targets
+
+- `WorkspaceWatcherTest.poll_contentWatchedBuildFile_touchIgnored_editReported_revertReportedAsRestored`
+- `WorkspaceWatcherTest.poll_contentWatchedBuildFileNewerThanManifestAtStartup_reportedOnlyIfContentDiffers`
+- `WorkspaceWatcherTest.poll_buildFileEditedBeforeStartup_reportedOnFirstPollOnlyWhenNewerThanManifest`
+  (touch-watched)
+- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
+- `LatheEngineTest.notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers`
+
+---
+
 ## WS-12 — `lathe-sync.sh` drops the `-D` properties of the build it was generated from — non-goal
 
 **Status: non-goal (2026-10-24): documented behaviour, no code change.**
@@ -8376,6 +8562,8 @@ build has no Lathe) and no longer replays `-P`/`-D`.
 ### Regression targets
 
 None: there is no behaviour to guard.
+
+---
 
 ## WS-11 — A failed Maven compile empties the module's `.lathe` mirror — done
 
@@ -9934,6 +10122,219 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-13 — `verify_change` still advises a sync after a change has been fully reverted — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+After a change to `EqualsVerifier.java` was reverted on disk, so the tree matched `HEAD` again,
+`verify_change` still answered "3 module(s) depend on your change …; verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+On a large reactor that sends an agent into a needless Maven run.
+
+Since the [MC-7](gaps-archive.md#mc-7--verify_change-reports-a-clean-tree-while-dependent-modules-are-broken--done)
+fix the pass records every file it writes, so the reverting writes are reported too: a full revert
+now always reads as a change with dependents to build (seen on EqualsVerifier, 2026-10-24).
+
+### Fix
+
+The compile stamps record, beside each source's mtime, the content fingerprint (size plus CRC32C) the
+build last compiled (`CompiledStampsData.built`, written by `CompileCapture` on every Maven compile;
+the server's own writes leave it). `verify_change` drops any changed file whose content is back to
+that (`WorkspaceSession.differingFromBuild`), so a full revert reports nothing and suggests no sync;
+a deleted file stays, as its callers break. The OpenJDK front-end records no built content, so there
+a revert still reads as a change.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_changeFullyReverted_reportsNothingAndSuggestsNoSync` (fails without
+  the filter)
+- `CompiledStampsTest.writeAllThenLoad_roundTripsAndRecordUpdatesOneMtimeButKeepsWhatTheBuildCompiled`
+
+---
+
+## MC-7 — `verify_change` reports a clean tree while dependent modules are broken — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17), `forPackage` was renamed on disk in `EqualsVerifier.java` only, so core
+still compiles and `equalsverifier-test` breaks.
+`verify_change` with no arguments answered "No new diagnostics — the changed files compile cleanly",
+plus a sync suggestion for the dependent modules.
+`get_diagnostics` on a dependent test file (`MultipleTypeEqualsVerifierTest.java`) immediately
+returned 26 errors (`cannot find symbol … method forPackage(java.lang.String)`), so the server can see
+the breakage in-process.
+An agent that trusts the headline concludes its change is safe.
+
+Reproduced on all three test workspaces by the external-change staleness probe (2026-10-24):
+an upstream method renamed outside the server, with a caller in another module.
+`get_diagnostics` on the caller reported `cannot find symbol`, then `verify_change` with no arguments
+answered "No new diagnostics — the changed files compile cleanly".
+MCP only: in the editor an open caller in the dependent module republished the `cannot find symbol`
+within 3–4 s of the same external change.
+
+### Fix
+
+`verify_change` now also checks the callers of the changed files in dependent modules: the files that
+mention a changed type (the reactor-wide candidate index) in its module or one downstream of it
+(`WorkspaceSession.verifyTargetsByModule`), the changed files' modules first.
+It checks every caller, uncapped, and logs each call (`[verify] <files> file(s) in <modules>
+module(s) <ms>ms diags=<n>`), so a costly one shows in the log rather than being cut short; a broken
+`MediaTypes.java` on Helidon, with 142 dependent modules, took about 12 s.
+It freshens once and then analyzes each target without a pass of its own (`LatheEngine.analyze`).
+
+With no `files`, it now also sees changes an earlier query already compiled: the pass records every
+source it writes or whose classes it drops (design rule 8), not only the files the tools wrote, so a
+deleted type's callers are checked too; a file that no longer exists is not itself diagnosed.
+
+Verified on EqualsVerifier: the probe's upstream rename, after a query had compiled it, is reported
+in `equalsverifier-test`.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+  (fails with same-module callers only, and without the pass recording its writes)
+- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`
+
+---
+
+## MC-8 — The sync command `verify_change` suggests does not build the dependent modules it names — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`verify_change` says, for example, "3 module(s) depend on your change (equalsverifier-test,
+equalsverifier-test-mockito, equalsverifier-test-signedjar); verify them with:
+`.lathe/lathe-sync.sh equalsverifier-core`".
+After a type rename it named `equalsverifier-test-signedjar` but suggested
+`.lathe/lathe-sync.sh equalsverifier-core equalsverifier-test equalsverifier-test-mockito`.
+`lathe-sync.sh` scopes with `-pl <module> -am`, which builds the listed modules and their *upstream*
+dependencies only, so the dependents the message names are never built.
+Running the suggested command built parent, testhelpers and core only.
+
+### Fix
+
+The suggestion names the dependent modules (`LatheEngine.syncFor`), so `-pl … -am` builds them and
+everything they depend on, the changed modules included.
+When the dependents are more than half the reactor's modules it is the unscoped
+`.lathe/lathe-sync.sh` instead: that is nearly a full build anyway, and a core module's list (Helidon's
+`common/media-type` alone has 142 dependents) heads toward the 8,191-character Windows command line.
+
+History, so the question does not come back: the script first scoped with `-am -amd`, which broke on
+Helidon (ef6391a0): `-amd` adds the dependents but not their own upstream, so a dependent whose other
+dependencies were outside the selection failed to build. The script has been `-am`-only since, and
+stays so: a caller that needs the dependents built names them, as `verify_change` now does. The
+script and the shared model are unchanged, so a Gradle front-end (its `--module` options build each
+module's upstream through task dependencies) gets the same behaviour.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
+  (asserts `.lathe/lathe-sync.sh app` for a change in `api`)
+- `LatheEngineTest.verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents`
+- `LatheEngineTest.verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync`
+
+---
+
+## MC-15 — `search_symbols` and `find_implementations` miss a type added outside for a few seconds — done
+
+**Status: done — Target: next.**
+**Affects: MCP only.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A new type file was written outside the server, then queried at once:
+
+| Query | First answer | 3 s later |
+|---|---|---|
+| `search_symbols LatheProbeType` | "No symbols matching" | found |
+| `search_symbols` for a type just renamed by renaming its file | "No symbols matching" | found |
+| `find_implementations` on an interface, with a new implementing class | the old list | includes it |
+
+The pass had already written the class into the mirror (and `get_diagnostics`, `get_definition`,
+and `find_references` saw it at once), so only these two tools lag.
+An agent that creates a type and searches for it right away is told it does not exist.
+
+The editor server lags the same way, but there it is expected: `workspace/symbol` and
+`textDocument/implementation` caught up within 3–4 s of the external write, the latency of the
+reconcile tick that every external change has in the editor (an open dependent also took 3–8 s to
+republish).
+It is a gap only for MCP, which promises that answers reflect the disk at query time.
+
+### Cause
+
+The [one-pass design](../done/lathe-recompile-simplification.md#threads-and-state) rebuilds the
+reactor type index after the pass on a pooled thread; the engine waits for the pass
+(`reconcileForVerify`) but not for that rebuild.
+
+### Fix
+
+`rebuildReactorIndex` keeps a future (`reactorIndexRebuilt`) completed on the session thread once its
+rebuild is applied or superseded, and the engine's freshen step (`reconcileForVerify`) waits for it
+after the pass.
+The wait is chained through the session thread (`thenComposeAsync(…, worker::execute)`): a pass that
+ran as another's follow-up completes the caller's future before its own `endPass`, which starts the
+rebuild, so reading the future right in that callback would see the previous one.
+The failure was deterministic, not a narrow race: the probe's "3 s" was its retry interval.
+The editor keeps the non-blocking rebuild.
+
+### Regression targets
+
+Fails without the wait:
+
+- `LatheEngineTest.searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery`
+
+---
+
+## MC-14 — A changed build file never yields "Sync required" — done
+
+**Status: done — Target: next.**
+**Affects: MCP only.** The editor raises its sync prompt for the same edit within 0.5 s.
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A module `pom.xml` was edited during a session, then `get_diagnostics` was called on an unrelated
+file, again after 3 s and 8 s.
+None of the answers carried the `Sync required: build files changed — run .lathe/lathe-sync.sh` note
+that the [one-pass design](../done/lathe-recompile-simplification.md#mcp-fix-it-or-say-exactly-what-is-needed)
+and `status.md` promise; the answers silently came from the mirror built for the old POM.
+
+### Cause
+
+The server detects the change: the session log has `[watcher] build files changed — sync needed`.
+`promptForSync` sets `buildFilesNotificationPending` and asks the client, but the engine's
+`NoopLanguageClient.showMessageRequest` answers `null` at once, and `onSyncPromptResponse` clears
+`buildFilesNotificationPending` in the same millisecond (`[sync] answered action=null`).
+`reconcileForVerify` therefore never returns `BUILD_FILES_PENDING`.
+A build file changed before the session started is not detected at all ([WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done)).
+
+### Fix
+
+`NoopLanguageClient.showMessageRequest` leaves the prompt unanswered, so
+`buildFilesNotificationPending` holds until a sync reloads the workspace (`reloadWorkspace` clears
+it), and every answer carries the note until then — or, since the build files are compared by
+content ([WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done)), until
+every changed POM is back to what the sync saw.
+The engine's freshen step (`reconcileForVerify`) now runs the watcher's check first, so a build file
+the agent edited just before the query is reported by that query, not on the next tick.
+While the sync is pending the pass still runs, so the agent's own edits keep being compiled;
+the outcome only carries `BUILD_FILES_PENDING`, on which `verify_change` still defers to the sync.
+A build file changed before the session started is [WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done).
+
+### Regression targets
+
+Fails with the old immediate `null` answer:
+
+- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredAtOnceAndUntilSynced_editsStillCompile`
+
+---
 
 ## MC-2 — Non-lathe (MCP SDK / Reactor) logs are silently dropped: no SLF4J provider on the server classpath — done
 

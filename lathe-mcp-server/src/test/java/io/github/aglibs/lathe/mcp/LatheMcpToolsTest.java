@@ -237,7 +237,7 @@ class LatheMcpToolsTest {
     assertThat(
             LatheMcpTools.crossModuleNote(
                 new LatheVerifyChange(null, List.of(), List.of("a", "b"), sync)))
-        .contains("2 module(s) depend on your change (a, b);")
+        .contains("2 module(s) depend on your change (a, b); their callers were checked here")
         .doesNotContain("more");
     assertThat(LatheMcpTools.crossModuleNote(new LatheVerifyChange(null, List.of(), twelve, null)))
         .isEmpty();

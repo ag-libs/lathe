@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core;
 
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -24,9 +25,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import java.util.zip.CRC32C;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -42,6 +46,27 @@ public final class FileUtil {
 
   public static boolean isJavaFile(final Path path) {
     return path.getFileName().toString().endsWith(".java");
+  }
+
+  public static boolean isClassFile(final Path path) {
+    return path.getFileName().toString().endsWith(".class");
+  }
+
+  // CRC32C (a CPU instruction on x86 and ARM) plus the size: cheap, and only compared for equality.
+  public static ContentFingerprint fingerprint(final Path file) throws IOException {
+    final byte[] content = Files.readAllBytes(file);
+    final var crc = new CRC32C();
+    crc.update(content);
+    return new ContentFingerprint(content.length, crc.getValue());
+  }
+
+  // Empty when the file cannot be read (deleted, say): it then matches no recorded fingerprint.
+  public static Optional<ContentFingerprint> readFingerprint(final Path file) {
+    try {
+      return Optional.of(fingerprint(file));
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
   }
 
   // The top-level type name of a .java source — its file name without the .java suffix.
@@ -114,7 +139,7 @@ public final class FileUtil {
 
     try (final var walk = Files.walk(root)) {
       return walk.filter(Files::isRegularFile)
-          .filter(path -> path.getFileName().toString().endsWith(".class"))
+          .filter(FileUtil::isClassFile)
           .map(path -> toPackageName(root, path))
           .filter(name -> !name.isEmpty())
           .distinct()
@@ -275,6 +300,17 @@ public final class FileUtil {
         copyEntry(src, dest, source);
       }
     }
+  }
+
+  // Copies each file below src matching keep that dest lacks; files dest already has are left as
+  // they are. Returns how many it copied.
+  public static int copyMissing(final Path src, final Path dest, final Predicate<Path> keep)
+      throws IOException {
+    final UnaryOperator<Path> target = file -> dest.resolve(src.relativize(file));
+    final List<Path> missing =
+        walkFiles(src, keep).stream().filter(file -> Files.notExists(target.apply(file))).toList();
+    missing.forEach(file -> IOUtil.unchecked(() -> copyFileAtomically(file, target.apply(file))));
+    return missing.size();
   }
 
   // Temp file + atomic rename so a concurrent reader (a replay JVM reading .lathe/) never sees a
