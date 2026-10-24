@@ -10123,6 +10123,325 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink — done
+
+**Status: done — Target: next**
+
+Signal: attempting to read the server's per-call logs to diagnose [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route--done)
+— the logs were nowhere to be found despite the server emitting them.
+
+### Observed behaviour
+
+The server emits one `INFO` line per tool call to stderr, but Claude Code persists only the stderr of
+the connection handshake (`~/.cache/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl`, and
+`~/.claude/debug/<session>.txt` under `claude --debug=mcp`), so every later server line was lost.
+A request for per-server logs is open upstream and marked "not planned"
+(anthropics/claude-code#29035).
+
+### Fix
+
+- **File sink** (shipped earlier): `LatheMcpServer.main` attaches an appending JUL `FileHandler`
+  (`LatheLogging.initFile`) writing `~/.cache/lathe/logs/mcp-<start-timestamp>-<pid>.log`
+  (`LatheLayout.mcpSessionLog`), one file per server process, beside the `ConsoleHandler`.
+- **Retention:** a starting server keeps the newest 100 session logs and deletes the rest
+  (`FileUtil.deleteAllButLast`; the names start with the start time, so name order is age order).
+  On 2026-10-22 the directory had accrued 612 files. A session log at INFO averages a few kilobytes,
+  so no per-file cap. It also deletes the `.lck` files JUL's `FileHandler` leaves behind when a server
+  is killed outright (286 of them by 2026-10-24), once their log is gone.
+- **Timestamps:** `logging.properties` formats ISO-8601 with the zone offset
+  (`2026-10-24T16:21:40.134+0200`), so lines correlate with a client's UTC logs; the editor's server
+  log gains it too.
+- **Discoverability:** the startup line names the file (`[startup] pid=… cwd=… log=<path>`), so the
+  one stderr burst the client keeps points at the full log.
+- **Won't do:** a `LATHE_LOG_DIR` override; nobody asked for it, and the startup line gives the path.
+
+### Regression targets
+
+- `FileUtilTest.deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone`
+- `LatheMcpServerTest.isOrphanLock_sessionLocks_trueOnlyForALockWhoseLogIsGone`
+- `LatheLoggingTest.logFormat_record_isoTimestampWithTheZoneOffset`
+- `LatheLoggingTest.initFile_missingParentDir_createsItAndWritesRecord`
+
+---
+
+## MC-20 — `verify_change` lists each diagnostic under its module, not its file — done
+
+**Status: done — Target: next**
+Found while reviewing the shorter MCP answers (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+`verify_change` grouped diagnostics by module, each as `Warning [758:9] message`: an agent could not
+tell which file line 758 was in.
+
+### Fix
+
+The engine pairs each diagnostic with its file (`LatheDiagnostic`, the path as on a location), and the
+text lists them on one grep-style line each, errors first across all modules:
+`dropwizard-jetty/src/main/java/…/HttpConnectorFactory.java:758:9: Warning: …`.
+The structured result keeps `perModule` and gives each diagnostic its `path`.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_externalEditBreaksSibling_reportsDiagnostic` (the caller's path)
+- `LatheMcpToolsTest.locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn`
+
+---
+
+## MC-11 — `run_test` does not give the remedy when no test launch was captured — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+For a module whose tests never ran under Lathe, `run_test` answered
+"Test run blocked: no captured test-launch.json for equalsverifier-core", without the command its own
+description promises.
+
+### Fix
+
+The three places that block on a missing test launch (a test run, a test debug, a main class in test
+scope) share one message, which names the command:
+"no captured test launch for M; run `.lathe/lathe-sync.sh --tests M` to capture it".
+The editor's run and debug messages carry it too.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.runTestFuture_moduleWithoutACapturedLaunch_blockedWithTheCommandThatCapturesIt`
+
+---
+
+## MC-9 — `get_diagnostics` says "compiles cleanly" for files it never compiled — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+On EqualsVerifier (JDK 17):
+
+| `file` | Answer |
+|---|---|
+| `/etc/hosts` | "No diagnostics — hosts compiles cleanly." + "Sync required: ../../../etc/hosts is in no synced module — run `.lathe/lathe-sync.sh`" |
+| `pom.xml` | "No diagnostics — pom.xml compiles cleanly." + the same sync hint |
+| a Java file in `equalsverifier-21` (a module the JDK 17 build excludes by profile) | "No diagnostics — … compiles cleanly." + "run `.lathe/lathe-sync.sh`" |
+| a missing `.java` file | a raw `java.nio.file.NoSuchFileException` |
+
+The headline claimed a compile that never happened, and for the JDK-gated module the suggested sync
+could never include it.
+On Helidon a new public class answered "compiles cleanly" while its write failed on Helidon's
+API-stability annotation processor, which the analysis behind the headline does not run.
+
+### Fix
+
+- The file tools (`get_diagnostics`, the position tools, `run_test`) take only an existing `.java`
+  file: "pom.xml is not a .java file", "Foo.java does not exist".
+- A file no module compiles gets its own note, `Not checked:`, instead of a `Sync required:` line.
+  It advises the sync only for a file of a module the last build compiled (the manifest's outputs,
+  `WorkspaceManifest.inBuiltModule`); outside them it says Lathe cannot check the file, since no sync
+  would. A changed build file keeps its own sync note, so a new module still gets the advice.
+- `get_diagnostics` answers "Foo.java was not checked." for such a file, and otherwise "No errors or
+  warnings in Foo.java." instead of "compiles cleanly": the analysis is not the write, whose failure
+  the `Not compiled:` note reports.
+
+### Regression targets
+
+- `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules`
+- `LatheMcpToolsTest.fileTools_notAnExistingJavaSource_returnError`
+- `LatheMcpToolsTest.getDiagnostics_fileNoModuleCompiles_saysItWasNotChecked`
+
+---
+
+## MC-10 — Position tools answer for an unrelated symbol when the position is not on one — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`describe_symbol` in `EqualsVerifier.java`, on the line declaring `forClass`:
+
+| Position | Answer |
+|---|---|
+| column past the end of the line | the enclosing class `EqualsVerifier` |
+| column 0, a whitespace column, or the keyword `public` | the method `forClass` |
+| a line past the end of the file | "No symbol information at that position." |
+
+An agent with an off-by-one column got a confident answer about the wrong symbol.
+
+### Root cause
+
+javac answers for the smallest tree around a position: on a method's modifiers or indentation that is
+the method's declaration, and a column past a line's end spills into the next line, whose smallest
+enclosing tree was the class.
+`SourceLocator.pathAt` must keep doing that: code actions and the editor rely on positions that are not
+on a name.
+
+### Fix
+
+Every MCP position tool goes through `LatheMcpTools.atPosition`, which now first asks
+`LatheEngine.onName`: the line and column exist, the character there is part of a Java identifier, and
+the word around it starts like one and is not a keyword.
+Otherwise the tool answers with an error that shows the line, so the agent can correct its column:
+"No symbol at line 120, column 5: the position must be on a name. Line 120 reads: …".
+It is a text check of one word on one line, since javac's trees give a declaration's span, not its
+name's.
+A name inside a comment still passes, since a Javadoc `{@link}` is a position the server resolves.
+LSP requests are unchanged: an editor's cursor is deliberate, and IntelliJ too renames a method with
+the caret on its modifiers.
+
+### Regression targets
+
+- `LatheEngineTest.onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine`
+
+---
+
+## MC-12 — `search_symbols` finds nothing for a fully qualified name — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`search_symbols` with `nl.jqno.equalsverifier.EqualsVerifier` answered "No symbols matching", while
+`EqualsVerifier` found it.
+Agents often search by the qualified name they see in imports and stack traces.
+
+### Fix
+
+`WorkspaceSymbolResolver` splits a query with a dot at its last dot: the part after it is the
+simple-name prefix, searched as before, and only the types whose container (the package, or the
+enclosing type of a nested one) is the part before it, or ends with it, are kept.
+So `nl.jqno.equalsverifier.EqualsVerifier`, `util.Duration`, `Map.Entry` and `java.util.Lis` all work.
+The narrowing runs before the result cap, so a common name like `java.util.List` is not crowded out
+by its `List*` siblings.
+The resolver also serves the LSP `workspace/symbol` request, so an editor's symbol search gains it too.
+A query without a dot behaves as before.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.resolve_qualifiedName_matchesOnlyTypesDeclaredInThatPackageOrType`
+
+---
+
+## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+`search_symbols "Duration"` returned 50 symbols with a source snippet of up to seven lines each: 388 lines to
+find one class.
+`find_references` showed the same snippet per reference, about 350 lines for
+`Duration.toMilliseconds`' 52 uses.
+Every line costs an agent context.
+
+### Fix
+
+Every located result is one line in grep's form, `path:line: code`, which agents already read.
+The engine's snippet is the target line alone, and `LatheLocation` and `LatheFileEdit` carry a
+`path` beside the URI: workspace-relative for reactor and generated files, the URI for a dependency or
+the JDK, which have no workspace path.
+Only results outside the reactor are tagged (`[EXTERNAL]`, `[GENERATED]`).
+A symbol is its name, kind and container followed by `path:line`; a rename lists each file by its path.
+This covers references, implementations, definitions, call hierarchies and the impact analysis's
+override family alike, since all of them render through one line.
+An agent that needs the surrounding code reads the file at that line.
+
+### Regression targets
+
+- `LatheEngineTest.definition_crossFileInModule_resolvesTargetWithItsWorkspacePathAndLine`
+- `LatheMcpToolsTest.locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor`
+
+---
+
+## MC-17 — `verify_change` reports unchanged files' old warnings as results, and does not lead with errors — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard and Helidon.
+
+### Observed behaviour
+
+- After a correct rename of `Duration.toMilliseconds` on Dropwizard, `verify_change` answered
+  "5 diagnostic(s) after recompile", all pre-existing Jetty deprecation warnings in callers the rename
+  did not create.
+- After a deliberate type error, it answered "6 diagnostic(s)" with the one error listed between those
+  warnings; the headline did not say "1 error".
+- On Helidon every call, a no-op included, answered "7 diagnostic(s)": `unchecked` warnings in callers.
+
+An agent reads the count as something it caused and must fix.
+
+### Fix
+
+`LatheEngine.diagnose` keeps errors and warnings for the changed files but only errors for the
+callers checked for breakage: a caller's warnings were there before the change.
+Errors come first.
+The text leads with the count that matters: "No errors — the changed files and their callers
+compile." or "N error(s).", plus "M warning(s) in the changed files" when there are any.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors`
+  (fails without the filter or the ordering)
+- `LatheMcpToolsTest.verifyHeadline_errorsAndWarnings_leadsWithErrors`
+
+---
+
+## MC-19 — `verify_change`'s sync suggestion reads as required even when every caller was checked — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Dropwizard.
+
+### Observed behaviour
+
+After fixing one caller in `dropwizard-core`, with every caller checked clean, `verify_change` ended
+with "18 module(s) depend on your change …; to build them fully, run: `.lathe/lathe-sync.sh` …".
+Agents tend to run the commands they are given, so a clean check still cost a long build.
+
+### Fix
+
+The cross-module note now depends on the result.
+With no errors: "their callers compile, so a full build is optional: `<sync>`".
+With errors: "fix the errors and re-check, or build them with: `<sync>`".
+A deferred check (a pending build-file sync, a running build) still asks for the sync, as before.
+
+### Regression targets
+
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
+
+---
+
+## MC-16 — `verify_change` has no record of what the build compiled for modules Maven left untouched — done
+
+**Status: done — Target: next**
+Found by the MCP-quality probes (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+On Helidon, `common/common` had no `built` entries in its compile stamps: the last sync found the
+module up to date, so Maven did not compile it and the compiler shim, which records `built`, never ran
+there.
+Without that record a source only touched (same content) read as a change: `verify_change` named 211
+dependent modules and suggested a full sync, and a full revert there still read as a change.
+
+### Fix
+
+At the end of a build the extension (`LatheLifecycleParticipant.recordBuilt`) records `built` for each
+source tree of every module the build completed successfully and that has no such record yet
+(`CompiledStamps.recordBuiltIfMissing`).
+Maven compiled nothing there because every source was older than its classes, so each source's
+current content is what was compiled.
+Its mtimes stay; a tree that already has a record is left alone, and a module outside the build or one
+that failed is never touched.
+Like the late-output top-up, it is best-effort: a failure is logged at debug level and never fails the
+build.
+`CompileCapture` and the hook list a tree's sources the same way (`CompiledStamps.sourcesByKey`).
+
+### Regression targets
+
+- `LatheLifecycleParticipantTest.recordBuilt_moduleWithoutABuiltRecord_recordsItsSourcesAndKeepsAnExistingRecord`
+
+---
+
 ## MC-13 — `verify_change` still advises a sync after a change has been fully reverted — done
 
 **Status: done — Target: next**
@@ -10198,7 +10517,7 @@ in `equalsverifier-test`.
 
 - `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (fails with same-module callers only, and without the pass recording its writes)
-- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`
 
 ---
 
@@ -10465,9 +10784,9 @@ The same review capped the "N module(s) depend on your change" list in the text 
 
 ### Regression targets
 
-- `LatheEngineTest.verifyChange_referrerWithOnlyAHint_reportsClean` (fails without the filter); the
+- `LatheEngineTest.verifyChange_callerWithAWarningAndAHint_reportsTheChangedFilesWarningAfterErrors` (fails without the filter); the
   error side stays covered by `verifyChange_externalEditBreaksSibling_reportsDiagnostic`.
-- `LatheMcpToolsTest.crossModuleNote_manyDependents_namesTheFirstTenAndCountsTheRest`.
+- `LatheMcpToolsTest.crossModuleNote_dependents_namesTheFirstTenAndSaysWhetherTheBuildIsNeeded`.
 
 ---
 

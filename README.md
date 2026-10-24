@@ -74,12 +74,12 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `find_references`      | every real use of a symbol across the reactor                       |
 | `find_implementations` | implementers of an interface / overrides of a method                |
 | `call_hierarchy`       | callers or callees of a method, across modules                      |
-| `search_symbols`       | find a type by name across reactor, dependencies, JDK (CamelHumps for reactor types) |
+| `search_symbols`       | find a type by simple or qualified name across reactor, dependencies, JDK (CamelHumps for reactor types) |
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
-| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their same-module referrers in-process, report errors/warnings per module (no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
@@ -103,7 +103,7 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
 | Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |
-| Document / workspace symbols | file outline; workspace search by name prefix, with CamelCase-hump matching for reactor types (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
+| Document / workspace symbols | file outline; workspace search by name prefix, simple or qualified (`java.util.Map.Entry`), with CamelCase-hump matching for reactor types (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
 | Type hierarchy               | supertypes and subtypes of the symbol under the cursor, one level at a time                        | `textDocument/prepareTypeHierarchy`               |
 | Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.typeHierarchy` |
 | Add missing imports          | resolve every unimported type in the file in one pass — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |

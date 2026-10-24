@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheLogging;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
@@ -8,6 +9,7 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
@@ -30,6 +32,9 @@ public final class LatheMcpServer {
   // chronologically.
   private static final DateTimeFormatter SESSION_TIMESTAMP =
       DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneId.systemDefault());
+
+  // A session log at INFO is a few kilobytes, so this keeps weeks of sessions.
+  private static final int KEPT_SESSION_LOGS = 100;
 
   // Routing guidance injected into the agent's context (Claude Code reads server instructions).
   // Dispatch-first and kept well under the ~2KB the client truncates at. The tool descriptions
@@ -60,9 +65,10 @@ public final class LatheMcpServer {
 
       Every tool first compiles the files you changed, so answers reflect your edits. A result may \
       end with notes: "Not compiled:" lists files whose code does not compile, with the error -- fix \
-      the code, no sync helps; "Sync required:" names what only a sync fixes (changed build files, \
-      a module never synced) with the exact command to run, such as `%s`; "A build is running" \
-      means re-query once it ends."""
+      the code, no sync helps; "Sync required:" names what only a sync fixes (changed build files) \
+      with the exact command to run, such as `%s`; "Not checked:" names a file no module \
+      compiles, with the sync that would add it when one can; "A build is running" means \
+      re-query once it ends."""
           .formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
 
   private LatheMcpServer() {}
@@ -72,8 +78,11 @@ public final class LatheMcpServer {
 
     final var cwd = Path.of("").toAbsolutePath();
     final long pid = ProcessHandle.current().pid();
-    LatheLogging.initFile(LatheLayout.mcpSessionLog(sessionId(pid)));
-    LOG.info(() -> "[startup] pid=%d cwd=%s".formatted(pid, cwd));
+    final Path logFile = LatheLayout.mcpSessionLog(sessionId(pid));
+    LatheLogging.initFile(logFile);
+    pruneSessionLogs();
+    // The client keeps only the startup burst of stderr, so this line points at the full log.
+    LOG.info(() -> "[startup] pid=%d cwd=%s log=%s".formatted(pid, cwd, logFile));
 
     final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
     if (workspaceRoot.isEmpty()) {
@@ -112,6 +121,34 @@ public final class LatheMcpServer {
 
   // Process start time + pid, so each agent session maps to one log file; pid alone if the start
   // time is unavailable.
+  // One log per session would accrue forever; the names start with the session's start time, so
+  // name order is age order. Best-effort: a failure costs only the pruning.
+  private static void pruneSessionLogs() {
+    try {
+      FileUtil.deleteAllButLast(
+          LatheLayout.logsDir(), LatheLayout::isMcpSessionLog, KEPT_SESSION_LOGS);
+      FileUtil.deleteAllButLast(LatheLayout.logsDir(), LatheMcpServer::isOrphanLock, 0);
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[startup] old session logs not pruned in %s".formatted(LatheLayout.logsDir()));
+    }
+  }
+
+  // A live session's lock always has its log beside it.
+  static boolean isOrphanLock(final Path path) {
+    final String name = path.getFileName().toString();
+    if (!name.endsWith(LatheLayout.LOG_LOCK_SUFFIX)) {
+      return false;
+    }
+
+    final Path log =
+        path.resolveSibling(
+            name.substring(0, name.length() - LatheLayout.LOG_LOCK_SUFFIX.length()));
+    return LatheLayout.isMcpSessionLog(log) && Files.notExists(log);
+  }
+
   private static String sessionId(final long pid) {
     return ProcessHandle.current()
         .info()

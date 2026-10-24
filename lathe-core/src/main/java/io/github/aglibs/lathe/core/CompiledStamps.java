@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import io.github.aglibs.lathe.core.schema.CompiledStampsData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,6 +41,45 @@ public final class CompiledStamps {
         stampsPath(moduleDir, sourceTree));
   }
 
+  // A build that found the tree up to date compiled nothing, so nothing recorded what was compiled:
+  // for a tree the build completed, that is each source's current content. The mtimes stay.
+  public static void recordBuiltIfMissing(final Path moduleDir, final ModuleConfigData config)
+      throws IOException {
+    final CompiledStampsData data = read(moduleDir, config.sourceTree());
+    if (!data.built().isEmpty()) {
+      return;
+    }
+
+    writeAll(moduleDir, config.sourceTree(), byPath(data.stamps()), builtOf(sourcesByKey(config)));
+  }
+
+  // Each Java source of the tree by its stamp key (source-root-relative), the annotation-processor
+  // output left out: the scan skips it too, and its files could collide with real sources' keys.
+  public static Map<Path, Path> sourcesByKey(final ModuleConfigData config) {
+    final Path genRoot =
+        config.generatedSourcesDir() != null
+            ? Path.of(config.generatedSourcesDir()).normalize()
+            : null;
+    return config.sourceRoots().stream()
+        .map(Path::of)
+        .filter(root -> !root.normalize().equals(genRoot) && Files.isDirectory(root))
+        .flatMap(
+            root ->
+                IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile)).stream()
+                    .map(source -> Map.entry(root.relativize(source), source)))
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
+  }
+
+  public static Map<Path, ContentFingerprint> builtOf(final Map<Path, Path> sourcesByKey) {
+    return sourcesByKey.entrySet().stream()
+        .collect(
+            Collectors.toUnmodifiableMap(
+                Map.Entry::getKey,
+                entry -> IOUtil.unchecked(() -> FileUtil.fingerprint(entry.getValue()))));
+  }
+
   // The server's own write: the mtime only, so what the build compiled stays the reference.
   public static void record(
       final Path moduleDir, final String sourceTree, final Path relPath, final long mtime)
@@ -50,6 +90,8 @@ public final class CompiledStamps {
     writeAll(moduleDir, sourceTree, stamps, byPath(data.built()));
   }
 
+  // Drops the mtimes only: what the build compiled is unchanged by a deletion, so a deleted file
+  // still counts as changed, and one restored as it was (a branch switch and back) does not.
   public static void prune(final Path moduleDir, final String sourceTree, final Set<Path> relPaths)
       throws IOException {
     final CompiledStampsData data = read(moduleDir, sourceTree);
@@ -58,9 +100,7 @@ public final class CompiledStamps {
       return;
     }
 
-    final var built = new HashMap<>(byPath(data.built()));
-    built.keySet().removeAll(relPaths);
-    writeAll(moduleDir, sourceTree, stamps, built);
+    writeAll(moduleDir, sourceTree, stamps, byPath(data.built()));
   }
 
   private static CompiledStampsData read(final Path moduleDir, final String sourceTree) {

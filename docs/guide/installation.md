@@ -210,7 +210,7 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
   is recorded as missing and simply not navigable.
 - `type-index/` — the symbol index behind workspace symbol search.
-- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); nothing prunes them yet.
+- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); a starting server keeps the newest 100.
 
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.
@@ -243,6 +243,16 @@ It is expanded after `.lathe/jvm.args` and ahead of Lathe's own arguments:
 export LATHE_JVM_OPTS="-Xmx4g"
 # or grant access the build does not declare:
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
+```
+
+**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's
+memory. On a large reactor its heap grows with use rather than collecting early: an MCP session on
+Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same
+work at the same speed capped at 2 GB. If memory matters, cap it, and let an idle server return what
+it no longer uses (the same variable reaches the editor's and the MCP launcher):
+
+```bash
+export LATHE_JVM_OPTS="-Xmx4g -XX:G1PeriodicGCInterval=60000"
 ```
 
 The server talks to the editor over stdout, so the launcher sends the JVM's own output (startup failures, `-Xlog` warnings) to stderr, where it lands in the editor's LSP log (`:LspLog` in Neovim).

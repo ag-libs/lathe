@@ -18,6 +18,8 @@ import threading
 from pathlib import Path
 
 PROTOCOL_VERSION = "2025-06-18"
+# Lathe sets no heap limit; dev runs cap theirs so probes on large reactors stay light.
+DEV_JVM_OPTS = "-Xmx2g"
 
 
 class McpClient:
@@ -28,6 +30,7 @@ class McpClient:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env={**os.environ, "LATHE_JVM_OPTS": os.environ.get("LATHE_JVM_OPTS", DEV_JVM_OPTS)},
         )
         self._id = 0
         threading.Thread(target=self._drain_stderr, daemon=True).start()

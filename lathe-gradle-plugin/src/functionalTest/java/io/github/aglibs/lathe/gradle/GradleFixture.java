@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.stream.Stream;
 import org.gradle.testkit.runner.GradleRunner;
@@ -21,6 +23,10 @@ final class GradleFixture {
   // fixture build, under the build directory, not the user's.
   private static final String LATHE_CACHE =
       "-Dlathe.cache=%s".formatted(System.getProperty("lathe.gradle.fixturesCache"));
+
+  // The fixture JDK, and a short idle timeout: on Windows a daemon inherits the outer build's
+  // output pipe, so one idling after the tests keeps Maven waiting on it.
+  private static final Map<String, String> DAEMON_PROPERTIES = daemonProperties();
 
   private final Path dir;
 
@@ -84,15 +90,21 @@ final class GradleFixture {
         .formatted(repoUri("lathe.gradle.latheRepo"));
   }
 
+  private static Map<String, String> daemonProperties() {
+    final var idle = Map.entry("org.gradle.daemon.idletimeout", "10000");
+    return Optional.ofNullable(System.getProperty("lathe.gradle.fixturesJavaHome"))
+        .map(javaHome -> Map.ofEntries(idle, Map.entry("org.gradle.java.home", javaHome)))
+        .orElseGet(() -> Map.ofEntries(idle));
+  }
+
   private static String repoUri(final String property) {
     return Path.of(System.getProperty(property)).toUri().toString();
   }
 
-  // The fixture JDK goes in the build's gradle.properties, where Gradle reads the daemon's JDK;
-  // Properties escapes a Windows path. Written once: a rewritten file (Properties stamps the time)
-  // would stop the configuration cache from being reused.
+  // The daemon settings go in the build's gradle.properties, where Gradle reads them, written only
+  // when they change: a rewritten file (Properties stamps the time) would stop the configuration
+  // cache from being reused. Properties escapes a Windows path.
   GradleRunner runner(final String... args) throws IOException {
-    final var javaHome = System.getProperty("lathe.gradle.fixturesJavaHome");
     final var file = dir.resolve("gradle.properties");
     final var properties = new Properties();
     if (Files.exists(file)) {
@@ -101,8 +113,9 @@ final class GradleFixture {
       }
     }
 
-    if (javaHome != null && !javaHome.equals(properties.getProperty("org.gradle.java.home"))) {
-      properties.setProperty("org.gradle.java.home", javaHome);
+    if (!DAEMON_PROPERTIES.entrySet().stream()
+        .allMatch(entry -> entry.getValue().equals(properties.getProperty(entry.getKey())))) {
+      properties.putAll(DAEMON_PROPERTIES);
       try (final BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
         properties.store(writer, null);
       }

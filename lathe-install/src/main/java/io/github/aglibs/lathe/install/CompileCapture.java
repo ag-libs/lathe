@@ -2,16 +2,14 @@ package io.github.aglibs.lathe.install;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 // What one compile leaves in .lathe/<module>: its lsp-params, and, after a successful compile, the
 // bytecode and generated-sources mirrors and the compile stamps. The build tool decides when each
@@ -45,32 +43,16 @@ public final class CompileCapture {
         moduleDir.resolve(LatheLayout.generatedSourcesDir(config.sourceTree())));
   }
 
-  // A stamp per source (root-relative path -> mtime) and the content compiled, excluding the
-  // annotation-processor output: the scan skips it too, and its files could collide with real
-  // sources on their key.
+  // A stamp per source (root-relative path -> mtime) and the content compiled.
   private static void writeStamps(final Path moduleDir, final ModuleConfigData config)
       throws IOException {
-    final Path genRoot =
-        config.generatedSourcesDir() != null
-            ? Path.of(config.generatedSourcesDir()).normalize()
-            : null;
-    final var stamps = new HashMap<Path, Long>();
-    final var built = new HashMap<Path, ContentFingerprint>();
-    for (final String location : config.sourceRoots()) {
-      final var root = Path.of(location);
-      if (root.normalize().equals(genRoot) || !Files.isDirectory(root)) {
-        continue;
-      }
-
-      final List<Path> sources = FileUtil.walkFiles(root, FileUtil::isJavaFile);
-      sources.forEach(source -> stamps.put(root.relativize(source), mtime(source)));
-      sources.forEach(
-          source ->
-              built.put(
-                  root.relativize(source), IOUtil.unchecked(() -> FileUtil.fingerprint(source))));
-    }
-
-    CompiledStamps.writeAll(moduleDir, config.sourceTree(), stamps, built);
+    final Map<Path, Path> sources = CompiledStamps.sourcesByKey(config);
+    final Map<Path, Long> stamps =
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> mtime(entry.getValue())));
+    CompiledStamps.writeAll(
+        moduleDir, config.sourceTree(), stamps, CompiledStamps.builtOf(sources));
   }
 
   private static long mtime(final Path path) {

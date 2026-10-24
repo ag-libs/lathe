@@ -16,6 +16,8 @@ public final class LatheLayout {
   public static final String LOGS_DIR = "logs";
   public static final String MCP_LOG_PREFIX = "mcp-";
   public static final String LOG_SUFFIX = ".log";
+  // The lock JUL's FileHandler keeps beside its file; a server killed outright leaves it behind.
+  public static final String LOG_LOCK_SUFFIX = ".lck";
   public static final String SERVERS_DIR = "servers";
 
   // Best-effort machine-global copy of the newest installed server's launchers, for the one
@@ -261,6 +263,11 @@ public final class LatheLayout {
   // agent session maps to one file and files sort chronologically.
   public static Path mcpSessionLog(final String sessionId) {
     return logsDir().resolve("%s%s%s".formatted(MCP_LOG_PREFIX, sessionId, LOG_SUFFIX));
+  }
+
+  public static boolean isMcpSessionLog(final Path path) {
+    final String name = path.getFileName().toString();
+    return name.startsWith(MCP_LOG_PREFIX) && name.endsWith(LOG_SUFFIX);
   }
 
   public static String cacheName(final String value) {

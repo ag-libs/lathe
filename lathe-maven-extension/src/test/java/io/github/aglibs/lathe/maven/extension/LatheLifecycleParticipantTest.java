@@ -3,9 +3,12 @@ package io.github.aglibs.lathe.maven.extension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
@@ -13,7 +16,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import org.apache.maven.execution.DefaultMavenExecutionRequest;
+import org.apache.maven.execution.DefaultMavenExecutionResult;
+import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Model;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -136,6 +143,8 @@ class LatheLifecycleParticipantTest {
         .doesNotThrowAnyException();
   }
 
+  // Maven 3.6.3, the API floor, has no session constructor left undeprecated.
+  @SuppressWarnings("deprecation")
   @Test
   @DisabledOnOs(value = OS.WINDOWS, disabledReason = "POSIX permissions")
   void afterSessionEnd_topUpFailsReadingTheOutput_buildUnaffectedAndLockReleased(
@@ -145,14 +154,60 @@ class LatheLifecycleParticipantTest {
     final Path unreadable = Files.createDirectories(root.resolve("apt/target/classes/sub"));
     writeManifest(root, new OutputData("apt/target/classes", "apt", LatheLayout.CLASSES_DIR));
     participant.startReactorLock(latheDir);
+    final var session =
+        new MavenSession(
+            null, null, new DefaultMavenExecutionRequest(), new DefaultMavenExecutionResult());
+    session.setProjects(List.of());
     Files.setPosixFilePermissions(unreadable, Set.of());
     try {
-      participant.afterSessionEnd(null);
+      participant.afterSessionEnd(session);
     } finally {
       Files.setPosixFilePermissions(unreadable, PosixFilePermissions.fromString("rwx------"));
     }
 
     assertThat(lockFile(latheDir)).doesNotExist();
+  }
+
+  // Maven found app up to date, so its stamps lack what the build compiled; lib has its record from
+  // a compile; docs has no mirror.
+  @Test
+  void recordBuilt_moduleWithoutABuiltRecord_recordsItsSourcesAndKeepsAnExistingRecord(
+      @TempDir final Path root) throws IOException {
+    final Path foo = Path.of("com", "example", "Foo.java");
+    final ContentFingerprint compiled = new ContentFingerprint(1, 1);
+    final Path appDir = moduleWithSource(root, "app", foo);
+    CompiledStamps.writeAll(appDir, LatheLayout.CLASSES_DIR, Map.of(foo, 100L), Map.of());
+    final Path libDir = moduleWithSource(root, "lib", foo);
+    CompiledStamps.writeAll(
+        libDir, LatheLayout.CLASSES_DIR, Map.of(foo, 100L), Map.of(foo, compiled));
+
+    LatheLifecycleParticipant.recordBuilt(
+        root, List.of(root.resolve("app"), root.resolve("lib"), root.resolve("docs")));
+
+    assertThat(CompiledStamps.loadBuilt(appDir, LatheLayout.CLASSES_DIR))
+        .containsExactly(
+            Map.entry(foo, FileUtil.fingerprint(root.resolve("app/src/main/java").resolve(foo))));
+    assertThat(CompiledStamps.load(appDir, LatheLayout.CLASSES_DIR))
+        .containsExactly(Map.entry(foo, 100L));
+    assertThat(CompiledStamps.loadBuilt(libDir, LatheLayout.CLASSES_DIR))
+        .containsExactly(Map.entry(foo, compiled));
+    assertThat(root.resolve(LatheLayout.LATHE_DIR).resolve("docs")).doesNotExist();
+  }
+
+  private static Path moduleWithSource(final Path root, final String module, final Path source)
+      throws IOException {
+    final Path sourceRoot = root.resolve(module).resolve("src/main/java");
+    Files.createDirectories(sourceRoot.resolve(source).getParent());
+    Files.writeString(sourceRoot.resolve(source), "class Foo {}");
+    final Path moduleDir =
+        Files.createDirectories(root.resolve(LatheLayout.LATHE_DIR).resolve(module));
+    Json.write(
+        Map.of(
+            "sourceTree", LatheLayout.CLASSES_DIR,
+            "outputDir", root.resolve(module).resolve("target/classes").toString(),
+            "sourceRoots", List.of(sourceRoot.toString())),
+        moduleDir.resolve(LatheLayout.paramsFileName(LatheLayout.CLASSES_DIR)));
+    return moduleDir;
   }
 
   private static void writeManifest(final Path root, final OutputData... outputs)
