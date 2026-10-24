@@ -451,6 +451,128 @@ and secrets passed as `-D`/`-P` (signing keys, tokens) would be written to `.lat
 
 None yet.
 
+## WS-13 — A build file changed while no server ran is never detected
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A module `pom.xml` was edited (a comment appended) while no server was running, then a session was
+started and queried.
+No `[watcher] build files changed` line was logged and no sync was requested, so the answers came from
+a mirror built for the old POM.
+The same edit made while the server runs is detected within one tick.
+
+### Cause
+
+`WorkspaceWatcher.updateBuildFiles` takes its fingerprint baseline (mtime and size) from the build
+files as they are at startup, so a change made before startup is part of the baseline.
+The startup pass checks sources against their compile stamps, but nothing compares build files against
+the state the last sync saw.
+It affects the editor and MCP alike.
+
+### Fix direction
+
+Compare build files at startup against what the last sync recorded, for example fingerprints written
+into `workspace.json` by `lathe:sync`, and treat a difference as `BUILD_FILES_CHANGED`.
+
+### Regression targets
+
+None yet.
+
+## WS-14 — A deleted resource stays in the mirror
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard.
+
+### Observed behaviour
+
+A test resource (`src/test/resources/latheprobe.txt`) was added outside the server, and a test that
+asserts `getClass().getResource("/latheprobe.txt") != null` passed through MCP `run_test`, as expected.
+After the resource was deleted, the same test still passed, after waiting 8 s as well:
+`.lathe/<module>/test-classes/latheprobe.txt` was still there.
+
+### Cause
+
+The pass copies changed resources (`WorkspaceSession.reconcileResources` → `copyIfStale`), but only
+copies; nothing removes the mirror copy of a resource whose source is gone, unlike classes, whose
+deleted sources are dropped in the pass's first step.
+It affects the editor's test runs, the debugger, and MCP alike.
+
+### Fix direction
+
+In the same pass, delete mirror resources under each resource root's destination that no longer have
+a source, taking care with resources that do not come from a resource root (the build's generated
+resources and service files, see WS-15).
+
+### Regression targets
+
+None yet.
+
+## WS-15 — Annotation processors built in the reactor never run in-process
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on Helidon.
+
+### Observed behaviour
+
+An option (`String latheProbeOpt()` with `@Option.Configured` and `@Option.Default`) was added to
+`common/configurable/.../AllowListConfigBlueprint.java` outside the server, and a test in
+`webserver/webserver` called `AllowListConfig.builder().latheProbeOpt("x")`.
+The pass rewrote `AllowListConfigBlueprint.class`, but `AllowListConfig.java` in
+`.lathe/common/configurable/generated-sources` and its `AllowListConfig*.class` kept the dates of the
+last sync, and the caller kept reporting `cannot find symbol` (also after 8 s).
+Removing the option again was handled correctly, because the stale builder has no such option either.
+
+### Cause
+
+The write sets `ANNOTATION_PROCESSOR_PATH` from `ModuleSourceConfig.remappedProcessorPath()`, which
+maps reactor processors to their `.lathe/<module>/classes` mirror, e.g. `.lathe/codegen/apt/classes`.
+That mirror holds the classes but not
+`META-INF/services/javax.annotation.processing.Processor`, which exists in
+`codegen/apt/target/classes` because the build generates it (there is no
+`src/main/resources` in `codegen/apt`).
+javac finds no processor, so the write silently compiles without code generation.
+Processors from dependency jars are unaffected.
+
+### Fix direction
+
+Make the mirror of a module that is used as a processor carry the build's
+`META-INF/services` entries (copied by `lathe:sync` from the build output), or resolve reactor
+processors from the build output instead of the mirror.
+Then confirm an edit to a blueprint regenerates its builder.
+
+### Regression targets
+
+None yet.
+
+## WS-16 — A source whose content changes while its mtime is put back is not recompiled
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on all three test workspaces; an edge case.
+
+### Observed behaviour
+
+A source was changed and its previous mtime restored (as `cp -p`, `rsync -t`, or extracting an
+archive does).
+Dependents kept compiling against the old classes, also after 8 s.
+
+### Cause
+
+Staleness is "mtime differs from the compile stamp"
+([compile stamps](../done/lathe-staleness-compile-stamps.md)); content is not compared.
+
+### Fix direction
+
+Probably a non-goal: git and editors always bump the mtime.
+If it matters, record size alongside mtime in the stamp, which catches most such copies at no extra
+cost.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Test Execution Gaps (TE)
@@ -732,6 +854,11 @@ returned 26 errors (`cannot find symbol … method forPackage(java.lang.String)`
 the breakage in-process.
 An agent that trusts the headline concludes its change is safe.
 
+Reproduced on all three test workspaces by the external-change staleness probe (2026-10-24):
+an upstream method renamed outside the server, with a caller in another module.
+`get_diagnostics` on the caller reported `cannot find symbol`, then `verify_change` with no arguments
+answered "No new diagnostics — the changed files compile cleanly".
+
 ### Fix direction
 
 Let `verify_change` also compile the dependent modules' callers of the changed API in-process, as
@@ -903,3 +1030,71 @@ None yet.
 
 
 
+## MC-14 — A changed build file never yields "Sync required"
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A module `pom.xml` was edited during a session, then `get_diagnostics` was called on an unrelated
+file, again after 3 s and 8 s.
+None of the answers carried the `Sync required: build files changed — run .lathe/lathe-sync.sh` note
+that the [one-pass design](../done/lathe-recompile-simplification.md#mcp-fix-it-or-say-exactly-what-is-needed)
+and `status.md` promise; the answers silently came from the mirror built for the old POM.
+
+### Cause
+
+The server detects the change: the session log has `[watcher] build files changed — sync needed`.
+`promptForSync` sets `buildFilesNotificationPending` and asks the client, but the engine's
+`NoopLanguageClient.showMessageRequest` answers `null` at once, and `onSyncPromptResponse` clears
+`buildFilesNotificationPending` in the same millisecond (`[sync] answered action=null`).
+`reconcileForVerify` therefore never returns `BUILD_FILES_PENDING`.
+A build file changed before the session started is not detected at all (WS-13).
+
+### Fix direction
+
+In the engine, keep the build-files state pending until a sync reloads the workspace (a `null` answer
+must not count as dismissal there), so every answer carries the note until then.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-15 — `search_symbols` and `find_implementations` miss a type added outside for a few seconds
+
+**Status: documented.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A new type file was written outside the server, then queried at once:
+
+| Query | First answer | 3 s later |
+|---|---|---|
+| `search_symbols LatheProbeType` | "No symbols matching" | found |
+| `search_symbols` for a type just renamed by renaming its file | "No symbols matching" | found |
+| `find_implementations` on an interface, with a new implementing class | the old list | includes it |
+
+The pass had already written the class into the mirror (and `get_diagnostics`, `get_definition`,
+and `find_references` saw it at once), so only these two tools lag.
+An agent that creates a type and searches for it right away is told it does not exist.
+
+### Cause
+
+The [one-pass design](../done/lathe-recompile-simplification.md#threads-and-state) rebuilds the
+reactor type index after the pass on a pooled thread; the engine waits for the pass
+(`reconcileForVerify`) but not for that rebuild.
+
+### Fix direction
+
+Have the engine's freshen step also wait for the type-index rebuild the pass started, when it started
+one; the editor keeps the current non-blocking behaviour.
+
+### Regression targets
+
+None yet.
+
+---
