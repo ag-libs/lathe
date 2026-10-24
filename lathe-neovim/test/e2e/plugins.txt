@@ -1,0 +1,5 @@
+# The Neovim plugins run-e2e.sh puts on the runtimepath: name, repository, pinned commit.
+# Bump a commit deliberately, with the e2e passing against it.
+neotest https://github.com/nvim-neotest/neotest.git 27bf921498043f7ecd821d6db68d05de244bbd02
+nvim-nio https://github.com/nvim-neotest/nvim-nio.git edcc181a875301dd21840189aa2f2f9ad69fc172
+plenary.nvim https://github.com/nvim-lua/plenary.nvim.git 74b06c6c75e4eeb3108ec01852001636d85a932b

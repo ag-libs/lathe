@@ -3,17 +3,16 @@ package com.example.verify;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.URI;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.Map;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -30,7 +29,6 @@ import org.eclipse.lsp4j.WorkspaceEditCapabilities;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
-import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
@@ -43,23 +41,14 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
-import org.eclipse.lsp4j.TextDocumentItem;
-import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
-import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.MessageActionItem;
-import org.eclipse.lsp4j.MessageParams;
-import org.eclipse.lsp4j.PublishDiagnosticsParams;
-import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams;
 import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.WorkspaceSymbol;
 import org.eclipse.lsp4j.WorkspaceSymbolParams;
-import org.eclipse.lsp4j.jsonrpc.Launcher;
-import org.eclipse.lsp4j.launch.LSPLauncher;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.LanguageServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -69,17 +58,18 @@ import org.junit.jupiter.api.Timeout;
 
 class LspSmokeTest {
 
-  private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
+  private static final Path ROOT = LspSession.ROOT;
   private static final Path MANIFEST = ROOT.resolve(".lathe/workspace.json");
-  private static final Path LAUNCHER =
-      Path.of(System.getProperty("lathe.cache"))
-          .resolve("servers")
-          .resolve(System.getProperty("lathe.version"))
-          .resolve(Os.script("lathe-launcher"));
+  private static final Path SHAPES = ROOT.resolve("shapes");
+  private static final String ID_SHAPES = "com.example.shapes.IdShapesTest";
+  private static final int TEST_METHOD = 1;
+  private static final int STDOUT = 0;
+  private static final int STDERR = 1;
+  private static final int COMMAND = 2;
 
-  private static Process serverProcess;
+  private static LspSession session;
   private static LanguageServer server;
-  private static CapturingClient client;
+  private static LspSession.CapturingClient client;
   private static InitializeResult initResult;
   private static FileTime originalPomMtime;
   private static String originalManifest;
@@ -88,55 +78,15 @@ class LspSmokeTest {
   static void startServer() throws Exception {
     originalPomMtime = Files.getLastModifiedTime(ROOT.resolve("pom.xml"));
     originalManifest = Files.readString(MANIFEST);
-    client = new CapturingClient();
-    final var pb = new ProcessBuilder(LAUNCHER.toString());
-    // Editors start the launcher from the workspace root, where it finds .lathe/jvm.args.
-    pb.directory(ROOT.toFile());
-    pb.environment().put("LATHE_DEBUG", "1");
-    // Scans fast so the tests that wait for an outside change (manifest, pom.xml) need not wait 2 s.
-    pb.environment().put("LATHE_JVM_OPTS", "-Dlathe.scanIntervalMs=200");
-    serverProcess = pb.start();
-
-    final var stderrThread =
-        new Thread(
-            () -> {
-              try (var reader =
-                  new BufferedReader(new InputStreamReader(serverProcess.getErrorStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                  System.out.println("[server] %s".formatted(line));
-                }
-              } catch (final IOException ignored) {
-              }
-            },
-            "server-stderr");
-    stderrThread.setDaemon(true);
-    stderrThread.start();
-
-    final Launcher<LanguageServer> launcher =
-        LSPLauncher.createClientLauncher(
-            client, serverProcess.getInputStream(), serverProcess.getOutputStream());
-    launcher.startListening();
-    server = launcher.getRemoteProxy();
-
-    final var params = new InitializeParams();
-    params.setRootUri(ROOT.toUri().toString());
-    params.setCapabilities(renameCapableClient());
-    initResult = server.initialize(params).get(10, SECONDS);
-    server.initialized(new InitializedParams());
-
-    final var reload = client.messages.poll(10, SECONDS);
-    assertThat(reload)
-        .as(
-            "no showMessage received within 10s after initialized; server alive=%s",
-            serverProcess.isAlive())
-        .isNotNull();
-    assertThat(reload.getMessage()).contains("workspace ready");
+    session = LspSession.start(renameCapableClient());
+    server = session.server;
+    client = session.client;
+    initResult = session.initResult;
   }
 
   @AfterAll
   static void stopServer() {
-    Os.stop(serverProcess);
+    session.stop();
   }
 
   @AfterEach
@@ -180,7 +130,7 @@ class LspSmokeTest {
     final var mangled =
         Files.readString(stringUtilsJava)
             .replace("public static String upper", "public   static String   upper");
-    openDoc(uri, mangled);
+    session.openDoc(uri, mangled);
     final var document = new TextDocumentIdentifier(uri);
     final var options = new FormattingOptions(2, true);
     final int line = findToken(mangled, "public   static String   upper", "upper").getLine();
@@ -234,7 +184,7 @@ class LspSmokeTest {
         ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
     final var stringUtilsUri = stringUtilsJava.toUri().toString();
     final var stringUtilsContent = Files.readString(stringUtilsJava);
-    openDoc(stringUtilsUri, stringUtilsContent);
+    session.openDoc(stringUtilsUri, stringUtilsContent);
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
@@ -262,7 +212,7 @@ class LspSmokeTest {
 
     final String stringUri = stringJava.toUri().toString();
     final String stringContent = Files.readString(stringJava);
-    openDoc(stringUri, stringContent);
+    session.openDoc(stringUri, stringContent);
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(stringUri));
@@ -280,7 +230,7 @@ class LspSmokeTest {
     final Path dbClientJava = ROOT.resolve("core/src/main/java/com/example/core/DbClient.java");
     final String dbClientUri = dbClientJava.toUri().toString();
     final String dbClientContent = Files.readString(dbClientJava);
-    openDoc(dbClientUri, dbClientContent);
+    session.openDoc(dbClientUri, dbClientContent);
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(dbClientUri));
@@ -301,7 +251,7 @@ class LspSmokeTest {
         ROOT.resolve("app/src/main/java/com/example/app/MongoDbClient.java");
     final String mongoClientUri = mongoClientJava.toUri().toString();
     final String mongoClientContent = Files.readString(mongoClientJava);
-    openDoc(mongoClientUri, mongoClientContent);
+    session.openDoc(mongoClientUri, mongoClientContent);
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(mongoClientUri));
@@ -320,7 +270,7 @@ class LspSmokeTest {
         ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
     final String greeterUri = greeterJava.toUri().toString();
     final String greeterContent = Files.readString(greeterJava);
-    openDoc(greeterUri, greeterContent);
+    session.openDoc(greeterUri, greeterContent);
 
     final var params = new ImplementationParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
@@ -343,7 +293,7 @@ class LspSmokeTest {
     final Path greeterJava = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
     final String greeterUri = greeterJava.toUri().toString();
     final String greeterContent = Files.readString(greeterJava);
-    openDoc(greeterUri, greeterContent);
+    session.openDoc(greeterUri, greeterContent);
 
     final var params = new ImplementationParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
@@ -365,7 +315,7 @@ class LspSmokeTest {
         ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
     final String greeterUri = greeterJava.toUri().toString();
     final String greeterContent = Files.readString(greeterJava);
-    openDoc(greeterUri, greeterContent);
+    session.openDoc(greeterUri, greeterContent);
 
     final var prepareParams = new TypeHierarchyPrepareParams();
     prepareParams.setTextDocument(new TextDocumentIdentifier(greeterUri));
@@ -393,7 +343,7 @@ class LspSmokeTest {
     final Path greeterJava = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
     final String greeterUri = greeterJava.toUri().toString();
     final String greeterContent = Files.readString(greeterJava);
-    openDoc(greeterUri, greeterContent);
+    session.openDoc(greeterUri, greeterContent);
 
     final var params = new RenameParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
@@ -430,7 +380,7 @@ class LspSmokeTest {
         ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
     final var stringUtilsUri = stringUtilsJava.toUri().toString();
     final var stringUtilsContent = Files.readString(stringUtilsJava);
-    openDoc(stringUtilsUri, stringUtilsContent);
+    session.openDoc(stringUtilsUri, stringUtilsContent);
 
     final var prepParams = new CallHierarchyPrepareParams();
     prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
@@ -458,7 +408,7 @@ class LspSmokeTest {
         ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
     final var stringUtilsUri = stringUtilsJava.toUri().toString();
     final var stringUtilsContent = Files.readString(stringUtilsJava);
-    openDoc(stringUtilsUri, stringUtilsContent);
+    session.openDoc(stringUtilsUri, stringUtilsContent);
 
     final var prepParams = new CallHierarchyPrepareParams();
     prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
@@ -536,8 +486,8 @@ class LspSmokeTest {
     // Cursor immediately after "StringUtils." on the existing StringUtils.upper(...) call.
     final Position dot = findToken(mainContent, "StringUtils.upper", "upper");
 
-    openDoc(mainUri, mainContent);
-    openDoc(stringUtilsUri, original);
+    session.openDoc(mainUri, mainContent);
+    session.openDoc(stringUtilsUri, original);
 
     assertThat(completionLabels(mainUri, dot)).contains("upper").doesNotContain("lower");
 
@@ -550,6 +500,75 @@ class LspSmokeTest {
     } finally {
       saveDoc(stringUtilsUri, original);
     }
+  }
+
+  // The shapes module's tests replayed as an editor runs a module node: runnables.dir, then
+  // lathe.run.test with its answer. Results, streamed events and output arrive as editors use them.
+  @Test
+  void runTest_shapesModule_resultsLandOnDiscoveredMethodsWithFailureLinesAndStreamedOutput()
+      throws Exception {
+    final Path tests = SHAPES.resolve("src/test/java/com/example/shapes");
+    final Path idShapes = tests.resolve("IdShapesTest.java");
+    session.openDoc(idShapes.toUri().toString(), Files.readString(idShapes));
+    final List<String> landing =
+        List.of(
+            ID_SHAPES + "#plain()",
+            ID_SHAPES + "#printsToStderr()",
+            ID_SHAPES + "#overloaded(java.lang.String)",
+            ID_SHAPES + "#overloaded(int)",
+            ID_SHAPES + "#genericParam(java.util.List)",
+            ID_SHAPES + "#repeated()",
+            ID_SHAPES + "#factory()",
+            ID_SHAPES + "$Inner#innerTest()",
+            ID_SHAPES + "$Inner$Deeper#deeperTest()");
+    final int assertLine =
+        lineOf(Files.readAllLines(tests.resolve("AssertionsTest.java")), "assertEquals(");
+
+    final JsonObject run =
+        session
+            .execute("lathe.runnables.dir", Map.of("uri", SHAPES.toUri().toString()))
+            .getAsJsonObject();
+    final JsonObject outcome =
+        session
+            .execute(
+                "lathe.run.test",
+                Map.of(
+                    "moduleRel", run.get("moduleRel"),
+                    "selections", run.get("selections"),
+                    "token", "shapes-module"))
+            .getAsJsonObject();
+    final List<JsonObject> results = objects(outcome.getAsJsonArray("testResults"));
+
+    assertThat(outcome.get("launched").getAsBoolean()).isTrue();
+    assertThat(outcome.get("exitCode").getAsInt()).isNotZero();
+    assertThat(methodIds(idShapes)).containsAll(landing);
+    assertThat(results)
+        .extracting(result -> result.get("positionId").getAsString())
+        .containsAll(landing);
+    assertThat(results)
+        .filteredOn(result -> result.get("positionId").getAsString().endsWith("#singleLine()"))
+        .singleElement()
+        .satisfies(
+            result -> {
+              assertThat(result.get("status").getAsString()).isEqualTo("failed");
+              assertThat(result.get("failureLine").getAsInt()).isEqualTo(assertLine);
+            });
+
+    // Every result also streamed live under this run's token, before the response.
+    assertThat(streamed(client.testEvents, "shapes-module")).hasSameSizeAs(results);
+    // The output as an editor shows it, streamed live: the launch header, then both streams.
+    final List<JsonObject> output =
+        streamed(client.testOutput, "shapes-module").stream()
+            .map(params -> params.getAsJsonObject("line"))
+            .toList();
+    assertThat(output.subList(0, 2)).allMatch(line -> stream(line) == COMMAND);
+    assertThat(text(output.get(0))).startsWith("config: ");
+    assertThat(output)
+        .anyMatch(line -> stream(line) == STDOUT && text(line).equals("shapes: plain on stdout"))
+        .anyMatch(
+            line ->
+                stream(line) == STDERR
+                    && text(line).equals("shapes: printsToStderr on stderr"));
   }
 
   private static void awaitCompletionLabel(final String uri, final Position pos, final String label)
@@ -604,17 +623,6 @@ class LspSmokeTest {
     return result.getRight().stream().map(WorkspaceSymbol::getName).toList();
   }
 
-  private static void openDoc(final String uri, final String content) {
-    final var item = new TextDocumentItem();
-    item.setUri(uri);
-    item.setLanguageId("java");
-    item.setVersion(1);
-    item.setText(content);
-    final var params = new DidOpenTextDocumentParams();
-    params.setTextDocument(item);
-    server.getTextDocumentService().didOpen(params);
-  }
-
   private static Position findToken(
       final String content, final String linePattern, final String token) {
     final String[] lines = content.split("\n", -1);
@@ -627,33 +635,41 @@ class LspSmokeTest {
     throw new AssertionError("pattern not found: " + linePattern);
   }
 
-  static class CapturingClient implements LanguageClient {
+  private static List<String> methodIds(final Path file) throws Exception {
+    final var uri = Map.of("uri", file.toUri().toString());
+    return objects(session.execute("lathe.runnables.list", uri).getAsJsonArray()).stream()
+        .filter(target -> target.get("kind").getAsInt() == TEST_METHOD)
+        .map(target -> target.get("id").getAsString())
+        .toList();
+  }
 
-    final BlockingQueue<MessageParams> messages = new LinkedBlockingQueue<>();
-    final BlockingQueue<ShowMessageRequestParams> syncPrompts = new LinkedBlockingQueue<>();
+  private static List<JsonObject> streamed(
+      final List<JsonObject> notifications, final String token) {
+    return notifications.stream()
+        .filter(params -> params.get("token").getAsString().equals(token))
+        .toList();
+  }
 
-    @Override
-    public void showMessage(final MessageParams params) {
-      System.out.println("[showMessage] %s: %s".formatted(params.getType(), params.getMessage()));
-      messages.add(params);
+  private static List<JsonObject> objects(final JsonArray array) {
+    return array.asList().stream().map(JsonElement::getAsJsonObject).toList();
+  }
+
+  private static int stream(final JsonObject line) {
+    return line.get("stream").getAsInt();
+  }
+
+  private static String text(final JsonObject line) {
+    return line.get("text").getAsString();
+  }
+
+  // 1-based, as failureLine reports it.
+  private static int lineOf(final List<String> lines, final String fragment) {
+    for (int i = 0; i < lines.size(); i++) {
+      if (lines.get(i).contains(fragment)) {
+        return i + 1;
+      }
     }
 
-    @Override
-    public CompletableFuture<MessageActionItem> showMessageRequest(
-        final ShowMessageRequestParams params) {
-      syncPrompts.add(params);
-      return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
-    public void logMessage(final MessageParams params) {
-      System.out.println("[logMessage] %s: %s".formatted(params.getType(), params.getMessage()));
-    }
-
-    @Override
-    public void publishDiagnostics(final PublishDiagnosticsParams params) {}
-
-    @Override
-    public void telemetryEvent(final Object object) {}
+    throw new AssertionError("not found: " + fragment);
   }
 }

@@ -84,7 +84,7 @@ local function run_tests(test)
   vim.wait(120000, function() return lathe_client(buf) ~= nil end, 200)
   local adapter = require("lathe.neotest")
   local state = {}
-  -- As dev/neotest-e2e does: the real adapter's discover, build and replay, inside a nio task.
+  -- As the neotest e2e (lathe-neovim/test/e2e) does: the real adapter's discover, build and replay, inside a nio task.
   require("nio").run(function()
     -- Any error ends the task with state.error, never leaving the wait below to time out.
     local ok, err = pcall(function()

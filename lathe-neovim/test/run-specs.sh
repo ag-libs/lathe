@@ -2,7 +2,7 @@
 # Runs every Neovim `*_spec.lua` fixture in this directory headlessly. Each
 # spec is self-contained and reports failures via spec_helper.lua, exiting
 # `qa!`/`cq!` so this script can detect pass/fail per spec. Hard-fails when
-# nvim is missing under CI (CI=true) so a misconfigured runner turns the build
+# nvim is missing in GitHub Actions so a misconfigured runner turns the build
 # red; degrades gracefully (exit 0) on local machines without nvim. Bound to
 # the `integration-test` phase via exec-maven-plugin; runnable by hand too.
 set -euo pipefail
@@ -11,8 +11,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 neovim_runtime="$here/../runtime"
 
 if ! command -v nvim >/dev/null 2>&1; then
-  if [[ "${CI:-}" == "true" ]]; then
-    echo "[neovim-specs] nvim not found on PATH under CI; failing build" >&2
+  # The workflow runs Maven under `env -u CI`, so CI is never set here; GITHUB_ACTIONS is.
+  if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "[neovim-specs] nvim not found on PATH in GitHub Actions; failing build" >&2
     exit 1
   fi
 
