@@ -10123,6 +10123,47 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink — done
+
+**Status: done — Target: next**
+
+Signal: attempting to read the server's per-call logs to diagnose [MC-1](#mc-1--describe_symbol-and-position-tools-return-empty-on-dependencyjdk-source-files-the-mcp-warmup-skips-the-external-compile-route--done)
+— the logs were nowhere to be found despite the server emitting them.
+
+### Observed behaviour
+
+The server emits one `INFO` line per tool call to stderr, but Claude Code persists only the stderr of
+the connection handshake (`~/.cache/claude-cli-nodejs/<project>/mcp-logs-<server>/*.jsonl`, and
+`~/.claude/debug/<session>.txt` under `claude --debug=mcp`), so every later server line was lost.
+A request for per-server logs is open upstream and marked "not planned"
+(anthropics/claude-code#29035).
+
+### Fix
+
+- **File sink** (shipped earlier): `LatheMcpServer.main` attaches an appending JUL `FileHandler`
+  (`LatheLogging.initFile`) writing `~/.cache/lathe/logs/mcp-<start-timestamp>-<pid>.log`
+  (`LatheLayout.mcpSessionLog`), one file per server process, beside the `ConsoleHandler`.
+- **Retention:** a starting server keeps the newest 100 session logs and deletes the rest
+  (`FileUtil.deleteAllButLast`; the names start with the start time, so name order is age order).
+  On 2026-10-22 the directory had accrued 612 files. A session log at INFO averages a few kilobytes,
+  so no per-file cap. It also deletes the `.lck` files JUL's `FileHandler` leaves behind when a server
+  is killed outright (286 of them by 2026-10-24), once their log is gone.
+- **Timestamps:** `logging.properties` formats ISO-8601 with the zone offset
+  (`2026-10-24T16:21:40.134+0200`), so lines correlate with a client's UTC logs; the editor's server
+  log gains it too.
+- **Discoverability:** the startup line names the file (`[startup] pid=… cwd=… log=<path>`), so the
+  one stderr burst the client keeps points at the full log.
+- **Won't do:** a `LATHE_LOG_DIR` override; nobody asked for it, and the startup line gives the path.
+
+### Regression targets
+
+- `FileUtilTest.deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone`
+- `LatheMcpServerTest.isOrphanLock_sessionLocks_trueOnlyForALockWhoseLogIsGone`
+- `LatheLoggingTest.logFormat_record_isoTimestampWithTheZoneOffset`
+- `LatheLoggingTest.initFile_missingParentDir_createsItAndWritesRecord`
+
+---
+
 ## MC-20 — `verify_change` lists each diagnostic under its module, not its file — done
 
 **Status: done — Target: next**

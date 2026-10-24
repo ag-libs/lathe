@@ -210,7 +210,7 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
   is recorded as missing and simply not navigable.
 - `type-index/` — the symbol index behind workspace symbol search.
-- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); nothing prunes them yet.
+- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); a starting server keeps the newest 100.
 
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.

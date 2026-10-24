@@ -74,12 +74,12 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `find_references`      | every real use of a symbol across the reactor                       |
 | `find_implementations` | implementers of an interface / overrides of a method                |
 | `call_hierarchy`       | callers or callees of a method, across modules                      |
-| `search_symbols`       | find a type by name across reactor, dependencies, JDK (CamelHumps for reactor types) |
+| `search_symbols`       | find a type by simple or qualified name across reactor, dependencies, JDK (CamelHumps for reactor types) |
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
-| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first per module (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+| `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).

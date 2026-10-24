@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.Properties;
 import java.util.logging.FileHandler;
 import java.util.logging.Handler;
 import java.util.logging.Logger;
@@ -37,6 +40,28 @@ class LatheLoggingTest {
 
     assertThat(logFile).exists();
     assertThat(Files.readString(logFile)).contains("[startup] pid=1234 cwd=/tmp/project", "INFO");
+  }
+
+  // ISO-8601 with the zone offset, so the server's lines line up with a client's UTC logs.
+  @Test
+  void logFormat_record_isoTimestampWithTheZoneOffset() throws IOException {
+    final var properties = new Properties();
+    try (final var in = LatheLoggingTest.class.getResourceAsStream("/logging.properties")) {
+      properties.load(in);
+    }
+
+    final String line =
+        properties
+            .getProperty("java.util.logging.SimpleFormatter.format")
+            .formatted(
+                ZonedDateTime.of(2026, 10, 24, 16, 21, 40, 134_000_000, ZoneOffset.ofHours(2)),
+                "source",
+                "logger",
+                "INFO",
+                "[startup] ready",
+                "");
+
+    assertThat(line).startsWith("2026-10-24T16:21:40.134+0200 INFO    [startup] ready");
   }
 
   @Test

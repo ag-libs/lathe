@@ -51,8 +51,8 @@ try:
 
     TYPE.write_text(re.sub(r"\bcreate\(", "createLatheProbe(", original))
     out = verify(client, "breaking edit (create renamed)")
-    modules = re.findall(r"^(\S[^:\n]*):$", out, re.M)
-    print("   broken modules reported: %d; first lines:" % len(modules))
+    files = set(re.findall(r"^(\S+\.java):\d+:\d+: Error:", out, re.M))
+    print("   broken files reported: %d; first lines:" % len(files))
     print("\n".join("     " + line for line in out.splitlines()[:6]))
 
     TYPE.write_text(original)

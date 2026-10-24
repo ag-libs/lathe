@@ -112,7 +112,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
-| `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, per module (callers: errors only) |
+| `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
 
 The file tools take an existing `.java` file; any other path answers with an error.
 Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
@@ -188,7 +188,11 @@ Every tool call emits one line to the server's stderr and to a per-session log f
 
 This records which tool ran, on what, how long it took, and whether it succeeded — enough to tally
 tool usage over a session. It is always on (no `LATHE_DEBUG` needed). Read the log file: a client
-such as Claude Code keeps only the server's startup stderr. Nothing prunes old session files yet.
+such as Claude Code keeps only the server's startup stderr, whose `[startup] … log=<path>` line names
+the file. Each line starts with an ISO-8601 timestamp and its zone offset
+(`2026-10-24T16:21:40.134+0200`), so it lines up with a client's UTC logs.
+A starting server keeps the newest 100 session logs and deletes older ones, with the lock files that
+sessions killed outright leave behind.
 Set `LATHE_DEBUG=1` for finer detail.
 
 ## Troubleshooting
@@ -198,7 +202,7 @@ Set `LATHE_DEBUG=1` for finer detail.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
-  `Not compiled:`, run the command a `Sync required:` note names; a cold index also needs a moment to
+  `Not compiled:`, run the command a `Sync required:` or `Not checked:` note names; a cold index also needs a moment to
   warm on the first query.
 - **The server uses a lot of memory** — each agent session runs its own server, and with no heap limit
   each may grow toward a quarter of the machine's memory on a large reactor; cap it with
