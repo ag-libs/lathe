@@ -2,7 +2,7 @@
 
 **Status:** approved (2026-10-23); revised 2026-10-24 after studying how other VS Code extensions do this (§12).
 Not built. Delivered editor-neutral first: server pieces, each adopted by Neovim, then VS Code (§11).
-Spikes (§9) come before the code they cover; debugging is deferred (§10).
+All seven spikes ran on 2026-10-24 (§9); their outcomes are folded in below. Debugging is deferred (§10).
 
 ## 1. Goal
 
@@ -21,9 +21,10 @@ Today it is a pure language-client passthrough (`lathe-vscode/src/extension.ts`)
 - **Mostly client.** Every server command and notification used today is editor-neutral
   ([Run, Test, and Debug](../done/lathe-run-test-debug.md), [Named run configs](../done/lathe-named-run-configs.md),
   [Structured test results](../done/lathe-structured-test-results.md), [Test output streaming](../done/lathe-test-output-streaming.md)).
-  Four small server additions (§3.2) are part of this design, because without them VS Code users would get the same gaps
+  Small server additions (§3.2) are part of this design, because without them VS Code users would get the same gaps
   other Java and Rust test explorers are still criticised for (§12).
-  They are additive on the wire; §3.3 lists what the Neovim client has to tolerate.
+  The spikes also found three bugs in today's run path that Neovim users hit as well (§3.2 E–G).
+  The additions are additive on the wire; §3.3 lists what the Neovim client has to tolerate.
 
 ## 3. Server contract
 
@@ -55,7 +56,13 @@ Every launch's output starts with **two** `COMMAND` lines: `config: <label>`, th
 Test ids are `<binaryClassName>#<method>(<erasedParams>)` (`TestId`, `RunnableScanner`), e.g. `com.example.Outer$Inner#greet(java.lang.String)`.
 A class's id is its binary name; a package's id is its name.
 Package, class and nesting can therefore be read off any id without asking the server.
-Signatures with arrays, generics or varargs don't reconstruct identically on both sides (`TestId`); such a result matches no discovered method and is attached to its class instead (§5.3).
+Spike S6 checked the two sides against each other: plain, overloaded, generic (erased to `java.util.List`), repeated, factory, `@Nested` and doubly nested methods all match.
+Array and varargs parameters don't: JUnit reports them in JVM form (`arrayParam([I)`, `varargsParam([Ljava.lang.String;)`) while javac's id says `int[]` and `java.lang.String[]`.
+Their results land on no method today, in Neovim too; §3.2 E fixes that.
+Any result that still matches no method is attached to its class (§5.3).
+
+`failureLine` is 1-based and `-1` when no line is known (S6: the assertion on line 74 reported 74).
+A parameterized test produces one result per invocation, all with the same `positionId`.
 
 Enums are serialized as ordinals, not names:
 
@@ -77,14 +84,38 @@ The client mirrors these numbers in one place (`runnables.ts`).
 `tests.discover` runs the module's captured test launch with the runner in a new **discover mode**:
 `LauncherFactory.create().discover(request)` with a module-wide selector, and no test executed.
 JUnit itself decides what a test is, so inherited tests, `@Nested` classes, meta-annotations and every engine on the test classpath come out right.
-The ids come from the same `MethodSource` → `TestId.positionId` mapping as run results, so discovered items and results can't disagree.
+The ids come from the same `MethodSource` → `TestId.positionId` mapping as run results, so discovered items and results agree.
+One exception: a `@Nested` class declared in a parent and inherited by two outer classes is two JUnit tests but one Lathe id (S7 found one in Dropwizard).
+The tree shows it once, and both runs' results land on that one item, worst-wins.
 Parameterized, repeated and factory methods are listed once, as their template, which is how §5.1 shows them.
 `uri` is resolved like `lathe.testSources` (the outer class's source path).
 There is no `range`: positions need javac, and an opened file supplies them (§5.2).
 
+The selection is the module's, as a module run selects it: one package selector per test package (`WorkspaceSession.moduleRun`), filtered by the build's own test-class filter (F).
+Discovery loads test classes without initializing them, so no user code runs: Spring, Weld and Helidon test extensions, `@MethodSource` and `@EnabledIf` act only at execution.
+
 The server caches one answer per module and drops it on the event that sends `lathe/testsChanged`.
-The cost is one short JVM start per module, paid only when someone expands that module.
 A module with no capture answers with `blockedReasons` (the same messages `lathe.run.test` gives), so the tree can say why it is empty.
+
+**Cost (spike S7).** One JVM per module, paid only when someone expands that module:
+
+| Module | Test classes | Test methods | JVM + discovery, cold / warm |
+|---|---|---|---|
+| lathe-server (JPMS, `--patch-module`) | 111 | 1222 | 1.15–1.25 s / 0.95–1.1 s |
+| Helidon `config/config` | 75 | 648 | 0.73–1.15 s / 0.52–0.63 s |
+| Helidon `common/reactive` | 73 | 557 | 0.74–1.0 s / 0.57–0.63 s |
+| Dropwizard `dropwizard-jersey` | 55 | 372 | 1.37–1.89 s / 1.08–1.36 s |
+| Dropwizard `dropwizard-testing` | 85 | 179 | 1.4–1.83 s / 1.0–1.13 s |
+| Dropwizard `dropwizard-util` | 7 | 67 | 0.76–1.04 s / 0.7–0.77 s |
+
+Two thirds of the time is JUnit loading classes; walking the plan takes under 30 ms.
+Discover mode starts its JVM with `-XX:TieredStopAtLevel=1 -XX:+UseSerialGC` ahead of the launch's own JVM arguments (so the build can still override them), which cut `dropwizard-jersey` by about 30%.
+A second at most per module needs no per-package split; the client shows the module as busy while it waits (§5.2).
+
+Against what Surefire ran, the discovered set matched exactly on four of the six modules, including disabled tests (Surefire reports them as skipped), inherited tests and parameterized templates.
+The other two listed classes Surefire's include patterns leave out; F makes discovery and runs follow those patterns.
+Not covered: TestNG run through Surefire's own TestNG provider rather than the JUnit Platform.
+The JUnit Platform runner finds nothing there, so discovery lists no tests for such a module; what its runs do today was not checked.
 
 **B. Richer results** (backs §5.3). `TestResult` gains fields; the runner's NDJSON record carries them:
 
@@ -110,6 +141,7 @@ The message itself is unchanged.
 **C. Container failures.**
 `ResultsListener` today ignores every container, so a failing `@BeforeAll`, a class initializer or a broken `@MethodSource` never reaches the client.
 The run then looks like "no result (exit 1)" and the actual error is lost.
+Spike S6 confirmed it: a class whose `@BeforeAll` throws ran with exit 1, no `lathe/testEvent` and an empty `testResults`; the error appeared only as plain text in the output.
 A failed or aborted container now produces a record with `methodName` empty and `positionId` = the class id.
 (`TestResult` relaxes its `methodName` check for that case.)
 
@@ -121,6 +153,27 @@ A failed or aborted container now produces a record with `methodName` empty and 
 - The `Launcher` closes the replay process's stdin right after it starts.
   A `main()` reading `System.in` gets end-of-input at once; today it hangs on an open pipe until it is cancelled.
 
+**E. Array and varargs ids.**
+`TestId.positionId` turns JUnit's JVM-form parameter names into javac's source form before building the id:
+`[I` → `int[]`, `[[J` → `long[][]`, `[Ljava.lang.String;` → `java.lang.String[]` (a varargs parameter is an array).
+This reads a JVM type descriptor, a fixed format, not Java source.
+[Structured test results](../done/lathe-structured-test-results.md) flagged array and varargs shapes as the open risk of this mapping, and `TestId`'s own comment records the mismatch; S6 confirmed it.
+Results for such methods then land on their method, in Neovim as in VS Code.
+
+**F. Follow the build's test-class filter.**
+A module or package run today executes every test class JUnit finds, while `mvn test` runs only the classes Surefire's `includes`/`excludes` select (by default `**/Test*.java`, `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`) and the tags its `groups`/`excludedGroups` select.
+[Run, Test, and Debug](../done/lathe-run-test-debug.md) lists this as a known limitation (§9 there); S7 showed it matters on real projects, so F lifts it, and that document's limitation and `docs/status.md` change when F lands.
+Spike S7 found the difference on real projects: Helidon's `config/config` includes only `**/*Test.java`, so three classes `mvn test` never runs are run by Lathe;
+Dropwizard's `dropwizard-testing` has inner `*SubTest` fixtures that fail on purpose and are meant to be driven only by another test, and a Lathe module run reports them as failures.
+The capture records the filter Surefire applied (its include/exclude patterns and tag expressions, as Surefire resolved them), and module runs, package runs and discovery apply it as a JUnit `ClassNameFilter` and `TagFilter`.
+Running a class or a method explicitly ignores the filter, as IntelliJ does: the user asked for that class.
+How the capture records it is settled when F is built: the in-fork capture listener sees the discovery request Surefire built (one class selector per included class), and the patterns themselves are in the plugin's configuration.
+
+**G. Running a class runs its static nested classes.**
+JUnit's class selector includes `@Nested` inner classes but not `static` nested ones, so running `Outer` skips `Outer$StaticNested`'s tests (spike S6), although `runnables.list` shows that class under `Outer`, in Neovim as in VS Code.
+`lathe.run.test` adds a class selector for every member class of a selected class, from the module's captured test classes (`Outer$Name.class`; anonymous and local classes, whose names continue with a digit, are skipped).
+JUnit ignores classes without tests and runs each test once even when a `@Nested` class is selected twice (S6: 17 results, no duplicates).
+
 ### 3.3 Impact on the Neovim client
 
 - New fields in `TestResult`: ignored.
@@ -128,6 +181,8 @@ A failed or aborted container now produces a record with `methodName` empty and 
 - A container-failure record: neotest sees an unknown method id and falls back to the class's aggregate status, which is better than today's "no result".
   A spec pins that it doesn't crash on an empty `methodName`.
 - Closed stdin: applies to Neovim runs too, by design.
+- E, F and G need no adapter change and fix Neovim runs directly:
+  array and varargs tests get their results, a module run stops running classes `mvn test` excludes, and running a class runs its static nested classes.
 
 ### 3.4 Neovim adoption
 
@@ -155,6 +210,11 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    A failure without the two values shows only its message, as today.
 5. **Structured stack frames.** `stackTrace` can replace the text parsing in `stacktrace.lua`, and put failure diagnostics on lines in helper classes, not only in the test class.
 6. **Durations** in the run summary, e.g. the slowest tests.
+7. **A check on open-file discovery.** The adapter waits for a buffer's first `DiagnosticChanged` before asking `runnables.list`, because it can't see when Neovim's LSP client has sent `didOpen`.
+   Spike S3 showed the server side needs no more than that `didOpen` was sent: the server handles it before any later request and queues that request behind the open compile,
+   so a query sent right after `didOpen` was complete 30 times out of 30.
+   It also showed the wait can be fooled: on `didClose` the server publishes empty diagnostics, which can arrive just after a quick reopen and look like the first diagnostics of the new open.
+   Worth checking whether the adapter can key on the `didOpen` itself (Neovim's client tracks which buffers it has opened) instead.
 
 ## 4. Shape of the client
 
@@ -180,11 +240,20 @@ A folder nested inside another Lathe folder gets no client of its own, as in Mic
 
 **Don't let the language client register the server's commands.**
 `vscode-languageclient` registers every command the server advertises (`lathe.run.main`, …) as a VS Code command.
-With two folders the second client's registration throws "command already exists" inside `initialize`, and that client stops: a two-folder window loses its second server today.
+With two folders one client's registration throws, its `start()` rejects with ``command 'lathe.run.test' already exists``, and it stops (Starting → Running → Stopped):
+a two-folder window loses one of its servers today, a random one (spike S5, on 1.84.2 and on stable).
+The surviving server then receives the other folder's files as well, and reports them as "not under any Lathe module source root".
 The client therefore adds a `StaticFeature` whose `preInitialize` deletes `executeCommandProvider` from the server capabilities it is given, before the command feature sees them.
-The one server command VS Code itself invokes is `lathe.missingImports`, returned by the "Add missing imports" code action.
-The extension registers it once and sends it to the client that owns `args[0].uri`.
+With that feature and the folder-scoped selector, S5 saw both clients start (19 commands stripped), and each file opened on its own server only.
 The extension's own user-facing commands use a separate prefix, `lathe.editor.*`, e.g. `lathe.editor.runMain`.
+
+**"Add missing imports…" needs a handler of its own.**
+The one server command VS Code itself invokes is `lathe.missingImports`, returned by the "Add missing imports…" code action.
+It answers with candidates, not an edit:
+`{insertionRange, items: [{name: "List", candidates: ["java.awt.List", "java.util.List"]}]}`.
+The command `vscode-languageclient` registers today sends the request and drops that answer, so the action does nothing visible in VS Code, even with one folder.
+The extension registers `lathe.missingImports` once, sends it to the client that owns `args[0].uri`, asks with a QuickPick for every name with more than one candidate, and applies the import lines as a `WorkspaceEdit` at `insertionRange`.
+S5 checked the routing in both folders of a two-folder window.
 
 ## 5. Test Explorer
 
@@ -213,14 +282,18 @@ Two sources fill one tree, and both speak the same ids.
 
 - `resolveHandler(undefined)` (the Testing view opens) adds one module node per `lathe.tests.modules` entry, with `canResolveChildren`.
 - `resolveHandler(module)` calls `lathe.tests.discover` and adds the module's packages, classes and methods.
+  The module item is `busy` meanwhile; S7 measured up to about 1.9 s cold.
   `blockedReasons` becomes the module item's `error`, e.g. "no test capture, sync with `--tests`".
 - `lathe/testsChanged` re-queries a module the user has already expanded; a module never expanded stays unexpanded.
 
 **Open files, live** (`lathe.runnables.list`):
 
-- The server answers `runnables.list` only for a document it has open, and only after its open-mode compile.
-  The client asks after a file's **first `publishDiagnostics`** (`LanguageClientOptions.middleware.handleDiagnostics`), which is the reliable "the server has this file open" signal.
-  Neovim hit the same race between `didOpen` and the first request and fixed it the same way.
+- The server answers `runnables.list` only for a document it has open.
+  The client asks **right after sending `didOpen`**: in `LanguageClientOptions.middleware.didOpen`, after `await next(document)`.
+  The server handles `didOpen` before any later request and queues that request behind the file's open compile, so the first answer is complete.
+  Spike S3: 50/50 complete on 1.84.2 and 50/50 on stable when asking after the first diagnostics, and 30/30 on 1.84.2 when asking straight after `didOpen`, with a reopened document answered in a median of about 45 ms and a cold server in about 1.3 s.
+- The first `publishDiagnostics` is **not** used as the open signal, although the design first proposed it (Neovim's adapter uses it, §3.4 item 7):
+  on `didClose` the server publishes empty diagnostics, which S3 saw arrive just before or just after a quick reopen's `didOpen`, so they can pass for the new open's first diagnostics.
 - It asks again on save, and on later diagnostics after an edit, debounced.
 - An open file is the better source for its own classes: it reflects unsaved edits and supplies ranges.
   Its answer replaces what discovery said about the classes declared in that file.
@@ -240,11 +313,14 @@ It doesn't re-ask closed files through `runnables.list`, which would come back e
 One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes with §10.
 
 1. Save the folder's dirty Java files first.
-   The replay runs saved bytecode; running before the save compile lands reports a stale result
-   (Metals' "green without running", §12; spike S4 checks the ordering).
+   The replay runs saved bytecode: an unsaved edit is not what runs (spike S4 ran an unsaved failing edit and it passed).
+   A run sent right after the save does replay the new bytecode, because `didSave`'s compile and the run are queued on the same server worker in arrival order
+   (S4: 10 of 10 alternating fail/pass edits, each run sent straight after `didSave` without waiting for diagnostics, about 0.5 s per method run).
+   So the handler awaits the saves, then runs, with no extra wait (Metals reported tests green that never ran when a run beat the compile, §12).
 2. Collect `request.include`; when it is undefined, run every module node.
 3. Turn each included item into selectors:
    method → `METHOD`, class → `CLASS`, package → `PACKAGE`, all keyed by the item's id.
+   A class's static nested classes come along server-side (§3.2 G), so the client sends one selector per included item.
    A module node calls `runnables.dir` on the module directory (the folder path joined with `moduleRel`).
    When `request.exclude` is non-empty, expand the included nodes down to methods and drop the excluded ones, because Lathe selectors have no exclude.
 4. Group selectors by `moduleRel`.
@@ -257,13 +333,13 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
    - A failure becomes a `TestMessage`.
      With `expected`/`actual` it is `TestMessage.diff(message, expected, actual)`: the Test Results peek then shows VS Code's own diff editor (side by side or inline, changed characters highlighted), with nothing else to build.
      Without them it is a plain `TestMessage(message)`.
-     Its `location` is the `failureLine` (1-based, `-1` = none; spike S6 pins this) in the item's file.
+     Its `location` is the `failureLine` (1-based, `-1` = none, as S6 confirmed) in the item's file.
      The `stackTrace` follows the message as Markdown, each reactor frame a link to its file and line
      (class → file through `lathe.testSources`); `TestMessageStackFrame` needs a newer VS Code than 1.84.
    - A container failure (empty `methodName`) marks the class `errored` with the message,
      and its methods that got no result `errored` with "class failed: …".
    - A result for an id the tree doesn't have — a test in a file nobody opened while the module was never expanded,
-     or a signature `TestId` can't match — gets its items created on the spot from the id (package and class from the class name, `uri` through `lathe.testSources`).
+     or a signature `TestId` still can't match after §3.2 E — gets its items created on the spot from the id (package and class from the class name, `uri` through `lathe.testSources`).
      A run never drops a result.
 8. When the `lathe.run.test` response arrives:
    - `launched == false` → every enqueued item is `errored` with `blockedReasons` (e.g. "capture is stale, sync"),
@@ -298,7 +374,7 @@ rust-analyzer's lens and explorer runs went through different code and behaved d
 
 - **CodeLens** `▶ Run` on each `MAIN` target's range, computed client-side from `runnables.list` (the server has no CodeLens provider).
   The lens command is `lathe.editor.runMain {moduleRel, mainClass}` (`mainClass` = the target's `parentId`).
-  The provider fires `onDidChangeCodeLenses` after a file's first diagnostics and on save, because `runnables.list` is empty until the server has the file open.
+  The provider fires `onDidChangeCodeLenses` when a file's `runnables.list` answer arrives (asked right after `didOpen`, §5.2) and on save.
   `lathe.codeLens.run` (default on) turns the lens off, e.g. when Microsoft's Java debugger extension already shows its own `Run | Debug` lens (it is on Open VSX, so Cursor users may have it).
   No lens on the `MAIN_CLASS` line, unlike Neovim's sign: the `main` lens sits a few lines below and runs the same thing.
 - **Editor run button and context menu** (`editor/title/run`, `editor/context`): `Lathe: Run Main` (`lathe.editor.runMain` with no argument).
@@ -353,6 +429,10 @@ This ports Neovim's `_save_target_for`.
 - Server: `tests.modules` and `tests.discover` against the existing test workspaces, including a module without capture (`blockedReasons`);
   `tests.discover` answers from cache until the module's test classes change, then sends `lathe/testsChanged` once;
   a launched `main()` reading `System.in` exits instead of hanging.
+- Run-path fixes, pinned with the id shapes spike S6 used (kept as a fixture class):
+  `TestId` maps `[I`, `[[J` and `[Ljava.lang.String;` to `int[]`, `long[][]` and `java.lang.String[]`, so array and varargs results match their `RunTarget` ids (E);
+  a module run skips a class the captured Surefire patterns exclude and a test the captured tag expression excludes, while running that class explicitly still runs it (F);
+  running `Outer` runs `Outer$StaticNested` once and `@Nested` classes once, and skips `Outer$1` (G).
 - Neovim: a spec feeds a container-failure result and the two new notifications to the neotest adapter (§3.3).
 
 ### 8.2 Client unit (plain Node, beside `launch.test.ts`)
@@ -381,6 +461,16 @@ This is the first editor E2E against a real Lathe server; the Neovim specs stub 
 **Harness.**
 - `@vscode/test-electron` (exact pin) downloads VS Code into `lathe-vscode/target/vscode-test/`, user data under `target/`, `--disable-extensions` (the development extension still loads).
   It runs twice: on **1.84.2**, the `engines` floor, and on current **stable**, which catches Testing API drift the floor can't (rust-analyzer does the same).
+- Pins, from spike S1: `@vscode/test-electron` 3.1.0 and mocha **10.8.2**. Mocha 11 needs Node 18.18, and VS Code 1.84's extension host runs Node 18.15.
+  `stable` is resolved with a network lookup on every run, so CI resolves it once and keys the download cache on the resolved version.
+  Stable logs a stream of `[AgentHost]`/`[ChatModelSelection]` lines; the runner filters them out of the test output.
+- Cost on Linux (S1): 1.84.2 is a 129 MB download (370 MB unpacked), stable 335 MB (990 MB); a warm run takes about 4–7 s, a cold one 12–32 s.
+- **Display.** Linux runs under `xvfb-run -a` (on GitHub's Ubuntu runners it is installed).
+  VS Code launches get `--ozone-platform=x11`, and `WAYLAND_DISPLAY` is removed from their environment:
+  current VS Code otherwise prefers Wayland and opens its windows on the developer's own screen, outside Xvfb.
+  Locally without root, `apt-get download xvfb` and `dpkg -x` into a temporary directory give a working `Xvfb` and `xvfb-run` (the spikes ran that way).
+- **Forcing a cold open in a test.** Closing an editor doesn't make VS Code send `didClose` (S3 waited 30 s; the document stays alive).
+  `languages.setTextDocumentLanguage(doc, 'plaintext')` and back to `'java'` makes the client send a real `didClose` and `didOpen`, without restarting the server.
 - The workspace is the `multi-module` invoker fixture after the invoker has built it: `lathe-maven-plugin/target/it/multi-module`.
   Its `.lathe/` launcher points at the working-tree server in the invoker's own cache, so the E2E tests this checkout, not a release.
   `lathe-vscode` is already declared after `lathe-maven-plugin` in the root `pom.xml`, so a reactor build has the fixture ready.
@@ -389,7 +479,6 @@ This is the first editor E2E against a real Lathe server; the Neovim specs stub 
   CI can't be detected through `CI`: the workflow runs Maven as `env -u CI mvn …` so that Lathe stays enabled in the fixture builds, so `CI` is never set inside the build.
   The check uses `GITHUB_ACTIONS` instead.
   (`lathe-neovim/test/run-specs.sh` checks `CI` and so never fails in CI today; it moves to the same check.)
-  On Linux it runs under `xvfb-run -a`.
 - On failure it prints the server's `lsp.log`.
 - CI: it runs on every row that builds `lathe-vscode`. Today that is JDK 21 Linux, macOS (JDK 25) and Windows (JDK 25), so the Windows `.cmd` launcher path gets covered as well.
   The JDK 17, 25 and 27 Linux rows exclude the client modules.
@@ -400,6 +489,8 @@ VS Code has no stable API for reading another controller's results (`tests.testR
 `RunRecord` = per-item final state, durations, failure messages with locations and diffs, output lines with the item they were attributed to, exit code.
 The tests trigger runs through the real UI commands (`testing.runAtCursor`, the CodeLens command) where one exists, so they exercise the same path a user does;
 `run(items)` drives the same run handler for a chosen node, for which VS Code has no command.
+S2 confirmed this on 1.84.2 and stable: `testing.runAtCursor` calls the controller's run handler with the method under the cursor (or the class, on its declaration line) within about 0.1 s, also with the Testing panel focused.
+With the cursor outside every item's range it does nothing and raises no error, so every such test has its own timeout.
 
 **Scenarios** (fixture classes: `jpms` `HelloTest` with three `@Test`s and a `@ParameterizedTest`, including one that writes to both streams; `app` `Main` printing `ALICE`; `jpms` `HelloTester`, a `main` in test sources):
 
@@ -420,23 +511,21 @@ The tests trigger runs through the real UI commands (`testing.runAtCursor`, the 
 
 Cancel and container failures are covered by §8.3: the fixture has no long-running or broken test, and adding one would slow every invoker run.
 
-## 9. Spikes (before production code)
+## 9. Spikes
 
-No showstopper has been found; these settle the unknowns that could change the design.
+All seven ran on 2026-10-24, on Linux, against a copy of the `multi-module` fixture (plus test classes for the id shapes and a failing `@BeforeAll`) and against Helidon and Dropwizard.
+No repository code was changed; the throwaway harnesses live outside the repository.
+None found a showstopper; each outcome is folded into the section it affects.
 
-| # | Question | Done when |
+| # | Question | Outcome |
 |---|---|---|
-| S1 | Does `@vscode/test-electron` with VS Code 1.84.2 and stable run on all three CI OSes (xvfb on Ubuntu, no display on macOS/Windows), with the download cached, within a sensible time budget? | A trivial extension-host test opens `HelloTest.java` in the fixture and sees the server's diagnostics on Linux, macOS and Windows CI rows. |
-| S2 | Can a test drive a custom controller through `testing.runAtCursor` headlessly, and see the results through the exported handle? | A throwaway controller's run handler fires from the command, and the test reads its outcome. |
-| S3 | Is the first `publishDiagnostics` (middleware) a reliable "file is open on the server" signal in `vscode-languageclient` 9, so the first `runnables.list` never comes back empty? | 50 cold opens of `HelloTest.java`, each discovering all four methods on the first query. |
-| S4 | Does save → run replay the edited test: does the save's in-process compile land on the replay classpath, and is a `lathe.run.test` sent right after `didSave` ordered behind that compile? | Scenario 4 fails as expected by hand, through the existing Neovim client or `dev/explore.py`, with the run sent immediately after the save. |
-| S5 | Does the `preInitialize` feature (§4) stop the command registration, so a two-folder window starts both clients, each file opened on only its own server, and "Add missing imports" still works in both? | A two-folder window where both clients start; before the fix, the second one fails. |
-| S6 | Ids and lines: does `positionId` equal the method target `id` for nested classes and parameterized tests? Is `failureLine` 1-based, with -1 meaning none? | Checked against `TestId`, `RunnableScanner` and neotest's mapping, and pinned by a unit test. |
-| S7 | Discover mode's cost and fidelity: how long does `tests.discover` take on a large module (a Helidon or Dropwizard module with hundreds of tests), and does it list exactly what a run executes? | Timings for a few large modules, and a test plan diffed against the ids of a full run's results. |
-
-S1 and S2 decide whether the E2E is feasible as designed.
-S3 decides whether open-file discovery needs a retry.
-S7 decides whether the module expansion needs a progress indicator or a per-package split.
+| S1 | Does `@vscode/test-electron` run VS Code 1.84.2 and stable headlessly, cached, in a sensible time? | **Pass on Linux**, both versions; numbers and pins in §8.4. macOS and Windows need a CI run, which is still open. |
+| S2 | Can a test drive a custom controller through `testing.runAtCursor` / `testing.runAll` and read the outcome through an exported handle? | **Pass** on 1.84.2 and stable (§8.4). `runAll` passes `include` undefined. |
+| S3 | Is the first `publishDiagnostics` a reliable "server has this file open" signal? | **The wrong signal, but the right result.** 50/50 complete answers on each version, and also 30/30 when asking straight after `didOpen`, which is the better trigger: empty diagnostics from a `didClose` can pass for a reopen's first ones (§5.2). |
+| S4 | Does a run sent right after `didSave` replay the edited test? | **Pass**, 10/10; the save's compile and the run share the server worker's queue. An unsaved edit is not replayed, so the client saves first (§5.3). |
+| S5 | Does a two-folder window fail today, and do the `preInitialize` feature and the folder-scoped selector fix it? | **Fails today** (a random client stops on "command already exists", the other receives both folders' files); **the fix works** on both versions. "Add missing imports…" turned out to do nothing in VS Code even with one folder (§4). |
+| S6 | Do result ids equal `RunTarget` ids; is `failureLine` 1-based? | **Mostly.** All shapes match except array and varargs parameters (§3.2 E). `failureLine` is 1-based, `-1` = none. Also found: a class run skips static nested classes (§3.2 G), and a failing `@BeforeAll` produces no result at all (§3.2 C). |
+| S7 | How long does discover mode take on large modules, and does it list what a run executes? | **About 0.5–1.9 s per module** (§3.2 A); no per-package split needed. Matches Surefire except for Surefire's class include/exclude patterns, which Lathe's module runs ignore today (§3.2 F). |
 
 ## 10. Debugging (deferred, not designed)
 
@@ -460,25 +549,28 @@ What the research settled for when this is designed:
 Editor-neutral pieces come first, and each one lands in Neovim before VS Code is touched,
 so Neovim users gain from every phase and the server work is proven by an existing client.
 
-**Phase 0: spikes.**
-S4, S6 and S7 settle the editor-neutral phases; S1–S3 and S5 are VS Code-only and can wait until phase 3.
+**Phase 0: spikes.** Done (§9). The one open item is S1 on macOS and Windows, which needs a CI run and matters only for phase 3.
 
-**Phase 1: richer results.**
+**Phase 1: run-path fixes and richer results.**
 
-1. Server: container failures, `expected`/`actual`, `stackTrace`, `durationMs`, `displayName`, `lathe/testStarted`, the closed stdin (§3.2 B–D); runner and server tests (§8.1).
-2. Neovim: the spec for the new data (§3.3), then the adapter work of §3.4 items 2–6: per-test output, container failures, the inline and side-by-side diffs, structured stack frames, durations.
+1. Server: the three run-path fixes the spikes found, small and independent, each a direct Neovim improvement with no adapter change:
+   array and varargs ids (§3.2 E), static nested classes (§3.2 G), and the closed stdin (§3.2 D).
+2. Server: container failures, `expected`/`actual`, `stackTrace`, `durationMs`, `displayName` and `lathe/testStarted` (§3.2 B, C and D); runner and server tests (§8.1).
+3. Neovim: the spec for the new data (§3.3), then the adapter work of §3.4 items 2–6: per-test output, container failures, the inline and side-by-side diffs, structured stack frames, durations.
+4. Capture and server: follow Surefire's test-class filter in module and package runs (§3.2 F).
+   This touches the capture side (Maven), so it gets its own small design check first.
 
 **Phase 2: whole-module discovery.**
 
-3. Server: discover mode, `lathe.tests.modules`/`discover`, `lathe/testsChanged` (§3.2 A).
-4. Neovim: the whole-module summary (§3.4 item 1).
+5. Server: discover mode, `lathe.tests.modules`/`discover`, `lathe/testsChanged` (§3.2 A), applying the filter from step 4.
+6. Neovim: the whole-module summary (§3.4 item 1), and the open-file discovery check (§3.4 item 7).
 
 **Phase 3: VS Code.**
 
-5. Groundwork: folder-scoped selector, the command-registration feature and `lathe.missingImports` (§4). This fixes multi-root on its own.
-6. Test Explorer: lazy and open-file discovery, run at every level, live results, diffs, stack traces, per-test output, cancel; unit and canned-event tests, E2E scenarios 1–5.
-7. Run `main()`: CodeLens, run button and menu, run terminals, stop; E2E scenarios 6–7.
-8. Named run configs: run, run last, save.
+7. Groundwork: folder-scoped selector, the command-registration feature, and the `lathe.missingImports` handler that builds the import edit (§4). This fixes multi-root and "Add missing imports…" on their own.
+8. Test Explorer: lazy and open-file discovery, run at every level, live results, diffs, stack traces, per-test output, cancel; unit and canned-event tests, E2E scenarios 1–5.
+9. Run `main()`: CodeLens, run button and menu, run terminals, stop; E2E scenarios 6–7.
+10. Named run configs: run, run last, save.
 
 **Docs** with each phase: `README.md`, `docs/guide/` (`test-capture.md`, the Neovim cheatsheet, a new VS Code cheatsheet) and `docs/status.md`.
 
