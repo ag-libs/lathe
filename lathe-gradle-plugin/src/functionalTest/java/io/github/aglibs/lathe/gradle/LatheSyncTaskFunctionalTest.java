@@ -17,12 +17,8 @@ import org.junit.jupiter.api.io.TempDir;
 class LatheSyncTaskFunctionalTest {
 
   private static final String SETTINGS =
-      """
-      plugins { id("io.github.ag-libs.lathe") }
-      rootProject.name = "root"
-      include("lib", "app")
-      """
-          + GradleFixture.latheRepositories();
+      "%sinclude(\"lib\", \"app\")\n%s"
+          .formatted(GradleFixture.latheSettings("root"), GradleFixture.latheRepositories());
 
   @TempDir Path dir;
 
@@ -32,9 +28,8 @@ class LatheSyncTaskFunctionalTest {
   void sync_multiProjectBuild_writesTheWorkspaceFilesAndInstallsTheServer() throws Exception {
     final var fixture = multiProject();
 
-    fixture.runner("latheSync", GradleFixture.latheCache(), "--configuration-cache").build();
-    final var second =
-        fixture.runner("latheSync", GradleFixture.latheCache(), "--configuration-cache").build();
+    fixture.runner("latheSync", "--configuration-cache").build();
+    final var second = fixture.runner("latheSync", "--configuration-cache").build();
 
     assertThat(second.getOutput()).contains("Configuration cache entry reused.");
     final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
@@ -64,8 +59,7 @@ class LatheSyncTaskFunctionalTest {
   void sync_oneModule_capturesItAloneAndWritesNoWorkspaceFile() throws Exception {
     final var fixture = multiProject();
 
-    final var result =
-        fixture.runner("latheSync", "--module", "lib", GradleFixture.latheCache()).build();
+    final var result = fixture.runner("latheSync", "--module", "lib").build();
 
     assertThat(result.task(":lib:latheCaptureMain")).isNotNull();
     assertThat(result.task(":app:compileJava")).isNull();
@@ -93,7 +87,7 @@ class LatheSyncTaskFunctionalTest {
                 "gradle.properties",
                 "org.gradle.jvmargs=-Xmx512m --add-opens=java.base/java.lang=ALL-UNNAMED\n");
 
-    fixture.runner("latheSync", GradleFixture.latheCache()).build();
+    fixture.runner("latheSync").build();
 
     assertThat(dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.JVM_ARGS_FILE))
         .content()
@@ -114,7 +108,7 @@ class LatheSyncTaskFunctionalTest {
         .file("lib/src/main/resources/lib.properties", "name=lib\n")
         .file(
             "app/build.gradle.kts",
-            "plugins { java }\ndependencies { implementation(project(\":lib\")) }\n")
+            GradleFixture.JAVA + "dependencies { implementation(project(\":lib\")) }\n")
         .file(
             "app/src/main/java/com/example/app/App.java",
             "package com.example.app; class App { com.example.lib.Lib lib; }\n")

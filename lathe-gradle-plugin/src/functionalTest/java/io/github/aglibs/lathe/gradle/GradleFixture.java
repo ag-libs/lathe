@@ -8,11 +8,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
+import java.util.stream.Stream;
 import org.gradle.testkit.runner.GradleRunner;
 
 // A fixture build on the Gradle (and JDK) the build passes in: the one that builds the plugin, or
 // an older one in the older-version CI jobs.
 final class GradleFixture {
+
+  static final String JAVA = "plugins { java }\n";
+
+  // A sync installs the server and extracts the JDK sources into Lathe's cache: one for every
+  // fixture build, under the build directory, not the user's.
+  private static final String LATHE_CACHE =
+      "-Dlathe.cache=%s".formatted(System.getProperty("lathe.gradle.fixturesCache"));
 
   private final Path dir;
 
@@ -54,6 +62,15 @@ final class GradleFixture {
                 System.getProperty("lathe.version")));
   }
 
+  // Lathe registered in the settings, as a team commits it.
+  static String latheSettings(final String rootName) {
+    return """
+        plugins { id("io.github.ag-libs.lathe") }
+        rootProject.name = "%s"
+        """
+        .formatted(rootName);
+  }
+
   // Settings-level repositories that resolve Lathe's server from the repository the reactor fills.
   static String latheRepositories() {
     return """
@@ -65,12 +82,6 @@ final class GradleFixture {
         }
         """
         .formatted(repoUri("lathe.gradle.latheRepo"));
-  }
-
-  // A sync installs the server and extracts the JDK sources into Lathe's cache: one for every
-  // fixture, under the build directory, not the user's.
-  static String latheCache() {
-    return "-Dlathe.cache=%s".formatted(System.getProperty("lathe.gradle.fixturesCache"));
   }
 
   private static String repoUri(final String property) {
@@ -101,6 +112,6 @@ final class GradleFixture {
         .withGradleInstallation(new File(System.getProperty("lathe.gradle.fixturesHome")))
         .withProjectDir(dir.toFile())
         .withPluginClasspath()
-        .withArguments(args);
+        .withArguments(Stream.concat(Stream.of(LATHE_CACHE), Stream.of(args)).toList());
   }
 }

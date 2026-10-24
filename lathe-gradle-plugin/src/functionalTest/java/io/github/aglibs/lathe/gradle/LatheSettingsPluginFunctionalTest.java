@@ -11,11 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LatheSettingsPluginFunctionalTest {
 
-  private static final String SETTINGS =
-      """
-      plugins { id("io.github.ag-libs.lathe") }
-      rootProject.name = "app"
-      """;
+  private static final String SETTINGS = GradleFixture.latheSettings("app");
 
   // Prints how many times Lathe was applied to the project: an init script and a settings plugin
   // load it in different class loaders, so applying it twice would show 2.
@@ -106,10 +102,10 @@ class LatheSettingsPluginFunctionalTest {
             .latheInitScript("lathe.init.gradle.kts")
             .file("settings.gradle.kts", "rootProject.name = \"app\"\nincludeBuild(\"logic\")\n")
             .file("build.gradle.kts", PROBE)
-            .file("buildSrc/build.gradle.kts", "plugins { java }\n" + PROBE)
+            .file("buildSrc/build.gradle.kts", GradleFixture.JAVA + PROBE)
             .file("buildSrc/src/main/java/Helper.java", "class Helper {}\n")
             .file("logic/settings.gradle.kts", "rootProject.name = \"logic\"\n")
-            .file("logic/build.gradle.kts", "plugins { java }\n" + PROBE)
+            .file("logic/build.gradle.kts", GradleFixture.JAVA + PROBE)
             .file("logic/src/main/java/Logic.java", "class Logic {}\n");
 
     final var result =

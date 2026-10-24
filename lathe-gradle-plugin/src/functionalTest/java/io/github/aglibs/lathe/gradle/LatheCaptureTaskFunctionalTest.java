@@ -14,13 +14,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LatheCaptureTaskFunctionalTest {
 
-  private static final String SETTINGS =
-      """
-      plugins { id("io.github.ag-libs.lathe") }
-      rootProject.name = "app"
-      """;
-
-  private static final String JAVA = "plugins { java }\n";
+  private static final String SETTINGS = GradleFixture.latheSettings("app");
 
   @TempDir Path dir;
 
@@ -31,7 +25,7 @@ class LatheCaptureTaskFunctionalTest {
     final var fixture =
         new GradleFixture(dir)
             .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", JAVA)
+            .file("build.gradle.kts", GradleFixture.JAVA)
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
             .file(
                 "src/test/java/com/example/AppTest.java",
@@ -72,7 +66,7 @@ class LatheCaptureTaskFunctionalTest {
             .file(
                 "lib/src/main/java/com/example/lib/Lib.java",
                 "package com.example.lib; public class Lib {}\n")
-            .file("processor/build.gradle.kts", JAVA)
+            .file("processor/build.gradle.kts", GradleFixture.JAVA)
             .file(
                 "processor/src/main/java/com/example/processor/GreeterProcessor.java",
                 """
@@ -148,7 +142,7 @@ class LatheCaptureTaskFunctionalTest {
     final var fixture =
         new GradleFixture(dir)
             .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", JAVA)
+            .file("build.gradle.kts", GradleFixture.JAVA)
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n");
 
     fixture.runner("classes").build();
@@ -168,7 +162,7 @@ class LatheCaptureTaskFunctionalTest {
             .file(
                 "settings.gradle.kts",
                 SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
-            .file("build.gradle.kts", JAVA)
+            .file("build.gradle.kts", GradleFixture.JAVA)
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n");
 
     fixture.runner("classes", "--build-cache", "-Plathe.disabled=true").build();
@@ -193,7 +187,7 @@ class LatheCaptureTaskFunctionalTest {
             .file(
                 "lib/src/main/java/com/example/lib/Lib.java",
                 "package com.example.lib; public class Lib {}\n")
-            .file("plain/build.gradle.kts", JAVA)
+            .file("plain/build.gradle.kts", GradleFixture.JAVA)
             .file(
                 "plain/src/main/java/com/example/plain/Plain.java",
                 "package com.example.plain; public class Plain {}\n")
