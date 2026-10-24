@@ -761,6 +761,52 @@ class LatheEngineTest {
     assertThat(Files.readString(source)).isEqualTo(clean);
   }
 
+  @Test
+  void outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine() throws Exception {
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Shop.java",
+            """
+            package com.example;
+
+            public class Shop {
+              private int stock = 3;
+
+              public Shop() {}
+
+              int sell(int count) {
+                return stock -= count;
+              }
+
+              record Item(String name) {}
+            }
+            """);
+    engine = new LatheEngine(tmp);
+
+    final List<LatheOutlineItem> outline = engine.outline(source);
+
+    assertThat(outline)
+        .extracting(
+            LatheOutlineItem::kind,
+            LatheOutlineItem::name,
+            LatheOutlineItem::depth,
+            item -> item.location().range().getStart().getLine() + 1,
+            item -> item.location().snippet())
+        .containsExactly(
+            tuple("class", "Shop", 0, 3, "public class Shop {"),
+            tuple("field", "stock", 1, 4, "private int stock = 3;"),
+            tuple("constructor", "Shop", 1, 6, "public Shop() {}"),
+            tuple("method", "sell", 1, 8, "int sell(int count) {"),
+            tuple("struct", "Item", 1, 12, "record Item(String name) {}"),
+            tuple("field", "name", 2, 12, "record Item(String name) {}"));
+    assertThat(outline)
+        .allSatisfy(
+            item ->
+                assertThat(item.location().path())
+                    .isEqualTo(FileUtil.slashed(tmp.relativize(source))));
+  }
+
   // The style file lathe:sync writes for a project whose Spotless step pins google-java-format.
   private void pinGoogleJavaFormat() throws Exception {
     Json.write(

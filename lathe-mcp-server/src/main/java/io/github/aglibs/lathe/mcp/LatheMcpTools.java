@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
@@ -73,7 +74,25 @@ final class LatheMcpTools {
           .idempotentHint(true)
           .build();
 
+  private static final String FILE_SCHEMA =
+      """
+      {"type":"object","required":["file"],
+       "properties":{"file":{"type":"string",
+         "description":"Absolute path to a .java file in this project."}}}""";
+
   private LatheMcpTools() {}
+
+  // The symbol-at-a-position input every position tool takes, plus its own properties (each
+  // starting with a comma).
+  private static String positionSchema(final String extraProperties) {
+    return """
+        {"type":"object","required":["file","line","column"],
+         "properties":{
+           "file":{"type":"string","description":"Absolute path to a .java file."},
+           "line":{"type":"integer","description":"1-based line of the symbol."},
+           "column":{"type":"integer","description":"1-based column of the symbol."}%s}}"""
+        .formatted(extraProperties);
+  }
 
   static List<SyncToolSpecification> all(final LatheEngine engine, final McpJsonMapper mapper) {
     return List.of(
@@ -89,20 +108,14 @@ final class LatheMcpTools {
         analyzeChange(engine, mapper),
         verifyChange(engine, mapper),
         formatFile(engine, mapper),
-        fixImports(engine, mapper));
+        fixImports(engine, mapper),
+        outline(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "get_diagnostics",
-                mapper,
-                """
-                {"type":"object","required":["file"],
-                 "properties":{"file":{"type":"string",
-                   "description":"Absolute path to a .java file in this project."}}}\
-                """)
+        Tool.builder("get_diagnostics", mapper, FILE_SCHEMA)
             .description(
                 """
                 Compiler-accurate errors and warnings (plus unused-code hints) for a Java file, \
@@ -117,16 +130,7 @@ final class LatheMcpTools {
   private static SyncToolSpecification definition(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "get_definition",
-                mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."}}}\
-                """)
+        Tool.builder("get_definition", mapper, positionSchema(""))
             .description(
                 """
                 Resolve the symbol at a position to its definition — across modules and into \
@@ -144,15 +148,11 @@ final class LatheMcpTools {
         Tool.builder(
                 "find_references",
                 mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."},
-                   "maxResults":{"type":"integer",
-                     "description":"Max references to return (default 50)."}}}\
-                """)
+                positionSchema(
+                    """
+                    ,"maxResults":{"type":"integer",
+                     "description":"Max references to return (default 50)."}\
+                    """))
             .description(
                 """
                 Find every real use of the symbol at a position across the whole reactor — \
@@ -238,16 +238,12 @@ final class LatheMcpTools {
         Tool.builder(
                 "call_hierarchy",
                 mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."},
-                   "direction":{"type":"string","enum":["incoming","outgoing"],
+                positionSchema(
+                    """
+                    ,"direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
-                   "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}}}\
-                """)
+                    "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}\
+                    """))
             .description(
                 """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
@@ -263,16 +259,7 @@ final class LatheMcpTools {
   private static SyncToolSpecification describeSymbol(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "describe_symbol",
-                mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."}}}\
-                """)
+        Tool.builder("describe_symbol", mapper, positionSchema(""))
             .description(
                 """
                 Describe the symbol at a position — its rendered signature, type, and javadoc as \
@@ -313,15 +300,11 @@ final class LatheMcpTools {
         Tool.builder(
                 "find_implementations",
                 mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."},
-                   "maxResults":{"type":"integer",
-                     "description":"Max implementations to return (default 50)."}}}\
-                """)
+                positionSchema(
+                    """
+                    ,"maxResults":{"type":"integer",
+                     "description":"Max implementations to return (default 50)."}\
+                    """))
             .description(
                 """
                 Find the implementations of the interface — or the overrides of the method — at a \
@@ -338,15 +321,7 @@ final class LatheMcpTools {
   private static SyncToolSpecification analyzeChange(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "analyze_change",
-                mapper,
-                """
-                {"type":"object","required":["file","line","column"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."}}}""")
+        Tool.builder("analyze_change", mapper, positionSchema(""))
             .description(
                 """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
@@ -388,14 +363,7 @@ final class LatheMcpTools {
   private static SyncToolSpecification formatFile(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "format_file",
-                mapper,
-                """
-                {"type":"object","required":["file"],
-                 "properties":{"file":{"type":"string",
-                   "description":"Absolute path to a .java file in this project."}}}\
-                """)
+        Tool.builder("format_file", mapper, FILE_SCHEMA)
             .description(
                 """
                 Format a Java file in place with the formatter the project pins (its Spotless \
@@ -411,14 +379,7 @@ final class LatheMcpTools {
   private static SyncToolSpecification fixImports(
       final LatheEngine engine, final McpJsonMapper mapper) {
     final var tool =
-        Tool.builder(
-                "fix_imports",
-                mapper,
-                """
-                {"type":"object","required":["file"],
-                 "properties":{"file":{"type":"string",
-                   "description":"Absolute path to a .java file in this project."}}}\
-                """)
+        Tool.builder("fix_imports", mapper, FILE_SCHEMA)
             .description(
                 """
                 Add the missing imports of a Java file in place — every unresolved type name that \
@@ -430,6 +391,22 @@ final class LatheMcpTools {
             .annotations(EDITS_IN_PLACE)
             .build();
     return spec(tool, request -> handleFixImports(engine, request));
+  }
+
+  private static SyncToolSpecification outline(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder("outline", mapper, FILE_SCHEMA)
+            .description(
+                """
+                A Java file's structure without reading it: every type, field, constructor and \
+                method in source order, indented by nesting, each with its line and declaration \
+                (`method sell  8: int sell(int count) {`). Use it to find a member's line before \
+                reading or editing that part of a large file.\
+                """)
+            .annotations(READ_ONLY)
+            .build();
+    return spec(tool, request -> handleOutline(engine, request));
   }
 
   private static SyncToolSpecification spec(
@@ -576,6 +553,14 @@ final class LatheMcpTools {
         "fix_imports",
         request,
         file -> importsResult(engine.fixImports(file), engine.notes(List.of(file))));
+  }
+
+  private static CallToolResult handleOutline(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atFile(
+        "outline",
+        request,
+        file -> outlineResult(file, engine.outline(file), engine.notes(List.of(file))));
   }
 
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
@@ -814,6 +799,44 @@ final class LatheMcpTools {
                     notes));
   }
 
+  // The path once in the header: each line carries only its line number and declaration.
+  static CallToolResult outlineResult(
+      final Path file, final List<LatheOutlineItem> items, final LatheNotes notes) {
+    final String text =
+        items.isEmpty()
+            ? "No declarations in %s.".formatted(file.getFileName())
+            : "%d declaration(s) in %s:%n%s"
+                .formatted(
+                    items.size(),
+                    items.get(0).location().path(),
+                    items.stream()
+                        .map(LatheMcpTools::outlineLine)
+                        .collect(Collectors.joining(System.lineSeparator())));
+    return result(
+        text,
+        Map.<String, Object>of("items", items.stream().map(LatheMcpTools::outlineItemMap).toList()),
+        notes);
+  }
+
+  private static String outlineLine(final LatheOutlineItem item) {
+    return "%s%s %s  %d: %s"
+        .formatted(
+            "  ".repeat(item.depth()),
+            item.kind(),
+            item.name(),
+            line(item.location()),
+            item.location().snippet());
+  }
+
+  private static Map<String, Object> outlineItemMap(final LatheOutlineItem item) {
+    return Map.<String, Object>of(
+        "kind", item.kind(),
+        "name", item.name(),
+        "depth", item.depth(),
+        "line", line(item.location()),
+        "snippet", item.location().snippet());
+  }
+
   static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
     final List<MissingImport> ambiguous =
         imports.unresolved().stream().filter(item -> !item.candidates().isEmpty()).toList();
@@ -936,7 +959,7 @@ final class LatheMcpTools {
         "kind", symbol.kind(),
         "container", symbol.container(),
         "uri", loc.uri(),
-        "startLine", loc.range().getStart().getLine() + 1,
+        "startLine", line(loc),
         "snippet", loc.snippet());
   }
 
@@ -950,7 +973,7 @@ final class LatheMcpTools {
         "name", call.name(),
         "uri", loc.uri(),
         "origin", loc.origin().name(),
-        "startLine", loc.range().getStart().getLine() + 1,
+        "startLine", line(loc),
         "snippet", loc.snippet());
   }
 
@@ -1035,7 +1058,7 @@ final class LatheMcpTools {
   }
 
   // verify_change reports its own deferral and diagnostics.
-  private static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
+  static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
 
   private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {
     if (verify.deferral() != null) {
@@ -1204,11 +1227,11 @@ final class LatheMcpTools {
   }
 
   private static String position(final LatheLocation location) {
-    return "%s:%d%s"
-        .formatted(
-            location.path(),
-            location.range().getStart().getLine() + 1,
-            originTag(location.origin()));
+    return "%s:%d%s".formatted(location.path(), line(location), originTag(location.origin()));
+  }
+
+  private static int line(final LatheLocation location) {
+    return location.range().getStart().getLine() + 1;
   }
 
   // Most answers are reactor code, so only the exceptions are tagged.
@@ -1271,7 +1294,7 @@ final class LatheMcpTools {
     return Map.<String, Object>of(
         "uri", t.uri(),
         "origin", t.origin().name(),
-        "startLine", t.range().getStart().getLine() + 1,
+        "startLine", line(t),
         "startColumn", t.range().getStart().getCharacter() + 1,
         "snippet", t.snippet());
   }

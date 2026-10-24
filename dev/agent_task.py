@@ -40,6 +40,7 @@ originals = {p: p.read_text() for p in (DURATION, CALLER, TEST)}
 try:
     client.initialize()
     ask(client, "1 find the type", "search_symbols", {"query": "Duration"}, 6)
+    ask(client, "1b its structure", "outline", {"file": str(DURATION)}, 12)
     line, col = locate(DURATION, "public long toMilliseconds")
     col += len("public long ")
     pos = {"file": str(DURATION), "line": line, "column": col}

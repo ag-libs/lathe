@@ -108,6 +108,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, column, direction` | callers (`incoming`) or callees (`outgoing`) of a method, across modules |
 | `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
+| `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
@@ -126,7 +127,7 @@ a line answers with an error that shows the line, rather than with the enclosing
 (`class` — default — / `method` / `package`).
 
 Each tool declares the MCP annotations that say whether it writes:
-the query tools and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
+the query tools (`outline` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
 `run_test` is neither (it runs code but writes no source), and `format_file` and `fix_imports` are
 neither but `idempotentHint` (running them twice changes nothing more).
 What a client does with them is up to the client.

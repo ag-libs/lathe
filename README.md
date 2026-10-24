@@ -75,6 +75,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `find_implementations` | implementers of an interface / overrides of a method                |
 | `call_hierarchy`       | callers or callees of a method, across modules                      |
 | `search_symbols`       | find a type by simple or qualified name across reactor, dependencies, JDK (CamelHumps for reactor types) |
+| `outline`              | a file's types and members, indented by nesting, each with its line and declaration |
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |

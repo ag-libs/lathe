@@ -10123,6 +10123,37 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-24 — No file outline tool: an agent reads a whole file to learn its structure — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Claude Code's LSP tool (`documentSymbol`), Serena (`get_symbols_overview`,
+[Serena tools](https://oraios.github.io/serena/01-about/035_tools.html)) and Java MCP servers such as
+LSP4J-MCP (`document_symbols`) give an agent a file's members in a few hundred tokens.
+Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for it.
+
+### Fix
+
+- `outline` answers from the editor's document-symbol request (`DocumentSymbolScanner`): every type,
+  field, constructor and method in source order, indented by nesting, as
+  `method sell  8: int sell(int count) {`.
+- The scanner gives no signature, so each line carries the declaration's source line instead, as
+  the other answers carry `path:line: code`; no Java is parsed for it.
+- The path is in the header once, not on every line: a large type has dozens of members, and an
+  agent pays for every repeated path.
+- The kinds are the LSP symbol kinds the editor shows (a record is `struct`, its components
+  `field`s).
+
+### Regression targets
+
+- `LatheEngineTest.outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine`
+- `LatheMcpToolsTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
+
+---
+
 ## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all) — done
 
 **Status: done — Target: next**

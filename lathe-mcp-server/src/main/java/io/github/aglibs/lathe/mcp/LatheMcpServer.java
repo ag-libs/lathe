@@ -55,6 +55,8 @@ public final class LatheMcpServer {
       - Tracing who calls a method, or what it calls: use call_hierarchy (the real cross-module call \
       graph, which text search cannot follow).
       - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
+      - Learning a file's structure, or finding a member's line, without reading the whole file: \
+      use outline.
       - Finding a type by name (reactor, dependencies, JDK): use search_symbols.
       - Finding the implementations of an interface, or the overrides of a method (the declarations \
       themselves, not their call sites): use find_implementations.

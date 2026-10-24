@@ -680,29 +680,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-24 — No file outline tool: an agent reads a whole file to learn its structure
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Claude Code's LSP tool (`documentSymbol`), Serena (`get_symbols_overview`,
-[Serena tools](https://oraios.github.io/serena/01-about/035_tools.html)) and Java MCP servers such as
-LSP4J-MCP (`document_symbols`) give an agent a file's members in a few hundred tokens.
-Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for it.
-
-### Fix direction
-
-An `outline` tool over the existing document-symbol scanner: one line per member, nested by type,
-with its `path:line` and signature, in the grep-style form of the other answers.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on
 
 **Status: accepted — Target: next**

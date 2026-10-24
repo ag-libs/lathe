@@ -46,6 +46,8 @@ import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -60,6 +62,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /**
  * In-process facade into the language server for non-editor clients (the MCP server): it drives the
@@ -245,6 +248,31 @@ public final class LatheEngine {
     }
 
     return hover.getContents().getRight().getValue();
+  }
+
+  // The file's types and their members in source order, each at its nesting depth.
+  public List<LatheOutlineItem> outline(final Path file) {
+    compileFromDisk(file); // register the file and warm its analysis before scanning
+    final String uri = LatheUri.fromPath(file);
+    final var params = new DocumentSymbolParams(new TextDocumentIdentifier(uri));
+    return await(service.documentSymbol(params)).stream()
+        .filter(Either::isRight)
+        .flatMap(symbol -> outlineItems(uri, symbol.getRight(), 0))
+        .toList();
+  }
+
+  private Stream<LatheOutlineItem> outlineItems(
+      final String uri, final DocumentSymbol symbol, final int depth) {
+    final List<DocumentSymbol> children =
+        symbol.getChildren() == null ? List.of() : symbol.getChildren();
+    return Stream.concat(
+        Stream.of(
+            new LatheOutlineItem(
+                symbol.getKind().name().toLowerCase(Locale.ROOT),
+                symbol.getName(),
+                depth,
+                toLatheLocation(new Location(uri, symbol.getSelectionRange())))),
+        children.stream().flatMap(child -> outlineItems(uri, child, depth + 1)));
   }
 
   /**
