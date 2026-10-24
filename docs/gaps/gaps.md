@@ -419,39 +419,6 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-14 — A deleted resource stays in the mirror
-
-**Status: documented.**
-**Affects: the editor and MCP.**
-Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard through
-MCP, and on all three test workspaces through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
-
-### Observed behaviour
-
-A test resource (`src/test/resources/latheprobe.txt`) was added outside the server, and a test that
-asserts `getClass().getResource("/latheprobe.txt") != null` passed through MCP `run_test`, as expected.
-After the resource was deleted, the same test still passed, after waiting 8 s as well:
-`.lathe/<module>/test-classes/latheprobe.txt` was still there.
-
-Editor: the added resource was copied into the mirror within 1 s; after the delete the mirror copy was
-still there 15 s later, so the editor's test runs and the debugger see it too.
-
-### Cause
-
-The pass copies changed resources (`WorkspaceSession.reconcileResources` → `copyIfStale`), but only
-copies; nothing removes the mirror copy of a resource whose source is gone, unlike classes, whose
-deleted sources are dropped in the pass's first step.
-
-### Fix direction
-
-In the same pass, delete mirror resources under each resource root's destination that no longer have
-a source, taking care with resources that do not come from a resource root (the build's generated
-resources and service files, see WS-15).
-
-### Regression targets
-
-None yet.
-
 ## WS-15 — Annotation processors built in the reactor never run in-process
 
 **Status: documented.**

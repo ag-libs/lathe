@@ -206,6 +206,8 @@ final class WorkspaceSession {
   // Done once the last rebuild is applied (or superseded): MCP answers wait for it, so a type the
   // pass just wrote is already searchable.
   private CompletableFuture<Void> reactorIndexRebuilt = CompletableFuture.completedFuture(null);
+  // The resource files the last pass found, so the next one can drop the copies of deleted ones.
+  private Set<Path> scannedResources = Set.of();
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
   // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
@@ -4010,27 +4012,42 @@ final class WorkspaceSession {
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
-  // resource edit is picked up without Maven. The copy bumps the destination mtime, so the next
-  // pass
-  // sees it as fresh — no dedupe state needed.
-  // Returns how many resources were checked.
+  // resource edit is picked up without Maven; the copy bumps the destination mtime, so the next
+  // pass sees it as fresh. Remove the copy of a resource deleted since the last pass. Returns how
+  // many resources were checked.
   private int reconcileResources() {
-    int checked = 0;
-    for (final Path sourceDir : manifest.resourceSourceDirs()) {
-      checked += copyStaleResourcesUnder(sourceDir);
-    }
-
-    return checked;
+    final Map<Path, Long> resources =
+        manifest.resourceSourceDirs().stream()
+            .flatMap(sourceDir -> resourceMtimesUnder(sourceDir).entrySet().stream())
+            .collect(
+                Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
+    resources.forEach(this::copyIfStale);
+    // Only files the last scan saw: a copy with no source may be the build's own output.
+    final Set<Path> deleted =
+        scannedResources.stream()
+            .filter(file -> !resources.containsKey(file) && Files.notExists(file))
+            .collect(Collectors.toUnmodifiableSet());
+    deleted.forEach(
+        file -> manifest.resourceDestination(file).ifPresent(dest -> deleteResource(file, dest)));
+    scannedResources = resources.keySet();
+    return resources.size();
   }
 
-  private int copyStaleResourcesUnder(final Path sourceDir) {
+  private Map<Path, Long> resourceMtimesUnder(final Path sourceDir) {
     try {
-      final Map<Path, Long> resources = FileUtil.fileMtimes(sourceDir, file -> true);
-      resources.forEach(this::copyIfStale);
-      return resources.size();
+      return FileUtil.fileMtimes(sourceDir, file -> true);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
-      return 0;
+      return Map.of();
+    }
+  }
+
+  private void deleteResource(final Path file, final Path dest) {
+    try {
+      Files.deleteIfExists(dest);
+      LOG.info(() -> "[resource] %s deleted → removed %s".formatted(file, dest));
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[resource] delete failed for %s".formatted(dest));
     }
   }
 

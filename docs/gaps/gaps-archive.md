@@ -8338,6 +8338,48 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-14 — A deleted resource stays in the mirror — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier and Dropwizard through
+MCP, and on all three test workspaces through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+A test resource (`src/test/resources/latheprobe.txt`) was added outside the server, and a test that
+asserts `getClass().getResource("/latheprobe.txt") != null` passed through MCP `run_test`, as expected.
+After the resource was deleted, the same test still passed, after waiting 8 s as well:
+`.lathe/<module>/test-classes/latheprobe.txt` was still there.
+
+Editor: the added resource was copied into the mirror within 1 s; after the delete the mirror copy was
+still there 15 s later, so the editor's test runs and the debugger see it too.
+
+### Cause
+
+The pass copies changed resources (`WorkspaceSession.reconcileResources` → `copyIfStale`), but only
+copies; nothing removes the mirror copy of a resource whose source is gone, unlike classes, whose
+deleted sources are dropped in the pass's first step.
+
+### Fix
+
+The pass remembers the resource files its last scan found (`scannedResources`, session-thread state)
+and removes the mirror copy (`manifest.resourceDestination`) of each one that is gone since and does
+not exist on disk.
+It never deletes a mirror file only because it has no source: the mirror also holds the build's own
+output, such as a generated `META-INF/services` entry.
+
+Known limit: the first pass after startup has no earlier scan, so a resource deleted while no server
+ran keeps its copy until a sync.
+
+### Regression targets
+
+Fails without the deletion:
+
+- `WritePassTest.reconcile_resourceDeletedOnDisk_removesItsCopy_keepsOtherFilesInTheMirror`
+
+---
+
 ## WS-13 — A build file changed while no server ran is never detected — done
 
 **Status: done — Target: next.**
