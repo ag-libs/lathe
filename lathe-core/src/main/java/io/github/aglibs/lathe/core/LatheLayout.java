@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
 import java.util.Properties;
 
 public final class LatheLayout {
@@ -68,6 +69,7 @@ public final class LatheLayout {
   public static final String TYPE_INDEX_FILENAME = "index.json";
   public static final String TEST_LAUNCH_FILE = "test-launch.json";
   public static final String MAIN_LAUNCH_FILE = "main-launch.json";
+  public static final String TEST_FILTER_FILE = "test-filter.json";
   public static final String RUN_CONFIG_SHARED_FILE = "lathe-run.json";
   public static final String RUN_CONFIG_LOCAL_FILE = "run.json";
   public static final String STYLE_FILE = "style.json";
@@ -145,6 +147,14 @@ public final class LatheLayout {
     public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
     public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
     public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
+    public static final String MAVEN_SUREFIRE_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
+    public static final String MAVEN_SUREFIRE_PLUGIN_ARTIFACT_ID = "maven-surefire-plugin";
+    // The execution `mvn test` runs, whose configuration overrides the plugin-level one.
+    public static final String SUREFIRE_TEST_EXECUTION_ID = "default-test";
+    // Surefire's class-file patterns when a module configures none.
+    public static final List<String> SUREFIRE_DEFAULT_INCLUDES =
+        List.of("**/Test*.java", "**/*Test.java", "**/*Tests.java", "**/*TestCase.java");
+    public static final List<String> SUREFIRE_DEFAULT_EXCLUDES = List.of("**/*$*");
     // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
     // says why. maven.version is the system property Maven sets to its own version.
     public static final String MIN_MAVEN_VERSION = "3.6.3";

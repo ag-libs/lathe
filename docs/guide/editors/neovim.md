@@ -402,10 +402,10 @@ This name filter is a neotest-adapter concern — it shapes the summary tree onl
 can run.
 Two limits follow from it:
 
-- **Project-overridden Surefire `<includes>` / `<excludes>` are not honored yet.**
-  The adapter assumes Surefire's defaults, so a build that customizes them lists a different set in the
-  summary than `mvn test` runs. Reading each module's real patterns at `lathe:sync` is a known future
-  improvement.
+- **The summary assumes Surefire's default name patterns.**
+  A build that customizes `<includes>` / `<excludes>` may list a different set of files in the summary
+  than `mvn test` runs. Running a package or a whole module does follow the build's real patterns, so
+  it runs what `mvn test` runs; only the summary's file list doesn't yet.
 - **Integration tests (Failsafe) do not appear.**
   IT classes (`IT*.java`, `*IT.java`, `*ITCase.java`) fall outside the Surefire name patterns, so the
   summary never lists them. They are also not runnable from the editor: Lathe captures only the

@@ -19,6 +19,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
@@ -406,7 +407,7 @@ final class WorkspaceSession {
               workspaceRoot,
               manifest.reactorRewrite(),
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               jdwp);
@@ -751,6 +752,40 @@ final class WorkspaceSession {
   // A dir inside a module's test tree runs just that package (selectPackage recurses); the
   // source root, or anything above it (module root, src/), runs every test package in one
   // launch. A dir enclosing more than one module (the reactor root) resolves to nothing.
+  // A package or module run executes the classes the build's own test run would (the module's
+  // test-filter.json); a run naming classes or methods runs exactly those.
+  private static List<TestSelection> withTestFilter(
+      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections)
+      throws IOException {
+    return new LaunchReader(workspaceRoot)
+        .testFilter(moduleRel)
+        .map(filter -> withClassNameFilter(selections, filter))
+        .orElse(selections);
+  }
+
+  static List<TestSelection> withClassNameFilter(
+      final List<TestSelection> selections, final TestFilterData filter) {
+    final boolean wide =
+        !selections.isEmpty()
+            && selections.stream()
+                .allMatch(
+                    selection ->
+                        selection.kind() == TestSelectionKind.PACKAGE
+                            || selection.kind() == TestSelectionKind.MODULE);
+    if (!wide) {
+      return selections;
+    }
+
+    return Stream.of(
+            selections.stream(),
+            filter.classNameIncludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_INCLUDE, regex)),
+            filter.classNameExcludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_EXCLUDE, regex)))
+        .flatMap(stream -> stream)
+        .toList();
+  }
+
   static DirRun dirRun(
       final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path dirPath) {
     final List<ModuleSourceConfig> testConfigs = testConfigs(configs);
@@ -1176,7 +1211,7 @@ final class WorkspaceSession {
               workspaceRoot,
               reactorRewrite,
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               JdwpOptions.NONE);

@@ -549,6 +549,9 @@ class LspSmokeTest {
         .extracting(result -> result.get("positionId").getAsString())
         .containsAll(landing);
     assertThat(results).allMatch(result -> result.get("durationMs").getAsLong() >= 0);
+    // The module's Surefire includes leave this class out, as mvn test does.
+    assertThat(results)
+        .noneMatch(result -> result.get("positionId").getAsString().contains("ExcludedByPattern"));
     assertThat(resultFor(results, "AssertionsTest#singleLine()"))
         .satisfies(
             result -> {

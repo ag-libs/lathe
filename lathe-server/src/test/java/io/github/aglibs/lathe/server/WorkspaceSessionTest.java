@@ -8,6 +8,9 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
+import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
@@ -606,6 +609,29 @@ class WorkspaceSessionTest {
 
     assertThat(WorkspaceSession.resolveContext(List.of(config), tmp, tmp.resolve("loose/Bar.java")))
         .isNull();
+  }
+
+  // A package or module run takes the build's class-name filter; a run naming a class or a method,
+  // alone or among packages, runs exactly what it names.
+  @Test
+  void withClassNameFilter_packageModuleOrNamedRuns_filtersOnlyTheWideOnes() {
+    final var filter = new TestFilterData(List.of(".*Test"), List.of(".*\\$.*"));
+    final var pkg = new TestSelection(TestSelectionKind.PACKAGE, "com.x");
+    final var module = new TestSelection(TestSelectionKind.MODULE, "com.x.mod");
+    final var cls = new TestSelection(TestSelectionKind.CLASS, "com.x.FooIT");
+    final var method = new TestSelection(TestSelectionKind.METHOD, "com.x.FooIT#a()");
+
+    assertThat(WorkspaceSession.withClassNameFilter(List.of(pkg, module), filter))
+        .containsExactly(
+            pkg,
+            module,
+            new TestSelection(TestSelectionKind.CLASS_NAME_INCLUDE, ".*Test"),
+            new TestSelection(TestSelectionKind.CLASS_NAME_EXCLUDE, ".*\\$.*"));
+    assertThat(WorkspaceSession.withClassNameFilter(List.of(cls), filter)).containsExactly(cls);
+    assertThat(WorkspaceSession.withClassNameFilter(List.of(method), filter))
+        .containsExactly(method);
+    assertThat(WorkspaceSession.withClassNameFilter(List.of(pkg, cls), filter))
+        .containsExactly(pkg, cls);
   }
 
   @Test

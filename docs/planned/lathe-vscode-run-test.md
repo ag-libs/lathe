@@ -171,7 +171,7 @@ This reads a JVM type descriptor, a fixed format, not Java source.
 [Structured test results](../done/lathe-structured-test-results.md) flagged array and varargs shapes as the open risk of this mapping, and `TestId`'s own comment records the mismatch; S6 confirmed it.
 Results for such methods then land on their method, in Neovim as in VS Code.
 
-**F. Follow the build's test-class filter.**
+**F. Follow the build's test-class filter.** (Done in slice 5.)
 A module or package run today executes every test class JUnit finds, while `mvn test` runs only the classes Surefire's `includes`/`excludes` select (by default `**/Test*.java`, `**/*Test.java`, `**/*Tests.java`, `**/*TestCase.java`).
 [Run, Test, and Debug](../done/lathe-run-test-debug.md) lists this as a known limitation (§9 there); S7 showed it matters on real projects, so F lifts it for class patterns, and that document's limitation and `docs/status.md` change when F lands.
 Surefire's tag selection (`groups`/`excludedGroups`) is left out on purpose (decided 2026-10-24) and stays a documented limitation.
@@ -179,7 +179,10 @@ Spike S7 found the difference on real projects: Helidon's `config/config` includ
 Dropwizard's `dropwizard-testing` has inner `*SubTest` fixtures that fail on purpose and are meant to be driven only by another test, and a Lathe module run reports them as failures.
 The capture records the class patterns Surefire applied (its include/exclude patterns, as Surefire resolved them), and module runs, package runs and discovery apply them as a JUnit `ClassNameFilter`.
 Running a class or a method explicitly ignores the filter, as IntelliJ does: the user asked for that class.
-How the capture records it is settled when F is built: the in-fork capture listener sees the discovery request Surefire built (one class selector per included class), and the patterns themselves are in the plugin's configuration.
+How it is recorded (settled in slice 5): `lathe:sync` reads `maven-surefire-plugin`'s `<includes>`/`<excludes>` (the `default-test` execution's over the plugin's, else Surefire's defaults) and writes them as class-name regexes to `.lathe/<module>/test-filter.json`, a build-neutral format a Gradle front-end can write too.
+Not from the test JVM: there the capture would only see the classes Surefire already selected, a list that goes stale when a test class is added and that a `-Dtest=…` build would shrink.
+The server appends them to a package or module run as two more selection kinds (`CLASS_NAME_INCLUDE`/`CLASS_NAME_EXCLUDE`, runner flags `--include-classname`/`--exclude-classname`, applied as JUnit's `ClassNameFilter`); a run naming a class or a method gets none.
+Through Surefire's default exclude (`**/*$*`), a module run no longer runs a static nested test class on its own, as `mvn test` doesn't; `@Nested` classes still run with their outer class.
 
 **G. Running a class runs its static nested classes.** (Done in slice 1.)
 JUnit's class selector includes `@Nested` inner classes but not `static` nested ones, so running `Outer` skips `Outer$StaticNested`'s tests (spike S6), although `runnables.list` shows that class under `Outer`, in Neovim as in VS Code.
@@ -614,7 +617,7 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | 2 | Richer results: B and C; JUnit 4 values deferred | done (PR #45, first opened as #46) |
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations (§3.4 items 3, 4, 6; item 5 not pursued) | built |
 | 4 | Output attributed to its test (`TranscriptLine.positionId`, from the runner's markers) and per-test output in neotest (§3.4 item 2); `lathe/testStarted` deferred to VS Code | built |
-| 5 | Surefire's filter (F), after its own design check | |
+| 5 | Surefire's include/exclude filter (F): read at sync, applied to package and module runs | built |
 | 6 | Whole-module discovery (A), lazy and bounded so neotest's startup doesn't start a JVM per module | |
 | 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | |
 | 8 | Release: docs, release notes, the `lathe.nvim` publish; the GitHub release carries no `.vsix` this time | |
@@ -625,7 +628,6 @@ What this design leaves open, on purpose:
 
 | Item | Status | Needed before |
 |---|---|---|
-| How the capture records Surefire's filter (§3.2 F) | Two candidate sources, the in-fork view of Surefire's discovery request or the plugin's configuration; settled in a short design check | Phase 1 step 4 |
 | S1 on macOS and Windows | Linux verified; the other two need a CI run on a pushed branch | Phase 3 |
 | Debugging (§10) | Deferred; the wiring is recorded, the design is not written | After phase 3 |
 | TestNG through Surefire's own TestNG provider | Out of scope; what today's runs do on such a module was not checked | — |

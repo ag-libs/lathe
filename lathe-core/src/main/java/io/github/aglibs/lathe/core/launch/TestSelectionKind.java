@@ -6,7 +6,11 @@ public enum TestSelectionKind {
   CLASS("--select-class"),
   METHOD("--select-method"),
   PACKAGE("--select-package"),
-  MODULE("--select-module");
+  MODULE("--select-module"),
+  // Not selectors: class-name regexes narrowing a package or module run to the classes the build's
+  // own test run would execute (its Surefire includes/excludes).
+  CLASS_NAME_INCLUDE("--include-classname"),
+  CLASS_NAME_EXCLUDE("--exclude-classname");
 
   private final String runnerFlag;
 

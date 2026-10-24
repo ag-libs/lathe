@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.engine.DiscoverySelector;
+import org.junit.platform.engine.discovery.ClassNameFilter;
 import org.junit.platform.engine.discovery.ClassSelector;
 import org.junit.platform.engine.discovery.MethodSelector;
 import org.junit.platform.engine.discovery.ModuleSelector;
@@ -24,7 +25,8 @@ final class TestSelectorParserTest {
   void parse_classWithStaticNestedClasses_selectsThemAlongside() {
     final var selectors =
         TestSelectorParser.parse(
-            new String[] {TestSelectionKind.CLASS.runnerFlag(), Outer.class.getName()});
+                new String[] {TestSelectionKind.CLASS.runnerFlag(), Outer.class.getName()})
+            .selectors();
 
     assertThat(selectors)
         .map(selector -> ((ClassSelector) selector).getClassName())
@@ -32,6 +34,21 @@ final class TestSelectorParserTest {
             Outer.class.getName(),
             Outer.StaticNested.class.getName(),
             Outer.StaticNested.Deeper.class.getName());
+  }
+
+  // The class-name filters narrow the selection; they select nothing themselves.
+  @Test
+  void parse_classNameFlags_becomeFiltersBesideTheSelectors() {
+    final var request =
+        TestSelectorParser.parse(
+            new String[] {
+              TestSelectionKind.PACKAGE.runnerFlag(), "com.example",
+              TestSelectionKind.CLASS_NAME_INCLUDE.runnerFlag(), ".*Test",
+              TestSelectionKind.CLASS_NAME_EXCLUDE.runnerFlag(), ".*\\$.*"
+            });
+
+    assertThat(request.selectors()).singleElement().isInstanceOf(PackageSelector.class);
+    assertThat(request.filters()).hasSize(2).allMatch(ClassNameFilter.class::isInstance);
   }
 
   @Test
@@ -78,7 +95,8 @@ final class TestSelectorParserTest {
       final TestSelectionKind kind,
       final String value,
       final Class<? extends DiscoverySelector> selectorType) {
-    final var selectors = TestSelectorParser.parse(new String[] {kind.runnerFlag(), value});
+    final var selectors =
+        TestSelectorParser.parse(new String[] {kind.runnerFlag(), value}).selectors();
 
     assertThat(selectors).singleElement().isInstanceOf(selectorType);
   }

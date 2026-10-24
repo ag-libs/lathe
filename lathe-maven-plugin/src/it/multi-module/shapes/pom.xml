@@ -31,6 +31,10 @@
         <configuration>
           <!-- The failing tests are the point: the build still captures their launch. -->
           <testFailureIgnore>true</testFailureIgnore>
+          <!-- Narrower than Surefire's defaults, so ExcludedByPatternTests is a class mvn test skips. -->
+          <includes>
+            <include>**/*Test.java</include>
+          </includes>
         </configuration>
       </plugin>
     </plugins>

@@ -8,7 +8,7 @@ Builds on `lathe-design.md` (especially §5 Compiler Shim and §6 Module Model).
 In: JUnit Platform tests (JUnit 5/6; JUnit 4 via the vintage engine), modular (JPMS) and classpath
 projects, single named class/method runs and package-/module-wide runs, and `main` classes.
 Out (documented limitations, §9): non-JUnit-Platform providers (pure TestNG), `forkCount=0`,
-lifecycle-provisioned integration tests, faithful Surefire include/exclude/tag filtering for wide runs,
+lifecycle-provisioned integration tests, Surefire tag filtering (`groups`) for wide runs,
 coverage reports.
 
 This document merges design intent (why capture-replay, why in-fork introspection) with specification
@@ -486,8 +486,10 @@ replay time by the captured class path).
 
 **Behaviour:** drives `LauncherFactory.create()` + a result listener; **exit code** `0` = all passed,
 `1` = failures, `2` = no selectors.
-**Fidelity note:** package-/module-wide runs execute everything JUnit discovers — they do **not**
-reproduce Surefire include/exclude/tag filtering (§9).
+**Fidelity note:** package-/module-wide runs follow the module's Surefire include/exclude patterns,
+recorded at sync as class-name regexes (`.lathe/<module>/test-filter.json`, added later by the
+[run/test design](../planned/lathe-vscode-run-test.md) §3.2 F); they do **not** reproduce Surefire's
+tag filtering (§9).
 **Results:** a summary today; a `TestExecutionListener` emitting NDJSON to a sink path (system property)
 in the streaming stage (§15).
 
@@ -582,7 +584,7 @@ rel path, and its source range.
 
 Routing unit vs. integration tests is by convention (`*Test`/`Test*`/`*Tests` → Surefire;
 `*IT`/`IT*`/`*ITCase` → Failsafe);
-custom include/exclude patterns are a fidelity gap (§9).
+custom include/exclude patterns are followed by package-/module-wide runs (see the fidelity note above).
 
 ---
 
@@ -768,8 +770,9 @@ run.
 - **`main` before the first build** — `main-launch.json` is written by `lathe:sync`, so a fresh
   checkout needs one build (any build that reaches `process-test-classes`) before `main` runs are
   available; no test run is required (§4.4).
-- **Package/module-wide selection** — exact for a named class/method; Surefire include/exclude/tag
-  filtering for wide runs is not reproduced.
+- **Package/module-wide selection** — exact for a named class/method; wide runs follow the module's
+  Surefire include/exclude patterns, but Surefire's tag filtering (`groups`/`excludedGroups`) is not
+  reproduced.
 - **Coverage** — replay keeps whatever agents the build captured (including a coverage agent) but does
   not produce a coverage report; *use `mvn verify`* for coverage. To keep the coverage agent out of
   replays, disable it at capture via a Lathe-specific profile.
