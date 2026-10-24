@@ -68,8 +68,8 @@ For Maven:
 |---|---|
 | `.lathe/lathe-sync.sh` | `mvn … process-test-classes` |
 | `.lathe/lathe-sync.sh --tests` | `mvn … test -Dlathe.capture.only=true -DfailIfNoTests=false` |
-| `.lathe/lathe-sync.sh app core` | `mvn … -pl app,core -am process-test-classes` |
-| `.lathe/lathe-sync.sh --tests app` | `mvn … -pl app -am test -Dlathe.capture.only=true -DfailIfNoTests=false` |
+| `.lathe/lathe-sync.sh app core` | `mvn … process-test-classes -pl app,core -am` |
+| `.lathe/lathe-sync.sh --tests app` | `mvn … test -Dlathe.capture.only=true -DfailIfNoTests=false -pl app -am` |
 
 - **Visible command.**
   Before running the build, the script prints the exact command it is about to run on stderr, as its first line (`lathe-sync: mvnd --no-transfer-progress … process-test-classes`).
@@ -112,7 +112,7 @@ else mvn=mvn
 fi
 scope=
 if [ $# -gt 0 ]; then scope="-pl $(echo "$@" | tr ' ' ',') -am"; fi
-set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope "$goal"
+set -- "$mvn" --no-transfer-progress -Dmaven.build.cache.enabled=false "$goal" $scope
 echo "lathe-sync: $*" >&2
 exec "$@"
 ```

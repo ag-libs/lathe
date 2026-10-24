@@ -115,8 +115,10 @@ public record SyncScript(
             upstream);
   }
 
+  // Goals before the module scope: a Gradle task option must follow its task, and Maven takes
+  // -pl/-am anywhere.
   private String posixCommand() {
-    final List<String> variable = moduleArgs.isEmpty() ? goals : List.of("$scope", "$goal");
+    final List<String> variable = moduleArgs.isEmpty() ? goals : List.of("$goal", "$scope");
     return Stream.concat(fixedArgs.stream().map(SyncScript::quote), variable.stream())
         .collect(Collectors.joining(" "));
   }
@@ -195,7 +197,7 @@ public record SyncScript(
     final List<String> variable =
         moduleArgs.isEmpty()
             ? goals.stream().map(SyncScript::batch).toList()
-            : List.of("%scope%", "%goal%");
+            : List.of("%goal%", "%scope%");
     return Stream.concat(
             fixedArgs.stream().map(arg -> "\"%s\"".formatted(batch(arg))), variable.stream())
         .collect(Collectors.joining(" "));

@@ -65,19 +65,22 @@ class SyncScriptTest {
     assertThat(run(maven, "--tests").stdout())
         .endsWith("args=--quiet -Dcache=false test -Dcapture=true");
     assertThat(run(maven, "app", "core").stdout())
-        .endsWith("args=--quiet -Dcache=false -pl app -pl core -am sync");
+        .endsWith("args=--quiet -Dcache=false sync -pl app -pl core -am");
     assertThat(run(maven, "--tests", "app").stdout())
-        .endsWith("args=--quiet -Dcache=false -pl app -am test -Dcapture=true");
+        .endsWith("args=--quiet -Dcache=false test -Dcapture=true -pl app -am");
 
-    // A front-end that resolves upstream itself (Gradle) has nothing after the modules.
+    // A front-end that resolves upstream itself (Gradle) has nothing after the modules, and its
+    // module option belongs to the task, so it must follow it.
     final var gradle =
         script(
             List.of("latheSync"),
-            List.of("latheSync", "--tests"),
+            List.of("latheSync", "-Pcapture=true"),
             List.of("--module", LatheFlags.SYNC_MODULE_TOKEN),
             List.of());
     assertThat(run(gradle, "app", "core").stdout())
-        .endsWith("args=--quiet -Dcache=false --module app --module core latheSync");
+        .endsWith("args=--quiet -Dcache=false latheSync --module app --module core");
+    assertThat(run(gradle, "--tests", "app").stdout())
+        .endsWith("args=--quiet -Dcache=false latheSync -Pcapture=true --module app");
   }
 
   @Test
@@ -130,7 +133,7 @@ class SyncScriptTest {
             "set \"scope=%scope% -pl %~1\"",
             "if defined scope set \"scope=%scope% -am\"",
             "set \"JAVA_HOME=%s\"".formatted(jdk),
-            "call \"%tool%\" \"--quiet\" \"-Dlog=100%%\" %scope% %goal%",
+            "call \"%tool%\" \"--quiet\" \"-Dlog=100%%\" %goal% %scope%",
             "exit /b %ERRORLEVEL%");
     // A ')' in an expanded path (Program Files (x86)) would end a parenthesized block early.
     assertThat(lines).noneMatch(line -> line.contains("(") && line.contains("%"));

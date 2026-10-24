@@ -228,7 +228,7 @@ goal=process-test-classes
 if [ "$1" = --tests ]; then goal="test -Dlathe.capture.only=true -DfailIfNoTests=false"; shift; fi
 scope=; for m; do scope="$scope -pl $m"; done
 [ -n "$scope" ] && scope="$scope -am"
-set -- "$tool" --no-transfer-progress -Dmaven.build.cache.enabled=false $scope $goal
+set -- "$tool" --no-transfer-progress -Dmaven.build.cache.enabled=false $goal $scope
 echo "lathe-sync: $*" >&2
 JAVA_HOME=/opt/jdk-25 exec "$@"
 ```

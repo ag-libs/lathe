@@ -16,9 +16,9 @@ No Gradle code exists yet. This is a design, sliced for incremental delivery.
 1. [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md) — **done (2026-10-11).**
    Downstream code no longer assumes Maven's `target/` layout or Maven-named manifest fields.
 2. [Multi-OS](../done/lathe-multi-os.md), all of it — **done (2026-10-23).** Decided 2026-10-20: Multi-OS closes before Gradle starts.
-   Its sync script model (D3) is build-neutral, so Gradle fills the model in rather than writing script logic —
-   after one fix before slice 2: the model splices module options before the goals, which Gradle rejects for a
-   task option (see [The sync command](#the-sync-command)).
+   Its sync script model (D3) is build-neutral, so Gradle fills the model in rather than writing script logic.
+   The one fix it needed — goals before module options, which a Gradle task option requires — is made
+   (see [The sync command](#the-sync-command)).
 3. The **JDK 17 floor** ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md), slice 0, D7) — **done (2026-10-19, PR #24):** every module targets Java 17.
    So the plugin is written against Java 17 from the start.
 4. **A Maven-free `lathe-install`** (see [What is reused vs new](#what-is-reused-vs-new)) — this design's slice 0 (moved here from Multi-OS on 2026-10-20, since only Gradle needs it).
@@ -632,9 +632,9 @@ Force a clean recapture if the build cache masks staleness: `./gradlew clean lat
 It fills in the [Multi-OS](../done/lathe-multi-os.md) D3 model, with three Gradle-specific points:
 
 - **Module options go after the task.** A task option must follow its task (`latheSync --module app`), and
-  Gradle rejects one placed before it. The D3 model today splices `moduleArgs` *before* the goals —
-  `SyncScriptTest`'s Gradle-shaped case expects `--module app --module core latheSync` — so the model gains a
-  way to place them after the goals (a change to `SyncScript` and its test, made before slice 2).
+  Gradle rejects one placed before it. The D3 model first spliced `moduleArgs` before the goals; it now
+  renders the goals first for every front-end, since Maven takes `-pl`/`-am` anywhere (`SyncScriptTest`'s
+  Gradle-shaped case expects `latheSync --module app --module core`).
   Its `testsGoals` for Gradle are `latheSync -Plathe.capture.only=true`, the counterpart of Maven's
   `test -Dlathe.capture.only=true`.
 - **It replays how the build was launched.** A build registered through an init script that is not in
