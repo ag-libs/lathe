@@ -361,7 +361,7 @@ execute"), and capture-only filters every test out — observed on 9.8.1.
 Setting `failOnNoDiscoveredTests = false` in capture mode fixes it, and the filter still runs in the worker.
 Gradle 8.x neither fails nor has the property, so the plugin sets it only when `GradleVersion.current()` is 9.0 or
 newer. The plugin is compiled against a newer Gradle API than its 8.8 floor for calls like this one, each guarded
-by a version check; the TestKit version matrix catches an unguarded one.
+by a version check; the 8.8 fixture run catches an unguarded one (see [Repository & build integration](#repository--build-integration-polyglot)).
 
 **Cache interaction — capture mode always runs and is never cached** (spiked).
 The listener only fires when Gradle actually forks the worker; an `UP-TO-DATE` or `FROM-CACHE` `test`
@@ -690,19 +690,46 @@ Gate the Gradle exec behind a profile / `-Dlathe.gradle.skip=true` so scoped or 
 Gradle or download a distribution.
 
 **The version is passed in, not hardcoded:** the orchestrating `exec-maven-plugin` runs
-`./gradlew build -Plathe.version=${project.version} -PlatheRepo=…`, and the Gradle build resolves
+`gradle build -Plathe.version=${project.version} -PlatheRepo=…`, and the Gradle build resolves
 `io.github.ag-libs:lathe-core:${lathe.version}` from that repository.
 At release, `versions:set` stamps the real version and the same flags flow to Gradle — lockstep with no drift.
 
 **How it is wired — chosen: Maven-orchestrated.** A `pom`-packaged Maven module `lathe-gradle-plugin`,
-listed last in the reactor, binds **`exec-maven-plugin`** to run `./gradlew build -Plathe.version=…`
+listed last in the reactor, binds **`exec-maven-plugin`** to run `gradle build -Plathe.version=…`
 (and the TestKit tests) in a later phase. This reuses the repo's existing pattern — CI already drives
 `run-specs.sh` via `exec-maven-plugin` — so a single `mvn install` builds and tests everything, Gradle
 included: one entry point, one CI stage. (Alternative, rejected for now: a standalone Gradle sub-build
 with its own CI job — more idiomatic for Gradle, but two commands / two CI stages.)
 
-**CI:** the outer build runs one Gradle version; the **Gradle version matrix** (8.8 floor / latest 8.x / latest 9.x)
-lives *inside* the TestKit tests via `GradleRunner.withGradleVersion(...)`, not in the outer build.
+**Which Gradle, and no wrapper (decided 2026-10-24) — the same model as Maven.**
+
+- **One installed Gradle builds the plugin: the latest stable, pinned exactly — 9.8.2.** No Gradle wrapper,
+  as Lathe's Maven build has none. CI's shared `.github/actions/build-tools` sets it up next to Maven 3.9.16
+  (`gradle/actions/setup-gradle` with `gradle-version: 9.8.2`, which also caches `~/.gradle`); bumping it is a
+  deliberate one-line change, like Maven's. Locally the build uses `gradle` on the PATH, or
+  `-Dlathe.gradle.home=<dir>` (it runs `<dir>/bin/gradle`); `-Dlathe.gradle.skip=true` skips the Gradle part.
+- **That Gradle is also the API the plugin compiles against** (`java-gradle-plugin` compiles against the
+  running Gradle). A call newer than the 8.8 floor must be guarded by a version check; the 8.8 fixture run
+  below catches an unguarded one (`NoSuchMethodError`), as the Maven 3.6.3 invoker job catches a too-new Maven
+  API.
+- **The TestKit fixtures run on that same Gradle by default** (`GradleRunner.withGradleInstallation`), so every
+  main CI row (each JDK, Linux, macOS, Windows) tests the plugin on the latest Gradle.
+
+**Older Gradle versions run in the existing older-Maven invoker jobs (decided 2026-10-24)**, not in jobs of
+their own and not through `withGradleVersion` inside every build. Each job downloads one Gradle
+distribution, as it downloads its Maven, and passes `-Dlathe.gradle.fixturesHome=<dir>` — the counterpart
+of `-Dinvoker.mavenHome` — which the Maven module forwards so the TestKit fixtures run on that installation.
+Those jobs skip unit tests (`-Dmaven.test.skip.exec=true`); the module forwards that too, so Gradle skips its
+`test` task but still runs the fixtures, kept in their own `functionalTest` task as the Maven fixtures are an
+invoker run.
+
+| Existing job | Gradle fixtures on | Covers |
+|---|---|---|
+| Maven 3.6.3, JDK 17 | 8.8 | the floor, and the floor running on JDK 17 |
+| Maven 3.8.8, JDK 21 | 8.14.6 | the last 8.x |
+| Maven 3.10.0, JDK 21 | 9.0.0 | the 8 → 9 boundary, where Gradle's internals changed (the JPMS spike's GradleX failure was there) |
+
+Every main row covers the latest 9.x. Maven's own build stays on 3.9.16 (3.10.0 has a deployment problem).
 
 *Spiked 2026-10-23* with a miniature reactor: a `core` jar module and a `pom`-packaged `gradle-plugin` module
 listed last, depending on `core`, whose directory also holds the Gradle build.
@@ -714,8 +741,7 @@ and put its own output under `target/gradle`, so `mvn clean` removes it.
 code from `core`; `-T 4` kept the order; `-Dlathe.gradle.skip=true` skipped both the repository fill and the
 Gradle run; a failing TestKit test failed the Maven build; and after changing `core`, the test saw the change —
 no stale jar — while `~/.m2` received nothing.
-The spike ran an installed Gradle and `withGradleInstallation`; the repository will use the Gradle wrapper and
-`withGradleVersion`, which download distributions, so CI caches `~/.gradle/wrapper/dists`.
+The spike ran an installed Gradle and `withGradleInstallation`, which is the decided model above.
 
 **Release:** the plugin publishes to the **Gradle Plugin Portal** (`com.gradle.plugin-publish`),
 separate from the Maven `central-publishing` flow, with the version pinned in lockstep to the Lathe
@@ -725,9 +751,10 @@ release. Wiring this into `release.yml` is a follow-up detail, not part of the c
 
 **Harness: Gradle TestKit (`GradleRunner`)** — the official functional-test tool for Gradle plugins and
 the direct analog of the Maven-invoker ITs in `lathe-maven-plugin/src/it/`. It runs a **real** Gradle
-build against fixture projects, and `withGradleVersion(...)` makes it download/cache the distribution
-itself (no system Gradle install; drives the version matrix). Because test capture is in-fork, these
-tests exercise a real `test`/capture-only fork.
+build against fixture projects on an installed Gradle (`withGradleInstallation`): the one that builds
+the plugin, or an older one in the older-version CI jobs (see
+[Repository & build integration](#repository--build-integration-polyglot)). Because test capture is in-fork,
+these tests exercise a real `test`/capture-only fork.
 
 Two layers, mirroring the Maven side:
 
@@ -792,7 +819,9 @@ and a capture-only test run on Gradle 9.
    reading Lathe's artifacts from a reactor-filled repository (`-PlatheRepo=…`, never `~/.m2`) with
    `-Plathe.version=${project.version}`, filled by `maven-invoker-plugin:install`. Spiked 2026-10-23 (see
    [Repository & build integration](#repository--build-integration-polyglot)), so the standalone Gradle
-   sub-build fallback is not expected to be needed.
+   sub-build fallback is not expected to be needed. *Decided 2026-10-24:* no Gradle wrapper; an installed Gradle,
+   the latest stable pinned exactly (9.8.2), builds the plugin; older Gradle versions (8.8, 8.14.6, 9.0.0) run
+   the fixtures in the existing older-Maven invoker jobs.
 2. **GradleX `java-module-testing` injection mechanism** — *answered 2026-10-23:* its directives are real JVM
    arguments of the test worker, so in-fork capture sees all of them, module path included; the task's public
    `allJvmArgs` has the directives but not the module path. GradleX itself does not yet run on Gradle 9.8.1.
