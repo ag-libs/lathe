@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -63,6 +64,8 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
  * out-of-process edits, and returns results directly instead of over JSON-RPC.
  */
 public final class LatheEngine {
+
+  private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int SNIPPET_CONTEXT_LINES = 3;
@@ -449,6 +452,13 @@ public final class LatheEngine {
 
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
     final Set<Path> unchecked = uncheckedCallers(targets, changed);
+    if (!unchecked.isEmpty()) {
+      LOG.info(
+          () ->
+              "[verify] %d caller(s) left unchecked past the %d-caller cap"
+                  .formatted(unchecked.size(), CHECKED_CALLERS));
+    }
+
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(

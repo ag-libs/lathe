@@ -388,8 +388,8 @@ final class LatheMcpTools {
             .description(
                 """
                 After editing Java files, recompile the changed files and their callers, in their \
-                module and in dependent modules (up to 200 callers), in-process against the real \
-                classpath — no full build — and report their errors and warnings grouped by module \
+                module and in dependent modules, in-process against the real classpath — no full \
+                build — and report their errors and warnings grouped by module \
                 (unused-code hints left out). With no `files` it checks what changed on disk plus \
                 what Lathe's own tools wrote, such as a rename. When the change reaches other \
                 modules it names them, says how many callers it left unchecked, and returns the \
