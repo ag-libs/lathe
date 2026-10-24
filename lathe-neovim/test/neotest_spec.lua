@@ -795,6 +795,67 @@ do
   spec.check("untimed summary omits the seconds suffix", untimed.text, "C — 2 passed, 0 failed, 0 skipped")
 end
 
+-- The richer results (durations, display names, expected/actual, stack frames) and a class's own
+-- failure (its @BeforeAll broke: empty methodName, positionId = the class id) pass through results()
+-- and the quickfix rows without error. The class record marks the class node failed with its real
+-- message instead of the run's aggregate.
+do
+  local nodes = {
+    ["demo.BrokenTest"] = { id = "demo.BrokenTest", children = { "demo.BrokenTest#neverRuns()" } },
+    ["demo.BrokenTest#neverRuns()"] = { id = "demo.BrokenTest#neverRuns()", children = {} },
+  }
+  local class_failure = {
+    className = "demo.BrokenTest",
+    methodName = "",
+    positionId = "demo.BrokenTest",
+    status = "failed",
+    failureMessage = "java.lang.IllegalStateException: setup exploded",
+    failureLine = 9,
+    durationMs = 4,
+    displayName = "BrokenTest",
+    stackTrace = {},
+  }
+  local rich_failure = {
+    className = "demo.OtherTest",
+    methodName = "m",
+    positionId = "demo.OtherTest#m()",
+    status = "failed",
+    failureMessage = "expected: <a> but was: <b>",
+    failureLine = 3,
+    durationMs = 12,
+    displayName = "m()",
+    expected = "a",
+    actual = "b",
+    stackTrace = { { className = "demo.OtherTest", methodName = "m", fileName = "OtherTest.java", line = 3 } },
+  }
+
+  local results = adapter.results({
+    context = {
+      position_id = "demo.BrokenTest",
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = transcript("transcript"),
+        testResults = { class_failure, rich_failure },
+      },
+    },
+  }, nil, fake_tree(nodes))
+  local items = adapter._results_qf_items({ class_failure, rich_failure }, {})
+
+  spec.check("class failure marks the class node failed", results["demo.BrokenTest"].status, "failed")
+  spec.check(
+    "class failure carries its real message",
+    results["demo.BrokenTest"].short,
+    "java.lang.IllegalStateException: setup exploded"
+  )
+  spec.check("rich failure still maps to its method", results["demo.OtherTest#m()"].status, "failed")
+  spec.check(
+    "class failure's quickfix row is named by the class alone",
+    items[1].text,
+    "demo.BrokenTest — java.lang.IllegalStateException: setup exploded"
+  )
+end
+
 -- _results_qf_items: the run's executed tests -> quickfix rows. Failures come first and jump to their
 -- failure line; passed/skipped follow in run order. A class whose source path resolved (paths map)
 -- becomes a jumpable row (filename+lnum); an unresolved class is a text-only row.

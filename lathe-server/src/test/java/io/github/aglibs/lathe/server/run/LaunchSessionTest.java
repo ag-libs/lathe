@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
@@ -24,6 +25,24 @@ final class LaunchSessionTest {
   private static final long TIMEOUT_SECONDS = 5;
   private static final Consumer<TranscriptLine> NO_STREAM = line -> {};
   private static final Consumer<TestResult> NO_EVENTS = result -> {};
+  // As the runner writes them: a pass, a failure with values and a frame, and a class's own
+  // failure.
+  private static final String PASSES =
+      """
+      {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed",\
+      "failureMessage":"","failureLine":-1,"durationMs":3,"displayName":"passes()","stackTrace":[]}
+      """;
+  private static final String RECORDS =
+      PASSES
+          + """
+          {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed",\
+          "failureMessage":"boom","failureLine":12,"durationMs":5,"displayName":"fails()",\
+          "expected":"a\\nb","actual":"a\\nc","stackTrace":[{"className":"pkg.FooTest",\
+          "methodName":"fails","fileName":"FooTest.java","line":12}]}
+          {"className":"pkg.BrokenTest","methodName":"","methodParameterTypes":"","status":"failed",\
+          "failureMessage":"setup exploded","failureLine":9,"durationMs":1,"displayName":"BrokenTest",\
+          "stackTrace":[]}
+          """;
 
   private static Process start(final String... args) throws IOException {
     return new ProcessBuilder(TestProcess.command(args)).start();
@@ -88,13 +107,7 @@ final class LaunchSessionTest {
   void onExit_resultsSinkWithRecords_streamsEachToTheResultConsumer(@TempDir final Path dir)
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final Path sink = dir.resolve("results.ndjson");
-    Files.writeString(
-        sink,
-        """
-        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
-        {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
-        """,
-        StandardCharsets.UTF_8);
+    Files.writeString(sink, RECORDS, StandardCharsets.UTF_8);
     final List<TestResult> streamed = Collections.synchronizedList(new ArrayList<>());
     final var session = new LaunchSession(start("exit", "0"), sink, NO_STREAM, streamed::add);
 
@@ -102,25 +115,19 @@ final class LaunchSessionTest {
 
     assertThat(streamed)
         .extracting(TestResult::positionId)
-        .containsExactly("pkg.FooTest#passes()", "pkg.FooTest#fails()");
+        .containsExactly("pkg.FooTest#passes()", "pkg.FooTest#fails()", "pkg.BrokenTest");
   }
 
   @Test
   void onExit_resultsSinkWithRecords_parsesAndDeletesSink(@TempDir final Path dir)
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final Path sink = dir.resolve("results.ndjson");
-    Files.writeString(
-        sink,
-        """
-        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
-        {"className":"pkg.FooTest","methodName":"fails","methodParameterTypes":"","status":"failed","failureMessage":"boom","failureLine":12}
-        """,
-        StandardCharsets.UTF_8);
+    Files.writeString(sink, RECORDS, StandardCharsets.UTF_8);
     final var session = launchSession(start("exit", "0"), sink);
 
     final LaunchOutcome outcome = session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
-    assertThat(outcome.testResults()).hasSize(2);
+    assertThat(outcome.testResults()).hasSize(3);
     assertThat(outcome.testResults())
         .anySatisfy(
             r -> {
@@ -128,10 +135,22 @@ final class LaunchSessionTest {
               assertThat(r.status()).isEqualTo("failed");
               assertThat(r.failureMessage()).isEqualTo("boom");
               assertThat(r.failureLine()).isEqualTo(12);
+              assertThat(r.durationMs()).isEqualTo(5);
+              assertThat(r.displayName()).isEqualTo("fails()");
+              assertThat(r.expected()).isEqualTo("a\nb");
+              assertThat(r.actual()).isEqualTo("a\nc");
+              assertThat(r.stackTrace())
+                  .containsExactly(new StackFrame("pkg.FooTest", "fails", "FooTest.java", 12));
               // positionId is absent from the sink NDJSON; it must be derived server-side while
               // deserializing, which only happens if Gson runs the record's compact constructor.
               assertThat(r.positionId()).isEqualTo("pkg.FooTest#fails()");
-            });
+            })
+        .anySatisfy(
+            r -> {
+              assertThat(r.expected()).isNull();
+              assertThat(r.positionId()).isEqualTo("pkg.FooTest#passes()");
+            })
+        .anySatisfy(r -> assertThat(r.positionId()).isEqualTo("pkg.BrokenTest"));
     assertThat(Files.exists(sink)).isFalse();
   }
 
@@ -139,13 +158,7 @@ final class LaunchSessionTest {
   void onExit_malformedRecordLine_skipsItAndKeepsValidRecords(@TempDir final Path dir)
       throws IOException, ExecutionException, InterruptedException, TimeoutException {
     final Path sink = dir.resolve("results.ndjson");
-    Files.writeString(
-        sink,
-        """
-        not json at all
-        {"className":"pkg.FooTest","methodName":"passes","methodParameterTypes":"","status":"passed","failureMessage":"","failureLine":-1}
-        """,
-        StandardCharsets.UTF_8);
+    Files.writeString(sink, "not json at all\n" + PASSES, StandardCharsets.UTF_8);
     final var session = launchSession(start("exit", "0"), sink);
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).testResults()).hasSize(1);
@@ -167,6 +180,22 @@ final class LaunchSessionTest {
     session.cancel();
 
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isNotZero();
+  }
+
+  // What the JVM started would otherwise outlive the cancel, holding its ports and files.
+  @Test
+  void cancel_processWithChild_stopsTheChildToo() throws Exception {
+    final var lines = new LinkedBlockingQueue<String>();
+    final var session =
+        new LaunchSession(start("spawn"), null, line -> lines.add(line.text()), NO_EVENTS);
+    final ProcessHandle child =
+        ProcessHandle.of(Long.parseLong(lines.poll(TIMEOUT_SECONDS, TimeUnit.SECONDS)))
+            .orElseThrow();
+
+    session.cancel();
+
+    // The child sleeps 5 s by itself, so ending within 2 s means the cancel stopped it.
+    assertThat(child.onExit().get(2, TimeUnit.SECONDS).isAlive()).isFalse();
   }
 
   // Windows has no SIGTERM: destroy() always kills there, so there is no grace to escalate from.

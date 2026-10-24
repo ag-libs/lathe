@@ -19,7 +19,9 @@ final class LaunchOutcomeTest {
 
   @Test
   void completed_withTestResults_carriesAndCopiesThem() {
-    final var result = new TestResult("pkg.FooTest", "bar", "", "failed", "boom", 7, "");
+    final var result =
+        new TestResult(
+            "pkg.FooTest", "bar", "", "failed", "boom", 7, -1, "bar()", null, null, List.of(), "");
 
     final LaunchOutcome outcome =
         LaunchOutcome.completed(
