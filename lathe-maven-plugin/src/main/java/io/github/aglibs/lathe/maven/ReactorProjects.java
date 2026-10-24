@@ -34,14 +34,9 @@ public final class ReactorProjects {
         .toList();
   }
 
-  /**
-   * True when this build's top-level project is the real reactor root, so {@code .lathe} belongs at
-   * (and describes) the whole workspace. Only such a build may create {@code .lathe}; a {@code -pl}
-   * or in-submodule build must never drop a stray one into a submodule (its editor root marker
-   * would then resolve to the submodule and runnables discovery would crash). The class-refresh
-   * path is unaffected -- the compiler still copies into an existing root {@code .lathe}
-   * regardless.
-   */
+  // Only a build of the real reactor root may create .lathe/: a -pl or in-submodule build
+  // would drop one into a submodule, which the editor would then take for the workspace
+  // root. The compiler still copies into an existing root .lathe/ either way.
   public static boolean isReactorRootBuild(final MavenSession session) {
     return isReactorRoot(session.getTopLevelProject().getBasedir().toPath());
   }
@@ -104,14 +99,9 @@ public final class ReactorProjects {
     }
   }
 
-  /**
-   * Returns a map from artifact key to the compile classpath of the first reactor module that has
-   * that artifact. Used to populate per-dep classpath entries in the workspace manifest.
-   *
-   * <p>The classpath is the set of compile+provided-scope external JARs from that module. Maven has
-   * already resolved version conflicts, so any module's view of a dep's transitive classpath is
-   * correct.
-   */
+  // Artifact key -> the compile and provided external jars of the first module that has it,
+  // for the manifest's per-dependency classpath. Maven has resolved version conflicts, so
+  // any module will do.
   public static Map<String, List<Path>> artifactClasspaths(final List<MavenProject> projects) {
     final var reactorGAs = reactorProjects(projects);
     final var result = new TreeMap<String, List<Path>>();

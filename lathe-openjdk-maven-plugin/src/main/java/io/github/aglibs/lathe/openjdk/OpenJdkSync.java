@@ -24,13 +24,9 @@ import java.util.Properties;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-/**
- * Emits the OpenJDK-native {@code .lathe/}: per-module compiled-deps params + stamps
- * (MODULE_SYSTEM), the non-module build tools (CLASSPATH, reading the build's own output dir),
- * {@code workspace.json}, and {@code java-home} (the exploded JDK = the read-only base). No
- * bytecode mirror — dependencies are referenced from the build's exploded {@code modules/} / tool
- * output dirs, never copied.
- */
+// The OpenJDK-native .lathe/: per-module params and stamps (MODULE_SYSTEM), the build
+// tools (CLASSPATH), workspace.json and java-home (the exploded JDK). No bytecode mirror:
+// dependencies are read in place from the build's exploded modules/ and tool output dirs.
 public final class OpenJdkSync {
 
   private static final String SOURCE_TREE = "classes";
@@ -39,10 +35,7 @@ public final class OpenJdkSync {
 
   private OpenJdkSync() {}
 
-  /**
-   * Discovers every built module under {@code buildDir/jdk/modules} plus the build tools, and
-   * syncs.
-   */
+  // Every built module under buildDir/jdk/modules, plus the build tools.
   public static void sync(
       final Path buildDir,
       final Path workspaceRoot,
