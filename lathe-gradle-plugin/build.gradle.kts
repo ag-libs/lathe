@@ -85,6 +85,8 @@ val functionalTestTask =
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
       systemProperty("lathe.version", project.version)
+      systemProperty(
+          "lathe.gradle.fixturesCache", layout.buildDirectory.dir("lathe-cache").get().asFile.path)
       enabled = !flag("skipTests")
       systemProperty(
           "lathe.gradle.fixturesHome",

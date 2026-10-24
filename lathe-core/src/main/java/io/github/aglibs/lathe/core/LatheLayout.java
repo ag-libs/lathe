@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.core;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
 import java.util.Properties;
 
 public final class LatheLayout {
@@ -192,6 +193,30 @@ public final class LatheLayout {
     // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
     // applies Lathe to each project without cross-project configuration (Isolated Projects).
     public static final String MIN_GRADLE_VERSION = "8.8";
+
+    // The build files a sync fingerprints, so the server notices a changed build: the settings
+    // file, gradle.properties and the version catalogs at the root, each project's build file, and
+    // the build logic in buildSrc/ and included builds, where Gradle builds keep their compiler
+    // settings.
+    public static final List<String> ROOT_BUILD_FILES =
+        List.of("settings.gradle", "settings.gradle.kts", "gradle.properties");
+    public static final String CATALOG_DIR = "gradle";
+    public static final String CATALOG_SUFFIX = ".toml";
+    public static final String BUILD_SRC_DIR = "buildSrc";
+    public static final List<String> BUILD_LOGIC_SUFFIXES =
+        List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
+    // The daemon's JVM options; module-access flags there reach a compile that runs in the daemon.
+    public static final String DAEMON_JVM_ARGS_PROPERTY = "org.gradle.jvmargs";
+    // Each project's facts for the root's sync to merge, in the project's build directory.
+    public static final String FACTS_FILE = "lathe-facts.json";
+    // Output and state directories inside a build-logic build, never part of it.
+    public static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");
+
+    // The launcher of the Gradle distribution that ran the build (gradle.gradleHomeDir), not the
+    // wrapper: the same version, with no download step.
+    public static Path runningTool(final Path gradleHome, final boolean windows) {
+      return gradleHome.resolve(BIN_DIR).resolve(windows ? "gradle.bat" : "gradle");
+    }
 
     private Gradle() {}
   }

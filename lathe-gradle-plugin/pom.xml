@@ -31,11 +31,22 @@
   </properties>
 
   <!-- Not compiled against: orders this module after the jars it consumes, also under -T, and is what
-       invoker:install copies into the repository. -->
+       invoker:install copies into the repository. The servers are what latheSync installs, so the
+       TestKit fixtures resolve them from there. -->
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>
       <artifactId>lathe-install</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-server</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-mcp-server</artifactId>
       <version>${project.version}</version>
     </dependency>
   </dependencies>

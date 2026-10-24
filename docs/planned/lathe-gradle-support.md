@@ -10,6 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
+Slice 2a is done: `latheSync` writes `workspace.json`, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and a synced project works in the editor; 2b (dependency sources), 2c (formatter) and 2d (build lock) remain.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -505,9 +506,16 @@ the GradleX run showed the test classes directory on the classpath as well as pa
   *Spiked 2026-10-23* with Isolated Projects on, on 8.8 and 9.8.1 (configuration cache stored and reused): the
   per-project facts tasks ran in parallel, the root merged them, and a project without Java contributed nothing
   and caused no error. Three constraints came out of it, binding on the plugin's code:
-  - **Read the project list once the settings file has run** (`settingsEvaluated`), walking the descriptor tree.
+  - **Read the project list once the settings file has run**, walking the descriptor tree.
     `plugins {}` applies the settings plugin before the file's `include(...)` lines, so at `apply` the list is empty
     (the spike's first run resolved no facts at all).
+    *Revised 2026-10-24 (slice 2a):* the plugin registers `beforeProject` at `apply` and passes the list as a lazy
+    `Provider`, which Gradle reads when it isolates the action, after the settings file has run.
+    Registering from a `settingsEvaluated` listener fails for init-script registration: the init script applies the
+    plugin from its own `settingsEvaluated`, and a listener added there never fires; `projectsLoaded` is too late
+    ("`beforeProject` cannot be called after settings have been evaluated").
+    Included builds are not listed yet at settings time either ("Included builds are not yet available"), so the
+    root project reads them for `buildFiles` during its own configuration.
   - **The `beforeProject` action is a standalone `IsolatedAction` class holding only plain values** (the project
     paths). Gradle serializes it; an action that captures anything else — a Kotlin-script lambda capturing its
     script, a reference to `Settings` — fails with "Failed to isolate 'GradleLifecycle' action".
@@ -793,7 +801,10 @@ and a capture-only test run on Gradle 9.
    1c, the capture tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps.
    Its TestKit suite includes the cache-key check and the configuration cache stored and reused.
    It fills `.lathe/<module>/` for main and test; the editor can use it once slice 2 adds the workspace files.
-2. **`workspace.json` + `jvm.args` + `.lathe/java-home` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`;
+2. **`workspace.json` + `jvm.args` + `.lathe/java-home` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`, in four reviewed steps:
+   2a, `workspace.json`, `java-home` and the JDK sources, `jvm.args`, the server install and the sync script;
+   2b, dependency `-sources` jars and type-index shards; 2c, `style.json`; 2d, the build lock.
+   The server resolves through the root project's repositories; the plugin adds Maven Central to the root only when neither the root nor the settings declare a repository and the build allows project repositories;
    `jvm.args` and `java-home` are workspace-wide (the union of the access flags, the highest compiling JDK), so they come with the per-project `latheFacts` merge, which Isolated Projects requires (*decided 2026-10-24*); the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
