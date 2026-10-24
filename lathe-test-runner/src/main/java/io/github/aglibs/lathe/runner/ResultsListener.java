@@ -38,9 +38,8 @@ final class ResultsListener implements TestExecutionListener {
   private static final String STATUS_FAILED = "failed";
   private static final String STATUS_SKIPPED = "skipped";
   private static final String STATUS_DISCOVERED = "discovered";
-  // Mirror LatheFlags.TEST_STARTED_MARKER / TEST_FINISHED_MARKER by value: the runner can't depend
-  // on
-  // lathe-core. A drift-guard test pins them equal.
+  // Mirror LatheFlags.TEST_STARTED_MARKER / TEST_FINISHED_MARKER by value: the runner can't
+  // depend on lathe-core. A drift-guard test pins them equal.
   static final String TEST_STARTED_MARKER = "\u0001lathe:test-started\t";
   static final String TEST_FINISHED_MARKER = "\u0001lathe:test-finished\t";
   // Where a failure's stack leaves the test's own code for the machinery that called it.
@@ -147,8 +146,7 @@ final class ResultsListener implements TestExecutionListener {
   }
 
   // On the stream the test's own output goes to, so the server reads them in the order they
-  // happened
-  // and can tell which test printed each line.
+  // happened and can tell which test printed each line.
   private void mark(final String marker, final TestIdentifier id) {
     if (id.isContainer() || !(id.getSource().orElse(null) instanceof final MethodSource method)) {
       return;

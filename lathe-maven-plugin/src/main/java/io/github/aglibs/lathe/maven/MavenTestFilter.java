@@ -56,17 +56,19 @@ final class MavenTestFilter {
     final var regex = new StringBuilder();
     int i = 0;
     while (i < glob.length()) {
-      final String rest = glob.substring(i);
-      final String token = rest.startsWith("**/") ? "**/" : rest.startsWith("**") ? "**" : "";
-      regex.append(token.isEmpty() ? regexFor(glob.charAt(i)) : regexFor(token));
-      i += token.isEmpty() ? 1 : token.length();
+      if (glob.startsWith("**/", i)) {
+        regex.append("(.*\\.)?");
+        i += 3;
+      } else if (glob.startsWith("**", i)) {
+        regex.append(".*");
+        i += 2;
+      } else {
+        regex.append(regexFor(glob.charAt(i)));
+        i++;
+      }
     }
 
     return regex.toString();
-  }
-
-  private static String regexFor(final String doubleStar) {
-    return "**/".equals(doubleStar) ? "(.*\\.)?" : ".*";
   }
 
   private static String regexFor(final char c) {

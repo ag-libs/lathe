@@ -44,7 +44,7 @@ public record RunItem(
     modulePathAppend = modulePathAppend != null ? List.copyOf(modulePathAppend) : List.of();
   }
 
-  /** This item with one more JVM argument, after its own. */
+  // This item with one more JVM argument, after its own.
   public RunItem withJvmArg(final String jvmArg) {
     return new RunItem(
         name,

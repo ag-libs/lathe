@@ -755,10 +755,6 @@ final class WorkspaceSession {
         .orElse(null);
   }
 
-  // Test selectors to run for a directory, from the real reactor layout, not the path string.
-  // A dir inside a module's test tree runs just that package (selectPackage recurses); the
-  // source root, or anything above it (module root, src/), runs every test package in one
-  // launch. A dir enclosing more than one module (the reactor root) resolves to nothing.
   // A package or module run executes the classes the build's own test run would (the module's
   // test-filter.json); a run naming classes or methods runs exactly those.
   private static List<TestSelection> withTestFilter(
@@ -793,6 +789,10 @@ final class WorkspaceSession {
         .toList();
   }
 
+  // Test selectors to run for a directory, from the real reactor layout, not the path string.
+  // A dir inside a module's test tree runs just that package (selectPackage recurses); the
+  // source root, or anything above it (module root, src/), runs every test package in one
+  // launch. A dir enclosing more than one module (the reactor root) resolves to nothing.
   static DirRun dirRun(
       final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path dirPath) {
     final List<ModuleSourceConfig> testConfigs = testConfigs(configs);
@@ -836,7 +836,12 @@ final class WorkspaceSession {
         .toList();
   }
 
-  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {}
+  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
+
+    CachedDiscovery {
+      ValidCheck.check().notNull(result, "result").validate();
+    }
+  }
 
   // A module's discovery on disk with the test-classes stamp it was found for, so a new session
   // reuses it instead of launching a JVM per module again.
@@ -865,7 +870,7 @@ final class WorkspaceSession {
       return cached.result();
     }
 
-    final Path persisted = discoveryFile(moduleRel);
+    final Path persisted = moduleLatheDir(moduleRel).resolve(LatheLayout.TEST_DISCOVERY_FILE);
     final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
     if (stored.isPresent()) {
       final var result = CompletableFuture.completedFuture(stored.get());
@@ -932,11 +937,8 @@ final class WorkspaceSession {
         .toList();
   }
 
-  private Path discoveryFile(final String moduleRel) {
-    return workspaceRoot
-        .resolve(LatheLayout.LATHE_DIR)
-        .resolve(moduleRel)
-        .resolve(LatheLayout.TEST_DISCOVERY_FILE);
+  private Path moduleLatheDir(final String moduleRel) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
   }
 
   // The stored discovery, when it was found for the module's current test classes.
@@ -974,9 +976,7 @@ final class WorkspaceSession {
 
   private FileTime testClassesStamp(final String moduleRel) {
     final Path stamps =
-        workspaceRoot
-            .resolve(LatheLayout.LATHE_DIR)
-            .resolve(moduleRel)
+        moduleLatheDir(moduleRel)
             .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
     return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }

@@ -525,7 +525,6 @@ class LspSmokeTest {
     final Path tests = SHAPES.resolve("src/test/java/com/example/shapes");
     final Path idShapes = tests.resolve("IdShapesTest.java");
     session.openDoc(idShapes.toUri().toString(), Files.readString(idShapes));
-    final List<String> landing = ID_SHAPES_TESTS;
     final int assertLine =
         lineOf(Files.readAllLines(tests.resolve("AssertionsTest.java")), "assertEquals(");
 
@@ -546,10 +545,10 @@ class LspSmokeTest {
 
     assertThat(outcome.get("launched").getAsBoolean()).isTrue();
     assertThat(outcome.get("exitCode").getAsInt()).isNotZero();
-    assertThat(methodIds(idShapes)).containsAll(landing);
+    assertThat(methodIds(idShapes)).containsAll(ID_SHAPES_TESTS);
     assertThat(results)
         .extracting(result -> result.get("positionId").getAsString())
-        .containsAll(landing);
+        .containsAll(ID_SHAPES_TESTS);
     assertThat(results).allMatch(result -> result.get("durationMs").getAsLong() >= 0);
     // The module's Surefire includes leave this class out, as mvn test does.
     assertThat(results)

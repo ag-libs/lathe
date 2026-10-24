@@ -41,10 +41,8 @@ public final class TestProcess {
   // own name into it. write text file: writes text into the file. cwd: prints the working
   // directory. exit code: exits with that code, printing nothing. sleep: never finishes in time.
   // echo out:text err:text ...: prints each text on a line of the stream it names. read: prints
-  // what
-  // reading stdin returns. spawn: starts a sleeping child, prints its pid, then sleeps. marked:
-  // prints
-  // output around the test runner's markers: one test, a gap, then two tests at once.
+  // what reading stdin returns. spawn: starts a sleeping child, prints its pid, then sleeps.
+  // marked: prints output around the test runner's markers (one test, a gap, two at once).
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);

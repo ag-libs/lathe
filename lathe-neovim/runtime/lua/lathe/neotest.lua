@@ -238,8 +238,10 @@ end
 -- the wrong level in the tree (file contains package, not the other way around).
 -- Package-level running is instead bound to the directory node neotest's own tree walk
 -- already creates at the right level -- see build_spec's "dir" handling below.
-local POSITION_TYPE = { [1] = "test", [2] = "namespace" }
-local SELECTOR_KIND = { [1] = "METHOD", [2] = "CLASS" }
+local TEST_METHOD_KIND = 1
+local TEST_CLASS_KIND = 2
+local POSITION_TYPE = { [TEST_METHOD_KIND] = "test", [TEST_CLASS_KIND] = "namespace" }
+local SELECTOR_KIND = { [TEST_METHOD_KIND] = "METHOD", [TEST_CLASS_KIND] = "CLASS" }
 
 local function lathe_client()
   local clients = nio().lsp.get_clients({ name = "lathe" })
@@ -260,7 +262,16 @@ M._live_output_stderr_rows = output.stderr_rows
 M._live_output_command_rows = output.command_rows
 
 local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
-local TEST_METHOD_KIND = 1
+
+-- A position id's class (`com.x.FooTest$Inner` for `com.x.FooTest$Inner#m()`), and the class a
+-- nested class is declared in; nil past the top.
+local function class_of(id)
+  return id:match("^(.-)#")
+end
+
+local function enclosing_class(class)
+  return class:match("^(.*)%$[^$]+$")
+end
 -- A huge value (a whole JSON document) keeps the failure text readable; open_diff shows all of it.
 local DIFF_MAX_LINES = 40
 
@@ -534,16 +545,16 @@ function M._targets_from_discovery(tests, file_path, module_rel)
   local file = vim.fs.normalize(file_path)
   for _, test in ipairs(tests or {}) do
     if test.uri ~= "" and vim.fs.normalize(vim.uri_to_fname(test.uri)) == file then
-      local class = test.id:match("^(.-)#")
+      local class = class_of(test.id)
       targets[#targets + 1] =
-        { id = test.id, parentId = class, kind = 1, label = test.label, moduleRel = module_rel, range = TOP_OF_FILE }
+        { id = test.id, parentId = class, kind = TEST_METHOD_KIND, label = test.label, moduleRel = module_rel, range = TOP_OF_FILE }
       while class and not classes[class] do
         classes[class] = true
-        local outer = class:match("^(.*)%$[^$]+$")
+        local outer = enclosing_class(class)
         targets[#targets + 1] = {
           id = class,
           parentId = outer or class:match("^(.*)%.[^.]+$") or "",
-          kind = 2,
+          kind = TEST_CLASS_KIND,
           label = class:match("([^.$]+)$"),
           moduleRel = module_rel,
           range = TOP_OF_FILE,
@@ -720,7 +731,7 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
   return spec
 end
 
---- FQCN for a `*Test.java` file, or the dotted package for a test source directory, derived from its
+--- FQCN for a test source file, or the dotted package for a test source directory, derived from its
 --- absolute path anchored on `/src/<scope>/java/`. nil for a path outside a test source root, so a
 --- non-standard-layout node falls back to the aggregate rather than mis-matching.
 local function path_to_qualified(path)
@@ -895,13 +906,6 @@ local function class_encloses(qualifier, class, is_package)
   return class == qualifier or class:sub(1, #qualifier + 1) == qualifier .. "$"
 end
 
---- Status a container node inherits from the per-test results whose class it encloses, matched by NAME
---- rather than by discovered child nodes. neotest discovers positions only for open files, so a package
---- run's tree is childless for every file the user never opened -- yet the run still produced a real
---- result for each of those tests. Matching results to the file/package by name lets a passing but
---- never-opened file show passed instead of inheriting the run-wide aggregate failure. nil when nothing
---- matches (or the node isn't a container), so the caller falls back to the aggregate and never leaves
---- it stuck running.
 --- A method's status when its class failed itself (its @BeforeAll broke, so the method never ran):
 --- failed, naming the class's error. The class is the id's own or any class it is nested in. nil for
 --- a non-method id, or when no enclosing class failed.
@@ -910,7 +914,7 @@ end
 --- (on its broken setup line) rides on the first of its methods resolved here; `diagnosed` records
 --- the classes already carried, so the line gets one diagnostic, not one per method.
 local function class_failure(id, real, output, diagnosed)
-  local class = id:match("^(.-)#")
+  local class = class_of(id)
   while class do
     local failure = real[class]
     if failure and failure.status == "failed" then
@@ -923,12 +927,19 @@ local function class_failure(id, real, output, diagnosed)
       return res
     end
 
-    class = class:match("^(.*)%$[^$]+$")
+    class = enclosing_class(class)
   end
 
   return nil
 end
 
+--- Status a container node inherits from the per-test results whose class it encloses, matched by NAME
+--- rather than by discovered child nodes. neotest discovers positions only for open files, so a package
+--- run's tree is childless for every file the user never opened -- yet the run still produced a real
+--- result for each of those tests. Matching results to the file/package by name lets a passing but
+--- never-opened file show passed instead of inheriting the run-wide aggregate failure. nil when nothing
+--- matches (or the node isn't a container), so the caller falls back to the aggregate and never leaves
+--- it stuck running.
 local function container_status(node, real)
   local data = node:data()
   local qualifier, is_package
@@ -1274,10 +1285,6 @@ function M._results_qf_items(results, paths)
   return vim.list_extend(failures, others)
 end
 
---- Lists the last run's executed tests in the quickfix window, failures first and jumpable -- even
---- tests in files never opened into the summary tree (the tree only shows opened files, but the run
---- executed the whole module). className -> source path is resolved server-side (lathe.testSources,
---- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
 --- The failure open_diff compares, from a run's results: the failure with values whose id is
 --- `cursor_id` (the test under the cursor), else the only failure with values. Returns nil and the
 --- candidates when there are several (the caller asks), or none. Pure, so the specs reach it.
@@ -1361,6 +1368,9 @@ function M.open_diff()
   end)
 end
 
+--- Lists the last run's executed tests in the quickfix window, failures first and jumpable, with each
+--- test's time. className -> source path is resolved server-side (lathe.testSources,
+--- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
 function M.open_results()
   local run = last_run
   if not run or #run.results == 0 then
