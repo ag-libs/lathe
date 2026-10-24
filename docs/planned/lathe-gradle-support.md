@@ -726,9 +726,10 @@ with its own CI job — more idiomatic for Gradle, but two commands / two CI sta
   processes differ; the other rows pass `-Dlathe.gradle.skip=true`, since the plugin is plain JVM code
   (*revised 2026-10-24*: running it in every row added minutes per job for no coverage).
   The fixtures run as parallel test JVMs, one test class per JVM.
-- **On Windows the build runs with `--no-daemon`, and every fixture daemon idles out after 10 seconds.**
-  A Windows child process inherits its parent's open handles, so a Gradle daemon that outlives the build keeps
-  Maven's output pipe open, and `exec-maven-plugin` waited until the 30-minute job timeout.
+- **The build runs with `--no-daemon`, and every fixture daemon idles out after 10 seconds.**
+  One Gradle build per Maven run gains nothing from a daemon. On Windows a daemon that outlives the build also
+  inherits Maven's output pipe and keeps `exec-maven-plugin` waiting (it waited until the 30-minute job timeout).
+  TestKit always runs fixtures in daemons, so those get the short idle timeout instead.
 
 **Older Gradle versions run in the existing older-Maven invoker jobs (decided 2026-10-24)**, not in jobs of
 their own and not through `withGradleVersion` inside every build. Each job downloads one Gradle
