@@ -118,13 +118,12 @@ final class SyncCoordinator {
                   rootProject.getRemoteProjectRepositories()),
               log);
       final WorkspaceStyleData style =
-          new WorkspaceStyleWriter(formatterResolver, log).write(workspaceRoot, rootProject);
-      new JvmArgsWriter(log)
-          .write(
-              workspaceRoot,
-              projects,
-              session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
-              style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
+          new MavenStyle(formatterResolver, log).write(workspaceRoot, rootProject);
+      MavenJvmArgs.write(
+          workspaceRoot,
+          projects,
+          session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
+          style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
       syncScript.write(workspaceRoot);
     }
   }

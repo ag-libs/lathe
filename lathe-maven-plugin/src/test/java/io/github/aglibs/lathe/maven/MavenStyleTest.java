@@ -14,7 +14,7 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
 import org.junit.jupiter.api.Test;
 
-class WorkspaceStyleWriterTest {
+class MavenStyleTest {
 
   private static Xpp3Dom config(final String xml) throws Exception {
     return Xpp3DomBuilder.build(new StringReader(xml));
@@ -22,7 +22,7 @@ class WorkspaceStyleWriterTest {
 
   // The style sync derives from a Spotless <java> section.
   private static WorkspaceStyleData javaStyle(final String java) throws Exception {
-    return WorkspaceStyleWriter.fromConfig(
+    return MavenStyle.fromConfig(
         config("<configuration><java>%s</java></configuration>".formatted(java)));
   }
 
@@ -125,13 +125,13 @@ class WorkspaceStyleWriterTest {
 
   @Test
   void fromConfig_noJavaSection_returnsNull() throws Exception {
-    assertThat(WorkspaceStyleWriter.fromConfig(config("<configuration/>"))).isNull();
-    assertThat(WorkspaceStyleWriter.fromConfig(null)).isNull();
+    assertThat(MavenStyle.fromConfig(config("<configuration/>"))).isNull();
+    assertThat(MavenStyle.fromConfig(null)).isNull();
   }
 
   @Test
   void detect_spotlessPresentAndAbsent() throws Exception {
-    assertThat(WorkspaceStyleWriter.detect(new MavenProject())).isNull();
+    assertThat(MavenStyle.detect(new MavenProject())).isNull();
 
     final var project = new MavenProject();
     final var build = new Build();
@@ -143,6 +143,6 @@ class WorkspaceStyleWriterTest {
     build.addPlugin(spotless);
     project.setBuild(build);
 
-    assertThat(WorkspaceStyleWriter.detect(project).formatter().engine()).isEqualTo("google");
+    assertThat(MavenStyle.detect(project).formatter().engine()).isEqualTo("google");
   }
 }

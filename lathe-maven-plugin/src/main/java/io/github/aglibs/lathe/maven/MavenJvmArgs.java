@@ -1,109 +1,65 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.JavaArgfile;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.install.JvmArgsWriter;
 import io.github.aglibs.lathe.install.SyncException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Stream;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
-import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-// Derives .lathe/jvm.args: the module-access flags the server JVM needs so the build's classpath
-// javac plugins (Error Prone, NullAway, ...) also run in-process. A build grants them either to a
-// forked javac (-J flags in compilerArgs/compilerArgument) or to Maven's own JVM (.mvn/jvm.config,
-// MAVEN_OPTS); the launcher passes the file to java as an @argfile. Read from the model, not the
-// captured lsp-params files: sync runs in the reactor root, before any child module compiles.
-final class JvmArgsWriter {
+// Collects the module-access flags this Maven build grants, for JvmArgsWriter: to a forked javac
+// (-J flags in compilerArgs/compilerArgument) or to Maven's own JVM (.mvn/jvm.config, and the
+// jdk.compiler grants in MAVEN_OPTS). Read from the model, not the captured lsp-params files: sync
+// runs in the reactor root, before any child module compiles.
+final class MavenJvmArgs {
 
   private static final String COMPILER_PLUGIN_KEY =
       Plugin.constructKey(
           LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
           LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
   private static final String FORKED_JVM_ARG_PREFIX = "-J";
-
-  // Only module access is carried over: other forked-javac options (e.g. -J-Xmx256m) size a
-  // short-lived compiler and would starve the long-running server.
-  private static final Set<String> ACCESS_FLAGS = Set.of("--add-exports", "--add-opens");
   private static final String JAVAC_MODULE_TARGET = "=jdk.compiler/";
 
-  private final Log log;
+  private MavenJvmArgs() {}
 
-  JvmArgsWriter(final Log log) {
-    this.log = log;
-  }
-
-  // mavenOpts is MAVEN_OPTS as the build sees it (empty when unset). Only its jdk.compiler grants
-  // are taken: it often carries unrelated JVM tuning or java.base opens meant for Maven itself.
-  // formatterGrants are what the project's pinned formatter needs, granted even when the build
-  // declares none (a project may run Spotless only in CI).
-  void write(
+  // Each source is parsed on its own, so a flag split across two sources never pairs up. Only
+  // MAVEN_OPTS's jdk.compiler grants count: the rest tunes Maven itself. The formatter's grants
+  // apply even when the build declares none (a project may run Spotless only in CI).
+  static void write(
       final Path workspaceRoot,
       final List<MavenProject> projects,
       final String mavenOpts,
       final List<String> formatterGrants) {
-    final var args = new LinkedHashSet<String>();
-    args.addAll(accessFlags(forkedJvmArgs(projects)));
-    args.addAll(accessFlags(jvmConfigTokens(workspaceRoot)));
-    accessFlags(tokens(mavenOpts)).stream()
-        .filter(flag -> flag.contains(JAVAC_MODULE_TARGET))
-        .forEach(args::add);
-    args.addAll(accessFlags(formatterGrants));
-    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    final var argsPath = latheDir.resolve(LatheLayout.JVM_ARGS_FILE);
-    try {
-      if (args.isEmpty()) {
-        Files.deleteIfExists(argsPath);
-        return;
-      }
-
-      if (!JavaArgfile.write(latheDir, argsPath, List.copyOf(args), JavaArgfile.NATIVE_CHARSET)) {
-        return;
-      }
-
-      log.info("[sync] jvm.args %d module-access flag(s)".formatted(args.size()));
-    } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write jvm.args", e);
-    }
-  }
-
-  // Keeps only --add-exports/--add-opens, joining the two-token form into one so the same grant
-  // from both sources dedupes.
-  static List<String> accessFlags(final List<String> tokens) {
-    final var flags = new ArrayList<String>();
-    for (int i = 0; i < tokens.size(); i++) {
-      final String token = tokens.get(i);
-      if (ACCESS_FLAGS.contains(token) && i + 1 < tokens.size()) {
-        i++;
-        flags.add("%s=%s".formatted(token, tokens.get(i)));
-        continue;
-      }
-
-      if (ACCESS_FLAGS.stream().anyMatch(flag -> token.startsWith(flag.concat("=")))) {
-        flags.add(token);
-      }
-    }
-
-    return List.copyOf(flags);
+    final List<String> mavenOptsFlags =
+        JvmArgsWriter.accessFlags(tokens(mavenOpts)).stream()
+            .filter(flag -> flag.contains(JAVAC_MODULE_TARGET))
+            .toList();
+    JvmArgsWriter.write(
+        workspaceRoot,
+        Stream.of(
+                JvmArgsWriter.accessFlags(forkedJvmArgs(projects)),
+                JvmArgsWriter.accessFlags(jvmConfigTokens(workspaceRoot)),
+                mavenOptsFlags,
+                JvmArgsWriter.accessFlags(formatterGrants))
+            .flatMap(List::stream)
+            .toList());
   }
 
   private static List<String> forkedJvmArgs(final List<MavenProject> projects) {
     return projects.stream()
-        .map(JvmArgsWriter::compilerPlugin)
+        .map(MavenJvmArgs::compilerPlugin)
         .filter(Objects::nonNull)
-        .flatMap(JvmArgsWriter::configurations)
-        .flatMap(JvmArgsWriter::compilerArgs)
+        .flatMap(MavenJvmArgs::configurations)
+        .flatMap(MavenJvmArgs::compilerArgs)
         .filter(arg -> arg.startsWith(FORKED_JVM_ARG_PREFIX))
         .map(arg -> arg.substring(FORKED_JVM_ARG_PREFIX.length()))
         .toList();

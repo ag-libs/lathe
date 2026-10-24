@@ -1,14 +1,10 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.IndentSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
-import io.github.aglibs.lathe.install.SyncException;
-import java.io.IOException;
+import io.github.aglibs.lathe.install.StyleWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -23,11 +19,11 @@ import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-// Derives .lathe/style.json from the reactor's spotless-maven-plugin. googleJavaFormat,
-// palantirJavaFormat, and eclipse run in-process from the project's pinned jars; any other
-// formatter is disabled (none) rather than guessed at, so Lathe never fights the project's own
-// formatter. A committed lathe-style.json can still select an external command for it.
-final class WorkspaceStyleWriter {
+// Detects the workspace style for StyleWriter from the reactor's spotless-maven-plugin.
+// googleJavaFormat, palantirJavaFormat, and eclipse run in-process from the project's pinned jars;
+// any other formatter is disabled (none) rather than guessed at, so Lathe never fights the
+// project's own formatter. A committed lathe-style.json can still select an external command.
+final class MavenStyle {
 
   private static final String SPOTLESS_PLUGIN_KEY = "com.diffplug.spotless:spotless-maven-plugin";
   // Formatters whose indentation Lathe does not derive leave it to the project's .editorconfig.
@@ -36,7 +32,7 @@ final class WorkspaceStyleWriter {
   private final FormatterResolver resolver;
   private final Log log;
 
-  WorkspaceStyleWriter(final FormatterResolver resolver, final Log log) {
+  MavenStyle(final FormatterResolver resolver, final Log log) {
     this.resolver = resolver;
     this.log = log;
   }
@@ -62,18 +58,8 @@ final class WorkspaceStyleWriter {
             .map(spec -> resolver.resolve(spec, spotless.getVersion()))
             .orElse(detected.formatter());
     final var style = new WorkspaceStyleData(formatter, detected.indent());
-    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    final var stylePath = latheDir.resolve(LatheLayout.STYLE_FILE);
-    final var content = Json.toJson(style);
-    try {
-      if (FileUtil.writeIfChanged(latheDir, stylePath, content, false)) {
-        log.info("[sync] style formatter=%s".formatted(style.formatter().engine()));
-      }
-
-      return style;
-    } catch (final IOException e) {
-      throw new SyncException("lathe:sync failed to write style.json", e);
-    }
+    StyleWriter.write(workspaceRoot, style);
+    return style;
   }
 
   // The Eclipse profile as an absolute path, resolved against the root project as Spotless resolves

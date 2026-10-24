@@ -11,14 +11,13 @@ import java.util.List;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
-import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class JvmArgsWriterTest {
+class MavenJvmArgsTest {
 
   @TempDir Path workspaceRoot;
 
@@ -58,12 +57,11 @@ class JvmArgsWriterTest {
             + "  --add-exports jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED ";
 
     // The pinned formatter's grants overlap the build's (api, tree, util) and add the rest.
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(forked, legacy, new MavenProject()),
-            mavenOpts,
-            LatheFlags.FORMATTER_JAVAC_GRANTS);
+    MavenJvmArgs.write(
+        workspaceRoot,
+        List.of(forked, legacy, new MavenProject()),
+        mavenOpts,
+        LatheFlags.FORMATTER_JAVAC_GRANTS);
 
     assertThat(Files.readAllLines(jvmArgs()))
         .containsExactly(
@@ -85,18 +83,10 @@ class JvmArgsWriterTest {
     writeJvmConfig("-Xmx2g\n");
     final var project = projectWithCompilerArgs(compilerArgs("-J-Xmx256m", "-parameters"));
 
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(project),
-            "--add-opens=java.base/java.lang=ALL-UNNAMED",
-            List.of());
+    MavenJvmArgs.write(
+        workspaceRoot, List.of(project), "--add-opens=java.base/java.lang=ALL-UNNAMED", List.of());
 
     assertThat(jvmArgs()).doesNotExist();
-  }
-
-  private JvmArgsWriter writer() {
-    return new JvmArgsWriter(new SystemStreamLog());
   }
 
   private Path jvmArgs() {
