@@ -9935,6 +9935,48 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-14 — A changed build file never yields "Sync required" — done
+
+**Status: done — Target: next.**
+**Affects: MCP only.** The editor raises its sync prompt for the same edit within 0.5 s.
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon.
+
+### Observed behaviour
+
+A module `pom.xml` was edited during a session, then `get_diagnostics` was called on an unrelated
+file, again after 3 s and 8 s.
+None of the answers carried the `Sync required: build files changed — run .lathe/lathe-sync.sh` note
+that the [one-pass design](../done/lathe-recompile-simplification.md#mcp-fix-it-or-say-exactly-what-is-needed)
+and `status.md` promise; the answers silently came from the mirror built for the old POM.
+
+### Cause
+
+The server detects the change: the session log has `[watcher] build files changed — sync needed`.
+`promptForSync` sets `buildFilesNotificationPending` and asks the client, but the engine's
+`NoopLanguageClient.showMessageRequest` answers `null` at once, and `onSyncPromptResponse` clears
+`buildFilesNotificationPending` in the same millisecond (`[sync] answered action=null`).
+`reconcileForVerify` therefore never returns `BUILD_FILES_PENDING`.
+A build file changed before the session started is not detected at all (WS-13).
+
+### Fix
+
+`NoopLanguageClient.showMessageRequest` leaves the prompt unanswered, so
+`buildFilesNotificationPending` holds until a sync reloads the workspace (`reloadWorkspace` clears
+it), and every answer carries the note until then.
+The engine's freshen step (`reconcileForVerify`) now runs the watcher's check first, so a build file
+the agent edited just before the query is reported by that query, not on the next tick.
+While the sync is pending the pass still runs, so the agent's own edits keep being compiled;
+the outcome only carries `BUILD_FILES_PENDING`, on which `verify_change` still defers to the sync.
+A build file changed before the session started is WS-13.
+
+### Regression targets
+
+Fails with the old immediate `null` answer:
+
+- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredAtOnceAndUntilSynced_editsStillCompile`
+
+---
+
 ## MC-2 — Non-lathe (MCP SDK / Reactor) logs are silently dropped: no SLF4J provider on the server classpath — done
 
 **Status: done — fixed in `417f296d` (added `slf4j-jdk14` runtime provider to `lathe-mcp-server`).**

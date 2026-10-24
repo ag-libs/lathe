@@ -3499,24 +3499,24 @@ final class WorkspaceSession {
     return requestPass(false).thenAccept(stale -> {});
   }
 
-  // The engine's freshen step, before every MCP query and verify_change: an eager pass, never a
-  // prompt. If an in-process recompile can't be trusted (a build-file sync pending, or a running
-  // build) it returns a DeferReason so the caller falls back to the build. The outcome lists every
-  // stale source, including one that failed unchanged since and so was not recompiled. Runs on
-  // the worker.
+  // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
+  // a build file the agent just edited is seen now rather than on the next tick, then an eager
+  // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
+  // carries a DeferReason so verify_change falls back to the build. The outcome lists every stale
+  // source, including one that failed unchanged since and so was not recompiled. Runs on the
+  // worker.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    checkForChanges();
     if (reactorBuildInProgress()) {
       return CompletableFuture.completedFuture(
           new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_IN_PROGRESS));
     }
 
-    if (buildFilesNotificationPending) {
-      return CompletableFuture.completedFuture(
-          new ReconcileOutcome(List.of(), ReconcileOutcome.DeferReason.BUILD_FILES_PENDING));
-    }
-
-    return requestPass(true)
-        .thenApply(stale -> new ReconcileOutcome(stale, ReconcileOutcome.DeferReason.NONE));
+    final ReconcileOutcome.DeferReason deferral =
+        buildFilesNotificationPending
+            ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
+            : ReconcileOutcome.DeferReason.NONE;
+    return requestPass(true).thenApply(stale -> new ReconcileOutcome(stale, deferral));
   }
 
   List<Path> takeWrittenSinceVerify() {

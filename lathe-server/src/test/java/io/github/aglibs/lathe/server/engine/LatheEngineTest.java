@@ -263,20 +263,7 @@ class LatheEngineTest {
 
   @Test
   void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
-    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
-    Json.write(
-        new WorkspaceManifestData(
-            "0",
-            tmp.toString(),
-            null,
-            List.of(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            null),
-        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
+    writeManifest("0", List.of());
     engine = new LatheEngine(tmp);
 
     assertThat(engine.notes(List.of()).syncRequired())
@@ -284,6 +271,33 @@ class LatheEngineTest {
         .asString()
         .contains("another Lathe version")
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
+  void notes_buildFileEditedMidSession_syncRequiredAtOnceAndUntilSynced_editsStillCompile()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    stampModule(fx.callee(), fx.caller());
+    final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of("module/pom.xml"));
+    engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired()).isEmpty();
+
+    Files.writeString(pom, "<project><!-- edited --></project>");
+    engine.diagnostics(fx.caller());
+    final String buildFilesNote =
+        "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
+    assertThat(engine.notes(List.of()).syncRequired())
+        .as("seen by the query itself, not on the next tick")
+        .containsExactly(buildFilesNote);
+
+    writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
+    assertThat(engine.diagnostics(fx.caller()))
+        .as("the agent's edits are still compiled while the sync is pending")
+        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(buildFilesNote);
+    assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
   }
 
   @Test
@@ -734,6 +748,24 @@ class LatheEngineTest {
           sourceRoot.relativize(source),
           Files.getLastModifiedTime(source).toMillis());
     }
+  }
+
+  private void writeManifest(final String schemaVersion, final List<String> buildFiles)
+      throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Json.write(
+        new WorkspaceManifestData(
+            schemaVersion,
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            buildFiles,
+            List.of(),
+            List.of(),
+            null),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
   }
 
   private void writeNewer(final Path source, final String content) throws Exception {

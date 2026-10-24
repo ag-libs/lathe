@@ -27,10 +27,12 @@ final class NoopLanguageClient implements LatheLanguageClient {
   @Override
   public void showMessage(final MessageParams messageParams) {}
 
+  // An agent cannot answer a prompt, and an answer would dismiss it: left unanswered, a build-file
+  // change stays in every answer's notes until a sync reloads the workspace.
   @Override
   public CompletableFuture<MessageActionItem> showMessageRequest(
       final ShowMessageRequestParams requestParams) {
-    return CompletableFuture.completedFuture(null);
+    return new CompletableFuture<>();
   }
 
   @Override
