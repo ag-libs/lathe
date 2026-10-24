@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.core;
 
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -28,6 +29,7 @@ import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+import java.util.zip.CRC32C;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -47,6 +49,14 @@ public final class FileUtil {
 
   public static boolean isClassFile(final Path path) {
     return path.getFileName().toString().endsWith(".class");
+  }
+
+  // CRC32C (a CPU instruction on x86 and ARM) plus the size: cheap, and only compared for equality.
+  public static ContentFingerprint fingerprint(final Path file) throws IOException {
+    final byte[] content = Files.readAllBytes(file);
+    final var crc = new CRC32C();
+    crc.update(content);
+    return new ContentFingerprint(content.length, crc.getValue());
   }
 
   // The top-level type name of a .java source — its file name without the .java suffix.

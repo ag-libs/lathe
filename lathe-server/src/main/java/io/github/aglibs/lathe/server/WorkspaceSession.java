@@ -281,7 +281,7 @@ final class WorkspaceSession {
         WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
-    watcher.updateBuildFiles(manifest.buildFiles());
+    watcher.updateBuildFiles(manifest.buildFiles(), manifest.buildFileFingerprints());
     final long scanIntervalMs = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
     worker.scheduleAtFixedRate(
         scanIntervalMs > 0 ? scanIntervalMs : DEFAULT_SCAN_INTERVAL_MS, this::checkForChanges);
@@ -4274,6 +4274,13 @@ final class WorkspaceSession {
         promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
         requestPass(false);
       }
+      // A prompt already shown stays (answering it still syncs), but MCP stops asking for a sync
+      // and the next change prompts again.
+      case BUILD_FILES_RESTORED -> {
+        buildFilesNotificationPending = false;
+        pendingSyncModules = List.of();
+        requestPass(false);
+      }
       // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
       case NO_CHANGE -> requestPass(false);
     }
@@ -4335,7 +4342,7 @@ final class WorkspaceSession {
   private void reloadWorkspace() {
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
-      watcher.updateBuildFiles(newManifest.buildFiles());
+      watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());
       buildFilesNotificationPending = false;
     }
 

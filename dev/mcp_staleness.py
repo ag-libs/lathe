@@ -349,6 +349,9 @@ def s_pom(pr: Probe):
     pom = pr.p(c["pom"])
     down = pr.p(c["doc"][2])
     orig = pom.read_text()
+    os.utime(pom)
+    pr.check("F0 POM only touched: no Sync required", "get_diagnostics", {"file": str(down)},
+             lambda t: "Sync required" not in t, show=True)
     pom.write_text(orig.replace("</project>", "<!-- latheprobe --></project>"))
     time.sleep(0.1)
     pr.check("F1 POM change yields Sync required", "get_diagnostics", {"file": str(down)},
@@ -360,8 +363,8 @@ def s_pom(pr: Probe):
     pr.check("F3 POM changed while no session ran: Sync required", "get_diagnostics", {"file": str(down)},
              lambda t: "Sync required" in t, show=True, settle=True)
     pom.write_text(orig)
-    pr.check("F2 POM reverted: Sync required stays until a sync", "get_diagnostics", {"file": str(down)},
-             lambda t: "Sync required" in t, show=True)
+    pr.check("F2 POM back to the synced content: no Sync required", "get_diagnostics", {"file": str(down)},
+             lambda t: "Sync required" not in t, show=True)
 
 
 def s_cold_start(pr: Probe):

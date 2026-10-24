@@ -2,8 +2,10 @@ package io.github.aglibs.lathe.install;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -21,6 +24,14 @@ class WorkspaceManifestWriterTest {
   private static final Path TOOL = Path.of("/opt/maven/bin/mvn");
 
   @TempDir Path workspaceRoot;
+
+  private Path pom;
+
+  // The writer fingerprints each build file it lists.
+  @BeforeEach
+  void writePom() throws Exception {
+    pom = Files.writeString(workspaceRoot.resolve("pom.xml"), "<project/>");
+  }
 
   @Test
   void write_writesWorkspaceJsonAtomically() throws Exception {
@@ -74,7 +85,9 @@ class WorkspaceManifestWriterTest {
     assertThat(entry.status()).isEqualTo(SourceStatus.PRESENT);
     assertThat(entry.dir()).isEqualTo(Path.of("/cache/dep").toString());
     assertThat(entry.classpath()).containsExactly(Path.of("/repo/transitive.jar").toString());
-    assertThat(data.buildFiles()).containsExactly("pom.xml");
+    assertThat(data.buildFiles())
+        .as("with the content Maven read, so a merely touched POM asks for no sync")
+        .containsExactly(new BuildFileData("pom.xml", FileUtil.fingerprint(pom)));
     assertThat(data.outputs()).containsExactly(output);
 
     // The build JDK is also written as a plain path for the launcher to run the server under.

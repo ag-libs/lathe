@@ -117,7 +117,7 @@ Workspace-wide data: `WorkspaceManifestData`.
 | `runnerClasspath` | `lathe-test-runner` plus JUnit Platform jars; empty blocks test runs |
 | `jdk` | JDK sources and type-index shard (`JdkSourceData`), or null |
 | `dependencySources` | per dependency jar: extracted sources dir, classpath, type-index shard (`DependencyData`) |
-| `buildFiles` | workspace-relative build files the server watches for changes |
+| `buildFiles` | workspace-relative build files the server watches for changes (`BuildFileData`: `path` and an optional content `fingerprint`, size plus CRC32C). One with a fingerprint counts as changed only while its content differs from the synced one; one without, whenever it is touched |
 | `resourceRoots` | resource directories, their build output, and owning module (`ResourceRootData`) |
 | `outputs` | every build output that can appear on another module's classpath, and the mirror it stands for (`OutputData`) |
 | `buildTool` | absolute path of the tool that ran the last build (the one `lathe-sync.sh` runs); the formatter's `%MVN%` |
@@ -131,10 +131,10 @@ The server polls it every 2 seconds:
 a content change reloads the workspace, and an mtime-only change re-scans the reactor mirror.
 Without it the server still compiles and navigates the workspace's own code, but has no dependency or JDK sources, no type index for them, no build-file watching, and no test runs.
 
-- **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged.
+- **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged; each POM in `buildFiles` carries the fingerprint of the content Maven read.
   Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
   a custom test-jar classifier or another classified jar is not listed.
-- **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch.
+- **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch, so they carry no fingerprint: the touch is the signal.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`
 

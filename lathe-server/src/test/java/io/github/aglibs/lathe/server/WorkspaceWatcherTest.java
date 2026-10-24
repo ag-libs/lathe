@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.WorkspaceWatcher.PollResult;
 import java.io.IOException;
@@ -9,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -50,7 +52,7 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     // Update mtime and size
     Files.writeString(pom, "<project>updated</project>");
@@ -64,7 +66,7 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     // Mtime changes but size stays same (touch)
     Files.setLastModifiedTime(pom, FileTime.fromMillis(PAST.toMillis() + 10_000L));
@@ -78,7 +80,7 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     // Make it stale
     Files.writeString(pom, "<project>updated</project>");
@@ -86,7 +88,7 @@ class WorkspaceWatcherTest {
     // A sync rewrites the manifest; the reload that change triggers resets the baseline
     Files.writeString(manifest(), "{synced}");
     assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
   }
@@ -98,7 +100,7 @@ class WorkspaceWatcherTest {
     Files.setLastModifiedTime(pom, PAST);
 
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     // Change both
     Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{updated}");
@@ -144,7 +146,7 @@ class WorkspaceWatcherTest {
     Files.writeString(pom, "<project/>");
     Files.setLastModifiedTime(pom, PAST);
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(pom));
+    watcher.updateBuildFiles(List.of(pom), Map.of());
 
     Files.writeString(pom, "<project>updated</project>");
     assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
@@ -163,7 +165,7 @@ class WorkspaceWatcherTest {
     Files.writeString(edited, "<project/>");
     Files.setLastModifiedTime(edited, FileTime.fromMillis(PAST.toMillis() + 10_000L));
     final var watcher = new WorkspaceWatcher(workspaceRoot);
-    watcher.updateBuildFiles(List.of(edited));
+    watcher.updateBuildFiles(List.of(edited), Map.of());
 
     assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
@@ -172,11 +174,48 @@ class WorkspaceWatcherTest {
     Files.writeString(synced, "<project/>");
     Files.setLastModifiedTime(synced, FileTime.fromMillis(PAST.toMillis() - 10_000L));
     final var syncedWatcher = new WorkspaceWatcher(workspaceRoot);
-    syncedWatcher.updateBuildFiles(List.of(synced));
+    syncedWatcher.updateBuildFiles(List.of(synced), Map.of());
 
     assertThat(syncedWatcher.poll())
         .as("older than the manifest: the last sync saw it")
         .isEqualTo(PollResult.NO_CHANGE);
+  }
+
+  @Test
+  void poll_contentWatchedBuildFile_touchIgnored_editReported_revertReportedAsRestored()
+      throws IOException {
+    final var pom = workspaceRoot.resolve("pom.xml");
+    Files.writeString(pom, "<project/>");
+    Files.setLastModifiedTime(pom, PAST);
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+    watcher.updateBuildFiles(List.of(pom), Map.of(pom, FileUtil.fingerprint(pom)));
+
+    Files.setLastModifiedTime(pom, FileTime.fromMillis(PAST.toMillis() + 10_000L));
+    assertThat(watcher.poll()).as("touched only").isEqualTo(PollResult.NO_CHANGE);
+
+    Files.writeString(pom, "<project>edited</project>");
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+
+    Files.writeString(pom, "<project/>");
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_RESTORED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+  }
+
+  @Test
+  void poll_contentWatchedBuildFileNewerThanManifestAtStartup_reportedOnlyIfContentDiffers()
+      throws IOException {
+    final var pom = workspaceRoot.resolve("pom.xml");
+    Files.writeString(pom, "<project/>");
+    final var synced = Map.of(pom, FileUtil.fingerprint(pom));
+    Files.setLastModifiedTime(pom, FileTime.fromMillis(PAST.toMillis() + 10_000L));
+    final var touchedWatcher = new WorkspaceWatcher(workspaceRoot);
+    touchedWatcher.updateBuildFiles(List.of(pom), synced);
+    assertThat(touchedWatcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+
+    Files.writeString(pom, "<project>edited</project>");
+    final var editedWatcher = new WorkspaceWatcher(workspaceRoot);
+    editedWatcher.updateBuildFiles(List.of(pom), synced);
+    assertThat(editedWatcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
   }
 
   private Path manifest() {

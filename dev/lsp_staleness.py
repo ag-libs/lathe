@@ -162,6 +162,9 @@ def s_pom(pr: Probe):
     pom = pr.p(pr.cfg["pom"])
     orig = pom.read_text()
     pr.prompts.clear()
+    os.utime(pom)
+    time.sleep(6)
+    pr.record(not pr.prompts, "F0 POM only touched: no sync prompt", str(pr.prompts)[:80])
     pom.write_text(orig.replace("</project>", "<!-- latheprobe --></project>"))
     pr.poll("F1 live POM change prompts a sync", lambda: list(pr.prompts), lambda p: bool(p))
     pom.write_text(orig)
@@ -172,6 +175,12 @@ def s_pom(pr: Probe):
     pr.poll("F3 POM changed while no server ran prompts a sync (WS-13)", lambda: list(pr.prompts),
             lambda p: bool(p))
     pom.write_text(orig)
+    pr.stop()
+    os.utime(pom)
+    pr.start()
+    time.sleep(6)
+    pr.record(not pr.prompts, "F4 POM only touched while no server ran: no sync prompt",
+              str(pr.prompts)[:80])
 
 
 def s_resource(pr: Probe):

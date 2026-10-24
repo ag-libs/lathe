@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -64,9 +65,14 @@ class OpenJdkSyncTest {
         Json.read(latheDir.resolve(LatheLayout.WORKSPACE_JSON), WorkspaceManifestData.class);
     assertThat(manifest.buildTool()).isEqualTo("/opt/maven/bin/mvn");
     assertThat(manifest.buildFiles())
+        .as("markers make only touches, so they are watched by touch, not content")
         .containsExactly(
-            "build/linux-x86_64-server-release/jdk/modules/java.base/_the.java.base_batch",
-            "build/linux-x86_64-server-release/buildtools/tools_classes/_the.BUILD_TOOLS_batch");
+            new BuildFileData(
+                "build/linux-x86_64-server-release/jdk/modules/java.base/_the.java.base_batch",
+                null),
+            new BuildFileData(
+                "build/linux-x86_64-server-release/buildtools/tools_classes/_the.BUILD_TOOLS_batch",
+                null));
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
   }
 

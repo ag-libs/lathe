@@ -8502,21 +8502,25 @@ so the first poll reports `BUILD_FILES_CHANGED` and the existing reaction follow
 prompt on the first tick, and through the MCP freshen step (which polls the watcher since the
 [MC-14](#mc-14--a-changed-build-file-never-yields-sync-required--done) fix) a "Sync required" note on
 the first query.
-The manifest's mtime stands for the last sync: `lathe:sync` writes it at its end (or touches it when
-unchanged), after Maven read every POM, so a reload after a sync never reports anything.
-No schema change.
-
-Known limits, both narrow: the MCP engine also touches `workspace.json` after a rename (so an editor's
-server rescans), so a server started after such a touch misses a POM change made before it; and a
-POM edited during a Maven build, after the models were read, is older than the manifest that build
-writes.
+That first version compared mtimes, so a POM merely touched, or edited and put back (a branch switch
+and back, a probe's revert), asked for a sync until the next full sync — a scoped `-pl` sync does not
+rewrite `workspace.json`.
+It now compares content: `lathe:sync` records each POM's fingerprint (size and CRC32C, schema 6) as
+`buildFiles[].fingerprint`, and the watcher re-fingerprints a POM whose mtime or size moved, counting it
+changed only while its content differs from the synced one; when every changed POM is back, it reports
+`BUILD_FILES_RESTORED` and the session drops the pending sync (MCP's note goes; the next change
+prompts again). A POM changed while no server ran is caught the same way at startup, by content.
+OpenJDK's `_the.<batch>_batch` markers, which `make` only touches, carry no fingerprint and keep the
+touch watch, startup included (newer than `workspace.json`).
 
 ### Regression targets
 
-Both fail with the startup baseline taken as is:
-
+- `WorkspaceWatcherTest.poll_contentWatchedBuildFile_touchIgnored_editReported_revertReportedAsRestored`
+- `WorkspaceWatcherTest.poll_contentWatchedBuildFileNewerThanManifestAtStartup_reportedOnlyIfContentDiffers`
 - `WorkspaceWatcherTest.poll_buildFileEditedBeforeStartup_reportedOnFirstPollOnlyWhenNewerThanManifest`
-- `LatheEngineTest.notes_buildFileEditedBeforeTheSessionStarted_syncRequiredOnTheFirstQuery`
+  (touch-watched)
+- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
+- `LatheEngineTest.notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers`
 
 ---
 
@@ -10283,7 +10287,9 @@ A build file changed before the session started is not detected at all ([WS-13](
 
 `NoopLanguageClient.showMessageRequest` leaves the prompt unanswered, so
 `buildFilesNotificationPending` holds until a sync reloads the workspace (`reloadWorkspace` clears
-it), and every answer carries the note until then.
+it), and every answer carries the note until then — or, since the build files are compared by
+content ([WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done)), until
+every changed POM is back to what the sync saw.
 The engine's freshen step (`reconcileForVerify`) now runs the watcher's check first, so a build file
 the agent edited just before the query is reported by that query, not on the next tick.
 While the sync is pending the pass still runs, so the agent's own edits keep being compiled;

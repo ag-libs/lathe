@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.install.SyncScript;
@@ -279,7 +280,8 @@ public final class OpenJdkSync {
             List.of(),
             null,
             List.of(),
-            buildFiles,
+            // Watched by touch, not content: make only touches a marker after its module compiles.
+            buildFiles.stream().map(rel -> new BuildFileData(rel, null)).toList(),
             List.of(),
             List.of(),
             buildTool.toString());

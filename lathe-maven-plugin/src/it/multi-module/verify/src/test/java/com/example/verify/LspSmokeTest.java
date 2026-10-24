@@ -10,7 +10,6 @@ import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
-import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -484,15 +483,20 @@ class LspSmokeTest {
 
   @Test
   void pomChange_triggersResyncPrompt() throws Exception {
-    Files.setLastModifiedTime(
-        ROOT.resolve("pom.xml"), FileTime.from(Instant.now().plusSeconds(5)));
-
-    final var prompt = client.syncPrompts.poll(10, SECONDS);
-    assertThat(prompt).isNotNull();
-    assertThat(prompt.getMessage()).contains("Build files changed");
-    assertThat(prompt.getActions())
-        .extracting(MessageActionItem::getTitle)
-        .containsExactlyInAnyOrder("Sync", "Sync + capture tests", "Later");
+    // A content edit: the server compares POMs by content, so a mere touch prompts nothing.
+    final Path pom = ROOT.resolve("pom.xml");
+    final String original = Files.readString(pom);
+    Files.writeString(pom, original.replace("</project>", "<!-- lsp smoke --></project>"));
+    try {
+      final var prompt = client.syncPrompts.poll(10, SECONDS);
+      assertThat(prompt).isNotNull();
+      assertThat(prompt.getMessage()).contains("Build files changed");
+      assertThat(prompt.getActions())
+          .extracting(MessageActionItem::getTitle)
+          .containsExactlyInAnyOrder("Sync", "Sync + capture tests", "Later");
+    } finally {
+      Files.writeString(pom, original);
+    }
   }
 
   @Test

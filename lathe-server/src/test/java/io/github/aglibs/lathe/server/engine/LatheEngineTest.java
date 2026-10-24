@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -310,12 +312,12 @@ class LatheEngineTest {
   }
 
   @Test
-  void notes_buildFileEditedMidSession_syncRequiredAtOnceAndUntilSynced_editsStillCompile()
+  void notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile()
       throws Exception {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
     final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
-    writeManifest(LatheLayout.SCHEMA_VERSION, List.of("module/pom.xml"));
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
     engine = new LatheEngine(tmp);
     engine.diagnostics(fx.caller());
     assertThat(engine.notes(List.of()).syncRequired()).isEmpty();
@@ -332,19 +334,28 @@ class LatheEngineTest {
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
     assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
+
+    Files.writeString(pom, "<project/>");
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired())
+        .as("the POM is back to what the sync saw")
+        .isEmpty();
   }
 
   @Test
-  void notes_buildFileEditedBeforeTheSessionStarted_syncRequiredOnTheFirstQuery() throws Exception {
+  void notes_buildFileChangedBeforeTheSessionStarted_syncRequiredOnlyIfItsContentDiffers()
+      throws Exception {
     final GreetFixture fx = greetFixture();
-    writeManifest(LatheLayout.SCHEMA_VERSION, List.of("module/pom.xml"));
-    final long synced =
-        Files.getLastModifiedTime(
-                tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON))
-            .toMillis();
-    TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", synced + 10_000L);
+    final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
+    TestCompiler.writeAt(pom, "<project/>", 99_000_000_000L);
     engine = new LatheEngine(tmp);
+    engine.diagnostics(fx.caller());
+    assertThat(engine.notes(List.of()).syncRequired()).as("only touched").isEmpty();
+    engine.close();
 
+    Files.writeString(pom, "<project><!-- edited --></project>");
+    engine = new LatheEngine(tmp);
     engine.diagnostics(fx.caller());
 
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
@@ -898,7 +909,11 @@ class LatheEngineTest {
     }
   }
 
-  private void writeManifest(final String schemaVersion, final List<String> buildFiles)
+  private BuildFileData syncedBuildFile(final Path file) throws Exception {
+    return new BuildFileData(FileUtil.slashed(tmp.relativize(file)), FileUtil.fingerprint(file));
+  }
+
+  private void writeManifest(final String schemaVersion, final List<BuildFileData> buildFiles)
       throws Exception {
     Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
     Json.write(
