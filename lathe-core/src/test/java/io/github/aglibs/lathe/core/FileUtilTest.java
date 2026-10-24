@@ -130,6 +130,18 @@ final class FileUtilTest {
   // On Windows '\' separates names and becomes '/'; on Linux it is an ordinary file-name
   // character, so it stays inside its name.
   @Test
+  void deleteDir_treeThenMissing_deletesItThenDoesNothing() throws IOException {
+    final Path dir = tempDir.resolve("tree");
+    Files.createDirectories(dir.resolve("a/b"));
+    Files.writeString(dir.resolve("a/b/file.txt"), "x");
+
+    FileUtil.deleteDir(dir);
+    FileUtil.deleteDir(dir);
+
+    assertThat(dir).doesNotExist();
+  }
+
+  @Test
   void slashed_relativePath_joinsNamesWithSlash_keepingABackslashInsideAName() {
     assertThat(FileUtil.slashed(Path.of("core", "src", "Foo.java"))).isEqualTo("core/src/Foo.java");
     assertThat(FileUtil.slashed(Path.of("odd\\name", "Foo.java")))

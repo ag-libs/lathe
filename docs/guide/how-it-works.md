@@ -92,3 +92,7 @@ When Maven is invoked with `-pl`, `lathe:sync` skips writing `workspace.json` to
 full workspace manifest with a partial view. Module parameter files are still written by Lathe's
 compiler integration for the modules that compiled. To force a workspace manifest write from a partial
 build, pass `-Dlathe.sync.force=true`.
+
+A full build also removes from `.lathe/` what the build no longer has: a module dropped from the
+reactor, a module's test tree once its tests are gone, and annotation-processor output a removed
+processor left behind. A partial build never removes anything, since it sees only part of the build.

@@ -150,11 +150,48 @@ public final class ReactorProjects {
   // before `package`; only the default test-jar classifier is listed.
   public static List<OutputData> outputs(
       final Path workspaceRoot, final List<MavenProject> projects) {
-    return projects.stream()
-        .filter(project -> !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging()))
-        .filter(project -> !escapesReactorRoot(workspaceRoot, project))
+    return captured(workspaceRoot, projects)
         .flatMap(project -> outputs(workspaceRoot, project))
         .toList();
+  }
+
+  // Each captured module's source trees the build still has: Java in its compile source roots, or
+  // the output an earlier build left. The sync runs on the root project before its modules build,
+  // so a source root a plugin adds in this build is not listed yet; the earlier output keeps it.
+  public static Map<Path, Set<String>> sourceTrees(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    return captured(workspaceRoot, projects)
+        .collect(
+            Collectors.toUnmodifiableMap(
+                project -> workspaceRoot.relativize(project.getBasedir().toPath()),
+                project ->
+                    Stream.of(LatheLayout.CLASSES_DIR, LatheLayout.TEST_CLASSES_DIR)
+                        .filter(tree -> hasTree(project, tree))
+                        .collect(Collectors.toUnmodifiableSet())));
+  }
+
+  private static boolean hasTree(final MavenProject project, final String tree) {
+    final boolean main = LatheLayout.CLASSES_DIR.equals(tree);
+    final Build build = project.getBuild();
+    final String output = main ? build.getOutputDirectory() : build.getTestOutputDirectory();
+    final List<String> sourceRoots =
+        main ? project.getCompileSourceRoots() : project.getTestCompileSourceRoots();
+    return Files.isDirectory(Path.of(output))
+        || sourceRoots.stream()
+            .map(Path::of)
+            .anyMatch(
+                root ->
+                    !IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile))
+                        .isEmpty());
+  }
+
+  // The projects .lathe/ captures: a pom-packaged one compiles nothing, and one outside the reactor
+  // root cannot be mirrored.
+  private static Stream<MavenProject> captured(
+      final Path workspaceRoot, final List<MavenProject> projects) {
+    return projects.stream()
+        .filter(project -> !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging()))
+        .filter(project -> !escapesReactorRoot(workspaceRoot, project));
   }
 
   private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
