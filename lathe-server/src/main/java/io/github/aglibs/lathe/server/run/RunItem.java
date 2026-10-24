@@ -44,6 +44,23 @@ public record RunItem(
     modulePathAppend = modulePathAppend != null ? List.copyOf(modulePathAppend) : List.of();
   }
 
+  /** This item with one more JVM argument, after its own. */
+  public RunItem withJvmArg(final String jvmArg) {
+    return new RunItem(
+        name,
+        module,
+        kind,
+        mainClass,
+        selectors,
+        args,
+        Stream.concat(jvmArgs.stream(), Stream.of(jvmArg)).toList(),
+        env,
+        envFile,
+        cwd,
+        classpathAppend,
+        modulePathAppend);
+  }
+
   static RunItem empty(final String module, final RunKind kind) {
     return new RunItem(null, module, kind, null, null, null, null, null, null, null, null, null);
   }

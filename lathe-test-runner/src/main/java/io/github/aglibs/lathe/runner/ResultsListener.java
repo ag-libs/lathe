@@ -10,6 +10,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.junit.platform.engine.TestExecutionResult;
 import org.junit.platform.engine.TestSource;
@@ -36,6 +37,7 @@ final class ResultsListener implements TestExecutionListener {
   private static final String STATUS_PASSED = "passed";
   private static final String STATUS_FAILED = "failed";
   private static final String STATUS_SKIPPED = "skipped";
+  private static final String STATUS_DISCOVERED = "discovered";
   // Mirror LatheFlags.TEST_STARTED_MARKER / TEST_FINISHED_MARKER by value: the runner can't depend
   // on
   // lathe-core. A drift-guard test pins them equal.
@@ -213,6 +215,30 @@ final class ResultsListener implements TestExecutionListener {
     return value.getValue() instanceof final CharSequence chars
         ? chars.toString()
         : value.getStringRepresentation();
+  }
+
+  /**
+   * A discovered test as a record with status {@code discovered}: a test method, or a template
+   * (parameterized, repeated, factory) listed once; empty for classes and engines.
+   */
+  static Optional<TestRecord> discovered(final TestIdentifier id) {
+    if (!(id.getSource().orElse(null) instanceof final MethodSource method)) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new TestRecord(
+            method.getClassName(),
+            method.getMethodName(),
+            parameterTypes(method),
+            STATUS_DISCOVERED,
+            "",
+            -1,
+            -1,
+            id.getDisplayName(),
+            null,
+            null,
+            List.of()));
   }
 
   private static String parameterTypes(final MethodSource method) {

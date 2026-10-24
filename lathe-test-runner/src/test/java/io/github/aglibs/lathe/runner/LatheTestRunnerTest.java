@@ -10,6 +10,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -65,6 +66,33 @@ final class LatheTestRunnerTest {
     assertThat(out.toString(StandardCharsets.UTF_8)).isEmpty();
   }
 
+  // Discover mode lists what a run would execute and runs none of it: a failing test comes back
+  // discovered, not failed, and a parameterized method is listed once, as its template.
+  @Test
+  void run_discoverProperty_listsEachTestOnceWithoutRunningIt(@TempDir final Path dir)
+      throws IOException {
+    final Path sink = dir.resolve("discovered.ndjson");
+    System.setProperty(LatheTestRunner.RESULTS_SINK, sink.toString());
+    System.setProperty(LatheTestRunner.DISCOVER, "true");
+    try {
+      final int exit =
+          LatheTestRunner.run(
+              new String[] {
+                TestSelectorParser.SELECT_CLASS, FailingFixture.class.getName(),
+                TestSelectorParser.SELECT_CLASS, ParameterizedFixture.class.getName()
+              });
+      assertThat(exit).isEqualTo(LatheTestRunner.EXIT_OK);
+    } finally {
+      System.clearProperty(LatheTestRunner.RESULTS_SINK);
+      System.clearProperty(LatheTestRunner.DISCOVER);
+    }
+
+    final List<String> lines = Files.readAllLines(sink);
+    assertThat(lines).allMatch(line -> line.contains("\"status\":\"discovered\""));
+    assertThat(lines).filteredOn(line -> line.contains("\"methodName\":\"param_test\"")).hasSize(1);
+    assertThat(lines).anyMatch(line -> line.contains(FailingFixture.class.getName()));
+  }
+
   @Test
   void run_withResultsSinkProperty_writesPerTestRecords(@TempDir final Path dir)
       throws IOException {
@@ -83,6 +111,7 @@ final class LatheTestRunnerTest {
   @Test
   void inlinedWireLiterals_matchLatheCoreSourceOfTruth() {
     assertThat(LatheTestRunner.RESULTS_SINK).isEqualTo(LatheFlags.RESULTS_SINK);
+    assertThat(LatheTestRunner.DISCOVER).isEqualTo(LatheFlags.DISCOVER);
     assertThat(ResultsListener.TEST_STARTED_MARKER).isEqualTo(LatheFlags.TEST_STARTED_MARKER);
     assertThat(ResultsListener.TEST_FINISHED_MARKER).isEqualTo(LatheFlags.TEST_FINISHED_MARKER);
     assertThat(TestSelectorParser.SELECT_CLASS).isEqualTo(TestSelectionKind.CLASS.runnerFlag());

@@ -748,6 +748,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.dirRun(uri));
   }
 
+  CompletableFuture<List<String>> testModulesFuture() {
+    return worker.submit(session::testModules);
+  }
+
+  CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
+    return worker.submit(() -> session.discoverTests(moduleRel)).thenCompose(f -> f);
+  }
+
   CompletableFuture<List<TestSource>> testSourcesFuture(
       final String moduleRel, final List<String> classNames) {
     return worker.submit(() -> session.testSources(moduleRel, classNames));

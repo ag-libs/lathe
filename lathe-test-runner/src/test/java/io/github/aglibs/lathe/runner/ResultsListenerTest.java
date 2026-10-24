@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
@@ -252,16 +251,6 @@ final class MixedFixture {
   void aborted_test() {
     Assumptions.assumeTrue(false, "precondition not met");
   }
-}
-
-final class ParameterizedFixture {
-
-  @Test
-  void plain_test() {}
-
-  @ParameterizedTest
-  @ValueSource(strings = {"a", "b"})
-  void param_test(final String value) {}
 }
 
 final class ComparisonFixture {

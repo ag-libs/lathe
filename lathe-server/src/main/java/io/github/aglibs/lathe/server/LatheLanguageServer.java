@@ -136,6 +136,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
                 LatheWorkspaceService.LIST_RUNNABLES_COMMAND,
                 LatheWorkspaceService.DIR_RUNNABLES_COMMAND,
                 LatheWorkspaceService.TEST_SOURCES_COMMAND,
+                LatheWorkspaceService.TEST_MODULES_COMMAND,
+                LatheWorkspaceService.DISCOVER_TESTS_COMMAND,
                 LatheWorkspaceService.RESOURCES_COMMAND,
                 LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
                 LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,

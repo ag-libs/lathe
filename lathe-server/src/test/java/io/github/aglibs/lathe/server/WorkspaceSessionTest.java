@@ -611,6 +611,44 @@ class WorkspaceSessionTest {
         .isNull();
   }
 
+  // A discover run's records become one entry per position id (an inherited @Nested class reaches
+  // the same test twice), labelled by method, with the source file's URI when there is one.
+  @Test
+  void discoveredTests_discoverRecords_oneEntryPerPositionWithItsSource(@TempDir final Path dir) {
+    final Path source = dir.resolve("FooTest.java");
+    final List<TestResult> records =
+        List.of(
+            discovered("com.x.FooTest", "a", ""),
+            discovered("com.x.FooTest", "a", ""),
+            discovered("com.x.FooTest", "p", "java.lang.String"),
+            discovered("com.x.NoSourceTest", "b", ""));
+
+    assertThat(
+            WorkspaceSession.discoveredTests(
+                records, Map.of("com.x.FooTest", source.toString(), "com.x.NoSourceTest", "")))
+        .containsExactly(
+            new DiscoveredTest("com.x.FooTest#a()", "a", LatheUri.fromPath(source)),
+            new DiscoveredTest("com.x.FooTest#p(java.lang.String)", "p", LatheUri.fromPath(source)),
+            new DiscoveredTest("com.x.NoSourceTest#b()", "b", ""));
+  }
+
+  private static TestResult discovered(
+      final String className, final String methodName, final String parameterTypes) {
+    return new TestResult(
+        className,
+        methodName,
+        parameterTypes,
+        "discovered",
+        "",
+        -1,
+        -1,
+        methodName,
+        null,
+        null,
+        List.of(),
+        null);
+  }
+
   // A package or module run takes the build's class-name filter; a run naming a class or a method,
   // alone or among packages, runs exactly what it names.
   @Test

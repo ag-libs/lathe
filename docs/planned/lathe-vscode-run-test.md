@@ -74,13 +74,13 @@ The client mirrors these numbers in one place (`runnables.ts`).
 
 ### 3.2 Server additions
 
-**A. Workspace test discovery** (backs the lazy tree, §5.2).
+**A. Workspace test discovery** (backs the lazy tree, §5.2; done in slice 6).
 
 | API | Answer |
 |---|---|
 | `lathe.tests.modules {}` | `[{moduleRel, label}]`: every module with a test source tree. Cheap: read from the reactor layout. |
-| `lathe.tests.discover {moduleRel}` | `{moduleRel, blockedReasons, classes: [{id, label, uri, methods: [{id, label}]}]}`; nested classes are separate entries whose `id` carries the `$`. |
-| `lathe/testsChanged {moduleRel}` (notification) | That module's captured test classes changed (a sync, or an in-process save compile); answers from `tests.discover` for it are stale. |
+| `lathe.tests.discover {moduleRel}` | `{moduleRel, blockedReasons, tests: [{id, label, uri}]}`: one entry per test method, flat; package, class and nesting are read off the `id` as for run results, `label` is the method name, `uri` the source file (empty when it resolves to none). |
+| `lathe/testsChanged {moduleRel}` (notification) | **Not built in slice 6**; added with slice 7 only if a client needs a push. Answers stay fresh without it (below). |
 
 `tests.discover` runs the module's captured test launch with the runner in a new **discover mode**:
 `LauncherFactory.create().discover(request)` with a module-wide selector, and no test executed.
@@ -95,7 +95,9 @@ There is no `range`: positions need javac, and an opened file supplies them (§5
 The selection is the module's, as a module run selects it: one package selector per test package (`WorkspaceSession.moduleRun`), filtered by the build's own test-class filter (F).
 Discovery loads test classes without initializing them, so no user code runs: Spring, Weld and Helidon test extensions, `@MethodSource` and `@EnabledIf` act only at execution.
 
-The server caches one answer per module and drops it on the event that sends `lathe/testsChanged`.
+The server caches one answer per module, valid while the module's test-classes stamp file (`lsp-stamps-test-classes.json`, rewritten by sync and by the in-process compile after a save) is unchanged, so an answer after an edit is fresh without any event plumbing.
+Requests for the same module share one discovery, and discovery JVMs run one at a time per server: a client asking for every module at startup gets a queue, not a JVM per module.
+Discover mode is the runner run with `-Dlathe.discover=true` (`LatheFlags.DISCOVER`); it writes one record per test method or template, status `discovered`, into the results file the server already reads.
 A module with no capture answers with `blockedReasons` (the same messages `lathe.run.test` gives), so the tree can say why it is empty.
 
 **Cost (spike S7).** One JVM per module, paid only when someone expands that module:
@@ -110,7 +112,7 @@ A module with no capture answers with `blockedReasons` (the same messages `lathe
 | Dropwizard `dropwizard-util` | 7 | 67 | 0.76–1.04 s / 0.7–0.77 s |
 
 Two thirds of the time is JUnit loading classes; walking the plan takes under 30 ms.
-Discover mode starts its JVM with `-XX:TieredStopAtLevel=1 -XX:+UseSerialGC` ahead of the launch's own JVM arguments (so the build can still override them), which cut `dropwizard-jersey` by about 30%.
+The spike's JVM flags (`-XX:TieredStopAtLevel=1 -XX:+UseSerialGC`, about 30% off) are not used: the server can only add JVM arguments after the build's, and a second GC flag after a build's own makes the JVM refuse to start.
 A second at most per module needs no per-package split; the client shows the module as busy while it waits (§5.2).
 
 Against what Surefire ran, the discovered set matched exactly on four of the six modules, including disabled tests (Surefire reports them as skipped), inherited tests and parameterized templates.
@@ -618,7 +620,7 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | 3 | Neotest: class failures, inline and side-by-side diffs, durations (§3.4 items 3, 4, 6; item 5 not pursued) | built |
 | 4 | Output attributed to its test (`TranscriptLine.positionId`, from the runner's markers) and per-test output in neotest (§3.4 item 2); `lathe/testStarted` deferred to VS Code | built |
 | 5 | Surefire's include/exclude filter (F): read at sync, applied to package and module runs | built |
-| 6 | Whole-module discovery (A), lazy and bounded so neotest's startup doesn't start a JVM per module | |
+| 6 | Whole-module discovery (A) on the server: `lathe.tests.modules`, `lathe.tests.discover`, cached by stamp, one discovery JVM at a time | built |
 | 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | |
 | 8 | Release: docs, release notes, the `lathe.nvim` publish; the GitHub release carries no `.vsix` this time | |
 

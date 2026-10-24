@@ -84,6 +84,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -246,6 +247,11 @@ final class WorkspaceSession {
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
+  // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
+  // last one queued: discovery JVMs run one at a time. Both touched on the worker thread only.
+  private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
+  private CompletableFuture<TestDiscovery> lastDiscovery =
+      CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
   private final AtomicBoolean formatFailureReported = new AtomicBoolean();
 
   WorkspaceSession(
@@ -827,6 +833,97 @@ final class WorkspaceSession {
     return configs.stream()
         .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
         .toList();
+  }
+
+  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {}
+
+  List<String> testModules() {
+    return testConfigs(workspace.allConfigs()).stream()
+        .map(this::moduleRel)
+        .distinct()
+        .sorted()
+        .toList();
+  }
+
+  // The tests a run of the module would execute, found by a discover-mode launch that runs none of
+  // them. Answered from the cache until the module's test classes change (sync and save compiles
+  // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
+  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
+    final FileTime stamp = testClassesStamp(moduleRel);
+    final CachedDiscovery cached = discoveries.get(moduleRel);
+    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
+      return cached.result();
+    }
+
+    final CompletableFuture<TestDiscovery> result =
+        lastDiscovery
+            .handle((previous, error) -> moduleRel)
+            .thenComposeAsync(this::launchDiscovery, worker::execute);
+    lastDiscovery = result;
+    discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+    return result;
+  }
+
+  private CompletableFuture<TestDiscovery> launchDiscovery(final String moduleRel) {
+    final List<TestSelection> selections =
+        moduleRun(workspace.allConfigs(), workspaceRoot, moduleRel).selections().stream()
+            .map(
+                selector ->
+                    new TestSelection(
+                        TestSelectionKind.valueOf(selector.selectorKind()),
+                        selector.selectorValue()))
+            .toList();
+    if (selections.isEmpty()) {
+      return CompletableFuture.completedFuture(new TestDiscovery(moduleRel, List.of(), List.of()));
+    }
+
+    final RunItem overlay =
+        baselineOverlay(moduleRel, RunKind.TEST)
+            .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
+    return startTestRun(moduleRel, selections, "", overlay)
+        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), worker::execute);
+  }
+
+  private TestDiscovery discovery(final String moduleRel, final LaunchOutcome outcome) {
+    final Map<String, String> paths =
+        testSources(moduleRel, outcome.testResults().stream().map(TestResult::className).toList())
+            .stream()
+            .collect(Collectors.toMap(TestSource::className, TestSource::path));
+    return new TestDiscovery(
+        moduleRel, outcome.blockedReasons(), discoveredTests(outcome.testResults(), paths));
+  }
+
+  // One entry per position id: a @Nested class inherited by two outer classes is two JUnit tests
+  // but one position. `paths` maps a class name to its source file, as testSources resolves it.
+  static List<DiscoveredTest> discoveredTests(
+      final List<TestResult> results, final Map<String, String> paths) {
+    return results.stream()
+        .collect(
+            Collectors.toMap(
+                TestResult::positionId,
+                result ->
+                    new DiscoveredTest(
+                        result.positionId(),
+                        result.methodName(),
+                        sourceUri(paths.getOrDefault(result.className(), ""))),
+                (first, again) -> first,
+                LinkedHashMap::new))
+        .values()
+        .stream()
+        .toList();
+  }
+
+  private static String sourceUri(final String path) {
+    return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
+  }
+
+  private FileTime testClassesStamp(final String moduleRel) {
+    final Path stamps =
+        workspaceRoot
+            .resolve(LatheLayout.LATHE_DIR)
+            .resolve(moduleRel)
+            .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
+    return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
   List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
