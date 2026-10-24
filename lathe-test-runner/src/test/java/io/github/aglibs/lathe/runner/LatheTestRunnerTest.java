@@ -83,10 +83,16 @@ final class LatheTestRunnerTest {
   @Test
   void inlinedWireLiterals_matchLatheCoreSourceOfTruth() {
     assertThat(LatheTestRunner.RESULTS_SINK).isEqualTo(LatheFlags.RESULTS_SINK);
+    assertThat(ResultsListener.TEST_STARTED_MARKER).isEqualTo(LatheFlags.TEST_STARTED_MARKER);
+    assertThat(ResultsListener.TEST_FINISHED_MARKER).isEqualTo(LatheFlags.TEST_FINISHED_MARKER);
     assertThat(TestSelectorParser.SELECT_CLASS).isEqualTo(TestSelectionKind.CLASS.runnerFlag());
     assertThat(TestSelectorParser.SELECT_METHOD).isEqualTo(TestSelectionKind.METHOD.runnerFlag());
     assertThat(TestSelectorParser.SELECT_PACKAGE).isEqualTo(TestSelectionKind.PACKAGE.runnerFlag());
     assertThat(TestSelectorParser.SELECT_MODULE).isEqualTo(TestSelectionKind.MODULE.runnerFlag());
+    assertThat(TestSelectorParser.INCLUDE_CLASS_NAME)
+        .isEqualTo(TestSelectionKind.CLASS_NAME_INCLUDE.runnerFlag());
+    assertThat(TestSelectorParser.EXCLUDE_CLASS_NAME)
+        .isEqualTo(TestSelectionKind.CLASS_NAME_EXCLUDE.runnerFlag());
   }
 
   private static int runClass(final Class<?> testClass) {

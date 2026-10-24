@@ -97,7 +97,9 @@ public final class RunConfigWriter {
   private static String derivedTestName(final TestSelection selection) {
     return switch (selection.kind()) {
       case METHOD -> methodName(selection.value());
-      case CLASS, PACKAGE, MODULE -> simpleName(selection.value());
+      // The class-name filters are added at launch, never saved, so they never come first.
+      case CLASS, PACKAGE, MODULE, CLASS_NAME_INCLUDE, CLASS_NAME_EXCLUDE ->
+          simpleName(selection.value());
     };
   }
 

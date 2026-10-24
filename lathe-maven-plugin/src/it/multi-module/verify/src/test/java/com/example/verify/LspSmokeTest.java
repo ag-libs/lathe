@@ -549,6 +549,9 @@ class LspSmokeTest {
         .extracting(result -> result.get("positionId").getAsString())
         .containsAll(landing);
     assertThat(results).allMatch(result -> result.get("durationMs").getAsLong() >= 0);
+    // The module's Surefire includes leave this class out, as mvn test does.
+    assertThat(results)
+        .noneMatch(result -> result.get("positionId").getAsString().contains("ExcludedByPattern"));
     assertThat(resultFor(results, "AssertionsTest#singleLine()"))
         .satisfies(
             result -> {
@@ -579,6 +582,13 @@ class LspSmokeTest {
             .toList();
     assertThat(output.subList(0, 2)).allMatch(line -> stream(line) == COMMAND);
     assertThat(text(output.get(0))).startsWith("config: ");
+    // Each line names the test that printed it; the runner's markers never show as output.
+    assertThat(output).noneMatch(line -> text(line).contains("\u0001"));
+    assertThat(output)
+        .filteredOn(line -> text(line).equals("shapes: plain on stdout"))
+        .singleElement()
+        .satisfies(
+            line -> assertThat(line.get("positionId").getAsString()).isEqualTo(ID_SHAPES + "#plain()"));
     assertThat(output)
         .anyMatch(line -> stream(line) == STDOUT && text(line).equals("shapes: plain on stdout"))
         .anyMatch(

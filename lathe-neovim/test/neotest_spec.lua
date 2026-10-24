@@ -801,8 +801,12 @@ end
 -- message instead of the run's aggregate.
 do
   local nodes = {
-    ["demo.BrokenTest"] = { id = "demo.BrokenTest", children = { "demo.BrokenTest#neverRuns()" } },
+    ["demo.BrokenTest"] = {
+      id = "demo.BrokenTest",
+      children = { "demo.BrokenTest#neverRuns()", "demo.BrokenTest$Inner#alsoNever()" },
+    },
     ["demo.BrokenTest#neverRuns()"] = { id = "demo.BrokenTest#neverRuns()", children = {} },
+    ["demo.BrokenTest$Inner#alsoNever()"] = { id = "demo.BrokenTest$Inner#alsoNever()", children = {} },
   }
   local class_failure = {
     className = "demo.BrokenTest",
@@ -850,10 +854,132 @@ do
   )
   spec.check("rich failure still maps to its method", results["demo.OtherTest#m()"].status, "failed")
   spec.check(
-    "class failure's quickfix row is named by the class alone",
-    items[1].text,
-    "demo.BrokenTest — java.lang.IllegalStateException: setup exploded"
+    "rich failure's text carries the diff of its values",
+    results["demo.OtherTest#m()"].short,
+    "expected: <a> but was: <b>\n-a\n+b"
   )
+  -- The class's methods never ran: they report the class's error, not the run's "exit=1".
+  spec.check("method of a failed class is failed", results["demo.BrokenTest#neverRuns()"].status, "failed")
+  spec.check(
+    "method of a failed class names the class's error",
+    results["demo.BrokenTest#neverRuns()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  spec.check(
+    "method of a class nested in a failed class is failed too",
+    results["demo.BrokenTest$Inner#alsoNever()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  -- neotest shows diagnostics for test positions only, so the class's diagnostic (its setup line,
+  -- failureLine 9 -> 0-based 8) rides on exactly one of its methods.
+  local carried = 0
+  for _, id in ipairs({ "demo.BrokenTest#neverRuns()", "demo.BrokenTest$Inner#alsoNever()" }) do
+    local errors = results[id].errors
+    if errors then
+      carried = carried + 1
+      spec.check("the carried diagnostic is on the class's setup line", errors[1].line, 8)
+    end
+  end
+  spec.check("one method carries the class's diagnostic", carried, 1)
+  local method_run = adapter.results({
+    context = {
+      position_id = "demo.BrokenTest#neverRuns()",
+      outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = { class_failure } },
+    },
+  }, nil, fake_tree(nodes))
+  spec.check(
+    "running one method of a failed class reports the class's error",
+    method_run["demo.BrokenTest#neverRuns()"].short,
+    "class failed: java.lang.IllegalStateException: setup exploded"
+  )
+  spec.check(
+    "…and carries the class's diagnostic",
+    method_run["demo.BrokenTest#neverRuns()"].errors and method_run["demo.BrokenTest#neverRuns()"].errors[1].line,
+    8
+  )
+  spec.check(
+    "class failure's quickfix row is named by the class alone, with its time",
+    items[1].text,
+    "demo.BrokenTest — java.lang.IllegalStateException: setup exploded (4 ms)"
+  )
+end
+
+-- Each test's output is the lines the server tagged with it; a test without lines of its own shows
+-- the run's whole transcript, as before.
+do
+  local results = adapter.results({
+    context = {
+      position_id = "demo.OutTest",
+      outcome = {
+        launched = true,
+        exitCode = 0,
+        output = {
+          { stream = 0, text = "from a", positionId = "demo.OutTest#a()" },
+          { stream = 0, text = "from setup" },
+          { stream = 1, text = "also from a", positionId = "demo.OutTest#a()" },
+        },
+        testResults = {
+          { positionId = "demo.OutTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
+          { positionId = "demo.OutTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
+        },
+      },
+    },
+  }, nil, nil)
+
+  spec.check("a test's output holds only its own lines", read_file(results["demo.OutTest#a()"].output), "from a\nalso from a")
+  spec.check(
+    "a test without lines of its own shows the whole transcript",
+    read_file(results["demo.OutTest#b()"].output),
+    "from a\nfrom setup\nalso from a"
+  )
+end
+
+-- The inline diff in a failure's text: line by line, without hunk headers, capped for huge values.
+do
+  spec.check("single-line values diff as one removed and one added line", adapter._value_diff("Alice", "alice"), "-Alice\n+alice")
+  spec.check(
+    "multi-line values keep their unchanged lines as context",
+    adapter._value_diff("one\ntwo\nthree", "one\nTWO\nthree"),
+    " one\n-two\n+TWO\n three"
+  )
+  spec.check("equal values give no diff", adapter._value_diff("same", "same"), nil)
+  local long_expected, long_actual = {}, {}
+  for i = 1, 60 do
+    long_expected[i] = "line " .. i
+    long_actual[i] = "LINE " .. i
+  end
+  local capped = vim.split(adapter._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")), "\n")
+  spec.check("a huge diff is capped at 40 lines plus a hint", #capped, 41)
+  spec.check("the hint says how much is left", capped[41]:match("^… (%d+) more lines") ~= nil, true)
+end
+
+-- open_diff's choice of failure, and the side-by-side tab it opens.
+do
+  local a = { positionId = "demo.T#a()", status = "failed", expected = "1", actual = "2" }
+  local b = { positionId = "demo.T#b()", status = "failed", expected = "x", actual = "y" }
+  local no_values = { positionId = "demo.T#c()", status = "failed" }
+  local passed = { positionId = "demo.T#d()", status = "passed" }
+
+  spec.check("the failure under the cursor wins", adapter._diff_target({ a, b }, "demo.T#b()"), b)
+  spec.check("the only failure with values is taken", adapter._diff_target({ a, no_values, passed }, nil), a)
+  local none, several = adapter._diff_target({ a, b }, "demo.T#d()")
+  spec.check("several failures leave the choice to the user", none, nil)
+  spec.check("…offering each of them", #several, 2)
+  local _, nothing = adapter._diff_target({ no_values, passed }, nil)
+  spec.check("no failure with values offers nothing", #nothing, 0)
+
+  local tabs = #vim.api.nvim_list_tabpages()
+  adapter._show_diff({ positionId = "demo.T#a()", expected = "one\ntwo", actual = "one\nTWO" })
+  local windows = vim.api.nvim_tabpage_list_wins(0)
+  spec.check("the diff opens in a new tab", #vim.api.nvim_list_tabpages(), tabs + 1)
+  spec.check("with two windows", #windows, 2)
+  local function window_text(win)
+    return table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), "\n")
+  end
+  spec.check("expected on the left", window_text(windows[1]), "one\ntwo")
+  spec.check("actual on the right", window_text(windows[2]), "one\nTWO")
+  spec.check("both in diff mode", vim.wo[windows[1]].diff and vim.wo[windows[2]].diff, true)
+  vim.cmd.tabclose()
 end
 
 -- _results_qf_items: the run's executed tests -> quickfix rows. Failures come first and jump to their
