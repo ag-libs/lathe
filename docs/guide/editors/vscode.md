@@ -74,6 +74,12 @@ The extension works the same on Windows, in VS Code and in Cursor (install the `
 Build the project once with `mvnw.cmd` or `mvn`; the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
 Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or with `set` in the `cmd` window you start `code` or `cursor` from.
 
+## Known issues
+
+- **One Lathe project per window.** In a multi-root workspace with two Lathe folders, only one of their servers starts, and it also receives the other folder's files.
+  Open each project in its own window for now.
+- **"Add missing imports…" does nothing.** The whole-file action has no effect in VS Code yet; the single-type quick fixes (*Import 'java.util.List'*) work.
+
 ## Not available yet
 
 Run/test/debug and scaffolding (`:LatheNew`) are **[Neovim-client](neovim.md)**

@@ -201,8 +201,10 @@ reused):
   editor-neutral first, each server piece adopted by Neovim before VS Code. Working-tree E2E with
   `@vscode/test-electron` against the `multi-module` invoker fixture. Debugging deferred.
 - [New Java Project (VS Code)](planned/lathe-vscode-new-project.md) — **proposed.** A
-  `Lathe: New Java Project` command for beginners: writes a minimal Lathe-enabled Maven project from
-  inline templates (no archetype), opens it, and runs the first build in a terminal. VS Code and Maven only.
+  `Lathe: New Java Project` command for beginners: checks for a JDK 17+ (explains, never installs),
+  writes a minimal Lathe-enabled Maven project with the Maven Wrapper (no Maven install needed),
+  runs `test` as the first build so run/test work at once, and starts Lathe without a reload.
+  Steers away from a second Java language server. VS Code and Maven only.
 - [Wider Maven and JDK Support](done/lathe-wider-maven-support.md) — **done (2026-10-19, PR #24).** Maven
   3.6.3+ through a Plexus descriptor (Maven <3.9's Sisu silently dropped the extension) and the 3.6.3 API floor;
   JDK 17+ for every module, the server included, with javac API newer than 17 behind a multi-release jar
@@ -361,12 +363,15 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [Personal Setup](potential/lathe-personal-setup.md) — **potential, no decisions.** Records the
-  2026-10-18 discussion on using Lathe without changing the project, in VS Code/Cursor, Neovim, Zed,
-  Emacs and the terminal. Covers personal vs team mode; activation via `-Dmaven.ext.class.path` (Maven
-  3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by the generated sync script; option A (jars in the `.vsix`) vs
-  option B (a coordinate-invoked setup goal, the OpenJDK front-end's pattern); per-editor journeys;
-  detect-and-explain; open questions and spikes.
+- [Personal Setup](potential/lathe-personal-setup.md) — **potential; one part agreed.** Records the
+  2026-10-18 and 2026-10-24 discussions on using Lathe without changing the project, in VS Code/Cursor,
+  Neovim, Zed, Emacs and the terminal. Covers personal vs team mode; activation via
+  `-Dmaven.ext.class.path` (Maven 3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by the generated
+  sync script; option A (jars in the `.vsix`) vs option B (a coordinate-invoked setup goal, the OpenJDK
+  front-end's pattern); per-editor journeys; detect-and-explain; open questions and spikes. Agreed
+  (2026-10-24): the path from personal to team mode — an explicit command, one previewed
+  `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
+  and the project's registration winning over any other copy.
 - [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
   rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
   (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine

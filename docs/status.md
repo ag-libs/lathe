@@ -67,7 +67,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | Editor | Status |
 |---|---|
 | Neovim | Current and supported target; the client lives in `lathe-neovim/` and is published as the standalone `ag-libs/lathe.nvim` plugin. |
-| VS Code | Preview: a thin `vscode-languageclient` passthrough extension (`lathe-vscode/`, `.vsix` attached to each GitHub release, not on the Marketplace), also for Cursor; on Windows it starts the `.cmd` launcher (checked by hand on Windows, 2026-10-23); parity with the Neovim custom commands is backlog. See [the guide](guide/editors/vscode.md). |
+| VS Code | Preview: a thin `vscode-languageclient` passthrough extension (`lathe-vscode/`, `.vsix` attached to each GitHub release, not on the Marketplace), also for Cursor; on Windows it starts the `.cmd` launcher (checked by hand on Windows, 2026-10-23); parity with the Neovim custom commands is backlog. Known gaps (found 2026-10-24, fixes designed in `lathe-vscode-run-test.md` §4): a window with two Lathe folders starts only one server, and the whole-file "Add missing imports…" action does nothing (single-type import quick fixes work). See [the guide](guide/editors/vscode.md). |
 | Other LSP clients | May work, but are not qualified or supported before their roadmap scope is defined; Emacs (Eglot) and Zed have setup notes under `guide/editors/`; Zed's include Windows. |
 
 ## AI Agent Integration (MCP)

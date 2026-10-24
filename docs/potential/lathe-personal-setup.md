@@ -1,14 +1,16 @@
 # Lathe — Personal Setup (Lathe Without Changing the Project)
 
-Status: potential design, **no decisions taken**.
-This document records a design discussion held on 2026-10-18: the goals, the facts established, the options considered and their trade-offs, and the open questions.
-It is meant to be picked up again later. Where the discussion leaned towards an option, that is noted, but nothing here is approved.
+Status: potential design. One part agreed: the path from personal to team mode ([From personal to team](#from-personal-to-team), 2026-10-24); the rest has **no decisions taken**.
+This document records a design discussion held on 2026-10-18, continued on 2026-10-24: the goals, the facts established, the options considered and their trade-offs, and the open questions.
+It is meant to be picked up again later. Where the discussion leaned towards an option, that is noted; only the section marked agreed is approved, to be implemented with the rest later.
 
 Related designs:
 - [Multi-OS Design](../done/lathe-multi-os.md): the sync script that runs the tool that ran the build (D3, decided 2026-10-19) and the tool resolver (D9).
 - [Wider Maven Support](../done/lathe-wider-maven-support.md): the Maven 3.6.3 floor, the Plexus-descriptor fix, and detect-and-explain for unsupported setups.
 - [VS Code client](../planned/lathe-vscode-client.md): §7 first-run UX and §8 protocol handshake.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the existing coordinate-invoked front-end this design would reuse.
+- [New Java Project (VS Code)](../planned/lathe-vscode-new-project.md): the novice path when there is no project yet; it shares the JDK check, the launcher watcher and the Red Hat Java notice with this design.
+- [Run and Test in VS Code](../planned/lathe-vscode-run-test.md): what needs a test capture, and how a run reports a missing one.
 
 ## Problem / motivation
 
@@ -31,7 +33,7 @@ The audience:
 
 - **The user's project already builds with Maven on their machine.** Lathe does not install JDKs or Maven, and doesn't fix broken builds.
 - **Maven 3.6.3 or newer**, per Wider Maven Support.
-- **Maven must run on Java 21 or newer when Lathe is involved.** Lathe's own code stays Java 21+; a JDK 17 support request was declined.
+- **Maven must run on Java 17 or newer when Lathe is involved.** Lathe's own code targets Java 17 (decided 2026-10-18; it was Java 21 when this discussion started).
   The project can still *target* Java 8, 11 or 17 (`release` / `source` / `target`).
   Only the JVM that *runs* Maven matters, because the extension and compiler shim run inside it.
 
@@ -42,7 +44,7 @@ Consequently, pre-flight is about **detecting and explaining**, not installing.
 | | Personal mode | Team mode |
 |---|---|---|
 | Who | anyone, including someone in a repo they don't own | someone adopting Lathe for the team |
-| Changes to the project | none, apart from `.lathe/`, which ignores itself | one previewed change to the build registration |
+| Changes to the project | none, apart from `.lathe/`, which would ignore itself (a `.lathe/.gitignore` with `*`; not written today) | one previewed change to the build registration |
 | Lathe version | chosen by the client or the setup command | pinned by the project |
 | Terminal builds refresh `.lathe/` | only with a user-wide registration (Maven 3.10+), see below | yes |
 
@@ -58,6 +60,49 @@ Consequently, pre-flight is about **detecting and explaining**, not installing.
 | Gradle | nothing: show the settings-plugin line with a copy button | build scripts, because they are code |
 
 - A committed registration is safe for teammates without Lathe: Lathe is off without `.lathe/`, and skipped when `CI` is set.
+
+### From personal to team
+
+**Agreed 2026-10-24**, to be implemented with personal setup.
+A user who started in personal mode moves the project to team mode like this:
+
+1. **An explicit trigger**, never a side effect and never an automatic prompt:
+   - VS Code: **Lathe: Add to Project Build (for your team)**, also offered from the status bar's Lathe menu.
+   - Neovim: `:LatheSetup team`.
+   - Terminal: the setup goal in team mode (its name and flag follow the open goal-name question).
+2. **A preview of the one change**: create `.mvn/extensions.xml`, or add one `<extension>` block to an existing one; `pom.xml` is never touched.
+   In VS Code this is a reviewable, undoable `WorkspaceEdit`.
+   It pins **the version the user already runs** in personal mode, so nothing changes under them.
+3. **A re-sync.** The build now loads Lathe itself, so the sync script is rendered without the activation line (`-Dmaven.ext.class.path=…`).
+   `.lathe/` stays; nothing is downloaded again.
+4. **The user commits** `.mvn/extensions.xml` like any other file.
+   Teammates without Lathe are unaffected (see above).
+5. **What it gains:**
+   - the user's own terminal builds (`mvn test`) refresh `.lathe/`, also on Maven older than 3.10;
+   - teammates open the project in any Lathe editor with no setup step;
+   - the Lathe version is pinned by the project, not by each person's editor.
+
+What the design must get right:
+
+- **Lathe never loads twice. The project's registration wins.**
+  After step 2 Lathe can be registered twice:
+  - the old sync script's `-D` activation plus the project's registration;
+  - or, on Maven 3.10+, `~/.m2/extensions.xml` plus the project's file.
+
+  Two things prevent a double load:
+  - The extension detects a second copy of itself in the same build. The copy that didn't come from the project's registration stays inactive and logs one `[lathe]` line saying so.
+  - A sync that finds a project registration renders no activation line.
+
+  Spike (e) checks both cases.
+- **Version upgrades.** In personal mode the editor extension chooses the version; in team mode the project pins it.
+  An editor extension newer than the project's pin shows the existing protocol-mismatch message ("bump `lathe-maven-extension`"), so from team mode on, upgrading Lathe is a project change.
+- **Going back.**
+  - When the registration is removed from the project, personal mode takes over again at the user's next setup.
+  - A teammate who prefers personal mode in a team project still gets the project's pin: personal mode only fills in where the project has no registration.
+- **Discovery without nagging.** The command lives in the Lathe menu.
+  It is suggested at most once per project, and only at one of two moments:
+  - a terminal build left `.lathe/` stale, which only a project or user-wide registration prevents;
+  - the user dismisses the "build files changed, sync?" prompt for the third time.
 
 ## How Lathe can get into a build without project changes
 
@@ -110,7 +155,7 @@ or with `./mvnw` / `mvnw.cmd`, and optionally pinned (`…:0.1.22:setup`). The g
   - One mechanism for every editor and a bare terminal; no client bundles anything or contains Java-side logic.
   - The first command runs in a shell, which already resolves `mvn` to `mvn.cmd` on Windows.
   - Downloads go through the user's Maven.
-  - The goal runs inside Maven, so it can check Maven's JVM and stop early with the clear "Maven must run on Java 21+" message. That gives every client the same pre-flight check.
+  - The goal runs inside Maven, so it can check Maven's JVM and stop early with the clear "Maven must run on Java 17+" message. That gives every client the same pre-flight check.
   - Team mode is the same step without the activation line.
 - **Cons:** a nested Maven build, and a few extra seconds on first setup only.
 - **Unknowns:**
@@ -154,7 +199,7 @@ With multi-OS D3, every front-end's sync is the same script template, run with t
 |---|---|---|---|
 | 1 | Install | Marketplace (VS Code) or Open VSX (Cursor). The listing's first line: *"Java support from your real Maven build. Sets itself up without changing your project. Maven 3.6.3+."* | — |
 | 2 | Open a folder | For a Maven project without Lathe: **one** notification, *"Set up Lathe for this project? Your project files won't be changed."* [Set up] [Not now] [Learn more]. Silent for non-Maven folders. "Not now" is remembered per folder. | Finds the reactor root, walking up from a submodule if needed. Checks for `.lathe/`, a team registration and Red Hat Java. |
-| 3 | Pre-flight (seconds) | Silent unless something's wrong; otherwise a notification with the fix (see [Detecting and explaining](#detecting-and-explaining)). | Maven found; Maven ≥ 3.6.3; Maven runs on Java 21+. A setting such as `lathe.java.home` would let Lathe's own syncs use a different JDK. |
+| 3 | Pre-flight (seconds) | Silent unless something's wrong; otherwise a notification with the fix (see [Detecting and explaining](#detecting-and-explaining)). | Maven found; Maven ≥ 3.6.3; Maven runs on Java 17+. A setting such as `lathe.java.home` would let Lathe's own syncs use a different JDK. |
 | 4 | First sync (a minute to many minutes) | Status bar "Lathe: first build…", plus a terminal task with Maven's output. | Option A or B above. `process-test-classes` only: no tests are executed. |
 | 5 | Result | Success: "Indexing…" → "Lathe: ready", attached without a reload. `[lathe]` warnings become notifications with the fix. Failure: *"Your Maven build failed (not Lathe). [Open log]"* | — |
 | 6 | Daily work | Diagnostics, completion, navigation, refactorings. Cursor's AI also sees Lathe's diagnostics. A POM change or `git pull`: *"Build files changed. [Sync]"* | No VS Code code handles the `lathe/sync` notification today. |
@@ -196,8 +241,12 @@ Building on [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) 
 
 ## Other topics discussed
 
-- **Red Hat Java coexistence:** beginners often also install the Extension Pack for Java, which gives duplicate diagnostics and two indexers. An extension can't disable another. The idea: detect it once, explain in plain words, and offer "Use Lathe here" (workspace settings that quiet jdtls for this folder) or "Keep both".
-- **What the first sync captures:** `process-test-classes` (editing only, fast) versus also capturing tests (`--tests`) for run/test. The lean was: editing first; test capture on first "Run test", or as a checkbox.
+- **Red Hat Java coexistence:** beginners often also install the Extension Pack for Java, which gives duplicate diagnostics and two indexers. An extension can't disable another.
+  The first idea was to offer "Use Lathe here" through workspace settings that quiet jdtls, but in a single-folder workspace those settings are `.vscode/settings.json`, a project change that breaks personal mode's promise.
+  The approach since chosen for [New Java Project](../planned/lathe-vscode-new-project.md) §8 fits here as well: a one-time notice with *"Show extension"*, where *Disable (Workspace)* is one click and stored by VS Code, not in the project.
+- **What the first sync captures:** `process-test-classes` (editing only, fast) versus also capturing tests (`--tests`) for run/test. The lean was: editing first, because an existing project's tests can be slow or need services.
+  A test run without a capture already reports a blocked reason ([Run and Test in VS Code](../planned/lathe-vscode-run-test.md) §5.3), which can carry a *"Capture tests (runs the tests once)"* action.
+  A new project is the exception: its first build is `test`, because the build is tiny and the novice should see a passing test at once ([New Java Project](../planned/lathe-vscode-new-project.md) §6).
 - **Update policy:** prompt rather than auto-sync, since a sync is a full Maven build.
 - **Cursor extras, to check:** Lathe's diagnostics reach Cursor's AI through the language server. Whether an extension can register Lathe's MCP server for Cursor's agent, as recent VS Code allows, is unverified.
 - **Windows:** the one-liner is the same on every OS apart from `mvnw` vs `mvnw.cmd`. The scripts the setup writes follow the multi-OS rules.
@@ -209,7 +258,7 @@ Building on [Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) 
 3. **Versionless invocation in docs:** Maven 3 resolves the latest release (with a warning). Show the version (it goes stale) or not?
 4. **Should the setup goal run the first sync itself, or prepare and print the next command?**
 5. **The default activation:** per-run `-Dmaven.ext.class.path` only, with `~/.m2/extensions.xml` offered on 3.10+ as an opt-in ("Also refresh Lathe on your terminal builds?")?
-6. **Version precedence on Maven 3.10:** Lathe in both `~/.m2/extensions.xml` and the project's `.mvn/extensions.xml` at different versions; which wins? One proposal: the project wins.
+6. **Version precedence on Maven 3.10:** Lathe in both `~/.m2/extensions.xml` and the project's `.mvn/extensions.xml` at different versions; which wins? Agreed: the project wins ([From personal to team](#from-personal-to-team)); spike (e) checks how Maven itself orders the two, which the extension's double-load detection has to work with.
 7. **mvnd:** does it honor `-Dmaven.ext.class.path` per invocation, given that it caches core extensions per daemon? If not, fall back to `mvnw` / `mvn` in personal mode.
 8. **Removal:** a `teardown` goal and command, or "delete `.lathe/`" in the docs?
 9. **Red Hat Java:** what exactly to offer, and whether to detect it in a first version.
@@ -223,9 +272,11 @@ All of them fit into one session in a sandbox like the 2026-10-18 Maven 3.6.3 sp
 - **(b)** Maven on JDK 17 with Lathe registered: what does the user see?
 - **(c)** An `aggregator` setup goal invoked by coordinates inside a Maven project, on 3.6.3 and 3.9.16.
 - **(d)** The nested build started from that goal: stdio, exit code, Ctrl-C.
-- **(e)** Version precedence between `~/.m2/extensions.xml` and `.mvn/extensions.xml` on Maven 3.10.0.
+- **(e)** Double registration: which copy Maven loads, and in what order, with Lathe in both `~/.m2/extensions.xml` and `.mvn/extensions.xml` (Maven 3.10.0), and with a `-Dmaven.ext.class.path` activation on top of `.mvn/extensions.xml` (3.6.3, 3.9.16, 3.10.0).
+  Whether the extension can see the other copy, so the non-project one stays inactive.
 
 ## Milestone candidate
 
 Untriaged.
-The earliest it would make sense: after Wider Maven Support slice 1 (the extension loads on old Maven) and multi-OS Phase A (the recorded-tool sync script), and alongside the VS Code client's Marketplace / Open VSX publish.
+Its prerequisites have landed: Wider Maven Support (the extension loads on Maven 3.6.3+) and the multi-OS recorded-tool sync script are done, and the JDK 17 floor shipped.
+What remains is the spikes above, then the decisions; it makes most sense alongside the VS Code client's Marketplace / Open VSX publish.

@@ -4,14 +4,18 @@
 > `displayName "Lathe for Java"`, id `ag-libs.lathe`, esbuild-bundled, a ~70-line passthrough that
 > resolves `<root>/.lathe/lathe-launcher.sh` (or `LATHE_SERVER_DIR`) and starts a stdio
 > `LanguageClient`. It builds with **one tool** — `frontend-maven-plugin` fetches Node, runs the
-> prettier/tsc checks, and packages `lathe-vscode/target/lathe-<version>.vsix` (built once on JDK 21 in
-> CI), which `release.yml` attaches to the GitHub Release. Next: M2.
+> prettier/tsc checks, and packages `lathe-vscode/target/lathe-<version>.vsix` (built in CI on the JDK 21
+> Linux, macOS and Windows rows), which `release.yml` attaches to the GitHub Release. Not built yet: the
+> `@vscode/test-electron` E2E (its harness was spiked on 2026-10-24, see
+> [Run and Test in VS Code](lathe-vscode-run-test.md) §8.4). Next: M2.
 > **M1 — self-built, tester distribution:** we build the `.vsix` ourselves and hand it to a handful of
 > testers (local `.vsix` now; a GitHub release asset once `release.yml` is wired).
 > **M2 — go all in:** publish to the VS Code Marketplace + Open VSX, gated on naming/trademark
 > resolution and the first-run UX below (including the detect-pom-but-no-`.lathe` opt-in/build flow).
 > This doc captures the scope, launch/distribution model, source-of-truth decision, naming, first-run
-> UX, and end-to-end testing so the shape is agreed before any TypeScript is written.
+> UX, and end-to-end testing. Feature designs that build on it:
+> [Run and Test in VS Code](lathe-vscode-run-test.md), [New Java Project](lathe-vscode-new-project.md),
+> and, for existing projects, [Personal Setup](../potential/lathe-personal-setup.md).
 
 ## Goal
 
@@ -89,12 +93,12 @@ against VS Code APIs.
 |---|---|---|---|
 | Run main/test (`run.lua`) | `run.main/test/named`, `run.cancel`, `runnables.list/dir` | `Pseudoterminal` per run; **CodeLens** and the editor run button for run-under-cursor | medium — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) |
 | Test runner (`neotest`) | `runnables.list`, `run.test`, `lathe/testEvent`/`testFinished`/`testOutput` | **Test Explorer API** (`TestController`, streaming `TestRun` results) | high — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) |
-| Debug (`dap.lua`) | `debug.main/test/named` | Native **DebugAdapter** + `DebugConfigurationProvider` | high |
-| Run configs | `runconfig.save`, `runconfigs.list` | **QuickPick** + optional `launch.json` contribution | medium |
+| Debug (`dap.lua`) | `debug.main/test/named` | Native **DebugAdapter** + `DebugConfigurationProvider` | high — wiring recorded in [Run and Test in VS Code](lathe-vscode-run-test.md) §10 |
+| Run configs | `runconfig.save`, `runconfigs.list` | **QuickPick**; dynamic debug configurations, never written into `launch.json` | medium — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) §6 |
 | Resources browser (`resources.lua`) | `resources`, `resourceOpen`, `resource.refresh` | **TreeView** (custom view container) + read-only/virtual documents | medium |
 | Type hierarchy (`typehierarchy.lua`) | `typeHierarchy` | native LSP Type Hierarchy, or a **TreeView** | low–medium |
 | New type (`createType`) | `createType` | QuickPick + `WorkspaceEdit` | low |
-| Missing imports | `missingImports` | **CodeAction** / quick-fix | low |
+| Missing imports | `missingImports` | **CodeAction** / quick-fix, plus a client handler that builds the import edit (the command returns candidates, not an edit, so the passthrough does nothing today) | low — designed in [Run and Test in VS Code](lathe-vscode-run-test.md) §4 |
 | Module / package pickers | `modules`, `packages` | QuickPick / completion | low |
 | Workspace sync | `lathe/sync` | notification handler (status / mostly no-op) | low |
 | Indent + fold (`indent.lua`, `fold.lua`) | on-type indent; imports fold | `OnTypeFormatting` / indentation rules; `FoldingRangeProvider` | medium |
@@ -110,9 +114,13 @@ The extension spawns the existing launcher over stdio — the same target the Ne
 1. Resolve the launcher: `LATHE_SERVER_DIR` (dev override) `/lathe-launcher.sh` → else the workspace's
    own `<root>/.lathe/lathe-launcher.sh`, spawned with cwd = workspace root.
 2. If it is not executable, drive the first-run UX (§7) rather than failing silently.
-3. `ServerOptions = { command: launcher, transport: stdio }`;
-   `LanguageClientOptions = { documentSelector: [{ language: 'java' }] }`, `rootUri` = the folder
-   containing `.lathe`, walked up from the workspace folder.
+3. `ServerOptions = { command: launcher, transport: stdio }`, one client per workspace folder;
+   `LanguageClientOptions = { documentSelector: [{ scheme: 'file', language: 'java' }], workspaceFolder }`.
+   Today the launcher is looked up only in the workspace folder itself; walking up to a `.lathe` above it
+   is an open decision (below).
+   Multi-root needs two changes, designed and spiked in [Run and Test in VS Code](lathe-vscode-run-test.md) §4:
+   a folder-scoped selector (`RelativePattern(folder, '**/*')`), and stopping `vscode-languageclient`
+   from registering the server's commands, which today makes a two-folder window lose one of its servers.
 
 **Why not bundle the server/extension in the jar and cache-install it like the Neovim client.** The
 Neovim client is jar-bundled because Neovim loads a plugin from any local directory via
@@ -163,7 +171,7 @@ apply here).
 **Maven lifecycle** via **frontend-maven-plugin**: Maven downloads Node into `target/node` (no system
 Node, no nvm), runs `npm ci` + `npm run check` (prettier + tsc), and packages
 `lathe-vscode/target/lathe-<version>.vsix`. `skipTests` skips it for a fast local build; CI builds it
-**once on JDK 21** (excluded via `-pl '!lathe-vscode'` on the other matrix rows). So `release.yml` needs
+on the JDK 21 Linux, macOS and Windows rows (excluded via `-pl '!lathe-vscode'` on the others). So `release.yml` needs
 no Node step — `mvn -Prelease … deploy` produces the `.vsix` and the release just attaches it:
 
 ```yaml
@@ -173,7 +181,7 @@ no Node step — `mvn -Prelease … deploy` produces the `.vsix` and the release
              --generate-notes lathe-vscode/target/lathe-*.vsix
 ```
 
-CI's own `mvn install` builds the extension on the JDK 21 row, so no separate CI job is needed. No new
+CI's own `mvn install` builds the extension on those rows, so no separate CI job is needed. No new
 secret, no PAT, no mirror. Testers install from the release page:
 ```bash
 code --install-extension ~/Downloads/lathe.vsix   # --install-extension takes a local path, not a URL
@@ -250,13 +258,20 @@ project's `.lathe/`. This is the same trap the `lathe.nvim` design named ("insta
 happens, uninstall"); on the Marketplace it is amplified (wider, less patient audience; public,
 unremovable ratings). Silence is the enemy. Five layered defenses, strongest first:
 
-1. **Turn the failure into one click.** On *Maven project + no `.lathe/`*, show an actionable warning
-   with buttons — *"Run `mvn process-test-classes`"* (runs the build as a VS Code **Task** in the
-   integrated terminal), *"Setup guide"*, *"Don't show again"*. Then **watch for `.lathe/` appearing**
-   and auto-attach, so it lights up without a reload. Highest-impact fix.
+1. **Turn the failure into one click.** What the click does depends on the folder:
+   - *A Maven project that registers Lathe, but no `.lathe/`*: an actionable warning with buttons —
+     *"Run the build"* (`process-test-classes` as a VS Code **Task**, with the project's `mvnw` or the
+     found `mvn` run by its full path, never a bare tool name), *"Setup guide"*, *"Don't show again"*.
+   - *A Maven project that doesn't register Lathe*: running the build would load no Lathe, so the
+     offer is [Personal Setup](../potential/lathe-personal-setup.md) ("Set up Lathe for this project?
+     Your project files won't be changed."), once it is built.
+   - *No project open*: the [New Java Project](lathe-vscode-new-project.md) command.
+
+   Then **watch for the launcher appearing** and start the client, so it lights up without a reload
+   (built once, used by every path; [New Java Project](lathe-vscode-new-project.md) §7). Highest-impact fix.
 2. **Native Walkthrough on install** (`contributes.walkthroughs`): a 3-step checklist — ① open a Maven
-   project · ② run `mvn process-test-classes` (button) · ③ open a Java file — that opens automatically
-   after install and sets expectations *before* the trap.
+   project or create one (New Java Project) · ② set it up or build it (button, per #1) · ③ open a Java
+   file — that opens automatically after install and sets expectations *before* the trap.
 3. **Status bar item** for constant feedback: `Lathe: not set up → starting → indexing… → ready
    (N modules)`. Impatient users need to *see* progress, especially through the ~12s first-compile/
    index warmup (the same warmup behind the "empty findReferences on cold start" behavior).
@@ -269,6 +284,10 @@ unremovable ratings). Silence is the enemy. Five layered defenses, strongest fir
 **Silence-is-never-acceptable rule:** every unattached state gets an actionable signal — *except*
 genuinely non-Maven projects, where the extension stays silent so Lathe never nags on code it cannot
 serve (same principle as the nvim nudge). Fire the nudge **once per root**, not per buffer.
+
+**A second Java language server** (Red Hat's, often installed with the Extension Pack for Java) gets a
+one-time notice with a *"Show extension"* button, never an attempt to disable it; see
+[New Java Project](lathe-vscode-new-project.md) §8.
 
 M1 testers are the input to this section: their friction observations shape which of #1–#5 are
 mandatory before M2 publish.
@@ -301,7 +320,8 @@ and testing splits into three tiers by how much of the stack each needs:
    the workspace's **`.lathe/lathe-launcher.sh`** — all of which the monorepo already produces via the
    `multi-module` invoker fixture. A `@vscode/test-electron` run slots in beside `run-specs.sh` in
    `integration-test`, testing the **working-tree** server before release. CI needs `xvfb` (headless
-   Electron is heavier than nvim).
+   Electron is heavier than nvim); the harness, its pins and a rootless local Xvfb recipe are in
+   [Run and Test in VS Code](lathe-vscode-run-test.md) §8.4.
 
 The working-tree E2E of tier 3 is the reason the client lives in the monorepo (§4). A standalone repo
 could reach tier 3 only via a **published-server bootstrap** (a sample project using the released
@@ -315,7 +335,8 @@ documented fallback if the source of truth is ever flipped, not the primary.
   reactor root where `.lathe` lives, do we walk up past the workspace-folder boundary to find `.lathe`
   (matching Neovim) or require opening the reactor root? Leaning toward walk-up for parity.
 - **Feature baseline for M1 testers** — passthrough only, or passthrough plus one or two low-effort
-  custom commands (missing-imports quick-fix, `createType`)? To decide when M1 starts.
+  custom commands (missing-imports quick-fix, `createType`)? To decide when M1 starts. Note that the
+  passthrough's "Add missing imports…" does nothing visible today (§2 table).
 - **Mirror repo name** for M2 (`ag-libs/lathe.vscode` assumed).
 
 ## Out of Scope
