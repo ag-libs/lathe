@@ -10123,6 +10123,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+gopls tells agents to call `go_workspace` first; IntelliJ's MCP server has `get_project_modules` and
+`get_project_dependencies`.
+Lathe holds the same facts in `.lathe/` — modules, source roots, inter-module dependencies, release
+level, which modules have a captured test launch, the sync command — but an agent has to guess them
+from POMs.
+
+### Fix
+
+- `workspace_summary` (no arguments) lists every reactor module with the reactor modules it depends
+  on (those on its classpath, which with Maven include transitive ones) and, for a module with tests, whether its test launch is captured; the header names the
+  sync command and its scoped form, the footer the command that captures a module's tests.
+- The module graph now keeps the per-module dependencies it already computed from the classpaths
+  (`WorkspaceModuleGraph.upstreamModuleDirs`); `LaunchReader.testCaptured` checks for the captured
+  launch without reading it.
+- The summary is built on the event loop, where session state lives, as a static core over
+  `(configs, workspaceRoot, graph)` like the session's other module listings.
+- A long dependency list names the first ten and counts the rest, as `verify_change` does; the
+  structured result keeps every name.
+- Left out: the Java release (a module may have none recorded, and diagnostics already reject syntax
+  past it) and the build tool (the sync script runs the recorded one).
+
+### Regression targets
+
+- `WorkspaceModuleGraphTest.upstreamModuleDirs_chain_theModulesOnItsClasspath`
+- `WorkspaceSessionTest.moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists`
+- `LatheEngineTest.modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture`
+- `LatheMcpToolsTest.modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut`
+- `LatheMcpToolsTest.workspaceSummary_emptyWorkspace_answersNoModulesNotAnError`
+
+---
+
 ## MC-24 — No file outline tool: an agent reads a whole file to learn its structure — done
 
 **Status: done — Target: next**

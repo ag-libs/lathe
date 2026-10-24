@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
 import io.github.aglibs.lathe.server.engine.LatheReferences;
@@ -109,7 +110,8 @@ final class LatheMcpTools {
         verifyChange(engine, mapper),
         formatFile(engine, mapper),
         fixImports(engine, mapper),
-        outline(engine, mapper));
+        outline(engine, mapper),
+        workspaceSummary(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -407,6 +409,29 @@ final class LatheMcpTools {
             .annotations(READ_ONLY)
             .build();
     return spec(tool, request -> handleOutline(engine, request));
+  }
+
+  private static SyncToolSpecification workspaceSummary(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "workspace_summary",
+                mapper,
+                """
+                {"type":"object","properties":{}}""")
+            .description(
+                """
+                The reactor at a glance: every module, the reactor modules it depends on, \
+                and whether its test launch is captured (which run_test needs), plus the sync \
+                command that builds them. Call it first in an unfamiliar project, instead of \
+                reading the build files.\
+                """)
+            .annotations(READ_ONLY)
+            .build();
+    return spec(
+        tool,
+        request ->
+            guarded("workspace_summary", "workspace", () -> modulesResult(engine.modules())));
   }
 
   private static SyncToolSpecification spec(
@@ -837,6 +862,44 @@ final class LatheMcpTools {
         "snippet", item.location().snippet());
   }
 
+  static CallToolResult modulesResult(final List<LatheModuleSummary> modules) {
+    final String text =
+        "%d module(s); build them with `%s`, one with `%s`.%n%s%n%nCapture a module's tests for run_test with `%s`."
+            .formatted(
+                modules.size(),
+                LatheLayout.SYNC_SCRIPT_COMMAND,
+                LatheLayout.scopedSyncCommand(List.of("<module>")),
+                modules.stream()
+                    .map(LatheMcpTools::moduleLine)
+                    .collect(Collectors.joining(System.lineSeparator())),
+                LatheLayout.captureTestsCommand("<module>"));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "modules", modules.stream().map(LatheMcpTools::moduleSummaryMap).toList()),
+        NO_NOTES);
+  }
+
+  private static String moduleLine(final LatheModuleSummary module) {
+    final String upstream =
+        module.dependsOn().isEmpty()
+            ? ""
+            : "  depends on: %s".formatted(listed(module.dependsOn()));
+    final String tests =
+        !module.hasTests()
+            ? ""
+            : "  tests: %s".formatted(module.testsCaptured() ? "captured" : "not captured");
+    return "%s%s%s".formatted(module.module(), upstream, tests);
+  }
+
+  private static Map<String, Object> moduleSummaryMap(final LatheModuleSummary module) {
+    return Map.<String, Object>of(
+        "module", module.module(),
+        "dependsOn", module.dependsOn(),
+        "hasTests", module.hasTests(),
+        "testsCaptured", module.testsCaptured());
+  }
+
   static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
     final List<MissingImport> ambiguous =
         imports.unresolved().stream().filter(item -> !item.candidates().isEmpty()).toList();
@@ -1106,17 +1169,21 @@ final class LatheMcpTools {
     }
 
     final List<String> modules = verify.affectedModules();
-    final String listed = modules.stream().limit(LISTED_MODULES).collect(Collectors.joining(", "));
-    final String more =
-        modules.size() > LISTED_MODULES
-            ? ", and %d more".formatted(modules.size() - LISTED_MODULES)
-            : "";
     final String advice =
         errors == 0
             ? "their callers compile, so a full build is optional"
             : "fix the errors and re-check, or build them with";
-    return "%n%n%d module(s) depend on your change (%s%s); %s:%n  %s"
-        .formatted(modules.size(), listed, more, advice, verify.suggestedSync());
+    return "%n%n%d module(s) depend on your change (%s); %s:%n  %s"
+        .formatted(modules.size(), listed(modules), advice, verify.suggestedSync());
+  }
+
+  // A core module has a hundred dependents: the first few name the shape, the structured result
+  // keeps every name.
+  private static String listed(final List<String> modules) {
+    final String first = modules.stream().limit(LISTED_MODULES).collect(Collectors.joining(", "));
+    return modules.size() > LISTED_MODULES
+        ? "%s, and %d more".formatted(first, modules.size() - LISTED_MODULES)
+        : first;
   }
 
   private static Map<String, Object> verifyStructured(

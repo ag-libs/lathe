@@ -1146,6 +1146,25 @@ class LatheEngineTest {
   }
 
   @Test
+  void modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture() throws Exception {
+    apiReactor(List.of("app1"), List.of("tool1"));
+    Files.writeString(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve("app1").resolve(LatheLayout.TEST_LAUNCH_FILE),
+        "{}");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.modules())
+        .extracting(
+            LatheModuleSummary::module,
+            LatheModuleSummary::dependsOn,
+            LatheModuleSummary::testsCaptured)
+        .containsExactly(
+            tuple("api", List.of(), false),
+            tuple("app1", List.of("api"), true),
+            tuple("tool1", List.of(), false));
+  }
+
+  @Test
   void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
     final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
     engine = new LatheEngine(tmp);

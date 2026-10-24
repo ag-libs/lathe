@@ -539,6 +539,11 @@ public final class LatheEngine {
         to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
   }
 
+  // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
+  public List<LatheModuleSummary> modules() {
+    return await(service.moduleSummariesFuture());
+  }
+
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
   // sync that would. No files: what changed on disk plus what the tools wrote since the last check.
   // A pending build-file sync or a running build defers the check to a full sync.

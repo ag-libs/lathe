@@ -69,6 +69,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 
 | Tool                   | What it does                                                         |
 |------------------------|---------------------------------------------------------------------|
+| `workspace_summary`    | every module, the reactor modules it depends on, its test capture, and the sync command |
 | `get_diagnostics`      | compiler errors, warnings, and unused-code hints for one file — no build |
 | `get_definition`       | resolve a symbol to its definition, incl. dependencies/JDK/generated |
 | `find_references`      | every real use of a symbol across the reactor                       |

@@ -76,6 +76,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 
 | Tool | Status | Notes |
 |---|---|---|
+| `workspace_summary` | Implemented | Every reactor module, the reactor modules on its classpath, which with Maven includes transitive ones (the first ten named, then a count; the structured result keeps all), and, for a module with tests, whether its test launch is captured; with the sync command, the scoped one, and the command that captures a module's tests. The routing instructions say to call it first. Read-only. |
 | `get_diagnostics` | Implemented | Single-file compiler diagnostics, plus unused-code hints, on the captured build classpath — no build. |
 | `get_definition` | Implemented | Resolves into reactor, dependency, JDK, and generated sources. |
 | `find_references` | Implemented | Reactor-wide, javac-accurate; resolves overloads/inheritance. |

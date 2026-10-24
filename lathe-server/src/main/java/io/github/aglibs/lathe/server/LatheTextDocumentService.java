@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
@@ -120,6 +121,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
   /** The files written on report since the last call, for a verify_change given no files. */
   public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
     return worker.submit(session::takeWrittenSinceVerify);
+  }
+
+  // A lambda, not session::moduleSummaries: the session is created on the event loop, possibly
+  // after this call, and a method reference would read it now.
+  public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
+    return worker.submit(() -> session.moduleSummaries());
   }
 
   /** The changed files plus their same-module candidate callers, grouped by module rel. */

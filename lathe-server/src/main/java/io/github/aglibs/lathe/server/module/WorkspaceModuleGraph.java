@@ -26,12 +26,15 @@ public final class WorkspaceModuleGraph {
   private static final Logger LOG = Logger.getLogger(WorkspaceModuleGraph.class.getName());
 
   private final Map<Path, List<ModuleSourceConfig>> configsByModuleDir;
+  private final Map<Path, Set<Path>> directDeps;
   private final Map<Path, Set<Path>> downstreamOf;
 
   private WorkspaceModuleGraph(
       final Map<Path, List<ModuleSourceConfig>> configsByModuleDir,
+      final Map<Path, Set<Path>> directDeps,
       final Map<Path, Set<Path>> downstreamOf) {
     this.configsByModuleDir = configsByModuleDir;
+    this.directDeps = Map.copyOf(directDeps);
     this.downstreamOf = downstreamOf;
   }
 
@@ -59,7 +62,7 @@ public final class WorkspaceModuleGraph {
                                     config.remappedModulepath().stream())
                                 .map(classDirToModuleDir::get)
                                 .filter(dep -> dep != null && !dep.equals(config.moduleDir())),
-                        Collectors.toSet())));
+                        Collectors.toUnmodifiableSet())));
 
     final var directDependents = new HashMap<Path, Set<Path>>();
     for (final var m : configsByModuleDir.keySet()) {
@@ -86,7 +89,7 @@ public final class WorkspaceModuleGraph {
                         .sorted()
                         .collect(Collectors.joining(", "))));
 
-    return new WorkspaceModuleGraph(configsByModuleDir, downstreamOf);
+    return new WorkspaceModuleGraph(configsByModuleDir, directDeps, downstreamOf);
   }
 
   public List<ModuleSourceConfig> configsForModule(final Path moduleDir) {
@@ -97,6 +100,11 @@ public final class WorkspaceModuleGraph {
     return downstreamOf.getOrDefault(declaring.moduleDir(), Set.of(declaring.moduleDir())).stream()
         .flatMap(dir -> configsByModuleDir.getOrDefault(dir, List.of()).stream())
         .toList();
+  }
+
+  // The reactor modules on this one's class or module path: with Maven, transitive ones too.
+  public Set<Path> upstreamModuleDirs(final Path moduleDir) {
+    return directDeps.getOrDefault(moduleDir, Set.of());
   }
 
   // The module itself plus every module transitively depending on it -- the set whose open files

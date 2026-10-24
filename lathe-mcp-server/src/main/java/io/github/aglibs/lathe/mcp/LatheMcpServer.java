@@ -42,7 +42,8 @@ public final class LatheMcpServer {
   static final String INSTRUCTIONS =
       """
       Lathe provides javac-accurate, cross-module code intelligence for this multi-module Java build \
-      — precise where text search is ambiguous. Choose by task:
+      — precise where text search is ambiguous. In an unfamiliar project, call workspace_summary \
+      first: the modules, what each depends on, and the sync command. Choose by task:
 
       - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
       every override/implementation, and all call sites across modules, and nothing that merely \

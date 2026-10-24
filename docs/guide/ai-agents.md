@@ -102,6 +102,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
+| `workspace_summary` | — | every module, the reactor modules it depends on (all on its classpath, transitive ones included with Maven), and whether its test launch is captured, plus the sync command; call it first in an unfamiliar project |
 | `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
@@ -127,7 +128,7 @@ a line answers with an error that shows the line, rather than with the enclosing
 (`class` — default — / `method` / `package`).
 
 Each tool declares the MCP annotations that say whether it writes:
-the query tools (`outline` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
+the query tools (`outline` and `workspace_summary` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
 `run_test` is neither (it runs code but writes no source), and `format_file` and `fix_imports` are
 neither but `idempotentHint` (running them twice changes nothing more).
 What a client does with them is up to the client.

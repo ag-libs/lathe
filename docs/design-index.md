@@ -226,7 +226,9 @@ reused):
   the official MCP Java SDK, calling the engine in-process via a `LatheEngine` facade, with its own
   launcher. The tool surface is now feature-complete — `get_diagnostics`, `get_definition`,
   `find_references`, `find_implementations`, `call_hierarchy`, `search_symbols`, `describe_symbol`,
-  `rename_symbol`, `run_test`, `analyze_change`, and `verify_change`, each with per-call usage logging;
+  `rename_symbol`, `run_test`, `analyze_change`, `verify_change`, and (since
+  [Agent Tools](done/lathe-agent-tools.md)) `workspace_summary`, `outline`, `format_file` and
+  `fix_imports`, each with per-call usage logging;
   remaining work is the scaled measurement run, streaming/cancel, and the Claude Code LSP plugin.
 - [Change Impact & Verification](done/lathe-change-impact-and-verification.md) — **shipped
   (2026-09-26).** Two paired agent
@@ -235,6 +237,10 @@ reused):
   drives the in-process write pass — Tier 1, since 2026-10-11 the
   [One Write Pass](done/lathe-recompile-simplification.md) — plus a scoped `.lathe/lathe-sync.sh` handoff
   for the cross-module remainder — Tier 3).
+- [Agent Tools](done/lathe-agent-tools.md) — **shipped (2026-10-24).** What other code-intelligence
+  servers give an agent and Lathe did not: tool annotations (read-only vs writing), `format_file`
+  (the project's pinned formatter), `fix_imports` (the unambiguous missing imports), `outline` (a
+  file's declarations) and `workspace_summary` (the modules and their dependencies, called first).
 - [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
   MCP server makes an agent measurably better on a real Maven reactor: adopt the SWE-bench /
   Multi-SWE-bench plumbing and make Lathe the single ablation variable (grep-only baseline vs agent +

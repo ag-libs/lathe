@@ -2,12 +2,12 @@
 
 ## Status
 
-**Approved 2026-10-24, not started.**
+**Shipped 2026-10-24** (PR #48, one commit per gap).
 Implements the five accepted gaps from the agent-tooling landscape review —
-[MC-21 to MC-25](../gaps/gaps.md#mcp--agent-facade-gaps-mc) — on branch `agent-tools` in the
-`../lathe-agent-tools` worktree, as one PR with **one commit per gap**, the user reviewing after each.
+MC-21 to MC-25, now in [the gap archive](../gaps/gaps-archive.md#mcp--agent-facade-resolved), each
+with what was built and where it differs from the design below.
 The review that found them is in
-[AI Agent Integration — Landscape update](lathe-ai-agent-integration.md#landscape-update-oct-2026).
+[AI Agent Integration — Landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
 
 ## Goal
 

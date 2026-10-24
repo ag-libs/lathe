@@ -680,30 +680,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-gopls tells agents to call `go_workspace` first; IntelliJ's MCP server has `get_project_modules` and
-`get_project_dependencies`.
-Lathe holds the same facts in `.lathe/` — modules, source roots, inter-module dependencies, release
-level, which modules have a captured test launch, the sync command — but an agent has to guess them
-from POMs.
-
-### Fix direction
-
-A `workspace_summary` tool returning those facts compactly, from the manifest and the module registry;
-the server's routing instructions suggest calling it first.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-26 — `search_symbols` finds types only, not methods or fields
 
 **Status: documented**

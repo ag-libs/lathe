@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
@@ -70,7 +71,8 @@ class LatheMcpToolsTest {
             "verify_change",
             "format_file",
             "fix_imports",
-            "outline");
+            "outline",
+            "workspace_summary");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -111,7 +113,8 @@ class LatheMcpToolsTest {
             "find_implementations",
             "analyze_change",
             "verify_change",
-            "outline");
+            "outline",
+            "workspace_summary");
     assertThat(tool("rename_symbol").tool().annotations().destructiveHint()).isTrue();
     assertThat(tool("run_test").tool().annotations().destructiveHint()).isFalse();
     assertThat(List.of("format_file", "fix_imports"))
@@ -337,6 +340,38 @@ class LatheMcpToolsTest {
 
   private SyncToolSpecification tool(final String name) {
     return specs.stream().filter(spec -> spec.tool().name().equals(name)).findFirst().orElseThrow();
+  }
+
+  @Test
+  void workspaceSummary_emptyWorkspace_answersNoModulesNotAnError() {
+    final CallToolResult result = call("workspace_summary", Map.of());
+
+    assertThat(result.isError()).isNotEqualTo(true);
+    assertThat(text(result)).startsWith("0 module(s)");
+  }
+
+  @Test
+  void modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut() {
+    final List<String> upstream =
+        IntStream.rangeClosed(1, 12).mapToObj("lib%02d"::formatted).toList();
+
+    final String text =
+        text(
+            LatheMcpTools.modulesResult(
+                List.of(
+                    new LatheModuleSummary("app", upstream, true, true),
+                    new LatheModuleSummary("lib01", List.of(), true, false),
+                    new LatheModuleSummary("docs", List.of(), false, false))));
+
+    assertThat(text.lines())
+        .contains(
+            "app  depends on: lib01, lib02, lib03, lib04, lib05, lib06, lib07, lib08, lib09, lib10, and 2 more  tests: captured",
+            "lib01  tests: not captured",
+            "docs")
+        .first()
+        .asString()
+        .startsWith("3 module(s); build them with `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+    assertThat(text).endsWith("`%s`.".formatted(LatheLayout.captureTestsCommand("<module>")));
   }
 
   @Test

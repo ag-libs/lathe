@@ -48,6 +48,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DapHost;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -722,7 +723,7 @@ final class WorkspaceSession {
 
   static List<String> modules(final List<ModuleSourceConfig> configs, final Path workspaceRoot) {
     return configs.stream()
-        .map(config -> moduleRel(workspaceRoot, config))
+        .map(config -> moduleRel(workspaceRoot, config.moduleDir()))
         .distinct()
         .sorted()
         .toList();
@@ -731,7 +732,7 @@ final class WorkspaceSession {
   static List<PackageEntry> packages(
       final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
     return configs.stream()
-        .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+        .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
         .flatMap(WorkspaceSession::packageEntries)
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
@@ -761,7 +762,7 @@ final class WorkspaceSession {
       }
 
       final String pkg = packageOf(root.get(), dirPath);
-      final String moduleRel = moduleRel(workspaceRoot, config);
+      final String moduleRel = moduleRel(workspaceRoot, config.moduleDir());
       if (pkg.isEmpty()) {
         return moduleRun(configs, workspaceRoot, moduleRel);
       }
@@ -776,7 +777,8 @@ final class WorkspaceSession {
     final List<ModuleSourceConfig> enclosed =
         testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
     if (enclosed.size() == 1) {
-      return moduleRun(configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0)));
+      return moduleRun(
+          configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0).moduleDir()));
     }
 
     return new DirRun("", List.of());
@@ -892,7 +894,7 @@ final class WorkspaceSession {
       final List<String> classNames) {
     final List<Path> roots =
         testConfigs(configs).stream()
-            .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+            .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
             .flatMap(config -> config.sourceRoots().stream())
             .toList();
     return classNames.stream()
@@ -964,7 +966,7 @@ final class WorkspaceSession {
         .map(
             root ->
                 new ContextInfo(
-                    moduleRel(workspaceRoot, config),
+                    moduleRel(workspaceRoot, config.moduleDir()),
                     scopeWire(config),
                     packageOf(root, path.getParent())));
   }
@@ -1408,7 +1410,7 @@ final class WorkspaceSession {
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
-    return moduleRel(workspaceRoot, config);
+    return moduleRel(workspaceRoot, config.moduleDir());
   }
 
   // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
@@ -1424,13 +1426,13 @@ final class WorkspaceSession {
         .map(rel -> rel.isEmpty() ? "." : rel);
   }
 
-  private static String moduleRel(final Path workspaceRoot, final ModuleSourceConfig config) {
-    return FileUtil.slashed(
-        workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()));
+  // A module's .lathe directory as the reactor-relative module path the tools and the sync use.
+  private static String moduleRel(final Path workspaceRoot, final Path moduleDir) {
+    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
   private String moduleRelForDir(final Path moduleDir) {
-    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
+    return moduleRel(workspaceRoot, moduleDir);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -3674,6 +3676,35 @@ final class WorkspaceSession {
   int reactorModuleCount() {
     return (int)
         workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+  }
+
+  List<LatheModuleSummary> moduleSummaries() {
+    return moduleSummaries(workspace.allConfigs(), workspaceRoot, moduleGraph);
+  }
+
+  static List<LatheModuleSummary> moduleSummaries(
+      final List<ModuleSourceConfig> configs,
+      final Path workspaceRoot,
+      final WorkspaceModuleGraph graph) {
+    final var launches = new LaunchReader(workspaceRoot);
+    return configs.stream()
+        .collect(Collectors.groupingBy(ModuleSourceConfig::moduleDir))
+        .entrySet()
+        .stream()
+        .map(
+            module -> {
+              final String rel = moduleRel(workspaceRoot, module.getKey());
+              return new LatheModuleSummary(
+                  rel,
+                  graph.upstreamModuleDirs(module.getKey()).stream()
+                      .map(dir -> moduleRel(workspaceRoot, dir))
+                      .sorted()
+                      .toList(),
+                  module.getValue().stream().anyMatch(ModuleSourceConfig::isTestTree),
+                  launches.testCaptured(rel));
+            })
+        .sorted(Comparator.comparing(LatheModuleSummary::module))
+        .toList();
   }
 
   List<String> downstreamModuleRels(final List<Path> changed) {

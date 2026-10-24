@@ -39,6 +39,7 @@ client = mcp.McpClient(mcp._default_launcher(), ws)
 originals = {p: p.read_text() for p in (DURATION, CALLER, TEST)}
 try:
     client.initialize()
+    ask(client, "0 the reactor at a glance", "workspace_summary", {}, 8)
     ask(client, "1 find the type", "search_symbols", {"query": "Duration"}, 6)
     ask(client, "1b its structure", "outline", {"file": str(DURATION)}, 12)
     line, col = locate(DURATION, "public long toMilliseconds")
