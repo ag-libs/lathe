@@ -8338,6 +8338,35 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-16 — A source whose content changes while its mtime is put back is not recompiled — non-goal
+
+**Status: non-goal.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on all three test workspaces, through MCP and
+through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s); an edge case.
+
+### Observed behaviour
+
+A source was changed and its previous mtime restored (as `cp -p`, `rsync -t`, or extracting an
+archive does).
+Dependents kept compiling against the old classes, also after 8 s.
+Editor: an open dependent kept its clean diagnostics for 10 s, and the mirror class kept the old method.
+
+### Cause
+
+Staleness is "mtime differs from the compile stamp"
+([compile stamps](../done/lathe-staleness-compile-stamps.md)); content is not compared.
+
+### Decision
+
+Not fixed (2026-10-24).
+Git, editors, and agents' file tools always bump the mtime; only tools that copy timestamps on
+purpose leave it, and a sync then repairs the mirror.
+Recording the size beside the mtime would not catch a same-size edit (the probe's `int a()` →
+`int b()` is one), and hashing every source on each scan would cost far more than the case is worth.
+
+---
+
 ## WS-15 — Annotation processors built in the reactor never run in-process — done
 
 **Status: done — Target: next.**

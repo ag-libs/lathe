@@ -419,35 +419,6 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-16 — A source whose content changes while its mtime is put back is not recompiled
-
-**Status: documented.**
-**Affects: the editor and MCP.**
-Found by the external-change staleness probe (2026-10-24) on all three test workspaces, through MCP and
-through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s); an edge case.
-
-### Observed behaviour
-
-A source was changed and its previous mtime restored (as `cp -p`, `rsync -t`, or extracting an
-archive does).
-Dependents kept compiling against the old classes, also after 8 s.
-Editor: an open dependent kept its clean diagnostics for 10 s, and the mirror class kept the old method.
-
-### Cause
-
-Staleness is "mtime differs from the compile stamp"
-([compile stamps](../done/lathe-staleness-compile-stamps.md)); content is not compared.
-
-### Fix direction
-
-Probably a non-goal: git and editors always bump the mtime.
-If it matters, record size alongside mtime in the stamp, which catches most such copies at no extra
-cost.
-
-### Regression targets
-
-None yet.
-
 ---
 
 # Test Execution Gaps (TE)
