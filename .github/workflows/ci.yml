@@ -81,19 +81,25 @@ jobs:
         #
         # The JDK 17 row runs every test and the invoker fixture builds on JDK 17, and switches off
         # the multi-release test layering, which is for JDK 21+ test runs.
+        #
+        # The Gradle plugin builds in the JDK 21 Linux row and the Windows row only: its code is plain
+        # JVM code, Windows is where paths and processes differ, and the invoker rows run its fixtures
+        # on the older Gradle versions, the floor on JDK 17 included.
+        env:
+          GRADLE: ${{ !((matrix.java == '21' && runner.os == 'Linux') || runner.os == 'Windows') && '-Dlathe.gradle.skip=true' || '' }}
         run: |
           if [ "${{ matrix.java }}" = "17" ]; then
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
               -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
-              -P '!multi-release-jdk21'
+              -P '!multi-release-jdk21' $GRADLE
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install
+            env -u CI mvn -B --no-transfer-progress clean install $GRADLE
           elif [ "${{ runner.os }}" = "Windows" ]; then
             # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
             # since Cursor on Windows is a target.
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
           else
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
       - name: Verify javadoc and sources generate
@@ -110,12 +116,14 @@ jobs:
           path: |
             **/target/surefire-reports/
             lathe-maven-plugin/target/it/**/build.log
+            lathe-gradle-plugin/target/gradle/reports/tests/
           retention-days: 7
 
   invoker-maven:
     # The Maven version matters only to the invoker suite, which runs the fixture builds with Maven;
-    # Lathe itself builds on 3.9. Older and newer Maven releases get one invoker-only row each.
-    name: Invoker (Maven ${{ matrix.maven }}, JDK ${{ matrix.java }})
+    # Lathe itself builds on 3.9. Older and newer Maven releases get one invoker-only row each, and
+    # each row runs the Gradle plugin's fixtures on an older Gradle, the latest being in every main row.
+    name: Invoker (Maven ${{ matrix.maven }}, Gradle ${{ matrix.gradle }}, JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -123,10 +131,13 @@ jobs:
         include:
           - maven: '3.6.3'
             java: '17'
+            gradle: '8.8'
           - maven: '3.8.8'
             java: '21'
+            gradle: '8.14.6'
           - maven: '3.10.0'
             java: '21'
+            gradle: '9.0.0'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -141,6 +152,11 @@ jobs:
           curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${{ matrix.maven }}/binaries/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
             | tar xz -C "$RUNNER_TEMP"
 
+      - name: Download Gradle ${{ matrix.gradle }} for the fixture builds
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+
       - name: Invoker suite
         # Builds the reactor without running unit tests (maven.test.skip.exec; skipTests would also skip
         # the invoker), so every extraArtifact comes from this build, then runs the fixture builds with
@@ -148,6 +164,7 @@ jobs:
         run: |
           env -u CI mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
             -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
+            -Dlathe.gradle.fixturesHome="$RUNNER_TEMP/gradle-${{ matrix.gradle }}" \
             -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64"
 
       - name: Upload invoker logs
@@ -155,5 +172,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: invoker-logs-maven${{ matrix.maven }}-jdk${{ matrix.java }}
-          path: 'lathe-maven-plugin/target/it/**/build.log'
+          path: |
+            lathe-maven-plugin/target/it/**/build.log
+            lathe-gradle-plugin/target/gradle/reports/tests/
           retention-days: 7

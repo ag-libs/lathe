@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.install.jdk;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -14,6 +15,7 @@ public final class JdkSourceResolver {
   private static final String IMPLEMENTOR_VERSION = "IMPLEMENTOR_VERSION";
   private static final String IMPLEMENTOR = "IMPLEMENTOR";
   private static final String JAVA_VERSION = "JAVA_VERSION";
+  private static final String UNKNOWN = "unknown";
   private static final List<String> LEGAL_SUFFIXES =
       List.of(" Corporation", " Corp.", " Corp", " Inc.", " Inc", " Ltd.", " LLC");
 
@@ -26,11 +28,28 @@ public final class JdkSourceResolver {
   public static JdkSource resolve(final Map<String, String> env) {
     final var vendor = System.getProperty("java.vendor");
     final var version = System.getProperty("java.version");
-    final Path home = resolveHome(env.get("JAVA_HOME"));
-    if (home == null) {
+    final String javaHome = env.get("JAVA_HOME");
+    final String raw =
+        javaHome != null ? javaHome : System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
+    if (raw == null) {
       return JdkSource.missing(vendor, version, cacheKey(null, vendor, version), null);
     }
 
+    return resolve(realPath(Path.of(raw)), vendor, version);
+  }
+
+  // A JDK other than the running one, such as the toolchain a Gradle build compiles with: its
+  // vendor and version come from its release file.
+  public static JdkSource resolveAt(final Path javaHome) {
+    final Path home = realPath(javaHome);
+    final Map<String, String> release = parseReleaseFile(home);
+    return resolve(
+        home,
+        release.getOrDefault(IMPLEMENTOR, UNKNOWN),
+        release.getOrDefault(JAVA_VERSION, UNKNOWN));
+  }
+
+  private static JdkSource resolve(final Path home, final String vendor, final String version) {
     final var key = cacheKey(home, vendor, version);
     final var sourceZip = home.resolve("lib").resolve("src.zip");
     final var sourceDir =
@@ -42,14 +61,7 @@ public final class JdkSourceResolver {
     return JdkSource.missing(vendor, version, key, home);
   }
 
-  private static Path resolveHome(final String javaHome) {
-    final String raw =
-        javaHome != null ? javaHome : System.getProperty(LatheLayout.JAVA_HOME_PROPERTY);
-    if (raw == null) {
-      return null;
-    }
-
-    final Path path = Path.of(raw);
+  private static Path realPath(final Path path) {
     try {
       return path.toRealPath();
     } catch (final IOException e) {
@@ -102,10 +114,10 @@ public final class JdkSourceResolver {
     }
 
     try {
-      return Files.readAllLines(file).stream()
+      return Files.readAllLines(file, StandardCharsets.UTF_8).stream()
           .filter(line -> line.contains("="))
           .collect(
-              Collectors.toMap(
+              Collectors.toUnmodifiableMap(
                   line -> line.substring(0, line.indexOf('=')).trim(),
                   line -> unquote(line.substring(line.indexOf('=') + 1).trim()),
                   (a, b) -> a));

@@ -9,7 +9,9 @@ replays from `.lathe/`). This document designs an equivalent **Gradle** front-en
 identical `.lathe/` contract, so every downstream component — the language server, `lathe-test-runner`,
 the MCP server, and all editor clients — works unchanged.
 
-No Gradle code exists yet. This is a design, sliced for incremental delivery.
+**In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
+Slices 2a and 2d are done: `latheSync` writes `workspace.json`, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor. 2b (dependency sources) and 2c (formatter) remain.
+This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
 
@@ -494,8 +496,16 @@ the GradleX run showed the test classes directory on the classpath as well as pa
   (`junit-platform-launcher` at its `junit-platform-commons` version, `junit-jupiter-engine` at its
   `junit-jupiter-api` version), as `ServerInstaller.resolveJUnitSupportJars` does on Maven — a launcher that
   does not match the project's engine breaks replay.
-- **Build lock:** `latheSync` (and any build with Lathe enabled) holds and heartbeats `.lathe/lathe.lock`
-  like the Maven extension, through a build service that releases it when the build finishes.
+- **Build lock:** any build with Lathe enabled holds `.lathe/lathe.lock` with the Maven extension's `BuildLock`
+  (`lathe-core`), through a shared build service. Gradle creates the service when the first task that writes
+  `.lathe/` (a capture, or `latheSync`) starts, and closes it, releasing the lock, when the build finishes;
+  nothing writes `.lathe/` before that. A first-ever build, before `.lathe/` exists, holds none, as on Maven.
+- **Pruning:** a full `latheSync` deletes the captures of source trees the build no longer has, with the shared
+  `CapturePruner` ([workspace contract](../lathe-workspace-contract.md)); `--module` never prunes.
+  A project's trees are those whose source set has Java sources, decided when its `latheFacts` runs, after the
+  compiles and any generator: the configuration cache computes the other facts before generators run, so a
+  generated-only source set would look empty there. The rule is exact, unlike Maven's, which also keeps a tree
+  whose output directory exists.
 - **Per-project facts, merged at the root (decided 2026-10-23).** The root `latheSync` must not read other
   projects' tasks or configurations, or the plugin is no longer Isolated-Projects-safe.
   Each project's `latheFacts` task writes its own facts (outputs, resource roots, its resolved `-sources`
@@ -504,9 +514,16 @@ the GradleX run showed the test classes directory on the classpath as well as pa
   *Spiked 2026-10-23* with Isolated Projects on, on 8.8 and 9.8.1 (configuration cache stored and reused): the
   per-project facts tasks ran in parallel, the root merged them, and a project without Java contributed nothing
   and caused no error. Three constraints came out of it, binding on the plugin's code:
-  - **Read the project list once the settings file has run** (`settingsEvaluated`), walking the descriptor tree.
+  - **Read the project list once the settings file has run**, walking the descriptor tree.
     `plugins {}` applies the settings plugin before the file's `include(...)` lines, so at `apply` the list is empty
     (the spike's first run resolved no facts at all).
+    *Revised 2026-10-24 (slice 2a):* the plugin registers `beforeProject` at `apply` and passes the list as a lazy
+    `Provider`, which Gradle reads when it isolates the action, after the settings file has run.
+    Registering from a `settingsEvaluated` listener fails for init-script registration: the init script applies the
+    plugin from its own `settingsEvaluated`, and a listener added there never fires; `projectsLoaded` is too late
+    ("`beforeProject` cannot be called after settings have been evaluated").
+    Included builds are not listed yet at settings time either ("Included builds are not yet available"), so the
+    root project reads them for `buildFiles` during its own configuration.
   - **The `beforeProject` action is a standalone `IsolatedAction` class holding only plain values** (the project
     paths). Gradle serializes it; an action that captures anything else — a Kotlin-script lambda capturing its
     script, a reference to `Settings` — fails with "Failed to isolate 'GradleLifecycle' action".
@@ -601,10 +618,10 @@ if there is one, stops the build with one message naming each problem, its fix, 
 | Way out named in the message | `-Dlathe.disabled=true` | `-Plathe.disabled=true` |
 
 - **A daemon older than JDK 17 cannot load the plugin at all** (Lathe's classes are Java 17), so the check never runs there; Gradle 8.x would show a bare class-version error.
-  Gradle 9 requires JDK 17 for its daemon anyway; for 8.x, a small entry class compiled for an older Java checks the running JDK first and fails with a clear message, then loads the rest.
-- **The message is shared, the version reading is not.** When this plugin is built, the wording (the heading, one line per problem with its fix, the way out) moves from
-  `lathe-maven-extension`'s `LatheRequirements` into `lathe-core`, so both tools say it the same way; each tool keeps its own version reading and comparison.
-  Not before: today the Maven extension is its only user.
+  Gradle 9 requires JDK 17 for its daemon anyway; for 8.x, a small entry class compiled for an older Java could check the running JDK first and fail with a clear message, then load the rest.
+  *Deferred 2026-10-24:* no CI job runs Gradle 8.x on a JDK older than 17, so the entry class would be untested; 8.x on an old JDK shows Gradle's class-version error until a user reports it.
+- **The message is shared, the version reading is not.** The wording (the heading, one line per problem with its fix, the way out) is
+  `LatheFlags.unsupportedBuild` in `lathe-core`, so both tools say it the same way; each tool keeps its own version reading and comparison.
 
 ## End-user setup
 
@@ -712,13 +729,22 @@ with its own CI job — more idiomatic for Gradle, but two commands / two CI sta
   running Gradle). A call newer than the 8.8 floor must be guarded by a version check; the 8.8 fixture run
   below catches an unguarded one (`NoSuchMethodError`), as the Maven 3.6.3 invoker job catches a too-new Maven
   API.
-- **The TestKit fixtures run on that same Gradle by default** (`GradleRunner.withGradleInstallation`), so every
-  main CI row (each JDK, Linux, macOS, Windows) tests the plugin on the latest Gradle.
+- **The TestKit fixtures run on that same Gradle by default** (`GradleRunner.withGradleInstallation`).
+  Two main CI rows build and test the plugin on the latest Gradle: JDK 21 on Linux, and Windows, where paths and
+  processes differ; the other rows pass `-Dlathe.gradle.skip=true`, since the plugin is plain JVM code
+  (*revised 2026-10-24*: running it in every row added minutes per job for no coverage).
+  The fixtures run as parallel test JVMs, one test class per JVM.
+- **The build runs with `--no-daemon`, and every fixture daemon idles out after 10 seconds.**
+  One Gradle build per Maven run gains nothing from a daemon. On Windows a daemon that outlives the build also
+  inherits Maven's output pipe and keeps `exec-maven-plugin` waiting (it waited until the 30-minute job timeout).
+  TestKit always runs fixtures in daemons, so those get the short idle timeout instead.
 
 **Older Gradle versions run in the existing older-Maven invoker jobs (decided 2026-10-24)**, not in jobs of
 their own and not through `withGradleVersion` inside every build. Each job downloads one Gradle
 distribution, as it downloads its Maven, and passes `-Dlathe.gradle.fixturesHome=<dir>` — the counterpart
 of `-Dinvoker.mavenHome` — which the Maven module forwards so the TestKit fixtures run on that installation.
+The fixtures also run on the JDK that `-Dinvoker.javaHome` names (written as `org.gradle.java.home` into each
+fixture's `gradle.properties`), so the JDK 17 rows, which build on JDK 21, test on 17.
 Those jobs skip unit tests (`-Dmaven.test.skip.exec=true`); the module forwards that too, so Gradle skips its
 `test` task but still runs the fixtures, kept in their own `functionalTest` task as the Maven fixtures are an
 invoker run.
@@ -729,7 +755,7 @@ invoker run.
 | Maven 3.8.8, JDK 21 | 8.14.6 | the last 8.x |
 | Maven 3.10.0, JDK 21 | 9.0.0 | the 8 → 9 boundary, where Gradle's internals changed (the JPMS spike's GradleX failure was there) |
 
-Every main row covers the latest 9.x. Maven's own build stays on 3.9.16 (3.10.0 has a deployment problem).
+The JDK 21 Linux and Windows rows cover the latest 9.x. Maven's own build stays on 3.9.16 (3.10.0 has a deployment problem).
 
 *Spiked 2026-10-23* with a miniature reactor: a `core` jar module and a `pom`-packaged `gradle-plugin` module
 listed last, depending on `core`, whose directory also holds the Gradle build.
@@ -784,11 +810,17 @@ and a capture-only test run on Gradle 9.
    *Done 2026-10-24* (slices A, 0a–0d): `lathe-install` depends only on `lathe-core` and the provided SLF4J API.
    Prerequisites, all done before it: the [Build-Tool-Agnostic Core](../done/lathe-build-agnostic-core.md),
    the JDK 17 floor ([Wider Maven and JDK Support](../done/lathe-wider-maven-support.md) slice 0), and all of [Multi-OS](../done/lathe-multi-os.md).
-1. **Compiler capture (main + test)** — settings/project plugin + gating + the fail-fast requirements check + the capture
-   tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps, `jvm.args`.
-   Its TestKit suite includes the cache-key check and the configuration cache stored and reused. Delivers full **code
-   intelligence** for main and test.
-2. **`workspace.json` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`; the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
+1. **Compiler capture (main + test)**, in three reviewed steps:
+   1a, the `lathe-gradle-plugin` module, its Maven-orchestrated build, and CI;
+   1b, the settings/project plugin, gating, and the fail-fast requirements check;
+   1c, the capture tasks finalizing `JavaCompile` → `ModuleConfigData`, bytecode and generated-sources mirrors, stamps.
+   Its TestKit suite includes the cache-key check and the configuration cache stored and reused.
+   It fills `.lathe/<module>/` for main and test; the editor can use it once slice 2 adds the workspace files.
+2. **`workspace.json` + `jvm.args` + `.lathe/java-home` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`, in four reviewed steps:
+   2a, `workspace.json`, `java-home` and the JDK sources, `jvm.args`, the server install and the sync script;
+   2b, dependency `-sources` jars and type-index shards; 2c, `style.json`; 2d, the build lock.
+   The server resolves through the root project's repositories; the plugin adds Maven Central to the root only when neither the root nor the settings declare a repository and the build allows project repositories;
+   `jvm.args` and `java-home` are workspace-wide (the union of the access flags, the highest compiling JDK), so they come with the per-project `latheFacts` merge, which Isolated Projects requires (*decided 2026-10-24*); the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
 4. **Test launch (in-fork)** — `lathe-junit` on the `test` classpath in capture mode + worker-jar filter + `failOnNoDiscoveredTests = false` on Gradle 9+; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
@@ -892,6 +924,33 @@ exercised by slice 4 and 5's TestKit fixtures; the Maven side already replays mo
 hand-written whitebox wiring (its directives are the build's own JVM arguments, which in-fork capture reads like
 GradleX's).
 (A toolchain other than the daemon JDK is covered by the 8.8 spike: JDK 17 toolchain, JDK 21 daemon.)
+
+## Real-project probes (2026-10-24)
+
+The slice 1 capture ran, through a personal init script, on four public Gradle builds cloned next to the repo, compile tasks only (no tests):
+Caffeine (Error Prone and NullAway, a code-generation source set, `testFixtures`, configuration cache),
+Micronaut Core (annotation processors in almost every module, project directories remapped in `settings.gradle`, mixed Kotlin),
+Hibernate ORM (a custom build: output under `target/`, ANTLR and XJC sources added to `srcDirs`, the JBoss Logging processor, `--limit-modules`),
+and JUnit (modular `module-info` projects, toolchains, an included `build-logic` build).
+
+What held, on all four:
+
+- every compile was captured, and a second build left every capture `UP-TO-DATE`;
+- compile tasks still came `FROM-CACHE` with Lathe applied (the cache-key rule);
+- the configuration cache was stored and reused where the build enables it;
+- the module directory follows the project directory (Micronaut's `:micronaut-http` → `.lathe/http`), and Hibernate's `target/` output was read from the task, not assumed;
+- processor output was mirrored (54 JBoss Logging sources), and Micronaut's processors, which write bytecode, left their `$Definition` classes in the bytecode mirror;
+- generated directories a build adds to `srcDirs` (ANTLR, XJC) were kept as source roots;
+- modular source sets put every module on the module path (JUnit's engine: all six dependencies), and the targets were read right whether set by `release` (Hibernate: 17) or `sourceCompatibility` (Micronaut: 25).
+
+What they found:
+
+1. **Lathe reached `buildSrc` and included builds** (Micronaut's `buildSrc`, Hibernate's `local-build-plugins`, JUnit's `gradle/base`), each writing a `.lathe/` of its own, because an init script applies to every build.
+   *Fixed in slice 1:* the settings plugin acts only on the root build. Included builds holding application code are not captured yet.
+2. **Source sets other than `main` and `test` are not captured** — Caffeine's `codeGen` and `testFixtures`; `integrationTest` and `jmh` are common elsewhere.
+   Their files get no module configuration in the editor, and the test classpath reads their output from `build/`, so `gradle clean` takes it away. Maven has no counterpart; a later slice decides whether to capture them as more trees.
+3. **Siblings reach the classpath as jars more often than the spike suggested**: a modular consumer, and every Micronaut module, compile against `build/libs/*.jar`, and Micronaut's processor path holds sibling jars too. The `workspace.json` `outputs` map of slice 2 must remap both shapes.
+4. **Mixed Kotlin/Groovy modules** compile Java against `build/classes/kotlin/main`, which Lathe does not mirror; Kotlin sources themselves are out of scope.
 
 ## Non-goals (this design)
 

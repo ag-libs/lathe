@@ -59,6 +59,28 @@ class JdkSourceResolverTest {
     assertThat(result.sourceDir().toString()).doesNotContain(" ");
   }
 
+  // A toolchain JDK, not the running one: vendor and version come from its release file.
+  @Test
+  void resolveAt_otherJdk_readsVendorAndVersionFromItsReleaseFile() throws IOException {
+    writeRelease(
+        """
+        IMPLEMENTOR="Eclipse Adoptium"
+        JAVA_VERSION="21.0.9"
+        """);
+    Files.createDirectories(tmp.resolve("lib"));
+    Files.createFile(tmp.resolve("lib/src.zip"));
+
+    final JdkSource result = JdkSourceResolver.resolveAt(tmp);
+    final JdkSource noRelease = JdkSourceResolver.resolveAt(tmp.resolve("lib"));
+
+    assertThat(result.isPresent()).isTrue();
+    assertThat(result.vendor()).isEqualTo("Eclipse Adoptium");
+    assertThat(result.version()).isEqualTo("21.0.9");
+    assertThat(result.cacheKey()).isEqualTo("eclipse-adoptium-21.0.9");
+    assertThat(noRelease.isPresent()).isFalse();
+    assertThat(noRelease.version()).isEqualTo("unknown");
+  }
+
   @Test
   void cacheKey_correttoRelease_returnsCorrettoKey() throws IOException {
     writeRelease(

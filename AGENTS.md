@@ -54,9 +54,10 @@ Which file answers which question:
 | `lathe-server`       | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core`                                                                      |
 | `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
 | `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
+| `lathe-gradle-plugin`| Gradle plugin, built by Gradle: this `pom` module fills `target/lathe-repo` with the reactor-built jars and runs `gradle build` (TestKit fixtures) against it.   |
 
 Build order: `lathe-core` → `lathe-install` → `lathe-compiler` → `lathe-server` → `lathe-install-maven` →
-`lathe-maven-plugin`.
+`lathe-maven-plugin` → `lathe-gradle-plugin` (listed last).
 
 `lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and
 property-file helpers.
@@ -83,6 +84,11 @@ mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one specific 
 
 The two `-pl lathe-maven-plugin` commands take the Lathe jars the fixtures need (`extraArtifacts`) from
 `~/.m2`, so run `mvn install -DskipTests` first; the reactor-wide command builds them itself.
+
+`lathe-gradle-plugin` runs `gradle` from the PATH (Gradle 9.8.2, no wrapper); `-Dlathe.gradle.home=<dir>`
+runs `<dir>/bin/gradle` instead, and `-Dlathe.gradle.skip=true` skips it.
+`-Dlathe.gradle.fixturesHome=<dir>` runs its TestKit fixtures on another Gradle (and `-Dinvoker.javaHome`
+on another JDK), as the older-Maven CI jobs do.
 
 ## Test projects
 

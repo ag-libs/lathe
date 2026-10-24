@@ -35,6 +35,12 @@ public final class ServerInstaller {
   // references HttpClient when it loads.
   private static final List<String> COMMON_JVM_ARGS = List.of("--add-modules", "java.net.http");
 
+  // What install() resolves, each with its runtime closure. Gradle declares them as configurations
+  // before it resolves anything.
+  public static final String SERVER_COORDINATES = latheCoordinates(PluginProps.SERVER_ARTIFACT_ID);
+  public static final String MCP_SERVER_COORDINATES =
+      latheCoordinates(PluginProps.MCP_SERVER_ARTIFACT_ID);
+
   private final ArtifactResolver artifacts;
 
   public ServerInstaller(final ArtifactResolver artifacts) {
@@ -180,22 +186,21 @@ public final class ServerInstaller {
   }
 
   Path resolveRunnerJar() throws SyncException {
-    return artifacts.resolve(
-        "%s:%s:%s"
-            .formatted(
-                PluginProps.groupId(), PluginProps.TEST_RUNNER_ARTIFACT_ID, PluginProps.version()));
+    return artifacts.resolve(latheCoordinates(PluginProps.TEST_RUNNER_ARTIFACT_ID));
   }
 
   private List<Path> resolveServerJars() throws SyncException {
-    return resolveTransitiveJars(
-        PluginProps.groupId(), PluginProps.SERVER_ARTIFACT_ID, PluginProps.version());
+    return artifacts.resolveTransitive(SERVER_COORDINATES);
   }
 
   // The full runtime closure of lathe-mcp-server (itself, lathe-server, lathe-core and the MCP SDK)
   // for the classpath launcher.
   private List<Path> resolveMcpServerJars() throws SyncException {
-    return resolveTransitiveJars(
-        PluginProps.groupId(), PluginProps.MCP_SERVER_ARTIFACT_ID, PluginProps.version());
+    return artifacts.resolveTransitive(MCP_SERVER_COORDINATES);
+  }
+
+  private static String latheCoordinates(final String artifactId) {
+    return "%s:%s:%s".formatted(PluginProps.groupId(), artifactId, PluginProps.version());
   }
 
   // The runner plus the JUnit launcher and engine for replay: the build's test runner brings its
