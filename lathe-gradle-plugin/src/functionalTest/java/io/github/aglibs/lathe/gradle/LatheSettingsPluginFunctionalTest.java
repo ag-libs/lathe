@@ -99,6 +99,27 @@ class LatheSettingsPluginFunctionalTest {
     assertThat(both.getOutput()).contains("LATHE app 1");
   }
 
+  @Test
+  void apply_initScriptWithBuildSrcAndIncludedBuild_onlyTheRootBuildGetsLathe() throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .latheInitScript("lathe.init.gradle.kts")
+            .file("settings.gradle.kts", "rootProject.name = \"app\"\nincludeBuild(\"logic\")\n")
+            .file("build.gradle.kts", PROBE)
+            .file("buildSrc/build.gradle.kts", "plugins { java }\n" + PROBE)
+            .file("buildSrc/src/main/java/Helper.java", "class Helper {}\n")
+            .file("logic/settings.gradle.kts", "rootProject.name = \"logic\"\n")
+            .file("logic/build.gradle.kts", "plugins { java }\n" + PROBE)
+            .file("logic/src/main/java/Logic.java", "class Logic {}\n");
+
+    final var result =
+        fixture.runner("help", ":logic:classes", "--init-script", "lathe.init.gradle.kts").build();
+
+    assertThat(result.getOutput()).contains("LATHE app 1", "LATHE buildSrc 0", "LATHE logic 0");
+    assertThat(dir.resolve("buildSrc/.lathe")).doesNotExist();
+    assertThat(dir.resolve("logic/.lathe")).doesNotExist();
+  }
+
   private static Map<String, String> ci() {
     final var env = new HashMap<>(System.getenv());
     env.put("CI", "true");

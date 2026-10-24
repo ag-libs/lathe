@@ -9,7 +9,7 @@ replays from `.lathe/`). This document designs an equivalent **Gradle** front-en
 identical `.lathe/` contract, so every downstream component — the language server, `lathe-test-runner`,
 the MCP server, and all editor clients — works unchanged.
 
-**In progress:** slices 1a (the `lathe-gradle-plugin` module, its build, and CI) and 1b (registration, gating, the requirements check) are done; the project plugin captures nothing yet.
+**In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -898,6 +898,33 @@ exercised by slice 4 and 5's TestKit fixtures; the Maven side already replays mo
 hand-written whitebox wiring (its directives are the build's own JVM arguments, which in-fork capture reads like
 GradleX's).
 (A toolchain other than the daemon JDK is covered by the 8.8 spike: JDK 17 toolchain, JDK 21 daemon.)
+
+## Real-project probes (2026-10-24)
+
+The slice 1 capture ran, through a personal init script, on four public Gradle builds cloned next to the repo, compile tasks only (no tests):
+Caffeine (Error Prone and NullAway, a code-generation source set, `testFixtures`, configuration cache),
+Micronaut Core (annotation processors in almost every module, project directories remapped in `settings.gradle`, mixed Kotlin),
+Hibernate ORM (a custom build: output under `target/`, ANTLR and XJC sources added to `srcDirs`, the JBoss Logging processor, `--limit-modules`),
+and JUnit (modular `module-info` projects, toolchains, an included `build-logic` build).
+
+What held, on all four:
+
+- every compile was captured, and a second build left every capture `UP-TO-DATE`;
+- compile tasks still came `FROM-CACHE` with Lathe applied (the cache-key rule);
+- the configuration cache was stored and reused where the build enables it;
+- the module directory follows the project directory (Micronaut's `:micronaut-http` → `.lathe/http`), and Hibernate's `target/` output was read from the task, not assumed;
+- processor output was mirrored (54 JBoss Logging sources), and Micronaut's processors, which write bytecode, left their `$Definition` classes in the bytecode mirror;
+- generated directories a build adds to `srcDirs` (ANTLR, XJC) were kept as source roots;
+- modular source sets put every module on the module path (JUnit's engine: all six dependencies), and the targets were read right whether set by `release` (Hibernate: 17) or `sourceCompatibility` (Micronaut: 25).
+
+What they found:
+
+1. **Lathe reached `buildSrc` and included builds** (Micronaut's `buildSrc`, Hibernate's `local-build-plugins`, JUnit's `gradle/base`), each writing a `.lathe/` of its own, because an init script applies to every build.
+   *Fixed in slice 1:* the settings plugin acts only on the root build. Included builds holding application code are not captured yet.
+2. **Source sets other than `main` and `test` are not captured** — Caffeine's `codeGen` and `testFixtures`; `integrationTest` and `jmh` are common elsewhere.
+   Their files get no module configuration in the editor, and the test classpath reads their output from `build/`, so `gradle clean` takes it away. Maven has no counterpart; a later slice decides whether to capture them as more trees.
+3. **Siblings reach the classpath as jars more often than the spike suggested**: a modular consumer, and every Micronaut module, compile against `build/libs/*.jar`, and Micronaut's processor path holds sibling jars too. The `workspace.json` `outputs` map of slice 2 must remap both shapes.
+4. **Mixed Kotlin/Groovy modules** compile Java against `build/classes/kotlin/main`, which Lathe does not mirror; Kotlin sources themselves are out of scope.
 
 ## Non-goals (this design)
 

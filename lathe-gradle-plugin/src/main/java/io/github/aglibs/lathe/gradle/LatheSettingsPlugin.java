@@ -17,9 +17,11 @@ import org.gradle.util.GradleVersion;
 // configured.
 public class LatheSettingsPlugin implements Plugin<Settings> {
 
+  // Only the root build: an init script reaches buildSrc and every included build too, and each of
+  // those would write a .lathe/ of its own.
   @Override
   public void apply(final Settings settings) {
-    if (isDisabled(settings)) {
+    if (settings.getGradle().getParent() != null || isDisabled(settings)) {
       return;
     }
 
