@@ -1,13 +1,17 @@
 package io.github.aglibs.lathe.install;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // .lathe/lathe-sync.sh [--tests] [module ...], rendered from the build that ran: the tool and JDK
 // are that build's own, so the script chooses nothing. A front-end only fills this in; testsGoals
@@ -21,6 +25,8 @@ public record SyncScript(
     List<String> testsGoals,
     List<String> moduleArgs,
     List<String> afterModules) {
+
+  private static final Logger LOG = LoggerFactory.getLogger(SyncScript.class);
 
   public SyncScript {
     fixedArgs = List.copyOf(fixedArgs);
@@ -52,6 +58,19 @@ public record SyncScript(
 
   public String render() {
     return Platform.WINDOWS ? cmd() : posix();
+  }
+
+  // Rewritten only when it changed, so a sync that changes nothing leaves its mtime alone.
+  public void write(final Path workspaceRoot) {
+    final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
+    final var file = latheDir.resolve(LatheLayout.SYNC_SCRIPT);
+    try {
+      if (FileUtil.writeIfChanged(latheDir, file, render(), true)) {
+        LOG.info("[sync] wrote %s".formatted(file));
+      }
+    } catch (final IOException e) {
+      throw new SyncException("lathe:sync failed to write %s".formatted(file), e);
+    }
   }
 
   public String posix() {

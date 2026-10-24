@@ -10,6 +10,7 @@ import io.github.aglibs.validcheck.ValidationException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +92,21 @@ class SyncScriptTest {
 
     assertThat(result.stdout()).endsWith("args=--quiet -Dcache=false plugin:sync");
     assertThat(result.stderr()).startsWith("lathe-sync: arguments ignored;");
+  }
+
+  @Test
+  void write_unchangedScript_isNotRewritten() throws Exception {
+    final SyncScript script = script(List.of("sync"), List.of(), List.of(), List.of());
+    script.write(root);
+    final Path file = root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.SYNC_SCRIPT);
+    final var stamp = FileTime.fromMillis(1_000_000L);
+    Files.setLastModifiedTime(file, stamp);
+
+    script.write(root);
+
+    assertThat(Files.getLastModifiedTime(file)).isEqualTo(stamp);
+    assertThat(file).isExecutable();
+    assertThat(Files.readString(file)).isEqualTo(script.render());
   }
 
   @Test

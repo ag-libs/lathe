@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.install;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
@@ -6,23 +6,21 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import org.apache.maven.plugin.logging.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-final class WorkspaceManifestWriter {
+public final class WorkspaceManifestWriter {
 
-  private final Log log;
+  private static final Logger LOG = LoggerFactory.getLogger(WorkspaceManifestWriter.class);
 
-  WorkspaceManifestWriter(final Log log) {
-    this.log = log;
-  }
+  private WorkspaceManifestWriter() {}
 
-  void write(
+  public static void write(
       final Path workspaceRoot,
       final List<DependencySource> dependencySources,
       final JdkSource jdkSource,
@@ -53,7 +51,7 @@ final class WorkspaceManifestWriter {
         // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
         // the server's watcher re-scans the mirror even though the manifest itself did not change.
         FileUtil.touch(manifestPath);
-        log.info("[sync] workspace unchanged — touched manifest for mirror refresh");
+        LOG.info("[sync] workspace unchanged — touched manifest for mirror refresh");
       }
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
@@ -62,7 +60,8 @@ final class WorkspaceManifestWriter {
 
   // The build JDK, as a plain path the launcher reads to run the server's javac at the project's
   // language level.
-  private void writeJavaHome(final Path latheDir, final JdkSource jdkSource) throws IOException {
+  private static void writeJavaHome(final Path latheDir, final JdkSource jdkSource)
+      throws IOException {
     if (jdkSource.home() == null) {
       return;
     }

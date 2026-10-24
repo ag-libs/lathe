@@ -914,7 +914,7 @@ Running the suggested command built parent, testhelpers and core only.
 Build the suggestion from the downstream modules, not the changed ones: `LatheEngine.verifyChange`
 passes `targets.keySet()` to `LatheLayout.scopedSyncCommand`, while `LatheVerifyChange` documents the
 command as the sync that builds the dependents.
-The script stays `-am`-only by design (`SyncScriptWriter`: "callers that need dependents name them"),
+The script stays `-am`-only by design (`MavenSyncScript`: "callers that need dependents name them"),
 and naming the dependents builds the changed module too.
 Above a few dozen dependents (Helidon's `common/media-type` has 142) suggest the unscoped full sync:
 `-am` over that many modules is the whole reactor anyway, and the list would overflow the 8,191-character

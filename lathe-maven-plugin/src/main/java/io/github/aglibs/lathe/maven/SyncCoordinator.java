@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
+import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
 import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
@@ -94,18 +95,17 @@ final class SyncCoordinator {
               .stream()
               .map(Path::toString)
               .toList();
-      final SyncScript syncScript = SyncScriptWriter.script(session.getSystemProperties());
-      new WorkspaceManifestWriter(log)
-          .write(
-              workspaceRoot,
-              enrichedSources,
-              enrichedJdkSource,
-              PluginProps.version(),
-              runnerClasspath,
-              buildFiles,
-              ModuleResourcesReader.read(workspaceRoot, projects),
-              ReactorProjects.outputs(workspaceRoot, projects),
-              syncScript.tool());
+      final SyncScript syncScript = MavenSyncScript.of(session.getSystemProperties());
+      WorkspaceManifestWriter.write(
+          workspaceRoot,
+          enrichedSources,
+          enrichedJdkSource,
+          PluginProps.version(),
+          runnerClasspath,
+          buildFiles,
+          ModuleResourcesReader.read(workspaceRoot, projects),
+          ReactorProjects.outputs(workspaceRoot, projects),
+          syncScript.tool());
       final MavenProject rootProject = session.getTopLevelProject();
       final var formatterResolver =
           new FormatterResolver(
@@ -126,7 +126,7 @@ final class SyncCoordinator {
               projects,
               session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
               style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
-      new SyncScriptWriter(log).write(workspaceRoot, syncScript);
+      syncScript.write(workspaceRoot);
     }
   }
 

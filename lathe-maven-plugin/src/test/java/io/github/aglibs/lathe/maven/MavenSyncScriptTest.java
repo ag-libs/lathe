@@ -5,20 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.install.SyncScript;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.Properties;
-import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 // What the Maven front-end puts into the sync script; SyncScriptTest runs the rendered script.
-class SyncScriptWriterTest {
+class MavenSyncScriptTest {
 
   private static final String SUFFIX = Platform.WINDOWS ? ".cmd" : "";
-
-  @TempDir Path tmp;
 
   @Test
   void script_plainWrapperAndMvndBuilds_runTheirOwnMavenOnTheBuildJdk() {
@@ -40,21 +34,6 @@ class SyncScriptWriterTest {
         .isEqualTo(absolute("/opt/mvnd/bin/mvnd" + SUFFIX));
   }
 
-  @Test
-  void write_unchangedScript_isNotRewritten() throws Exception {
-    final var writer = new SyncScriptWriter(new SystemStreamLog());
-    writer.write(tmp, script("/opt/maven", null));
-    final Path file = tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.SYNC_SCRIPT);
-    final var stamp = FileTime.fromMillis(1_000_000L);
-    Files.setLastModifiedTime(file, stamp);
-
-    writer.write(tmp, script("/opt/maven", null));
-
-    assertThat(Files.getLastModifiedTime(file)).isEqualTo(stamp);
-    assertThat(file).isExecutable();
-    assertThat(Files.readString(file)).contains(absolute("/opt/maven/bin/mvn" + SUFFIX).toString());
-  }
-
   private static SyncScript script(final String mavenHome, final String mvndHome) {
     final var properties = new Properties();
     properties.setProperty("maven.home", absolute(mavenHome).toString());
@@ -63,7 +42,7 @@ class SyncScriptWriterTest {
       properties.setProperty("mvnd.home", absolute(mvndHome).toString());
     }
 
-    return SyncScriptWriter.script(properties);
+    return MavenSyncScript.of(properties);
   }
 
   // On Windows a path from '/' has no drive, so it is not absolute until it gains the current one.

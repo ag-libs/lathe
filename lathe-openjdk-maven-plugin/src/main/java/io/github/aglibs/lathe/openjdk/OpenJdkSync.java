@@ -87,9 +87,7 @@ public final class OpenJdkSync {
       final SyncScript syncScript = syncScript(buildDir, serverVersion, systemProperties);
       writeWorkspace(workspaceRoot, serverVersion, buildFiles, syncScript.tool());
       writeJavaHome(workspaceRoot, explodedJdk);
-      final Path latheDir = latheDir(workspaceRoot);
-      FileUtil.writeIfChanged(
-          latheDir, latheDir.resolve(LatheLayout.SYNC_SCRIPT), syncScript.render(), true);
+      syncScript.write(workspaceRoot);
       log.accept(
           "[sync] %d module(s) + %d tool(s) -> %s"
               .formatted(moduleCmdlines.size(), toolCmdlines.size(), latheDir(workspaceRoot)));

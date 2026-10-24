@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven;
+package io.github.aglibs.lathe.install;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
-import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -22,10 +21,6 @@ class WorkspaceManifestWriterTest {
   private static final Path TOOL = Path.of("/opt/maven/bin/mvn");
 
   @TempDir Path workspaceRoot;
-
-  private WorkspaceManifestWriter writer() {
-    return new WorkspaceManifestWriter(new SystemStreamLog());
-  }
 
   @Test
   void write_writesWorkspaceJsonAtomically() throws Exception {
@@ -47,17 +42,16 @@ class WorkspaceManifestWriterTest {
             .withTypeIndex(Path.of("/cache/type-index/jdks/example-vendor-21.0.1/index.json"));
 
     final var output = new OutputData("app/target/classes", "app", LatheLayout.CLASSES_DIR);
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(dep),
-            jdk,
-            null,
-            List.of(),
-            List.of("pom.xml"),
-            List.of(),
-            List.of(output),
-            TOOL);
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(dep),
+        jdk,
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(output),
+        TOOL);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -94,17 +88,16 @@ class WorkspaceManifestWriterTest {
     final var jdk =
         JdkSource.missing("Example Vendor", "21.0.1", "example-vendor-21.0.1", Path.of("/jdk"));
 
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(),
-            jdk,
-            null,
-            List.of(),
-            List.of("pom.xml"),
-            List.of(),
-            List.of(),
-            TOOL);
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        jdk,
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(),
+        TOOL);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -117,17 +110,16 @@ class WorkspaceManifestWriterTest {
   @Test
   void write_sameContent_touchesMtimeButKeepsContent() throws Exception {
     final var jdk = JdkSource.missing("Vendor", "21", "vendor-21", Path.of("/jdk"));
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(),
-            jdk,
-            null,
-            List.of(),
-            List.of("pom.xml"),
-            List.of(),
-            List.of(),
-            TOOL);
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        jdk,
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(),
+        TOOL);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
@@ -135,17 +127,16 @@ class WorkspaceManifestWriterTest {
     final var sentinel = FileTime.fromMillis(1_000_000L);
     Files.setLastModifiedTime(manifest, sentinel);
 
-    writer()
-        .write(
-            workspaceRoot,
-            List.of(),
-            jdk,
-            null,
-            List.of(),
-            List.of("pom.xml"),
-            List.of(),
-            List.of(),
-            TOOL);
+    WorkspaceManifestWriter.write(
+        workspaceRoot,
+        List.of(),
+        jdk,
+        null,
+        List.of(),
+        List.of("pom.xml"),
+        List.of(),
+        List.of(),
+        TOOL);
 
     // Same content: the rewrite is skipped but the mtime is bumped; the content stays
     // byte-identical.
@@ -170,17 +161,8 @@ class WorkspaceManifestWriterTest {
             Path.of("/jdk/src.zip"),
             Path.of("/cache/jdk"));
 
-    writer()
-        .write(
-            workspaceRoot,
-            deps,
-            jdk,
-            null,
-            List.of(),
-            List.of("pom.xml"),
-            List.of(),
-            List.of(),
-            TOOL);
+    WorkspaceManifestWriter.write(
+        workspaceRoot, deps, jdk, null, List.of(), List.of("pom.xml"), List.of(), List.of(), TOOL);
 
     final var manifest =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
