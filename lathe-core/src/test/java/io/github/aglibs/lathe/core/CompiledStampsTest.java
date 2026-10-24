@@ -42,13 +42,15 @@ final class CompiledStampsTest {
   }
 
   @Test
-  void prune_dropsNamedEntriesAndIgnoresUnknownKeys() throws IOException {
+  void prune_dropsNamedMtimesKeepsWhatTheBuildCompiledAndIgnoresUnknownKeys() throws IOException {
     CompiledStamps.writeAll(
         moduleDir, "classes", Map.of(FOO, 100L, GONE, 200L), Map.of(FOO, BUILT, GONE, BUILT));
 
     CompiledStamps.prune(moduleDir, "classes", Set.of(GONE));
     assertThat(CompiledStamps.load(moduleDir, "classes")).containsExactly(Map.entry(FOO, 100L));
-    assertThat(CompiledStamps.loadBuilt(moduleDir, "classes")).containsOnlyKeys(FOO);
+    assertThat(CompiledStamps.loadBuilt(moduleDir, "classes"))
+        .as("what the build compiled survives a deletion, for a restore to match")
+        .containsOnlyKeys(FOO, GONE);
 
     // An unknown key prunes nothing and leaves the survivor in place.
     CompiledStamps.prune(moduleDir, "classes", Set.of(Path.of("com", "example", "Absent.java")));

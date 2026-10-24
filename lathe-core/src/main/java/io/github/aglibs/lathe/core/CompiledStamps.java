@@ -50,6 +50,8 @@ public final class CompiledStamps {
     writeAll(moduleDir, sourceTree, stamps, byPath(data.built()));
   }
 
+  // Drops the mtimes only: what the build compiled is unchanged by a deletion, so a deleted file
+  // still counts as changed, and one restored as it was (a branch switch and back) does not.
   public static void prune(final Path moduleDir, final String sourceTree, final Set<Path> relPaths)
       throws IOException {
     final CompiledStampsData data = read(moduleDir, sourceTree);
@@ -58,9 +60,7 @@ public final class CompiledStamps {
       return;
     }
 
-    final var built = new HashMap<>(byPath(data.built()));
-    built.keySet().removeAll(relPaths);
-    writeAll(moduleDir, sourceTree, stamps, built);
+    writeAll(moduleDir, sourceTree, stamps, byPath(data.built()));
   }
 
   private static CompiledStampsData read(final Path moduleDir, final String sourceTree) {

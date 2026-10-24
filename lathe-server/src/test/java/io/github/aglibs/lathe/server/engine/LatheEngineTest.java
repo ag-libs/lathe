@@ -861,6 +861,16 @@ class LatheEngineTest {
     assertThat(verify.suggestedSync())
         .as("back to what the build compiled: nothing to verify or sync")
         .isNull();
+
+    // A branch switch and back: a built file deleted (its callers break), then restored as it was.
+    Files.delete(api);
+    assertThat(engine.verifyChange(List.of()).perModule())
+        .singleElement()
+        .satisfies(module -> assertThat(module.module()).isEqualTo("app"));
+    TestCompiler.writeAt(api, API_SOURCE, 30_000L);
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .as("restored as the build compiled it")
+        .isNull();
   }
 
   @Test
