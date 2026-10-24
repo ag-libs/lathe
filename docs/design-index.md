@@ -177,6 +177,9 @@ reused):
   project's own pinned Spotless formatter (google-java-format, palantir, Eclipse JDT) in-process from an
   isolated classloader, with its configured options and range formatting; no automatic Maven
   delegation, no bundled google-java-format.
+- [Declared Formatters](planned/lathe-declared-formatters.md) — **proposed**, after the Gradle plugin.
+  A formatter declared in a committed `lathe-style.json` (engine, version, options), its jars resolved by
+  every front-end's sync: pinned formatters for Gradle, Maven without Spotless, and personal setups.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
