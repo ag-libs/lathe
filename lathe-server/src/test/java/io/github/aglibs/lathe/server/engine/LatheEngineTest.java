@@ -31,6 +31,8 @@ class LatheEngineTest {
 
   private static final String BUILD_FILES_NOTE =
       "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
+  private static final String API_SOURCE =
+      "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
 
   @TempDir private Path tmp;
   private LatheEngine engine;
@@ -850,6 +852,62 @@ class LatheEngineTest {
     assertThat(verify.deferral()).isNull();
     assertThat(verify.perModule()).isEmpty();
     assertThat(verify.suggestedSync()).isNull();
+  }
+
+  @Test
+  void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
+    final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
+    engine = new LatheEngine(tmp);
+
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .as("the dependents, not the changed module: -am builds api along with them")
+        .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app1", "app2")));
+  }
+
+  @Test
+  void verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync() throws Exception {
+    final Path api = apiReactor(List.of("app1", "app2"), List.of());
+    engine = new LatheEngine(tmp);
+
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+
+    assertThat(engine.verifyChange(List.of()).suggestedSync())
+        .isEqualTo(LatheLayout.SYNC_SCRIPT_COMMAND);
+  }
+
+  // An api module, modules that call it, and modules that do not, all compiled into the mirror.
+  private Path apiReactor(final List<String> dependents, final List<String> unrelated)
+      throws Exception {
+    final Path api =
+        TestCompiler.writeMirroredModule(
+                tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L)
+            .get(0);
+    for (final String module : dependents) {
+      TestCompiler.writeMirroredModule(
+          tmp,
+          module,
+          Map.of(
+              "com/example/%s/Use.java".formatted(module),
+              "package com.example.%s;\nclass Use { int u() { return new com.example.api.Api().a(); } }\n"
+                  .formatted(module)),
+          List.of("api"),
+          1_000L);
+    }
+
+    for (final String module : unrelated) {
+      TestCompiler.writeMirroredModule(
+          tmp,
+          module,
+          Map.of(
+              "com/example/%s/Other.java".formatted(module),
+              "package com.example.%s;\nclass Other {}\n".formatted(module)),
+          List.of(),
+          1_000L);
+    }
+
+    return api;
   }
 
   // Record a compile stamp per source so a freshly started engine sees the module as already

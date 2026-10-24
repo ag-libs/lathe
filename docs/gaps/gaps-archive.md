@@ -10184,12 +10184,24 @@ Running the suggested command built parent, testhelpers and core only.
 ### Fix
 
 The suggestion names the dependent modules (`LatheEngine.syncFor`), so `-pl … -am` builds them and
-the changed modules too; past 30 dependents it is the unscoped `.lathe/lathe-sync.sh`.
+everything they depend on, the changed modules included.
+When the dependents are more than half the reactor's modules it is the unscoped
+`.lathe/lathe-sync.sh` instead: that is nearly a full build anyway, and a core module's list (Helidon's
+`common/media-type` alone has 142 dependents) heads toward the 8,191-character Windows command line.
+
+History, so the question does not come back: the script first scoped with `-am -amd`, which broke on
+Helidon (ef6391a0): `-amd` adds the dependents but not their own upstream, so a dependent whose other
+dependencies were outside the selection failed to build. The script has been `-am`-only since, and
+stays so: a caller that needs the dependents built names them, as `verify_change` now does. The
+script and the shared model are unchanged, so a Gradle front-end (its `--module` options build each
+module's upstream through task dependencies) gets the same behaviour.
 
 ### Regression targets
 
 - `LatheEngineTest.verifyChange_apiChangeBreaksDependentModule_reportedAlsoAfterAnotherQueryCompiledIt`
   (asserts `.lathe/lathe-sync.sh app` for a change in `api`)
+- `LatheEngineTest.verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents`
+- `LatheEngineTest.verifyChange_moreThanHalfTheReactorDepends_suggestsTheFullSync`
 
 ---
 

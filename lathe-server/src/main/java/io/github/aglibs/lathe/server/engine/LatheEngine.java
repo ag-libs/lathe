@@ -75,8 +75,6 @@ public final class LatheEngine {
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
   private static final int IMPACT_MAX_RESULTS = 1000;
 
-  private static final int SCOPED_SYNC_MODULES = 30;
-
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
 
@@ -466,17 +464,20 @@ public final class LatheEngine {
                     checked.elapsedMs(),
                     perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
     final List<String> downstream = await(service.downstreamModuleRels(changed));
-    return new LatheVerifyChange(null, perModule, downstream, syncFor(downstream));
+    return new LatheVerifyChange(
+        null, perModule, downstream, syncFor(downstream, await(service.reactorModuleCount())));
   }
 
-  // Naming the dependents builds them and, with -am, the changed modules too; past a few dozen the
-  // scoped build is the whole reactor anyway, and the list could overflow a Windows command line.
-  private static String syncFor(final List<String> dependents) {
+  // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
+  // included (not -amd: it adds dependents without their own upstream, which broke on Helidon).
+  // Past half the reactor that is nearly a full build anyway, and the list could approach the
+  // 8,191-character Windows command line.
+  private static String syncFor(final List<String> dependents, final int reactorModules) {
     if (dependents.isEmpty()) {
       return null;
     }
 
-    return dependents.size() > SCOPED_SYNC_MODULES
+    return dependents.size() * 2 > reactorModules
         ? LatheLayout.SYNC_SCRIPT_COMMAND
         : LatheLayout.scopedSyncCommand(dependents);
   }

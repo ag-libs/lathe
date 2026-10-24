@@ -3613,6 +3613,11 @@ final class WorkspaceSession {
 
   // The reactor remainder a cross-module change may break: modules that transitively depend on the
   // changed ones. verify_change hands these to `mvn`, not recompile (codegen/AP are Maven's job).
+  int reactorModuleCount() {
+    return (int)
+        workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+  }
+
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
