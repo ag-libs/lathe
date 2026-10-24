@@ -207,6 +207,61 @@ on `$PATH`) and `extensionToLanguage`; optional fields include `args`, `transpor
 `workspace/executeCommand`**, so Lathe's run/verify/rename verbs require MCP. The `command` must
 resolve on `$PATH`, so a plugin points at `lathe-launcher.sh` rather than a bare binary.
 
+## Landscape update (Oct 2026)
+
+A review of recent LSP and MCP work for Java and other languages (2026-10-24), comparing it with what
+Lathe offers, found the gaps below. Two independent passes agreed on most of the top items.
+The sources are the tools' docs, changelogs and blog posts; claims about client behaviour (which hints
+Claude Code or Codex act on) come from issues and posts and are not yet confirmed against official
+docs.
+
+**Registered as gaps** (see [gaps.md](../gaps/gaps.md)):
+
+| Gap | What | Who has it |
+|---|---|---|
+| MC-21 | Tool annotations (`readOnlyHint`, `destructiveHint`) | MCP spec 2025-03-26+; reportedly honoured by Claude Code plan mode and Codex |
+| MC-22 | `format_file` | IntelliJ MCP `reformat_file` |
+| MC-23 | Apply fixes, `fix_imports` first | gopls `go_diagnostics`; javalens `suggest_imports` |
+| MC-24 | File outline | Claude Code LSP `documentSymbol`, Serena `get_symbols_overview`, LSP4J-MCP |
+| MC-25 | Workspace summary | gopls `go_workspace`; IntelliJ `get_project_modules` / `get_project_dependencies` |
+| MC-26 | Search methods and fields | IntelliJ `search_symbol`, gopls `go_search` |
+| MC-27 | A type's API by name (with its supertypes) | gopls `go_package_api`, Serena `find_symbol(depth=1)` |
+| MC-28 | Rename lists the text it left unchanged | (a study of agent renames) |
+| MC-29 | Stack trace to source | LSP4J-MCP `resolve_stack_trace` |
+| MC-30 | Address a symbol without an exact column | mcp-language-server, Serena name paths |
+| MC-31 | `get_definition` with the body | mcp-language-server, Serena `include_body` |
+| MC-32 | A recipe that makes an agent run `verify_change` before it finishes | Pyrefly skill + `Stop` hook |
+| MC-33 | `outputSchema` (backlog) | MCP spec 2025-06-18 |
+| EG-063 | Decompiler fallback for dependencies without sources | IntelliJ, LSP4J-MCP, vscode-java |
+| EG-064 | Code lens (reference counts, run/debug) | jdtls / vscode-java |
+
+Already planned elsewhere, and confirmed as table stakes by the review: `textDocument/typeDefinition`
+([lathe-type-definition.md](lathe-type-definition.md)), inlay hints and `selectionRange`
+([EG-018](../gaps/gaps.md#eg-018--textdocumentselectionrange-not-implemented)) in the
+[roadmap](../roadmap.md).
+
+**Distribution.** Claude Code's code-intelligence plugins push LSP diagnostics into the agent's context
+after every edit, without a tool call, and the official Java plugin runs jdtls; GitHub Copilot CLI now
+reads a repo-level `lsp.json` with the same `lspServers` shape. The plugin planned above would cover
+both. The open question is memory: a second server JVM beside the MCP one.
+
+**Not worth it for Lathe**, decided on this review:
+
+- *Symbol-body editing* (Serena's `replace_symbol_body`, `insert_after_symbol`): the client's own edit
+  tool does this well, and it is a large write surface to keep correct.
+- *IDE-as-everything tools* (shell, git, file reading, terminals): agents have them already; more tools
+  add selection noise.
+- *LSP 3.18 inline completions*: model-generated ghost text, a model server's job, not javac's.
+- *LSP 3.18 `workspace/textDocumentContent`*: Lathe serves real `file://` sources; it matters only if
+  decompiled virtual documents come (EG-063 writes files instead).
+- *Elicitation, sampling, MCP Apps, OAuth and the 2026 stateless-HTTP transport*: for remote,
+  multi-tenant servers, not a local stdio server per session; watch only for SDK compatibility.
+- *Prompts and resources*: clients rarely use them unprompted; the server instructions do that job.
+- *More read-only search polish*: agents pick grep for reads, which matches Lathe's own A/B result;
+  the value is in the write and verify tools.
+- *Debugger over MCP, vulnerability scanning, upgrade/OpenRewrite agents, metrics and framework
+  tools*: too large for the payoff, or products that already exist.
+
 ## The tension, and the resolution
 
 The channel that is easiest to ship (a Claude Code LSP plugin) exposes the *least* differentiated
