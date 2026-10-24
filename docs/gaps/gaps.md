@@ -670,7 +670,25 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-All NV entries to date are resolved in [gaps-archive.md](gaps-archive.md); none are currently open.
+---
+
+## NV-8 — A neotest run started before a file's discovery finishes reports "no tests found"
+
+**Status: accepted — Target: next**
+
+Found while testing slice 3 of the Neovim release track ([run/test design](../planned/lathe-vscode-run-test.md) §11)
+through neotest's own client: a file run issued right after opening a test file, before the adapter's
+discovery has returned its tests (1–4 s on the `multi-module` fixture, while the server compiles the
+opened file), comes back `skipped` with "no tests found in this file". neotest still holds the file
+position from before discovery, without its tests, and the adapter's `build_spec` skips an empty file.
+A user who runs a file as soon as it opens, before the gutter signs appear, sees nothing run.
+Already the case before slice 3. To be handled with slice 7, which reworks discovery: a file run
+should wait for the file's discovery, or run the file's classes from the server, instead of skipping.
+
+### Regression targets
+
+- A neotest file run issued immediately after opening a test file runs its tests (the neotest e2e,
+  through neotest's client rather than the adapter alone).
 
 ---
 

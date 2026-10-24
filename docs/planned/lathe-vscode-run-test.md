@@ -214,8 +214,9 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
    The limit: neotest needs a range for every position and discovery has none, so an unopened file's positions get a placeholder (the top of the file) until it is opened.
    Approximate method lines from the classes' line-number tables would close that gap; that is a later server addition.
 2. **Per-test output.** `lathe/testStarted` lets the adapter write each test's output to its own file, instead of every test opening the run's whole transcript.
-3. **Container failures.** A failing `@BeforeAll` shows on the class with its real error, instead of every method reading "no result (exit 1)". (Since slice 2 the class node already shows it; marking the methods under it is this item.)
-4. **Expected/actual as a diff.** neotest has no diff view, so the adapter offers two, both from `expected`/`actual`:
+3. **Container failures.** (Done in slices 2–3.) A failing `@BeforeAll` shows on the class with its real error, and each method under it, also in nested classes and in a run of that one method, reads `class failed: …` instead of "exit=1".
+   neotest places diagnostics only for test positions, never for a class, so the class's diagnostic (on its failing setup line) is carried by the first of its methods: one diagnostic, cleared with that method's result.
+4. **Expected/actual as a diff.** (Done in slice 3.) neotest has no diff view, so the adapter offers two, both from `expected`/`actual`:
    - **Inline**, always visible: the failure's short text gets a unified diff of the two values (Neovim's built-in diff function), highlighted as a diff.
      Multi-line values are diffed line by line; the inline diff is capped (a few dozen lines) and says how to see the rest.
      ```
@@ -223,11 +224,11 @@ Each item is adapter work (Lua), delivered right after the server piece it uses 
      - Hello, Alice!
      + Hello, alice!
      ```
-   - **Side by side**, for long or multi-line values: `:LatheTestDiff` on a failed test opens a tab with two read-only scratch buffers, `expected` and `actual`, in diff mode (`:diffthis`),
+   - **Side by side**, for long or multi-line values: `require("lathe.neotest").open_diff()` (suggested `<leader>td`, a function like the adapter's other helpers rather than a `:LatheTestDiff` command) opens a tab with two read-only scratch buffers, `expected` and `actual`, in diff mode (`:diffthis`),
      so Neovim highlights the changed lines and the changed text within them, like an IDE's comparison window.
    A failure without the two values shows only its message, as today.
-5. **Structured stack frames.** `stackTrace` can replace the text parsing in `stacktrace.lua`, and put failure diagnostics on lines in helper classes, not only in the test class.
-6. **Durations** in the run summary, e.g. the slowest tests.
+5. **Structured stack frames.** Not pursued for Neovim (decided in slice 3): neotest places a test's diagnostics only in that test's own file, so a helper-class frame can't become one through it, and the output buffer's stack navigation (`stacktrace.lua`) already works from the printed trace, for `main()` runs too. The frames stay on the wire for VS Code's clickable stack traces (§5.3).
+6. **Durations.** (Done in slice 3.) Each row of the results quickfix list (`open_results()`, `<leader>tq`) ends with the test's time; neotest's summary tree has no place for them, and the run's total is in the completion notification.
 7. **A check on open-file discovery.** The adapter waits for a buffer's first `DiagnosticChanged` before asking `runnables.list`, because it can't see when Neovim's LSP client has sent `didOpen`.
    Spike S3 showed the server side needs no more than that `didOpen` was sent: the server handles it before any later request and queues that request behind the open compile,
    so a query sent right after `didOpen` was complete 30 times out of 30.
@@ -338,7 +339,7 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
 2. Collect `request.include`; when it is undefined, run every module node.
 3. Turn each included item into selectors:
    method → `METHOD`, class → `CLASS`, package → `PACKAGE`, all keyed by the item's id.
-   A class's static nested classes come along server-side (§3.2 G), so the client sends one selector per included item.
+   A class's static nested classes come along in the test runner (§3.2 G), so the client sends one selector per included item.
    A module node calls `runnables.dir` on the module directory (the folder path joined with `moduleRel`).
    When `request.exclude` is non-empty, expand the included nodes down to methods and drop the excluded ones, because Lathe selectors have no exclude.
 4. Group selectors by `moduleRel`.
@@ -608,13 +609,13 @@ Work happens on the `nvim-run-test` branch, one slice at a time, each with its o
 | Slice | Content | Status |
 |---|---|---|
 | 0 | End-to-end safety net: the `shapes` module in the `multi-module` fixture; a module-run test in `LspSmokeTest` over a shared `LspSession`; the neotest e2e moved to `lathe-neovim/test/e2e/` and run in the build with pinned plugins; the specs' CI check on `GITHUB_ACTIONS` | done (PR #43) |
-| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | built (PR #45) |
-| 2 | Richer results: B and C; JUnit 4 values deferred | built |
-| 3 | Neotest: class failures, inline and side-by-side diffs, durations, structured stack frames (§3.4 items 3–6) | |
+| 1 | Run-path fixes: E (also nested-type parameters), G (in the runner), H and the closed stdin (D) | done (PR #45) |
+| 2 | Richer results: B and C; JUnit 4 values deferred | done (PR #45, first opened as #46) |
+| 3 | Neotest: class failures, inline and side-by-side diffs, durations (§3.4 items 3, 4, 6; item 5 not pursued) | built |
 | 4 | `lathe/testStarted` and per-test output in neotest (§3.4 item 2) | |
 | 5 | Surefire's filter (F), after its own design check | |
 | 6 | Whole-module discovery (A), lazy and bounded so neotest's startup doesn't start a JVM per module | |
-| 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7) | |
+| 7 | Neotest whole-module summary and the discovery-trigger check (§3.4 items 1 and 7); a file run issued before the file's discovery finishes (gap NV-8) | |
 | 8 | Release: docs, release notes, the `lathe.nvim` publish; the GitHub release carries no `.vsix` this time | |
 
 ## 12. Open items
@@ -628,9 +629,12 @@ What this design leaves open, on purpose:
 | Debugging (§10) | Deferred; the wiring is recorded, the design is not written | After phase 3 |
 | TestNG through Surefire's own TestNG provider | Out of scope; what today's runs do on such a module was not checked | — |
 | Neovim open-file discovery trigger (§3.4 item 7) | A check, not a decided change | Phase 2 step 6 |
+| JUnit 4 expected/actual values (`ComparisonFailure`) | Deferred in slice 2: needs JUnit 4 as a dependency of the runner's tests and the fixture; JUnit 4 failures keep their message | When someone asks |
+| Run before discovery finishes in neotest (gap NV-8) | Skipped with "no tests found" | Slice 7 |
 
 Accepted limits, not open items: one id for a `@Nested` class inherited by two outer classes (§3.2 A);
-a placeholder position for tests in unopened files in neotest (§3.4 item 1); no stdin for a `main()` (§6).
+a placeholder position for tests in unopened files in neotest (§3.4 item 1); no stdin for a `main()` (§6);
+no structured stack frames in Neovim (§3.4 item 5: neotest can't place a helper-class diagnostic, and the output buffer's navigation already works).
 
 ## 13. Prior art
 
