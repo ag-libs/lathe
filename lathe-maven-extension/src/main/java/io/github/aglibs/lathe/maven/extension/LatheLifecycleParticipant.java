@@ -57,9 +57,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
             session.getProjects());
     if (!unmet.isEmpty()) {
       throw new MavenExecutionException(
-          "[lathe] This build is older than Lathe supports:%n  - %s%n  To build without Lathe, add -D%s=true"
-              .formatted(String.join("%n  - ".formatted(), unmet), LatheFlags.DISABLED),
-          session.getTopLevelProject().getFile());
+          LatheFlags.unsupportedBuild(unmet, "-D"), session.getTopLevelProject().getFile());
     }
 
     final var injector = new LatheModelInjector(ExtensionProps.version());

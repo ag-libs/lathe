@@ -187,6 +187,15 @@ public final class LatheLayout {
     private Maven() {}
   }
 
+  public static final class Gradle {
+
+    // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
+    // applies Lathe to each project without cross-project configuration (Isolated Projects).
+    public static final String MIN_GRADLE_VERSION = "8.8";
+
+    private Gradle() {}
+  }
+
   public static Path userCacheRoot() {
     final var override = System.getProperty("lathe.cache");
     if (override != null) {

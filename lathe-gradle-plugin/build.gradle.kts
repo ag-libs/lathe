@@ -1,4 +1,7 @@
-plugins { `java-gradle-plugin` }
+plugins {
+  `java-gradle-plugin`
+  `maven-publish`
+}
 
 // Inside a Maven module: the build output goes under target/, so `mvn clean` removes it too.
 layout.buildDirectory = layout.projectDirectory.dir("target/gradle")
@@ -6,10 +9,12 @@ layout.buildDirectory = layout.projectDirectory.dir("target/gradle")
 group = "io.github.ag-libs"
 version = property("lathe.version") as String
 
+val latheRepo = property("latheRepo") as String
+
 repositories {
   // Lathe's own jars only from the repository the reactor fills, never from a stale ~/.m2.
   maven {
-    url = uri(property("latheRepo") as String)
+    url = uri(latheRepo)
     content { includeGroup("io.github.ag-libs") }
   }
   mavenCentral()
@@ -30,6 +35,7 @@ configurations[functionalTest.runtimeOnlyConfigurationName].extendsFrom(
 dependencies {
   implementation("io.github.ag-libs:lathe-install:$version")
   testImplementation(platform("org.junit:junit-bom:${property("junit.version")}"))
+  testImplementation(gradleApi())
   testImplementation("org.junit.jupiter:junit-jupiter")
   testImplementation("org.assertj:assertj-core:${property("assertj.version")}")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -45,6 +51,12 @@ gradlePlugin {
   }
   testSourceSets(functionalTest)
 }
+
+// The plugin as a user's init script resolves it: from a repository, not TestKit's injected
+// classpath, which reaches only plugins {} blocks.
+val fixturesRepo = layout.buildDirectory.dir("fixtures-repo")
+
+publishing { repositories { maven { name = "fixtures"; url = uri(fixturesRepo) } } }
 
 fun flag(name: String) = providers.gradleProperty(name).map(String::toBoolean).getOrElse(false)
 
@@ -69,6 +81,10 @@ val functionalTestTask =
       testClassesDirs = functionalTest.output.classesDirs
       classpath = functionalTest.runtimeClasspath
       shouldRunAfter(tasks.test)
+      dependsOn("publishAllPublicationsToFixturesRepository")
+      systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
+      systemProperty("lathe.gradle.latheRepo", latheRepo)
+      systemProperty("lathe.version", project.version)
       enabled = !flag("skipTests")
       systemProperty(
           "lathe.gradle.fixturesHome",

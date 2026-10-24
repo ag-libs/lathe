@@ -9,7 +9,7 @@ replays from `.lathe/`). This document designs an equivalent **Gradle** front-en
 identical `.lathe/` contract, so every downstream component — the language server, `lathe-test-runner`,
 the MCP server, and all editor clients — works unchanged.
 
-**In progress:** slice 1a (the `lathe-gradle-plugin` module, its build, and CI) is done; the plugin does nothing yet.
+**In progress:** slices 1a (the `lathe-gradle-plugin` module, its build, and CI) and 1b (registration, gating, the requirements check) are done; the project plugin captures nothing yet.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -602,10 +602,10 @@ if there is one, stops the build with one message naming each problem, its fix, 
 | Way out named in the message | `-Dlathe.disabled=true` | `-Plathe.disabled=true` |
 
 - **A daemon older than JDK 17 cannot load the plugin at all** (Lathe's classes are Java 17), so the check never runs there; Gradle 8.x would show a bare class-version error.
-  Gradle 9 requires JDK 17 for its daemon anyway; for 8.x, a small entry class compiled for an older Java checks the running JDK first and fails with a clear message, then loads the rest.
-- **The message is shared, the version reading is not.** When this plugin is built, the wording (the heading, one line per problem with its fix, the way out) moves from
-  `lathe-maven-extension`'s `LatheRequirements` into `lathe-core`, so both tools say it the same way; each tool keeps its own version reading and comparison.
-  Not before: today the Maven extension is its only user.
+  Gradle 9 requires JDK 17 for its daemon anyway; for 8.x, a small entry class compiled for an older Java could check the running JDK first and fail with a clear message, then load the rest.
+  *Deferred 2026-10-24:* no CI job runs Gradle 8.x on a JDK older than 17, so the entry class would be untested; 8.x on an old JDK shows Gradle's class-version error until a user reports it.
+- **The message is shared, the version reading is not.** The wording (the heading, one line per problem with its fix, the way out) is
+  `LatheFlags.unsupportedBuild` in `lathe-core`, so both tools say it the same way; each tool keeps its own version reading and comparison.
 
 ## End-user setup
 
