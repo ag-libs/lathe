@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.mcp;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -13,6 +14,7 @@ import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
+import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleDiagnostics;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
@@ -86,7 +88,8 @@ final class LatheMcpTools {
         findImplementations(engine, mapper),
         analyzeChange(engine, mapper),
         verifyChange(engine, mapper),
-        formatFile(engine, mapper));
+        formatFile(engine, mapper),
+        fixImports(engine, mapper));
   }
 
   private static SyncToolSpecification diagnostics(
@@ -405,6 +408,30 @@ final class LatheMcpTools {
     return spec(tool, request -> handleFormatFile(engine, request));
   }
 
+  private static SyncToolSpecification fixImports(
+      final LatheEngine engine, final McpJsonMapper mapper) {
+    final var tool =
+        Tool.builder(
+                "fix_imports",
+                mapper,
+                """
+                {"type":"object","required":["file"],
+                 "properties":{"file":{"type":"string",
+                   "description":"Absolute path to a .java file in this project."}}}\
+                """)
+            .description(
+                """
+                Add the missing imports of a Java file in place — every unresolved type name that \
+                matches exactly one type in the reactor, its dependencies, or the JDK. A name with \
+                several matches (List: java.util.List, java.awt.List) is listed with its \
+                candidates for you to choose, and a name with none is listed too. Call after \
+                writing code that uses new types, then format_file to put the imports in order.\
+                """)
+            .annotations(EDITS_IN_PLACE)
+            .build();
+    return spec(tool, request -> handleFixImports(engine, request));
+  }
+
   private static SyncToolSpecification spec(
       final Tool tool, final Function<CallToolRequest, CallToolResult> handler) {
     return SyncToolSpecification.builder()
@@ -541,6 +568,14 @@ final class LatheMcpTools {
         "format_file",
         request,
         file -> formatResult(file, engine.format(file), engine.notes(List.of(file))));
+  }
+
+  private static CallToolResult handleFixImports(
+      final LatheEngine engine, final CallToolRequest request) {
+    return atFile(
+        "fix_imports",
+        request,
+        file -> importsResult(engine.fixImports(file), engine.notes(List.of(file))));
   }
 
   // Optional, case-insensitive; absent means class, unknown means null (caller errors on it).
@@ -777,6 +812,57 @@ final class LatheMcpTools {
                     "%s was already formatted.".formatted(file.getFileName()),
                     Map.<String, Object>of("formatted", false),
                     notes));
+  }
+
+  static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
+    final List<MissingImport> ambiguous =
+        imports.unresolved().stream().filter(item -> !item.candidates().isEmpty()).toList();
+    final List<String> unknown =
+        imports.unresolved().stream()
+            .filter(item -> item.candidates().isEmpty())
+            .map(MissingImport::name)
+            .toList();
+    final String added =
+        imports.added().isEmpty()
+            ? "No import added to %s.".formatted(imports.path())
+            : "Added %d import(s) to %s: %s"
+                .formatted(
+                    imports.added().size(), imports.path(), String.join(", ", imports.added()));
+    final String text =
+        Stream.of(
+                Optional.of(added),
+                Optional.of(ambiguous)
+                    .filter(items -> !items.isEmpty())
+                    .map(
+                        items ->
+                            "Ambiguous — add one yourself:%n%s"
+                                .formatted(
+                                    items.stream()
+                                        .map(LatheMcpTools::choiceLine)
+                                        .collect(Collectors.joining(System.lineSeparator())))),
+                Optional.of(unknown)
+                    .filter(names -> !names.isEmpty())
+                    .map(names -> "No import found for: %s".formatted(String.join(", ", names))))
+            .flatMap(Optional::stream)
+            .collect(Collectors.joining(System.lineSeparator()));
+    return result(
+        text,
+        Map.<String, Object>of(
+            "path", imports.path(),
+            "added", imports.added(),
+            "ambiguous",
+                ambiguous.stream()
+                    .map(
+                        item ->
+                            Map.<String, Object>of(
+                                "name", item.name(), "candidates", item.candidates()))
+                    .toList(),
+            "unknown", unknown),
+        notes);
+  }
+
+  private static String choiceLine(final MissingImport item) {
+    return "  %s: %s".formatted(item.name(), String.join(", ", item.candidates()));
   }
 
   private static String lineSpan(final LatheFormat format) {

@@ -716,7 +716,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.typeHierarchyExplorerFuture(uri, pos)).thenCompose(f -> f);
   }
 
-  CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
+  public CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     return worker.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
   }
 

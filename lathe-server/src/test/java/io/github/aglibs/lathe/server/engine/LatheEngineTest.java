@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.engine;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -17,6 +18,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.FormatterFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;
@@ -710,6 +712,53 @@ class LatheEngineTest {
     assertThatThrownBy(() -> engine.format(source))
         .hasMessageStartingWith("No formatter for this workspace")
         .hasMessageContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+  }
+
+  @Test
+  void fixImports_mixedNames_addsTheUnambiguousOnes_leavesTheRestToTheAgent() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/util/Helper.java", "package com.example.util; public class Helper {}");
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/a/Widget.java", "package com.example.a; public class Widget {}");
+    TestCompiler.writeModuleSource(
+        tmp, "com/example/b/Widget.java", "package com.example.b; public class Widget {}");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/app/App.java",
+            "package com.example.app;\nclass App {\n  Helper h;\n  Widget w;\n  Fooo f;\n}\n");
+    engine = new LatheEngine(tmp);
+
+    final LatheImports imports = engine.fixImports(source);
+
+    assertThat(imports.path()).isEqualTo(FileUtil.slashed(tmp.relativize(source)));
+    assertThat(imports.added()).containsExactly("com.example.util.Helper");
+    assertThat(imports.unresolved())
+        .extracting(MissingImport::name, MissingImport::candidates)
+        .containsExactlyInAnyOrder(
+            tuple("Widget", List.of("com.example.a.Widget", "com.example.b.Widget")),
+            tuple("Fooo", List.of()));
+    assertThat(Files.readString(source))
+        .startsWith("package com.example.app;\nimport com.example.util.Helper;\nclass App {");
+
+    final LatheImports again = engine.fixImports(source);
+
+    assertThat(again.added()).as("nothing left to add").isEmpty();
+    assertThat(again.unresolved()).extracting(MissingImport::name).contains("Widget", "Fooo");
+  }
+
+  @Test
+  void fixImports_nothingMissing_writesNothing() throws Exception {
+    final String clean =
+        "package com.example;\nimport java.util.List;\nclass Sample { List<String> s; }\n";
+    final Path source = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", clean);
+    engine = new LatheEngine(tmp);
+
+    final LatheImports imports = engine.fixImports(source);
+
+    assertThat(imports.added()).isEmpty();
+    assertThat(imports.unresolved()).isEmpty();
+    assertThat(Files.readString(source)).isEqualTo(clean);
   }
 
   // The style file lathe:sync writes for a project whose Spotless step pins google-java-format.

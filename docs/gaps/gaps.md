@@ -680,32 +680,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all)
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Missing imports are the most common error an agent makes in Java.
-The LSP side computes the fixes (single-name import quick fix, whole-file `lathe.missingImports`
-([CA-7](#ca-7--pasting-code-with-unresolved-types-requires-per-symbol-quick-fixes-no-whole-file-add-missing-imports)),
-add-throws), but MCP only reports the errors, so the agent guesses the import.
-gopls's `go_diagnostics` returns the fixes with the diagnostics and tells the agent to apply them and
-re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/gopls/internal/mcp/instructions.md)).
-
-### Fix direction
-
-A `fix_imports` tool applying the unambiguous imports and listing the ambiguous names with their
-candidates; then consider listing other available fixes beside `get_diagnostics` results.
-Reuse `ImportCandidates`; write like `rename_symbol`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-24 — No file outline tool: an agent reads a whole file to learn its structure
 
 **Status: accepted — Target: next**

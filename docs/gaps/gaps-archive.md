@@ -10123,6 +10123,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all) — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Missing imports are the most common error an agent makes in Java.
+The LSP side computes the fixes (single-name import quick fix, whole-file `lathe.missingImports`
+([CA-7](gaps.md#ca-7--pasting-code-with-unresolved-types-requires-per-symbol-quick-fixes-no-whole-file-add-missing-imports)),
+add-throws), but MCP only reports the errors, so the agent guesses the import.
+gopls's `go_diagnostics` returns the fixes with the diagnostics and tells the agent to apply them and
+re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/gopls/internal/mcp/instructions.md)).
+
+### Fix
+
+- `fix_imports` reads the file's unresolved type names and their candidates from the analysis behind
+  the editor's "Add missing imports…" (`missingImportsFuture`), adds every name with exactly one
+  candidate, and writes the result the way `rename_symbol` does.
+- The added imports go in as one edit at the import insertion point
+  (`MissingImportsResult.importEdit`, which the single-name quick fix now uses too): several edits at
+  the same position apply in no defined order.
+- The answer lists the imports added, each ambiguous name with its candidates
+  (`List: java.util.List, java.awt.List`) for the agent to choose, and the names with none.
+  The description points to `format_file` to put the imports in order.
+- A failed analysis still answers "no import added", as the editor's command does; a file that does
+  not compile already carries a `Not compiled:` note.
+- Not done: listing the other available fixes (add-throws) beside `get_diagnostics` results; missing
+  imports are the common case.
+
+### Regression targets
+
+- `LatheEngineTest.fixImports_mixedNames_addsTheUnambiguousOnes_leavesTheRestToTheAgent`
+- `LatheEngineTest.fixImports_nothingMissing_writesNothing`
+- `LatheMcpToolsTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`
+
+---
+
 ## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check — done
 
 **Status: done — Target: next**

@@ -113,6 +113,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step), so edits pass the build's formatting check; answers with the lines it rewrote |
+| `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match; the ambiguous ones are listed with their candidates for you to pick |
 | `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
 
 The file tools take an existing `.java` file; any other path answers with an error.
@@ -126,8 +127,8 @@ a line answers with an error that shows the line, rather than with the enclosing
 
 Each tool declares the MCP annotations that say whether it writes:
 the query tools and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
-`run_test` is neither (it runs code but writes no source), and `format_file` is neither but
-`idempotentHint` (formatting twice changes nothing).
+`run_test` is neither (it runs code but writes no source), and `format_file` and `fix_imports` are
+neither but `idempotentHint` (running them twice changes nothing more).
 What a client does with them is up to the client.
 
 The server also sends routing guidance at connection time (which tool fits which task), so a client

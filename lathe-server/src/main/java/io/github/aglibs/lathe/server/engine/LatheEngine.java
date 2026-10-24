@@ -12,6 +12,8 @@ import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.ModulePlacement;
 import io.github.aglibs.lathe.server.ReconcileOutcome;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -350,11 +352,7 @@ public final class LatheEngine {
   // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
   // like a rename. Empty when the file was already formatted.
   public Optional<LatheFormat> format(final Path file) {
-    if (origin(file) != LatheLocation.Origin.REACTOR) {
-      throw new IllegalStateException(
-          "[format] refusing: %s is not a reactor file".formatted(file));
-    }
-
+    requireReactorFile("format", file);
     compileFromDisk(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
     final List<TextEdit> edits = await(service.formatFuture(uri));
@@ -362,12 +360,48 @@ public final class LatheEngine {
       return Optional.empty();
     }
 
+    return Optional.of(
+        new LatheFormat(
+            writeFile(file, uri, edits),
+            firstLine(edits.get(0)),
+            lastLine(edits.get(edits.size() - 1))));
+  }
+
+  // Adds the imports that have one candidate; the rest are the agent's to choose (ambiguous) or
+  // fix (unknown names).
+  public LatheImports fixImports(final Path file) {
+    requireReactorFile("fixImports", file);
+    compileFromDisk(file); // missing imports are read from the file's document, so register it
+    final String uri = LatheUri.fromPath(file);
+    final MissingImportsResult missing = await(service.missingImportsFuture(uri));
+    final Map<Boolean, List<MissingImport>> byUnambiguous =
+        missing.items().stream()
+            .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
+    final List<String> added =
+        byUnambiguous.get(true).stream().map(item -> item.candidates().get(0)).sorted().toList();
+    final String path =
+        added.isEmpty()
+            ? displayPath(file, uri)
+            : writeFile(
+                file,
+                uri,
+                List.of(MissingImportsResult.importEdit(missing.insertionRange(), added)));
+    return new LatheImports(path, added, byUnambiguous.get(false));
+  }
+
+  // The tools that write one file leave dependency, JDK and generated sources alone.
+  private void requireReactorFile(final String operation, final Path file) {
+    if (origin(file) != LatheLocation.Origin.REACTOR) {
+      throw new IllegalStateException(
+          "[%s] refusing: %s is not a reactor file".formatted(operation, file));
+    }
+  }
+
+  private String writeFile(final Path file, final String uri, final List<TextEdit> edits) {
     final var edit =
         new LatheFileEdit(uri, displayPath(file, uri), LatheLocation.Origin.REACTOR, edits.size());
     writeAndCommit(Map.of(uri, edits), Map.of(), List.of(edit));
-    return Optional.of(
-        new LatheFormat(
-            edit.path(), firstLine(edits.get(0)), lastLine(edits.get(edits.size() - 1))));
+    return edit.path();
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.

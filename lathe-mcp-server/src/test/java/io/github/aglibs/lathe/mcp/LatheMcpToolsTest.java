@@ -3,8 +3,10 @@ package io.github.aglibs.lathe.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
@@ -65,7 +67,8 @@ class LatheMcpToolsTest {
             "find_implementations",
             "analyze_change",
             "verify_change",
-            "format_file");
+            "format_file",
+            "fix_imports");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -87,6 +90,7 @@ class LatheMcpToolsTest {
     assertThat(tool("analyze_change").tool().inputSchema().toString())
         .contains("file", "line", "column");
     assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
+    assertThat(tool("fix_imports").tool().inputSchema().toString()).contains("file");
   }
 
   @Test
@@ -106,8 +110,9 @@ class LatheMcpToolsTest {
             "verify_change");
     assertThat(tool("rename_symbol").tool().annotations().destructiveHint()).isTrue();
     assertThat(tool("run_test").tool().annotations().destructiveHint()).isFalse();
-    assertThat(tool("format_file").tool().annotations())
-        .satisfies(
+    assertThat(List.of("format_file", "fix_imports"))
+        .map(name -> tool(name).tool().annotations())
+        .allSatisfy(
             hints -> {
               assertThat(hints.destructiveHint()).isFalse();
               assertThat(hints.idempotentHint()).isTrue();
@@ -217,6 +222,7 @@ class LatheMcpToolsTest {
         .isEqualTo("%s does not exist".formatted(missing));
     assertThat(text(call("format_file", Map.of())))
         .isEqualTo("format_file requires a 'file' argument");
+    assertThat(call("fix_imports", Map.of("file", pom.toString())).isError()).isTrue();
   }
 
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
@@ -326,6 +332,32 @@ class LatheMcpToolsTest {
 
   private SyncToolSpecification tool(final String name) {
     return specs.stream().filter(spec -> spec.tool().name().equals(name)).findFirst().orElseThrow();
+  }
+
+  @Test
+  void importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft() {
+    final var noNotes = new LatheNotes(List.of(), List.of(), List.of(), false);
+    final var imports =
+        new LatheImports(
+            "app/src/main/java/a/Foo.java",
+            List.of("java.time.Duration", "java.util.ArrayList"),
+            List.of(
+                new MissingImport("List", List.of("java.util.List", "java.awt.List")),
+                new MissingImport("Fooo", List.of())));
+
+    assertThat(text(LatheMcpTools.importsResult(imports, noNotes)))
+        .isEqualTo(
+            String.join(
+                System.lineSeparator(),
+                "Added 2 import(s) to app/src/main/java/a/Foo.java: java.time.Duration, java.util.ArrayList",
+                "Ambiguous — add one yourself:",
+                "  List: java.util.List, java.awt.List",
+                "No import found for: Fooo"));
+    assertThat(
+            text(
+                LatheMcpTools.importsResult(
+                    new LatheImports("a/Foo.java", List.of(), List.of()), noNotes)))
+        .isEqualTo("No import added to a/Foo.java.");
   }
 
   @Test
