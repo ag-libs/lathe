@@ -163,16 +163,22 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 | `workspace.json`, the sync script, `main-launch.json` | `lathe-maven-plugin` (`WorkspaceManifestWriter`, `SyncScriptWriter`, `MainLaunchWriter`) | Maven's `Log`; `MainLaunchWriter` also reads `MavenProject` |
 | Formatter jars and `style.json` | `lathe-maven-plugin` (`FormatterResolver`, `WorkspaceStyleWriter`) | Aether resolution, and the Spotless POM reading, which stays Maven-only |
 | `jvm.args` | `lathe-maven-plugin` (`JvmArgsWriter`) | reads the compiler plugin's POM configuration and `.mvn/jvm.config`; the *writing* moves, the reading stays per tool |
-| Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`, `LauncherCopier`) | a `maven-core` / `maven-plugin-api` dependency |
+| Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`, `LauncherCopier`) | *no longer (slice 0b):* Aether moved to `lathe-install-maven`, Maven's `ComparableVersion` became the JDK's `ModuleDescriptor.Version`, and the runner classpath takes `group:artifact:version` strings |
 | `lsp-params-*.json`, the bytecode and generated-sources mirrors, compile stamps | `lathe-compiler` (`ParamsWriter`, `LatheCompiler.syncOutput`) | Plexus `CompilerConfiguration` |
 
 `ReactorProjects`, `ModuleResourcesReader`, `SyncCoordinator`, and the Mojos read the Maven model and stay in `lathe-maven-plugin`; the Gradle plugin has its own counterparts.
 
-They move into `lathe-install`, which then depends only on `lathe-core`:
+They move into `lathe-install`, which then depends only on `lathe-core` (and the SLF4J API every build
+tool provides):
 
 - SLF4J replaces Maven's `Log`, as in `lathe-compiler`: both build tools route it to their own output, so
   no logging interface is needed (*decided 2026-10-24; `lathe-install`'s own classes switched in slice 0a*);
-- an artifact-resolver interface, with a Maven implementation (Aether, in `lathe-maven-plugin`) and a Gradle one (in the plugin) — two implementations, so the interface earns its place;
+- an artifact-resolver interface (`ArtifactResolver`: `resolve` and `resolveTransitive`, repositories bound
+  when it is built), with a Maven implementation and a Gradle one (in the plugin) — two implementations, so the
+  interface earns its place. The Maven one, `MavenArtifactResolver` (Aether), lives in a small
+  **`lathe-install-maven`** module rather than `lathe-maven-plugin`, because the OpenJDK plugin, a second Maven
+  front-end that does not depend on `lathe-maven-plugin`, uses it too (*done 2026-10-24, slice 0b*). The
+  Maven-only POM reading (`directDependencies`, for Spotless) stays on the Maven class;
 - `ParamsWriter` and the mirror/stamp writer (`syncOutput`, including its keep-the-last-good-capture rule on a failed compile) take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
 - `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values;
 - the dependency and JDK source sync, the type-index shards, `WorkspaceStyleWriter`, and `JvmArgsWriter` take the resolved jars and flags as values.

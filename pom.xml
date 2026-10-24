@@ -35,6 +35,7 @@
     <module>lathe-mcp-server</module>
     <module>lathe-maven-extension</module>
     <module>lathe-install</module>
+    <module>lathe-install-maven</module>
     <module>lathe-maven-plugin</module>
     <module>lathe-openjdk-maven-plugin</module>
     <module>lathe-neovim</module>

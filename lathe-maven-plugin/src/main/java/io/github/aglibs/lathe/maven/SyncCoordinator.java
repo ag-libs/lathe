@@ -4,12 +4,12 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
-import io.github.aglibs.lathe.install.ArtifactResolver;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
+import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
@@ -69,7 +69,9 @@ final class SyncCoordinator {
     JdkSourceSync.extract(jdkSource, log);
     final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
     final var serverInstaller =
-        new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos);
+        new ServerInstaller(
+            new MavenArtifactResolver(
+                repositorySystem, session.getRepositorySession(), remoteRepos));
     final Path versionDir = serverInstaller.install();
     LauncherCopier.copyToWorkspace(workspaceRoot, versionDir);
     final var mainLaunchWriter =
@@ -84,7 +86,10 @@ final class SyncCoordinator {
               .map(p -> FileUtil.slashed(workspaceRoot.relativize(p.getFile().toPath())))
               .toList();
       final List<String> runnerClasspath =
-          serverInstaller.resolveRunnerClasspath(externalArtifacts).stream()
+          serverInstaller
+              .resolveRunnerClasspath(
+                  externalArtifacts.values().stream().map(ReactorProjects::gav).toList())
+              .stream()
               .map(Path::toString)
               .toList();
       final SyncScript syncScript = SyncScriptWriter.script(session.getSystemProperties());
@@ -102,8 +107,14 @@ final class SyncCoordinator {
       final MavenProject rootProject = session.getTopLevelProject();
       final var formatterResolver =
           new FormatterResolver(
-              new ArtifactResolver(repositorySystem, session.getRepositorySession()),
-              rootProject,
+              new MavenArtifactResolver(
+                  repositorySystem,
+                  session.getRepositorySession(),
+                  rootProject.getRemotePluginRepositories()),
+              new MavenArtifactResolver(
+                  repositorySystem,
+                  session.getRepositorySession(),
+                  rootProject.getRemoteProjectRepositories()),
               log);
       final WorkspaceStyleData style =
           new WorkspaceStyleWriter(formatterResolver, log).write(workspaceRoot, rootProject);

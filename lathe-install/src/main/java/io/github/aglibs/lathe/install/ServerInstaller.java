@@ -5,20 +5,17 @@ import io.github.aglibs.lathe.core.JavaArgfile;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.File;
 import java.io.IOException;
+import java.lang.module.ModuleDescriptor.Version;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.versioning.ComparableVersion;
-import org.eclipse.aether.RepositorySystem;
-import org.eclipse.aether.RepositorySystemSession;
-import org.eclipse.aether.repository.RemoteRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,15 +35,10 @@ public final class ServerInstaller {
   // references HttpClient when it loads.
   private static final List<String> COMMON_JVM_ARGS = List.of("--add-modules", "java.net.http");
 
-  private final ArtifactResolver artifactResolver;
-  private final List<RemoteRepository> remoteRepositories;
+  private final ArtifactResolver artifacts;
 
-  public ServerInstaller(
-      final RepositorySystem repositorySystem,
-      final RepositorySystemSession repoSession,
-      final List<RemoteRepository> remoteRepositories) {
-    this.artifactResolver = new ArtifactResolver(repositorySystem, repoSession);
-    this.remoteRepositories = remoteRepositories;
+  public ServerInstaller(final ArtifactResolver artifacts) {
+    this.artifacts = artifacts;
   }
 
   // Installs the server + MCP launchers for this plugin's version into an immutable,
@@ -110,19 +102,27 @@ public final class ServerInstaller {
     }
   }
 
+  // The JDK's version ordering: numeric parts as numbers, a pre-release (-SNAPSHOT) before its
+  // release. A directory whose name is no version is not a server install.
   static Path newestVersionDir(final Path serversDir) {
     try {
       return FileUtil.subdirectories(serversDir).stream()
           .filter(path -> serversDir.equals(path.getParent()))
-          .max(Comparator.comparing(ServerInstaller::versionOf))
+          .flatMap(path -> versionOf(path).map(version -> Map.entry(version, path)).stream())
+          .max(Map.Entry.comparingByKey())
+          .map(Map.Entry::getValue)
           .orElse(null);
     } catch (final IOException e) {
       return null;
     }
   }
 
-  private static ComparableVersion versionOf(final Path versionDir) {
-    return new ComparableVersion(versionDir.getFileName().toString());
+  private static Optional<Version> versionOf(final Path versionDir) {
+    try {
+      return Optional.of(Version.parse(versionDir.getFileName().toString()));
+    } catch (final IllegalArgumentException e) {
+      return Optional.empty();
+    }
   }
 
   private void writeLauncher(final Path versionDir, final String scriptName, final String script)
@@ -180,11 +180,10 @@ public final class ServerInstaller {
   }
 
   Path resolveRunnerJar() throws SyncException {
-    return artifactResolver.resolve(
+    return artifacts.resolve(
         "%s:%s:%s"
             .formatted(
-                PluginProps.groupId(), PluginProps.TEST_RUNNER_ARTIFACT_ID, PluginProps.version()),
-        remoteRepositories);
+                PluginProps.groupId(), PluginProps.TEST_RUNNER_ARTIFACT_ID, PluginProps.version()));
   }
 
   private List<Path> resolveServerJars() throws SyncException {
@@ -207,20 +206,20 @@ public final class ServerInstaller {
    * here, at sync time, against whatever JUnit Platform/Jupiter version the reactor actually uses,
    * so the versions match what the project resolved rather than a hardcoded pin.
    */
-  public List<Path> resolveRunnerClasspath(final Map<String, Artifact> externalArtifacts)
+  public List<Path> resolveRunnerClasspath(final Collection<String> externalCoordinates)
       throws SyncException {
     final var classpath = new ArrayList<Path>();
     classpath.add(resolveRunnerJar());
-    classpath.addAll(resolveJUnitSupportJars(externalArtifacts));
+    classpath.addAll(resolveJUnitSupportJars(externalCoordinates));
     return List.copyOf(classpath);
   }
 
-  private List<Path> resolveJUnitSupportJars(final Map<String, Artifact> externalArtifacts)
+  private List<Path> resolveJUnitSupportJars(final Collection<String> externalCoordinates)
       throws SyncException {
     final String platformVersion =
-        versionOf(externalArtifacts, "org.junit.platform", "junit-platform-commons");
+        versionOf(externalCoordinates, "org.junit.platform:junit-platform-commons");
     final String jupiterVersion =
-        versionOf(externalArtifacts, "org.junit.jupiter", "junit-jupiter-api");
+        versionOf(externalCoordinates, "org.junit.jupiter:junit-jupiter-api");
     if (platformVersion == null || jupiterVersion == null) {
       LOG.debug("[sync] no JUnit Jupiter dependency detected — skipping runner support jars");
       return List.of();
@@ -233,20 +232,19 @@ public final class ServerInstaller {
     return List.copyOf(jars);
   }
 
+  // The version of groupId:artifactId among groupId:artifactId:version coordinates.
   private static String versionOf(
-      final Map<String, Artifact> externalArtifacts,
-      final String groupId,
-      final String artifactId) {
-    return externalArtifacts.values().stream()
-        .filter(a -> groupId.equals(a.getGroupId()) && artifactId.equals(a.getArtifactId()))
-        .map(Artifact::getVersion)
+      final Collection<String> coordinates, final String groupArtifact) {
+    final String prefix = "%s:".formatted(groupArtifact);
+    return coordinates.stream()
+        .filter(gav -> gav.startsWith(prefix))
+        .map(gav -> gav.substring(prefix.length()))
         .findFirst()
         .orElse(null);
   }
 
   private List<Path> resolveTransitiveJars(
       final String groupId, final String artifactId, final String version) throws SyncException {
-    return artifactResolver.resolveTransitive(
-        "%s:%s:%s".formatted(groupId, artifactId, version), remoteRepositories);
+    return artifacts.resolveTransitive("%s:%s:%s".formatted(groupId, artifactId, version));
   }
 }

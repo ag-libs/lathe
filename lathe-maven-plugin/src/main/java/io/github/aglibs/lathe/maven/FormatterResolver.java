@@ -3,8 +3,8 @@ package io.github.aglibs.lathe.maven;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
-import io.github.aglibs.lathe.install.ArtifactResolver;
 import io.github.aglibs.lathe.install.SyncException;
+import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,10 +19,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import org.apache.maven.plugin.logging.Log;
-import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.artifact.Artifact;
 import org.eclipse.aether.graph.Dependency;
-import org.eclipse.aether.repository.RemoteRepository;
 
 // Completes a detected formatter from the project's own Spotless, so Lathe runs exactly what
 // spotless:apply would: the version and step options Spotless defaults to when the POM leaves them
@@ -61,16 +59,17 @@ final class FormatterResolver {
               false,
               "com/diffplug/spotless/extra/eclipse_jdt_formatter/v%s.lockfile"));
 
-  private final ArtifactResolver artifacts;
-  private final List<RemoteRepository> pluginRepositories;
-  private final List<RemoteRepository> projectRepositories;
+  // Spotless itself comes from the plugin repositories, the formatter it runs from the project's.
+  private final MavenArtifactResolver pluginArtifacts;
+  private final MavenArtifactResolver projectArtifacts;
   private final Log log;
 
   FormatterResolver(
-      final ArtifactResolver artifacts, final MavenProject rootProject, final Log log) {
-    this.artifacts = artifacts;
-    this.pluginRepositories = rootProject.getRemotePluginRepositories();
-    this.projectRepositories = rootProject.getRemoteProjectRepositories();
+      final MavenArtifactResolver pluginArtifacts,
+      final MavenArtifactResolver projectArtifacts,
+      final Log log) {
+    this.pluginArtifacts = pluginArtifacts;
+    this.projectArtifacts = projectArtifacts;
     this.log = log;
   }
 
@@ -87,12 +86,11 @@ final class FormatterResolver {
           withDefaults(spec, spotless.loadClass(step.type()), step.groupArtifact());
       final List<Path> jars =
           step.lockfile().isEmpty()
-              ? artifacts.resolveTransitive(
+              ? projectArtifacts.resolveTransitive(
                   "%s:%s"
                       .formatted(
                           completed.options().get(LatheFlags.FORMAT_GROUP_ARTIFACT),
-                          completed.version()),
-                  projectRepositories)
+                          completed.version()))
               : lockfileJars(spotless, step.lockfile().formatted(completed.version()));
       final List<String> classpath = jars.stream().map(Path::toString).toList();
       log.info(
@@ -122,10 +120,9 @@ final class FormatterResolver {
   private URLClassLoader spotlessLibraries(final String spotlessVersion)
       throws SyncException, IOException {
     final List<Artifact> declared =
-        artifacts
+        pluginArtifacts
             .directDependencies(
-                "%s:%s:%s".formatted(SPOTLESS_GROUP, SPOTLESS_PLUGIN, spotlessVersion),
-                pluginRepositories)
+                "%s:%s:%s".formatted(SPOTLESS_GROUP, SPOTLESS_PLUGIN, spotlessVersion))
             .stream()
             .map(Dependency::getArtifact)
             .filter(artifact -> SPOTLESS_LIBRARIES.contains(artifact.getArtifactId()))
@@ -140,11 +137,10 @@ final class FormatterResolver {
     final List<URL> urls = new ArrayList<>();
     for (final Artifact library : declared) {
       urls.add(
-          artifacts
+          pluginArtifacts
               .resolve(
                   "%s:%s:%s"
-                      .formatted(SPOTLESS_GROUP, library.getArtifactId(), library.getVersion()),
-                  pluginRepositories)
+                      .formatted(SPOTLESS_GROUP, library.getArtifactId(), library.getVersion()))
               .toUri()
               .toURL());
     }
@@ -168,7 +164,7 @@ final class FormatterResolver {
           .lines()
           .map(String::trim)
           .filter(line -> !line.isEmpty() && !line.startsWith("#"))
-          .map(coordinates -> artifacts.resolve(coordinates, projectRepositories))
+          .map(projectArtifacts::resolve)
           .toList();
     }
   }

@@ -26,6 +26,11 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-install-maven</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>io.github.ag-libs.validcheck</groupId>
       <artifactId>validcheck</artifactId>
     </dependency>

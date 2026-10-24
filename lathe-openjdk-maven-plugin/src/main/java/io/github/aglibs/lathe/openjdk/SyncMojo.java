@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
+import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
 import java.io.IOException;
 import java.nio.file.Path;
 import javax.inject.Inject;
@@ -69,9 +70,10 @@ public final class SyncMojo extends AbstractMojo {
   private void installServer() {
     final var installer =
         new ServerInstaller(
-            repositorySystem,
-            session.getRepositorySession(),
-            session.getCurrentProject().getRemoteProjectRepositories());
+            new MavenArtifactResolver(
+                repositorySystem,
+                session.getRepositorySession(),
+                session.getCurrentProject().getRemoteProjectRepositories()));
     final Path versionDir = installer.install();
     LauncherCopier.copyToWorkspace(Path.of(workspaceRoot), versionDir);
   }
