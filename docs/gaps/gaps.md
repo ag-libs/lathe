@@ -419,41 +419,6 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
-## WS-13 — A build file changed while no server ran is never detected
-
-**Status: documented.**
-**Affects: the editor and MCP.**
-Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon,
-through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
-
-### Observed behaviour
-
-A module `pom.xml` was edited (a comment appended) while no server was running, then a session was
-started and queried.
-No `[watcher] build files changed` line was logged and no sync was requested, so the answers came from
-a mirror built for the old POM.
-The same edit made while the server runs is detected within one tick.
-
-Editor: a live POM edit raised the "Build files changed" sync prompt within 0.5 s; an edit made before
-the server started raised no prompt within 15 s, on all three workspaces.
-MCP: since the [MC-14](gaps-archive.md#mc-14--a-changed-build-file-never-yields-sync-required--done) fix the live case yields a note; the cold case still does not.
-
-### Cause
-
-`WorkspaceWatcher.updateBuildFiles` takes its fingerprint baseline (mtime and size) from the build
-files as they are at startup, so a change made before startup is part of the baseline.
-The startup pass checks sources against their compile stamps, but nothing compares build files against
-the state the last sync saw.
-
-### Fix direction
-
-Compare build files at startup against what the last sync recorded, for example fingerprints written
-into `workspace.json` by `lathe:sync`, and treat a difference as `BUILD_FILES_CHANGED`.
-
-### Regression targets
-
-None yet.
-
 ## WS-14 — A deleted resource stays in the mirror
 
 **Status: documented.**

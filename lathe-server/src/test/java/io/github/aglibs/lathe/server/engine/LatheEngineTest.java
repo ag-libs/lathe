@@ -29,6 +29,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LatheEngineTest {
 
+  private static final String BUILD_FILES_NOTE =
+      "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
+
   @TempDir private Path tmp;
   private LatheEngine engine;
 
@@ -286,18 +289,32 @@ class LatheEngineTest {
 
     Files.writeString(pom, "<project><!-- edited --></project>");
     engine.diagnostics(fx.caller());
-    final String buildFilesNote =
-        "build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND);
     assertThat(engine.notes(List.of()).syncRequired())
         .as("seen by the query itself, not on the next tick")
-        .containsExactly(buildFilesNote);
+        .containsExactly(BUILD_FILES_NOTE);
 
     writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
     assertThat(engine.diagnostics(fx.caller()))
         .as("the agent's edits are still compiled while the sync is pending")
         .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
-    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(buildFilesNote);
+    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
     assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
+  }
+
+  @Test
+  void notes_buildFileEditedBeforeTheSessionStarted_syncRequiredOnTheFirstQuery() throws Exception {
+    final GreetFixture fx = greetFixture();
+    writeManifest(LatheLayout.SCHEMA_VERSION, List.of("module/pom.xml"));
+    final long synced =
+        Files.getLastModifiedTime(
+                tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON))
+            .toMillis();
+    TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", synced + 10_000L);
+    engine = new LatheEngine(tmp);
+
+    engine.diagnostics(fx.caller());
+
+    assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
   }
 
   @Test

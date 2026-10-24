@@ -8338,6 +8338,58 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-13 — A build file changed while no server ran is never detected — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP.**
+Found by the external-change staleness probe (2026-10-24) on EqualsVerifier, Dropwizard, and Helidon,
+through MCP and through a matching LSP probe the same day (an editor session driven through `didOpen`/`didSave`, polling up to 15 s).
+
+### Observed behaviour
+
+A module `pom.xml` was edited (a comment appended) while no server was running, then a session was
+started and queried.
+No `[watcher] build files changed` line was logged and no sync was requested, so the answers came from
+a mirror built for the old POM.
+The same edit made while the server runs is detected within one tick.
+
+Editor: a live POM edit raised the "Build files changed" sync prompt within 0.5 s; an edit made before
+the server started raised no prompt within 15 s, on all three workspaces.
+MCP: neither case yielded a note (the live one was
+[MC-14](#mc-14--a-changed-build-file-never-yields-sync-required--done)).
+
+### Cause
+
+`WorkspaceWatcher.updateBuildFiles` takes its fingerprint baseline (mtime and size) from the build
+files as they are at startup, so a change made before startup is part of the baseline.
+The startup pass checks sources against their compile stamps, but nothing compares build files against
+the state the last sync saw.
+
+### Fix
+
+`WorkspaceWatcher.updateBuildFiles` baselines a build file newer than `workspace.json` as unseen,
+so the first poll reports `BUILD_FILES_CHANGED` and the existing reaction follows: the editor's sync
+prompt on the first tick, and through the MCP freshen step (which polls the watcher since the
+[MC-14](#mc-14--a-changed-build-file-never-yields-sync-required--done) fix) a "Sync required" note on
+the first query.
+The manifest's mtime stands for the last sync: `lathe:sync` writes it at its end (or touches it when
+unchanged), after Maven read every POM, so a reload after a sync never reports anything.
+No schema change.
+
+Known limits, both narrow: the MCP engine also touches `workspace.json` after a rename (so an editor's
+server rescans), so a server started after such a touch misses a POM change made before it; and a
+POM edited during a Maven build, after the models were read, is older than the manifest that build
+writes.
+
+### Regression targets
+
+Both fail with the startup baseline taken as is:
+
+- `WorkspaceWatcherTest.poll_buildFileEditedBeforeStartup_reportedOnFirstPollOnlyWhenNewerThanManifest`
+- `LatheEngineTest.notes_buildFileEditedBeforeTheSessionStarted_syncRequiredOnTheFirstQuery`
+
+---
+
 ## WS-12 — `lathe-sync.sh` drops the `-D` properties of the build it was generated from — non-goal
 
 **Status: non-goal (2026-10-24): documented behaviour, no code change.**
@@ -8376,6 +8428,8 @@ build has no Lathe) and no longer replays `-P`/`-D`.
 ### Regression targets
 
 None: there is no behaviour to guard.
+
+---
 
 ## WS-11 — A failed Maven compile empties the module's `.lathe` mirror — done
 
@@ -9956,7 +10010,7 @@ The server detects the change: the session log has `[watcher] build files change
 `NoopLanguageClient.showMessageRequest` answers `null` at once, and `onSyncPromptResponse` clears
 `buildFilesNotificationPending` in the same millisecond (`[sync] answered action=null`).
 `reconcileForVerify` therefore never returns `BUILD_FILES_PENDING`.
-A build file changed before the session started is not detected at all (WS-13).
+A build file changed before the session started is not detected at all ([WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done)).
 
 ### Fix
 
@@ -9967,7 +10021,7 @@ The engine's freshen step (`reconcileForVerify`) now runs the watcher's check fi
 the agent edited just before the query is reported by that query, not on the next tick.
 While the sync is pending the pass still runs, so the agent's own edits keep being compiled;
 the outcome only carries `BUILD_FILES_PENDING`, on which `verify_change` still defers to the sync.
-A build file changed before the session started is WS-13.
+A build file changed before the session started is [WS-13](#ws-13--a-build-file-changed-while-no-server-ran-is-never-detected--done).
 
 ### Regression targets
 

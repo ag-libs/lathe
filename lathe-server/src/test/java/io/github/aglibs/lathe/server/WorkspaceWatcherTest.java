@@ -83,7 +83,9 @@ class WorkspaceWatcherTest {
     // Make it stale
     Files.writeString(pom, "<project>updated</project>");
 
-    // Now call updateBuildFiles to reset baseline to current disk state
+    // A sync rewrites the manifest; the reload that change triggers resets the baseline
+    Files.writeString(manifest(), "{synced}");
+    assertThat(watcher.poll()).isEqualTo(PollResult.WORKSPACE_CHANGED);
     watcher.updateBuildFiles(List.of(pom));
 
     assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
@@ -152,6 +154,29 @@ class WorkspaceWatcherTest {
 
     Files.writeString(pom, "<project>updated again</project>");
     assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+  }
+
+  @Test
+  void poll_buildFileEditedBeforeStartup_reportedOnFirstPollOnlyWhenNewerThanManifest()
+      throws IOException {
+    final var edited = workspaceRoot.resolve("pom.xml");
+    Files.writeString(edited, "<project/>");
+    Files.setLastModifiedTime(edited, FileTime.fromMillis(PAST.toMillis() + 10_000L));
+    final var watcher = new WorkspaceWatcher(workspaceRoot);
+    watcher.updateBuildFiles(List.of(edited));
+
+    assertThat(watcher.poll()).isEqualTo(PollResult.BUILD_FILES_CHANGED);
+    assertThat(watcher.poll()).isEqualTo(PollResult.NO_CHANGE);
+
+    final var synced = workspaceRoot.resolve("module.xml");
+    Files.writeString(synced, "<project/>");
+    Files.setLastModifiedTime(synced, FileTime.fromMillis(PAST.toMillis() - 10_000L));
+    final var syncedWatcher = new WorkspaceWatcher(workspaceRoot);
+    syncedWatcher.updateBuildFiles(List.of(synced));
+
+    assertThat(syncedWatcher.poll())
+        .as("older than the manifest: the last sync saw it")
+        .isEqualTo(PollResult.NO_CHANGE);
   }
 
   private Path manifest() {

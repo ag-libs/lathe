@@ -32,6 +32,8 @@ final class WorkspaceWatcher {
 
   private record BuildFileFingerprint(long mtime, long size) {}
 
+  private static final BuildFileFingerprint UNSEEN = new BuildFileFingerprint(-1, -1);
+
   private final Path manifestPath;
   private long lastManifestMtime;
   private String lastManifestContent;
@@ -68,8 +70,15 @@ final class WorkspaceWatcher {
     return PollResult.NO_CHANGE;
   }
 
+  // A build file newer than the manifest the last sync wrote changed while no server watched it:
+  // baselined as unseen, so the first poll reports it.
   void updateBuildFiles(final List<Path> absBuildFiles) {
-    buildFileBaseline = fingerprintAll(absBuildFiles);
+    final long synced = mtime(manifestPath);
+    buildFileBaseline =
+        absBuildFiles.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    p -> p, p -> mtime(p) > synced ? UNSEEN : fingerprint(p)));
   }
 
   private static Map<Path, BuildFileFingerprint> fingerprintAll(final Collection<Path> paths) {
