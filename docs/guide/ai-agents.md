@@ -121,6 +121,11 @@ a line answers with an error that shows the line, rather than with the enclosing
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).
 
+Each tool declares the MCP annotations that say whether it writes:
+the query tools and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
+`run_test` is neither (it runs code but writes no source).
+What a client does with them is up to the client.
+
 The server also sends routing guidance at connection time (which tool fits which task), so a client
 that reads server instructions steers itself.
 

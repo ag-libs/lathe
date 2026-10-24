@@ -680,34 +680,6 @@ Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surf
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
-## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24); see
-[the landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
-
-### Gap
-
-The MCP spec (2025-03-26 onward) lets a tool declare `annotations`: `readOnlyHint`,
-`destructiveHint`, `idempotentHint`, `openWorldHint`
-([tools spec](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
-Lathe registers its tools with none.
-Reports say Claude Code's plan mode allows only MCP tools that declare `readOnlyHint` and runs them in
-parallel, and that Codex auto-approves read-only tools; neither is confirmed against official docs yet.
-
-### Fix direction
-
-Declare `readOnlyHint` on the read tools (diagnostics, definition, references, implementations, call
-hierarchy, describe, search, analyze_change, verify_change), `destructiveHint` on `rename_symbol`, and
-neither on `run_test`, which runs code but writes no source.
-Check what the client does with them before claiming any effect in the guide.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check
 
 **Status: accepted — Target: next**

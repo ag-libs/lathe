@@ -122,7 +122,8 @@ def main(argv):
 
         tools = client.tools_list()
         print("== tools/list ==")
-        print("  tools:", [t["name"] for t in tools.get("tools", [])])
+        for tool in tools.get("tools", []):
+            print("  %-22s %s" % (tool["name"], tool.get("annotations")))
 
         if len(argv) > 2:
             file = str(Path(argv[2]).resolve())

@@ -26,6 +26,7 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -34,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -53,6 +55,14 @@ final class LatheMcpTools {
   private static final int DEFAULT_MAX_RESULTS = 50;
   private static final int MAX_ARG_VALUE_CHARS = 200;
   private static final int LISTED_MODULES = 10;
+
+  // An unset destructiveHint reads as true, so a writing tool that destroys nothing says so.
+  private static final ToolAnnotations READ_ONLY =
+      ToolAnnotations.builder().readOnlyHint(true).build();
+  private static final ToolAnnotations REWRITES_SOURCE =
+      ToolAnnotations.builder().readOnlyHint(false).destructiveHint(true).build();
+  private static final ToolAnnotations RUNS_CODE =
+      ToolAnnotations.builder().readOnlyHint(false).destructiveHint(false).build();
 
   private LatheMcpTools() {}
 
@@ -88,13 +98,9 @@ final class LatheMcpTools {
                 exactly as javac sees them on the real build classpath. Call after editing a file to check whether \
                 it compiles — no whole-project build.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("get_diagnostics", request, () -> handleDiagnostics(engine, request)))
-        .build();
+    return spec(tool, request -> handleDiagnostics(engine, request));
   }
 
   private static SyncToolSpecification definition(
@@ -116,13 +122,9 @@ final class LatheMcpTools {
                 dependency, JDK, and generated sources — returning each target as \
                 `path:line: code`, its source line included.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("get_definition", request, () -> handleDefinition(engine, request)))
-        .build();
+    return spec(tool, request -> handleDefinition(engine, request));
   }
 
   private static SyncToolSpecification references(
@@ -152,13 +154,9 @@ final class LatheMcpTools {
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
                 name a plain grep is fine.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("find_references", request, () -> handleReferences(engine, request)))
-        .build();
+    return spec(tool, request -> handleReferences(engine, request));
   }
 
   private static SyncToolSpecification rename(
@@ -189,13 +187,9 @@ final class LatheMcpTools {
                 call verify_change with no arguments to check the rewritten files and their callers, \
                 and run the sync it suggests for other modules.\
                 """)
+            .annotations(REWRITES_SOURCE)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("rename_symbol", request, () -> handleRename(engine, request)))
-        .build();
+    return spec(tool, request -> handleRename(engine, request));
   }
 
   private static SyncToolSpecification runTest(
@@ -222,13 +216,9 @@ final class LatheMcpTools {
                 that if missing.\
                 """
                     .formatted(LatheLayout.captureTestsCommand("<module>")))
+            .annotations(RUNS_CODE)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("run_test", request, () -> handleRunTest(engine, request)))
-        .build();
+    return spec(tool, request -> handleRunTest(engine, request));
   }
 
   private static SyncToolSpecification callHierarchy(
@@ -254,13 +244,9 @@ final class LatheMcpTools {
                 and cross-module edges), one `path:line: code` line per call. Use to scope the impact of a \
                 change; text search cannot follow calls.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("call_hierarchy", request, () -> handleCallHierarchy(engine, request)))
-        .build();
+    return spec(tool, request -> handleCallHierarchy(engine, request));
   }
 
   private static SyncToolSpecification describeSymbol(
@@ -282,13 +268,9 @@ final class LatheMcpTools {
                 markdown — exactly as the compiler sees it, without opening the file. Use to \
                 understand an API before calling it.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("describe_symbol", request, () -> handleDescribe(engine, request)))
-        .build();
+    return spec(tool, request -> handleDescribe(engine, request));
   }
 
   private static SyncToolSpecification searchSymbols(
@@ -309,13 +291,9 @@ final class LatheMcpTools {
                 JDK — returning each with its kind, container, and `path:line`. Use to \
                 locate a type when you know its name but not its file.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("search_symbols", request, () -> handleSearchSymbols(engine, request)))
-        .build();
+    return spec(tool, request -> handleSearchSymbols(engine, request));
   }
 
   private static SyncToolSpecification findImplementations(
@@ -341,16 +319,9 @@ final class LatheMcpTools {
                 follows the type hierarchy across modules and includes anonymous and nested \
                 implementers a name grep cannot find.\
                 """)
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged(
-                    "find_implementations",
-                    request,
-                    () -> handleFindImplementations(engine, request)))
-        .build();
+    return spec(tool, request -> handleFindImplementations(engine, request));
   }
 
   private static SyncToolSpecification analyzeChange(
@@ -371,13 +342,9 @@ final class LatheMcpTools {
                 its override/implementation family, how many production vs test references it has, \
                 which reactor modules use it, and the relevant test classes. Use it to scope a rename \
                 or signature change before making it.""")
+            .annotations(READ_ONLY)
             .build();
-    return SyncToolSpecification.builder()
-        .tool(tool)
-        .callHandler(
-            (exchange, request) ->
-                logged("analyze_change", request, () -> handleAnalyzeChange(engine, request)))
-        .build();
+    return spec(tool, request -> handleAnalyzeChange(engine, request));
   }
 
   private static SyncToolSpecification verifyChange(
@@ -402,12 +369,17 @@ final class LatheMcpTools {
                 command that builds them, optional when no errors were found. Use it to confirm \
                 your edits still compile before a build.\
                 """)
+            .annotations(READ_ONLY)
             .build();
+    return spec(tool, request -> handleVerifyChange(engine, request));
+  }
+
+  private static SyncToolSpecification spec(
+      final Tool tool, final Function<CallToolRequest, CallToolResult> handler) {
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) ->
-                logged("verify_change", request, () -> handleVerifyChange(engine, request)))
+            (exchange, request) -> logged(tool.name(), request, () -> handler.apply(request)))
         .build();
   }
 

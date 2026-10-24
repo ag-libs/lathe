@@ -87,6 +87,25 @@ class LatheMcpToolsTest {
   }
 
   @Test
+  void all_everyTool_declaresWhetherItWrites() {
+    assertThat(specs)
+        .filteredOn(spec -> Boolean.TRUE.equals(spec.tool().annotations().readOnlyHint()))
+        .map(spec -> spec.tool().name())
+        .containsExactlyInAnyOrder(
+            "get_diagnostics",
+            "get_definition",
+            "find_references",
+            "call_hierarchy",
+            "describe_symbol",
+            "search_symbols",
+            "find_implementations",
+            "analyze_change",
+            "verify_change");
+    assertThat(tool("rename_symbol").tool().annotations().destructiveHint()).isTrue();
+    assertThat(tool("run_test").tool().annotations().destructiveHint()).isFalse();
+  }
+
+  @Test
   void analyzeChange_missingPositionArguments_returnsError() {
     assertThat(call("analyze_change", Map.of("file", tmp.resolve("Any.java").toString())).isError())
         .isTrue();

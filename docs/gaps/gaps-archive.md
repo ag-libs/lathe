@@ -10123,6 +10123,39 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24); see
+[the landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
+
+### Gap
+
+The MCP spec (2025-03-26 onward) lets a tool declare `annotations`: `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`
+([tools spec](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
+Lathe registers its tools with none.
+Reports say Claude Code's plan mode allows only MCP tools that declare `readOnlyHint` and runs them in
+parallel, and that Codex auto-approves read-only tools; neither is confirmed against official docs yet.
+
+### Fix
+
+`LatheMcpTools` registers every tool with one of three annotation constants:
+the read tools (diagnostics, definition, references, implementations, call hierarchy, describe,
+search, analyze_change, verify_change) are `readOnlyHint`; `rename_symbol` writes and is
+`destructiveHint`; `run_test` is neither, since it runs code but writes no source.
+Its `destructiveHint` is set to `false` explicitly, because the spec reads an unset one as `true` on a
+tool that is not read-only.
+One `spec` helper now registers each tool and logs its calls under the tool's own name.
+The guide states only what the tools declare, not what a client does with it, since that is
+still unconfirmed.
+
+### Regression targets
+
+- `LatheMcpToolsTest.all_everyTool_declaresWhetherItWrites`
+
+---
+
 ## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink — done
 
 **Status: done — Target: next**
