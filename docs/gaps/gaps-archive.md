@@ -10123,6 +10123,77 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-10 — Position tools answer for an unrelated symbol when the position is not on one — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`describe_symbol` in `EqualsVerifier.java`, on the line declaring `forClass`:
+
+| Position | Answer |
+|---|---|
+| column past the end of the line | the enclosing class `EqualsVerifier` |
+| column 0, a whitespace column, or the keyword `public` | the method `forClass` |
+| a line past the end of the file | "No symbol information at that position." |
+
+An agent with an off-by-one column got a confident answer about the wrong symbol.
+
+### Root cause
+
+javac answers for the smallest tree around a position: on a method's modifiers or indentation that is
+the method's declaration, and a column past a line's end spills into the next line, whose smallest
+enclosing tree was the class.
+`SourceLocator.pathAt` must keep doing that: code actions and the editor rely on positions that are not
+on a name.
+
+### Fix
+
+Every MCP position tool goes through `LatheMcpTools.atPosition`, which now first asks
+`LatheEngine.onName`: the line and column exist, the character there is part of a Java identifier, and
+the word around it starts like one and is not a keyword.
+Otherwise the tool answers with an error that shows the line, so the agent can correct its column:
+"No symbol at line 120, column 5: the position must be on a name. Line 120 reads: …".
+It is a text check of one word on one line, since javac's trees give a declaration's span, not its
+name's.
+A name inside a comment still passes, since a Javadoc `{@link}` is a position the server resolves.
+LSP requests are unchanged: an editor's cursor is deliberate, and IntelliJ too renames a method with
+the caret on its modifiers.
+
+### Regression targets
+
+- `LatheEngineTest.onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine`
+
+---
+
+## MC-12 — `search_symbols` finds nothing for a fully qualified name — done
+
+**Status: done — Target: next**
+
+### Observed behaviour
+
+`search_symbols` with `nl.jqno.equalsverifier.EqualsVerifier` answered "No symbols matching", while
+`EqualsVerifier` found it.
+Agents often search by the qualified name they see in imports and stack traces.
+
+### Fix
+
+`WorkspaceSymbolResolver` splits a query with a dot at its last dot: the part after it is the
+simple-name prefix, searched as before, and only the types whose container (the package, or the
+enclosing type of a nested one) is the part before it, or ends with it, are kept.
+So `nl.jqno.equalsverifier.EqualsVerifier`, `util.Duration`, `Map.Entry` and `java.util.Lis` all work.
+The narrowing runs before the result cap, so a common name like `java.util.List` is not crowded out
+by its `List*` siblings.
+The resolver also serves the LSP `workspace/symbol` request, so an editor's symbol search gains it too.
+A query without a dot behaves as before.
+
+### Regression targets
+
+- `WorkspaceSymbolTest.resolve_qualifiedName_matchesOnlyTypesDeclaredInThatPackageOrType`
+
+---
+
 ## MC-18 — `search_symbols` and `find_references` answers run to hundreds of lines — done
 
 **Status: done — Target: next**

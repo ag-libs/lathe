@@ -164,6 +164,23 @@ class LatheEngineTest {
     assertThat(markup).contains("greet");
   }
 
+  // Line 2 is "  void greet() {}".
+  @Test
+  void onName_positionsAroundAMethod_trueOnlyOnANameNotAKeywordBlankOrPastTheEnd()
+      throws Exception {
+    final GreetFixture fx = greetFixture();
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.onName(fx.callee(), 2, 7)).as("the first letter of greet").isTrue();
+    assertThat(engine.onName(fx.callee(), 2, 11)).as("its last letter").isTrue();
+    assertThat(engine.onName(fx.callee(), 1, 6)).as("Callee").isTrue();
+    assertThat(engine.onName(fx.callee(), 2, 2)).as("the keyword void").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 0)).as("indentation").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 12)).as("the parenthesis").isFalse();
+    assertThat(engine.onName(fx.callee(), 2, 40)).as("past the line's end").isFalse();
+    assertThat(engine.onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
+  }
+
   @Test
   void describe_methodInADependencySource_returnsSignatureAndJavadoc() throws Exception {
     final Path sourceDir = tmp.resolve("sources/lib");

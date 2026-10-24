@@ -51,6 +51,11 @@ public final class WorkspaceSymbolResolver {
   // SEARCH_LIMIT so the per-entry declarationRange parse cost is unchanged from before.
   private static List<TypeIndexEntry> mergedEntries(
       final String query, final WorkspaceTypeIndex typeIndex) {
+    final int lastDot = query.lastIndexOf('.');
+    if (lastDot >= 0) {
+      return qualifiedEntries(query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex);
+    }
+
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
     for (final TypeIndexEntry entry : typeIndex.searchSymbols(query, SEARCH_LIMIT)) {
@@ -70,6 +75,21 @@ public final class WorkspaceSymbolResolver {
     }
 
     return merged;
+  }
+
+  // A qualified name as an import or a stack trace shows it (java.util.Map.Entry, or a tail of it
+  // like util.Duration): the simple-name prefix search, narrowed to the types declared in that
+  // package or type. Narrowed before the cap, so java.util.List is not starved by its siblings.
+  private static List<TypeIndexEntry> qualifiedEntries(
+      final String qualifier, final String simplePrefix, final WorkspaceTypeIndex typeIndex) {
+    return typeIndex.searchSymbols(simplePrefix, Integer.MAX_VALUE).stream()
+        .filter(entry -> declaredIn(containerName(entry), qualifier))
+        .limit(SEARCH_LIMIT)
+        .toList();
+  }
+
+  private static boolean declaredIn(final String container, final String qualifier) {
+    return container.equals(qualifier) || container.endsWith(".%s".formatted(qualifier));
   }
 
   private static SymbolInformation toSymbolInformation(

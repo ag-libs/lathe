@@ -295,7 +295,7 @@ final class LatheMcpTools {
                 """
                 {"type":"object","required":["query"],
                  "properties":{
-                   "query":{"type":"string","description":"Symbol name or prefix; reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
+                   "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
                    "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}\
                 """)
             .description(
@@ -450,6 +450,7 @@ final class LatheMcpTools {
   private static CallToolResult handleDefinition(
       final LatheEngine engine, final CallToolRequest request) {
     return atPosition(
+        engine,
         "get_definition",
         request,
         (file, line, column) ->
@@ -459,6 +460,7 @@ final class LatheMcpTools {
   private static CallToolResult handleReferences(
       final LatheEngine engine, final CallToolRequest request) {
     return atPosition(
+        engine,
         "find_references",
         request,
         (file, line, column) ->
@@ -470,6 +472,7 @@ final class LatheMcpTools {
   private static CallToolResult handleFindImplementations(
       final LatheEngine engine, final CallToolRequest request) {
     return atPosition(
+        engine,
         "find_implementations",
         request,
         (file, line, column) ->
@@ -486,6 +489,7 @@ final class LatheMcpTools {
     }
 
     return atPosition(
+        engine,
         "rename_symbol",
         request,
         (file, line, column) ->
@@ -518,6 +522,7 @@ final class LatheMcpTools {
   private static CallToolResult handleAnalyzeChange(
       final LatheEngine engine, final CallToolRequest request) {
     return atPosition(
+        engine,
         "analyze_change",
         request,
         (file, line, column) ->
@@ -549,6 +554,7 @@ final class LatheMcpTools {
     }
 
     return atPosition(
+        engine,
         "call_hierarchy",
         request,
         (file, line, column) ->
@@ -560,6 +566,7 @@ final class LatheMcpTools {
   private static CallToolResult handleDescribe(
       final LatheEngine engine, final CallToolRequest request) {
     return atPosition(
+        engine,
         "describe_symbol",
         request,
         (file, line, column) ->
@@ -584,7 +591,10 @@ final class LatheMcpTools {
   // Shared body for the position-based tools: parse the 1-based {file,line,column} into a 0-based
   // position, run the handler, and turn missing args or an engine failure into an isError result.
   private static CallToolResult atPosition(
-      final String tool, final CallToolRequest request, final PositionHandler handler) {
+      final LatheEngine engine,
+      final String tool,
+      final CallToolRequest request,
+      final PositionHandler handler) {
     final Path file = filePath(request);
     final Integer line = intArg(request, "line");
     final Integer column = intArg(request, "column");
@@ -592,7 +602,23 @@ final class LatheMcpTools {
       return error("%s requires 'file', 'line', and 'column' arguments".formatted(tool));
     }
 
-    return guarded(tool, file, () -> handler.at(file, line - 1, column - 1));
+    return guarded(
+        tool,
+        file,
+        () ->
+            engine.onName(file, line - 1, column - 1)
+                ? handler.at(file, line - 1, column - 1)
+                : error(
+                    engine
+                        .sourceLine(file, line - 1)
+                        .map(text -> notOnName(line, column, text))
+                        .orElse("No symbol at line %d: the file is shorter.".formatted(line))));
+  }
+
+  // The line itself, so the agent can correct its column without reading the file.
+  private static String notOnName(final int line, final int column, final String text) {
+    return "No symbol at line %d, column %d: the position must be on a name. Line %d reads: %s"
+        .formatted(line, column, line, text.strip());
   }
 
   // Run an engine call, turning an unexpected failure into a logged isError result.

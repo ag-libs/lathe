@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -197,6 +198,29 @@ public final class LatheEngine {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
     return new LatheImplementations(locations.size(), locations.size() > maxResults, capped);
+  }
+
+  // An agent's column is easily off by one, and javac answers for the smallest tree around a
+  // position: a method for its modifiers or indentation, the class past a line's end. So the
+  // position tools answer only on a name, checked as text (one word on one line) because javac's
+  // trees give a declaration's span, not its name's.
+  public boolean onName(final Path file, final int line, final int column) {
+    return sourceLine(file, line)
+        .filter(text -> column >= 0 && column < text.length())
+        .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))
+        .map(
+            text ->
+                text.substring(
+                    SourceLocator.identifierStart(text, column),
+                    SourceLocator.identifierEnd(text, column)))
+        .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
+        .filter(word -> !SourceVersion.isKeyword(word))
+        .isPresent();
+  }
+
+  public Optional<String> sourceLine(final Path file, final int line) {
+    final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
+    return line >= 0 && line < lines.size() ? Optional.of(lines.get(line)) : Optional.empty();
   }
 
   /**

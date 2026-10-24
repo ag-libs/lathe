@@ -125,6 +125,37 @@ class WorkspaceSymbolTest {
         .containsExactlyInAnyOrder("FooBar", "FooBaz");
   }
 
+  // An import or a stack trace names a type by its qualified name, whole or a tail of it.
+  @Test
+  void resolve_qualifiedName_matchesOnlyTypesDeclaredInThatPackageOrType() throws IOException {
+    createSourceFile("io.dropwizard.util", "Duration");
+    createSourceFile("java.time", "Duration");
+    createSourceFile("java.util", "Map");
+    createSourceFile("com.example", "Entry");
+    final var index =
+        indexOf(
+            entry("Duration", "io.dropwizard.util"),
+            entry("Duration", "java.time"),
+            new TypeIndexEntry(
+                "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
+            entry("Entry", "com.example"));
+
+    assertThat(WorkspaceSymbolResolver.resolve("io.dropwizard.util.Duration", index, List.of(src)))
+        .extracting(SymbolInformation::getContainerName)
+        .containsExactly("io.dropwizard.util");
+    assertThat(WorkspaceSymbolResolver.resolve("util.Dur", index, List.of(src)))
+        .extracting(SymbolInformation::getContainerName)
+        .containsExactly("io.dropwizard.util");
+    assertThat(WorkspaceSymbolResolver.resolve("Map.Entry", index, List.of(src)))
+        .extracting(SymbolInformation::getContainerName)
+        .containsExactly("java.util.Map");
+    assertThat(WorkspaceSymbolResolver.resolve("org.other.Duration", index, List.of(src)))
+        .isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("Duration", index, List.of(src)))
+        .as("an unqualified query is unchanged")
+        .hasSize(2);
+  }
+
   // --- resolve: location ---
 
   @Test

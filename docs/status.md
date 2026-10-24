@@ -81,7 +81,7 @@ The tag-driven release pipeline (CI GPG signing + publish; see [RELEASING.md](..
 | `find_references` | Implemented | Reactor-wide, javac-accurate; resolves overloads/inheritance. |
 | `find_implementations` | Implemented | Interface implementers / method overrides across the reactor. |
 | `call_hierarchy` | Implemented | Incoming (callers) and outgoing (callees) calls across modules. |
-| `search_symbols` | Implemented | Type lookup by name prefix across reactor, dependencies, and JDK; CamelHumps for reactor types. |
+| `search_symbols` | Implemented | Type lookup by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across reactor, dependencies, and JDK; CamelHumps for reactor types. |
 | `describe_symbol` | Implemented | Rendered signature, type, and Javadoc (hover) as Markdown. |
 | `rename_symbol` | Implemented | Reactor-wide rename applied to disk, including renaming a public type's file; the changed files are compiled into the mirror before it returns; refuses to touch non-reactor files, and refuses a symbol declared (or a method overriding one declared) in the JDK, a dependency, or generated source. |
 | `run_test` | Implemented | Replays a test method/class/package from captured bytecode — no reactor build. |

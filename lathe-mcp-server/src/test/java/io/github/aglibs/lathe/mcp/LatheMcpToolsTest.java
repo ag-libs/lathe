@@ -10,6 +10,8 @@ import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import io.modelcontextprotocol.spec.McpSchema.TextContent;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -148,6 +150,24 @@ class LatheMcpToolsTest {
     assertThat(result.isError()).isTrue();
   }
 
+  // An off-by-one column would otherwise answer for the enclosing method or class.
+  @Test
+  void describeSymbol_positionNotOnAName_returnsErrorShowingTheLine() throws Exception {
+    final Path file = tmp.resolve("A.java");
+    Files.writeString(file, "class A {\n  public void run() {}\n}\n");
+
+    assertThat(List.of(describe(file, 2, 3), describe(file, 2, 1), describe(file, 2, 30)))
+        .as("a keyword, indentation, past the line's end")
+        .allSatisfy(
+            result -> {
+              assertThat(result.isError()).isTrue();
+              assertThat(text(result))
+                  .contains("must be on a name. Line 2 reads: public void run() {}");
+            });
+    assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
+    assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
+  }
+
   @Test
   void getDiagnostics_missingFileArgument_returnsError() {
     final CallToolResult result = call("get_diagnostics", Map.of());
@@ -196,6 +216,14 @@ class LatheMcpToolsTest {
         .anySatisfy(
             message ->
                 assertThat(message).contains("[tool] get_diagnostics", "file=%s".formatted(file)));
+  }
+
+  private CallToolResult describe(final Path file, final int line, final int column) {
+    return call("describe_symbol", Map.of("file", file.toString(), "line", line, "column", column));
+  }
+
+  private static String text(final CallToolResult result) {
+    return ((TextContent) result.content().get(0)).text();
   }
 
   private CallToolResult call(final String name, final Map<String, Object> arguments) {

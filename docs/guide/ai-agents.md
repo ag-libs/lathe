@@ -107,14 +107,16 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, column, direction` | callers (`incoming`) or callees (`outgoing`) of a method, across modules |
-| `search_symbols` | `query` | find a type by name prefix across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
+| `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, per module (callers: errors only) |
 
-Positions are 1-based. `find_references`, `find_implementations`, `call_hierarchy`, and
+Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
+a line answers with an error that shows the line, rather than with the enclosing method or class.
+`find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).
 

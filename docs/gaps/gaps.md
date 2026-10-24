@@ -757,34 +757,6 @@ None yet.
 
 ---
 
-## MC-10 — Position tools answer for an unrelated symbol when the position is not on one
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-`describe_symbol` in `EqualsVerifier.java`, on the line declaring `forClass`:
-
-| Position | Answer |
-|---|---|
-| column past the end of the line | the enclosing class `EqualsVerifier` |
-| column 0, a whitespace column, or the keyword `public` | the method `forClass` |
-| a line past the end of the file | "No symbol information at that position." |
-
-An agent with an off-by-one column gets a confident answer about the wrong symbol.
-Not yet checked: the other position tools, and LSP hover at the same positions.
-
-### Fix direction
-
-Answer only when the position is on an identifier, and otherwise report that no symbol is at that
-position (as for a line past the end of the file).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-11 — `run_test` does not give the remedy when no test launch was captured
 
 **Status: deferred — Target: backlog**
@@ -806,23 +778,3 @@ None yet.
 
 ---
 
-## MC-12 — `search_symbols` finds nothing for a fully qualified name
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-`search_symbols` with `nl.jqno.equalsverifier.EqualsVerifier` answers "No symbols matching", while
-`EqualsVerifier` finds it.
-The schema says "Symbol name or prefix", but agents often search by the qualified name they see in
-imports and stack traces.
-
-### Fix direction
-
-Accept a qualified name: match the simple name and filter by the package (or containing type).
-
-### Regression targets
-
-None yet.
-
----
