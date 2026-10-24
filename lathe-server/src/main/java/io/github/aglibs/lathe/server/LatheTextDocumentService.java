@@ -49,6 +49,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
   private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
   private ProgressReporter progressReporter;
+  // Created, read and written only on the event loop: reach it through a lambda the loop runs
+  // (worker.submit(() -> session.x())), never a method reference (session::x), which reads the
+  // field on the caller's thread, where it may still be null.
   private WorkspaceSession session;
   // Written in initialize, read in formatting; volatile publishes it safely across lsp4j's
   // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
@@ -120,11 +123,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   /** The files written on report since the last call, for a verify_change given no files. */
   public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
-    return worker.submit(session::takeWrittenSinceVerify);
+    return worker.submit(() -> session.takeWrittenSinceVerify());
   }
 
-  // A lambda, not session::moduleSummaries: the session is created on the event loop, possibly
-  // after this call, and a method reference would read it now.
   public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
     return worker.submit(() -> session.moduleSummaries());
   }
@@ -753,7 +754,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<List<ResourceEntry>> resourcesFuture() {
-    return worker.submit(session::resources);
+    return worker.submit(() -> session.resources());
   }
 
   CompletableFuture<String> resourceOpenFuture(final String jar, final String entry) {
