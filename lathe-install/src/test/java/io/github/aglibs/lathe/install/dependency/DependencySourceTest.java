@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.dependency;
+package io.github.aglibs.lathe.install.dependency;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

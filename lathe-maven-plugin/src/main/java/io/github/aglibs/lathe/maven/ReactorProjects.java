@@ -4,12 +4,14 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.install.ResolvedJar;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -223,6 +225,25 @@ public final class ReactorProjects {
 
   public static String gav(final org.eclipse.aether.artifact.Artifact artifact) {
     return gav(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
+  }
+
+  // A missing classifier (the main jar) is empty, as ResolvedJar requires.
+  public static ResolvedJar resolvedJar(final Artifact artifact) {
+    return new ResolvedJar(
+        artifact.getGroupId(),
+        artifact.getArtifactId(),
+        artifact.getVersion(),
+        Objects.requireNonNullElse(artifact.getClassifier(), ""),
+        artifact.getFile().toPath());
+  }
+
+  public static ResolvedJar resolvedJar(final org.eclipse.aether.artifact.Artifact artifact) {
+    return new ResolvedJar(
+        artifact.getGroupId(),
+        artifact.getArtifactId(),
+        artifact.getVersion(),
+        artifact.getClassifier(),
+        artifact.getFile().toPath());
   }
 
   private static String gav(final String g, final String a, final String v) {

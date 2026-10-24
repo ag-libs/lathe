@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

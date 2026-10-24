@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;

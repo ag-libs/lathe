@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.jdk;
+package io.github.aglibs.lathe.install.jdk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

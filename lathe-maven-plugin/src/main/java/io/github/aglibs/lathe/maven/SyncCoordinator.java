@@ -6,18 +6,19 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.LauncherCopier;
 import io.github.aglibs.lathe.install.PluginProps;
+import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
+import io.github.aglibs.lathe.install.dependency.DependencySource;
+import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
+import io.github.aglibs.lathe.install.jdk.JdkSource;
+import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
+import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
-import io.github.aglibs.lathe.maven.dependency.DependencySource;
+import io.github.aglibs.lathe.install.typeindex.DependencyTypeIndexSync;
+import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
-import io.github.aglibs.lathe.maven.dependency.DependencySourceSync;
-import io.github.aglibs.lathe.maven.jdk.JdkSource;
-import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
-import io.github.aglibs.lathe.maven.jdk.JdkSourceSync;
-import io.github.aglibs.lathe.maven.typeindex.DependencyTypeIndexSync;
-import io.github.aglibs.lathe.maven.typeindex.JdkTypeIndexSync;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -54,20 +55,22 @@ final class SyncCoordinator {
     final List<DependencySource> dependencySources =
         resolver.resolve(
             externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
-    DependencySourceSync.extract(DependencySource.withSources(dependencySources), log);
-    DependencyTypeIndexSync.index(externalArtifacts.values(), log);
+    final List<ResolvedJar> externalJars =
+        externalArtifacts.values().stream().map(ReactorProjects::resolvedJar).toList();
+    DependencySourceSync.extract(DependencySource.withSources(dependencySources));
+    DependencyTypeIndexSync.index(externalJars);
     final Map<Path, Path> jarToTypeIndex =
-        externalArtifacts.values().stream()
+        externalJars.stream()
             .collect(
                 Collectors.toMap(
-                    a -> a.getFile().toPath(),
+                    ResolvedJar::jar,
                     DependencyTypeIndexSync::indexPath,
                     (first, ignored) -> first));
     final List<DependencySource> enrichedSources =
         dependencySources.stream().map(s -> enrichWithTypeIndex(s, jarToTypeIndex)).toList();
     final JdkSource jdkSource = JdkSourceResolver.resolve();
-    JdkSourceSync.extract(jdkSource, log);
-    final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
+    JdkSourceSync.extract(jdkSource);
+    final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource);
     final var serverInstaller =
         new ServerInstaller(
             new MavenArtifactResolver(
@@ -87,8 +90,7 @@ final class SyncCoordinator {
               .toList();
       final List<String> runnerClasspath =
           serverInstaller
-              .resolveRunnerClasspath(
-                  externalArtifacts.values().stream().map(ReactorProjects::gav).toList())
+              .resolveRunnerClasspath(externalJars.stream().map(ResolvedJar::gav).toList())
               .stream()
               .map(Path::toString)
               .toList();

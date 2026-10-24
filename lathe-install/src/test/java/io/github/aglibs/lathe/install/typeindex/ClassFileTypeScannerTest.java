@@ -1,11 +1,11 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.maven.ZipFixture;
+import io.github.aglibs.lathe.install.ZipFixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

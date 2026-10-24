@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -10,7 +10,7 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
 import io.github.aglibs.lathe.install.SyncException;
-import io.github.aglibs.lathe.maven.jdk.JdkSource;
+import io.github.aglibs.lathe.install.jdk.JdkSource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -22,15 +22,18 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
-import org.apache.maven.plugin.logging.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class JdkTypeIndexSync {
 
+  private static final Logger LOG = LoggerFactory.getLogger(JdkTypeIndexSync.class);
+
   private JdkTypeIndexSync() {}
 
-  public static JdkSource index(final JdkSource source, final Log log) {
+  public static JdkSource index(final JdkSource source) {
     if (source.home() == null) {
-      log.debug("[type-index] skipping JDK type index because no JDK home is resolvable");
+      LOG.debug("[type-index] skipping JDK type index because no JDK home is resolvable");
       return source;
     }
 
@@ -39,7 +42,7 @@ public final class JdkTypeIndexSync {
     try {
       final Optional<TypeIndexFile> current = currentIndex(index, source);
       if (current.isPresent()) {
-        log.debug(
+        LOG.debug(
             "[type-index] reused JDK %s %dms types=%d"
                 .formatted(source.version(), t.elapsedMs(), current.get().types().size()));
         return source.withTypeIndex(index);
@@ -53,7 +56,7 @@ public final class JdkTypeIndexSync {
                       source.home().toString(), source.vendor(), source.version())),
               scanJdk());
       TypeIndexFiles.write(index, file);
-      log.debug(
+      LOG.debug(
           "[type-index] scanned JDK %s %dms types=%d"
               .formatted(source.version(), t.elapsedMs(), file.types().size()));
       return source.withTypeIndex(index);

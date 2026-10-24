@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -7,21 +7,17 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
-import io.github.aglibs.lathe.maven.jdk.JdkSource;
-import io.github.aglibs.lathe.maven.jdk.JdkSourceResolver;
+import io.github.aglibs.lathe.install.jdk.JdkSource;
+import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Map;
-import org.apache.maven.plugin.logging.Log;
-import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
-
-  private static final Log LOG = new SystemStreamLog();
 
   @TempDir Path tmp;
 
@@ -30,7 +26,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     useTempCache();
     final JdkSource source = source();
 
-    final JdkSource indexed = JdkTypeIndexSync.index(source, LOG);
+    final JdkSource indexed = JdkTypeIndexSync.index(source);
 
     final TypeIndexFile file = readIndex(source);
     assertThat(indexed.typeIndex()).isEqualTo(JdkTypeIndexSync.indexPath(source));
@@ -50,10 +46,10 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     final JdkSource source = source();
     final Path index = JdkTypeIndexSync.indexPath(source);
 
-    JdkTypeIndexSync.index(source, LOG);
+    JdkTypeIndexSync.index(source);
     Files.setLastModifiedTime(index, FileTime.fromMillis(1000));
 
-    JdkTypeIndexSync.index(source, LOG);
+    JdkTypeIndexSync.index(source);
 
     assertThat(Files.getLastModifiedTime(index).toMillis()).isEqualTo(1000);
   }
@@ -64,7 +60,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     final JdkSource source = source();
     final Path index = JdkTypeIndexSync.indexPath(source);
 
-    JdkTypeIndexSync.index(source, LOG);
+    JdkTypeIndexSync.index(source);
     final String stale =
         Files.readString(index)
             .replace(
@@ -72,7 +68,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
                 "\"schema\": \"old\"");
     Files.writeString(index, stale);
 
-    JdkTypeIndexSync.index(source, LOG);
+    JdkTypeIndexSync.index(source);
 
     assertThat(readIndex(source).schema()).isEqualTo(LatheLayout.CACHE_SCHEMA_VERSION);
   }
@@ -82,7 +78,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     useTempCache();
     final JdkSource source = JdkSource.missing("vendor", "version", "cache-key", null);
 
-    assertThat(JdkTypeIndexSync.index(source, LOG)).isSameAs(source);
+    assertThat(JdkTypeIndexSync.index(source)).isSameAs(source);
   }
 
   private void useTempCache() {

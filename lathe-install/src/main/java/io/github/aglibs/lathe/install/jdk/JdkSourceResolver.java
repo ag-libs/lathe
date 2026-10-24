@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.jdk;
+package io.github.aglibs.lathe.install.jdk;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;

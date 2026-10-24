@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.maven.dependency;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.SyncException;
+import io.github.aglibs.lathe.install.dependency.DependencySource;
 import io.github.aglibs.lathe.maven.ReactorProjects;
 import java.nio.file.Path;
 import java.util.List;
@@ -71,7 +72,7 @@ public final class DependencySourceResolver {
               resolvedArtifact.getGroupId(),
               resolvedArtifact.getArtifactId(),
               resolvedArtifact.getVersion()),
-          resolvedArtifact,
+          ReactorProjects.resolvedJar(resolvedArtifact),
           classpath);
     } catch (final ArtifactResolutionException e) {
       log.debug("[sync] source missing %s".formatted(ReactorProjects.gav(artifact)), e);

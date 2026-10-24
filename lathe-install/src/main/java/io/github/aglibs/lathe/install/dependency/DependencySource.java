@@ -1,18 +1,18 @@
-package io.github.aglibs.lathe.maven.dependency;
+package io.github.aglibs.lathe.install.dependency;
 
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
+import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.List;
-import org.eclipse.aether.artifact.Artifact;
 
 public record DependencySource(
     String gav,
     Path jar,
     SourceStatus status,
     Path dir,
-    Artifact sourceArtifact,
+    ResolvedJar sourceArtifact,
     List<Path> classpath,
     Path typeIndex) {
 
@@ -31,7 +31,7 @@ public record DependencySource(
       final String gav,
       final Path jar,
       final Path dir,
-      final Artifact sourceArtifact,
+      final ResolvedJar sourceArtifact,
       final List<Path> classpath) {
     return new DependencySource(
         gav, jar, SourceStatus.PRESENT, dir, sourceArtifact, classpath, null);

@@ -158,8 +158,8 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 
 | Code | Lives in | Tied to Maven by |
 |---|---|---|
-| JDK sources and their type-index shard | `lathe-maven-plugin` (`jdk/JdkSource`, `JdkSourceResolver`, `JdkSourceSync`; `typeindex/JdkTypeIndexSync`, `TypeIndexFiles`) | Maven's `Log` |
-| Dependency `-sources` extraction and type-index shards | `lathe-maven-plugin` (`dependency/DependencySource`, `DependencySourceSync`; `typeindex/DependencyTypeIndexSync`) | Maven's `Log` and artifact types; *resolving* the jars stays per tool (`DependencySourceResolver` on Maven, an artifact view on Gradle) |
+| JDK sources and their type-index shard | *moved to `lathe-install` (slice 0c-1):* `jdk/JdkSource`, `JdkSourceResolver`, `JdkSourceSync`; `typeindex/JdkTypeIndexSync`, `TypeIndexFiles` | *none left:* they log through SLF4J |
+| Dependency `-sources` extraction and type-index shards | *moved to `lathe-install` (slice 0c-1):* `dependency/DependencySource`, `DependencySourceSync`; `typeindex/DependencyTypeIndexSync` | *none left:* the build tool's artifacts arrive as `ResolvedJar` (coordinates + jar); *resolving* the jars stays per tool (`DependencySourceResolver` on Maven, an artifact view on Gradle) |
 | `workspace.json`, the sync script, `main-launch.json` | `lathe-maven-plugin` (`WorkspaceManifestWriter`, `SyncScriptWriter`, `MainLaunchWriter`) | Maven's `Log`; `MainLaunchWriter` also reads `MavenProject` |
 | Formatter jars and `style.json` | `lathe-maven-plugin` (`FormatterResolver`, `WorkspaceStyleWriter`) | Aether resolution, and the Spotless POM reading, which stays Maven-only |
 | `jvm.args` | `lathe-maven-plugin` (`JvmArgsWriter`) | reads the compiler plugin's POM configuration and `.mvn/jvm.config`; the *writing* moves, the reading stays per tool |

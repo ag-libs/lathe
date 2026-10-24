@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.maven.typeindex;
+package io.github.aglibs.lathe.install.typeindex;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -8,8 +8,8 @@ import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
+import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.SyncException;
-import io.github.aglibs.lathe.maven.ReactorProjects;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -18,21 +18,23 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.plugin.logging.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class DependencyTypeIndexSync {
 
+  private static final Logger LOG = LoggerFactory.getLogger(DependencyTypeIndexSync.class);
+
   private DependencyTypeIndexSync() {}
 
-  public static void index(final Collection<Artifact> artifacts, final Log log) {
+  public static void index(final Collection<ResolvedJar> artifacts) {
     final var t = Stopwatch.start();
     try {
       final Map<Boolean, Long> counts =
           artifacts.stream()
-              .map(artifact -> IOUtil.unchecked(() -> index(artifact, log)))
+              .map(artifact -> IOUtil.unchecked(() -> index(artifact)))
               .collect(Collectors.partitioningBy(b -> b, Collectors.counting()));
-      log.info(
+      LOG.info(
           "[sync] built %d dependency type indexes, %d already cached in %dms"
               .formatted(
                   counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
@@ -41,30 +43,29 @@ public final class DependencyTypeIndexSync {
     }
   }
 
-  public static Path indexPath(final Artifact artifact) {
+  public static Path indexPath(final ResolvedJar artifact) {
     final Path versionDir =
         LatheLayout.artifactDir(
             LatheLayout.userCacheRoot()
                 .resolve(LatheLayout.TYPE_INDEX_DIR)
                 .resolve(LatheLayout.CACHE_DEPS_DIR),
-            artifact.getGroupId(),
-            artifact.getArtifactId(),
-            artifact.getVersion());
-    final String classifier = artifact.getClassifier();
-    if (classifier == null || classifier.isBlank()) {
+            artifact.groupId(),
+            artifact.artifactId(),
+            artifact.version());
+    if (artifact.classifier().isBlank()) {
       return versionDir.resolve(LatheLayout.TYPE_INDEX_FILENAME);
     }
 
-    return versionDir.resolve(classifier).resolve(LatheLayout.TYPE_INDEX_FILENAME);
+    return versionDir.resolve(artifact.classifier()).resolve(LatheLayout.TYPE_INDEX_FILENAME);
   }
 
-  private static boolean index(final Artifact artifact, final Log log) throws IOException {
-    final var jar = artifact.getFile().toPath();
+  private static boolean index(final ResolvedJar artifact) throws IOException {
+    final var jar = artifact.jar();
     final Path index = indexPath(artifact);
     final var t = Stopwatch.start();
     final Optional<TypeIndexFile> current = currentIndex(index, artifact, jar);
     if (current.isPresent()) {
-      log.debug(
+      LOG.debug(
           "[type-index] reused %s %dms types=%d"
               .formatted(jar, t.elapsedMs(), current.get().types().size()));
       return false;
@@ -75,28 +76,28 @@ public final class DependencyTypeIndexSync {
             LatheLayout.CACHE_SCHEMA_VERSION,
             TypeIndexOrigin.dependency(
                 new DependencyTypeIndexOrigin(
-                    ReactorProjects.gav(artifact),
+                    artifact.gav(),
                     jar.toString(),
                     Files.size(jar),
                     Files.getLastModifiedTime(jar).toMillis())),
             ClassFileTypeScanner.scanJar(jar));
     TypeIndexFiles.write(index, file);
-    log.debug(
+    LOG.debug(
         "[type-index] scanned %s %dms types=%d".formatted(jar, t.elapsedMs(), file.types().size()));
     return true;
   }
 
   private static Optional<TypeIndexFile> currentIndex(
-      final Path index, final Artifact artifact, final Path jar) {
+      final Path index, final ResolvedJar artifact, final Path jar) {
     return TypeIndexFiles.current(index, TypeIndexOriginKind.DEPENDENCY)
         .filter(file -> isCurrent(file, artifact, jar));
   }
 
   private static boolean isCurrent(
-      final TypeIndexFile file, final Artifact artifact, final Path jar) {
+      final TypeIndexFile file, final ResolvedJar artifact, final Path jar) {
     try {
       final DependencyTypeIndexOrigin origin = file.origin().dependency();
-      return ReactorProjects.gav(artifact).equals(origin.gav())
+      return artifact.gav().equals(origin.gav())
           && jar.toString().equals(origin.jar())
           && Files.size(jar) == origin.size()
           && Files.getLastModifiedTime(jar).toMillis() == origin.mtimeMillis();
