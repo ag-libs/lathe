@@ -1,6 +1,6 @@
 # Lathe — Run and Test in VS Code
 
-**Status:** approved (2026-10-23); revised 2026-10-24 after studying how other VS Code extensions do this (§12).
+**Status:** approved (2026-10-23); revised 2026-10-24 after studying how other VS Code extensions do this (§13).
 Not built. Delivered editor-neutral first: server pieces, each adopted by Neovim, then VS Code (§11).
 All seven spikes ran on 2026-10-24 (§9); their outcomes are folded in below. Debugging is deferred (§10).
 
@@ -22,8 +22,8 @@ Today it is a pure language-client passthrough (`lathe-vscode/src/extension.ts`)
   ([Run, Test, and Debug](../done/lathe-run-test-debug.md), [Named run configs](../done/lathe-named-run-configs.md),
   [Structured test results](../done/lathe-structured-test-results.md), [Test output streaming](../done/lathe-test-output-streaming.md)).
   Small server additions (§3.2) are part of this design, because without them VS Code users would get the same gaps
-  other Java and Rust test explorers are still criticised for (§12).
-  The spikes also found three bugs in today's run path that Neovim users hit as well (§3.2 E–G).
+  other Java and Rust test explorers are still criticised for (§13).
+  The spikes and the research also found four bugs in today's run path that Neovim users hit as well (§3.2 E–H).
   The additions are additive on the wire; §3.3 lists what the Neovim client has to tolerate.
 
 ## 3. Server contract
@@ -135,7 +135,7 @@ Where `expected`/`actual` come from — the same sources IntelliJ's "Click to se
 | Anything else | Hamcrest `assertThat`, `assertTrue`, custom assertions | No values, so no diff: only the message |
 
 The string representation is the value's `toString()`, so two records or POJOs compare by their `toString()` output, as in IntelliJ.
-The runner never parses `expected: <a> but was: <b>` out of the message: Microsoft's Java test extension does, and it breaks on multi-line strings (§12).
+The runner never parses `expected: <a> but was: <b>` out of the message: Microsoft's Java test extension does, and it breaks on multi-line strings (§13).
 The message itself is unchanged.
 
 **C. Container failures.**
@@ -174,6 +174,12 @@ JUnit's class selector includes `@Nested` inner classes but not `static` nested 
 `lathe.run.test` adds a class selector for every member class of a selected class, from the module's captured test classes (`Outer$Name.class`; anonymous and local classes, whose names continue with a digit, are skipped).
 JUnit ignores classes without tests and runs each test once even when a `@Nested` class is selected twice (S6: 17 results, no duplicates).
 
+**H. Cancel stops the whole process tree.**
+`LaunchSession.cancel` stops only the replay JVM (`destroy`, then `destroyForcibly` after a grace period).
+Processes the tests or the `main()` started — an embedded server, a forked tool — outlive the cancel and keep their ports and files.
+On Windows this is the common case for a `.cmd`-started tool, and VS Code/Cursor is Lathe's Windows client.
+Cancel first stops the JVM's descendants (`ProcessHandle.descendants()`), then the JVM, as `FormatProcess` already does for a formatter.
+
 ### 3.3 Impact on the Neovim client
 
 - New fields in `TestResult`: ignored.
@@ -181,8 +187,9 @@ JUnit ignores classes without tests and runs each test once even when a `@Nested
 - A container-failure record: neotest sees an unknown method id and falls back to the class's aggregate status, which is better than today's "no result".
   A spec pins that it doesn't crash on an empty `methodName`.
 - Closed stdin: applies to Neovim runs too, by design.
-- E, F and G need no adapter change and fix Neovim runs directly:
-  array and varargs tests get their results, a module run stops running classes `mvn test` excludes, and running a class runs its static nested classes.
+- E, F, G and H need no adapter change and fix Neovim runs directly:
+  array and varargs tests get their results, a module run stops running classes `mvn test` excludes, running a class runs its static nested classes,
+  and cancelling a run also stops the processes it started.
 
 ### 3.4 Neovim adoption
 
@@ -272,7 +279,7 @@ S5 checked the routing in both folders of a two-folder window.
   VS Code keeps whichever state was set last, so the run handler records each item's worst status so far
   and never moves a `failed` item back to `passed` or `skipped`.
   A failure's message names its invocation (`displayName`).
-  Child items per invocation were considered and rejected: they are the most persistent source of bugs in Microsoft's Java test extension (§12).
+  Child items per invocation were considered and rejected: they are the most persistent source of bugs in Microsoft's Java test extension (§13).
 
 ### 5.2 Discovery
 
@@ -316,7 +323,7 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
    The replay runs saved bytecode: an unsaved edit is not what runs (spike S4 ran an unsaved failing edit and it passed).
    A run sent right after the save does replay the new bytecode, because `didSave`'s compile and the run are queued on the same server worker in arrival order
    (S4: 10 of 10 alternating fail/pass edits, each run sent straight after `didSave` without waiting for diagnostics, about 0.5 s per method run).
-   So the handler awaits the saves, then runs, with no extra wait (Metals reported tests green that never ran when a run beat the compile, §12).
+   So the handler awaits the saves, then runs, with no extra wait (Metals reported tests green that never ran when a run beat the compile, §13).
 2. Collect `request.include`; when it is undefined, run every module node.
 3. Turn each included item into selectors:
    method → `METHOD`, class → `CLASS`, package → `PACKAGE`, all keyed by the item's id.
@@ -366,7 +373,7 @@ The main-run path (§6) and later the debug path (§10) use the same map.
 
 **One execution path.**
 The Test Explorer, `testing.runAtCursor` and any future lens all end in `lathe.run.test`.
-rust-analyzer's lens and explorer runs went through different code and behaved differently (§12).
+rust-analyzer's lens and explorer runs went through different code and behaved differently (§13).
 
 ## 6. Running a `main()`
 
@@ -432,7 +439,8 @@ This ports Neovim's `_save_target_for`.
 - Run-path fixes, pinned with the id shapes spike S6 used (kept as a fixture class):
   `TestId` maps `[I`, `[[J` and `[Ljava.lang.String;` to `int[]`, `long[][]` and `java.lang.String[]`, so array and varargs results match their `RunTarget` ids (E);
   a module run skips a class the captured Surefire patterns exclude and a test the captured tag expression excludes, while running that class explicitly still runs it (F);
-  running `Outer` runs `Outer$StaticNested` once and `@Nested` classes once, and skips `Outer$1` (G).
+  running `Outer` runs `Outer$StaticNested` once and `@Nested` classes once, and skips `Outer$1` (G);
+  cancelling a run whose test started a child process (a fixture helper started on the test JDK's own `java`, per the portability rules) leaves neither process alive, on Linux and Windows (H).
 - Neovim: a spec feeds a container-failure result and the two new notifications to the neotest adapter (§3.3).
 
 ### 8.2 Client unit (plain Node, beside `launch.test.ts`)
@@ -452,7 +460,7 @@ the stream ordinal → rendering (stderr red, both command lines dimmed).
 
 A real `TestController` and `TestRun`, with spies on `started`/`passed`/`failed`/`appendOutput`, fed scripted `lathe/testStarted`/`testEvent`/`testOutput` sequences and responses through the `RunSink`.
 No server: this pins the result routing (diffs, per-test output, container failures, cancel) quickly, and covers what the fixture can't produce, such as a long-running test to cancel.
-This is the layer Microsoft's Java extension and Metals rely on (§12).
+This is the layer Microsoft's Java extension and Metals rely on (§13).
 
 ### 8.4 End-to-end (`@vscode/test-electron`, working-tree server)
 
@@ -542,7 +550,7 @@ What the research settled for when this is designed:
   A Debug profile instead tags its configuration with the run token and follows the session through `onDidStartDebugSession` / `onDidTerminateDebugSession`, as Microsoft's Java test extension does.
   Results arrive through the same `RunSink` as a run (§5.3), and `lathe/testFinished` closes the run.
 - Named configs appear as dynamic debug configurations (`provideDebugConfigurations`), never written into `launch.json`.
-- Run stays on `lathe.run.*`, not a `noDebug` debug session: Metals moved its plain Run off DAP (§12), and our run path already streams per-test results that a DAP session only gives at the end.
+- Run stays on `lathe.run.*`, not a `noDebug` debug session: Metals moved its plain Run off DAP (§13), and our run path already streams per-test results that a DAP session only gives at the end.
 
 ## 11. Delivery
 
@@ -553,8 +561,8 @@ so Neovim users gain from every phase and the server work is proven by an existi
 
 **Phase 1: run-path fixes and richer results.**
 
-1. Server: the three run-path fixes the spikes found, small and independent, each a direct Neovim improvement with no adapter change:
-   array and varargs ids (§3.2 E), static nested classes (§3.2 G), and the closed stdin (§3.2 D).
+1. Server: the small run-path fixes, independent of each other, each a direct Neovim improvement with no adapter change:
+   array and varargs ids (§3.2 E), static nested classes (§3.2 G), cancel stopping the process tree (§3.2 H), and the closed stdin (§3.2 D).
 2. Server: container failures, `expected`/`actual`, `stackTrace`, `durationMs`, `displayName` and `lathe/testStarted` (§3.2 B, C and D); runner and server tests (§8.1).
 3. Neovim: the spec for the new data (§3.3), then the adapter work of §3.4 items 2–6: per-test output, container failures, the inline and side-by-side diffs, structured stack frames, durations.
 4. Capture and server: follow Surefire's test-class filter in module and package runs (§3.2 F).
@@ -574,7 +582,26 @@ so Neovim users gain from every phase and the server work is proven by an existi
 
 **Docs** with each phase: `README.md`, `docs/guide/` (`test-capture.md`, the Neovim cheatsheet, a new VS Code cheatsheet) and `docs/status.md`.
 
-## 12. Prior art
+**Approval per step.**
+Steps that span several classes or change the wire contract — at least 2, 4, 5, 7, 8 and 9 — each start with a short implementation summary (classes, records, tests) approved before any code, as the project's working rules require.
+The design here is what those summaries implement; it doesn't replace them.
+
+## 12. Open items
+
+What this design leaves open, on purpose:
+
+| Item | Status | Needed before |
+|---|---|---|
+| How the capture records Surefire's filter (§3.2 F) | Two candidate sources, the in-fork view of Surefire's discovery request or the plugin's configuration; settled in a short design check | Phase 1 step 4 |
+| S1 on macOS and Windows | Linux verified; the other two need a CI run on a pushed branch | Phase 3 |
+| Debugging (§10) | Deferred; the wiring is recorded, the design is not written | After phase 3 |
+| TestNG through Surefire's own TestNG provider | Out of scope; what today's runs do on such a module was not checked | — |
+| Neovim open-file discovery trigger (§3.4 item 7) | A check, not a decided change | Phase 2 step 6 |
+
+Accepted limits, not open items: one id for a `@Nested` class inherited by two outer classes (§3.2 A);
+a placeholder position for tests in unopened files in neotest (§3.4 item 1); no stdin for a `main()` (§6).
+
+## 13. Prior art
 
 Studied in October 2026 from source: Microsoft's Test Runner for Java and Debugger for Java (on jdtls), Red Hat's Java extension,
 Metals (Scala) and rust-analyzer, plus `vscode-languageclient` 9.0.1.

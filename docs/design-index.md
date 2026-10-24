@@ -197,9 +197,9 @@ reused):
   output in a terminal. Small additive server changes (discover mode, richer results, a started
   event, closed stdin), shaped by prior art in Microsoft's Java extensions, Metals and
   rust-analyzer, plus run-path fixes the spikes found (array/varargs ids, static nested classes,
-  Surefire's test-class filter for wide runs). Delivered editor-neutral first, each server piece adopted by Neovim before
-  VS Code. Working-tree E2E with `@vscode/test-electron` against the `multi-module` invoker
-  fixture. Debugging deferred.
+  Surefire's test-class filter for wide runs, cancel stopping the process tree). Delivered
+  editor-neutral first, each server piece adopted by Neovim before VS Code. Working-tree E2E with
+  `@vscode/test-electron` against the `multi-module` invoker fixture. Debugging deferred.
 - [New Java Project (VS Code)](planned/lathe-vscode-new-project.md) — **proposed.** A
   `Lathe: New Java Project` command for beginners: writes a minimal Lathe-enabled Maven project from
   inline templates (no archetype), opens it, and runs the first build in a terminal. VS Code and Maven only.
