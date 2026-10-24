@@ -18,7 +18,6 @@ import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
 import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
-import io.github.aglibs.lathe.install.typeindex.DependencyTypeIndexSync;
 import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import java.nio.file.Path;
@@ -59,17 +58,8 @@ final class SyncCoordinator {
             externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
     final List<ResolvedJar> externalJars =
         externalArtifacts.values().stream().map(ReactorProjects::resolvedJar).toList();
-    DependencySourceSync.extract(DependencySource.withSources(dependencySources));
-    DependencyTypeIndexSync.index(externalJars);
-    final Map<Path, Path> jarToTypeIndex =
-        externalJars.stream()
-            .collect(
-                Collectors.toMap(
-                    ResolvedJar::jar,
-                    DependencyTypeIndexSync::indexPath,
-                    (first, ignored) -> first));
     final List<DependencySource> enrichedSources =
-        dependencySources.stream().map(s -> enrichWithTypeIndex(s, jarToTypeIndex)).toList();
+        DependencySourceSync.prepare(dependencySources, externalJars);
     final JdkSource jdkSource = JdkSourceResolver.resolve();
     JdkSourceSync.extract(jdkSource);
     final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource);
@@ -132,12 +122,6 @@ final class SyncCoordinator {
           style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
       syncScript.write(workspaceRoot);
     }
-  }
-
-  private static DependencySource enrichWithTypeIndex(
-      final DependencySource s, final Map<Path, Path> jarToTypeIndex) {
-    final Path idx = s.jar() != null ? jarToTypeIndex.get(s.jar()) : null;
-    return idx != null ? s.withTypeIndex(idx) : s;
   }
 
   // Keep only modules whose directory is inside the reactor root; .lathe/ mirrors those and skips

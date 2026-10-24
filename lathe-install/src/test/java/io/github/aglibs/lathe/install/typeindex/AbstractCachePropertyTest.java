@@ -3,17 +3,17 @@ package io.github.aglibs.lathe.install.typeindex;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 
-abstract class AbstractCachePropertyTest {
+public abstract class AbstractCachePropertyTest {
 
   private String previousCache;
 
   @BeforeEach
-  void rememberCacheOverride() {
+  protected void rememberCacheOverride() {
     previousCache = System.getProperty("lathe.cache");
   }
 
   @AfterEach
-  void restoreCacheOverride() {
+  protected void restoreCacheOverride() {
     if (previousCache == null) {
       System.clearProperty("lathe.cache");
       return;
