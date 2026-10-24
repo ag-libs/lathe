@@ -749,7 +749,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<List<String>> testModulesFuture() {
-    return worker.submit(session::testModules);
+    return worker.submit(() -> session.testModules());
   }
 
   CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {

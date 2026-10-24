@@ -11,11 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -39,8 +39,10 @@ public final class LaunchSession {
   private final CompletableFuture<Void> stdoutDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> stderrDrained = new CompletableFuture<>();
   private final CompletableFuture<Void> tailerDone = new CompletableFuture<>();
-  // The tests running now, from the runner's markers on stdout; both drain threads read it.
-  private final Set<String> runningTests = ConcurrentHashMap.newKeySet();
+  // The tests running now, from the runner's markers on stdout: touched by the stdout drain only.
+  private final Set<String> runningTests = new HashSet<>();
+  // The one running test, or null for none or several; volatile so the stderr drain sees it too.
+  private volatile String currentTest;
 
   LaunchSession(
       final Process process,
@@ -168,8 +170,8 @@ public final class LaunchSession {
     try (var reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
       String line;
       while ((line = reader.readLine()) != null) {
-        if (!trackTest(line)) {
-          final var tagged = new TranscriptLine(stream, line, currentTest());
+        if (stream != TranscriptLine.Stream.STDOUT || !trackTest(line)) {
+          final var tagged = new TranscriptLine(stream, line, currentTest);
           output.add(tagged);
           onLine.accept(tagged);
         }
@@ -185,16 +187,15 @@ public final class LaunchSession {
   // A marker line moves a test in or out of the running set and is not output; any other line is.
   private boolean trackTest(final String line) {
     final Optional<String> started = markedTest(line, LatheFlags.TEST_STARTED_MARKER);
-    started.ifPresent(runningTests::add);
     final Optional<String> finished = markedTest(line, LatheFlags.TEST_FINISHED_MARKER);
-    finished.ifPresent(runningTests::remove);
-    return started.isPresent() || finished.isPresent();
-  }
+    if (started.isEmpty() && finished.isEmpty()) {
+      return false;
+    }
 
-  // The one test running, or null when none or several are (output then belongs to no single test).
-  private String currentTest() {
-    final List<String> running = List.copyOf(runningTests);
-    return running.size() == 1 ? running.get(0) : null;
+    started.ifPresent(runningTests::add);
+    finished.ifPresent(runningTests::remove);
+    currentTest = runningTests.size() == 1 ? runningTests.iterator().next() : null;
+    return true;
   }
 
   private static Optional<String> markedTest(final String line, final String marker) {
