@@ -10,7 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter) remains.
+Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete.
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -29,7 +29,7 @@ This is a design, sliced for incremental delivery.
 
 - **Order:** all of Multi-OS, Windows included, before slice 0 (*revised 2026-10-20*; first decided as Multi-OS Phase A before slice 2).
 - **Shared sync code lives in `lathe-install`, made free of Maven.** Maven-specific adapters stay in `lathe-maven-plugin`.
-- **Formatter version is observed** from Spotless's own dependency resolution; a committed `lathe-style.json` always wins; options come from Spotless's defaults with a one-time notice. No "latest" fallback.
+- **No automatic formatter detection** (*revised 2026-10-24*): formatting on Gradle comes from a committed `lathe-style.json` (the command engines today; pinned engines with [Declared Formatters](lathe-declared-formatters.md), after the plugin); observing Spotless's resolution was wrong or incomplete on the probe builds (see [Formatter](#formatter-stylejson)).
 - **Lathe artifacts come from a repository the reactor fills**, never `~/.m2` (the trap the invoker suite hit as 7a).
 - **JDK 17+:** the plugin targets Java 17, so the Gradle daemon may run on 17; toolchain test workers on 17 load `lathe-junit`.
 
@@ -163,7 +163,7 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 | JDK sources and their type-index shard | *moved to `lathe-install` (slice 0c-1):* `jdk/JdkSource`, `JdkSourceResolver`, `JdkSourceSync`; `typeindex/JdkTypeIndexSync`, `TypeIndexFiles` | *none left:* they log through SLF4J |
 | Dependency `-sources` extraction and type-index shards | *moved to `lathe-install` (slice 0c-1):* `dependency/DependencySource`, `DependencySourceSync`; `typeindex/DependencyTypeIndexSync` | *none left:* the build tool's artifacts arrive as `ResolvedJar` (coordinates + jar); *resolving* the jars stays per tool (`DependencySourceResolver` on Maven, an artifact view on Gradle) |
 | `workspace.json`, the sync script, `main-launch.json` | *moved to `lathe-install` (slice 0c-3):* `WorkspaceManifestWriter`, and the script's writing as `SyncScript.write`, which the OpenJDK plugin now uses too; Maven's script content stays in the plugin as `MavenSyncScript`. `main-launch.json` writing too, as `MainLaunchWriter` (slice 0c-4); deriving the launch stays per tool (`MavenMainLaunch` reads `MavenProject` and places modules with plexus-java; Gradle uses its own rule, see [JPMS](#jpms-java-modules)) | *none left* |
-| Formatter jars and `style.json` | *writing moved to `lathe-install` (slice 0c-5):* `StyleWriter`. *Still in `lathe-maven-plugin`:* `MavenStyle` (detection from the Spotless POM) and `FormatterResolver` | Spotless POM reading and Aether resolution stay Maven-only. `FormatterResolver`'s Spotless defaults and Eclipse lockfile jars may serve Gradle too; they move in Gradle slice 2, once Gradle's formatter flow gives them a second caller |
+| Formatter jars and `style.json` | *writing moved to `lathe-install` (slice 0c-5):* `StyleWriter`. *Maven-only, in `lathe-maven-plugin`:* `MavenStyle` (detection from the Spotless POM) and `FormatterResolver` | Gradle detects no formatter (*decided 2026-10-24*, see [Formatter](#formatter-stylejson)); resolving a committed `lathe-style.json` is [Declared Formatters](lathe-declared-formatters.md), which shares `FormatterResolver`'s engine table |
 | `jvm.args` | *writing and flag parsing moved to `lathe-install` (slice 0c-5):* `JvmArgsWriter` | *none left;* collecting the flags stays per tool (`MavenJvmArgs`: compiler `-J` args, `.mvn/jvm.config`, `MAVEN_OPTS`) |
 | Server install, artifact resolution | `lathe-install` (`ServerInstaller`, `ArtifactResolver`, `LauncherCopier`) | *no longer (slice 0b):* Aether moved to `lathe-install-maven`, Maven's `ComparableVersion` became the JDK's `ModuleDescriptor.Version`, and the runner classpath takes `group:artifact:version` strings |
 | `lsp-params-*.json`, the bytecode and generated-sources mirrors, compile stamps | *moved to `lathe-install` (slice 0d):* `CompileCapture` (`writeParams`, `mirror`), taking `ModuleConfigData` | *none left;* `lathe-compiler` keeps the thin adapter `MavenModuleConfig.of(CompilerConfiguration)` and the keep-the-last-good-capture order in `LatheCompiler.syncOutput` |
@@ -203,7 +203,7 @@ direct analog of `lathe-maven-extension` + `lathe-maven-plugin`.
 | Aether `resolveArtifact(":sources")` | resolve `-sources` jars | `ArtifactView` + `withVariantReselection()` with `DocsType.SOURCES` |
 | plexus-java `LocationManager` | module/classpath split | Gradle's own rule — every entry that is a module goes on the module path ([JPMS](#jpms-java-modules)) |
 | `workspace.json` `outputs` (module `outputDirectory` + packaged jars) | map sibling outputs to `.lathe/` mirrors | each `JavaCompile.destinationDirectory` + each `Jar.archiveFile` (main and test jars) |
-| `WorkspaceStyleWriter` (Spotless POM config) | pinned formatter → `style.json` | see [Formatter](#formatter-stylejson) |
+| `WorkspaceStyleWriter` (Spotless POM config) | none: a committed `lathe-style.json` | see [Formatter](#formatter-stylejson) |
 | `LatheFlags` / `isPomOptOut` | gating & precedence | same logic, reading Gradle properties + `.lathe/` |
 
 ## Capture point A — compiler arguments & annotation processing
@@ -379,8 +379,6 @@ absolute paths. Instead, in capture mode only, the plugin sets
 `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }`.
 Spiked with build and configuration caches on: two consecutive capture-only runs both forked, and the
 real `test` task kept its own cache entry (`FROM-CACHE` / `UP-TO-DATE` as usual).
-The sync script ([Multi-OS](../done/lathe-multi-os.md) D3) passes `--no-configuration-cache`, so formatter-version
-observation runs (see [Formatter](#formatter-stylejson)).
 It does not need `--no-build-cache` (the first draft passed it): a `FROM-CACHE` `compileJava` still runs its
 capture task (spiked 2026-10-23), so a sync keeps the speed of the build cache.
 
@@ -539,22 +537,42 @@ version (or the step's public `defaultVersion()` when the POM leaves it out), re
 On Gradle the configuration is DSL calls whose arguments disappear into Spotless internals:
 the step **name** is readable, the version and options are not (spiked on Spotless 7.0.2, 2026-10-10).
 
-**Decided 2026-10-18:**
+**Decided 2026-10-24 (slice 2c), replacing the 2026-10-18 plan below: no automatic detection on Gradle.**
+Formatting on a Gradle project comes from a committed `lathe-style.json`, the
+[Pinned Formatters](../done/lathe-pinned-formatters.md) user override, whose formatter section replaces the generated one
+whole. `latheSync` writes no `style.json` and says once that formatting is set up through `lathe-style.json`.
+A project without one is not formatted by Lathe, rather than formatted wrongly.
 
-1. **A committed `lathe-style.json` always wins.** The server already merges it per section over the generated `style.json`.
-2. **The version is observed, not read from the configuration.** Spotless resolves its formatter through an ordinary
-   project configuration (`spotless<hash>`) when its task runs. The project plugin registers
-   `configurations.configureEach { incoming.afterResolve { … } }` and records the resolved formatter module
-   (`com.google.googlejavaformat:google-java-format:<version>`, and the palantir / Eclipse equivalents).
-   It matches the formatter coordinates *and* the `spotless` configuration-name prefix,
-   so a project that uses google-java-format as an ordinary library is not mistaken for its formatter.
-   - Each project's `latheFacts` depends on that project's `spotless<Format>` task. When nothing changed it is `UP-TO-DATE` and cheap,
-     and the resolution still happens, because Spotless resolves the formatter to compute the task's inputs.
-   - The sync runs with `--no-configuration-cache`: a run that *reuses* the configuration cache skips configuration, so nothing resolves.
-3. **Options** (AOSP style, `reflowLongStrings`, `reorderImports`, `formatJavadoc`) are not observable through public API.
-   Sync uses Spotless's own defaults (as Maven does for unset options) and says once:
-   *"formatter options come from Spotless defaults; declare them in `lathe-style.json` if your build sets them."*
-   A wrong guess is loud (the first save re-indents, CI's `spotlessCheck` disagrees), not silent.
+- **The `command` and `command-file` engines work today**: the server runs the command the file names (for example
+  the build's own Spotless for one file).
+- **A pinned engine (google, aosp, palantir, eclipse) needs its jars**, which only a sync resolves: the server runs
+  it from the spec's `classpath` and reports "no resolved classpath" otherwise. The Gradle plugin ships without
+  formatter support; [Declared Formatters](lathe-declared-formatters.md) designs it for after the plugin is done:
+  a formatter declared in a committed `lathe-style.json`, its jars resolved by every front-end's sync.
+
+**Why.** The 2026-10-18 plan observed the formatter Spotless resolves (`configurations.configureEach { incoming.afterResolve }`
+on its `spotless…` configurations) and took its options from Spotless's defaults. Checked against the four probe builds,
+that is right for none of them:
+
+| Build | What it declares | What observation would conclude |
+|---|---|---|
+| Caffeine | no Spotless; google-java-format is a library in its version catalog | nothing (the `spotless` configuration-name check excludes it) |
+| Micronaut Core | Spotless `java { }` with only `targetExclude`s, no formatter step | nothing |
+| Hibernate ORM | Spotless header regexes, `removeUnusedImports()`, `leadingSpacesToTabs(4)`, trimming: cleanup steps, no formatter | **wrong:** `removeUnusedImports` resolves google-java-format, so every save would reformat a tab-indented codebase in Google style |
+| JUnit | Spotless `eclipse(<version>).configFile(junit-eclipse-formatter-settings.xml)` and a custom import order | **incomplete:** the version is observable, the settings file is not, so formatting would use Eclipse's defaults, not JUnit's profile |
+
+Whether a resolved formatter is a formatting step at all, and the formatter's own settings file, both decide the
+result, and neither is visible through Gradle's public API. Detection can return if a reliable signal appears;
+Spotless's own step model would be one, but reading it by reflection breaks across Spotless releases (rejected below).
+
+The 2026-10-18 plan, kept for the record:
+
+1. A committed `lathe-style.json` always wins.
+2. The version is observed from Spotless's resolution, matching the formatter coordinates and the `spotless`
+   configuration-name prefix; each project's `latheFacts` depends on its `spotless<Format>` task, and the sync runs
+   with `--no-configuration-cache`, since a reused configuration cache resolves nothing.
+3. Options (AOSP style, `reflowLongStrings`, `reorderImports`, `formatJavadoc`) come from Spotless's defaults, with a
+   one-time notice.
 
 **Rejected:**
 
@@ -819,10 +837,10 @@ and a capture-only test run on Gradle 9.
    It fills `.lathe/<module>/` for main and test; the editor can use it once slice 2 adds the workspace files.
 2. **`workspace.json` + `jvm.args` + `.lathe/java-home` + dependency/JDK sources + server install + formatter + the sync script** — `latheSync`, in four reviewed steps:
    2a, `workspace.json`, `java-home` and the JDK sources, `jvm.args`, the server install and the sync script;
-   2b, dependency `-sources` jars and type-index shards; 2c, `style.json`; 2d, the build lock.
+   2b, dependency `-sources` jars and type-index shards; 2c, `style.json`, decided against (formatting comes from a committed `lathe-style.json`, see [Formatter](#formatter-stylejson)); 2d, the build lock.
    The server resolves through the root project's repositories; the plugin adds Maven Central to the root only when neither the root nor the settings declare a repository and the build allows project repositories;
    `jvm.args` and `java-home` are workspace-wide (the union of the access flags, the highest compiling JDK), so they come with the per-project `latheFacts` merge, which Isolated Projects requires (*decided 2026-10-24*); the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
-   experience (go-to-definition into libraries/JDK, formatting with the project's formatter version).
+   experience (go-to-definition into libraries/JDK; formatting through a committed `lathe-style.json`, its pinned engines with [Declared Formatters](lathe-declared-formatters.md)).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
 4. **Test launch (in-fork)** — `lathe-junit` on the `test` classpath in capture mode + worker-jar filter + `failOnNoDiscoveredTests = false` on Gradle 9+; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
    First confirms Gradle 9's no-tests failure and, if needed, sets `failOnNoDiscoveredTests = false` in capture mode.
@@ -874,8 +892,9 @@ and a capture-only test run on Gradle 9.
 5. **Plugin Portal release wiring** — how `com.gradle.plugin-publish` slots into the tag-driven release.
    Not blocking a slice, but the Portal must approve ownership of the `io.github.ag-libs` plugin ID namespace
    before the first publish, which takes days: register the account and request it early.
-6. **Formatter discovery** — *decided:* committed `lathe-style.json` wins; otherwise the version is
-   observed from Spotless's resolution and options come from Spotless defaults; see [Formatter](#formatter-stylejson).
+6. **Formatter discovery** — *decided 2026-10-24:* none on Gradle; formatting comes from a committed
+   `lathe-style.json`, since observing Spotless's resolution was wrong or incomplete on the probe builds;
+   see [Formatter](#formatter-stylejson).
 7. **Shared sync code** — *decided:* in `lathe-install`, made Maven-free; see [What is reused vs new](#what-is-reused-vs-new).
 8. **JDK** — *decided:* Java 17+; see [JDK requirement](#jdk-requirement).
 9. **Readiness review** — *decided 2026-10-23:* a Lathe-enabled build leaves the build's own tasks' cache keys
