@@ -16,12 +16,15 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.versioning.ComparableVersion;
-import org.apache.maven.plugin.logging.Log;
 import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.repository.RemoteRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class ServerInstaller {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ServerInstaller.class);
 
   // jdk.compiler internals the MCP launcher grants to ALL-UNNAMED: it runs entirely on the
   // classpath, so its in-process javac is in the unnamed module there.
@@ -37,16 +40,13 @@ public final class ServerInstaller {
 
   private final ArtifactResolver artifactResolver;
   private final List<RemoteRepository> remoteRepositories;
-  private final Log log;
 
   public ServerInstaller(
       final RepositorySystem repositorySystem,
       final RepositorySystemSession repoSession,
-      final List<RemoteRepository> remoteRepositories,
-      final Log log) {
+      final List<RemoteRepository> remoteRepositories) {
     this.artifactResolver = new ArtifactResolver(repositorySystem, repoSession);
     this.remoteRepositories = remoteRepositories;
-    this.log = log;
   }
 
   // Installs the server + MCP launchers for this plugin's version into an immutable,
@@ -90,9 +90,9 @@ public final class ServerInstaller {
 
   private void updateLatest() {
     try {
-      new LauncherCopier(log).copyNewestToLatest(LatheLayout.serversDir(), LatheLayout.latestDir());
+      LauncherCopier.copyNewestToLatest(LatheLayout.serversDir(), LatheLayout.latestDir());
     } catch (final IOException e) {
-      log.debug("[server] could not update latest: %s".formatted(e.getMessage()));
+      LOG.debug("[server] could not update latest: %s".formatted(e.getMessage()));
     }
   }
 
@@ -103,10 +103,10 @@ public final class ServerInstaller {
     try {
       if (Files.isSymbolicLink(currentLink)) {
         Files.delete(currentLink);
-        log.info("[server] removed stale current symlink");
+        LOG.info("[server] removed stale current symlink");
       }
     } catch (final IOException e) {
-      log.debug("[server] could not remove stale current symlink: %s".formatted(e.getMessage()));
+      LOG.debug("[server] could not remove stale current symlink: %s".formatted(e.getMessage()));
     }
   }
 
@@ -130,11 +130,11 @@ public final class ServerInstaller {
     final var launcherScript = versionDir.resolve(scriptName);
     final boolean isUpdate = Files.exists(launcherScript);
     if (!FileUtil.writeIfChanged(versionDir, launcherScript, script, true)) {
-      log.debug("[server] %s unchanged — skipping write".formatted(scriptName));
+      LOG.debug("[server] %s unchanged — skipping write".formatted(scriptName));
       return;
     }
 
-    log.info(
+    LOG.info(
         "[server] %s %s at %s"
             .formatted(isUpdate ? "updated" : "installed", scriptName, launcherScript));
   }
@@ -222,7 +222,7 @@ public final class ServerInstaller {
     final String jupiterVersion =
         versionOf(externalArtifacts, "org.junit.jupiter", "junit-jupiter-api");
     if (platformVersion == null || jupiterVersion == null) {
-      log.debug("[sync] no JUnit Jupiter dependency detected — skipping runner support jars");
+      LOG.debug("[sync] no JUnit Jupiter dependency detected — skipping runner support jars");
       return List.of();
     }
 

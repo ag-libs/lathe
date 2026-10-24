@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,13 +19,11 @@ class LauncherCopierTest {
   private static final List<String> ARGFILES =
       List.of(LatheLayout.SERVER_ARGS_FILE, LatheLayout.MCP_ARGS_FILE);
 
-  private final LauncherCopier copier = new LauncherCopier(new SystemStreamLog());
-
   @TempDir private Path td;
 
   @Test
   void copyToWorkspace_copiesLaunchersIntoLatheDir() throws IOException {
-    copier.copyToWorkspace(td.resolve("ws"), installVersion("0.2.0"));
+    LauncherCopier.copyToWorkspace(td.resolve("ws"), installVersion("0.2.0"));
 
     assertCopies(td.resolve("ws").resolve(LatheLayout.LATHE_DIR), "0.2.0");
   }
@@ -38,9 +35,9 @@ class LauncherCopierTest {
     final Path oldVersion = installVersion("0.1.0");
     Files.createSymbolicLink(latest, oldVersion);
 
-    copier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
+    LauncherCopier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
     installVersion("0.2.0");
-    copier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
+    LauncherCopier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
 
     assertCopies(latest, "0.2.0");
     assertCopies(oldVersion, "0.1.0");
@@ -50,7 +47,7 @@ class LauncherCopierTest {
   void copyNewestToLatest_noServerInstalled_createsNothing() throws IOException {
     final Path latest = td.resolve(LatheLayout.LATEST_DIR);
 
-    copier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
+    LauncherCopier.copyNewestToLatest(td.resolve(LatheLayout.SERVERS_DIR), latest);
 
     assertThat(latest).doesNotExist();
   }

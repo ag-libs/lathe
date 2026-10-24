@@ -170,7 +170,8 @@ The sync work the plugin needs is build-neutral in substance but lives in Maven-
 
 They move into `lathe-install`, which then depends only on `lathe-core`:
 
-- a small logging interface replaces Maven's `Log`;
+- SLF4J replaces Maven's `Log`, as in `lathe-compiler`: both build tools route it to their own output, so
+  no logging interface is needed (*decided 2026-10-24; `lathe-install`'s own classes switched in slice 0a*);
 - an artifact-resolver interface, with a Maven implementation (Aether, in `lathe-maven-plugin`) and a Gradle one (in the plugin) — two implementations, so the interface earns its place;
 - `ParamsWriter` and the mirror/stamp writer (`syncOutput`, including its keep-the-last-good-capture rule on a failed compile) take plain values; `lathe-compiler` keeps a thin adapter from `CompilerConfiguration`;
 - `MainLaunchWriter` takes the resolved classpath, module placement, and `javaHome` as values;

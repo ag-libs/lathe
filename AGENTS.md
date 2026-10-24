@@ -215,11 +215,17 @@ against the `multi-module` invoker workspace — both use the checkout build dir
 
 ## Logging
 
+Code that runs inside a build tool logs through the tool's own logging; the server owns its JVM and
+uses JUL.
+
 **`lathe-compiler`** — SLF4J logger.
 Visible via Maven logging output.
 
 - `DEBUG` — workspace root found/skipped, params written, copy duration
 - `WARN` — post-compile, copy, and lock cleanup errors
+
+**`lathe-install`** — SLF4J logger (`slf4j-api` 1.7, `provided`: Maven 3.6.3+ and Gradle supply it and
+show it as their own log lines). Not JUL: Maven prints JUL in its raw format, outside `-q`/`-X`.
 
 **`lathe-maven-plugin`** — Mojo logger via `getLog()`.
 

@@ -69,9 +69,9 @@ final class SyncCoordinator {
     JdkSourceSync.extract(jdkSource, log);
     final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource, log);
     final var serverInstaller =
-        new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos, log);
+        new ServerInstaller(repositorySystem, session.getRepositorySession(), remoteRepos);
     final Path versionDir = serverInstaller.install();
-    new LauncherCopier(log).copyToWorkspace(workspaceRoot, versionDir);
+    LauncherCopier.copyToWorkspace(workspaceRoot, versionDir);
     final var mainLaunchWriter =
         new MainLaunchWriter(
             new LocationManager(), ReactorProjects.reactorOutputDirs(projects), log);

@@ -89,6 +89,9 @@
          Maven floor Lathe supports, so a newer API is a compile error, not a runtime surprise. -->
     <maven-api.version>3.6.3</maven-api.version>
     <maven-plugin.version>3.16.0</maven-plugin.version>
+    <!-- The SLF4J API build-side code logs through; the host build tool provides it at runtime, and
+         Maven 3.6.3 ships 1.7, so compiling against it keeps the code to calls every host has. -->
+    <slf4j.version>1.7.36</slf4j.version>
 
     <!-- release plugin versions (activated by the release profile) -->
     <maven-source.version>3.4.0</maven-source.version>
@@ -146,6 +149,12 @@
         <groupId>org.codehaus.plexus</groupId>
         <artifactId>plexus-compiler-api</artifactId>
         <version>${plexus-compiler.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>${slf4j.version}</version>
         <scope>provided</scope>
       </dependency>
       <dependency>

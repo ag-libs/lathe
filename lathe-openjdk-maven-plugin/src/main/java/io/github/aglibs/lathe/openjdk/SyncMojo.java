@@ -71,9 +71,8 @@ public final class SyncMojo extends AbstractMojo {
         new ServerInstaller(
             repositorySystem,
             session.getRepositorySession(),
-            session.getCurrentProject().getRemoteProjectRepositories(),
-            getLog());
+            session.getCurrentProject().getRemoteProjectRepositories());
     final Path versionDir = installer.install();
-    new LauncherCopier(getLog()).copyToWorkspace(Path.of(workspaceRoot), versionDir);
+    LauncherCopier.copyToWorkspace(Path.of(workspaceRoot), versionDir);
   }
 }
