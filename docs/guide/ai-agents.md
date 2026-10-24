@@ -102,24 +102,36 @@ The structured result carries the same, with the full `uri` and `origin`.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
+| `workspace_summary` | — | every module, the reactor modules it depends on (all on its classpath, transitive ones included with Maven), and whether its test launch is captured, plus the sync command; call it first in an unfamiliar project |
 | `get_diagnostics` | `file` | compiler errors and warnings, plus unused-code hints, for one file, on the real classpath — no build; says so when no module compiles the file |
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, column, direction` | callers (`incoming`) or callees (`outgoing`) of a method, across modules |
 | `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
+| `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
+| `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step), so edits pass the build's formatting check; answers with the lines it rewrote |
+| `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match; the ambiguous ones are listed with their candidates for you to pick |
 | `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
 
 The file tools take an existing `.java` file; any other path answers with an error.
+`format_file` answers with an error, not "already formatted", when the project pins no formatter or
+its jars are not resolved yet.
 Positions are 1-based and must be on a name: a position on a keyword, on whitespace or past the end of
 a line answers with an error that shows the line, rather than with the enclosing method or class.
 `find_references`, `find_implementations`, `call_hierarchy`, and
 `search_symbols` accept an optional `maxResults` (default 50); `run_test` takes an optional `scope`
 (`class` — default — / `method` / `package`).
+
+Each tool declares the MCP annotations that say whether it writes:
+the query tools (`outline` and `workspace_summary` included) and `verify_change` are `readOnlyHint`, `rename_symbol` is `destructiveHint`, and
+`run_test` is neither (it runs code but writes no source), and `format_file` and `fix_imports` are
+neither but `idempotentHint` (running them twice changes nothing more).
+What a client does with them is up to the client.
 
 The server also sends routing guidance at connection time (which tool fits which task), so a client
 that reads server instructions steers itself.

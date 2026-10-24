@@ -10123,6 +10123,184 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+gopls tells agents to call `go_workspace` first; IntelliJ's MCP server has `get_project_modules` and
+`get_project_dependencies`.
+Lathe holds the same facts in `.lathe/` — modules, source roots, inter-module dependencies, release
+level, which modules have a captured test launch, the sync command — but an agent has to guess them
+from POMs.
+
+### Fix
+
+- `workspace_summary` (no arguments) lists every reactor module with the reactor modules it depends
+  on (those on its classpath, which with Maven include transitive ones) and, for a module with tests, whether its test launch is captured; the header names the
+  sync command and its scoped form, the footer the command that captures a module's tests.
+- The module graph now keeps the per-module dependencies it already computed from the classpaths
+  (`WorkspaceModuleGraph.upstreamModuleDirs`); `LaunchReader.testCaptured` checks for the captured
+  launch without reading it.
+- The summary is built on the event loop, where session state lives, as a static core over
+  `(configs, workspaceRoot, graph)` like the session's other module listings.
+- A long dependency list names the first ten and counts the rest, as `verify_change` does; the
+  structured result keeps every name.
+- Left out: the Java release (a module may have none recorded, and diagnostics already reject syntax
+  past it) and the build tool (the sync script runs the recorded one).
+
+### Regression targets
+
+- `WorkspaceModuleGraphTest.upstreamModuleDirs_chain_theModulesOnItsClasspath`
+- `WorkspaceSessionTest.moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists`
+- `LatheEngineTest.modules_reactor_listsEachModuleWithItsUpstreamAndItsTestCapture`
+- `LatheMcpToolsTest.modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut`
+- `LatheMcpToolsTest.workspaceSummary_emptyWorkspace_answersNoModulesNotAnError`
+
+---
+
+## MC-24 — No file outline tool: an agent reads a whole file to learn its structure — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Claude Code's LSP tool (`documentSymbol`), Serena (`get_symbols_overview`,
+[Serena tools](https://oraios.github.io/serena/01-about/035_tools.html)) and Java MCP servers such as
+LSP4J-MCP (`document_symbols`) give an agent a file's members in a few hundred tokens.
+Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for it.
+
+### Fix
+
+- `outline` answers from the editor's document-symbol request (`DocumentSymbolScanner`): every type,
+  field, constructor and method in source order, indented by nesting, as
+  `method sell  8: int sell(int count) {`.
+- The scanner gives no signature, so each line carries the declaration's source line instead, as
+  the other answers carry `path:line: code`; no Java is parsed for it.
+- The path is in the header once, not on every line: a large type has dozens of members, and an
+  agent pays for every repeated path.
+- The kinds are the LSP symbol kinds the editor shows (a record is `struct`, its components
+  `field`s).
+
+### Regression targets
+
+- `LatheEngineTest.outline_typeWithNestedType_listsEveryDeclarationAtItsDepthWithItsLine`
+- `LatheMcpToolsTest.outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations`
+
+---
+
+## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all) — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Missing imports are the most common error an agent makes in Java.
+The LSP side computes the fixes (single-name import quick fix, whole-file `lathe.missingImports`
+([CA-7](gaps.md#ca-7--pasting-code-with-unresolved-types-requires-per-symbol-quick-fixes-no-whole-file-add-missing-imports)),
+add-throws), but MCP only reports the errors, so the agent guesses the import.
+gopls's `go_diagnostics` returns the fixes with the diagnostics and tells the agent to apply them and
+re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/gopls/internal/mcp/instructions.md)).
+
+### Fix
+
+- `fix_imports` reads the file's unresolved type names and their candidates from the analysis behind
+  the editor's "Add missing imports…" (`missingImportsFuture`), adds every name with exactly one
+  candidate, and writes the result the way `rename_symbol` does.
+- The added imports go in as one edit at the import insertion point
+  (`MissingImportsResult.importEdit`, which the single-name quick fix now uses too): several edits at
+  the same position apply in no defined order.
+- The answer lists the imports added, each ambiguous name with its candidates
+  (`List: java.util.List, java.awt.List`) for the agent to choose, and the names with none.
+  The description points to `format_file` to put the imports in order.
+- A failed analysis still answers "no import added", as the editor's command does; a file that does
+  not compile already carries a `Not compiled:` note.
+- Not done: listing the other available fixes (add-throws) beside `get_diagnostics` results; missing
+  imports are the common case.
+
+### Regression targets
+
+- `LatheEngineTest.fixImports_mixedNames_addsTheUnambiguousOnes_leavesTheRestToTheAgent`
+- `LatheEngineTest.fixImports_nothingMissing_writesNothing`
+- `LatheMcpToolsTest.importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft`
+
+---
+
+## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+Spotless runs on `verify`, and an agent's edits rarely match google-java-format, so the build fails
+after a correct change.
+Lathe already runs the project's own pinned formatter in-process for the editor, but MCP has no tool
+for it.
+IntelliJ's MCP server has `reformat_file`
+([IntelliJ MCP server](https://www.jetbrains.com/help/idea/mcp-server.html)).
+
+### Fix
+
+- `format_file` runs the formatter the project pins, the one the editor's format-on-save runs, and
+  writes the result the way `rename_symbol` does: reactor files only, under the reactor lock,
+  compiled into the mirror before it returns.
+- The formatter choice moved out of `LatheLanguageServer` into `FormatEngines`, so the agent engine
+  reads the same workspace style file (`LatheTextDocumentService.useWorkspaceFormatter`); the
+  editor-only fallback from `initializationOptions` stays in the language server.
+- The editor swallows a formatter failure into "no edits" (format-on-save must not nag); the agent
+  path refuses instead, so a file that does not parse, or a workspace with no formatter (or one whose
+  jars `lathe:sync` has not resolved), is an error, never "already formatted".
+- The answer names the rewritten line range (`Formatted a/Foo.java: lines 6–8 changed.`): the
+  formatter answers with one minimal edit, so an edit count would always be 1.
+- No `files` list: one call per file keeps each answer short, and an agent formats what it edited.
+
+### Regression targets
+
+- `LatheEngineTest.format_pinnedFormatter_rewritesTheChangedLinesOnce_thenAlreadyFormatted`
+- `LatheEngineTest.format_fileThatDoesNotParse_refusesWithTheReasonAndLeavesItAlone`
+- `LatheEngineTest.format_noFormatterPinned_refusesWithTheSyncRemedy`
+- `LatheMcpToolsTest.formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy`
+
+---
+
+## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes — done
+
+**Status: done — Target: next**
+Found by the agent-tooling landscape review (2026-10-24); see
+[the landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
+
+### Gap
+
+The MCP spec (2025-03-26 onward) lets a tool declare `annotations`: `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, `openWorldHint`
+([tools spec](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
+Lathe registers its tools with none.
+Reports say Claude Code's plan mode allows only MCP tools that declare `readOnlyHint` and runs them in
+parallel, and that Codex auto-approves read-only tools; neither is confirmed against official docs yet.
+
+### Fix
+
+`LatheMcpTools` registers every tool with one of three annotation constants:
+the read tools (diagnostics, definition, references, implementations, call hierarchy, describe,
+search, analyze_change, verify_change) are `readOnlyHint`; `rename_symbol` writes and is
+`destructiveHint`; `run_test` is neither, since it runs code but writes no source.
+Its `destructiveHint` is set to `false` explicitly, because the spec reads an unset one as `true` on a
+tool that is not read-only.
+One `spec` helper now registers each tool and logs its calls under the tool's own name.
+The guide states only what the tools declare, not what a client does with it, since that is
+still unconfirmed.
+
+### Regression targets
+
+- `LatheMcpToolsTest.all_everyTool_declaresWhetherItWrites`
+
+---
+
 ## MC-3 — MCP server logs are not observable: the client persists only startup stderr; the server has no durable log sink — done
 
 **Status: done — Target: next**

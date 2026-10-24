@@ -12,6 +12,8 @@ import io.github.aglibs.lathe.server.LatheTextDocumentService;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.ModulePlacement;
 import io.github.aglibs.lathe.server.ReconcileOutcome;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -44,6 +46,8 @@ import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.DocumentSymbol;
+import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.HoverParams;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -58,6 +62,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /**
  * In-process facade into the language server for non-editor clients (the MCP server): it drives the
@@ -134,6 +139,7 @@ public final class LatheEngine {
     service.setFileRenameSupported(true);
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
     service.setDocumentsFollowDisk(true);
+    service.useWorkspaceFormatter(workspaceRoot);
     service.initialize(workspaceRoot);
   }
 
@@ -244,6 +250,31 @@ public final class LatheEngine {
     return hover.getContents().getRight().getValue();
   }
 
+  // The file's types and their members in source order, each at its nesting depth.
+  public List<LatheOutlineItem> outline(final Path file) {
+    compileFromDisk(file); // register the file and warm its analysis before scanning
+    final String uri = LatheUri.fromPath(file);
+    final var params = new DocumentSymbolParams(new TextDocumentIdentifier(uri));
+    return await(service.documentSymbol(params)).stream()
+        .filter(Either::isRight)
+        .flatMap(symbol -> outlineItems(uri, symbol.getRight(), 0))
+        .toList();
+  }
+
+  private Stream<LatheOutlineItem> outlineItems(
+      final String uri, final DocumentSymbol symbol, final int depth) {
+    final List<DocumentSymbol> children =
+        symbol.getChildren() == null ? List.of() : symbol.getChildren();
+    return Stream.concat(
+        Stream.of(
+            new LatheOutlineItem(
+                symbol.getKind().name().toLowerCase(Locale.ROOT),
+                symbol.getName(),
+                depth,
+                toLatheLocation(new Location(uri, symbol.getSelectionRange())))),
+        children.stream().flatMap(child -> outlineItems(uri, child, depth + 1)));
+  }
+
   /**
    * Name-addressed symbol search across the reactor, dependencies, and the JDK (an index query, no
    * per-file warmup), each hit enriched with a snippet and where it lives, capped to {@code
@@ -346,6 +377,73 @@ public final class LatheEngine {
     IOUtil.unchecked(() -> Files.writeString(path, updated));
   }
 
+  // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
+  // like a rename. Empty when the file was already formatted.
+  public Optional<LatheFormat> format(final Path file) {
+    requireReactorFile("format", file);
+    compileFromDisk(file); // the formatter reads the file's document, so register it
+    final String uri = LatheUri.fromPath(file);
+    final List<TextEdit> edits = await(service.formatFuture(uri));
+    if (edits.isEmpty()) {
+      return Optional.empty();
+    }
+
+    return Optional.of(
+        new LatheFormat(
+            writeFile(file, uri, edits),
+            firstLine(edits.get(0)),
+            lastLine(edits.get(edits.size() - 1))));
+  }
+
+  // Adds the imports that have one candidate; the rest are the agent's to choose (ambiguous) or
+  // fix (unknown names).
+  public LatheImports fixImports(final Path file) {
+    requireReactorFile("fixImports", file);
+    compileFromDisk(file); // missing imports are read from the file's document, so register it
+    final String uri = LatheUri.fromPath(file);
+    final MissingImportsResult missing = await(service.missingImportsFuture(uri));
+    final Map<Boolean, List<MissingImport>> byUnambiguous =
+        missing.items().stream()
+            .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
+    final List<String> added =
+        byUnambiguous.get(true).stream().map(item -> item.candidates().get(0)).sorted().toList();
+    final String path =
+        added.isEmpty()
+            ? displayPath(file, uri)
+            : writeFile(
+                file,
+                uri,
+                List.of(MissingImportsResult.importEdit(missing.insertionRange(), added)));
+    return new LatheImports(path, added, byUnambiguous.get(false));
+  }
+
+  // The tools that write one file leave dependency, JDK and generated sources alone.
+  private void requireReactorFile(final String operation, final Path file) {
+    if (origin(file) != LatheLocation.Origin.REACTOR) {
+      throw new IllegalStateException(
+          "[%s] refusing: %s is not a reactor file".formatted(operation, file));
+    }
+  }
+
+  private String writeFile(final Path file, final String uri, final List<TextEdit> edits) {
+    final var edit =
+        new LatheFileEdit(uri, displayPath(file, uri), LatheLocation.Origin.REACTOR, edits.size());
+    writeAndCommit(Map.of(uri, edits), Map.of(), List.of(edit));
+    return edit.path();
+  }
+
+  // The formatter answers with one edit spanning what changed; its lines in the formatted file.
+  private static int firstLine(final TextEdit edit) {
+    return edit.getRange().getStart().getLine() + 1;
+  }
+
+  // A replacement ending in a line break ends on the line before it.
+  private static int lastLine(final TextEdit edit) {
+    final String text = edit.getNewText();
+    final long breaks = text.chars().filter(c -> c == '\n').count();
+    return firstLine(edit) + (int) (text.endsWith("\n") ? breaks - 1 : breaks);
+  }
+
   /**
    * What an answer about {@code files} cannot vouch for: files whose write failed (fix the code),
    * what only a sync can fix, and a running build. Read after the tool's own write pass.
@@ -439,6 +537,11 @@ public final class LatheEngine {
     final CallHierarchyItem to = call.getTo();
     return new LatheCall(
         to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
+  }
+
+  // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
+  public List<LatheModuleSummary> modules() {
+    return await(service.moduleSummariesFuture());
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the

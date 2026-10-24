@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
@@ -23,8 +26,11 @@ import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
@@ -43,6 +49,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
   private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
   private ProgressReporter progressReporter;
+  // Created, read and written only on the event loop: reach it through a lambda the loop runs
+  // (worker.submit(() -> session.x())), never a method reference (session::x), which reads the
+  // field on the caller's thread, where it may still be null.
   private WorkspaceSession session;
   // Written in initialize, read in formatting; volatile publishes it safely across lsp4j's
   // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
@@ -114,7 +123,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   /** The files written on report since the last call, for a verify_change given no files. */
   public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
-    return worker.submit(session::takeWrittenSinceVerify);
+    return worker.submit(() -> session.takeWrittenSinceVerify());
+  }
+
+  public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
+    return worker.submit(() -> session.moduleSummaries());
   }
 
   /** The changed files plus their same-module candidate callers, grouped by module rel. */
@@ -543,6 +556,29 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.format(uri, engine));
   }
 
+  // The formatter the workspace style file pins, for a client that sends no initializationOptions.
+  public void useWorkspaceFormatter(final Path root) {
+    final FormatterSpec spec = FormatEngines.workspaceSpec(root);
+    formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root, this);
+  }
+
+  // The whole-file formatting edits, refused (not empty) when there is no formatter or it fails.
+  public CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
+    final FormatEngine engine = formatEngine;
+    if (engine == null) {
+      return CompletableFuture.failedFuture(
+          new ResponseErrorException(
+              new ResponseError(
+                  ResponseErrorCode.RequestFailed,
+                  "No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `%s`)."
+                      .formatted(LatheLayout.SYNC_SCRIPT_COMMAND),
+                  null)));
+    }
+
+    final String canonical = LatheUri.canonical(uri);
+    return worker.submit(() -> session.formatOrRefuse(canonical, engine));
+  }
+
   @Override
   public CompletableFuture<List<? extends TextEdit>> rangeFormatting(
       final DocumentRangeFormattingParams params) {
@@ -688,7 +724,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.typeHierarchyExplorerFuture(uri, pos)).thenCompose(f -> f);
   }
 
-  CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
+  public CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     return worker.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
   }
 
@@ -718,7 +754,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<List<ResourceEntry>> resourcesFuture() {
-    return worker.submit(session::resources);
+    return worker.submit(() -> session.resources());
   }
 
   CompletableFuture<String> resourceOpenFuture(final String jar, final String entry) {

@@ -2,12 +2,15 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
@@ -544,6 +547,21 @@ class WorkspaceSessionTest {
 
     assertThat(WorkspaceSession.modules(List.of(config, testCfg, otherCfg), tmp))
         .containsExactly("module", "other"); // "module" appears twice (main+test) → distinct
+  }
+
+  @Test
+  void moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists() {
+    final var testCfg = testConfig("module", "src/test/java");
+    final var otherCfg =
+        TestCompiler.moduleConfig(
+            tmp.resolve(".lathe/other"),
+            tmp.resolve("other/target/classes"),
+            tmp.resolve("other/src/main/java"));
+    final List<ModuleSourceConfig> configs = List.of(config, testCfg, otherCfg);
+
+    assertThat(WorkspaceSession.moduleSummaries(configs, tmp, WorkspaceModuleGraph.build(configs)))
+        .extracting(LatheModuleSummary::module, LatheModuleSummary::hasTests)
+        .containsExactly(tuple("module", true), tuple("other", false));
   }
 
   @Test

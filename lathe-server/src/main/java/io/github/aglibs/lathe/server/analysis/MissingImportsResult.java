@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 
 /**
  * Every unresolved type name in a file with its importable fully-qualified candidates. {@code
@@ -20,6 +22,12 @@ public record MissingImportsResult(Range insertionRange, List<MissingImport> ite
 
   public static MissingImportsResult empty() {
     return new MissingImportsResult(null, List.of());
+  }
+
+  // One edit for every import: several edits at the same position apply in no defined order.
+  public static TextEdit importEdit(final Range at, final List<String> fqNames) {
+    return new TextEdit(
+        at, fqNames.stream().map("import %s;\n"::formatted).collect(Collectors.joining()));
   }
 
   public record MissingImport(String name, List<String> candidates) {

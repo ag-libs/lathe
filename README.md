@@ -69,17 +69,24 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 
 | Tool                   | What it does                                                         |
 |------------------------|---------------------------------------------------------------------|
+| `workspace_summary`    | every module, the reactor modules it depends on, its test capture, and the sync command |
 | `get_diagnostics`      | compiler errors, warnings, and unused-code hints for one file — no build |
 | `get_definition`       | resolve a symbol to its definition, incl. dependencies/JDK/generated |
 | `find_references`      | every real use of a symbol across the reactor                       |
 | `find_implementations` | implementers of an interface / overrides of a method                |
 | `call_hierarchy`       | callers or callees of a method, across modules                      |
 | `search_symbols`       | find a type by simple or qualified name across reactor, dependencies, JDK (CamelHumps for reactor types) |
+| `outline`              | a file's types and members, indented by nesting, each with its line and declaration |
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
+| `format_file`          | format a file in place with the project's pinned formatter, so edits pass Spotless |
+| `fix_imports`          | add a file's missing imports that have one match; list the ambiguous ones with their candidates |
 | `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+
+Each tool declares the MCP annotations that say whether it writes: only `rename_symbol`, `run_test`,
+`format_file` and `fix_imports` are not read-only, and only `rename_symbol` is destructive.
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
