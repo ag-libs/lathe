@@ -355,6 +355,8 @@ It is **optional** — configured separately from `require('lathe').setup()`, li
 | Re-run the first failing test | `require("lathe.neotest").run_first_failed()` | `<leader>tF` |
 | Toggle summary tree | `require("neotest").summary.toggle()` | `<leader>ts` |
 | Open output (docked, navigable) | `require("lathe.neotest").open_output()` | `<leader>to` |
+| Compare a failure's expected and actual side by side | `require("lathe.neotest").open_diff()` | `<leader>td` |
+| List the last run's results, with times (quickfix) | `require("lathe.neotest").open_results()` | `<leader>tq` |
 | Stop / cancel run | `require("lathe.neotest").stop()` | `<leader>tS` |
 
 Stop uses `require("lathe.neotest").stop()`, **not** neotest's `run.stop()`: the replay runs
@@ -362,6 +364,14 @@ server-side, so Lathe cancels it by asking the server to kill the replay JVM (SI
 SIGKILL for a hung test).
 Pass/fail also shows as gutter signs and in the summary tree, and a failing test places a diagnostic on
 its failing assertion line (jump with `]d` / `[d`).
+A failure that compares two values (`assertEquals`, AssertJ's `isEqualTo`, …) shows them as a diff under
+its message, `-` for expected and `+` for actual, line by line for multi-line text and capped at 40
+lines. `open_diff()` opens both values side by side in a new tab, in diff mode, for long or multi-line
+values: the failure under the cursor, else the only one with values, else one you pick.
+When a class's `@BeforeAll` fails, the class shows failed with that error, a diagnostic marks the failing
+setup line, and each of its tests reads `class failed: …` instead of a bare exit code.
+`open_results()` lists the last run's tests in the quickfix window, failures first, each with its time
+(`— passed (12 ms)`), including tests in files you never opened.
 `run_first_failed()` re-runs the first still-failing test from recent runs; the failing set is
 self-shrinking, so calling it repeatedly walks the failures one at a time as each goes green. It targets
 tests discovered as positions (open the file for a failure from a package run whose file you never

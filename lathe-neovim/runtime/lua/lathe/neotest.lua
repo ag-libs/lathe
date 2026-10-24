@@ -260,6 +260,35 @@ M._live_output_stderr_rows = output.stderr_rows
 M._live_output_command_rows = output.command_rows
 
 local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" }
+local TEST_METHOD_KIND = 1
+-- A huge value (a whole JSON document) keeps the failure text readable; open_diff shows all of it.
+local DIFF_MAX_LINES = 40
+
+--- A unified diff of a failure's expected and actual values, line by line, without the hunk headers
+--- (a "…" marks a gap between hunks) and capped at DIFF_MAX_LINES; nil when the two read the same.
+function M._value_diff(expected, actual)
+  local unified = vim.text.diff(expected .. "\n", actual .. "\n", { ctxlen = 3 })
+  if unified == "" then
+    return nil
+  end
+
+  local lines = {}
+  for _, line in ipairs(vim.split(unified, "\n", { trimempty = true })) do
+    if not line:match("^@@") then
+      lines[#lines + 1] = line
+    elseif #lines > 0 then
+      lines[#lines + 1] = "…"
+    end
+  end
+
+  if #lines > DIFF_MAX_LINES then
+    local more = #lines - DIFF_MAX_LINES
+    lines = vim.list_slice(lines, 1, DIFF_MAX_LINES)
+    lines[#lines + 1] = ("… %d more lines: require('lathe.neotest').open_diff() shows both values"):format(more)
+  end
+
+  return table.concat(lines, "\n")
+end
 
 --- One structured per-test result mapped to a neotest.Result. `output` is the run's shared
 --- transcript path, or nil while streaming live (the transcript file is written only once the
@@ -267,7 +296,8 @@ local TEST_STATUS = { passed = "passed", failed = "failed", skipped = "skipped" 
 local function test_result(tr, output)
   local res = { status = TEST_STATUS[tr.status] or "failed", output = output }
   if tr.failureMessage and tr.failureMessage ~= "" then
-    res.short = tr.failureMessage
+    local diff = tr.expected and tr.actual and M._value_diff(tr.expected, tr.actual)
+    res.short = diff and (tr.failureMessage .. "\n" .. diff) or tr.failureMessage
     -- Feed neotest's built-in diagnostic consumer (F1): a failed test becomes a vim.diagnostic on
     -- its failing line. failureLine is a 1-based Java source line, -1 when unresolved; neotest's
     -- error.line is 0-based, and omitting it lets neotest fall back to the position's start line.
@@ -794,6 +824,33 @@ end
 --- never-opened file show passed instead of inheriting the run-wide aggregate failure. nil when nothing
 --- matches (or the node isn't a container), so the caller falls back to the aggregate and never leaves
 --- it stuck running.
+--- A method's status when its class failed itself (its @BeforeAll broke, so the method never ran):
+--- failed, naming the class's error. The class is the id's own or any class it is nested in. nil for
+--- a non-method id, or when no enclosing class failed.
+---
+--- neotest places diagnostics only for test positions, never for a class, so the class's diagnostic
+--- (on its broken setup line) rides on the first of its methods resolved here; `diagnosed` records
+--- the classes already carried, so the line gets one diagnostic, not one per method.
+local function class_failure(id, real, output, diagnosed)
+  local class = id:match("^(.-)#")
+  while class do
+    local failure = real[class]
+    if failure and failure.status == "failed" then
+      local res = { status = "failed", short = "class failed: " .. (failure.short or ""), output = output }
+      if not diagnosed[class] then
+        diagnosed[class] = true
+        res.errors = failure.errors
+      end
+
+      return res
+    end
+
+    class = class:match("^(.*)%$[^$]+$")
+  end
+
+  return nil
+end
+
 local function container_status(node, real)
   local data = node:data()
   local qualifier, is_package
@@ -1043,7 +1100,10 @@ function M.results(spec, result, tree)
     real[id] = r
   end
 
-  results[ctx.position_id] = results[ctx.position_id] or result
+  local diagnosed = {}
+  results[ctx.position_id] = results[ctx.position_id]
+    or class_failure(ctx.position_id, real, result.output, diagnosed)
+    or result
 
   -- run_tree marks the whole subtree "running" up front and clears only the ids we return, so every
   -- descendant needs an entry: a container takes the status of the results whose class it encloses (by
@@ -1055,7 +1115,9 @@ function M.results(spec, result, tree)
       local id = node:data().id
       if not results[id] then
         local status = container_status(node, real)
-        results[id] = status and { status = status, output = result.output } or result
+        results[id] = class_failure(id, real, result.output, diagnosed)
+          or (status and { status = status, output = result.output })
+          or result
       end
     end
   end
@@ -1115,6 +1177,9 @@ function M._results_qf_items(results, paths)
     local message = failed and tr.failureMessage and tr.failureMessage ~= "" and tr.failureMessage
       or nil
     local text = message and (id .. " — " .. message:gsub("%s+", " ")) or (id .. " — " .. tr.status)
+    if tr.durationMs and tr.durationMs >= 0 then
+      text = ("%s (%d ms)"):format(text, tr.durationMs)
+    end
     local item = { text = text, type = QF_TYPE[tr.status] or "" }
     local path = paths[tr.className]
     if path and path ~= "" then
@@ -1134,6 +1199,89 @@ end
 --- tests in files never opened into the summary tree (the tree only shows opened files, but the run
 --- executed the whole module). className -> source path is resolved server-side (lathe.testSources,
 --- pure path math, no attribution). Reflects the last run; the next run replaces it. Bind <leader>tq.
+--- The failure open_diff compares, from a run's results: the failure with values whose id is
+--- `cursor_id` (the test under the cursor), else the only failure with values. Returns nil and the
+--- candidates when there are several (the caller asks), or none. Pure, so the specs reach it.
+function M._diff_target(results, cursor_id)
+  local candidates = {}
+  for _, tr in ipairs(results or {}) do
+    if tr.status == "failed" and tr.expected ~= nil and tr.actual ~= nil then
+      if tr.positionId == cursor_id then
+        return tr, { tr }
+      end
+
+      candidates[#candidates + 1] = tr
+    end
+  end
+
+  if #candidates == 1 then
+    return candidates[1], candidates
+  end
+
+  return nil, candidates
+end
+
+-- The test method under the cursor, from the buffer's last discovery; nil anywhere else.
+local function cursor_test_id()
+  local cached = discovery_cache[vim.api.nvim_buf_get_name(0)]
+  local line = vim.api.nvim_win_get_cursor(0)[1] - 1
+  for _, t in ipairs(cached and cached.targets or {}) do
+    if t.kind == TEST_METHOD_KIND and t.range and t.range.start.line <= line and line <= t.range["end"].line then
+      return t.id
+    end
+  end
+
+  return nil
+end
+
+local function diff_buffer(name, text)
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "wipe"
+  vim.bo[buf].swapfile = false
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(text, "\n"))
+  vim.bo[buf].modifiable = false
+  pcall(vim.api.nvim_buf_set_name, buf, name)
+  vim.cmd.diffthis()
+end
+
+--- Opens a failure's expected and actual values side by side in a new tab, in diff mode, so Neovim
+--- marks the changed lines and the changed text within them.
+function M._show_diff(tr)
+  vim.cmd.tabnew()
+  diff_buffer(("expected: %s"):format(tr.positionId), tr.expected)
+  vim.cmd("rightbelow vnew")
+  diff_buffer(("actual: %s"):format(tr.positionId), tr.actual)
+end
+
+--- Compares a failure's expected and actual values from the last run: the test under the cursor,
+--- else the only such failure, else the one picked from a list. Bind <leader>td.
+function M.open_diff()
+  local target, candidates = M._diff_target(last_run and last_run.results, cursor_test_id())
+  if target then
+    M._show_diff(target)
+    return
+  end
+
+  if #candidates == 0 then
+    vim.notify("No failure with expected and actual values in the last run", vim.log.levels.WARN, {
+      title = "Lathe",
+    })
+    return
+  end
+
+  vim.ui.select(candidates, {
+    prompt = "Compare",
+    format_item = function(tr)
+      return tr.displayName ~= "" and ("%s %s"):format(tr.positionId, tr.displayName) or tr.positionId
+    end,
+  }, function(choice)
+    if choice then
+      M._show_diff(choice)
+    end
+  end)
+end
+
 function M.open_results()
   local run = last_run
   if not run or #run.results == 0 then

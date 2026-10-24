@@ -190,7 +190,7 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Starts the workspace's own `.lathe/` launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
-- [Run and Test in VS Code](planned/lathe-vscode-run-test.md) — **approved, spikes done.** Test
+- [Run and Test in VS Code](planned/lathe-vscode-run-test.md) — **in progress: Neovim track slices 0–2 merged, 3 built.** Test
   Explorer (a lazy module tree from JUnit's own discovery on the captured bytecode, open files from
   attributed analysis; run at every level, live results with diffs, stack traces, durations and
   per-test output, container failures, cancel) and `main()` CodeLens, run button and named configs,
