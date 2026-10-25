@@ -14,8 +14,8 @@ Before making non-trivial changes, read the relevant design document first:
 Which file answers which question:
 
 - **Behavior / how-to** (user-facing) → `README.md` (editor-agnostic feature reference) and
-  `docs/guide/` (`how-it-works.md`, `installation.md`, `gradle.md`, `run-configuration.md`, `test-capture.md`, and
-  per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
+  `docs/guide/` (`how-it-works.md`, `installation.md`, `gradle.md`, `run-configuration.md`, `test-capture.md`,
+  `ai-agents.md`, `openjdk.md`, and per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
 - **Design / why** → `docs/design-index.md`, then the specific design doc under `docs/planned/`
   or `docs/done/`.
 - **What's implemented** → `docs/status.md`.
@@ -47,17 +47,24 @@ Which file answers which question:
 | Module               | Role                                                                                                                                                             |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `lathe-core`         | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java`                                                           |
+| `lathe-junit`        | Test-capture JUnit Platform listener that records the Surefire fork launch inside the fork                                                                       |
+| `lathe-test-runner`  | Standalone runner that replays captured tests and main methods outside the build                                                                                 |
 | `lathe-compiler`     | Plexus compiler SPI (`hint=lathe`)                                                                                                                               |
 | `lathe-install`      | Build-neutral sync code for every front-end (server install, launchers, sync script); no build-tool API: resolves jars through its `ArtifactResolver` interface |
 | `lathe-install-maven`| Maven's `ArtifactResolver` (Aether, the build's own repository session), shared by the Maven and OpenJDK plugins                                                |
 | `lathe-maven-plugin` | `lathe:init` (auto-bound to `initialize`, creates `.lathe/`) and `lathe:sync` (auto-bound to `process-test-classes`) Mojos; owns Maven invoker integration tests |
-| `lathe-server`       | LSP server; reads files produced by the other two; JPMS module; regular dep on `lathe-core`                                                                      |
+| `lathe-maven-extension`| Maven build extension that injects the Lathe build wiring (compiler, sync, capture) in memory                                                                  |
+| `lathe-openjdk-maven-plugin`| `sync` goal for the OpenJDK build: reads its per-module compile descriptors and writes an OpenJDK-native `.lathe/`                                        |
+| `lathe-server`       | LSP server; reads the `.lathe/` files the build front-ends write; JPMS module; regular dep on `lathe-core`                                                       |
+| `lathe-mcp-server`   | MCP server exposing Lathe's code intelligence to AI coding agents; runs `lathe-server` in process                                                                |
 | `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
 | `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
 | `lathe-gradle-plugin`| Gradle plugin, built by Gradle: this `pom` module fills `target/lathe-repo` with the reactor-built jars and runs `gradle build` (TestKit fixtures) against it.   |
 
-Build order: `lathe-core` → `lathe-install` → `lathe-compiler` → `lathe-server` → `lathe-install-maven` →
-`lathe-maven-plugin` → `lathe-gradle-plugin` (listed last).
+Build order: `lathe-core` → `lathe-junit` → `lathe-test-runner` → `lathe-install` → `lathe-compiler` →
+`lathe-server` → `lathe-mcp-server` → `lathe-maven-extension` → `lathe-install-maven` →
+`lathe-maven-plugin` → `lathe-openjdk-maven-plugin` → `lathe-neovim` → `lathe-vscode` →
+`lathe-gradle-plugin` (listed last).
 
 `lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and
 property-file helpers.
@@ -311,7 +318,7 @@ Message format: `[operation] uri-or-module detail Xms outcome`
 - Tests run on Linux, macOS and Windows (CI has a `windows-latest` row), so they **MUST** be portable:
     * Build expected paths through `Path` (OS-native; in JSON with the backslashes escaped), join
       paths with `File.pathSeparator`, and name scripts the way `LatheLayout` does (`.cmd` on Windows).
-    * Start helper processes on the test JDK's own `java` (e.g. `FakeFormatter`), never `sh` or Unix
+    * Start helper processes on the test JDK's own `java` (e.g. `TestProcess`), never `sh` or Unix
       tools, and stop a launcher's whole process tree: a `.cmd` launcher can't exec, so its JVM
       outlives it.
     * Close what opens a file before `@TempDir` cleanup: Windows won't delete an open file.

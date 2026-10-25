@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Map;
 import org.eclipse.lsp4j.DocumentHighlightKind;
 import org.eclipse.lsp4j.Position;
@@ -28,7 +29,8 @@ class ReferenceMatchTest {
     assertThat(expected).containsOnlyKeys(ReferenceRole.values());
     expected.forEach(
         (role, kind) -> {
-          final var highlight = new ReferenceMatch("file:///T.java", RANGE, role).toHighlight();
+          final var highlight =
+              new ReferenceMatch("file:///T.java", RANGE, role, List.of()).toHighlight();
           assertThat(highlight.getKind()).isEqualTo(kind);
           assertThat(highlight.getRange()).isEqualTo(RANGE);
         });

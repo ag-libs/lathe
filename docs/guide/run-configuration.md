@@ -25,8 +25,13 @@ configuration:
 
 Put team-wide settings in the committable `lathe-run.json`; keep machine-specific paths and
 secret-bearing `env` in the local `.lathe/run.json`.
-When both layers set the same field the local one wins — scalars override, lists concatenate, and
-`env` entries union.
+A local `defaults` entry merges with the shared one for the same `kind` and `module`, and a local
+config with the shared config of the same name.
+In a merge the local scalars (`cwd`, `envFile`) win, lists (`args`, `jvmArgs`, path appends)
+concatenate shared first, and `env` entries union with local values winning.
+A local config that overrides a shared one must repeat its target (`kind`, `module`, and `mainClass`
+or `selectors`): the target comes from the local entry, and a config without one is ignored with a
+warning in the server log.
 
 `:LatheRunSave` is the **only** thing that writes a config file, and it writes only the local
 `.lathe/run.json` (never the committed `lathe-run.json`). Nothing is written on a run.

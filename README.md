@@ -88,8 +88,8 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 Each tool declares the MCP annotations that say whether it writes: only `rename_symbol`, `run_test`,
 `format_file` and `fix_imports` are not read-only, and only `rename_symbol` is destructive.
 
-Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
-model — is in the [AI agents guide](docs/guide/ai-agents.md).
+Full setup — registering with Claude Code (other MCP clients take the same launcher), the result
+contract, and the freshness model — is in the [AI agents guide](docs/guide/ai-agents.md).
 
 ## Features
 
@@ -102,7 +102,7 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 |------------------------------|---------------------------------------------------------------------------------------------------|---------------------------------------------------|
 | Go to definition             | jumps to local sources, unpacked dependency JAR sources, and JDK sources                          | `textDocument/definition`                         |
 | Go to declaration            | navigates to the overridden interface or abstract-method contract                                 | `textDocument/declaration`                        |
-| Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace              | `textDocument/implementation`                     |
+| Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace; on a functional interface's method, also the lambdas and method references that implement it | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
 | Rename                       | renames a symbol and every reference **across every module of the build** — as one atomic edit (locals, fields, methods incl. the override family, record components, constructors) | `textDocument/rename` · `textDocument/prepareRename` |
@@ -115,15 +115,16 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.typeHierarchy` |
 | Add missing imports          | resolve every unimported type in the file in one pass, and every unresolved call the scope statically imports elsewhere — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |
 | Call hierarchy               | incoming and outgoing calls of a method                                                           | `textDocument/prepareCallHierarchy`               |
+| Resource finder              | find a resource by name across reactor resource roots and dependency JARs; dependency entries open read-only | `workspace/executeCommand` · `lathe.resources`, `lathe.resourceOpen` |
 | Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
-| Folding                      | classes, methods, blocks, and import groups                                                       | `textDocument/foldingRange`                       |
+| Folding                      | the imports (one range), module, classes, methods, and Javadoc comments                           | `textDocument/foldingRange`                       |
 
 ### Diagnostics & formatting
 
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as your build configures them, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | quick fixes and refactors: missing imports (including `import static` for members the scope imports elsewhere), add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
+| Code actions        | quick fixes and refactors: missing imports (including `import static` for members the scope imports elsewhere), add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method, surround with try-with-resources | `textDocument/codeAction`         |
 | Formatting          | the project's own formatter, detected from its Spotless setup — google-java-format, palantir-java-format, or Eclipse at the exact version it pins — run in-process in milliseconds, selections included | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` |
 
 Lathe applies the formatter step only, not other Spotless steps such as import order or license headers.
@@ -135,7 +136,7 @@ A committed `lathe-style.json` picks another formatter, an external command, or 
 | Feature                                              | What it does                                                                                                                                                | LSP method                                                            |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
 | Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode — no rebuild, live output                                                                 | `workspace/executeCommand` · `lathe.run.main`                         |
-| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output, a diagnostic on the failing assertion, expected/actual diffs, and class-level failures | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.tests.discover`, `lathe.run.test` |
+| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output (each test's own output attributed to it), a diagnostic on the failing assertion, expected/actual diffs, and class-level failures | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.tests.discover`, `lathe.run.test` |
 | Debug                                                | conditional breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
 | [Run configuration](docs/guide/run-configuration.md) | auto-applied overlays (JVM/program args, env, cwd, class-/module-path) plus named, selectable run configs (`:LatheRun {name}`, saved from the cursor)         | `lathe.run.named` · `lathe.runconfigs.list` · `lathe.runconfig.save`  |
 
@@ -161,7 +162,9 @@ sources or resources change **outside** the editor — a branch switch, a `git p
 editing files — Lathe reconciles in-process automatically, recompiling the changed files, however many, in dependency
 order and cleaning up deletions with no build. Only **build-file / module-structure** changes prompt a
 full refresh, which runs `.lathe/lathe-sync.sh` — a script the build writes, so the editor never needs to
-know your build tool. Run it yourself any time: `.lathe/lathe-sync.sh` refreshes everything,
+know your build tool. The Neovim client runs it when you answer the prompt; other editors
+(VS Code, Emacs, Zed) show the prompt but cannot run the script, so run it (or your Maven build) yourself.
+Run it any time: `.lathe/lathe-sync.sh` refreshes everything,
 `.lathe/lathe-sync.sh app core` only those modules (with their upstream), and `--tests` also
 re-captures test launches without running the tests. It prints the exact build command first.
 
@@ -205,6 +208,8 @@ configuration, and **Zed** needs only a project settings file.
 
 Test run and debug have additional requirements (Surefire and JUnit Platform
 versions); see [test-capture.md](docs/guide/test-capture.md).
+Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not
+captured, so they can't be run or debugged from the editor.
 
 ## Setup
 
@@ -254,6 +259,7 @@ Lathe.
   "ag-libs/lathe.nvim",
   ft = "java",
   cmd = "LatheStart",                             -- also start it from a non-Java buffer
+  event = { "BufReadPre pom.xml", "BufNewFile pom.xml" }, -- load for pom.xml validation too
   dependencies = { "mfussenegger/nvim-dap" },     -- optional: enables :LatheDebug
   config = function()
     require("lathe").setup()                       -- per-workspace style; `style`/`format_on_save` opts in the cheatsheet

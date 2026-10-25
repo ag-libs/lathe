@@ -17,7 +17,7 @@ graph, the same `--add-exports` / `--patch-module` flags, the same language leve
 
 ## Setup
 
-Prerequisites: a buildable JDK checkout, and `mvn` on `PATH` (any stable JDK runs Maven).
+Prerequisites: a buildable JDK checkout, and Maven 3.6.3+ on `PATH`, running on JDK 17 or later.
 
 ```sh
 bash configure --with-boot-jdk=/path/to/jdk-N   # if not already configured
@@ -27,8 +27,8 @@ mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync
 ```
 
 `sync` reads the build, writes `.lathe/` in the checkout, and installs the server into
-`~/.cache/lathe/`. It discovers `build/<conf>` automatically (`-Dlathe.buildDir=build/<conf>` to pick
-one). Then open any source — e.g. `src/java.base/share/classes/java/util/ArrayList.java` — in your
+`~/.cache/lathe/`. It finds the build automatically when exactly one configured `build/<conf>` exists; with several,
+pass `-Dlathe.buildDir=build/<conf>` to pick one. Then open any source — e.g. `src/java.base/share/classes/java/util/ArrayList.java` — in your
 editor's Lathe client; the server runs on the JDK you built via `.lathe/java-home`.
 
 File edits are analysed live; re-run `sync` only on build-shape changes (below).

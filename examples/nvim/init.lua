@@ -111,8 +111,7 @@ require("lazy").setup({
     cmd = "LatheStart",
     config = function()
       require("lathe").setup({
-        indent_style = "google",
-        formatter = "google",
+        style = { indent = { profile = "google" }, formatter = { engine = "google" } },
         format_on_save = true,
       })
       -- Run the `main` under the cursor from .lathe/ bytecode; output streams into Lathe's docked

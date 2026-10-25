@@ -1,14 +1,22 @@
 package io.github.aglibs.lathe.junit;
 
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.File;
+import java.lang.management.ManagementFactory;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 final class LaunchCapture {
@@ -17,6 +25,39 @@ final class LaunchCapture {
   private static final String AGENT_OPTION = "-javaagent:";
 
   private LaunchCapture() {}
+
+  // Writes this test JVM's launch to its module's test-launch.json, when the working directory is
+  // inside a Lathe workspace.
+  static void capture() throws Exception {
+    final var workingDir = Path.of("").toAbsolutePath().normalize();
+    final Optional<Path> workspaceRoot = LatheWorkspace.findRoot(workingDir);
+    if (workspaceRoot.isEmpty()) {
+      return;
+    }
+
+    final Path root = workspaceRoot.get();
+    final Path moduleRel = root.relativize(workingDir);
+    final Path moduleDir = root.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+    final TestLaunchData data =
+        toLaunchData(
+            System.getProperty(LatheLayout.JAVA_HOME_PROPERTY),
+            System.getProperty("java.class.path", ""),
+            ManagementFactory.getRuntimeMXBean().getInputArguments(),
+            ownJarLocation().orElse(null),
+            FileUtil.slashed(moduleRel));
+    Files.createDirectories(moduleDir);
+    final Path target = moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE);
+    FileUtil.writeAtomically(moduleDir, target, Json.toJson(data), false);
+  }
+
+  private static Optional<Path> ownJarLocation() throws URISyntaxException {
+    final CodeSource codeSource = LaunchCapture.class.getProtectionDomain().getCodeSource();
+    if (codeSource == null || codeSource.getLocation() == null) {
+      return Optional.empty();
+    }
+
+    return Optional.of(Path.of(codeSource.getLocation().toURI()));
+  }
 
   static TestLaunchData toLaunchData(
       final String javaHome,

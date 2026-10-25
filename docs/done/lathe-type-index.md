@@ -3,7 +3,7 @@
 ## Status
 
 Implemented baseline (reference). The type index described here ships; this is the living design
-reference for its shape. See also [Reactor Type Index](../planned/lathe-reactor-type-index.md) for the
+reference for its shape. See also [Reactor Type Index](../done/lathe-reactor-type-index.md) for the
 reactor-shard slice.
 
 This document captures the type-index shape for completion and missing-import support.
@@ -804,7 +804,7 @@ Structured timing fields (checked/resolved/accessible/elapsed) are deferred.
 
 Scan reactor `.lathe/` output directories on server startup/reload.
 Merge reactor candidates into `WorkspaceTypeIndex` alongside static dependency candidates.
-See [lathe-reactor-type-index.md](../planned/lathe-reactor-type-index.md) for the detailed design.
+See [lathe-reactor-type-index.md](../done/lathe-reactor-type-index.md) for the detailed design.
 
 **Status: done.**
 

@@ -1,5 +1,10 @@
 # Lathe — Find Instantiations of a Type
 
+**Status: implemented (2026-09-06).**
+Shipped as the `lathe.instantiations` command (Neovim `:LatheInstances`, `lathe/instances.lua`).
+As built, it maps the type's constructors, including synthesized ones, to reference targets and reuses the Find References search,
+rather than the `NewClassTree` matcher sketched below.
+
 ## Problem / motivation
 
 `textDocument/references` returns *all* references to a symbol; there is no way to ask for only the

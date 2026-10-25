@@ -7,6 +7,31 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-061 — Renaming a method also renames an override that implements a second, unrelated method — done
+
+**Status: done — Target: next.**
+
+Found while fixing EG-059 and reproduced on `main` (2026-10-25): with `interface Task { void run(); }`
+and `class Worker extends Thread implements Task { public void run() {} }`, renaming `Task.run` edited
+`Task.java` and `Worker.java`, so `Worker.execute` silently stopped overriding `Thread.run`.
+The same happened with the second supertype in the reactor (`class Job extends Base implements Step`).
+Both still compiled, because `@Override` was satisfied by the renamed interface method.
+
+**Cause.** The EG-059 check ran on the method under the cursor only; the overrides the reference
+search adds to the rename were never checked for a second, unrelated parent.
+
+**Resolution.** Where the reference search matches an override's declaration, it records what that
+override also overrides outside the searched family (`ReferenceTarget.overriddenOutsideFamily`, on the
+same supertype walk as `overriddenDeclarers`), on the match (`ReferenceMatch.alsoOverrides`).
+Rename refuses when any match carries one, naming the file and the method it would leave behind; the
+check runs in each searched module, so an override in a dependent module is covered.
+Starting from the override itself is refused too, since the search runs from the top-most contract.
+A diamond whose every parent is in the family (`Impl implements Plan, Phase`, `Phase extends Plan`)
+still renames.
+
+Regression:
+`LatheEngineTest.rename_overrideAlsoOverridingAnUnrelatedSupertype_refusesButAFamilyDiamondRenames`.
+
 ## EG-062 — Find-references and rename find nothing for a non-private nested type — done
 
 **Status: done — Target: next.**
@@ -88,12 +113,16 @@ The refusal is a `RequestFailed` response error that names the symbol and why; `
 its reason through to the MCP tool result.
 A nested reactor type stays renameable: its file is found from its binary name (`Outer$Inner`), which
 since EG-062 every reference target carries (that change replaced a canonical-name lookup added here).
-Not covered: an override in the renamed family that also implements an unrelated method
-([EG-061](gaps.md#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method)).
+A secondary top-level type (`interface Task` in `Sample.java`) has no file of its own name, so the
+workspace type index vouches for it instead; before that, its members were refused as outside the
+project.
+An override in the renamed family that also overrides an unrelated method is refused since
+[EG-061](#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method--done).
 
 Regression: `LatheEngineTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
 (JDK type, JDK method, `toString` override),
 `LatheEngineTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
+`LatheEngineTest.rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride`,
 `LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`.
 
 ## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done
@@ -6687,7 +6716,7 @@ Consequently, the client cannot distinguish:
 - a bug in result aggregation.
 
 This conflicts with the fail-fast policy in
-[lathe-m1-refactoring.md](../planned/lathe-m1-refactoring.md).
+[lathe-m1-refactoring.md](../done/lathe-m1-refactoring.md).
 
 ### Required behavior
 
@@ -8668,7 +8697,7 @@ Not yet decided; options to weigh when scheduled, cheapest first:
    affected reactor type-index entries between syncs.
 3. A fuller freshness model that reconciles the reactor index and mirror with on-disk sources
    without a Maven round trip; overlaps with [Sibling Recompilation](../done/lathe-sibling-recompilation.md)
-   and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
+   and the [Reactor Type Index](../done/lathe-reactor-type-index.md) freshness follow-ups.
 
 Scheduled for M2 as **WS-5**. The original plan was option 2 (in-process recompile), but that is
 **parked** — correct only for single-module change sets — in favour of **option 1**: detect source

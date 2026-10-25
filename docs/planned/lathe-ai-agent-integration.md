@@ -21,7 +21,7 @@ stdio, validated live against the private payment reactor.
   move, and refuses to touch a non-reactor file.
   It writes under the reactor lock and compiles the whole change set into the mirror before returning, however many files it touched,
   then touches `workspace.json` so an editor's server on the same workspace re-indexes the renamed types
-  ([Rename Transactions](../potential/lathe-rename-transactions.md)).
+  ([Rename Transactions](../done/lathe-rename-transactions.md)).
 - `run_test` replays a single test **method / class / package** against the compiled classpath (no
   `mvn`, no reactor build), reusing the editor's runnable→selection mapping; returns pass/fail/skip
   counts + each failure's `type: message` and line. Verified live on the payment reactor (sub-3s per

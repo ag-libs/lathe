@@ -33,7 +33,7 @@ as an archive of the reaction (R1 batch compile), the startup-reconciliation tri
 live-watch detection / gitignore / Neovim analysis.
 
 It relates to the [WS-1](../gaps/gaps.md) freshness umbrella and builds on the existing save-time
-compile pipeline ([Reactor Type Index](../planned/lathe-reactor-type-index.md)).
+compile pipeline ([Reactor Type Index](../done/lathe-reactor-type-index.md)).
 
 The sections below retain the original planned framing (D1 live watch, R1 reaction, D2
 reconciliation); treat all "planned"/"ships" wording as the parked proposal, not current state.
@@ -291,5 +291,5 @@ new method is package-private within the module core).
 - WS-6 — the in-session open-file dependent-module refresh (the open-file cousin of this reaction).
 - [Sibling Recompilation](../done/lathe-sibling-recompilation.md) — in-module dependents after an
   API change.
-- [Reactor Type Index](../planned/lathe-reactor-type-index.md) — the index this refresh keeps current.
+- [Reactor Type Index](../done/lathe-reactor-type-index.md) — the index this refresh keeps current.
 - [Lightweight Watcher](../planned/lathe-lightweight-watcher.md) — the `.lathe/`-poll redesign.

@@ -3,8 +3,8 @@ package io.github.aglibs.lathe.server.analysis;
 import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -265,6 +265,32 @@ public record ReferenceTarget(
     return accessor != null && overridesEitherWay(accessor, targetMethod, elements);
   }
 
+  // The methods a family override also overrides outside the family, as Type.method: renaming the
+  // override would leave them behind and silently end those overrides.
+  List<String> overriddenOutsideFamily(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (kind != ElementKind.METHOD
+        || targetMethod == null
+        || !(element instanceof final ExecutableElement method)
+        || method.getKind() != ElementKind.METHOD) {
+      return List.of();
+    }
+
+    return overriddenMethods(method, (TypeElement) method.getEnclosingElement(), types, elements)
+        .stream()
+        .filter(
+            overridden ->
+                !overridden.equals(targetMethod)
+                    && !overridesEitherWay(overridden, targetMethod, elements))
+        .map(
+            overridden ->
+                "%s.%s".formatted(declarer(overridden, elements), overridden.getSimpleName()))
+        .toList();
+  }
+
   private static boolean overridesEitherWay(
       final ExecutableElement method, final ExecutableElement target, final Elements elements) {
     final var methodOwner = (TypeElement) method.getEnclosingElement();
@@ -369,7 +395,23 @@ public record ReferenceTarget(
       final TypeElement owner,
       final Types types,
       final Elements elements) {
-    final var declarers = new LinkedHashSet<String>();
+    return overriddenMethods(method, owner, types, elements).stream()
+        .map(overridden -> declarer(overridden, elements))
+        .distinct()
+        .toList();
+  }
+
+  private static String declarer(final ExecutableElement method, final Elements elements) {
+    return elements.getBinaryName((TypeElement) method.getEnclosingElement()).toString();
+  }
+
+  // Every method in the supertypes (transitively) that the method overrides, nearest first.
+  private static List<ExecutableElement> overriddenMethods(
+      final ExecutableElement method,
+      final TypeElement owner,
+      final Types types,
+      final Elements elements) {
+    final var overridden = new ArrayList<ExecutableElement>();
     final var visited = new HashSet<String>();
     final var pending = new ArrayDeque<TypeMirror>(types.directSupertypes(owner.asType()));
     while (!pending.isEmpty()) {
@@ -383,23 +425,14 @@ public record ReferenceTarget(
         continue;
       }
 
-      if (declaresOverridden(method, owner, ste, elements)) {
-        declarers.add(binaryName);
-      }
-
+      overridden.addAll(
+          ElementFilter.methodsIn(ste.getEnclosedElements()).stream()
+              .filter(candidate -> elements.overrides(method, candidate, owner))
+              .toList());
       pending.addAll(types.directSupertypes(supertype));
     }
 
-    return List.copyOf(declarers);
-  }
-
-  private static boolean declaresOverridden(
-      final ExecutableElement method,
-      final TypeElement owner,
-      final TypeElement supertype,
-      final Elements elements) {
-    return ElementFilter.methodsIn(supertype.getEnclosedElements()).stream()
-        .anyMatch(candidate -> elements.overrides(method, candidate, owner));
+    return List.copyOf(overridden);
   }
 
   private static String buildDescriptor(final ExecutableElement method, final Types types) {

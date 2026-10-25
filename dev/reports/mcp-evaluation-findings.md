@@ -4,7 +4,7 @@
 **Status:** In progress — paused before the efficiency measurement. Next: some code changes
 (see [Pre-flight](#pre-flight-code-changes-before-the-ablation)), then run the MCP-vs-grep ablation.
 **Companion docs:** [`lsp-testing-report.md`](lsp-testing-report.md) (LSP round + the generated-sources
-bug) · [`docs/planned/lathe-mcp-value-benchmark.md`](docs/planned/lathe-mcp-value-benchmark.md) (the
+bug) · [`docs/planned/lathe-mcp-value-benchmark.md`](../../docs/planned/lathe-mcp-value-benchmark.md) (the
 ablation design this feeds into).
 
 ## Goal

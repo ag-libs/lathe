@@ -1,7 +1,7 @@
 # Potential Designs
 
 Documents in this directory preserve architectural ideas that are not part of the active roadmap.
-They are not assigned to M1, M2, M3, or post-M3 work and should not be treated as approved implementation designs.
+They are not assigned to a roadmap milestone or backlog item and should not be treated as approved implementation designs.
 
 Move a document to `docs/planned/` only after the idea is reprioritized, reviewed against the current implementation,
 and explicitly approved for implementation.
@@ -29,5 +29,5 @@ Rough approach — no committed design.
 What needs deciding before it could be planned.
 
 ## Milestone candidate
-A guess (M2, M3, post-M3), or "untriaged".
+A guess (a roadmap milestone or backlog section), or "untriaged".
 ```

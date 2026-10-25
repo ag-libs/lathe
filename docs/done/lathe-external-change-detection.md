@@ -168,7 +168,7 @@ a much larger reactor scales to tens of ms, and the interval is tunable (5–10 
 with editing latency. Open files are skipped before the `.class` stat, so the common case is cheaper.
 
 This is deliberately **not** the whole-`.lathe/`-tree walk the
-[Lightweight Watcher](lathe-lightweight-watcher.md) rejects: it stats only source files under the
+[Lightweight Watcher](../planned/lathe-lightweight-watcher.md) rejects: it stats only source files under the
 tracked roots, and the measurement above confirms the cost. Because one internal scan suffices, the
 client-side `didChangeWatchedFiles` watch — and its Neovim / inotify / gitignore machinery — is **not
 pursued**; the prototyped client-capability override (`M.watch_capabilities` in `lathe.lua`) has been
@@ -261,4 +261,4 @@ real multi-module edits), but it must still be respected:
 - [In-Process External-Change Recompilation](../potential/lathe-external-change-recompilation.md) —
   the parked compile-in-process design; the (now not pursued) live-watch / gitignore / Neovim analysis
   is archived there, superseded by the single internal scan above.
-- [Lightweight Watcher](lathe-lightweight-watcher.md) — why continuous source polling is avoided.
+- [Lightweight Watcher](../planned/lathe-lightweight-watcher.md) — why continuous source polling is avoided.

@@ -16,6 +16,17 @@ Both produce the identical effective build.
 > the build. On the standalone plugin path the two are fully decoupled; the client simply nudges you to
 > run the build if it hasn't done so yet.
 
+## Requirements
+
+- **JDK 17+** to run the build (and so the server, which runs on the build's JDK).
+- **Maven 3.6.3+** and **`maven-compiler-plugin` 3.6.2+**; with the extension, an older Maven or
+  compiler plugin fails the build with a message naming the fix (or add `-Dlathe.disabled=true` to build
+  without Lathe).
+
+Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless
+you pass `-Dlathe.disabled=false`.
+`-Dlathe.disabled=true` turns it off anywhere (see [jdtls](#coexisting-with-another-java-language-server-jdtls)).
+
 ## What Lathe needs in the build
 
 Both methods add the same three pieces, for the whole reactor:
@@ -168,14 +179,17 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 **In the project — `.lathe/`** (per-build, add to `.gitignore`):
 
 - `lathe:init` creates `.lathe/` at the workspace root on the first build, at the `initialize` phase.
-- The compiler shim writes compilation-parameter files under `.lathe/` as each module compiles — the
-  classpath, module path, source roots, generated-source locations, annotation-processor settings, and
-  other `javac` inputs the language server needs.
+- The compiler shim writes compilation-parameter files (`<module>/lsp-params-*.json`) under `.lathe/`
+  as each module compiles — the classpath, module path, source roots, generated-source locations,
+  annotation-processor settings, and other `javac` inputs the language server needs — plus
+  per-source compile stamps (`lsp-stamps-*.json`) the server uses to tell which sources are stale.
 - `lathe:sync` writes `workspace.json` and each module's derived `main-launch.json`. The write is
   skipped when the content is unchanged, so a no-op build does not trigger a server reload.
 - `lathe:sync` also writes `lathe-sync.sh` (`.cmd` on Windows), which re-runs the same build tool and JDK
   that ran this build, so the editor's "sync" matches the command line you use.
-  It runs the plain sync goal, without the `-D` properties or `-P` profiles you passed on the command line.
+  It runs `process-test-classes` (with `--tests <module>`, a capture-only `test` run that writes test
+  launches without executing tests), without the `-D` properties or `-P` profiles you passed on the
+  command line.
   If your build always needs a flag (say, to skip a check that does not run on your JDK), put it in
   `.mvn/maven.config`, which Maven reads on every run, or in a profile activated by the JDK version.
 - `lathe:sync` also writes `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows) here, with the argfiles
@@ -183,6 +197,10 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   `servers/<version>/` for the server version this project pins. These are what every
   editor client and the MCP agent launch; being version-pinned per workspace, two projects on
   different Lathe versions each resolve the right server.
+- `lathe:sync` also writes `java-home` (the build JDK the launcher runs the server on), `jvm.args`
+  (module grants for the server JVM; see [below](#tuning-the-server-jvm-lathe_jvm_opts)), and each
+  module's `test-filter.json` (the Surefire include/exclude patterns, applied to package and module
+  test runs).
 - `lathe:sync` also writes `style.json` (formatter + indent) when the reactor configures
   `spotless-maven-plugin`.
   For `googleJavaFormat`, `palantirJavaFormat`, and `eclipse` it records the formatter release the
@@ -196,7 +214,13 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
   phase — so test run/debug needs a build that reaches `test` (see the table above and
   [test-capture.md](test-capture.md)).
 
-**On the machine — `~/.cache/lathe/`** (machine-wide, regenerable, override with `-Dlathe.cache=<dir>`):
+**On the machine — `~/.cache/lathe/`** (machine-wide, regenerable):
+
+To move it, pass `-Dlathe.cache=<dir>` to the Maven run, which relocates what sync writes (`servers/`,
+`latest/`, `deps/`, `jdks/`, `type-index/`).
+The property is not forwarded to the launchers, so MCP session logs stay in `~/.cache/lathe/logs/`;
+set `LATHE_CACHE=<dir>` for the Neovim client so it still treats the moved cache as read-only
+dependency sources.
 
 - `servers/<version>/` — the launcher scripts and argfiles for that version (the jars themselves stay
   in `~/.m2`, which the argfiles name), shared across every workspace that pins it. Each project's `.lathe/lathe-launcher.sh` (`.cmd` on Windows) is a copy of the matching version's launcher;
