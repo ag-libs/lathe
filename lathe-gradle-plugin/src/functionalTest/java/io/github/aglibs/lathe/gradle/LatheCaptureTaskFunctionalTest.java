@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Path;
 import org.gradle.testkit.runner.TaskOutcome;
@@ -178,13 +179,17 @@ class LatheCaptureTaskFunctionalTest {
 
   // Gradle's rule, for the compile and the main run: a module goes on the module path, required or
   // not, a plain jar on the classpath; the run leads with the app's own classes and names its
-  // module.
-  // A modular project compiles against its siblings' jars.
+  // module. A modular project compiles against its siblings' jars, and its tests run as Gradle
+  // runs them.
   @Test
   void capture_modularMain_splitsModulesFromPlainJarsForCompileAndRun() throws Exception {
     final var fixture =
         new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS + "include(\"lib\", \"plain\", \"app\")\n")
+            .file(
+                "settings.gradle.kts",
+                SETTINGS
+                    + "include(\"lib\", \"plain\", \"app\")\n"
+                    + GradleFixture.latheRepositories())
             .file("lib/build.gradle.kts", "plugins { `java-library` }\n")
             .file(
                 "lib/src/main/java/module-info.java",
@@ -203,8 +208,15 @@ class LatheCaptureTaskFunctionalTest {
                 dependencies {
                   implementation(project(":lib"))
                   implementation(project(":plain"))
+                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
+                  testImplementation("org.junit.jupiter:junit-jupiter")
+                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
                 }
+                tasks.test { useJUnitPlatform() }
                 """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                "package com.example.app; class AppTest { @org.junit.jupiter.api.Test void runs() {} }\n")
             .file(
                 "app/src/main/java/module-info.java",
                 "module com.example.app { requires com.example.lib; }\n")
@@ -212,7 +224,7 @@ class LatheCaptureTaskFunctionalTest {
                 "app/src/main/java/com/example/app/App.java",
                 "package com.example.app; class App { com.example.lib.Lib lib; }\n");
 
-    fixture.runner(":app:classes", ":app:latheMainLaunch").build();
+    fixture.runner(":app:classes", ":app:latheMainLaunch", ":app:test").build();
 
     final var app = params("app", LatheLayout.CLASSES_DIR);
     assertThat(app.modulepath()).containsExactly(fixture.path("lib/build/libs/lib.jar"));
@@ -226,6 +238,18 @@ class LatheCaptureTaskFunctionalTest {
         .containsExactly(
             fixture.path("app/build/classes/java/main"), fixture.path("lib/build/libs/lib.jar"));
     assertThat(launch.classPath()).contains(fixture.path("plain/build/libs/plain.jar"));
+    // Its whitebox tests (no module-info of their own) run on the classpath, as Gradle runs them,
+    // with no --patch-module: a replay like any other.
+    final TestLaunchData tests =
+        Json.read(
+            dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE), TestLaunchData.class);
+    assertThat(tests.mode()).isEqualTo(LaunchMode.CLASSPATH);
+    assertThat(tests.patchModules()).isEmpty();
+    assertThat(tests.classPath())
+        .contains(
+            fixture.path("app/build/classes/java/test"),
+            fixture.path("app/build/classes/java/main"),
+            fixture.path("lib/build/libs/lib.jar"));
   }
 
   private ModuleConfigData params(final String module, final String sourceTree) throws IOException {
