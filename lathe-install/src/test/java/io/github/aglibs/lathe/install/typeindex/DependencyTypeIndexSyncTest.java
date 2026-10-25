@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.install.typeindex;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.install.ResolvedJar;
@@ -68,7 +69,7 @@ class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
   }
 
   private void useTempCache() {
-    System.setProperty("lathe.cache", tmp.resolve("cache").toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, tmp.resolve("cache").toString());
   }
 
   private void index(final ResolvedJar artifact) {

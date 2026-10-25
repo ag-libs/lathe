@@ -202,7 +202,7 @@ public final class LatheLayout {
   }
 
   public static Path userCacheRoot() {
-    final var override = System.getProperty("lathe.cache");
+    final var override = System.getProperty(LatheFlags.CACHE_ROOT);
     if (override != null) {
       return Path.of(override);
     }

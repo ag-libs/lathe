@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.install.dependency;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ZipFixture;
@@ -52,7 +53,7 @@ class DependencySourceSyncTest extends AbstractCachePropertyTest {
   // type index.
   @Test
   void prepare_presentAndMissingSources_extractsAndIndexesEach() throws IOException {
-    System.setProperty("lathe.cache", tmp.resolve("cache").toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, tmp.resolve("cache").toString());
     final DependencySource present = presentSource();
     final Path bareJar = ZipFixture.create(tmp.resolve("bare.jar"), "b/B.class", "x");
     final var bare = DependencySource.missing("com.example:bare:1.0", bareJar, List.of());

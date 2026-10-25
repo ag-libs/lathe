@@ -1,6 +1,9 @@
 # Per-Test Output Attribution ("Output Split") — Spike Plan
 
-Status: **potential — not planned.** Parked idea; not scheduled for implementation.
+**Status: superseded (2026-10-24).** Per-test output attribution shipped differently:
+the test runner prints start/finish marker lines on stdout and the server attributes each output line to the running test
+(see [Run and Test in VS Code](../planned/lathe-vscode-run-test.md) §3.2 D).
+This in-JVM redirect into the results sink was not built; kept as a design record.
 
 This is a de-risking spike, not a feature commitment.
 Its purpose is to prove — cheaply, with the existing neotest path still running — that Lathe can

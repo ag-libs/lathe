@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.install.typeindex;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
@@ -82,7 +83,7 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
   }
 
   private void useTempCache() {
-    System.setProperty("lathe.cache", tmp.resolve("cache").toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, tmp.resolve("cache").toString());
   }
 
   private TypeIndexFile readIndex(final JdkSource source) throws IOException {

@@ -18,7 +18,7 @@ discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [g
   [gap-workflow.md](gaps/gap-workflow.md).
 - [M1 Refactoring](done/lathe-m1-refactoring.md) — single consolidated refactoring plan: documentation accuracy,
   fail-fast propagation, DRY/structural extractions, god-class decomposition, naming, and test-suite hygiene. ✓
-- [Reactor Type Index](planned/lathe-reactor-type-index.md) — implemented baseline and freshness follow-ups.
+- [Reactor Type Index](done/lathe-reactor-type-index.md) — **implemented** baseline; freshness follow-ups recorded in the doc.
 - [Type Index](done/lathe-type-index.md) — implemented baseline plus active schema and freshness context.
 
 ## M2 — Neovim Public Beta
@@ -81,7 +81,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
   `[module:][scope:]package` location) with the type name always prompted and the package never defaulting by
   omission, a guided `vim.ui.select` fallback for the no-context 20%, selectable main/test scope, and
   `module-info` / `package-info` as special kinds; supersedes CQ-0055 v3's flow.
-- [New Type Creation](planned/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
+- [New Type Creation](done/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
   the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
@@ -127,6 +127,9 @@ reused):
 
 **Reliability and further work:**
 
+- [New/Changed-Test Replay Inner Loop](planned/lathe-new-test-replay-loop.md) — **planned.** Replay a test
+  written after the last capture without a full Maven capture: today replay's classpath and JPMS access set are
+  frozen at capture time.
 - [Test Framework: Fewer Cold Compiles](done/lathe-test-framework.md) — **done (2026-10-18).** Shared
   per-thread javac file managers (`TestJavac`, JDK-only default classpath), a once-per-thread `Sample.java`
   compile, per-class completion fixtures, and parallel test classes cut `lathe-server`'s tests from 35 s to
@@ -371,6 +374,23 @@ reused):
   status fan-out; follow-on to [Run, Test, and Debug](done/lathe-run-test-debug.md).
 - [Unused-Code Diagnostics](done/lathe-unused-code-diagnostics.md)
 - [Unused Record Components](done/lathe-unused-record-components.md)
+- [Rename Transactions](done/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
+  rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
+  (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine
+  writes the files; the as-built notes record the deferred parts.
+- [Batching](done/lathe-batching.md) — **partly implemented** (batch write, save coalescing, dependents-refresh
+  analysis). Two server primitives for multi-file bursts: chained batch writes (reconcile, the rename commit, save coalescing) and in-memory batch analysis (dependents refresh, open bursts, reload),
+  coalescing by load rather than timers; plus narrowing the dependents refresh.
+- [Find Instantiations of a Type](done/lathe-find-instantiations.md) — **implemented.** The `lathe.instantiations`
+  command (`:LatheInstances`) lists where the type under the cursor is instantiated (`new X(...)`), including
+  classes and records with synthesized constructors.
+- [Per-Test Output Attribution](done/lathe-per-test-output-attribution.md) — **superseded** spike plan (in-JVM
+  output redirect into the results sink); per-test output shipped instead through stdout markers, see
+  [Run and Test in VS Code](planned/lathe-vscode-run-test.md) §3.2 D.
+- [Test Output Streaming](done/lathe-test-output-streaming.md) — stack-trace navigation and the docked output
+  split; its no-live-output stance is superseded by [Neotest Experience](done/lathe-neotest-experience.md).
+- [Design Opinion & Code Evaluation](done/lathe-design-evaluation.md) — an early critique of the design and a
+  KISS/DRY review of the codebase (historical).
 
 ## Potential Designs
 
@@ -384,13 +404,6 @@ reused):
   (2026-10-24): the path from personal to team mode — an explicit command, one previewed
   `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
   and the project's registration winning over any other copy.
-- [Rename Transactions](potential/lathe-rename-transactions.md) — **slices 1–2 implemented.** The server absorbs a
-  rename it produced as one transaction: no per-file compiles while the editor applies and saves it, then one commit
-  (chained batch compile per source tree, one dependents refresh) at the last save or, for MCP, right after the engine
-  writes the files; the as-built notes record the deferred parts.
-- [Batching](potential/lathe-batching.md) — two server primitives for multi-file bursts: chained batch writes
-  (reconcile, the rename commit, save coalescing) and in-memory batch analysis (dependents refresh, open bursts, reload),
-  coalescing by load rather than timers; plus narrowing the dependents refresh.
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
   **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,
@@ -410,9 +423,6 @@ reused):
 - [Fuzzy Method-Name Symbol Search in the Reactor](potential/lathe-reactor-method-symbol-search.md) —
   extend `workspace/symbol` beyond type names to fuzzy method-name search by reusing the Find
   References token index (fuzzy key scan) plus a parse-only method collector; moderate, not soon.
-- [Find Instantiations of a Type](potential/lathe-find-instantiations.md) — type-scoped
-  instantiation query matching `NewClassTree` sites (handles synthetic default/record constructors)
-  surfaced as a command/code action, rather than a constructor-scoped `references` filter.
 - [Basic Refactorings (Rename, Move, Extract)](potential/lathe-basic-refactorings.md) — rename
   (`prepareRename`/`rename`, already M2), move and extract method/variable/field via
   `refactor.move`/`refactor.extract` code actions returning `WorkspaceEdit`s.
