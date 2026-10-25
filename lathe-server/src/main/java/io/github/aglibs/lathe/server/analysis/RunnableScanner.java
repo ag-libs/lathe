@@ -32,6 +32,9 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
   private static final Set<String> TEST_ANNOTATIONS =
       Set.of("Test", "ParameterizedTest", "TestFactory", "RepeatedTest");
+  // A JUnit Platform suite has no test methods of its own; run as a class, it runs its selection.
+  // By its full name: other frameworks have a Suite too (JUnit 4's is a runner, not this).
+  private static final String SUITE_ANNOTATION = "org.junit.platform.suite.api.Suite";
 
   private final AttributedFileAnalysis analysis;
   private final String uri;
@@ -67,7 +70,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     super.visitClass(node, unused);
     classStack.pop();
     final String binaryName = binaryName(typeElement);
-    if (classesWithTests.contains(binaryName)) {
+    if (classesWithTests.contains(binaryName) || isSuite(typeElement)) {
       final TypeElement enclosing = classStack.peek();
       targets.add(
           classLevelTarget(node, typeElement, binaryName, enclosing, RunnableKind.TEST_CLASS));
@@ -130,6 +133,14 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   private static boolean isStringArray(final TypeMirror type) {
     return type.getKind() == TypeKind.ARRAY
         && ((ArrayType) type).getComponentType().toString().equals("java.lang.String");
+  }
+
+  private static boolean isSuite(final TypeElement element) {
+    return element.getAnnotationMirrors().stream()
+        .anyMatch(
+            mirror ->
+                mirror.getAnnotationType().asElement() instanceof final TypeElement type
+                    && type.getQualifiedName().contentEquals(SUITE_ANNOTATION));
   }
 
   private static boolean isTestMethod(final ExecutableElement element) {

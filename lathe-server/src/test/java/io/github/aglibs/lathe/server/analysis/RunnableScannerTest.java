@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -159,6 +160,36 @@ class RunnableScannerTest {
     assertThat(targets.get(0).parentId()).isEqualTo(targets.get(1).id());
     assertThat(targets.get(1).parentId()).isEqualTo(targets.get(2).id());
     assertThat(targets.get(2).parentId()).isEmpty();
+  }
+
+  // A JUnit suite has no test methods of its own: the class is a test target, run as a class; a
+  // class with neither tests nor @Suite is none.
+  @Test
+  void runnables_suiteClass_returnsClassAndPackageTargets() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.platform.suite.api.SelectClasses;
+        import org.junit.platform.suite.api.Suite;
+
+        @Suite
+        @SelectClasses(FooTest.class)
+        class AllSuite {}
+
+        class FooTest {}
+
+        @Deprecated
+        class NotASuite {}
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::kind, RunTarget::id)
+        .containsExactly(
+            tuple(RunnableKind.TEST_CLASS, "demo.AllSuite"),
+            tuple(RunnableKind.TEST_PACKAGE, "demo"));
   }
 
   @Test
