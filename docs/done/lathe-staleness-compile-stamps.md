@@ -158,8 +158,8 @@ A content **hash** would be robust to that but costs a file read per suspicious 
 here as a **later hardening**, explicitly out of scope for phase one.
 
 Hardened later ([WS-18](../gaps/gaps-archive.md#ws-18--a-source-whose-time-changed-but-whose-content-did-not-is-recompiled-in-process--done)):
-each stamp also carries the content its class was compiled from, and the scan reads only a source
-whose mtime moved; the same content means a touch, re-stamped without a compile.
+each stamp also carries the content its class was compiled from.
+The scan reads only a source whose mtime moved, and the same content means a touch, re-stamped without a compile.
 
 ## Option comparison (why not record the class map)
 
