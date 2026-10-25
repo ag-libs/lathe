@@ -80,7 +80,12 @@ mvn install -DskipTests                                          # build and ins
 mvn verify -pl lathe-maven-plugin                                # all test layers (unit + invoker)
 mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true  # invoker integration tests only (skipTests would skip them too)
 mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one specific invoker project
+mvn verify -pl lathe-junit,lathe-gradle-plugin -am               # the Gradle plugin and its TestKit fixtures
 ```
+
+The Gradle plugin's fixtures load the `lathe-junit` this build makes, which reaches them as an
+`extraArtifact`, not a dependency (the extension pins every `lathe-junit` dependency to its own version):
+name `lathe-junit` beside `lathe-gradle-plugin` in a `-pl` build, or the fixtures get an older jar.
 
 The two `-pl lathe-maven-plugin` commands take the Lathe jars the fixtures need (`extraArtifacts`) from
 `~/.m2`, so run `mvn install -DskipTests` first; the reactor-wide command builds them itself.
@@ -108,9 +113,8 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 ### Development overrides (dogfooding lathe on lathe)
 
-Dogfooding is **off for now**: the root `pom.xml` no longer enables the repo's own `lathe-maven-extension`
-(it pinned every `lathe-junit` dependency, the Gradle fixtures' included, to its released version).
-When it is on, Neovim selects the **published** server pinned by that extension version — not your working tree. A `lathe-server`
+The lathe repo enables its own `lathe-maven-extension` in the root `pom.xml`, so Neovim selects the
+**published** server pinned by that extension version — not your working tree. A `lathe-server`
 or Lua-client edit is invisible in the editor until you override:
 
 - `LATHE_SERVER_DIR` — point the Neovim launcher at a working-tree server build. By default the client

@@ -359,6 +359,13 @@
         </executions>
       </plugin>
     </plugins>
+    <extensions>
+      <extension>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-maven-extension</artifactId>
+        <version>0.1.23</version>
+      </extension>
+    </extensions>
   </build>
 
   <profiles>

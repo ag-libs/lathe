@@ -99,8 +99,7 @@ done
 # bumped here: pointing it at the version being released makes the tagged commit unbuildable, since
 # CI loads that extension before the build and the version is not published yet. The pin stays on
 # the last published version — the editor tooling runs the prior shipped build, which is fine — and
-# is bumped by hand after the release is on Maven Central, if desired. (Dogfooding is off for now:
-# the root pom.xml has no such pin until it is turned back on.)
+# is bumped by hand after the release is on Maven Central, if desired.
 files=("${docs[@]}")
 
 # A no-op means the docs drifted out from under the patterns above — fail loudly rather than commit

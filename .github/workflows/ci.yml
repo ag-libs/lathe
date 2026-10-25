@@ -234,12 +234,13 @@ jobs:
 
       - name: Build and test the Gradle plugin
         # maven.test.skip leaves out the dependencies' tests; lathe.gradle.skipUnitTests says whether
-        # the plugin's own run. Formatting is checked by the build rows. `env -u CI` keeps Lathe
+        # the plugin's own run. lathe-junit is named because the fixtures get it as an extra
+        # artifact, which -am does not follow. Formatting is checked by the build rows. `env -u CI` keeps Lathe
         # enabled in the fixtures. An older Gradle's fixtures run on the row's JDK (17 for the floor).
         env:
           FIXTURES: ${{ matrix.gradle != '9.8.2' && format('-Dlathe.gradle.fixturesHome={0}/gradle-{1}', runner.temp, matrix.gradle) || '' }}
         run: |
-          env -u CI mvn -B --no-transfer-progress verify -pl lathe-gradle-plugin -am \
+          env -u CI mvn -B --no-transfer-progress verify -pl lathe-junit,lathe-gradle-plugin -am \
             -Dmaven.test.skip=true -Dspotless.check.skip=true \
             -Dlathe.gradle.skipUnitTests=${{ !matrix.unit }} $FIXTURES \
             -Dlathe.gradle.fixturesJavaHome="$JAVA_HOME_${{ matrix.java }}_X64"
