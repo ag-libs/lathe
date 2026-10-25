@@ -5,7 +5,6 @@ import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,7 +15,6 @@ import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
 import org.gradle.api.file.DirectoryProperty;
-import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.Property;
@@ -137,13 +135,13 @@ public abstract class LatheCaptureTask extends DefaultTask {
   }
 
   private ModuleConfigData moduleConfig() {
-    final List<String> sourceRoots = paths(getSourceRoots());
-    final List<String> classpath = paths(getClasspath());
+    final List<String> sourceRoots = GradleFiles.paths(getSourceRoots());
+    final List<String> classpath = GradleFiles.paths(getClasspath());
     final Map<Boolean, List<String>> split =
         isModular(sourceRoots)
             ? ModulePathSplit.split(classpath)
             : Map.of(true, List.of(), false, classpath);
-    final List<String> processorPath = paths(getProcessorPath());
+    final List<String> processorPath = GradleFiles.paths(getProcessorPath());
     final List<String> compilerArgs = getCompilerArgs().get();
     // Gradle runs no processor when the processor path is empty, and passes -proc:none to say so;
     // without it the server's javac would look for processors on the classpath.
@@ -172,10 +170,6 @@ public abstract class LatheCaptureTask extends DefaultTask {
   private boolean isModular(final List<String> sourceRoots) {
     return getInferModulePath().get()
         && sourceRoots.stream()
-            .anyMatch(root -> Files.isRegularFile(Path.of(root, "module-info.java")));
-  }
-
-  private static List<String> paths(final FileCollection files) {
-    return files.getFiles().stream().map(File::getPath).toList();
+            .anyMatch(root -> Files.isRegularFile(Path.of(root, LatheLayout.MODULE_INFO_JAVA)));
   }
 }

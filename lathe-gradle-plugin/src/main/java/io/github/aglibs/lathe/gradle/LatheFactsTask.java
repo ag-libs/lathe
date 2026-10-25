@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.gradle;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -115,7 +114,7 @@ public abstract class LatheFactsTask extends DefaultTask {
                     DependencyFact.of(
                         library.getKey(), library.getValue(), sources.get(library.getKey())))
             .toList();
-    final List<String> classpath = paths(getLibraryClasspath());
+    final List<String> classpath = GradleFiles.paths(getLibraryClasspath());
     final Path file = getFactsFile().get().getAsFile().toPath();
     Files.createDirectories(file.getParent());
     Files.writeString(
@@ -124,9 +123,5 @@ public abstract class LatheFactsTask extends DefaultTask {
             Json.fromJson(getFacts().get(), ProjectFacts.class)
                 .withResolved(trees, libraries, classpath, getRunnerClasspath().get())),
         StandardCharsets.UTF_8);
-  }
-
-  private static List<String> paths(final ConfigurableFileCollection files) {
-    return files.getFiles().stream().map(File::getPath).toList();
   }
 }

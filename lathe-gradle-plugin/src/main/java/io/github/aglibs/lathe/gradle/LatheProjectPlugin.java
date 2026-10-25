@@ -66,7 +66,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String SERVER = "latheServer";
   private static final String MCP_SERVER = "latheMcpServer";
   private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
-  private static final String ROOT_PATH = ":";
+  static final String ROOT_PATH = ":";
   private static final String LIBRARY_SOURCES = "latheLibrarySources";
 
   // Gradle 8.x under Isolated Projects rejects a project naming another's task, so there only the
@@ -282,10 +282,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static void registerJava(
       final Project project, final TaskProvider<LatheFactsTask> facts) {
     final var rootDir = project.getRootDir().toPath();
-    final Path moduleDir =
-        rootDir
-            .resolve(LatheLayout.LATHE_DIR)
-            .resolve(rootDir.relativize(project.getProjectDir().toPath()));
+    final Path moduleDir = rootDir.resolve(LatheLayout.moduleDir(module(project)));
     final SourceSetContainer sourceSets =
         project.getExtensions().getByType(JavaPluginExtension.class).getSourceSets();
     final SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);

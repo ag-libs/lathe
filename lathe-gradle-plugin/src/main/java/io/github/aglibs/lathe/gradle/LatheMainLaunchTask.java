@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.gradle;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.MainLaunchWriter;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.module.ModuleDescriptor;
@@ -32,8 +31,6 @@ import org.gradle.api.tasks.UntrackedTask;
 @UntrackedTask(because = "Its classpath is read for its paths, not built.")
 public abstract class LatheMainLaunchTask extends DefaultTask {
 
-  private static final String MODULE_INFO_CLASS = "module-info.class";
-
   @Internal
   public abstract ConfigurableFileCollection getRuntimeClasspath();
 
@@ -61,7 +58,8 @@ public abstract class LatheMainLaunchTask extends DefaultTask {
             getModule()
                 .map(
                     module ->
-                        Path.of(LatheLayout.LATHE_DIR, module, LatheLayout.MAIN_LAUNCH_FILE)
+                        LatheLayout.moduleDir(module)
+                            .resolve(LatheLayout.MAIN_LAUNCH_FILE)
                             .toString()));
   }
 
@@ -75,10 +73,9 @@ public abstract class LatheMainLaunchTask extends DefaultTask {
     final Path root = getWorkspaceRoot().get().getAsFile().toPath();
     final String module = getModule().get();
     final String javaHome = getJavaHome().get();
-    final List<String> classpath =
-        getRuntimeClasspath().getFiles().stream().map(File::getPath).toList();
+    final List<String> classpath = GradleFiles.paths(getRuntimeClasspath());
     final Path classesDir = getClassesDir().get().getAsFile().toPath();
-    final Path moduleInfo = classesDir.resolve(MODULE_INFO_CLASS);
+    final Path moduleInfo = classesDir.resolve(LatheLayout.MODULE_INFO_CLASS);
     if (!getInferModulePath().get() || !Files.isRegularFile(moduleInfo)) {
       MainLaunchWriter.writeClasspath(root, module, javaHome, classpath);
       return;

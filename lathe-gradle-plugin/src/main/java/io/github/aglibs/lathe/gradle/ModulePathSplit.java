@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +16,6 @@ import java.util.stream.Collectors;
 // inside javac's arguments, where Lathe cannot read it, so the capture applies it again.
 final class ModulePathSplit {
 
-  private static final String MODULE_INFO_CLASS = "module-info.class";
   private static final String VERSIONS_DIR = "META-INF/versions/";
   private static final String AUTOMATIC_MODULE_NAME = "Automatic-Module-Name";
 
@@ -32,7 +32,7 @@ final class ModulePathSplit {
 
   static boolean isModule(final Path entry) {
     if (Files.isDirectory(entry)) {
-      return Files.isRegularFile(entry.resolve(MODULE_INFO_CLASS));
+      return Files.isRegularFile(entry.resolve(LatheLayout.MODULE_INFO_CLASS));
     }
 
     if (!Files.isRegularFile(entry)) {
@@ -48,8 +48,8 @@ final class ModulePathSplit {
   }
 
   private static boolean isModuleInfo(final String name) {
-    return name.equals(MODULE_INFO_CLASS)
-        || (name.startsWith(VERSIONS_DIR) && name.endsWith("/" + MODULE_INFO_CLASS));
+    return name.equals(LatheLayout.MODULE_INFO_CLASS)
+        || (name.startsWith(VERSIONS_DIR) && name.endsWith("/" + LatheLayout.MODULE_INFO_CLASS));
   }
 
   private static boolean hasAutomaticModuleName(final Manifest manifest) {

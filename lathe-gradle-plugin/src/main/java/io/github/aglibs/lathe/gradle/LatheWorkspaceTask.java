@@ -167,9 +167,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   }
 
   static Path factsFile(final Path root, final String module) {
-    return root.resolve(LatheLayout.LATHE_DIR)
-        .resolve(module)
-        .resolve(LatheLayout.Gradle.FACTS_FILE);
+    return root.resolve(LatheLayout.moduleDir(module)).resolve(LatheLayout.Gradle.FACTS_FILE);
   }
 
   // Each external library once, with the classpath of the first project that compiles against it,

@@ -25,8 +25,6 @@ import org.gradle.util.GradleVersion;
 // configured.
 public class LatheSettingsPlugin implements Plugin<Settings> {
 
-  private static final String ROOT_PATH = ":";
-
   // Only the root build: an init script reaches buildSrc and every included build too, and each of
   // those would write a .lathe/ of its own.
   @Override
@@ -83,7 +81,8 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
     final ProviderFactory providers = settings.getProviders();
     final String commandLine =
         settings.getStartParameter().getProjectProperties().get(LatheFlags.DISABLED);
-    if (LatheFlags.isDisabled(commandLine, providers.environmentVariable("CI").isPresent())) {
+    if (LatheFlags.isDisabled(
+        commandLine, providers.environmentVariable(LatheFlags.CI_ENV).isPresent())) {
       return true;
     }
 
@@ -120,7 +119,7 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
     @Override
     public void execute(final Project project) {
       project.getPluginManager().apply(LatheProjectPlugin.class);
-      if (ROOT_PATH.equals(project.getPath())) {
+      if (LatheProjectPlugin.ROOT_PATH.equals(project.getPath())) {
         LatheProjectPlugin.registerSync(project, modulePaths.get(), addMavenCentral.get());
       }
     }

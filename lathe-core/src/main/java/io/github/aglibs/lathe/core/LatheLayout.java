@@ -61,6 +61,7 @@ public final class LatheLayout {
   public static final String REACTOR_LOCK_FILE = "lathe.lock";
   public static final String MODULE_LOCK_FILE = "module.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
+  public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -304,6 +305,11 @@ public final class LatheLayout {
 
   public static Path reactorLockFile(final Path latheDir) {
     return latheDir.resolve(REACTOR_LOCK_FILE);
+  }
+
+  // .lathe/<module>/, relative to the workspace root ("" or "." for the root module).
+  public static Path moduleDir(final String module) {
+    return Path.of(LATHE_DIR, module);
   }
 
   public static Path moduleLockFile(final Path moduleDir) {
