@@ -624,6 +624,41 @@ class LspSmokeTest {
         .isEqualTo(discovery);
   }
 
+  // A new test is offered the static members the module's other tests import, with the import
+  // line; nothing of the kind was configured, it is learned from `import static` in the shapes tests.
+  @Test
+  void completion_newTestFile_offersStaticMembersOtherTestsImport() throws Exception {
+    final var uri =
+        SHAPES
+            .resolve("src/test/java/com/example/shapes/StaticImportProbeTest.java")
+            .toUri()
+            .toString();
+    final var content =
+        """
+        package com.example.shapes;
+
+        class StaticImportProbeTest {
+          void probe() {
+            assertTr
+          }
+        }
+        """;
+    session.openDoc(uri, content);
+    final Position pos = findToken(content, "assertTr", "assertTr");
+    final var at = new Position(pos.getLine(), pos.getCharacter() + "assertTr".length());
+
+    awaitCompletionLabel(uri, at, "assertTrue");
+    assertThat(completionItems(uri, at))
+        .filteredOn(item -> memberName(item.getLabel()).equals("assertTrue"))
+        .singleElement()
+        .satisfies(
+            item ->
+                assertThat(item.getAdditionalTextEdits())
+                    .extracting(TextEdit::getNewText)
+                    .containsExactly(
+                        "import static org.junit.jupiter.api.Assertions.assertTrue;\n"));
+  }
+
   private static void awaitCompletionLabel(final String uri, final Position pos, final String label)
       throws Exception {
     while (!completionLabels(uri, pos).contains(label)) {
@@ -633,11 +668,17 @@ class LspSmokeTest {
 
   private static List<String> completionLabels(final String uri, final Position pos)
       throws Exception {
+    return completionItems(uri, pos).stream()
+        .map(CompletionItem::getLabel)
+        .map(LspSmokeTest::memberName)
+        .toList();
+  }
+
+  private static List<CompletionItem> completionItems(final String uri, final Position pos)
+      throws Exception {
     final var params = new CompletionParams(new TextDocumentIdentifier(uri), pos);
     final var result = server.getTextDocumentService().completion(params).get(30, SECONDS);
-    final List<CompletionItem> items =
-        result.isLeft() ? result.getLeft() : result.getRight().getItems();
-    return items.stream().map(CompletionItem::getLabel).map(LspSmokeTest::memberName).toList();
+    return result.isLeft() ? result.getLeft() : result.getRight().getItems();
   }
 
   // Method items carry a "name(params)" label; the receiver-member assertions compare on name only.

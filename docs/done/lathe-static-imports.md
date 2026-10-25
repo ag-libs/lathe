@@ -1,6 +1,6 @@
 # Lathe — Static Imports
 
-Status: proposed.
+Status: implemented.
 Static imports learned from the ones the project already declares, each source scope from its own files:
 completion offers them, the unresolved-call quick fix adds them, and "add missing imports" adds them.
 Builds on the completion engine and the reference candidate index in `lathe-design.md`.

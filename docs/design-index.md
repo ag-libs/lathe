@@ -63,9 +63,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Declaration Name Completion](done/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   catch declaration slots (shipped; type parameters and constants are documented non-goals).
-- [Static Imports](planned/lathe-static-imports.md) — completion, quick fix and "add missing imports"
+- [Static Imports](done/lathe-static-imports.md) — completion, quick fix and "add missing imports"
   for static members, learned per scope (test, main) from the static imports the project already
-  declares (proposed).
+  declares (shipped).
 - [Snippet (Template) Completion](planned/lathe-snippet-completion.md) — a minimal jdtls-style template set
   (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
 - [Method-Reference Completion](done/lathe-method-reference-completion.md) — completion after `::`
