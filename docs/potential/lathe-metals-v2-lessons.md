@@ -154,6 +154,26 @@ Verify each one live before it goes in.
 **Cons.**
 - Snippets drift when agents change their config formats; each needs a re-check now and then.
 
+**Documenting the working directory (to address later).**
+Both launchers read `.lathe/java-home` and `.lathe/jvm.args` relative to the directory the agent was started in,
+while the server itself finds `.lathe/` by walking up.
+Started from a subdirectory, the per-project launcher (a relative path) does not start at all,
+and the user-global `~/.cache/lathe/latest/lathe-mcp-launcher.sh` starts but quietly uses the `java` on `PATH` and drops the `jvm.args` flags (the `--add-exports` the formatter needs).
+`LATHE_JAVA_HOME` fixes the JDK but not the flags.
+[AI agents](../guide/ai-agents.md) should say so plainly:
+
+- Start the agent from the workspace root.
+- For a local-scope registration, the per-project launcher by absolute path is the robust choice:
+  it never leaves the machine and runs the version the project pins.
+- Prefer the user-global launcher only for one registration across projects that track the same Lathe version, and never from a subdirectory.
+
+The fix that removes the caveat is for `LauncherScript` to walk up to the nearest `.lathe/` before reading those files, in both the POSIX and `.cmd` forms.
+
+**Steering the agent.**
+Connecting the server does not make an agent use it.
+[`examples/agents/lathe-mcp.md`](../../examples/agents/lathe-mcp.md) is a sample block for a project's `CLAUDE.md` or `AGENTS.md` (Claude Code can import it with `@examples/agents/lathe-mcp.md`):
+it points the agent at the tools where Lathe beats text search (renames, `verify_change`, imports, formatting, polymorphic references, single tests) and leaves plain search to `grep`.
+
 ## Rejected
 
 - **Run the newest interactive request first.**
