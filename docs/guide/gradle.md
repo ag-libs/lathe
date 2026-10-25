@@ -14,6 +14,9 @@ and running and debugging tests and mains replayed from the build's own launch.
 - **Gradle 8.8 or newer**, its daemon on **JDK 17 or newer** (Gradle 9 requires that anyway).
   An older Gradle stops the build with a message naming the problem and the way out.
 - Projects applying `java` or `java-library` (or a plugin that applies one).
+  They may compile and test on any JDK their toolchain names; the server needs JDK 17+, and uses the JDK
+  Gradle runs on when every project compiles on an older one (navigation into the JDK then shows that
+  JDK's sources).
 - For test capture, tests on the **JUnit Platform** (`useJUnitPlatform()`: JUnit 5 and 6, and JUnit 4 through
   the vintage engine).
   A `Test` task on `useJUnit()` or `useTestNG()` is not captured.
@@ -102,6 +105,8 @@ starts each test task with every test skipped, which is all capture needs.
 
 ## Known limits
 
+- **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
+  captured, so they can't be run or debugged from the editor; the editor's sync names each such test task.
 - **A notice on every test run.**
   Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which
   leaves the test task's cache key alone; the JVM announces it with

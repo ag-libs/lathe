@@ -83,7 +83,7 @@ See the [AI agents guide](docs/guide/ai-agents.md).
 
 Lathe is in active development and published to Maven Central.
 
-- **Builds:** Maven, and the [OpenJDK `make` build](docs/guide/openjdk.md). Gradle support is in progress.
+- **Builds:** Maven, and the [OpenJDK `make` build](docs/guide/openjdk.md). Gradle support arrives in 0.2.0 (see the [Gradle guide](docs/guide/gradle.md)).
 - **Platforms:** Linux, macOS and Windows 10/11. On Windows, use VS Code, Cursor or Zed.
 - **Editors:** Neovim has the full feature set. The other editors get the standard LSP features; run, test and debug are Neovim-only for now.
 
@@ -94,6 +94,7 @@ What works today, in detail, is in [status](docs/status.md).
 - [How Lathe works](docs/guide/how-it-works.md)
 - [Features](docs/guide/features.md)
 - [Installation](docs/guide/installation.md), including how to turn Lathe off
+- [Gradle](docs/guide/gradle.md), from 0.2.0
 - [Run configuration](docs/guide/run-configuration.md) and [test capture](docs/guide/test-capture.md)
 - [Troubleshooting](docs/guide/troubleshooting.md)
 - Project: [roadmap](docs/roadmap.md) · [design index](docs/design-index.md)
