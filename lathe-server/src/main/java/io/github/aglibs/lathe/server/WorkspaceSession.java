@@ -4030,10 +4030,7 @@ final class WorkspaceSession {
             ? Stream.of("build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
             : Stream.empty();
     final List<String> notChecked =
-        files.stream()
-            .filter(file -> routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing)
-            .map(this::notCheckedReason)
-            .toList();
+        files.stream().filter(this::uncheckable).map(this::notCheckedReason).toList();
     return new LatheNotes(
         notCompiled,
         Stream.concat(pendingBuildFiles, manifest.schemaMismatch().stream()).toList(),
@@ -4041,9 +4038,19 @@ final class WorkspaceSession {
         reactorBuildInProgress());
   }
 
+  // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
+  private boolean uncheckable(final Path file) {
+    return routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing
+        || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
+  }
+
   // A sync gives a module only to a file of the modules the build compiles.
   private String notCheckedReason(final Path file) {
     final Path relative = workspaceRoot.relativize(file);
+    if (Files.notExists(file)) {
+      return "%s does not exist, and the last build did not compile it".formatted(relative);
+    }
+
     return manifest.inBuiltModule(file)
         ? "%s is in no synced module — run `%s`"
             .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND)

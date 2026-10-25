@@ -345,6 +345,28 @@ class LatheEngineTest {
     assertThat(notes.syncRequired()).isEmpty();
   }
 
+  // A deleted source is a change verify_change checks; a path the build never had is a typo, and
+  // must not pass as "no change".
+  @Test
+  void notes_missingFile_notCheckedOnlyWhenTheBuildNeverCompiledIt() throws Exception {
+    final Path deleted =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    Files.delete(deleted);
+    final Path mistyped = deleted.resolveSibling("Smaple.java");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of(deleted, mistyped)).notChecked())
+        .containsExactly(
+            "%s does not exist, and the last build did not compile it"
+                .formatted(Path.of("module/src/main/java/com/example/Smaple.java")));
+  }
+
   @Test
   void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
     writeManifest("0", List.of());
