@@ -48,6 +48,7 @@ final class LatheTestCapture {
             project, LATHE_JUNIT, ServerInstaller.JUNIT_CAPTURE_COORDINATES);
     junit.setTransitive(false);
     final Path agentDir = moduleDir.resolve(LatheLayout.Gradle.AGENT_DIR);
+    final File agentJar = agentDir.resolve(LatheLayout.Gradle.AGENT_JAR).toFile();
     final TaskProvider<Sync> agent =
         project
             .getTasks()
@@ -71,9 +72,9 @@ final class LatheTestCapture {
                       JDK_JAVA_OPTIONS,
                       new AgentOption(
                           Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""),
-                          agentDir.resolve(LatheLayout.Gradle.AGENT_JAR).toFile()));
+                          agentJar));
                   if (captureOnly) {
-                    captureOnly(task);
+                    captureOnly(task, agentJar);
                   }
                 });
     if (captureOnly) {
@@ -103,13 +104,29 @@ final class LatheTestCapture {
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always
   // forks, since a run served from the cache or up to date captures nothing.
-  private static void captureOnly(final Test task) {
+  private static void captureOnly(final Test task, final File agentJar) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
+    task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
     task.getOutputs().upToDateWhen(ignored -> false);
     task.getOutputs().cacheIf(ignored -> false);
     if (GradleVersion.current().getBaseVersion().compareTo(FAIL_ON_NO_TESTS) >= 0) {
       task.getFailOnNoDiscoveredTests().set(false);
     }
+  }
+
+  // Without lathe-junit the filter that skips the tests is missing too, and a capture-only run
+  // would
+  // run every test while capturing nothing: the task is skipped instead, and says why.
+  private static boolean agentInPlace(final Task test, final File agentJar) {
+    if (agentJar.isFile()) {
+      return true;
+    }
+
+    test.getLogger()
+        .warn(
+            "[lathe] {} skipped: lathe-junit could not be resolved, so its tests can't be captured",
+            test.getPath());
+    return false;
   }
 
   // The test runner and the JUnit launcher, beside the test runtime classpath that replay starts

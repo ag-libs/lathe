@@ -313,6 +313,48 @@ class LatheSyncTaskFunctionalTest {
     assertThat(dir.resolve(".lathe/app/agent/classes/com/example/agent/Agent.class")).exists();
   }
 
+  // Without lathe-junit the capture-only filter is missing too: a capture-only sync skips the test
+  // task, and says why, rather than run every test. Here app's own repositories lack it, as a
+  // project that declares its repositories can.
+  @Test
+  void captureOnlySync_latheJunitUnresolvable_skipsTheTestsAndSaysWhy() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "app/build.gradle.kts",
+                """
+                plugins { java }
+                repositories { mavenCentral() }
+                dependencies {
+                  implementation(project(":lib"))
+                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
+                  testImplementation("org.junit.jupiter:junit-jupiter")
+                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                }
+                tasks.test { useJUnitPlatform() }
+                """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                """
+                package com.example.app;
+
+                class AppTest {
+                  @org.junit.jupiter.api.Test
+                  void runs() throws Exception {
+                    java.nio.file.Files.writeString(java.nio.file.Path.of("ran.txt"), "ran");
+                  }
+                }
+                """);
+
+    final var result = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+
+    assertThat(result.task(":app:test").getOutcome()).isEqualTo(TaskOutcome.SKIPPED);
+    assertThat(result.getOutput())
+        .contains("[lathe] :app:test skipped: lathe-junit could not be resolved");
+    assertThat(dir.resolve("app/ran.txt")).doesNotExist();
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).doesNotExist();
+  }
+
   private WorkspaceManifestData workspace() throws IOException {
     return Json.read(
         dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
