@@ -236,7 +236,9 @@ class LatheSyncTaskFunctionalTest {
   // and each test run's launch, captured in the test JVM while the tests run. lathe-junit enters as
   // an agent through the environment, so a build cache filled without Lathe still serves the test
   // task (which then forks nothing and captures nothing); a real run captures; and the editor's
-  // capture-only sync captures without running the tests.
+  // capture-only sync captures without running the tests. Lathe's dependencies are added only as
+  // its configurations resolve, so a script walking every configuration's dependencies neither
+  // resolves one early nor removes Lathe's.
   @Test
   void build_plainBuild_refreshesTheWorkspaceAndCapturesTestRuns() throws Exception {
     final var fixture =
@@ -259,8 +261,12 @@ class LatheSyncTaskFunctionalTest {
                   testImplementation(platform("org.junit:junit-bom:5.11.4"))
                   testImplementation("org.junit.jupiter:junit-jupiter")
                   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                  testCompileOnly("com.example:unused:1.0")
                 }
                 tasks.test { useJUnitPlatform() }
+                // As Micronaut's build does: walk every configuration's dependencies, then change one.
+                configurations.all { dependencies.removeAll { it.group == "io.github.ag-libs" } }
+                configurations.testCompileOnly { dependencies.removeAll { it.name == "unused" } }
                 """)
             .file(
                 "app/src/test/java/com/example/app/AppTest.java",

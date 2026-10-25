@@ -120,9 +120,8 @@ final class LatheTestCapture {
         project.getConfigurations().getByName(test.getRuntimeClasspathConfigurationName());
     final Configuration runner =
         LatheProjectPlugin.resolvable(
-            project, TEST_RUNNER, ServerInstaller.TEST_RUNNER_COORDINATES);
+            project, TEST_RUNNER, ServerInstaller.TEST_RUNNER_COORDINATES, JUNIT_LAUNCHER);
     runner.extendsFrom(testRuntime);
-    project.getDependencies().add(TEST_RUNNER, JUNIT_LAUNCHER);
     return LatheProjectPlugin.lenient(runner).minus(testRuntime);
   }
 

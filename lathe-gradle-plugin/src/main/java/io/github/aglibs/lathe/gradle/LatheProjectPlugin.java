@@ -239,10 +239,15 @@ public class LatheProjectPlugin implements Plugin<Project> {
     return ROOT_PATH.equals(path) ? ROOT_PATH + FACTS_TASK : "%s:%s".formatted(path, FACTS_TASK);
   }
 
+  // Its dependencies are added as the configuration resolves, not now: a build script that walks
+  // every configuration's dependencies (configurations.all { dependencies.removeAll { ... } })
+  // would otherwise remove them.
   static Configuration resolvable(
-      final Project project, final String name, final String coordinates) {
+      final Project project, final String name, final String... coordinates) {
     final Configuration configuration = configuration(project, name, true);
-    project.getDependencies().add(name, coordinates);
+    final DependencyFactory factory = project.getDependencyFactory();
+    configuration.withDependencies(
+        dependencies -> Stream.of(coordinates).map(factory::create).forEach(dependencies::add));
     return configuration;
   }
 
@@ -366,15 +371,16 @@ public class LatheProjectPlugin implements Plugin<Project> {
             project.getConfigurations().getByName(main.getCompileClasspathConfigurationName()));
     final Configuration sources = configuration(project, LIBRARY_SOURCES, true);
     sources.setTransitive(false);
+    // As the sources resolve, not before: a provider would be forced by a build script walking
+    // every configuration's dependencies, resolving the test classpath while the build is still
+    // configured, when the script may yet change it.
     final DependencyFactory dependencies = project.getDependencyFactory();
-    sources
-        .getDependencies()
-        .addAllLater(
-            testClasspath
-                .getIncoming()
-                .getResolutionResult()
-                .getRootComponent()
-                .map(root -> sourcesOf(dependencies, root)));
+    sources.withDependencies(
+        added ->
+            added.addAll(
+                sourcesOf(
+                    dependencies,
+                    testClasspath.getIncoming().getResolutionResult().getRootComponent().get())));
     final ArtifactCollection librarySources =
         sources.getIncoming().artifactView(view -> view.lenient(true)).getArtifacts();
     facts.configure(
