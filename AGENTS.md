@@ -13,9 +13,10 @@ Before making non-trivial changes, read the relevant design document first:
 
 Which file answers which question:
 
-- **Behavior / how-to** (user-facing) → `README.md` (editor-agnostic feature reference) and
-  `docs/guide/` (`how-it-works.md`, `installation.md`, `run-configuration.md`, `test-capture.md`,
-  `ai-agents.md`, `openjdk.md`, and per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
+- **Behavior / how-to** (user-facing) → `README.md` (short landing page; keep it short) and
+  `docs/guide/` (`features.md`, the editor-agnostic feature reference; `how-it-works.md`,
+  `installation.md`, `run-configuration.md`, `test-capture.md`, `troubleshooting.md`, `ai-agents.md`,
+  `openjdk.md`, and per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
 - **Design / why** → `docs/design-index.md`, then the specific design doc under `docs/planned/`
   or `docs/done/`.
 - **What's implemented** → `docs/status.md`.

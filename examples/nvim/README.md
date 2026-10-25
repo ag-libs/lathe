@@ -7,7 +7,7 @@ replace your own `~/.config/nvim` wholesale.
 
 Everything lives in [`init.lua`](init.lua).
 
-For the editor-agnostic feature reference see the [project README](../../README.md); for a
+For the editor-agnostic feature reference see [features](../../docs/guide/features.md); for a
 per-action keymap guide see [docs/guide/editors/neovim.md](../../docs/guide/editors/neovim.md).
 
 ## Try it
