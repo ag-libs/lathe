@@ -242,9 +242,10 @@ class LatheSyncTaskFunctionalTest {
   // and each test run's launch, captured in the test JVM while the tests run. lathe-junit enters as
   // an agent through the environment, so a build cache filled without Lathe still serves the test
   // task (which then forks nothing and captures nothing); a real run captures; and the editor's
-  // capture-only sync captures without running the tests. Lathe's dependencies are added only as
-  // its configurations resolve, so a script walking every configuration's dependencies neither
-  // resolves one early nor removes Lathe's.
+  // capture-only sync captures without running the tests, a JUnit @Suite included (JUnit's dry run
+  // discovers its tests, then skips them). Lathe's dependencies are added only as its
+  // configurations resolve, so a script walking every configuration's dependencies neither resolves
+  // one early nor removes Lathe's.
   @Test
   void build_plainBuild_refreshesTheWorkspaceAndCapturesTestRuns() throws Exception {
     final var fixture =
@@ -266,6 +267,7 @@ class LatheSyncTaskFunctionalTest {
                   implementation(project(":lib"))
                   testImplementation(platform("org.junit:junit-bom:5.11.4"))
                   testImplementation("org.junit.jupiter:junit-jupiter")
+                  testImplementation("org.junit.platform:junit-platform-suite")
                   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
                   testCompileOnly("com.example:unused:1.0")
                 }
@@ -273,6 +275,15 @@ class LatheSyncTaskFunctionalTest {
                 // As Micronaut's build does: walk every configuration's dependencies, then change one.
                 configurations.all { dependencies.removeAll { it.group == "io.github.ag-libs" } }
                 configurations.testCompileOnly { dependencies.removeAll { it.name == "unused" } }
+                """)
+            .file(
+                "app/src/test/java/com/example/app/AppSuite.java",
+                """
+                package com.example.app;
+
+                @org.junit.platform.suite.api.Suite
+                @org.junit.platform.suite.api.SelectClasses(AppTest.class)
+                class AppSuite {}
                 """)
             .file(
                 "app/src/test/java/com/example/app/AppTest.java",
