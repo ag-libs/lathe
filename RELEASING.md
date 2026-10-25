@@ -1,7 +1,12 @@
 # Releasing Lathe
 
-Lathe publishes every module in the reactor, plus the parent POM, to Maven Central. The release build
-deploys whatever the reactor contains, so the set stays correct as modules are added or removed.
+Lathe publishes every Java module in the reactor, plus the parent POM, to Maven Central. The release
+build deploys whatever the reactor contains except the two editor-client modules, `lathe-neovim` and
+`lathe-vscode` (excluded in the `release` profile), so the set stays correct as Java modules are added
+or removed.
+
+The VS Code extension's `.vsix` is attached to the GitHub release; publishing it to the VS Code
+Marketplace or Open VSX is not automated yet.
 
 Releases are cut from a git tag. CI does the signing and publishing, so **no Maven Central or GPG
 credentials are needed locally**.

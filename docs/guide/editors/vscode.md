@@ -10,6 +10,9 @@ the other editors. The extension just finds and launches it.
 
 ## Install
 
+The extension needs VS Code 1.84 or later (or a Cursor release built on it).
+It activates when the workspace contains a `.lathe/` directory or a Java file opens.
+
 1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) populates
    `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
    `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
@@ -50,14 +53,15 @@ Resolved from your real build, through VS Code's standard LSP UI:
 
 ## Read-only dependency sources
 
-Go-to-definition into a dependency or the JDK opens a source file Lathe extracts to its cache, marked
-**read-only on disk** (no write bit). VS Code does not honor that by default — it opens the buffer as
-editable and only fails at *save* time ("impossible to save"). Add this to your settings so VS Code
-reflects the permission (dependency sources then open locked, with a lock icon, editing disabled):
+Go-to-definition into a dependency or the JDK opens a source file Lathe extracts to its cache.
+The extension marks everything under `~/.cache/lathe/` read-only (it contributes a
+`files.readonlyInclude` default for `**/.cache/lathe/**`), so these files open locked, with a lock icon.
+Nothing to configure, unless you moved the cache with `-Dlathe.cache=<dir>`: then add that directory to
+`files.readonlyInclude` yourself:
 
 ```jsonc
 {
-  "files.readonlyFromPermissions": true
+  "files.readonlyInclude": { "/path/to/lathe-cache/**": true }
 }
 ```
 
@@ -74,9 +78,18 @@ The extension works the same on Windows, in VS Code and in Cursor (install the `
 Build the project once with `mvnw.cmd` or `mvn`; the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
 Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or with `set` in the `cmd` window you start `code` or `cursor` from.
 
+## Build-file changes
+
+After a `pom.xml` or module-structure change, the server shows a prompt to sync.
+The extension cannot run the sync for you yet: choosing *Sync* does nothing, so run
+`.lathe/lathe-sync.sh` (`.lathe\lathe-sync.cmd` on Windows) or your Maven build in a terminal.
+Source changes made outside the editor need no sync; the server compiles them in-process.
+
 ## Known issues
 
-- **One Lathe project per window.** In a multi-root workspace with two Lathe folders, only one of their servers starts, and it also receives the other folder's files.
+- **One Lathe project per window.** In a multi-root workspace each Lathe folder starts its own server,
+  but the extension does not scope documents to their folder, so every server may receive every
+  folder's Java files.
   Open each project in its own window for now.
 - **"Add missing imports…" does nothing.** The whole-file action has no effect in VS Code yet; the single-type quick fixes (*Import 'java.util.List'*) work.
 

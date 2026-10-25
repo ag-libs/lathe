@@ -32,6 +32,7 @@ Leader is `\`. The Lathe-relevant bindings:
 |---|---|
 | `gd` / `grr` / `gri` | Go to definition / references / implementations (via Telescope) |
 | `gO` | Document symbols |
+| `<leader>ws` | Workspace symbols (reactor-wide, server-ranked) |
 | `K` / `<C-k>` | Hover / signature help |
 | `<leader>ca` | Code action |
 | `<leader>rr` | Run the `main` under the cursor |
