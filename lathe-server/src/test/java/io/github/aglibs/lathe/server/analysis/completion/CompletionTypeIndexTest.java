@@ -2,9 +2,12 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItemKind;
 import org.junit.jupiter.api.Test;
 
@@ -127,6 +130,35 @@ class CompletionTypeIndexTest extends CompletionTestSupport {
                     "StringBuilder", "java.lang.StringBuilder", TypeKind.CLASS)));
     final var items = labels(localFixture.complete("class Test { Str§ field; }"));
     assertThat(items.indexOf("StringBuilder")).isLessThan(items.indexOf("StringJoiner"));
+  }
+
+  // A short prefix matches more types than the completer validates; after `@` only annotations
+  // count toward that limit, so an annotation sorting behind a thousand classes is still offered.
+  @Test
+  void typeIndex_annotationPosition_findsAnnotationBehindTheCandidateLimit() throws IOException {
+    final List<TypeIndexEntry> entries =
+        Stream.concat(
+                IntStream.range(0, 1_000)
+                    .mapToObj(
+                        i ->
+                            CompletionFixture.typeEntry(
+                                "Ge%04d".formatted(i), "a.Ge%04d".formatted(i), TypeKind.CLASS)),
+                Stream.of(
+                    CompletionFixture.typeEntry(
+                        "GregorianCalendar", "java.util.GregorianCalendar", TypeKind.CLASS),
+                    CompletionFixture.typeEntry(
+                        "Generated", "javax.annotation.processing.Generated", TypeKind.ANNOTATION)))
+            .toList();
+    localFixture =
+        new CompletionFixture(
+            CompletionFixture.typeIndex(
+                tmp.resolve("index.json"), entries.toArray(TypeIndexEntry[]::new)));
+
+    assertThat(labels(localFixture.complete("@Ge§ class Test {}")))
+        .contains("Generated")
+        .doesNotContain("GregorianCalendar");
+    assertThat(labels(localFixture.complete("class Test { Greg§ field; }")))
+        .contains("GregorianCalendar");
   }
 
   // ── java.lang fallback (no type index) ───────────────────────────────────────
