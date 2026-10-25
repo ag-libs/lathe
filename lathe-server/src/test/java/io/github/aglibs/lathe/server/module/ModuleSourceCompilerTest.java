@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.tree.ClassTree;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
@@ -328,6 +329,98 @@ class ModuleSourceCompilerTest {
       assertThat(result.failedUris()).containsExactly(brokenUri);
       assertThat(result.writtenBinaryNames()).isEmpty();
     }
+  }
+
+  // A module that ships a processor has it in its own class mirror, which is on its processor path.
+  // With <proc>none</proc> the build never runs it; without, it runs, and its error (no source,
+  // like -Werror's "warnings found") fails every source in the write.
+  @Test
+  void compileBatch_ownProcessorInClassMirror_runsOnlyWithoutProcNone() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+    final Path processor = td.resolve("proc/OwnProcessor.java");
+    Files.createDirectories(processor.getParent());
+    Files.writeString(
+        processor,
+        """
+        import java.util.Set;
+        import javax.annotation.processing.*;
+        import javax.lang.model.SourceVersion;
+        import javax.lang.model.element.TypeElement;
+        import javax.tools.Diagnostic;
+
+        @SupportedAnnotationTypes("*")
+        public class OwnProcessor extends AbstractProcessor {
+          @Override
+          public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+            if (!round.processingOver()) {
+              processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "own processor ran");
+            }
+            return false;
+          }
+
+          @Override
+          public SourceVersion getSupportedSourceVersion() {
+            return SourceVersion.latestSupported();
+          }
+        }
+        """);
+    TestCompiler.compileToDir(config.latheClassesDir(), processor);
+    final Path services =
+        config.latheClassesDir().resolve("META-INF/services/javax.annotation.processing.Processor");
+    Files.createDirectories(services.getParent());
+    Files.writeString(services, "OwnProcessor\n");
+    final List<TransientSource> sources =
+        List.of(
+            new TransientSource(sourceRoot.resolve("A.java").toUri().toString(), "class A {}"),
+            new TransientSource(sourceRoot.resolve("B.java").toUri().toString(), "class B {}"));
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            withProc(config, LatheFlags.PROC_NONE), new CompilationAdmission(1))) {
+      final BatchWrite write = compiler.compileBatch(sources, () -> {});
+
+      assertThat(write.failedUris()).isEmpty();
+      assertThat(write.writtenBinaryNames()).containsExactlyInAnyOrder("A", "B");
+    }
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final BatchWrite write = compiler.compileBatch(sources, () -> {});
+
+      assertThat(write.failedUris())
+          .containsExactlyInAnyOrderElementsOf(sources.stream().map(TransientSource::uri).toList());
+      assertThat(write.diagnosticsByUri().values())
+          .allSatisfy(
+              diagnostics ->
+                  assertThat(diagnostics)
+                      .anySatisfy(
+                          diagnostic ->
+                              assertThat(diagnostic.getMessage().getLeft())
+                                  .contains("own processor ran")));
+    }
+  }
+
+  private static ModuleSourceConfig withProc(final ModuleSourceConfig config, final String proc) {
+    return new ModuleSourceConfig(
+        config.moduleDir(),
+        config.sourceTree(),
+        config.outputDir(),
+        config.originalGenSourcesDir(),
+        config.sourceRoots(),
+        config.classpath(),
+        config.modulepath(),
+        config.processorPath(),
+        config.release(),
+        config.encoding(),
+        config.parameters(),
+        config.enablePreview(),
+        proc,
+        config.compilerArgs(),
+        config.analysisMode(),
+        config.externalOutput(),
+        config.reactorRewrite());
   }
 
   private static boolean hasError(final CompilerResult result) {

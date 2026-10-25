@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
@@ -8,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.TextEdit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -15,53 +17,84 @@ class ImportAnalyzerTest {
 
   @TempDir private Path tmp;
 
+  // A new import goes to its sorted place in its group, so an ordered block stays ordered.
   @Test
-  void insertionRange_packageAndImports_returnsAfterLastImport() throws IOException {
-    final var source =
-        """
-        package com.example;
+  void layout_sortedRegularImports_placesEachImportInOrder() throws IOException {
+    final var layout =
+        layoutOf(
+            """
+            package com.example;
 
-        import java.util.List;
-        import java.util.Set;
+            import java.util.List;
+            import java.util.Set;
 
-        class Foo {}
-        """;
-    final var analysis = analyze(source);
-    final var range = new ImportAnalyzer(analysis).insertionRange();
+            class Foo {}
+            """);
 
-    assertThat(range).isNotNull();
-    assertThat(range.getStart()).isEqualTo(new Position(4, 0));
-    assertThat(range.getEnd()).isEqualTo(new Position(4, 0));
+    assertThat(layout.edits(List.of("java.util.Map", "java.util.Objects")))
+        .as("both before Set: one edit, in order")
+        .singleElement()
+        .satisfies(
+            edit -> {
+              assertThat(edit.getRange().getStart()).isEqualTo(new Position(3, 0));
+              assertThat(edit.getNewText())
+                  .isEqualTo("import java.util.Map;\nimport java.util.Objects;\n");
+            });
+    assertThat(layout.edits(List.of("java.util.Stack", "static java.util.Collections.max")))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(
+            tuple(new Position(2, 0), "import static java.util.Collections.max;\n"),
+            tuple(new Position(4, 0), "import java.util.Stack;\n"));
   }
 
   @Test
-  void insertionRange_packageAndNoImports_returnsAfterPackage() throws IOException {
-    final var source =
-        """
-        package com.example;
+  void layout_staticGroupFirst_placesStaticAndRegularImportsInTheirGroups() throws IOException {
+    final var layout =
+        layoutOf(
+            """
+            package com.example;
 
-        class Foo {}
-        """;
-    final var analysis = analyze(source);
-    final var range = new ImportAnalyzer(analysis).insertionRange();
+            import static java.util.Collections.emptyList;
+            import static java.util.Objects.requireNonNull;
 
-    assertThat(range).isNotNull();
-    assertThat(range.getStart()).isEqualTo(new Position(1, 0));
-    assertThat(range.getEnd()).isEqualTo(new Position(1, 0));
+            import java.util.List;
+
+            class Foo {}
+            """);
+
+    assertThat(
+            layout.edits(
+                List.of(
+                    "static java.util.Collections.nCopies",
+                    "static java.util.Objects.toString",
+                    "java.util.ArrayList",
+                    "java.util.Set")))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(
+            tuple(new Position(3, 0), "import static java.util.Collections.nCopies;\n"),
+            tuple(new Position(4, 0), "import static java.util.Objects.toString;\n"),
+            tuple(new Position(5, 0), "import java.util.ArrayList;\n"),
+            tuple(new Position(6, 0), "import java.util.Set;\n"));
   }
 
   @Test
-  void insertionRange_noPackageAndNoImports_returnsStartOfFile() throws IOException {
-    final var source =
-        """
-        class Foo {}
-        """;
-    final var analysis = analyze(source);
-    final var range = new ImportAnalyzer(analysis).insertionRange();
+  void layout_noImports_placesAfterThePackageOrAtTheStart() throws IOException {
+    final var afterPackage =
+        layoutOf(
+            """
+            package com.example;
 
-    assertThat(range).isNotNull();
-    assertThat(range.getStart()).isEqualTo(new Position(0, 0));
-    assertThat(range.getEnd()).isEqualTo(new Position(0, 0));
+            class Foo {}
+            """);
+    final var atStart = layoutOf("class Foo {}\n");
+
+    assertThat(afterPackage.edit("java.util.List").getRange().getStart())
+        .isEqualTo(new Position(1, 0));
+    assertThat(atStart.edit("java.util.List").getRange().getStart()).isEqualTo(new Position(0, 0));
+  }
+
+  private ImportLayout layoutOf(final String source) throws IOException {
+    return new ImportAnalyzer(analyze(source)).layout().orElseThrow();
   }
 
   @Test

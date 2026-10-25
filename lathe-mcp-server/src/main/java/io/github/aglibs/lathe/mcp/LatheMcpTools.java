@@ -152,7 +152,7 @@ final class LatheMcpTools {
                 mapper,
                 positionSchema(
                     """
-                    ,"maxResults":{"type":"integer",
+                    ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max references to return (default 50)."}\
                     """))
             .description(
@@ -244,7 +244,7 @@ final class LatheMcpTools {
                     """
                     ,"direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
-                    "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}\
+                    "maxResults":{"type":"integer","minimum":1,"description":"Max calls to return (default 50)."}\
                     """))
             .description(
                 """
@@ -283,7 +283,7 @@ final class LatheMcpTools {
                 {"type":"object","required":["query"],
                  "properties":{
                    "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
-                   "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}\
+                   "maxResults":{"type":"integer","minimum":1,"description":"Max symbols to return (default 50)."}}}\
                 """)
             .description(
                 """
@@ -304,7 +304,7 @@ final class LatheMcpTools {
                 mapper,
                 positionSchema(
                     """
-                    ,"maxResults":{"type":"integer",
+                    ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max implementations to return (default 50)."}\
                     """))
             .description(
@@ -387,8 +387,9 @@ final class LatheMcpTools {
                 Add the missing imports of a Java file in place — every unresolved type name that \
                 matches exactly one type in the reactor, its dependencies, or the JDK. A name with \
                 several matches (List: java.util.List, java.awt.List) is listed with its \
-                candidates for you to choose, and a name with none is listed too. Call after \
-                writing code that uses new types, then format_file to put the imports in order.\
+                candidates for you to choose, and a name with none is listed too. Each import goes \
+                to its sorted place among the file's imports. Call after writing code that uses \
+                new types.\
                 """)
             .annotations(EDITS_IN_PLACE)
             .build();
@@ -558,10 +559,21 @@ final class LatheMcpTools {
 
   private static CallToolResult handleVerifyChange(
       final LatheEngine engine, final CallToolRequest request) {
+    final List<Path> files = fileListArg(request);
+    final Optional<Path> notJava =
+        files.stream().filter(file -> !FileUtil.isJavaFile(file)).findFirst();
+    if (notJava.isPresent()) {
+      return error(notAJavaSource(notJava.get()));
+    }
+
+    // Only which named files went unchecked: verify_change reports its own failures and deferral.
     return guarded(
         "verify_change",
         "files",
-        () -> verifyChangeResult(engine.verifyChange(fileListArg(request))));
+        () ->
+            verifyChangeResult(
+                engine.verifyChange(files),
+                LatheNotes.ofNotChecked(engine.notes(files).notChecked())));
   }
 
   private static CallToolResult handleFormatFile(
@@ -701,8 +713,14 @@ final class LatheMcpTools {
       return body.get();
     } catch (final RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, context));
-      return error("[%s] %s".formatted(tool, e.getMessage()));
+      return error(agentMessage(tool, e));
     }
+  }
+
+  static String agentMessage(final String tool, final RuntimeException e) {
+    return e.getMessage() == null
+        ? "%s failed; see the server log".formatted(tool)
+        : e.getMessage();
   }
 
   @FunctionalInterface
@@ -1120,10 +1138,10 @@ final class LatheMcpTools {
     return items.isEmpty() ? "none" : String.join(", ", items);
   }
 
-  // verify_change reports its own deferral and diagnostics.
-  static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
+  static final LatheNotes NO_NOTES = LatheNotes.ofNotChecked(List.of());
 
-  private static CallToolResult verifyChangeResult(final LatheVerifyChange verify) {
+  private static CallToolResult verifyChangeResult(
+      final LatheVerifyChange verify, final LatheNotes notes) {
     if (verify.deferral() != null) {
       final String text =
           "Verification deferred: %s. Run `%s`, then re-check."
@@ -1132,23 +1150,29 @@ final class LatheMcpTools {
           text,
           Map.<String, Object>of(
               "deferred", verify.deferral(), "suggestedSync", verify.suggestedSync()),
-          NO_NOTES);
+          notes);
     }
 
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
     final long errors = errorCount(verify);
     return result(
-        verifyHeadline(errors, total - errors)
+        verifyHeadline(errors, total - errors, notes.notChecked().size())
             + verifyDiagnosticLines(verify.perModule())
             + crossModuleNote(verify, errors),
         verifyStructured(verify, total),
-        NO_NOTES);
+        notes);
   }
 
-  // Callers report errors only, so every warning is in a changed file.
-  static String verifyHeadline(final long errors, final long warnings) {
+  // Callers report errors only, so every warning is in a changed file. A file it could not check
+  // must not read as compiling.
+  static String verifyHeadline(final long errors, final long warnings, final int unchecked) {
     final String warned =
         warnings == 0 ? "" : "; %d warning(s) in the changed files".formatted(warnings);
+    if (errors == 0 && unchecked > 0) {
+      return "No errors in what was checked%s; %d named file(s) not checked."
+          .formatted(warned, unchecked);
+    }
+
     return errors == 0
         ? "No errors — the changed files and their callers compile%s.".formatted(warned)
         : "%d error(s)%s.".formatted(errors, warned);
@@ -1394,7 +1418,7 @@ final class LatheMcpTools {
 
   private static Path filePath(final CallToolRequest request) {
     final String file = stringArg(request, "file");
-    return file == null ? null : Path.of(file);
+    return file == null ? null : FileUtil.absolute(file);
   }
 
   private static String stringArg(final CallToolRequest request, final String name) {
@@ -1406,13 +1430,13 @@ final class LatheMcpTools {
     return request.arguments().get(name) instanceof Number n ? n.intValue() : null;
   }
 
-  // Optional "files" array of absolute paths; absent or malformed means "detect the change set".
+  // Optional "files" array; absent or malformed means "detect the change set".
   private static List<Path> fileListArg(final CallToolRequest request) {
     if (!(request.arguments().get("files") instanceof List<?> files)) {
       return List.of();
     }
 
-    return files.stream().map(String::valueOf).map(Path::of).toList();
+    return files.stream().map(String::valueOf).map(FileUtil::absolute).toList();
   }
 
   private static CallToolResult error(final String message) {

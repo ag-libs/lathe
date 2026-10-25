@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.compiler;
 
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
@@ -160,7 +161,7 @@ public final class LatheCompiler implements Compiler {
   private static Path buildRoot() {
     final var root =
         System.getProperty("maven.multiModuleProjectDirectory", System.getProperty("user.dir"));
-    return root == null ? null : Path.of(root).toAbsolutePath().normalize();
+    return root == null ? null : FileUtil.absolute(root);
   }
 
   private record LatheContext(Path moduleDir, Path moduleRel) {}

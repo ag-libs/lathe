@@ -2,32 +2,22 @@ package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
-import java.util.stream.Collectors;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.Position;
 
 /**
- * Every unresolved type name in a file with its importable fully-qualified candidates. {@code
- * insertionRange} is where an import line belongs (null only when there is nothing to import). A
- * candidate list of one is unambiguous (auto-add); more than one needs a user choice; empty means
- * the name could not be resolved.
+ * Every unresolved type name in a file with its importable fully-qualified candidates, and the
+ * file's import layout, which places the lines to add. A candidate list of one is unambiguous
+ * (auto-add); more than one needs a user choice; empty means the name could not be resolved.
  */
-public record MissingImportsResult(Range insertionRange, List<MissingImport> items) {
+public record MissingImportsResult(ImportLayout layout, List<MissingImport> items) {
 
   public MissingImportsResult {
-    // insertionRange is intentionally nullable (the empty result); items never is.
-    ValidCheck.check().notNull(items, "items").validate();
+    ValidCheck.check().notNull(layout, "layout").notNull(items, "items").validate();
     items = List.copyOf(items);
   }
 
   public static MissingImportsResult empty() {
-    return new MissingImportsResult(null, List.of());
-  }
-
-  // One edit for every import: several edits at the same position apply in no defined order.
-  public static TextEdit importEdit(final Range at, final List<String> fqNames) {
-    return new TextEdit(
-        at, fqNames.stream().map("import %s;\n"::formatted).collect(Collectors.joining()));
+    return new MissingImportsResult(new ImportLayout(List.of(), new Position(0, 0)), List.of());
   }
 
   public record MissingImport(String name, List<String> candidates) {

@@ -35,6 +35,9 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   // A JUnit Platform suite has no test methods of its own; run as a class, it runs its selection.
   // By its full name: other frameworks have a Suite too (JUnit 4's is a runner, not this).
   private static final String SUITE_ANNOTATION = "org.junit.platform.suite.api.Suite";
+  // JUnit runs a @Nested class with its enclosing class, so a class whose nested ones hold tests is
+  // a test class too, even with no test method of its own.
+  private static final String NESTED_ANNOTATION = "org.junit.jupiter.api.Nested";
 
   private final AttributedFileAnalysis analysis;
   private final String uri;
@@ -70,8 +73,14 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
     super.visitClass(node, unused);
     classStack.pop();
     final String binaryName = binaryName(typeElement);
-    if (classesWithTests.contains(binaryName) || isSuite(typeElement)) {
-      final TypeElement enclosing = classStack.peek();
+    final TypeElement enclosing = classStack.peek();
+    if (enclosing != null
+        && classesWithTests.contains(binaryName)
+        && isAnnotated(typeElement, NESTED_ANNOTATION)) {
+      classesWithTests.add(binaryName(enclosing));
+    }
+
+    if (classesWithTests.contains(binaryName) || isAnnotated(typeElement, SUITE_ANNOTATION)) {
       targets.add(
           classLevelTarget(node, typeElement, binaryName, enclosing, RunnableKind.TEST_CLASS));
       emitPackageOnce();
@@ -79,8 +88,7 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
 
     if (classesWithMain.contains(binaryName)) {
       targets.add(
-          classLevelTarget(
-              node, typeElement, binaryName, classStack.peek(), RunnableKind.MAIN_CLASS));
+          classLevelTarget(node, typeElement, binaryName, enclosing, RunnableKind.MAIN_CLASS));
     }
 
     return null;
@@ -135,12 +143,12 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
         && ((ArrayType) type).getComponentType().toString().equals("java.lang.String");
   }
 
-  private static boolean isSuite(final TypeElement element) {
+  private static boolean isAnnotated(final TypeElement element, final String annotation) {
     return element.getAnnotationMirrors().stream()
         .anyMatch(
             mirror ->
                 mirror.getAnnotationType().asElement() instanceof final TypeElement type
-                    && type.getQualifiedName().contentEquals(SUITE_ANNOTATION));
+                    && type.getQualifiedName().contentEquals(annotation));
   }
 
   private static boolean isTestMethod(final ExecutableElement element) {

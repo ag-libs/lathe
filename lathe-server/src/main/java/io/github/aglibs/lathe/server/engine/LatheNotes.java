@@ -22,4 +22,9 @@ public record LatheNotes(
     syncRequired = List.copyOf(syncRequired);
     notChecked = List.copyOf(notChecked);
   }
+
+  // Only the asked-about files no module checks, for an answer that reports the rest itself.
+  public static LatheNotes ofNotChecked(final List<String> notChecked) {
+    return new LatheNotes(List.of(), List.of(), notChecked, false);
+  }
 }

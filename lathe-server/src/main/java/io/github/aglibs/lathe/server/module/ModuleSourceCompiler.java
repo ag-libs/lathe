@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
@@ -104,20 +105,29 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final Map<String, String> contentByUri =
           sources.stream()
               .collect(Collectors.toMap(TransientSource::uri, TransientSource::content));
-      return new BatchWrite(
-          result.writtenBinaryNames(),
+      final Map<String, List<Diagnostic<? extends JavaFileObject>>> bySource =
           result.diagnostics().stream()
               .filter(diagnostic -> uriByTempFile.containsKey(sourcePathOf(diagnostic)))
               .collect(
-                  Collectors.groupingBy(diagnostic -> uriByTempFile.get(sourcePathOf(diagnostic))))
-              .entrySet()
-              .stream()
+                  Collectors.groupingBy(diagnostic -> uriByTempFile.get(sourcePathOf(diagnostic))));
+      // An error with no source (-Werror's "warnings found") fails the whole task: javac wrote no
+      // class, so every source carries it, or the batch would look clean.
+      final List<Diagnostic<? extends JavaFileObject>> taskErrors =
+          result.diagnostics().stream().filter(ModuleSourceCompiler::isTaskError).toList();
+      return new BatchWrite(
+          result.writtenBinaryNames(),
+          contentByUri.keySet().stream()
+              .filter(uri -> bySource.containsKey(uri) || !taskErrors.isEmpty())
               .collect(
                   Collectors.toUnmodifiableMap(
-                      Map.Entry::getKey,
-                      entry ->
+                      uri -> uri,
+                      uri ->
                           JavacDiagnosticMapper.filterAndMap(
-                              entry.getValue(), contentByUri.get(entry.getKey())))));
+                              Stream.concat(
+                                      bySource.getOrDefault(uri, List.of()).stream(),
+                                      taskErrors.stream())
+                                  .toList(),
+                              contentByUri.get(uri)))));
     } finally {
       JavaSourceCompiler.setProcessorPath(fm, List.of());
       IOUtil.unchecked(fm::flush);
@@ -173,6 +183,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return analysis.tree() == null
         ? null
         : Path.of(analysis.tree().getSourceFile().toUri()).normalize();
+  }
+
+  private static boolean isTaskError(final Diagnostic<? extends JavaFileObject> diagnostic) {
+    return diagnostic.getSource() == null && diagnostic.getKind() == Diagnostic.Kind.ERROR;
   }
 
   private static Path sourcePathOf(final Diagnostic<? extends JavaFileObject> diagnostic) {
@@ -367,7 +381,9 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     }
 
     opts.addAll(modeCompilerArgs(compilerArgs, mode));
-    if (mode == CompileMode.FAST || mode == CompileMode.OPEN) {
+    // A write runs processors only where the build does: with <proc>none</proc> a module's own
+    // processor, visible through its class mirror, must not run over its sources.
+    if (mode != CompileMode.FULL || LatheFlags.PROC_NONE.equals(config.proc())) {
       opts.add("-proc:none");
     }
     return opts;
