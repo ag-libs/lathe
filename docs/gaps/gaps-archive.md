@@ -8367,6 +8367,34 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-18 — A source whose time changed but whose content did not is recompiled in-process — done
+
+**Status: done — Target: next.**
+
+Found by the Gradle plugin's touch probe (2026-10-25) on JUnit's own build: after `touch` on every
+source, `./gradlew testClasses` compiled nothing (Gradle decides by content), so the compile stamps
+kept their old times, and the server's stale scan, comparing mtimes only, recompiled all 1,653
+compiled sources in-process (about 39 s of background compiles).
+A branch switch and back did the same on either build tool.
+
+**Why not compare with what the build compiled.** `built` is what the *build* compiled, and the
+server's in-process compiles leave it, so `verify_change` reads a change put back as no change.
+Once the server has compiled an edit, a revert matches `built` but not the mirror, so the scan needs
+what the mirror holds.
+
+**Resolution.** Each stamp is now a `SourceStamp(mtime, content)`: the source as its class was last
+written, by the build (`CompileCapture`, from the hashes it already takes for `built`) or the server
+(the content it compiled, not a later read). The scan compares the mtime as before; only a source
+whose mtime moved is read, and if its content is the stamp's, it is current and only re-stamped at
+its new mtime (`TreeState.touched`, one write per tree, skipped while a build holds the lock).
+OpenJDK records no content (fingerprinting the JDK tree on each sync costs more than it saves), so
+the mtime alone decides there, as before; `built` and `verify_change` are unchanged.
+
+Regression: `WritePassTest.reconcileNow_touchedSource_restampsWithoutCompiling_changedOrPutBackOneCompiles`
+(touch, change, and a change put back after the server compiled it),
+`WritePassTest.reconcileNow_touchedSourceStampedWithoutContent_compiles`, and the writers'
+`CompiledStampsTest`, `CompileCaptureTest`, `OpenJdkSyncTest`.
+
 ## WS-16 — A source whose content changes while its mtime is put back is not recompiled — non-goal
 
 **Status: non-goal.**

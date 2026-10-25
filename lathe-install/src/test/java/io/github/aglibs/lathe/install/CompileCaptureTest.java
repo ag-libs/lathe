@@ -3,9 +3,11 @@ package io.github.aglibs.lathe.install;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -61,10 +63,19 @@ class CompileCaptureTest {
     CompileCapture.mirror(
         moduleDir, config("classes", gen, List.of(src.toString(), gen.toString())));
 
+    // Each stamp carries the content compiled, which is also what the build compiled.
+    final var foo =
+        new SourceStamp(100L, FileUtil.fingerprint(src.resolve("com/example/Foo.java")));
+    final var bar =
+        new SourceStamp(200L, FileUtil.fingerprint(src.resolve("com/example/Bar.java")));
     assertThat(CompiledStamps.load(moduleDir, "classes"))
         .containsOnly(
-            Map.entry(Path.of("com/example/Foo.java"), 100L),
-            Map.entry(Path.of("com/example/Bar.java"), 200L));
+            Map.entry(Path.of("com/example/Foo.java"), foo),
+            Map.entry(Path.of("com/example/Bar.java"), bar));
+    assertThat(CompiledStamps.loadBuilt(moduleDir, "classes"))
+        .containsOnly(
+            Map.entry(Path.of("com/example/Foo.java"), foo.content()),
+            Map.entry(Path.of("com/example/Bar.java"), bar.content()));
   }
 
   @Test

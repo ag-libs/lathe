@@ -3,9 +3,12 @@ package io.github.aglibs.lathe.openjdk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -73,6 +76,19 @@ class OpenJdkSyncTest {
             new BuildFileData(
                 "build/linux-x86_64-server-release/buildtools/tools_classes/_the.BUILD_TOOLS_batch",
                 null));
+    final Path stamps =
+        FileUtil.walkFiles(
+                latheDir,
+                file ->
+                    file.getFileName()
+                        .toString()
+                        .equals(LatheLayout.compiledStampsFileName("classes")))
+            .get(0);
+    assertThat(CompiledStamps.load(stamps.getParent(), "classes").values())
+        .as("the JDK tree is not fingerprinted, so the mtime alone decides")
+        .singleElement()
+        .extracting(SourceStamp::content)
+        .isNull();
     assertThat(LatheLayout.reactorLockFile(latheDir)).doesNotExist();
   }
 

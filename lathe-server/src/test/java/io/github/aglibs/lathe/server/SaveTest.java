@@ -11,7 +11,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
-import io.github.aglibs.lathe.core.CompiledStamps;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -246,7 +245,8 @@ class SaveTest extends ServiceTestBase {
                   assertThat(tasks.stream().mapToInt(Integer::intValue).sum())
                       .as("files written")
                       .isEqualTo(files.size()));
-      final Map<Path, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+      final Map<Path, Long> stamps =
+          TestCompiler.stampedMtimes(tmp.resolve(".lathe/module"), "classes");
       for (final Path file : files) {
         assertThat(stamps)
             .containsEntry(

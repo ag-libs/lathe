@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -27,6 +28,7 @@ import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -726,7 +728,7 @@ class LatheEngineTest {
     final Path apiClasses = tmp.resolve(".lathe/api/classes/com/example/api");
     assertThat(apiClasses.resolve("Renamed.class")).exists();
     assertThat(apiClasses.resolve("Api.class")).doesNotExist();
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
+    assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
         .containsEntry(
             Path.of("com/example/app/App.java"), Files.getLastModifiedTime(app).toMillis());
     assertThat(tmp.resolve(".lathe/lathe.lock")).doesNotExist();
@@ -749,7 +751,8 @@ class LatheEngineTest {
     renameAt(files.get(0), sources.get("com/example/Callee.java"), "greet", "welcome");
 
     // Every touched file is compiled and stamped before rename returns, not deferred to a sync.
-    final Map<Path, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
+    final Map<Path, Long> stamps =
+        TestCompiler.stampedMtimes(tmp.resolve(".lathe/module"), "classes");
     for (final Path file : files) {
       assertThat(stamps)
           .containsEntry(
@@ -1341,15 +1344,15 @@ class LatheEngineTest {
   // Record a compile stamp per source so a freshly started engine sees the module as already
   // synced; a later writeNewer() edit is then the only thing that reads as changed.
   private void stampModule(final Path... sources) throws Exception {
-    final Path moduleDir = tmp.resolve(".lathe/module");
     final Path sourceRoot = tmp.resolve("module/src/main/java");
-    for (final Path source : sources) {
-      CompiledStamps.record(
-          moduleDir,
-          "classes",
-          sourceRoot.relativize(source),
-          Files.getLastModifiedTime(source).toMillis());
-    }
+    CompiledStamps.record(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Arrays.stream(sources)
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    sourceRoot::relativize,
+                    source -> IOUtil.unchecked(() -> TestCompiler.buildStamp(source)))));
   }
 
   private BuildFileData syncedBuildFile(final Path file) throws Exception {
@@ -1377,7 +1380,7 @@ class LatheEngineTest {
   private void writeNewer(final Path source, final String content) throws Exception {
     Files.writeString(source, content);
     final long stamp =
-        CompiledStamps.load(tmp.resolve(".lathe/module"), "classes").values().stream()
+        TestCompiler.stampedMtimes(tmp.resolve(".lathe/module"), "classes").values().stream()
             .max(Long::compareTo)
             .orElse(0L);
     Files.setLastModifiedTime(source, FileTime.fromMillis(stamp + 10_000));

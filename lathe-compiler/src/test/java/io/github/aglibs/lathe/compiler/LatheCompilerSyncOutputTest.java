@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -20,6 +23,7 @@ final class LatheCompilerSyncOutputTest {
 
   private static final String TREE = LatheLayout.CLASSES_DIR;
   private static final Path FOO_SOURCE = Path.of("com/example/Foo.java");
+  private static final SourceStamp OLD_STAMP = new SourceStamp(1L, null);
 
   @TempDir Path tmp;
 
@@ -38,7 +42,7 @@ final class LatheCompilerSyncOutputTest {
     assertThat(module.latheDir().resolve(TREE).resolve("com/example/Old.class")).exists();
     assertThat(generatedMirror(module).resolve("com/example/OldGen.java")).exists();
     assertThat(CompiledStamps.load(module.latheDir(), TREE))
-        .containsOnly(Map.entry(FOO_SOURCE, 1L));
+        .containsOnly(Map.entry(FOO_SOURCE, OLD_STAMP));
   }
 
   @Test
@@ -58,7 +62,11 @@ final class LatheCompilerSyncOutputTest {
     assertThat(generatedMirror(module).resolve("com/example/FooGen.java")).exists();
     assertThat(generatedMirror(module).resolve("com/example/OldGen.java")).doesNotExist();
     assertThat(CompiledStamps.load(module.latheDir(), TREE))
-        .containsOnly(Map.entry(FOO_SOURCE, 100L));
+        .containsOnly(
+            Map.entry(
+                FOO_SOURCE,
+                new SourceStamp(
+                    100L, ContentFingerprint.of("x".getBytes(StandardCharsets.UTF_8)))));
   }
 
   // A module whose last good compile is mirrored (Old.class, OldGen.java, a stamp for Foo.java at
@@ -75,7 +83,7 @@ final class LatheCompilerSyncOutputTest {
     write(
         latheDir.resolve(LatheLayout.generatedSourcesDir(TREE)).resolve("com/example/OldGen.java"),
         0L);
-    CompiledStamps.writeAll(latheDir, TREE, Map.of(FOO_SOURCE, 1L), Map.of());
+    CompiledStamps.writeAll(latheDir, TREE, Map.of(FOO_SOURCE, OLD_STAMP), Map.of());
 
     final var config = new CompilerConfiguration();
     config.setOutputLocation(output.toString());
