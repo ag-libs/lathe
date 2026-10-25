@@ -39,7 +39,7 @@ Since the server discovers modules by walking `.lathe/`, a capture the build sto
 After a full sync, `.lathe/` holds only the source trees of the build's current modules (`CapturePruner` in `lathe-install`):
 
 - a tree the module no longer has loses its `lsp-params-<tree>.json`, its stamps, its class mirror and its generated-sources mirror;
-- a module the build no longer has loses all its trees and its `main-launch.json` and `test-launch.json`.
+- a module the build no longer has loses all its trees and its `main-launch.json`, `test-launch.json`, `test-filter.json`, and `test-discovery.json`.
 
 It deletes files, never a module directory, because modules nest (`.lathe/a/` holds `.lathe/a/b/`).
 A scoped sync (`-pl`, a forced one included) never prunes: it sees part of the build.
@@ -61,6 +61,8 @@ On Maven a tree is current when its compile source roots hold Java, or its outpu
 | `<moduleRel>/generated-sources/`, `<moduleRel>/generated-test-sources/` | sources mirror | optional |
 | `<moduleRel>/test-launch.json` | `TestLaunchData` | optional (test run/debug) |
 | `<moduleRel>/main-launch.json` | `MainLaunchData` | optional (main run/debug) |
+| `<moduleRel>/test-filter.json` | `TestFilterData` | optional (package/module test runs and discovery) |
+| `<moduleRel>/test-discovery.json` | server-written discovery cache | optional (written by the server) |
 | `jvm.args` | java `@argfile` | optional |
 | `style.json` | `WorkspaceStyleData` | optional |
 
@@ -86,7 +88,7 @@ Without it, files under the module are "not in a Lathe module" and get no compil
 Classpath entries that point at a sibling module's build output are rewritten by the server to that module's mirror,
 looked up in `workspace.json`'s `outputs`; any other path is used as written.
 
-- **Maven** writes it after every compile (`ParamsWriter`, from the compiler shim), including scoped `-pl` builds.
+- **Maven** writes it after every compile (`CompileCapture` in `lathe-install`, called from the compiler shim's `LatheCompiler`), including scoped `-pl` builds.
 - **OpenJDK** writes the `classes` tree only, with `externalOutput=true`: `MODULE_SYSTEM` for JDK modules, `CLASSPATH` for build tools.
 - The server never writes it.
 
@@ -107,7 +109,7 @@ An empty file; only its existence and mtime matter (`LatheLock`).
 It is held while it exists and its mtime is under 2 minutes old; an older lock is stale and ignored.
 
 - **Reactor lock** `.lathe/lathe.lock`: held for a whole build that writes `.lathe/`.
-  The Maven extension takes it after the projects are read and heartbeats it every 30 seconds until the session ends;
+  The Maven extension takes it (`BuildLock`) after the projects are read and heartbeats it every 30 seconds until the session ends;
   the Neovim client pre-touches it when it starts `lathe-sync.sh`, so the server sees the build before Maven starts.
   While it is held, the server suppresses reloads, sync prompts, and reconcile, so it never reads half-written output.
 - **Module lock** `.lathe/<moduleRel>/module.lock`: held while one module's params, stamps, and mirror are rewritten (the compiler shim).
@@ -221,6 +223,17 @@ The JVM launch for running the module's `main` classes: `MainLaunchData`, the sa
 Maven derives it in `lathe:sync` from the module's runtime classpath and module placement, without forking.
 Without it `main` classes cannot be run or debugged from the editor.
 
+### `<moduleRel>/test-filter.json`
+
+The module's test class-name filter: `TestFilterData` (`classNameIncludes`, `classNameExcludes`, as regexes).
+The server applies it to package and module test runs and to test discovery, so they select what the build's test run would.
+Maven derives it in `lathe:sync` from the module's Surefire `<includes>` / `<excludes>` (`TestFilterWriter`).
+
+### `<moduleRel>/test-discovery.json`
+
+The server's own cache of the module's discovered tests, keyed by the test-classes stamp it was found for, so a restart does not rediscover unchanged modules.
+Only the server writes it; a full sync prunes it with the module.
+
 ### `jvm.args`
 
 One `--add-exports=` / `--add-opens=` token per line, passed to the server JVM as `@.lathe/jvm.args`.
@@ -287,6 +300,7 @@ The server reads `deps/`, `jdks/`, and `type-index/` only through paths listed i
 | generated-sources mirror | yes | no |
 | `test-launch.json` | yes | no |
 | `main-launch.json` | yes | no |
+| `test-filter.json` | yes | no |
 | `jvm.args` | yes, full reactor | no |
 | `style.json` | yes, full reactor | no |
 

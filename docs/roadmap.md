@@ -47,11 +47,10 @@ Dropwizard, and the sample workspace.
 The implemented baseline is in [status.md](status.md); the designs behind it in
 [design-index.md](design-index.md#completed-designs); the resolved EG/CA/FR/CQ gaps in
 [gaps-archive.md](gaps/gaps-archive.md). Per this document's scope, M1's completed details are not
-re-listed here. The residual staleness thread is now split: an **M2 freshness slice** — the actionable
-Maven sync prompt (WS-3), post-sync `workspace/symbol` pickup (WS-4), and external-change
-detection → sync prompt (WS-5, see [design](done/lathe-external-change-detection.md)) — while the
-fuller no-Maven reconciliation (WS-1) remains in the Backlog. WS-2's source-only *prompt* is revived as
-that chosen approach; in-process recompile is [parked](potential/lathe-external-change-recompilation.md).
+re-listed here. The residual staleness thread moved to M2: the actionable Maven sync prompt (WS-3),
+post-sync `workspace/symbol` pickup (WS-4), external-change detection (WS-5, see
+[design](done/lathe-external-change-detection.md)), and finally the no-Maven reconciliation (WS-1),
+which shipped as [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md).
 
 ### Exit criteria
 
@@ -77,16 +76,13 @@ ships (see "Deferred to backlog" below).
 - Surface an unexpected server exit to the user (a Neovim notification pointing at the LSP log), and add
   `:LatheStart` to bring the server up for a directory with no Java file open — shipped. One-command
   diagnostics collection (e.g. `:checkhealth lathe`) is deferred and added on demand, not planned scope.
-- Workspace freshness slice — keep Lathe honest when the tree changes outside the editor. Fix the
-  looping/inert Maven sync prompt and make it actionable (WS-3), pick up an external `mvn` without a
-  restart (WS-4), and **detect** externally changed sources — agent edits, branch switches, pulls —
-  and route them to that sync prompt (WS-5, [design](done/lathe-external-change-detection.md));
-  resources auto-copy. In-process recompile is
-  [parked](potential/lathe-external-change-recompilation.md) (single-module only). The fuller no-Maven
-  reconciliation (WS-1) stays backlog.
-  *Since superseded:* the fuller no-Maven reconciliation (WS-1) shipped as
-  [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md), since 2026-10-11 the
-  [One Write Pass](done/lathe-recompile-simplification.md); the Maven prompt remains only for build-file changes.
+- Workspace freshness slice — keep Lathe honest when the tree changes outside the editor — shipped.
+  The Maven sync prompt is actionable (WS-3), an external `mvn` is picked up without a restart (WS-4),
+  and externally changed sources — agent edits, branch switches, pulls — are detected
+  (WS-5, [design](done/lathe-external-change-detection.md)) and compiled in-process, any number of
+  files, with no Maven (WS-1: [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md),
+  since 2026-10-11 the [One Write Pass](done/lathe-recompile-simplification.md)).
+  The Maven prompt remains only for build-file changes.
 
 ### Correctness gaps (triaged)
 
@@ -106,8 +102,9 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 
 ### Distribution (Maven Central beta)
 
-- Publish every reactor module to Maven Central as `0.x.y` releases (the leading 0 marks the beta; no
-  `-beta` qualifier, see [RELEASING.md](../RELEASING.md)) — source/Javadoc JARs, signatures, checksums, POM/licensing/SCM
+- Publish the Java reactor modules to Maven Central as `0.x.y` releases (the Neovim and VS Code clients
+  ship separately; see [RELEASING.md](../RELEASING.md)) (the leading 0 marks the beta; no
+  `-beta` qualifier) — source/Javadoc JARs, signatures, checksums, POM/licensing/SCM
   metadata, reproducible release automation, and staging verification.
 - Public users install from released coordinates instead of building from source.
 
@@ -120,15 +117,16 @@ All triaged correctness gaps are resolved — see [gaps-archive.md](gaps/gaps-ar
 ### Not in M2
 
 The broader editing-feature set (inlay hints, on-type indentation, semantic-highlighting expansion,
-generic-bound and declaration-name completion, new-type creation, `typeDefinition`), the full no-Maven
-freshness model (WS-1), incomplete-call definition ([EG-048](gaps/gaps.md)), and source-browsing
-references are **not** M2 scope — they are in the [Backlog](#backlog).
+generic-bound completion, `typeDefinition`), incomplete-call definition ([EG-048](gaps/gaps.md)), and
+source-browsing references are **not** M2 scope — they are in the [Backlog](#backlog).
+(Declaration-name completion, new-type creation, and the no-Maven freshness model were once listed
+here; all three have since shipped.)
 
 ### Exit criteria
 
 - Public Neovim users install from Maven Central (beta coordinates) and perform normal Java editing,
-  navigation, and refactoring (including rename) reliably — including after a branch switch, where they
-  are prompted to re-sync rather than shown stale results.
+  navigation, and refactoring (including rename) reliably — including after a branch switch, whose
+  source changes are compiled in-process rather than shown stale (a build-file change prompts a sync).
 - Beta artifacts are published to Maven Central and pass its validation (signatures, POM metadata).
 - Every advertised LSP capability has end-to-end coverage and documented limitations.
 - Setup, compatibility, and troubleshooting documentation is complete — the README and the guides it

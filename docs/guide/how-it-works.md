@@ -13,6 +13,8 @@ It runs `javac` in-process and reads the compiler's abstract syntax trees throug
 API (the `com.sun.source` packages exported by the JDK's `jdk.compiler` module), so every feature —
 diagnostics, go-to-definition, hover, completion, the type and call hierarchies — is computed from the
 compiler's own attributed syntax tree rather than a re-implementation of Java's rules.
+The [MCP server](ai-agents.md) for AI agents runs the same engine in-process, so an agent's answers
+match the editor's.
 There is no second Java front-end to drift out of step: what Lathe reports is what `javac` sees,
 resolved against the exact classpath and options your build captured — which is what the rest of this
 document describes.
@@ -29,6 +31,11 @@ The overhead above normal `javac` is small — a directory walk, a parameter-fil
 of the module's compiled classes (typically tens to a couple hundred milliseconds of I/O for a small
 module) — and it is safe under parallel builds (`mvnd -T N`), since each module writes to its own
 `.lathe/<module>/` directory.
+
+Maven is one front-end.
+For an OpenJDK checkout, the [OpenJDK front-end](openjdk.md) reads the `make` build's own per-module
+`javac` invocations and writes the same `.lathe/` files, so the server works the same on both.
+The server never runs the build itself; it only reads what a front-end wrote.
 
 ## Dependency & JDK sources
 

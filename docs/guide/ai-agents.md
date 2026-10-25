@@ -21,8 +21,9 @@ mvn process-test-classes
 
 That build does two things at once: it writes `.lathe/`, and its `lathe:sync` step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
-For `run_test`, the build must also reach the test phase once, as `mvn clean test
--Dlathe.capture.only=true` does without running the tests (see [test capture](test-capture.md)).
+For `run_test`, the module's test launch must also be captured once:
+`.lathe/lathe-sync.sh --tests <module>` does that without running the tests (see
+[test capture](test-capture.md)); `run_test` names this command when the capture is missing.
 
 ## The launcher
 
@@ -89,9 +90,8 @@ CLI) can use it. Two facts are all a client needs:
 - it must run with your project as its working directory (that is how Lathe locates the reactor, and
   what resolves the relative launcher path).
 
-Consult that client's own MCP-server configuration docs for the exact config file and syntax. The
-setups below have not been validated against every client, so their own documentation is the
-authority.
+Consult that client's own MCP-server configuration docs for the exact config file and syntax; only
+the Claude Code setup above has been validated.
 
 ## The tools
 
@@ -107,7 +107,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `get_definition` | `file, line, column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
-| `call_hierarchy` | `file, line, column, direction` | callers (`incoming`) or callees (`outgoing`) of a method, across modules |
+| `call_hierarchy` | `file, line, column, direction` (optional) | callers (`incoming`, the default) or callees (`outgoing`) of a method, across modules |
 | `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
 | `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
@@ -115,7 +115,7 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step), so edits pass the build's formatting check; answers with the lines it rewrote |
-| `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match; the ambiguous ones are listed with their candidates for you to pick |
+| `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match, plus static imports the file's scope already uses elsewhere; the ambiguous ones are listed with their candidates for you to pick, and names with no match are listed too |
 | `verify_change` | `files` (optional) | after edits: recompile the changed files and their callers, and report errors first, one line each (callers: errors only) |
 
 The file tools take an existing `.java` file; any other path answers with an error.

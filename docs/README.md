@@ -7,13 +7,15 @@ Start here. This page describes how `docs/` is organized; it does not contain de
 These four define the project's direction and current truth:
 
 - [lathe-design.md](lathe-design.md) — the stable architecture.
-- [roadmap.md](roadmap.md) — release milestones (M1–M3, post-M3) and exit criteria; authoritative for scope.
+- [roadmap.md](roadmap.md) — the M1 and M2 milestones, the post-beta release model and backlog, and exit criteria; authoritative for scope.
 - [status.md](status.md) — what works today and the known gaps; authoritative for the implemented baseline.
 - [design-index.md](design-index.md) — maps every design document to the roadmap.
 
 ## Gap tracking — `gaps/`
 
-One process for every kind of gap (navigation `EG`, references `FR`, code actions `CA`, completion `CQ`):
+One process for every kind of gap (exploration `EG`, references `FR`, code actions `CA`, completion `CQ`,
+workspace `WS`, test execution `TE`, debug `DB`, Neovim `NV`, MCP `MC`; see the prefix table in
+[gap-process.md](gaps/gap-process.md)):
 
 - [gaps/gap-process.md](gaps/gap-process.md) — the lifecycle: the `Status` and `Target` fields, the
   document → target → implement → done round, and the definition of done.
