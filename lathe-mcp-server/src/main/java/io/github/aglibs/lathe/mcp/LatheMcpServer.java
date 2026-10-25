@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheLogging;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
@@ -42,7 +43,8 @@ public final class LatheMcpServer {
   static final String INSTRUCTIONS =
       """
       Lathe provides javac-accurate, cross-module code intelligence for this multi-module Java build \
-      — precise where text search is ambiguous. Choose by task:
+      — precise where text search is ambiguous. In an unfamiliar project, call workspace_summary \
+      first: the modules, what each depends on, and the sync command. Choose by task:
 
       - Renaming or removing a symbol: ALWAYS use rename_symbol. It rewrites the true declaration, \
       every override/implementation, and all call sites across modules, and nothing that merely \
@@ -55,11 +57,17 @@ public final class LatheMcpServer {
       - Tracing who calls a method, or what it calls: use call_hierarchy (the real cross-module call \
       graph, which text search cannot follow).
       - Understanding an API before calling it (signature, type, javadoc): use describe_symbol.
+      - Learning a file's structure, or finding a member's line, without reading the whole file: \
+      use outline.
       - Finding a type by name (reactor, dependencies, JDK): use search_symbols.
       - Finding the implementations of an interface, or the overrides of a method (the declarations \
       themselves, not their call sites): use find_implementations.
       - Checking that edits still compile, no full build: get_diagnostics for one file; \
       verify_change (no arguments) after a multi-file edit or a rename.
+      - Adding the imports a file is missing: use fix_imports, which adds every one with a single \
+      match and lists the ambiguous names with their candidates.
+      - Making an edited file pass the build's formatting check (Spotless): use format_file, which \
+      runs the formatter the project pins.
       - Checking whether a test, class, or package passes after an edit: use run_test (replays just \
       that; prefer it over the build's own test command).
 
@@ -82,7 +90,10 @@ public final class LatheMcpServer {
     LatheLogging.initFile(logFile);
     pruneSessionLogs();
     // The client keeps only the startup burst of stderr, so this line points at the full log.
-    LOG.info(() -> "[startup] pid=%d cwd=%s log=%s".formatted(pid, cwd, logFile));
+    LOG.info(
+        () ->
+            "[startup] %s pid=%d cwd=%s log=%s"
+                .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile));
 
     final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
     if (workspaceRoot.isEmpty()) {

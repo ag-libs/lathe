@@ -498,6 +498,39 @@ None yet.
 
 ---
 
+## WS-18 — A source whose time changed but whose content did not is recompiled in-process
+
+**Status: documented**
+**Affects: the editor and MCP, on every build tool; most on Gradle.**
+Found by the Gradle plugin's touch probe (2026-10-25) on JUnit's own build.
+
+### Observed behaviour
+
+After `touch` on all 1,805 sources of JUnit's Gradle build, `./gradlew testClasses` compiled nothing
+(Gradle decides by content), so no capture task ran and the compile stamps kept their old times.
+The server's stale scan compares each source's mtime with its stamp, found all 1,653 compiled sources
+stale, and recompiled them in-process, upstream first: about 39 s of background compiles, all
+successful, after which the new stamps made the next start quiet.
+The editor stayed usable (workspace ready in 1.6 s), so this is wasted work, not a wrong result.
+Maven hides it after a build, since its compiler recompiles by mtime and refreshes the stamps, but
+not when the server sees the touch first; a branch switch and back does the same on either tool.
+
+### Fix direction
+
+Let the stale scan treat a source whose mtime differs from its stamp but whose content matches the
+fingerprint the build recorded (`CompiledStamps.loadBuilt`) as current, and only re-stamp it: hashing
+1,653 files takes well under a second.
+`differingFromBuild` already makes this comparison for `verify_change`; reuse it rather than adding
+a second one.
+A tree with no recorded fingerprints (OpenJDK, older stamps) keeps today's mtime rule.
+
+### Regression targets
+
+Touch every source of the `multi-module` invoker workspace with no build: no in-process recompile,
+and the stamps carry the new mtimes.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -516,6 +549,35 @@ replay omits them. No project validated against Lathe uses them today; the escap
 `<argLine>-Dkey=value</argLine>` (captured as `jvmArgs`). The design — `lathe:sync` reads the
 effective Surefire model (or a hybrid where sync supplies the key names and the fork supplies the
 values) — is in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §15.1.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+---
+
+## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure
+
+**Status: documented**
+**Affects: run, debug and replay on Gradle builds that run tests through the Develocity plugin.**
+Found by the Gradle plugin's end-to-end check (2026-10-25) on JUnit's own build.
+
+### Observed behaviour
+
+The Develocity Gradle plugin starts the test JVM through its own launcher, with that launcher's jar
+and a copy of `opentest4j` in a temporary directory (`/tmp/test-distribution-test-launcher-forked…/`)
+that is deleted after the run; it does so even with the build's own switch for Test Distribution off.
+The capture records the launch it saw, so `test-launch.json` names files that no longer exist.
+The server's completeness gate checks only the reactor's trees, so the replay launches anyway and
+fails with `NoClassDefFoundError: org/opentest4j/AssertionFailedError`.
+
+### Fix direction
+
+Decided 2026-10-25: a known limitation, not worked around (mapping the temporary copies back to
+same-named jars is a guess; switching Develocity off needs the Develocity plugin's API).
+The gate blocks a replay whose class or module path names a missing file outside the reactor, with
+a reason naming the file and suggesting a launch outside the Develocity plugin's test acceleration;
+the Gradle guide documents the limitation.
 
 ### Regression targets
 
@@ -670,7 +732,9 @@ Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended c
 distinct from the server's LSP/DAP surface. Resolved NV entries move to
 [gaps-archive.md](gaps-archive.md).
 
-All NV entries to date are resolved in [gaps-archive.md](gaps-archive.md); none are currently open.
+---
+
+No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ---
 
@@ -679,133 +743,6 @@ All NV entries to date are resolved in [gaps-archive.md](gaps-archive.md); none 
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
-
-## MC-21 — MCP tools declare no annotations, so clients cannot tell the read-only tools from the one that writes
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24); see
-[the landscape update](../planned/lathe-ai-agent-integration.md#landscape-update-oct-2026).
-
-### Gap
-
-The MCP spec (2025-03-26 onward) lets a tool declare `annotations`: `readOnlyHint`,
-`destructiveHint`, `idempotentHint`, `openWorldHint`
-([tools spec](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)).
-Lathe registers its tools with none.
-Reports say Claude Code's plan mode allows only MCP tools that declare `readOnlyHint` and runs them in
-parallel, and that Codex auto-approves read-only tools; neither is confirmed against official docs yet.
-
-### Fix direction
-
-Declare `readOnlyHint` on the read tools (diagnostics, definition, references, implementations, call
-hierarchy, describe, search, analyze_change, verify_change), `destructiveHint` on `rename_symbol`, and
-neither on `run_test`, which runs code but writes no source.
-Check what the client does with them before claiming any effect in the guide.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-22 — No MCP tool formats a file, so agent edits fail the project's formatting check
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Spotless runs on `verify`, and an agent's edits rarely match google-java-format, so the build fails
-after a correct change.
-Lathe already runs the project's own pinned formatter in-process for the editor, but MCP has no tool
-for it.
-IntelliJ's MCP server has `reformat_file`
-([IntelliJ MCP server](https://www.jetbrains.com/help/idea/mcp-server.html)).
-
-### Fix direction
-
-A `format_file` tool (and maybe a `files` list) applying the editor's format path to disk, with the
-same write discipline as `rename_symbol` (reactor files only, compiled into the mirror before it
-returns).
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-23 — MCP cannot apply the fixes Lathe already computes (missing imports above all)
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Missing imports are the most common error an agent makes in Java.
-The LSP side computes the fixes (single-name import quick fix, whole-file `lathe.missingImports`
-([CA-7](#ca-7--pasting-code-with-unresolved-types-requires-per-symbol-quick-fixes-no-whole-file-add-missing-imports)),
-add-throws), but MCP only reports the errors, so the agent guesses the import.
-gopls's `go_diagnostics` returns the fixes with the diagnostics and tells the agent to apply them and
-re-check ([gopls MCP instructions](https://github.com/golang/tools/blob/master/gopls/internal/mcp/instructions.md)).
-
-### Fix direction
-
-A `fix_imports` tool applying the unambiguous imports and listing the ambiguous names with their
-candidates; then consider listing other available fixes beside `get_diagnostics` results.
-Reuse `ImportCandidates`; write like `rename_symbol`.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-24 — No file outline tool: an agent reads a whole file to learn its structure
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-Claude Code's LSP tool (`documentSymbol`), Serena (`get_symbols_overview`,
-[Serena tools](https://oraios.github.io/serena/01-about/035_tools.html)) and Java MCP servers such as
-LSP4J-MCP (`document_symbols`) give an agent a file's members in a few hundred tokens.
-Lathe answers `textDocument/documentSymbol` in the LSP but has no MCP tool for it.
-
-### Fix direction
-
-An `outline` tool over the existing document-symbol scanner: one line per member, nested by type,
-with its `path:line` and signature, in the grep-style form of the other answers.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on
-
-**Status: accepted — Target: next**
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-gopls tells agents to call `go_workspace` first; IntelliJ's MCP server has `get_project_modules` and
-`get_project_dependencies`.
-Lathe holds the same facts in `.lathe/` — modules, source roots, inter-module dependencies, release
-level, which modules have a captured test launch, the sync command — but an agent has to guess them
-from POMs.
-
-### Fix direction
-
-A `workspace_summary` tool returning those facts compactly, from the manifest and the module registry;
-the server's routing instructions suggest calling it first.
-
-### Regression targets
-
-None yet.
-
----
 
 ## MC-26 — `search_symbols` finds types only, not methods or fields
 

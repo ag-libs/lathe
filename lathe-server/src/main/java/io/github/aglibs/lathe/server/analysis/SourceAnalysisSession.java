@@ -161,10 +161,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final Position pos,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames) {
+      final List<String> moduleNames,
+      final LearnedStaticImports staticImports) {
     final var t = Stopwatch.start();
     final var request =
-        new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex, moduleNames);
+        new CompletionRequest(
+            uri, content, pos, context, cache.get(uri), typeIndex, moduleNames, staticImports);
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(uri, new CachedFileAnalysis(content, version, outcome.freshAnalysis()));
@@ -200,7 +202,15 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final CachedFileAnalysis prior =
         analysis != null ? new CachedFileAnalysis(baseline, -1, analysis) : null;
     final var request =
-        new CompletionRequest(uri, content, pos, context, prior, typeIndex, moduleNames);
+        new CompletionRequest(
+            uri,
+            content,
+            pos,
+            context,
+            prior,
+            typeIndex,
+            moduleNames,
+            LearnedStaticImports.empty());
     final var outcome = completionEngine.complete(request);
     LOG.fine(
         () ->
@@ -1014,7 +1024,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final int version,
       final Range range,
       final List<CodeActionRequest> requests,
-      final WorkspaceTypeIndex typeIndex) {
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
     final var t = Stopwatch.start();
     LOG.fine(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
 
@@ -1043,7 +1054,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
                         addThrowsProvider.provide(request, analysis, typeIndex).stream(),
                         tryCatchProvider.provide(request, analysis, typeIndex).stream())
                     .toList();
-            case VARIABLE_REF -> declareProvider.provide(request, analysis, typeIndex);
+            case VARIABLE_REF ->
+                Stream.concat(
+                        ImportQuickFixProvider.staticImportActions(request, analysis, staticImports)
+                            .stream(),
+                        declareProvider.provide(request, analysis, typeIndex).stream())
+                    .toList();
             case MISSING_METHOD_IMPL -> missingImplProvider.provide(request, analysis, typeIndex);
           };
 
@@ -1073,7 +1089,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String uri,
       final String content,
       final int version,
-      final WorkspaceTypeIndex typeIndex) {
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
     final var t = Stopwatch.start();
     // Compile first: it yields the unresolved-type diagnostics and refreshes the analysis cache, so
     // the subsequent ensureAttributedAnalysis is a cache hit (no second compile).
@@ -1090,8 +1107,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final Set<String> alreadyImported = importAnalyzer.importedQualifiedNames();
-    final List<MissingImportsResult.MissingImport> items =
-        unresolvedTypeNames(diags).entrySet().stream()
+    final Stream<MissingImportsResult.MissingImport> types =
+        unresolvedNames(diags, DiagnosticPayload.Kind.TYPE_REF).entrySet().stream()
             .map(
                 unresolved ->
                     new MissingImportsResult.MissingImport(
@@ -1101,8 +1118,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
                             unresolved.getValue(),
                             analysis,
                             typeIndex,
-                            alreadyImported)))
-            .toList();
+                            alreadyImported)));
+    // Only members something can import are listed: any other unresolved name is a typo, not an
+    // import to add.
+    final Stream<MissingImportsResult.MissingImport> members =
+        unresolvedNames(diags, DiagnosticPayload.Kind.VARIABLE_REF).keySet().stream()
+            .map(
+                name ->
+                    new MissingImportsResult.MissingImport(
+                        name,
+                        StaticImportCandidates.importSpellings(staticImports, analysis, name)))
+            .filter(member -> !member.candidates().isEmpty());
+    final List<MissingImportsResult.MissingImport> items = Stream.concat(types, members).toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
     return new MissingImportsResult(insertionRange, items);
@@ -1110,12 +1137,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   // Distinct unresolved type names in encounter order, each mapped to the first diagnostic position
   // that reported it (used to compute the accessibility scope for candidate resolution).
-  private static Map<String, Position> unresolvedTypeNames(final List<Diagnostic> diags) {
+  private static Map<String, Position> unresolvedNames(
+      final List<Diagnostic> diags, final DiagnosticPayload.Kind kind) {
     return diags.stream()
-        .filter(
-            d ->
-                d.getData() instanceof DiagnosticPayload p
-                    && p.kind() == DiagnosticPayload.Kind.TYPE_REF)
+        .filter(d -> d.getData() instanceof DiagnosticPayload p && p.kind() == kind)
         .collect(
             Collectors.toMap(
                 d -> ((DiagnosticPayload) d.getData()).name(),

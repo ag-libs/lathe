@@ -221,15 +221,17 @@ The sources are the tools' docs, changelogs and blog posts; claims about client 
 Claude Code or Codex act on) come from issues and posts and are not yet confirmed against official
 docs.
 
-**Registered as gaps** (see [gaps.md](../gaps/gaps.md)):
+**Registered as gaps** (see [gaps.md](../gaps/gaps.md)).
+MC-21 to MC-25 shipped on 2026-10-24 ([Agent Tools](../done/lathe-agent-tools.md); now in
+[the gap archive](../gaps/gaps-archive.md#mcp--agent-facade-resolved)); the rest are open.
 
 | Gap | What | Who has it |
 |---|---|---|
-| MC-21 | Tool annotations (`readOnlyHint`, `destructiveHint`) | MCP spec 2025-03-26+; reportedly honoured by Claude Code plan mode and Codex |
-| MC-22 | `format_file` | IntelliJ MCP `reformat_file` |
-| MC-23 | Apply fixes, `fix_imports` first | gopls `go_diagnostics`; javalens `suggest_imports` |
-| MC-24 | File outline | Claude Code LSP `documentSymbol`, Serena `get_symbols_overview`, LSP4J-MCP |
-| MC-25 | Workspace summary | gopls `go_workspace`; IntelliJ `get_project_modules` / `get_project_dependencies` |
+| MC-21 (done) | Tool annotations (`readOnlyHint`, `destructiveHint`) | MCP spec 2025-03-26+; reportedly honoured by Claude Code plan mode and Codex |
+| MC-22 (done) | `format_file` | IntelliJ MCP `reformat_file` |
+| MC-23 (done) | Apply fixes, `fix_imports` first | gopls `go_diagnostics`; javalens `suggest_imports` |
+| MC-24 (done) | File outline | Claude Code LSP `documentSymbol`, Serena `get_symbols_overview`, LSP4J-MCP |
+| MC-25 (done) | Workspace summary | gopls `go_workspace`; IntelliJ `get_project_modules` / `get_project_dependencies` |
 | MC-26 | Search methods and fields | IntelliJ `search_symbol`, gopls `go_search` |
 | MC-27 | A type's API by name (with its supertypes) | gopls `go_package_api`, Serena `find_symbol(depth=1)` |
 | MC-28 | Rename lists the text it left unchanged | (a study of agent renames) |

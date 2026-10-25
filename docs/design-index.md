@@ -63,6 +63,9 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 
 - [Declaration Name Completion](done/lathe-declaration-name-completion.md) — names in variable/field/parameter/
   catch declaration slots (shipped; type parameters and constants are documented non-goals).
+- [Static Imports](done/lathe-static-imports.md) — completion, quick fix and "add missing imports"
+  for static members, learned per scope (test, main) from the static imports the project already
+  declares (shipped).
 - [Snippet (Template) Completion](planned/lathe-snippet-completion.md) — a minimal jdtls-style template set
   (`psvm`, `sout`, `ctor`) delivered as context-gated snippet completion items (proposed).
 - [Method-Reference Completion](done/lathe-method-reference-completion.md) — completion after `::`
@@ -177,6 +180,9 @@ reused):
   project's own pinned Spotless formatter (google-java-format, palantir, Eclipse JDT) in-process from an
   isolated classloader, with its configured options and range formatting; no automatic Maven
   delegation, no bundled google-java-format.
+- [Declared Formatters](planned/lathe-declared-formatters.md) — **proposed**, after the Gradle plugin.
+  A formatter declared in a committed `lathe-style.json` (engine, version, options), its jars resolved by
+  every front-end's sync: pinned formatters for Gradle, Maven without Spotless, and personal setups.
 
 **VS Code:** a supported integration; depends on the full semantic-token coverage above.
 
@@ -190,7 +196,7 @@ reused):
   baseline; parity maps the custom `lathe.*` commands onto VS Code APIs (Test Explorer, DebugAdapter,
   TreeView, CodeLens). Starts the workspace's own `.lathe/` launcher; monorepo source of truth; working-tree E2E via
   `@vscode/test-electron` beside the Neovim specs.
-- [Run and Test in VS Code](planned/lathe-vscode-run-test.md) — **approved, spikes done.** Test
+- [Run and Test in VS Code](planned/lathe-vscode-run-test.md) — **in progress: Neovim track slices 0–2 merged, 3 built.** Test
   Explorer (a lazy module tree from JUnit's own discovery on the captured bytecode, open files from
   attributed analysis; run at every level, live results with diffs, stack traces, durations and
   per-test output, container failures, cancel) and `main()` CodeLens, run button and named configs,
@@ -226,7 +232,9 @@ reused):
   the official MCP Java SDK, calling the engine in-process via a `LatheEngine` facade, with its own
   launcher. The tool surface is now feature-complete — `get_diagnostics`, `get_definition`,
   `find_references`, `find_implementations`, `call_hierarchy`, `search_symbols`, `describe_symbol`,
-  `rename_symbol`, `run_test`, `analyze_change`, and `verify_change`, each with per-call usage logging;
+  `rename_symbol`, `run_test`, `analyze_change`, `verify_change`, and (since
+  [Agent Tools](done/lathe-agent-tools.md)) `workspace_summary`, `outline`, `format_file` and
+  `fix_imports`, each with per-call usage logging;
   remaining work is the scaled measurement run, streaming/cancel, and the Claude Code LSP plugin.
 - [Change Impact & Verification](done/lathe-change-impact-and-verification.md) — **shipped
   (2026-09-26).** Two paired agent
@@ -235,6 +243,10 @@ reused):
   drives the in-process write pass — Tier 1, since 2026-10-11 the
   [One Write Pass](done/lathe-recompile-simplification.md) — plus a scoped `.lathe/lathe-sync.sh` handoff
   for the cross-module remainder — Tier 3).
+- [Agent Tools](done/lathe-agent-tools.md) — **shipped (2026-10-24).** What other code-intelligence
+  servers give an agent and Lathe did not: tool annotations (read-only vs writing), `format_file`
+  (the project's pinned formatter), `fix_imports` (the unambiguous missing imports), `outline` (a
+  file's declarations) and `workspace_summary` (the modules and their dependencies, called first).
 - [MCP Value Benchmark](planned/lathe-mcp-value-benchmark.md) — how to prove (or disprove) that the
   MCP server makes an agent measurably better on a real Maven reactor: adopt the SWE-bench /
   Multi-SWE-bench plumbing and make Lathe the single ablation variable (grep-only baseline vs agent +

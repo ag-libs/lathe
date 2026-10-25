@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
@@ -19,6 +20,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
@@ -30,6 +32,7 @@ import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
@@ -48,6 +51,7 @@ import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DapHost;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -82,6 +86,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -244,6 +249,11 @@ final class WorkspaceSession {
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
+  // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
+  // last one queued: discovery JVMs run one at a time. Both touched on the worker thread only.
+  private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
+  private CompletableFuture<TestDiscovery> lastDiscovery =
+      CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
   private final AtomicBoolean formatFailureReported = new AtomicBoolean();
 
   WorkspaceSession(
@@ -405,7 +415,7 @@ final class WorkspaceSession {
               workspaceRoot,
               manifest.reactorRewrite(),
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               jdwp);
@@ -722,7 +732,7 @@ final class WorkspaceSession {
 
   static List<String> modules(final List<ModuleSourceConfig> configs, final Path workspaceRoot) {
     return configs.stream()
-        .map(config -> moduleRel(workspaceRoot, config))
+        .map(config -> moduleRel(workspaceRoot, config.moduleDir()))
         .distinct()
         .sorted()
         .toList();
@@ -731,7 +741,7 @@ final class WorkspaceSession {
   static List<PackageEntry> packages(
       final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
     return configs.stream()
-        .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+        .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
         .flatMap(WorkspaceSession::packageEntries)
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
@@ -744,6 +754,40 @@ final class WorkspaceSession {
         .flatMap(config -> contextIn(workspaceRoot, config, path).stream())
         .findFirst()
         .orElse(null);
+  }
+
+  // A package or module run executes the classes the build's own test run would (the module's
+  // test-filter.json); a run naming classes or methods runs exactly those.
+  private static List<TestSelection> withTestFilter(
+      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections)
+      throws IOException {
+    return new LaunchReader(workspaceRoot)
+        .testFilter(moduleRel)
+        .map(filter -> withClassNameFilter(selections, filter))
+        .orElse(selections);
+  }
+
+  static List<TestSelection> withClassNameFilter(
+      final List<TestSelection> selections, final TestFilterData filter) {
+    final boolean wide =
+        !selections.isEmpty()
+            && selections.stream()
+                .allMatch(
+                    selection ->
+                        selection.kind() == TestSelectionKind.PACKAGE
+                            || selection.kind() == TestSelectionKind.MODULE);
+    if (!wide) {
+      return selections;
+    }
+
+    return Stream.of(
+            selections.stream(),
+            filter.classNameIncludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_INCLUDE, regex)),
+            filter.classNameExcludes().stream()
+                .map(regex -> new TestSelection(TestSelectionKind.CLASS_NAME_EXCLUDE, regex)))
+        .flatMap(stream -> stream)
+        .toList();
   }
 
   // Test selectors to run for a directory, from the real reactor layout, not the path string.
@@ -761,7 +805,7 @@ final class WorkspaceSession {
       }
 
       final String pkg = packageOf(root.get(), dirPath);
-      final String moduleRel = moduleRel(workspaceRoot, config);
+      final String moduleRel = moduleRel(workspaceRoot, config.moduleDir());
       if (pkg.isEmpty()) {
         return moduleRun(configs, workspaceRoot, moduleRel);
       }
@@ -776,7 +820,8 @@ final class WorkspaceSession {
     final List<ModuleSourceConfig> enclosed =
         testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
     if (enclosed.size() == 1) {
-      return moduleRun(configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0)));
+      return moduleRun(
+          configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0).moduleDir()));
     }
 
     return new DirRun("", List.of());
@@ -790,6 +835,151 @@ final class WorkspaceSession {
     return configs.stream()
         .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
         .toList();
+  }
+
+  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
+
+    CachedDiscovery {
+      ValidCheck.check().notNull(result, "result").validate();
+    }
+  }
+
+  // A module's discovery on disk with the test-classes stamp it was found for, so a new session
+  // reuses it instead of launching a JVM per module again.
+  private record PersistedDiscovery(long stampMillis, TestDiscovery discovery) {
+
+    PersistedDiscovery {
+      ValidCheck.check().notNull(discovery, "discovery").validate();
+    }
+  }
+
+  List<String> testModules() {
+    return testConfigs(workspace.allConfigs()).stream()
+        .map(this::moduleRel)
+        .distinct()
+        .sorted()
+        .toList();
+  }
+
+  // The tests a run of the module would execute, found by a discover-mode launch that runs none of
+  // them. Answered from the cache until the module's test classes change (sync and save compiles
+  // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
+  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
+    final FileTime stamp = testClassesStamp(moduleRel);
+    final CachedDiscovery cached = discoveries.get(moduleRel);
+    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
+      return cached.result();
+    }
+
+    final Path persisted = moduleLatheDir(moduleRel).resolve(LatheLayout.TEST_DISCOVERY_FILE);
+    final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
+    if (stored.isPresent()) {
+      final var result = CompletableFuture.completedFuture(stored.get());
+      discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+      return result;
+    }
+
+    final CompletableFuture<TestDiscovery> result =
+        lastDiscovery
+            .handle((previous, error) -> moduleRel)
+            .thenComposeAsync(this::launchDiscovery, worker::execute)
+            .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
+    lastDiscovery = result;
+    discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
+    return result;
+  }
+
+  private CompletableFuture<TestDiscovery> launchDiscovery(final String moduleRel) {
+    final List<TestSelection> selections =
+        moduleRun(workspace.allConfigs(), workspaceRoot, moduleRel).selections().stream()
+            .map(
+                selector ->
+                    new TestSelection(
+                        TestSelectionKind.valueOf(selector.selectorKind()),
+                        selector.selectorValue()))
+            .toList();
+    if (selections.isEmpty()) {
+      return CompletableFuture.completedFuture(new TestDiscovery(moduleRel, List.of(), List.of()));
+    }
+
+    final RunItem overlay =
+        baselineOverlay(moduleRel, RunKind.TEST)
+            .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
+    return startTestRun(moduleRel, selections, "", overlay)
+        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), worker::execute);
+  }
+
+  private TestDiscovery discovery(final String moduleRel, final LaunchOutcome outcome) {
+    final Map<String, String> paths =
+        testSources(moduleRel, outcome.testResults().stream().map(TestResult::className).toList())
+            .stream()
+            .collect(Collectors.toMap(TestSource::className, TestSource::path));
+    return new TestDiscovery(
+        moduleRel, outcome.blockedReasons(), discoveredTests(outcome.testResults(), paths));
+  }
+
+  // One entry per position id: a @Nested class inherited by two outer classes is two JUnit tests
+  // but one position. `paths` maps a class name to its source file, as testSources resolves it.
+  static List<DiscoveredTest> discoveredTests(
+      final List<TestResult> results, final Map<String, String> paths) {
+    return results.stream()
+        .collect(
+            Collectors.toMap(
+                TestResult::positionId,
+                result ->
+                    new DiscoveredTest(
+                        result.positionId(),
+                        result.methodName(),
+                        sourceUri(paths.getOrDefault(result.className(), ""))),
+                (first, again) -> first,
+                LinkedHashMap::new))
+        .values()
+        .stream()
+        .toList();
+  }
+
+  private Path moduleLatheDir(final String moduleRel) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+  }
+
+  // The stored discovery, when it was found for the module's current test classes.
+  static Optional<TestDiscovery> readDiscovery(final Path file, final FileTime stamp) {
+    if (stamp == null || !Files.exists(file)) {
+      return Optional.empty();
+    }
+
+    final PersistedDiscovery persisted =
+        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
+    return persisted.stampMillis() == stamp.toMillis()
+        ? Optional.of(persisted.discovery())
+        : Optional.empty();
+  }
+
+  // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
+  static TestDiscovery writeDiscovery(
+      final Path file, final FileTime stamp, final TestDiscovery discovery) {
+    if (stamp != null && discovery.blockedReasons().isEmpty()) {
+      IOUtil.unchecked(
+          () ->
+              FileUtil.writeIfChanged(
+                  file.getParent(),
+                  file,
+                  Json.toJson(new PersistedDiscovery(stamp.toMillis(), discovery)),
+                  false));
+    }
+
+    return discovery;
+  }
+
+  private static String sourceUri(final String path) {
+    return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
+  }
+
+  private FileTime testClassesStamp(final String moduleRel) {
+    final Path stamps =
+        moduleLatheDir(moduleRel)
+            .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
+    return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
   List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
@@ -892,7 +1082,7 @@ final class WorkspaceSession {
       final List<String> classNames) {
     final List<Path> roots =
         testConfigs(configs).stream()
-            .filter(config -> moduleRel(workspaceRoot, config).equals(moduleRel))
+            .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
             .flatMap(config -> config.sourceRoots().stream())
             .toList();
     return classNames.stream()
@@ -964,7 +1154,7 @@ final class WorkspaceSession {
         .map(
             root ->
                 new ContextInfo(
-                    moduleRel(workspaceRoot, config),
+                    moduleRel(workspaceRoot, config.moduleDir()),
                     scopeWire(config),
                     packageOf(root, path.getParent())));
   }
@@ -1174,7 +1364,7 @@ final class WorkspaceSession {
               workspaceRoot,
               reactorRewrite,
               runnerClasspath,
-              selections,
+              withTestFilter(workspaceRoot, moduleRel, selections),
               resultsSink,
               overlay,
               JdwpOptions.NONE);
@@ -1408,7 +1598,7 @@ final class WorkspaceSession {
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
-    return moduleRel(workspaceRoot, config);
+    return moduleRel(workspaceRoot, config.moduleDir());
   }
 
   // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
@@ -1424,13 +1614,13 @@ final class WorkspaceSession {
         .map(rel -> rel.isEmpty() ? "." : rel);
   }
 
-  private static String moduleRel(final Path workspaceRoot, final ModuleSourceConfig config) {
-    return FileUtil.slashed(
-        workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(config.moduleDir()));
+  // A module's .lathe directory as the reactor-relative module path the tools and the sync use.
+  private static String moduleRel(final Path workspaceRoot, final Path moduleDir) {
+    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
   private String moduleRelForDir(final Path moduleDir) {
-    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
+    return moduleRel(workspaceRoot, moduleDir);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -2812,6 +3002,7 @@ final class WorkspaceSession {
       final String uri, final Position pos, final CompletionContext context) {
     final var indexSnapshot = typeIndex;
     final var route = routeCompiler(uri);
+    final LearnedStaticImports staticImports = learnedStaticImports(route);
     return openDocFeature(
         uri,
         CompletionOutcome.of(List.of()),
@@ -2824,7 +3015,8 @@ final class WorkspaceSession {
                     pos,
                     context,
                     indexSnapshot,
-                    completionModuleNames(route, uri))
+                    completionModuleNames(route, uri),
+                    staticImports)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -2856,6 +3048,7 @@ final class WorkspaceSession {
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
@@ -2865,7 +3058,13 @@ final class WorkspaceSession {
                     openEntries -> {
                       final var enriched = buildEnrichedIndex(baseIndex, openEntries);
                       return moduleWorker.codeAction(
-                          uri, openFile.content(), openFile.version(), range, requests, enriched);
+                          uri,
+                          openFile.content(),
+                          openFile.version(),
+                          range,
+                          requests,
+                          enriched,
+                          staticImports);
                     })
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
@@ -2879,11 +3078,13 @@ final class WorkspaceSession {
     }
 
     final var indexSnapshot = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .missingImports(uri, openFile.content(), openFile.version(), indexSnapshot)
+                .missingImports(
+                    uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -2969,18 +3170,31 @@ final class WorkspaceSession {
     return formatDocument(uri, content -> JavaFormatter.formatRanges(engine, content, ranges));
   }
 
+  // For the agent, which must tell a failure from an already formatted file: a refusal that
+  // carries the formatter's reason.
+  List<TextEdit> formatOrRefuse(final String uri, final FormatEngine engine) {
+    try {
+      return formatted(uri, content -> JavaFormatter.format(engine, content, LatheUri.toPath(uri)));
+    } catch (final Exception e) {
+      if (e instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
+      }
+
+      throw new ResponseErrorException(
+          new ResponseError(
+              ResponseErrorCode.RequestFailed,
+              "Could not format %s: %s"
+                  .formatted(
+                      LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()),
+              null));
+    }
+  }
+
   // Formats the open document's text, reporting the outcome once and swallowing failures.
   private List<? extends TextEdit> formatDocument(final String uri, final DocumentFormat format) {
     final var t = Stopwatch.start();
-    final OpenDocument openFile = docs.get(uri);
-    final String content = openFile != null ? openFile.content() : null;
     try {
-      final List<TextEdit> result = format.apply(content);
-      LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
-      if (!result.isEmpty() && renameTransaction.isMember(uri)) {
-        renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
-      }
-
+      final List<TextEdit> result = formatted(uri, format);
       // Formatting is a synchronous request (format-on-save blocks the editor), so a progress
       // spinner would only paint after the edit; report the outcome once it is done instead. Stay
       // quiet when nothing changed, so saving an already-formatted file does not nag.
@@ -3009,6 +3223,19 @@ final class WorkspaceSession {
 
       return List.of();
     }
+  }
+
+  private List<TextEdit> formatted(final String uri, final DocumentFormat format) throws Exception {
+    final var t = Stopwatch.start();
+    final OpenDocument openFile = docs.get(uri);
+    final String content = openFile != null ? openFile.content() : null;
+    final List<TextEdit> result = format.apply(content);
+    LOG.info(() -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
+    if (!result.isEmpty() && renameTransaction.isMember(uri)) {
+      renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
+    }
+
+    return result;
   }
 
   @FunctionalInterface
@@ -3648,6 +3875,35 @@ final class WorkspaceSession {
   int reactorModuleCount() {
     return (int)
         workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+  }
+
+  List<LatheModuleSummary> moduleSummaries() {
+    return moduleSummaries(workspace.allConfigs(), workspaceRoot, moduleGraph);
+  }
+
+  static List<LatheModuleSummary> moduleSummaries(
+      final List<ModuleSourceConfig> configs,
+      final Path workspaceRoot,
+      final WorkspaceModuleGraph graph) {
+    final var launches = new LaunchReader(workspaceRoot);
+    return configs.stream()
+        .collect(Collectors.groupingBy(ModuleSourceConfig::moduleDir))
+        .entrySet()
+        .stream()
+        .map(
+            module -> {
+              final String rel = moduleRel(workspaceRoot, module.getKey());
+              return new LatheModuleSummary(
+                  rel,
+                  graph.upstreamModuleDirs(module.getKey()).stream()
+                      .map(dir -> moduleRel(workspaceRoot, dir))
+                      .sorted()
+                      .toList(),
+                  module.getValue().stream().anyMatch(ModuleSourceConfig::isTestTree),
+                  launches.testCaptured(rel));
+            })
+        .sorted(Comparator.comparing(LatheModuleSummary::module))
+        .toList();
   }
 
   List<String> downstreamModuleRels(final List<Path> changed) {
@@ -4523,6 +4779,14 @@ final class WorkspaceSession {
                   uri,
                   "This file is not under any Lathe module source root, so Lathe cannot analyze it.");
             });
+  }
+
+  // The static imports the file's own scope declares: test files learn from test files, main files
+  // from main files, and a file outside any module from nothing.
+  private LearnedStaticImports learnedStaticImports(final CompilerRoute route) {
+    return route instanceof final CompilerRoute.Module module
+        ? candidateIndex.staticImports(module.config().isTestTree())
+        : LearnedStaticImports.empty();
   }
 
   private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {

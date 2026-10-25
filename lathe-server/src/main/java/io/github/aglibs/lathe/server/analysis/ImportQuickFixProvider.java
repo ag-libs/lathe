@@ -3,11 +3,11 @@ package io.github.aglibs.lathe.server.analysis;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -18,23 +18,45 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
+    return importActions(
+        request,
+        analysis,
+        alreadyImported ->
+            ImportCandidates.resolve(
+                request.payload().name(),
+                request.diag().getRange().getStart(),
+                analysis,
+                typeIndex,
+                alreadyImported));
+  }
+
+  // An unresolved member the file's scope statically imports elsewhere: one action per owner.
+  static List<Either<Command, CodeAction>> staticImportActions(
+      final CodeActionRequest request,
+      final AttributedFileAnalysis analysis,
+      final LearnedStaticImports learned) {
+    return importActions(
+        request,
+        analysis,
+        alreadyImported ->
+            StaticImportCandidates.importSpellings(learned, analysis, request.payload().name()));
+  }
+
+  private static List<Either<Command, CodeAction>> importActions(
+      final CodeActionRequest request,
+      final AttributedFileAnalysis analysis,
+      final Function<Set<String>, List<String>> spellings) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
     final var insertionRange = importAnalyzer.insertionRange();
     if (insertionRange == null) {
       return List.of();
     }
 
-    final Set<String> alreadyImported = importAnalyzer.importedQualifiedNames();
-    return ImportCandidates.resolve(
-            request.payload().name(),
-            request.diag().getRange().getStart(),
-            analysis,
-            typeIndex,
-            alreadyImported)
-        .stream()
+    return spellings.apply(importAnalyzer.importedQualifiedNames()).stream()
         .map(
-            fqName ->
-                Either.<Command, CodeAction>forRight(importAction(request, fqName, insertionRange)))
+            spelling ->
+                Either.<Command, CodeAction>forRight(
+                    importAction(request, spelling, insertionRange)))
         .toList();
   }
 
@@ -49,7 +71,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
     edit.setChanges(
         Map.of(
             request.uri(),
-            List.of(new TextEdit(insertionRange, "import %s;\n".formatted(fqName)))));
+            List.of(MissingImportsResult.importEdit(insertionRange, List.of(fqName)))));
     action.setEdit(edit);
     return action;
   }

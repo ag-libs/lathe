@@ -1,10 +1,18 @@
 package io.github.aglibs.lathe.runner;
 
+import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
+import org.junit.platform.engine.Filter;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
 import org.junit.platform.launcher.TestExecutionListener;
+import org.junit.platform.launcher.TestIdentifier;
+import org.junit.platform.launcher.TestPlan;
 import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
 import org.junit.platform.launcher.core.LauncherFactory;
 import org.junit.platform.launcher.listeners.SummaryGeneratingListener;
@@ -23,6 +31,9 @@ public final class LatheTestRunner {
    * lathe-core} (which would drag gson onto that classpath). A drift-guard test pins the two equal.
    */
   static final String RESULTS_SINK = "lathe.results.sink";
+
+  /** Discover-mode system property, mirroring {@code LatheFlags.DISCOVER} by value. */
+  static final String DISCOVER = "lathe.discover";
 
   private LatheTestRunner() {}
 
@@ -43,12 +54,38 @@ public final class LatheTestRunner {
       return EXIT_USAGE;
     }
 
+    if (Boolean.getBoolean(DISCOVER)) {
+      return discover(request, Path.of(System.getProperty(RESULTS_SINK)), err);
+    }
+
     final var summary = new SummaryGeneratingListener();
     final var launcher = LauncherFactory.create();
-    launcher.execute(request, listeners(summary, err));
+    launcher.execute(request, listeners(summary, out, err));
     final TestExecutionSummary result = summary.getSummary();
     printFailures(result, out);
     return result.getTotalFailureCount() == 0 ? EXIT_OK : EXIT_FAILURE;
+  }
+
+  // Lists the tests a run of this request would execute, one record each into the results sink,
+  // without running any of them.
+  private static int discover(
+      final LauncherDiscoveryRequest request, final Path sink, final PrintStream err) {
+    final TestPlan plan = LauncherFactory.create().discover(request);
+    final var lines = new ArrayList<String>();
+    final var pending = new ArrayDeque<TestIdentifier>(plan.getRoots());
+    while (!pending.isEmpty()) {
+      final TestIdentifier id = pending.poll();
+      ResultsListener.discovered(id).map(ResultsListener::toJson).ifPresent(lines::add);
+      pending.addAll(plan.getChildren(id));
+    }
+
+    try {
+      Files.write(sink, lines, StandardCharsets.UTF_8);
+      return EXIT_OK;
+    } catch (final IOException e) {
+      err.printf("[discover] sink %s write failed: %s%n", sink, e.getMessage());
+      return EXIT_FAILURE;
+    }
   }
 
   /**
@@ -77,18 +114,20 @@ public final class LatheTestRunner {
   }
 
   private static TestExecutionListener[] listeners(
-      final SummaryGeneratingListener summary, final PrintStream err) {
+      final SummaryGeneratingListener summary, final PrintStream out, final PrintStream err) {
     final String sink = System.getProperty(RESULTS_SINK);
     if (sink == null) {
       return new TestExecutionListener[] {summary};
     }
 
-    return new TestExecutionListener[] {summary, new ResultsListener(Path.of(sink), err)};
+    return new TestExecutionListener[] {summary, new ResultsListener(Path.of(sink), out, err)};
   }
 
   private static LauncherDiscoveryRequest discoveryRequest(final String[] args) {
-    final var builder = LauncherDiscoveryRequestBuilder.request();
-    builder.selectors(TestSelectorParser.parse(args));
-    return builder.build();
+    final TestSelectorParser.Request request = TestSelectorParser.parse(args);
+    return LauncherDiscoveryRequestBuilder.request()
+        .selectors(request.selectors())
+        .filters(request.filters().toArray(Filter<?>[]::new))
+        .build();
   }
 }

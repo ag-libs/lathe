@@ -147,6 +147,8 @@ public final class JavacDiagnosticMapper {
             : DiagnosticPayload.Kind.VARIABLE_REF;
       }
       case METHOD,
+          ANNOTATION,
+          TYPE_ANNOTATION,
           CLASS,
           INTERFACE,
           ENUM,

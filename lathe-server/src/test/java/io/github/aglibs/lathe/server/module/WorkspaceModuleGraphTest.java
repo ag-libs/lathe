@@ -91,6 +91,21 @@ class WorkspaceModuleGraphTest {
   }
 
   @Test
+  void upstreamModuleDirs_chain_theModulesOnItsClasspath() {
+    final var apiMain = config("api", "classes", List.of());
+    final var serviceMain = config("service", "classes", List.of(reactorTarget("api")));
+    final var appMain =
+        config("app", "classes", List.of(reactorTarget("service"), reactorTarget("api")));
+    final var graph = WorkspaceModuleGraph.build(List.of(apiMain, serviceMain, appMain));
+
+    assertThat(graph.upstreamModuleDirs(LATHE_DIR.resolve("service")))
+        .containsExactly(LATHE_DIR.resolve("api"));
+    assertThat(graph.upstreamModuleDirs(LATHE_DIR.resolve("app")))
+        .containsExactlyInAnyOrder(LATHE_DIR.resolve("service"), LATHE_DIR.resolve("api"));
+    assertThat(graph.upstreamModuleDirs(LATHE_DIR.resolve("api"))).isEmpty();
+  }
+
+  @Test
   void referenceSearchScope_upstream_notIncluded() {
     final var coreMain = config("core", "classes", List.of());
     final var appMain = config("app", "classes", List.of(reactorTarget("core")));

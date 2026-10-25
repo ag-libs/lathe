@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
 import java.lang.ProcessBuilder.Redirect;
@@ -40,8 +41,8 @@ public final class TestProcess {
   // own name into it. write text file: writes text into the file. cwd: prints the working
   // directory. exit code: exits with that code, printing nothing. sleep: never finishes in time.
   // echo out:text err:text ...: prints each text on a line of the stream it names. read: prints
-  // what
-  // reading stdin returns. spawn: starts a sleeping child, prints its pid, then sleeps.
+  // what reading stdin returns. spawn: starts a sleeping child, prints its pid, then sleeps.
+  // marked: prints output around the test runner's markers (one test, a gap, two at once).
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);
@@ -53,6 +54,7 @@ public final class TestProcess {
       case "echo" -> echo(args);
       case "read" -> System.out.println(System.in.read());
       case "spawn" -> spawn();
+      case "marked" -> marked();
       default -> throw new IllegalArgumentException(args[0]);
     }
   }
@@ -69,6 +71,20 @@ public final class TestProcess {
             .start();
     System.out.println(child.pid());
     Thread.sleep(5_000);
+  }
+
+  private static void marked() {
+    final String a = "pkg.T\ta\t";
+    final String b = "pkg.T\tb\tint";
+    System.out.println(LatheFlags.TEST_STARTED_MARKER + a);
+    System.out.println("in a");
+    System.out.println(LatheFlags.TEST_FINISHED_MARKER + a);
+    System.out.println("between");
+    System.out.println(LatheFlags.TEST_STARTED_MARKER + a);
+    System.out.println(LatheFlags.TEST_STARTED_MARKER + b);
+    System.out.println("in both");
+    System.out.println(LatheFlags.TEST_FINISHED_MARKER + b);
+    System.out.println(LatheFlags.TEST_FINISHED_MARKER + a);
   }
 
   private static void echo(final String[] args) {

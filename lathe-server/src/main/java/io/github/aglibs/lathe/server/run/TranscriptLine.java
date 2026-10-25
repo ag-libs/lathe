@@ -10,8 +10,12 @@ import io.github.aglibs.validcheck.ValidCheck;
  * <p>{@code COMMAND} is not process output: it carries the replay launch command, emitted once
  * before the process starts so the client can show what ran the tests. It is appended to the enum
  * so the {@code STDOUT}/{@code STDERR} ordinals the client relies on stay stable.
+ *
+ * <p>{@code positionId} is the test that was running when the line arrived, or null for a line
+ * outside any single test (setup, teardown, several tests at once). On stdout it is exact; on
+ * stderr best-effort, like the ordering.
  */
-public record TranscriptLine(Stream stream, String text) {
+public record TranscriptLine(Stream stream, String text, String positionId) {
 
   public enum Stream {
     STDOUT,
@@ -21,5 +25,9 @@ public record TranscriptLine(Stream stream, String text) {
 
   public TranscriptLine {
     ValidCheck.check().notNull(stream, "stream").notNull(text, "text").validate();
+  }
+
+  public TranscriptLine(final Stream stream, final String text) {
+    this(stream, text, null);
   }
 }

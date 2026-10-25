@@ -2,10 +2,15 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
+import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
+import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
@@ -63,7 +68,11 @@ class LatheMcpToolsTest {
             "search_symbols",
             "find_implementations",
             "analyze_change",
-            "verify_change");
+            "verify_change",
+            "format_file",
+            "fix_imports",
+            "outline",
+            "workspace_summary");
 
     assertThat(tool("get_diagnostics").tool().inputSchema().toString()).contains("file");
     assertThat(tool("get_definition").tool().inputSchema().toString())
@@ -84,6 +93,37 @@ class LatheMcpToolsTest {
     assertThat(tool("verify_change").tool().inputSchema().toString()).contains("files");
     assertThat(tool("analyze_change").tool().inputSchema().toString())
         .contains("file", "line", "column");
+    assertThat(tool("format_file").tool().inputSchema().toString()).contains("file");
+    assertThat(tool("fix_imports").tool().inputSchema().toString()).contains("file");
+    assertThat(tool("outline").tool().inputSchema().toString()).contains("file");
+  }
+
+  @Test
+  void all_everyTool_declaresWhetherItWrites() {
+    assertThat(specs)
+        .filteredOn(spec -> Boolean.TRUE.equals(spec.tool().annotations().readOnlyHint()))
+        .map(spec -> spec.tool().name())
+        .containsExactlyInAnyOrder(
+            "get_diagnostics",
+            "get_definition",
+            "find_references",
+            "call_hierarchy",
+            "describe_symbol",
+            "search_symbols",
+            "find_implementations",
+            "analyze_change",
+            "verify_change",
+            "outline",
+            "workspace_summary");
+    assertThat(tool("rename_symbol").tool().annotations().destructiveHint()).isTrue();
+    assertThat(tool("run_test").tool().annotations().destructiveHint()).isFalse();
+    assertThat(List.of("format_file", "fix_imports"))
+        .map(name -> tool(name).tool().annotations())
+        .allSatisfy(
+            hints -> {
+              assertThat(hints.destructiveHint()).isFalse();
+              assertThat(hints.idempotentHint()).isTrue();
+            });
   }
 
   @Test
@@ -185,6 +225,25 @@ class LatheMcpToolsTest {
         .allSatisfy(result -> assertThat(result.isError()).isTrue());
     assertThat(text(describe(missing, 1, 1))).isEqualTo("%s does not exist".formatted(missing));
     assertThat(call("run_test", Map.of("file", pom.toString())).isError()).isTrue();
+    assertThat(text(call("format_file", Map.of("file", missing.toString()))))
+        .isEqualTo("%s does not exist".formatted(missing));
+    assertThat(text(call("format_file", Map.of())))
+        .isEqualTo("format_file requires a 'file' argument");
+    assertThat(call("fix_imports", Map.of("file", pom.toString())).isError()).isTrue();
+    assertThat(call("outline", Map.of("file", missing.toString())).isError()).isTrue();
+  }
+
+  // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
+  // remedy.
+  @Test
+  void formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final CallToolResult result = call("format_file", Map.of("file", file.toString()));
+
+    assertThat(result.isError()).isTrue();
+    assertThat(text(result))
+        .contains("No formatter for this workspace", LatheLayout.SYNC_SCRIPT_COMMAND);
   }
 
   // No module compiles it, so nothing was checked; the note says whether a sync would help.
@@ -284,9 +343,104 @@ class LatheMcpToolsTest {
   }
 
   @Test
+  void workspaceSummary_emptyWorkspace_answersNoModulesNotAnError() {
+    final CallToolResult result = call("workspace_summary", Map.of());
+
+    assertThat(result.isError()).isNotEqualTo(true);
+    assertThat(text(result)).startsWith("0 module(s)");
+  }
+
+  @Test
+  void modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut() {
+    final List<String> upstream =
+        IntStream.rangeClosed(1, 12).mapToObj("lib%02d"::formatted).toList();
+
+    final String text =
+        text(
+            LatheMcpTools.modulesResult(
+                List.of(
+                    new LatheModuleSummary("app", upstream, true, true),
+                    new LatheModuleSummary("lib01", List.of(), true, false),
+                    new LatheModuleSummary("docs", List.of(), false, false))));
+
+    assertThat(text.lines())
+        .contains(
+            "app  depends on: lib01, lib02, lib03, lib04, lib05, lib06, lib07, lib08, lib09, lib10, and 2 more  tests: captured",
+            "lib01  tests: not captured",
+            "docs")
+        .first()
+        .asString()
+        .startsWith("3 module(s); build them with `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+    assertThat(text).endsWith("`%s`.".formatted(LatheLayout.captureTestsCommand("<module>")));
+  }
+
+  @Test
+  void outlineResult_nestedDeclarations_indentedLinesUnderOneHeader_orNoDeclarations() {
+    final List<LatheOutlineItem> items =
+        List.of(
+            outlineItem("class", "Shop", 0, 3, "public class Shop {"),
+            outlineItem("method", "sell", 1, 8, "int sell(int count) {"));
+
+    assertThat(
+            text(
+                LatheMcpTools.outlineResult(
+                    tmp.resolve("Shop.java"), items, LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            String.join(
+                System.lineSeparator(),
+                "2 declaration(s) in app/Shop.java:",
+                "class Shop  3: public class Shop {",
+                "  method sell  8: int sell(int count) {"));
+    assertThat(
+            text(
+                LatheMcpTools.outlineResult(
+                    tmp.resolve("Empty.java"), List.of(), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No declarations in Empty.java.");
+  }
+
+  private static LatheOutlineItem outlineItem(
+      final String kind, final String name, final int depth, final int line, final String code) {
+    final var at = new Position(line - 1, 0);
+    return new LatheOutlineItem(
+        kind,
+        name,
+        depth,
+        new LatheLocation(
+            "file:///w/app/Shop.java",
+            "app/Shop.java",
+            new Range(at, at),
+            LatheLocation.Origin.REACTOR,
+            code));
+  }
+
+  @Test
+  void importsResult_addedAmbiguousAndUnknown_listsEachKind_onlyTheAddedLineWhenNothingIsLeft() {
+    final var imports =
+        new LatheImports(
+            "app/src/main/java/a/Foo.java",
+            List.of("java.time.Duration", "java.util.ArrayList"),
+            List.of(
+                new MissingImport("List", List.of("java.util.List", "java.awt.List")),
+                new MissingImport("Fooo", List.of())));
+
+    assertThat(text(LatheMcpTools.importsResult(imports, LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            String.join(
+                System.lineSeparator(),
+                "Added 2 import(s) to app/src/main/java/a/Foo.java: java.time.Duration, java.util.ArrayList",
+                "Ambiguous — add one yourself:",
+                "  List: java.util.List, java.awt.List",
+                "No import found for: Fooo"));
+    assertThat(
+            text(
+                LatheMcpTools.importsResult(
+                    new LatheImports("a/Foo.java", List.of(), List.of()), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No import added to a/Foo.java.");
+  }
+
+  @Test
   void noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay() {
-    assertThat(LatheMcpTools.noteLines(new LatheNotes(List.of(), List.of(), List.of(), false)))
-        .isEmpty();
+    assertThat(LatheMcpTools.noteLines(LatheMcpTools.NO_NOTES)).isEmpty();
     assertThat(
             LatheMcpTools.noteLines(
                 new LatheNotes(

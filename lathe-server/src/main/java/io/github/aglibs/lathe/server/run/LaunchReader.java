@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,9 +27,18 @@ public final class LaunchReader {
     return read(moduleRel, LatheLayout.MAIN_LAUNCH_FILE, MainLaunchData.class);
   }
 
+  // Whether a build has captured the module's test launch, without reading it.
+  public boolean testCaptured(final String moduleRel) {
+    return Files.exists(moduleDir(moduleRel).resolve(LatheLayout.TEST_LAUNCH_FILE));
+  }
+
+  public Optional<TestFilterData> testFilter(final String moduleRel) throws IOException {
+    return read(moduleRel, LatheLayout.TEST_FILTER_FILE, TestFilterData.class);
+  }
+
   private <T> Optional<T> read(final String moduleRel, final String fileName, final Class<T> type)
       throws IOException {
-    final Path moduleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+    final Path moduleDir = moduleDir(moduleRel);
     final Path launchFile = moduleDir.resolve(fileName);
     if (!Files.exists(launchFile)) {
       return Optional.empty();
@@ -37,5 +47,9 @@ public final class LaunchReader {
     return Optional.of(
         LatheLock.awaitAndRead(
             LatheLayout.moduleLockFile(moduleDir), () -> Json.read(launchFile, type)));
+  }
+
+  private Path moduleDir(final String moduleRel) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
   }
 }

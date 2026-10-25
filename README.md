@@ -69,17 +69,24 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 
 | Tool                   | What it does                                                         |
 |------------------------|---------------------------------------------------------------------|
+| `workspace_summary`    | every module, the reactor modules it depends on, its test capture, and the sync command |
 | `get_diagnostics`      | compiler errors, warnings, and unused-code hints for one file — no build |
 | `get_definition`       | resolve a symbol to its definition, incl. dependencies/JDK/generated |
 | `find_references`      | every real use of a symbol across the reactor                       |
 | `find_implementations` | implementers of an interface / overrides of a method                |
 | `call_hierarchy`       | callers or callees of a method, across modules                      |
 | `search_symbols`       | find a type by simple or qualified name across reactor, dependencies, JDK (CamelHumps for reactor types) |
+| `outline`              | a file's types and members, indented by nesting, each with its line and declaration |
 | `describe_symbol`      | signature, type, and javadoc for a symbol                           |
 | `rename_symbol`        | rename a symbol across the whole reactor, applied to disk           |
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
+| `format_file`          | format a file in place with the project's pinned formatter, so edits pass Spotless |
+| `fix_imports`          | add a file's missing imports that have one match, static ones included; list the ambiguous ones with their candidates |
 | `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
+
+Each tool declares the MCP annotations that say whether it writes: only `rename_symbol`, `run_test`,
+`format_file` and `fix_imports` are not read-only, and only `rename_symbol` is destructive.
 
 Full setup — registering with Claude Code, Codex, and Gemini, the result contract, and the freshness
 model — is in the [AI agents guide](docs/guide/ai-agents.md).
@@ -102,11 +109,11 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
-| Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |
+| Completion                   | types, methods, and variables, with automatic import insertion; static members the project already imports statically elsewhere in the same scope (test or main), with their `import static` | `textDocument/completion`                         |
 | Document / workspace symbols | file outline; workspace search by name prefix, simple or qualified (`java.util.Map.Entry`), with CamelCase-hump matching for reactor types (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
 | Type hierarchy               | supertypes and subtypes of the symbol under the cursor, one level at a time                        | `textDocument/prepareTypeHierarchy`               |
 | Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.typeHierarchy` |
-| Add missing imports          | resolve every unimported type in the file in one pass — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |
+| Add missing imports          | resolve every unimported type in the file in one pass, and every unresolved call the scope statically imports elsewhere — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |
 | Call hierarchy               | incoming and outgoing calls of a method                                                           | `textDocument/prepareCallHierarchy`               |
 | Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
 | Folding                      | classes, methods, blocks, and import groups                                                       | `textDocument/foldingRange`                       |
@@ -116,7 +123,7 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as your build configures them, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
+| Code actions        | quick fixes and refactors: missing imports (including `import static` for members the scope imports elsewhere), add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
 | Formatting          | the project's own formatter, detected from its Spotless setup — google-java-format, palantir-java-format, or Eclipse at the exact version it pins — run in-process in milliseconds, selections included | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` |
 
 Lathe applies the formatter step only, not other Spotless steps such as import order or license headers.
@@ -128,7 +135,7 @@ A committed `lathe-style.json` picks another formatter, an external command, or 
 | Feature                                              | What it does                                                                                                                                                | LSP method                                                            |
 |------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
 | Run a `main`                                         | replays a `main` from captured `.lathe/` bytecode — no rebuild, live output                                                                 | `workspace/executeCommand` · `lathe.run.main`                         |
-| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output and a diagnostic on the failing assertion | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.run.test` |
+| Tests                                                | discovers and runs tests (method, class, or package) from `.lathe/` bytecode, with live output, a diagnostic on the failing assertion, expected/actual diffs, and class-level failures | `workspace/executeCommand` · `lathe.runnables.list`, `lathe.tests.discover`, `lathe.run.test` |
 | Debug                                                | conditional breakpoints, stepping, variable inspection, and REPL expression evaluation over DAP                                                                         | `workspace/executeCommand` · `lathe.debug.*`, then DAP                |
 | [Run configuration](docs/guide/run-configuration.md) | auto-applied overlays (JVM/program args, env, cwd, class-/module-path) plus named, selectable run configs (`:LatheRun {name}`, saved from the cursor)         | `lathe.run.named` · `lathe.runconfigs.list` · `lathe.runconfig.save`  |
 

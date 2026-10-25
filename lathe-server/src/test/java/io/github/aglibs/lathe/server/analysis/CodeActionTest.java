@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CodeAction;
@@ -38,7 +39,14 @@ class CodeActionTest {
         TempSourceCompiler.typeIndex(
             tmp.resolve("index.json"),
             new TypeIndexEntry(
-                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()));
+                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "Generated",
+                "javax.annotation.processing.Generated",
+                "javax.annotation.processing",
+                TypeKind.ANNOTATION,
+                true,
+                List.of()));
     session = new SourceAnalysisSession(new TempSourceCompiler());
   }
 
@@ -67,6 +75,101 @@ class CodeActionTest {
     final DiagnosticPayload payload = (DiagnosticPayload) diag.getData();
     assertThat(payload.kind()).isEqualTo(DiagnosticPayload.Kind.TYPE_REF);
     assertThat(payload.name()).isEqualTo("ArrayList");
+  }
+
+  // An annotation's name is a type wherever it is used, so it gets the same import fix.
+  @Test
+  void codeAction_unresolvedAnnotation_classifiedAsTypeWithImportQuickFix() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          @Generated String field;
+          @Generated void method() {}
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+    assertThat(diags)
+        .filteredOn(d -> d.getData() instanceof DiagnosticPayload)
+        .extracting(d -> (DiagnosticPayload) d.getData())
+        .hasSize(2)
+        .allMatch(payload -> payload.kind() == DiagnosticPayload.Kind.TYPE_REF)
+        .allMatch(payload -> payload.name().equals("Generated"));
+    assertThat(codeActions(diagnosticActions(source, diags)))
+        .extracting(CodeAction::getTitle)
+        .contains("Import 'javax.annotation.processing.Generated'");
+  }
+
+  // --- Static imports learned from the file's scope ---
+
+  private static final LearnedStaticImports LEARNED =
+      new LearnedStaticImports(
+          Map.of("java.util.Objects.requireNonNull", 2, "java.util.Collections.*", 1));
+
+  private static final String UNRESOLVED_MEMBERS =
+      """
+      package com.example;
+      class Test {
+        void m(Object o) {
+          requireNonNull(o);
+          emptyList();
+          notImportedAnywhere();
+        }
+      }
+      """;
+
+  // An unresolved call the scope statically imports elsewhere gets one "Import 'static …'" action
+  // per owner; with nothing learned it gets none.
+  @Test
+  void codeAction_unresolvedLearnedMember_offersStaticImport() {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, UNRESOLVED_MEMBERS, 1, CompileMode.OPEN);
+
+    final List<CodeAction> learned =
+        codeActions(
+            session.codeAction(
+                TempSourceCompiler.TEST_URI,
+                UNRESOLVED_MEMBERS,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                typeIndex,
+                LEARNED));
+    assertThat(learned)
+        .extracting(CodeAction::getTitle)
+        .contains(
+            "Import 'static java.util.Objects.requireNonNull'",
+            "Import 'static java.util.Collections.emptyList'");
+    assertThat(learned)
+        .filteredOn(action -> action.getTitle().contains("requireNonNull"))
+        .singleElement()
+        .satisfies(
+            action ->
+                assertThat(action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI))
+                    .extracting(TextEdit::getNewText)
+                    .containsExactly("import static java.util.Objects.requireNonNull;\n"));
+    assertThat(codeActions(diagnosticActions(UNRESOLVED_MEMBERS, diags)))
+        .extracting(CodeAction::getTitle)
+        .noneMatch(title -> title.startsWith("Import 'static"));
+  }
+
+  // Missing imports lists an unresolved member with its static import, and leaves out a name no
+  // learned import declares: that is a typo, not an import to add.
+  @Test
+  void missingImports_unresolvedLearnedMember_listedWithStaticCandidate() {
+    final var result =
+        session.missingImports(
+            TempSourceCompiler.TEST_URI, UNRESOLVED_MEMBERS, 1, typeIndex, LEARNED);
+
+    assertThat(result.items())
+        .containsExactlyInAnyOrder(
+            new MissingImportsResult.MissingImport(
+                "requireNonNull", List.of("static java.util.Objects.requireNonNull")),
+            new MissingImportsResult.MissingImport(
+                "emptyList", List.of("static java.util.Collections.emptyList")));
   }
 
   @Test
@@ -175,7 +278,13 @@ class CodeActionTest {
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
         session.codeAction(
-            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), listIndex);
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            listIndex,
+            LearnedStaticImports.empty());
 
     assertThat(codeActions(actions))
         .extracting(CodeAction::getTitle)
@@ -228,14 +337,22 @@ class CodeActionTest {
             2,
             rangeAt(0, 0),
             toRequests(diags),
-            typeIndex);
+            typeIndex,
+            LearnedStaticImports.empty());
     assertThat(codeActions(actions)).isEmpty();
   }
 
   @Test
   void codeAction_noDiagnostics_returnsEmpty() {
     final var actions =
-        session.codeAction(TempSourceCompiler.TEST_URI, "", 1, rangeAt(0, 0), List.of(), typeIndex);
+        session.codeAction(
+            TempSourceCompiler.TEST_URI,
+            "",
+            1,
+            rangeAt(0, 0),
+            List.of(),
+            typeIndex,
+            LearnedStaticImports.empty());
     assertThat(actions).isEmpty();
   }
 
@@ -296,7 +413,8 @@ class CodeActionTest {
             1,
             rangeAt(0, 0),
             toRequests(diags),
-            customTypeIndex);
+            customTypeIndex,
+            LearnedStaticImports.empty());
 
     assertThat(codeActions(actions)).hasSize(1);
     assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
@@ -328,7 +446,13 @@ class CodeActionTest {
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
         session.codeAction(
-            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), reactorIndex);
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            reactorIndex,
+            LearnedStaticImports.empty());
 
     assertThat(codeActions(actions)).hasSize(1);
     assertThat(codeActions(actions).get(0).getTitle())
@@ -359,7 +483,9 @@ class CodeActionTest {
         }
         """;
 
-    final var result = session.missingImports(TempSourceCompiler.TEST_URI, source, 1, index);
+    final var result =
+        session.missingImports(
+            TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
 
     // Insertion goes right after the package line (no imports yet).
     assertThat(result.insertionRange().getStart().getLine()).isEqualTo(1);
@@ -383,7 +509,9 @@ class CodeActionTest {
         }
         """;
 
-    final var result = session.missingImports(TempSourceCompiler.TEST_URI, source, 1, typeIndex);
+    final var result =
+        session.missingImports(
+            TempSourceCompiler.TEST_URI, source, 1, typeIndex, LearnedStaticImports.empty());
 
     assertThat(result.items()).isEmpty();
   }
@@ -452,7 +580,13 @@ class CodeActionTest {
             .toList();
     final var actions =
         session.codeAction(
-            TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), sqlOnly, typeIndex);
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            sqlOnly,
+            typeIndex,
+            LearnedStaticImports.empty());
 
     assertThat(actions).hasSize(2);
     final var throwsAction = findThrowsAction(actions);
@@ -1886,7 +2020,13 @@ class CodeActionTest {
       final String source, final int line, final int character) {
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     return session.codeAction(
-        TempSourceCompiler.TEST_URI, source, 1, rangeAt(line, character), List.of(), typeIndex);
+        TempSourceCompiler.TEST_URI,
+        source,
+        1,
+        rangeAt(line, character),
+        List.of(),
+        typeIndex,
+        LearnedStaticImports.empty());
   }
 
   private List<Either<Command, CodeAction>> extractActionsSpanning(
@@ -1897,7 +2037,14 @@ class CodeActionTest {
       final int endChar) {
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var range = new Range(new Position(startLine, startChar), new Position(endLine, endChar));
-    return session.codeAction(TempSourceCompiler.TEST_URI, source, 1, range, List.of(), typeIndex);
+    return session.codeAction(
+        TempSourceCompiler.TEST_URI,
+        source,
+        1,
+        range,
+        List.of(),
+        typeIndex,
+        LearnedStaticImports.empty());
   }
 
   private static List<TextEdit> extractEdits(final List<Either<Command, CodeAction>> actions) {
@@ -1979,7 +2126,13 @@ class CodeActionTest {
   private List<Either<Command, CodeAction>> diagnosticActions(
       final String source, final List<Diagnostic> diags) {
     return session.codeAction(
-        TempSourceCompiler.TEST_URI, source, 1, rangeAt(0, 0), toRequests(diags), typeIndex);
+        TempSourceCompiler.TEST_URI,
+        source,
+        1,
+        rangeAt(0, 0),
+        toRequests(diags),
+        typeIndex,
+        LearnedStaticImports.empty());
   }
 
   private static List<CodeAction> codeActions(final List<Either<Command, CodeAction>> actions) {

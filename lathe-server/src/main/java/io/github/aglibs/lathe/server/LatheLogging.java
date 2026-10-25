@@ -27,8 +27,11 @@ public final class LatheLogging {
       System.err.printf("[lathe] failed to load logging config: %s%n", e.getMessage());
     }
 
+    // The config's lathe level binds only to a logger that exists; a caller's static LOG predates
+    // this call, so without creating the parent here its first lines fall back to root WARNING.
+    final var lathe = Logger.getLogger(LATHE_LOGGER);
     if (System.getenv("LATHE_DEBUG") != null) {
-      Logger.getLogger(LATHE_LOGGER).setLevel(Level.FINE);
+      lathe.setLevel(Level.FINE);
     }
   }
 
