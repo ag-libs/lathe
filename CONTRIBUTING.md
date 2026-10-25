@@ -6,8 +6,7 @@ Bug reports, questions and ideas are all welcome.
 ## Reporting a bug
 
 [Open an issue](https://github.com/ag-libs/lathe/issues).
-The most useful things to include are the Lathe version, your editor, your JDK and Maven versions,
-and the server log from a run with `LATHE_DEBUG=1` set before you start the editor.
+The most useful things to include are the Lathe version, your editor, your JDK and Maven versions, and the server log from a run with `LATHE_DEBUG=1` set before you start the editor.
 A small project that shows the problem helps most of all.
 
 For a security problem, don't open a public issue; see [SECURITY.md](SECURITY.md).
@@ -27,7 +26,8 @@ mvn verify                       # all tests, including the Maven integration te
 mvn spotless:apply               # format the code; spotless:check runs on verify
 ```
 
-The `lathe-neovim` module runs its specs in a headless Neovim, so it needs `nvim` on your `PATH`.
+The `lathe-neovim` module runs its specs in a headless Neovim; they're skipped if `nvim` isn't on your `PATH`.
+The `lathe-vscode` module downloads Node and its npm packages, so it needs network access.
 To build without the editor clients, add `-pl '!lathe-neovim,!lathe-vscode'`.
 
 ### Where things are
@@ -41,11 +41,9 @@ To build without the editor clients, add `-pl '!lathe-neovim,!lathe-vscode'`.
 
 Lathe is developed with AI coding tools, mainly Claude Code.
 A maintainer reviews every change and takes responsibility for it, the same as for hand-written code.
-Commits produced with AI assistance carry a `Co-Authored-By` trailer, so the provenance stays visible
-in the git history.
+Commits produced with AI assistance carry a `Co-Authored-By` trailer, so the provenance stays visible in the git history.
 
-AI-generated output is used only where it is compatible with the project's Apache-2.0 license, in line
-with the [Apache Software Foundation's generative-tooling guidance](https://www.apache.org/legal/generative-tooling.html).
+AI-generated output is used only where it is compatible with the project's Apache-2.0 license, in line with the [Apache Software Foundation's generative-tooling guidance](https://www.apache.org/legal/generative-tooling.html).
 You're welcome to use AI tools for your own contributions under the same rules.
 
 ## Releases

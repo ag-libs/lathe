@@ -21,7 +21,7 @@ Both produce the identical effective build.
 - **JDK 17+** to run the build (and so the server, which runs on the build's JDK).
 - **Maven 3.6.3+** and **`maven-compiler-plugin` 3.6.2+**; with the extension, an older Maven or
   compiler plugin fails the build with a message naming the fix (or add `-Dlathe.disabled=true` to build
-  without Lathe).
+  without Lathe). CI verifies Maven 3.6.3, 3.8.8, 3.9 and 3.10.
 - Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not
   captured, so they can't be run or debugged from the editor; see [test capture](test-capture.md) for
   the other test requirements.

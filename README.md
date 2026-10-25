@@ -22,9 +22,10 @@ When you build, Lathe records how the build compiles, tests and runs each module
   Errors come from the JDK's own compiler with your build's flags.
   Modular projects, annotation processors and generated sources work without extra setup.
 - **Run, test and debug without rebuilding.**
-  Lathe reruns your `main` methods and tests the way the build launched them, from the classes it already compiled.
+  Lathe runs your `main` methods and tests the way your build runs them (same classpath, module path and flags), from the classes it already compiled.
+  This is in the Neovim client today.
 - **Works across the whole project.**
-  Navigation, references and rename cover every module, plus your dependencies' sources and the JDK's.
+  Navigation, references and rename cover every module, and navigation also steps into your dependencies' sources and the JDK's.
 - **Keeps up with outside changes.**
   After a branch switch, a `git pull` or an AI agent's edits, Lathe recompiles the changed files on its own.
 - **Gives AI agents the same view.**
@@ -34,10 +35,9 @@ See the full [feature list](docs/guide/features.md).
 
 ## Quick start
 
-You need Java 17+ and Maven 3.6.3+.
+You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [requirements](docs/guide/installation.md#requirements)).
 
-**1. Add Lathe to your build.** Put this in `.mvn/extensions.xml` at the root of your project
-(or under `<build><extensions>` in the root `pom.xml`):
+**1. Add Lathe to your build.** Put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
 
 ```xml
 <extensions>

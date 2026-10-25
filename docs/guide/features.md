@@ -1,7 +1,8 @@
 # Lathe features
 
-Every capability is standard LSP (plus run, test, and debug through `workspace/executeCommand` and
-DAP), so any LSP client can drive it; see the [editor guides](../../README.md#editors) for the clients and their key bindings.
+Most capabilities are standard LSP, so any LSP client can use them.
+The rest (run, test, debug, and a few navigation and import commands) are Lathe commands over `workspace/executeCommand`, with DAP for debugging; the [Neovim client](editors/neovim.md) drives them all.
+See the [editor guides](../../README.md#editors) for each client.
 
 ## Code intelligence
 
