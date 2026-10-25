@@ -520,6 +520,45 @@ class LatheEngineTest {
     assertThat(Files.readString(file)).isEqualTo(source);
   }
 
+  // Task has no Task.java of its own; its members and its nested type's are still the project's,
+  // while its override of a JDK method stays refused.
+  @Test
+  void rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          void use(Task task, Task.Step step) { task.run(); step.next(); }
+        }
+        interface Task {
+          void run();
+          class Step { void next() {} @Override public String toString() { return "step"; } }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    final var jdkOverride = offsetToPosition(source, source.indexOf("toString"));
+    assertThatThrownBy(
+            () -> engine.rename(file, jdkOverride.getLine(), jdkOverride.getCharacter(), "renamed"))
+        .hasMessageContaining("outside the project");
+    for (final String symbol : List.of("void run", "void next", "class Step", "interface Task")) {
+      final String current = Files.readString(file);
+      final String name = symbol.substring(symbol.indexOf(' ') + 1);
+      final var pos = offsetToPosition(current, current.indexOf(symbol) + symbol.indexOf(name));
+      engine.rename(file, pos.getLine(), pos.getCharacter(), "%sRenamed".formatted(name));
+    }
+
+    assertThat(Files.readString(file))
+        .contains("void use(TaskRenamed task, TaskRenamed.StepRenamed step)")
+        .contains("task.runRenamed(); step.nextRenamed();")
+        .contains("interface TaskRenamed {")
+        .contains("void runRenamed();")
+        .contains("class StepRenamed { void nextRenamed() {}");
+  }
+
   @Test
   void rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing()
       throws Exception {

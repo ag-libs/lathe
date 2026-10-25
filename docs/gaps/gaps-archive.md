@@ -88,12 +88,16 @@ The refusal is a `RequestFailed` response error that names the symbol and why; `
 its reason through to the MCP tool result.
 A nested reactor type stays renameable: its file is found from its binary name (`Outer$Inner`), which
 since EG-062 every reference target carries (that change replaced a canonical-name lookup added here).
+A secondary top-level type (`interface Task` in `Sample.java`) has no file of its own name, so the
+workspace type index vouches for it instead; before that, its members were refused as outside the
+project.
 Not covered: an override in the renamed family that also implements an unrelated method
 ([EG-061](gaps.md#eg-061--renaming-a-method-also-renames-an-override-that-implements-a-second-unrelated-method)).
 
 Regression: `LatheEngineTest.rename_symbolDeclaredOutsideTheProject_refusesWithTheReasonAndEditsNothing`
 (JDK type, JDK method, `toString` override),
 `LatheEngineTest.rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing`,
+`LatheEngineTest.rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride`,
 `LatheTextDocumentServiceTest.prepareRename_projectOrJdkSymbol_acceptsTheProjectOneAndRefusesTheJdkOneWithTheReason`.
 
 ## EG-051 — Hover signature rendering: varargs as array, constructor `<init>`, method type params dropped — done

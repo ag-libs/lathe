@@ -1874,16 +1874,27 @@ final class WorkspaceSession {
   // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
   private void requireRenameable(final ReferenceTarget target) {
     final List<Path> roots = workspace.allSourceRoots();
-    final List<Optional<Path>> declarations =
+    final Map<String, Optional<Path>> declarations =
         Stream.concat(Stream.of(target.qualifiedName()), target.overriddenDeclarers().stream())
-            .map(binaryName -> TypeSourceLocator.findSourceFile(binaryName, roots))
-            .toList();
-    if (declarations.stream().anyMatch(Optional::isEmpty)) {
+            .distinct()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Function.identity(),
+                    binaryName -> TypeSourceLocator.findSourceFile(binaryName, roots)));
+    // A secondary top-level type has no file of its own name, so the index vouches for it; the file
+    // lookup still covers a type too new for the index.
+    if (declarations.entrySet().stream()
+        .anyMatch(
+            declaration ->
+                declaration.getValue().isEmpty()
+                    && !typeIndex.isReactorType(declaration.getKey()))) {
       throw renameRefused(
           target, "outside the project (JDK or a dependency), so it cannot be renamed");
     }
 
-    if (declarations.stream().flatMap(Optional::stream).anyMatch(this::isGeneratedSource)) {
+    if (declarations.values().stream()
+        .flatMap(Optional::stream)
+        .anyMatch(this::isGeneratedSource)) {
       throw renameRefused(
           target, "in generated source; rename the source it is generated from instead");
     }
