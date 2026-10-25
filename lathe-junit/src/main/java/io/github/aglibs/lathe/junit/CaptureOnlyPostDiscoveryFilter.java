@@ -9,9 +9,12 @@ import org.junit.platform.launcher.PostDiscoveryFilter;
 // listener is, so the capture-only sync skips the tests on any JDK.
 public final class CaptureOnlyPostDiscoveryFilter implements PostDiscoveryFilter {
 
+  // Decided once: JUnit creates one filter per launcher and asks it about every test.
+  private final boolean excludesAll = CaptureOnly.requested() && !CaptureOnly.dryRunSupported();
+
   @Override
   public FilterResult apply(final TestDescriptor descriptor) {
-    return CaptureOnly.requested() && !CaptureOnly.dryRunSupported()
+    return excludesAll
         ? FilterResult.excluded("Lathe capture-only: test execution skipped")
         : FilterResult.included("Lathe test execution enabled");
   }
