@@ -79,15 +79,19 @@ if git ls-remote --exit-code --tags origin "${tag}" >/dev/null 2>&1; then
 fi
 
 # (#4) Bump ONLY Lathe's version in the install docs:
-#   - the <version> on the line immediately after a lathe-* <artifactId>, and
-#   - the <lathe.version> property.
+#   - the <version> on the line immediately after a lathe-* <artifactId>,
+#   - the <lathe.version> property,
+#   - the Gradle plugin's id("io.github.ag-libs.lathe") version "x.y.z", and
+#   - Gradle-style io.github.ag-libs:lathe-*:x.y.z coordinates (the init script's classpath).
 # The [0-9] anchor leaves ${lathe.version} references alone; the artifactId
 # address leaves unrelated dependencies' <version> tags untouched.
-docs=(README.md docs/guide/installation.md)
+docs=(README.md docs/guide/installation.md docs/guide/gradle.md)
 for f in "${docs[@]}"; do
   sed -i \
     -e "\#<artifactId>lathe-[a-z-]*</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
     -e "s#<lathe.version>[0-9][^<]*</lathe.version>#<lathe.version>${version}</lathe.version>#" \
+    -e "s#\(id(\"io\.github\.ag-libs\.lathe\") version \"\)[0-9][^\"]*\"#\1${version}\"#" \
+    -e "s#\(io\.github\.ag-libs:lathe-[a-z-]*:\)[0-9][^\"]*\"#\1${version}\"#" \
     "$f"
 done
 
@@ -95,7 +99,8 @@ done
 # bumped here: pointing it at the version being released makes the tagged commit unbuildable, since
 # CI loads that extension before the build and the version is not published yet. The pin stays on
 # the last published version — the editor tooling runs the prior shipped build, which is fine — and
-# is bumped by hand after the release is on Maven Central, if desired.
+# is bumped by hand after the release is on Maven Central, if desired. (Dogfooding is off for now:
+# the root pom.xml has no such pin until it is turned back on.)
 files=("${docs[@]}")
 
 # A no-op means the docs drifted out from under the patterns above — fail loudly rather than commit

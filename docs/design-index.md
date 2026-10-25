@@ -101,7 +101,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 **Build-tool front-ends** (new front-ends onto the existing `.lathe/` contract; everything downstream
 reused):
 
-- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven and OpenJDK write it, Neovim runs it; Gradle's remains). The build integration writes
+- [Sync Launcher](planned/lathe-sync-launcher.md) — **in progress** (Maven, OpenJDK and Gradle write it, Neovim runs it). The build integration writes
   `.lathe/lathe-sync.sh [--tests] [module ...]`, which clients, the server, and the MCP server run instead
   of composing Maven commands; runs the build on the recorded JDK, scopes with `-am`. Prepares Gradle.
 - [Build-Tool-Agnostic Core](done/lathe-build-agnostic-core.md) — **done (2026-10-11), the prerequisite
@@ -111,12 +111,12 @@ reused):
 - [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
   front-end writes: path, schema record, writer, readers, required/recommended/optional, Maven vs
   OpenJDK coverage, and known issues.
-- [Gradle Support](planned/lathe-gradle-support.md) — **proposed, spiked on Gradle 8.8, 8.14 and 9.8 (every capture assumption, 2026-10-23), readiness-reviewed.** A
-  `lathe-gradle-plugin` (settings + project plugin + `latheSync`) emitting the same `.lathe/` files:
-  typed-API compiler capture on `JavaCompile`, in-fork test-launch capture reusing `lathe-junit`,
-  Gradle's own module placement rule, polyglot Maven-orchestrated build. Decided 2026-10-18, order revised 2026-10-20: after all of Multi-OS and
-  the JDK 17 floor, starting with a Maven-free `lathe-install` (slice 0); formatter version observed from Spotless's resolution
-  (a committed `lathe-style.json` wins); Lathe artifacts from a reactor-filled repository, never `~/.m2`.
+- [Gradle Support](planned/lathe-gradle-support.md) — **implemented (slices 0–4, 2026-10-25), ships in 0.1.24; Plugin Portal release wiring remains.** A
+  `lathe-gradle-plugin` (settings + project plugin) emitting the same `.lathe/` files, kept current by every build as on Maven:
+  typed-API compiler capture finalizing `JavaCompile`, a workspace write after every test compile, in-fork test-launch capture
+  through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
+  Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
+  `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
 - [OpenJDK Support](done/lathe-openjdk-support.md) — **shipped (code-intelligence MVP, 2026-10-03).**
   `lathe-openjdk-maven-plugin` `sync` emits `.lathe/` for the JDK's own GNU Make build by reading the
   per-module compile descriptors the build already persists (`_the.<module>.vardeps` /

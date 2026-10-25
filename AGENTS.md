@@ -14,7 +14,7 @@ Before making non-trivial changes, read the relevant design document first:
 Which file answers which question:
 
 - **Behavior / how-to** (user-facing) → `README.md` (editor-agnostic feature reference) and
-  `docs/guide/` (`how-it-works.md`, `installation.md`, `run-configuration.md`, `test-capture.md`, and
+  `docs/guide/` (`how-it-works.md`, `installation.md`, `gradle.md`, `run-configuration.md`, `test-capture.md`, and
   per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
 - **Design / why** → `docs/design-index.md`, then the specific design doc under `docs/planned/`
   or `docs/done/`.

@@ -23,7 +23,7 @@ Lathe ships a [Neovim client](#editors), a [VS Code and Cursor extension](#edito
 [MCP server for AI coding agents](#ai-agents-mcp).
 
 Lathe works from Maven builds and from the [OpenJDK `make` build](docs/guide/openjdk.md); Gradle
-support is coming.
+support arrives in 0.1.24 (see the [Gradle guide](docs/guide/gradle.md)).
 
 ## Demo
 
@@ -191,6 +191,8 @@ configuration, and **Zed** needs only a project settings file.
 - **Maven builds:** Maven 3.6.3+ with `maven-compiler-plugin` 3.6.2+ — verified on Maven 3.6.3, 3.8.8,
   3.9, and 3.10. An older Maven or compiler plugin stops the build with a message naming the fix (see
   [Troubleshooting](#troubleshooting)).
+- **Gradle builds** (from 0.1.24): Gradle 8.8+ with its daemon on JDK 17+ — verified on Gradle 8.8, 8.14,
+  and 9; see the [Gradle guide](docs/guide/gradle.md).
 - **Linux, macOS, or Windows 10/11.** On Windows use VS Code, Cursor, or Zed; the Neovim and Emacs
   clients are Linux and macOS only. Lathe writes `.cmd` launchers there instead of `.sh`.
 
@@ -317,7 +319,7 @@ overrides the POM opt-out, so the next build wires Lathe up and repopulates the 
 
 - Guides (editor-agnostic): [how Lathe works](docs/guide/how-it-works.md) ·
   [installation](docs/guide/installation.md) · [run configuration](docs/guide/run-configuration.md) ·
-  [test capture](docs/guide/test-capture.md) · [OpenJDK](docs/guide/openjdk.md)
+  [test capture](docs/guide/test-capture.md) · [Gradle](docs/guide/gradle.md) · [OpenJDK](docs/guide/openjdk.md)
 - Editor references: [Neovim](docs/guide/editors/neovim.md) · [VS Code and Cursor](docs/guide/editors/vscode.md) ·
   [Emacs (Eglot)](docs/guide/editors/emacs.md) · [Zed](docs/guide/editors/zed.md)
 - AI agents: [MCP server guide](docs/guide/ai-agents.md)
