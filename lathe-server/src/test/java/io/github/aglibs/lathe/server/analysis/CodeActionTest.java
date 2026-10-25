@@ -488,7 +488,15 @@ class CodeActionTest {
             TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
 
     // Insertion goes right after the package line (no imports yet).
-    assertThat(result.insertionRange().getStart().getLine()).isEqualTo(1);
+    assertThat(
+            result
+                .layout()
+                .edits(List.of("java.util.ArrayList"))
+                .get(0)
+                .getRange()
+                .getStart()
+                .getLine())
+        .isEqualTo(1);
     assertThat(result.items())
         .extracting(MissingImportsResult.MissingImport::name)
         .containsExactlyInAnyOrder("ArrayList", "List", "Widget");

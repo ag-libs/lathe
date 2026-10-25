@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
-import io.github.aglibs.lathe.core.CollectionUtil;
+import com.sun.source.tree.LineMap;
+import com.sun.source.util.SourcePositions;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
 public final class ImportAnalyzer {
@@ -16,34 +19,35 @@ public final class ImportAnalyzer {
     this.analysis = analysis;
   }
 
-  public Range insertionRange() {
+  // Empty without a parsed file.
+  public Optional<ImportLayout> layout() {
     if (analysis == null || analysis.tree() == null) {
-      return null;
+      return Optional.empty();
     }
 
-    final var cu = analysis.tree();
-    final var positions = analysis.trees().getSourcePositions();
-    final var lineMap = cu.getLineMap();
+    final CompilationUnitTree cu = analysis.tree();
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final LineMap lineMap = cu.getLineMap();
+    final List<ImportLayout.ImportLine> lines =
+        cu.getImports().stream()
+            // An import still being typed may have no end position yet.
+            .filter(imp -> positions.getEndPosition(cu, imp) >= 0)
+            .map(
+                imp ->
+                    new ImportLayout.ImportLine(
+                        spelling(imp),
+                        (int) lineMap.getLineNumber(positions.getStartPosition(cu, imp)) - 1,
+                        (int) lineMap.getLineNumber(positions.getEndPosition(cu, imp)) - 1))
+            .toList();
+    final long packageEnd =
+        cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
+    final int afterPackage = packageEnd < 0 ? 0 : (int) lineMap.getLineNumber(packageEnd);
+    return Optional.of(new ImportLayout(lines, new Position(afterPackage, 0)));
+  }
 
-    final var imports = cu.getImports();
-    if (!imports.isEmpty()) {
-      final long endOffset = positions.getEndPosition(cu, CollectionUtil.last(imports));
-      if (endOffset >= 0) {
-        final int insertLine = (int) lineMap.getLineNumber(endOffset);
-        return new Range(new Position(insertLine, 0), new Position(insertLine, 0));
-      }
-    }
-
-    final var pkg = cu.getPackage();
-    if (pkg != null) {
-      final long endOffset = positions.getEndPosition(cu, pkg);
-      if (endOffset >= 0) {
-        final int insertLine = (int) lineMap.getLineNumber(endOffset);
-        return new Range(new Position(insertLine, 0), new Position(insertLine, 0));
-      }
-    }
-
-    return new Range(new Position(0, 0), new Position(0, 0));
+  private static String spelling(final ImportTree imp) {
+    final String name = imp.getQualifiedIdentifier().toString();
+    return imp.isStatic() ? ImportLayout.staticSpelling(name) : name;
   }
 
   public Set<String> importedQualifiedNames() {
@@ -83,12 +87,7 @@ public final class ImportAnalyzer {
       return null;
     }
 
-    final var insertionRange = insertionRange();
-    if (insertionRange == null) {
-      return null;
-    }
-
-    return new TextEdit(insertionRange, "import %s;\n".formatted(qualifiedName));
+    return layout().map(found -> found.edits(List.of(qualifiedName)).get(0)).orElse(null);
   }
 
   public Set<String> importedStaticNames() {

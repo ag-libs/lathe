@@ -387,8 +387,9 @@ final class LatheMcpTools {
                 Add the missing imports of a Java file in place — every unresolved type name that \
                 matches exactly one type in the reactor, its dependencies, or the JDK. A name with \
                 several matches (List: java.util.List, java.awt.List) is listed with its \
-                candidates for you to choose, and a name with none is listed too. Call after \
-                writing code that uses new types, then format_file to put the imports in order.\
+                candidates for you to choose, and a name with none is listed too. Each import goes \
+                to its sorted place among the file's imports. Call after writing code that uses \
+                new types.\
                 """)
             .annotations(EDITS_IN_PLACE)
             .build();

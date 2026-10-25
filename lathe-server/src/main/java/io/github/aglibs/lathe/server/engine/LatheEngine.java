@@ -410,10 +410,7 @@ public final class LatheEngine {
     final String path =
         added.isEmpty()
             ? displayPath(file, uri)
-            : writeFile(
-                file,
-                uri,
-                List.of(MissingImportsResult.importEdit(missing.insertionRange(), added)));
+            : writeFile(file, uri, missing.layout().edits(added));
     return new LatheImports(path, added, byUnambiguous.get(false));
   }
 

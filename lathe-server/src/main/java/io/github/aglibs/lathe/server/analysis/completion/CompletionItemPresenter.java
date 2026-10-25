@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.ImportAnalyzer;
+import io.github.aglibs.lathe.server.analysis.ImportLayout;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionItemKind;
@@ -55,8 +57,8 @@ final class CompletionItemPresenter {
       final List<CompletionItem> items,
       final AttributedFileAnalysis analysis) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
+    final Optional<ImportLayout> layout = importAnalyzer.layout();
+    if (layout.isEmpty()) {
       return;
     }
 
@@ -73,11 +75,11 @@ final class CompletionItemPresenter {
         continue;
       }
 
-      final var importText =
+      final String spelling =
           edit.isStatic()
-              ? "import static %s;\n".formatted(edit.qualifiedName())
-              : "import %s;\n".formatted(edit.qualifiedName());
-      items.get(i).setAdditionalTextEdits(List.of(new TextEdit(insertionRange, importText)));
+              ? ImportLayout.staticSpelling(edit.qualifiedName())
+              : edit.qualifiedName();
+      items.get(i).setAdditionalTextEdits(layout.get().edits(List.of(spelling)));
     }
   }
 

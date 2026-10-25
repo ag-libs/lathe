@@ -1111,8 +1111,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
+    final Optional<ImportLayout> layout = importAnalyzer.layout();
+    if (layout.isEmpty()) {
       return MissingImportsResult.empty();
     }
 
@@ -1142,7 +1142,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final List<MissingImportsResult.MissingImport> items = Stream.concat(types, members).toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
-    return new MissingImportsResult(insertionRange, items);
+    return new MissingImportsResult(layout.get(), items);
   }
 
   // Distinct unresolved type names in encounter order, each mapped to the first diagnostic position

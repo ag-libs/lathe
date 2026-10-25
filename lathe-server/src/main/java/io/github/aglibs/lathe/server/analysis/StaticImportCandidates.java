@@ -89,7 +89,7 @@ public final class StaticImportCandidates {
       final AttributedFileAnalysis analysis,
       final String name) {
     return find(learned, analysis, name::equals).stream()
-        .map(candidate -> "static %s".formatted(candidate.qualifiedName()))
+        .map(candidate -> ImportLayout.staticSpelling(candidate.qualifiedName()))
         .toList();
   }
 
