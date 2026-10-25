@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.junit;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import org.junit.platform.launcher.LauncherSession;
 import org.junit.platform.launcher.LauncherSessionListener;
@@ -12,6 +13,11 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
   @Override
   public void launcherSessionOpened(final LauncherSession session) {
     try {
+      // Before the JDK check: an old test JVM captures nothing, but still skips its tests.
+      if (CaptureOnly.requested() && CaptureOnly.dryRunSupported()) {
+        System.setProperty(LatheFlags.JUNIT_DRY_RUN, "true");
+      }
+
       final int javaVersion = featureVersion(System.getProperty("java.specification.version"));
       if (javaVersion < LatheLayout.MIN_JAVA_VERSION) {
         // In the build's test output: the reason these tests can't be run from the editor.

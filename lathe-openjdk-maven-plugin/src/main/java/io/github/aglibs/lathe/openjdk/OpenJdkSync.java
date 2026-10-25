@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.install.SyncScript;
 import java.io.IOException;
@@ -228,19 +229,20 @@ public final class OpenJdkSync {
     Files.createDirectories(latheModuleDir);
     Json.write(config, latheModuleDir.resolve(LatheLayout.paramsFileName(SOURCE_TREE)));
     // No compiled content: fingerprinting every JDK source on each sync costs more than
-    // verify_change's revert check is worth there.
+    // verify_change's revert check, or the stale scan's touch check, is worth there.
     CompiledStamps.writeAll(latheModuleDir, SOURCE_TREE, stampsFor(sources, roots), Map.of());
   }
 
-  // filelist -> {sourceRoot-relative path -> mtime}, keyed as LatheCompiler.writeCompiledStamps
-  // does.
-  private static Map<Path, Long> stampsFor(final List<Path> sources, final List<Path> roots)
+  // filelist -> {sourceRoot-relative path -> stamp}, keyed as CompileCapture does.
+  private static Map<Path, SourceStamp> stampsFor(final List<Path> sources, final List<Path> roots)
       throws IOException {
-    final var stamps = new HashMap<Path, Long>();
+    final var stamps = new HashMap<Path, SourceStamp>();
     for (final Path source : sources) {
       final Optional<Path> root = rootOf(source, roots);
       if (root.isPresent()) {
-        stamps.put(root.get().relativize(source), Files.getLastModifiedTime(source).toMillis());
+        stamps.put(
+            root.get().relativize(source),
+            new SourceStamp(Files.getLastModifiedTime(source).toMillis(), null));
       }
     }
     return stamps;

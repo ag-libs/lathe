@@ -20,11 +20,14 @@ final class CaptureOnlyPostDiscoveryFilterTest {
     assertThat(filter.apply(null).included()).isTrue();
   }
 
+  // This module tests on a JUnit Platform with dry run, which skips the tests instead; a platform
+  // without it is CaptureOnlyTest's.
   @Test
-  void apply_captureOnlyTrue_excludesDescriptor() {
+  void apply_captureOnlyWithDryRun_leavesTheSkippingToTheDryRun() {
     System.setProperty(LatheFlags.CAPTURE_ONLY, "true");
     final var filter = new CaptureOnlyPostDiscoveryFilter();
 
-    assertThat(filter.apply(null).excluded()).isTrue();
+    assertThat(CaptureOnly.dryRunSupported()).isTrue();
+    assertThat(filter.apply(null).included()).isTrue();
   }
 }

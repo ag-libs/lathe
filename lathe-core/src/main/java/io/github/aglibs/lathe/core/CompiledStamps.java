@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core;
 import io.github.aglibs.lathe.core.schema.CompiledStampsData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,7 +20,7 @@ public final class CompiledStamps {
   private CompiledStamps() {}
 
   // Missing or corrupt file -> empty map: the scan then reads every source stale (self-healing).
-  public static Map<Path, Long> load(final Path moduleDir, final String sourceTree) {
+  public static Map<Path, SourceStamp> load(final Path moduleDir, final String sourceTree) {
     return byPath(read(moduleDir, sourceTree).stamps());
   }
 
@@ -28,12 +29,12 @@ public final class CompiledStamps {
     return byPath(read(moduleDir, sourceTree).built());
   }
 
-  // A build's stamps: every source's mtime, and the content it compiled (empty from a front-end
+  // A build's stamps: every source as compiled, and the content it compiled (empty from a front-end
   // that does not record it).
   public static void writeAll(
       final Path moduleDir,
       final String sourceTree,
-      final Map<Path, Long> stamps,
+      final Map<Path, SourceStamp> stamps,
       final Map<Path, ContentFingerprint> built)
       throws IOException {
     Json.write(
@@ -80,17 +81,17 @@ public final class CompiledStamps {
                 entry -> IOUtil.unchecked(() -> FileUtil.fingerprint(entry.getValue()))));
   }
 
-  // The server's own write: the mtime only, so what the build compiled stays the reference.
+  // The server's own writes, in one go: what the build compiled stays verify_change's reference.
   public static void record(
-      final Path moduleDir, final String sourceTree, final Path relPath, final long mtime)
+      final Path moduleDir, final String sourceTree, final Map<Path, SourceStamp> written)
       throws IOException {
     final CompiledStampsData data = read(moduleDir, sourceTree);
     final var stamps = new HashMap<>(byPath(data.stamps()));
-    stamps.put(relPath, mtime);
+    stamps.putAll(written);
     writeAll(moduleDir, sourceTree, stamps, byPath(data.built()));
   }
 
-  // Drops the mtimes only: what the build compiled is unchanged by a deletion, so a deleted file
+  // Drops the stamps only: what the build compiled is unchanged by a deletion, so a deleted file
   // still counts as changed, and one restored as it was (a branch switch and back) does not.
   public static void prune(final Path moduleDir, final String sourceTree, final Set<Path> relPaths)
       throws IOException {

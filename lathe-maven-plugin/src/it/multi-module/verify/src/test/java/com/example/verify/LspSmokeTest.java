@@ -78,6 +78,7 @@ class LspSmokeTest {
           ID_SHAPES + "$Inner#innerTest()",
           ID_SHAPES + "$Inner$Deeper#deeperTest()");
   private static final int TEST_METHOD = 1;
+  private static final int TEST_CLASS = 2;
   private static final int STDOUT = 0;
   private static final int STDERR = 1;
   private static final int COMMAND = 2;
@@ -596,6 +597,41 @@ class LspSmokeTest {
             line ->
                 stream(line) == STDERR
                     && text(line).equals("shapes: printsToStderr on stderr"));
+  }
+
+  // A JUnit @Suite has no test methods of its own: the editor still lists the class, and running it
+  // as a class replays the suite, whose results land on the class it selects.
+  @Test
+  void runTest_suiteClass_listedAndReplaysItsSelection() throws Exception {
+    final Path suite = SHAPES.resolve("src/test/java/com/example/shapes/ShapesSuite.java");
+    final var uri = Map.of("uri", suite.toUri().toString());
+    session.openDoc(suite.toUri().toString(), Files.readString(suite));
+
+    final List<JsonObject> targets =
+        objects(session.execute("lathe.runnables.list", uri).getAsJsonArray());
+    final JsonObject outcome =
+        session
+            .execute(
+                "lathe.run.test",
+                Map.of(
+                    "moduleRel", "shapes",
+                    "selections",
+                        List.of(
+                            Map.of(
+                                "selectorKind", "CLASS",
+                                "selectorValue", "com.example.shapes.ShapesSuite")),
+                    "token", "shapes-suite"))
+            .getAsJsonObject();
+
+    assertThat(targets)
+        .anyMatch(
+            target ->
+                target.get("kind").getAsInt() == TEST_CLASS
+                    && target.get("id").getAsString().equals("com.example.shapes.ShapesSuite"));
+    assertThat(outcome.get("launched").getAsBoolean()).isTrue();
+    assertThat(objects(outcome.getAsJsonArray("testResults")))
+        .extracting(result -> result.get("positionId").getAsString())
+        .containsAll(ID_SHAPES_TESTS);
   }
 
   // A module's tests, listed by a discover launch that runs none of them: what a module run of

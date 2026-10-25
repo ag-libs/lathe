@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
@@ -29,6 +30,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -433,7 +435,14 @@ class WorkspaceSessionTest {
   }
 
   private void writeStamps(final Map<Path, Long> stamps) throws IOException {
-    CompiledStamps.writeAll(config.moduleDir(), config.sourceTree(), stamps, Map.of());
+    CompiledStamps.writeAll(
+        config.moduleDir(),
+        config.sourceTree(),
+        stamps.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, entry -> new SourceStamp(entry.getValue(), null))),
+        Map.of());
   }
 
   @Test

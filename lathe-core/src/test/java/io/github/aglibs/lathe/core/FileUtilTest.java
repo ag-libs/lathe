@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.FileSystemException;
@@ -187,6 +188,19 @@ final class FileUtilTest {
     assertThat(Files.readString(file)).isEqualTo("{}");
     assertThatThrownBy(() -> FileUtil.touch(tempDir.resolve("missing.json")))
         .isInstanceOf(IOException.class);
+  }
+
+  @Test
+  void hasContent_sameChangedMissingOrNoRecord_trueOnlyForTheSameContent() throws IOException {
+    final Path file = Files.writeString(tempDir.resolve("Foo.java"), "class Foo {}");
+    final ContentFingerprint recorded = FileUtil.fingerprint(file);
+
+    assertThat(FileUtil.hasContent(file, recorded)).as("same content").isTrue();
+    assertThat(FileUtil.hasContent(file, null)).as("no record").isFalse();
+    Files.writeString(file, "class Foo { int changed; }");
+    assertThat(FileUtil.hasContent(file, recorded)).as("changed content").isFalse();
+    Files.delete(file);
+    assertThat(FileUtil.hasContent(file, recorded)).as("missing file").isFalse();
   }
 
   @Test

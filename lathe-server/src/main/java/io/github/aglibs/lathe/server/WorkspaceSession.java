@@ -20,6 +20,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
@@ -84,6 +85,7 @@ import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -3519,6 +3521,11 @@ final class WorkspaceSession {
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
     trees.forEach(this::reconcileDeletedSourcesIn);
+    // Not under a build: it rewrites the stamps itself, and a touched source is current meanwhile.
+    if (!building) {
+      trees.forEach(tree -> recordStamps(tree.config(), tree.touched()));
+    }
+
     final StaleScan scan = withReported(staleModules(trees));
     final long sourcesMs = scanned.elapsedMs();
     // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
@@ -3825,9 +3832,7 @@ final class WorkspaceSession {
     }
 
     final ContentFingerprint compiled = built.get(root.relativize(file));
-    return Files.notExists(file)
-        ? compiled == null
-        : compiled != null && Optional.of(compiled).equals(FileUtil.readFingerprint(file));
+    return Files.notExists(file) ? compiled == null : FileUtil.hasContent(file, compiled);
   }
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that mention
@@ -4115,7 +4120,7 @@ final class WorkspaceSession {
   private CompletableFuture<Void> compileChangedBatch(
       final ModuleSourceConfig config, final List<Path> sources, final Set<Path> failedFirst) {
     final var transientSources = new ArrayList<TransientSource>(sources.size());
-    final var mtimes = new LinkedHashMap<Path, Long>();
+    final var stamps = new LinkedHashMap<Path, SourceStamp>();
     for (final var source : sources) {
       final long mtime = mtimeMillis(source);
       final String content = readSource(source);
@@ -4125,7 +4130,10 @@ final class WorkspaceSession {
       }
 
       transientSources.add(new TransientSource(source.toUri().toString(), content));
-      mtimes.put(source, mtime);
+      // The content compiled, not a later read: a save during a long batch must not stamp it.
+      stamps.put(
+          source,
+          new SourceStamp(mtime, ContentFingerprint.of(content.getBytes(StandardCharsets.UTF_8))));
     }
 
     if (transientSources.isEmpty()) {
@@ -4135,21 +4143,21 @@ final class WorkspaceSession {
     LOG.fine(
         () -> {
           final String names =
-              mtimes.keySet().stream()
+              stamps.keySet().stream()
                   .limit(20)
                   .map(source -> source.getFileName().toString())
                   .collect(Collectors.joining(", "));
           return "[react] writing %d file(s) in %s: %s%s"
               .formatted(
-                  mtimes.size(),
+                  stamps.size(),
                   moduleRelForDir(config.moduleDir()),
                   names,
-                  mtimes.size() > 20 ? " +%d more".formatted(mtimes.size() - 20) : "");
+                  stamps.size() > 20 ? " +%d more".formatted(stamps.size() - 20) : "");
         });
 
     // Reported again after this read, a file stays reported for the next pass.
     final Map<Path, Long> reports =
-        mtimes.keySet().stream()
+        stamps.keySet().stream()
             .filter(reported::containsKey)
             .collect(Collectors.toUnmodifiableMap(source -> source, reported::get));
     return workspace
@@ -4162,7 +4170,7 @@ final class WorkspaceSession {
                 keepWriteDiagnostics(transientSources, written);
               }
 
-              return afterChangedBatch(config, Map.copyOf(mtimes), written, error, failedFirst);
+              return afterChangedBatch(config, Map.copyOf(stamps), written, error, failedFirst);
             },
             worker::execute)
         .thenCompose(next -> next);
@@ -4211,7 +4219,7 @@ final class WorkspaceSession {
 
   private CompletableFuture<Void> afterChangedBatch(
       final ModuleSourceConfig config,
-      final Map<Path, Long> mtimes,
+      final Map<Path, SourceStamp> stamps,
       final BatchWrite written,
       final Throwable error,
       final Set<Path> failedFirst) {
@@ -4221,15 +4229,15 @@ final class WorkspaceSession {
           error,
           () ->
               "[react] batch compile failed in %s".formatted(moduleRelForDir(config.moduleDir())));
-      mtimes.forEach(
-          (source, mtime) ->
-              failedCompiles.put(source, new FailedWrite(mtime, "the compiler failed")));
+      stamps.forEach(
+          (source, stamp) ->
+              failedCompiles.put(source, new FailedWrite(stamp.mtime(), "the compiler failed")));
       return CompletableFuture.completedFuture(null);
     }
 
     if (!written.failedUris().isEmpty() && failedFirst.isEmpty()) {
       final Map<Boolean, List<Path>> byFailure =
-          mtimes.keySet().stream()
+          stamps.keySet().stream()
               .collect(
                   Collectors.partitioningBy(
                       source -> written.failedUris().contains(source.toUri().toString())));
@@ -4238,13 +4246,14 @@ final class WorkspaceSession {
           .forEach(
               source ->
                   failedCompiles.put(
-                      source, new FailedWrite(mtimes.get(source), firstError(written, source))));
+                      source,
+                      new FailedWrite(stamps.get(source).mtime(), firstError(written, source))));
       LOG.fine(
           () ->
               "[react] %d of %d file(s) failed in %s, writing the rest"
                   .formatted(
                       byFailure.get(true).size(),
-                      mtimes.size(),
+                      stamps.size(),
                       moduleRelForDir(config.moduleDir())));
       // The failed files' open buffers get their write diagnostics.
       refreshScope.add(config.moduleDir());
@@ -4258,24 +4267,24 @@ final class WorkspaceSession {
       retryFailuresDownstream(config, failedFirst);
     }
 
-    mtimes.forEach(
-        (source, mtime) -> {
+    stamps.forEach(
+        (source, stamp) -> {
           try {
-            freshenClassOutputs(config, source, written, mtime);
+            freshenClassOutputs(config, source, written, stamp);
           } catch (final RuntimeException e) {
             // Left unstamped, the file would be rewritten by every next pass.
             LOG.log(Level.SEVERE, e, () -> "[react] freshening %s failed".formatted(source));
             failedCompiles.put(
-                source, new FailedWrite(mtime, "internal error, see the server log"));
+                source, new FailedWrite(stamp.mtime(), "internal error, see the server log"));
           }
         });
-    writtenSinceVerify.addAll(mtimes.keySet());
+    writtenSinceVerify.addAll(stamps.keySet());
     refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
         () ->
             "[react] recompiled %d file(s) in %s"
-                .formatted(mtimes.size(), moduleRelForDir(config.moduleDir())));
+                .formatted(stamps.size(), moduleRelForDir(config.moduleDir())));
     return CompletableFuture.completedFuture(null);
   }
 
@@ -4304,15 +4313,15 @@ final class WorkspaceSession {
       final ModuleSourceConfig config,
       final Path source,
       final BatchWrite written,
-      final long mtime) {
+      final SourceStamp stamp) {
     final Set<String> writtenBinaryNames = written.writtenBinaryNames();
     if (!wroteClassOf(config, source, writtenBinaryNames)) {
-      failedCompiles.put(source, new FailedWrite(mtime, firstError(written, source)));
+      failedCompiles.put(source, new FailedWrite(stamp.mtime(), firstError(written, source)));
       return;
     }
 
     deleteClassOutputs(config, source, writtenBinaryNames);
-    recordCompileStamp(config, source, mtime);
+    recordCompileStamp(config, source, stamp);
   }
 
   // Any written class of the source counts (Foo.class, Foo$*.class, or a sibling type), so a file
@@ -4460,44 +4469,90 @@ final class WorkspaceSession {
 
   // A source tree as one pass sees it: each hand-written source with its mtime, from one walk per
   // root, and the tree's stamps -- so its stale and orphaned sources follow without a further
-  // file-system call (a scan repeated every few seconds; such calls are costly on macOS).
+  // file-system call (a scan repeated every few seconds; such calls are costly on macOS). Only a
+  // source whose mtime moved is read, to tell a touch from a change.
   record TreeState(
-      ModuleSourceConfig config, Map<Path, Map<Path, Long>> sourcesByRoot, Map<Path, Long> stamps) {
+      ModuleSourceConfig config,
+      Map<Path, Map<Path, Long>> sourcesByRoot,
+      Map<Path, SourceStamp> stamps,
+      Map<Path, SourceStamp> touched) {
     TreeState {
       ValidCheck.check()
           .notNull(config, "config")
           .notNull(sourcesByRoot, "sourcesByRoot")
           .notNull(stamps, "stamps")
+          .notNull(touched, "touched")
           .validate();
       sourcesByRoot = Map.copyOf(sourcesByRoot);
       stamps = Map.copyOf(stamps);
+      touched = Map.copyOf(touched);
     }
 
     static TreeState read(final ModuleSourceConfig config) {
-      return new TreeState(
-          config,
+      final Map<Path, Map<Path, Long>> sourcesByRoot =
           config.sourceRoots().stream()
               .collect(
                   Collectors.toMap(
-                      root -> root, WorkspaceSession::javaSourceMtimes, (first, ignored) -> first)),
-          CompiledStamps.load(config.moduleDir(), config.sourceTree()));
+                      root -> root, WorkspaceSession::javaSourceMtimes, (first, ignored) -> first));
+      final Map<Path, SourceStamp> stamps =
+          CompiledStamps.load(config.moduleDir(), config.sourceTree());
+      return new TreeState(config, sourcesByRoot, stamps, touched(sourcesByRoot, stamps));
     }
 
     // No stamp (never built) or an mtime other than the one compiled -- older too, as a restore
-    // that keeps file times (rsync -a, cp -p, tar) brings back older content. Open files count
-    // like any other: an unsaved buffer is not on disk.
+    // that keeps file times (rsync -a, cp -p, tar) brings back older content -- unless only
+    // touched. Open files count like any other: an unsaved buffer is not on disk.
     List<Path> stale() {
+      return moved(sourcesByRoot, stamps)
+          .filter(source -> !touched.containsKey(source.rel()))
+          .map(ScannedSource::file)
+          .toList();
+    }
+
+    // Moved sources whose content is still what their class was compiled from (a touch, a branch
+    // switch and back, a build that compiled nothing), re-stamped at their new mtime.
+    private static Map<Path, SourceStamp> touched(
+        final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
+      return moved(sourcesByRoot, stamps)
+          .filter(ScannedSource::touched)
+          .collect(Collectors.toUnmodifiableMap(ScannedSource::rel, ScannedSource::restamped));
+    }
+
+    private static Stream<ScannedSource> moved(
+        final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
       return sourcesByRoot.entrySet().stream()
           .flatMap(
               root ->
                   root.getValue().entrySet().stream()
-                      .filter(
-                          source ->
-                              !source
-                                  .getValue()
-                                  .equals(stamps.get(root.getKey().relativize(source.getKey()))))
-                      .map(Map.Entry::getKey))
-          .toList();
+                      .map(source -> ScannedSource.of(root.getKey(), source, stamps)))
+          .filter(ScannedSource::moved);
+    }
+
+    // A source on disk with its stamp, null when it was never compiled.
+    private record ScannedSource(Path file, Path rel, long mtime, SourceStamp stamp) {
+      ScannedSource {
+        ValidCheck.check().notNull(file, "file").notNull(rel, "rel").validate();
+      }
+
+      static ScannedSource of(
+          final Path root,
+          final Map.Entry<Path, Long> source,
+          final Map<Path, SourceStamp> stamps) {
+        final Path rel = root.relativize(source.getKey());
+        return new ScannedSource(source.getKey(), rel, source.getValue(), stamps.get(rel));
+      }
+
+      boolean moved() {
+        return stamp == null || stamp.mtime() != mtime;
+      }
+
+      boolean touched() {
+        return stamp != null && FileUtil.hasContent(file, stamp.content());
+      }
+
+      SourceStamp restamped() {
+        return new SourceStamp(mtime, stamp.content());
+      }
     }
 
     // Stamped sources no longer on disk: their classes are left in the mirror.
@@ -4862,19 +4917,32 @@ final class WorkspaceSession {
   }
 
   private static void recordCompileStamp(
-      final ModuleSourceConfig config, final Path savedSource, final long mtime) {
+      final ModuleSourceConfig config, final Path savedSource, final SourceStamp stamp) {
     final var root = sourceRootFor(config, savedSource);
-    if (root == null) {
+    if (root != null) {
+      recordStamps(config, Map.of(root.relativize(savedSource), stamp));
+    }
+  }
+
+  private static void recordStamps(
+      final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {
+    if (stamps.isEmpty()) {
       return;
     }
 
-    final var sw = Stopwatch.start();
-    final Path rel = root.relativize(savedSource);
     try {
-      CompiledStamps.record(config.moduleDir(), config.sourceTree(), rel, mtime);
-      LOG.fine(() -> "[stamp] recorded %s %dms".formatted(rel, sw.elapsedMs()));
+      CompiledStamps.record(config.moduleDir(), config.sourceTree(), stamps);
+      LOG.fine(
+          () ->
+              "[stamp] %s recorded %d source(s)"
+                  .formatted(config.moduleDir().getFileName(), stamps.size()));
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[stamp] record failed for %s".formatted(rel));
+      LOG.log(
+          Level.WARNING,
+          e,
+          () ->
+              "[stamp] %s record failed for %d source(s)"
+                  .formatted(config.moduleDir().getFileName(), stamps.size()));
     }
   }
 

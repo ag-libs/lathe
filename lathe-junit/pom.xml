@@ -58,6 +58,7 @@
                 <exclude>**/CaptureLauncherSessionListener.java</exclude>
                 <exclude>**/CaptureOnlyPostDiscoveryFilter.java</exclude>
                 <exclude>**/LatheAgent.java</exclude>
+                <exclude>**/CaptureOnly.java</exclude>
               </excludes>
             </configuration>
           </execution>
@@ -74,6 +75,7 @@
                 <include>**/CaptureLauncherSessionListener.java</include>
                 <include>**/CaptureOnlyPostDiscoveryFilter.java</include>
                 <include>**/LatheAgent.java</include>
+                <include>**/CaptureOnly.java</include>
               </includes>
               <compilerArgs combine.children="append">
                 <!-- -Werror would fail on two harmless warnings: javac's that release 8 is

@@ -87,7 +87,7 @@ A single shared helper in `lathe-core` (used by both writers and the reader — 
 
 - `load(moduleDir, sourceTree) → Map<String,Long>`
 - `writeAll(moduleDir, sourceTree, Map<String,Long>)` — full rewrite (a whole-module build)
-- `record(moduleDir, sourceTree, relPath, mtime)` — load-put-write for one source (a save)
+- `record(moduleDir, sourceTree, stamps)` — load-put-write for the server's own writes (a save, a re-stamp)
 
 Format via the existing `Json` helper; the filename is a constant in `LatheLayout`
 (`compiledStampsFileName(sourceTree)` alongside `paramsFileName(sourceTree)`).
@@ -156,6 +156,10 @@ done, so the healthy tick adds no I/O.
 A `git checkout` touches mtimes, so identical content can read as stale (the same behavior as today).
 A content **hash** would be robust to that but costs a file read per suspicious source; it is recorded
 here as a **later hardening**, explicitly out of scope for phase one.
+
+Hardened later ([WS-18](../gaps/gaps-archive.md#ws-18--a-source-whose-time-changed-but-whose-content-did-not-is-recompiled-in-process--done)):
+each stamp also carries the content its class was compiled from.
+The scan reads only a source whose mtime moved, and the same content means a touch, re-stamped without a compile.
 
 ## Option comparison (why not record the class map)
 

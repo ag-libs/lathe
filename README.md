@@ -16,7 +16,7 @@
 
 Most Java language servers build their own model of your project, and it drifts from what your build actually does.
 Lathe doesn't keep a separate model.
-When you build, Lathe records how the build compiles, tests and runs each module, and the editor uses exactly that.
+When you build, Lathe [records how the build compiles, tests and runs each module](docs/guide/how-it-works.md#build-capture), and the editor uses exactly that.
 
 - **The editor agrees with your build.**
   Errors come from the JDK's own compiler with your build's flags.
@@ -31,7 +31,7 @@ When you build, Lathe records how the build compiles, tests and runs each module
 - **Gives AI agents the same view.**
   An [MCP server](docs/guide/ai-agents.md) lets coding agents use the compiler's answers instead of guessing with `grep`.
 
-See the full [feature list](docs/guide/features.md).
+See the full [feature list](docs/guide/features.md), or the [Neovim keymap reference](docs/guide/editors/neovim.md#lsp-actions) for each feature with its default and suggested key.
 
 ## Quick start
 
@@ -64,24 +64,24 @@ More options, including setup without the extension, are in the [installation gu
 
 ## Editors
 
-| Editor           | Support                                                         | Guide                                   |
-|------------------|-----------------------------------------------------------------|-----------------------------------------|
-| Neovim           | Full client: LSP plus run, test, debug and new-type scaffolding | [Neovim](docs/guide/editors/neovim.md)  |
-| VS Code / Cursor | "Lathe for Java" extension (preview, standard LSP)              | [VS Code](docs/guide/editors/vscode.md) |
-| Emacs            | Built-in Eglot, no plugin needed                                | [Emacs](docs/guide/editors/emacs.md)    |
-| Zed              | The Java extension, plus one settings file                      | [Zed](docs/guide/editors/zed.md)        |
+| Editor           | Support                                                                                                                  | Guide                                                                     |
+|------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
+| Neovim           | Full client: LSP plus run, test, debug and new-type scaffolding                                                          | [Neovim](docs/guide/editors/neovim.md) · [example config](examples/nvim/) |
+| VS Code / Cursor | "Lathe for Java" extension ([`.vsix` on each release](https://github.com/ag-libs/lathe/releases), preview, standard LSP) | [VS Code](docs/guide/editors/vscode.md)                                   |
+| Emacs            | Built-in [Eglot](https://www.gnu.org/software/emacs/manual/html_mono/eglot.html), no plugin needed                       | [Emacs](docs/guide/editors/emacs.md)                                      |
+| Zed              | The [Java extension](https://github.com/zed-extensions/java), plus one settings file                                     | [Zed](docs/guide/editors/zed.md)                                          |
 
 Lathe is a standard language server, so other LSP clients can use it too.
 
 ## AI agents
 
-`lathe-mcp-server` gives coding agents such as Claude Code the same analysis over the Model Context Protocol.
+`lathe-mcp-server` gives coding agents such as Claude Code the same analysis over the [Model Context Protocol](https://modelcontextprotocol.io/).
 Agents can check diagnostics, find references, rename across modules, run tests, and verify a change without a full build.
 See the [AI agents guide](docs/guide/ai-agents.md).
 
 ## Status
 
-Lathe is in active development and published to Maven Central.
+Lathe is in active development and published to [Maven Central](https://central.sonatype.com/namespace/io.github.ag-libs).
 
 - **Builds:** Maven, and the [OpenJDK `make` build](docs/guide/openjdk.md). Gradle support arrives in 0.2.0 (see the [Gradle guide](docs/guide/gradle.md)).
 - **Platforms:** Linux, macOS and Windows 10/11. On Windows, use VS Code, Cursor or Zed.

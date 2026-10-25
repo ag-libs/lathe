@@ -4,7 +4,9 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,16 +59,19 @@ public final class CompileCapture {
     FileUtil.replaceDir(Path.of(config.generatedSourcesDir()), mirror);
   }
 
-  // A stamp per source (root-relative path -> mtime) and the content compiled.
+  // Each source's stamp (its mtime and the content compiled) and, from the same hashes, what the
+  // build compiled.
   private static void writeStamps(final Path moduleDir, final ModuleConfigData config)
       throws IOException {
     final Map<Path, Path> sources = CompiledStamps.sourcesByKey(config);
-    final Map<Path, Long> stamps =
+    final Map<Path, ContentFingerprint> built = CompiledStamps.builtOf(sources);
+    final Map<Path, SourceStamp> stamps =
         sources.entrySet().stream()
             .collect(
-                Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> mtime(entry.getValue())));
-    CompiledStamps.writeAll(
-        moduleDir, config.sourceTree(), stamps, CompiledStamps.builtOf(sources));
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey,
+                    entry -> new SourceStamp(mtime(entry.getValue()), built.get(entry.getKey()))));
+    CompiledStamps.writeAll(moduleDir, config.sourceTree(), stamps, built);
   }
 
   private static long mtime(final Path path) {

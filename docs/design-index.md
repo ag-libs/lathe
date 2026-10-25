@@ -404,6 +404,12 @@ reused):
   (2026-10-24): the path from personal to team mode — an explicit command, one previewed
   `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
   and the project's registration winning over any other copy.
+- [Lessons from Metals v2](potential/lathe-metals-v2-lessons.md) — **potential.** Review of the
+  Metals v2 Java language server (2026-10-25), judged by Lathe's simplicity: most of Metals'
+  complexity comes from not trusting the build. Recommends `TaskListener` cancellation, a saved
+  reference index only if measurement justifies it, and validated MCP snippets for other agents;
+  rejects newest-first requests, git-reported changes, turbine header types, agent config writing
+  and anything needing javac internals.
 - [In-Process External-Change Recompilation](potential/lathe-external-change-recompilation.md) —
   **superseded** by [In-Process Workspace Sync](done/lathe-in-process-workspace-sync.md); retained as
   the archive of the reaction mechanics (batch FULL compile, startup reconciliation,

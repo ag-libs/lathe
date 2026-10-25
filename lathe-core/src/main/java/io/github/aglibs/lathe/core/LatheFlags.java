@@ -10,6 +10,9 @@ public final class LatheFlags {
   public static final String CAPTURE_ONLY = "lathe.capture.only";
   // Set by CI services; Lathe stays out of a CI build unless lathe.disabled=false says otherwise.
   public static final String CI_ENV = "CI";
+  // JUnit Platform's own switch (1.10+) for discovering tests and reporting them skipped, unrun:
+  // how lathe-junit's capture-only mode skips them.
+  public static final String JUNIT_DRY_RUN = "junit.platform.execution.dryRun.enabled";
   public static final String BUILD_DIR = "lathe.buildDir";
   public static final String RESULTS_SINK = "lathe.results.sink";
   // Set on a test launch to list the tests it would run, into the results sink, without running

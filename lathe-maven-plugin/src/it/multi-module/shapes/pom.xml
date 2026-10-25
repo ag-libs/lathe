@@ -21,6 +21,13 @@
       <version>5.14.4</version>
       <scope>test</scope>
     </dependency>
+    <!-- For ShapesSuite, which the editor lists and replays as a JUnit @Suite. -->
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite</artifactId>
+      <version>1.14.4</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
