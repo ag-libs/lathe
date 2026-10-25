@@ -1,5 +1,7 @@
 # Lathe — Reactor Type Index Design
 
+**Status: implemented.** Implementation Status below records what remains.
+
 This document describes the focused server-side slice for adding reactor type candidates to
 `WorkspaceTypeIndex`.
 It builds on [lathe-type-index.md](../done/lathe-type-index.md) and uses the current server worker model from

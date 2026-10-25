@@ -350,10 +350,10 @@ final class LatheMcpTools {
                 """
                 After editing Java files, recompile the changed files and their callers, in their \
                 module and in dependent modules, in-process against the real classpath — no full \
-                build — and report errors first, grouped by module: errors and warnings of the \
-                changed files, only errors of their callers (unused-code hints left out). With no \
-                `files` it checks what changed on disk plus what Lathe's own tools wrote, such as a \
-                rename. When the change reaches other modules it names them and returns the sync \
+                build — and report one list, errors first, each path starting with its module: \
+                errors and warnings of the changed files, only errors of their callers (unused-code \
+                hints left out). With no `files` it checks what changed on disk plus what Lathe's \
+                own tools wrote, such as a rename. When the change reaches other modules it names them and returns the sync \
                 command that builds them, optional when no errors were found. Use it to confirm \
                 your edits still compile before a build.\
                 """)

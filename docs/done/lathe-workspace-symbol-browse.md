@@ -30,7 +30,7 @@ that returns "everything" to seed a local fuzzy filter.
 
 This document is scoped to the blank-query gap only.
 It does not address CamelCase or infix matching for non-blank queries — that is tracked
-separately as [EG-005](gaps/gaps.md) (accepted, targeted at M2) and is independent of blank-query
+separately as [EG-005](../gaps/gaps-archive.md) (accepted, targeted at M2) and is independent of blank-query
 support.
 
 ## Goal
@@ -346,7 +346,7 @@ check that test class first before writing new fixtures, per the testing rules i
 
 ## Related Work
 
-- [EG-005](gaps/gaps.md) — CamelCase and infix workspace-symbol matching for non-blank queries.
+- [EG-005](../gaps/gaps-archive.md) — CamelCase and infix workspace-symbol matching for non-blank queries.
   Deferred to M2, independent of this document.
 - [Type Index](lathe-type-index.md) and [Reactor Type Index](lathe-reactor-type-index.md) — the
   underlying `WorkspaceTypeIndex` design this document builds on.

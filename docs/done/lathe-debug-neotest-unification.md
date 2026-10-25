@@ -241,7 +241,7 @@ self-minting via `output.next_token()`.
 This design makes debug's **output panel** work like a run's (NV-4): the whole transcript streams into
 the shared docked console and pass/fail is surfaced.
 It does **not** attribute or label output per test — that remains the parked
-[Per-Test Output Attribution](../potential/lathe-per-test-output-attribution.md) spike (and the lighter
+[Per-Test Output Attribution](../done/lathe-per-test-output-attribution.md) spike (and the lighter
 marker-line variant discussed alongside it).
 
 The payoff is structural: run and debug now share the one `lathe/testOutput` handler and the one docked

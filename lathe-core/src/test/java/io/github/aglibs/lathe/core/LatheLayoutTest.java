@@ -14,7 +14,7 @@ class LatheLayoutTest {
 
   @AfterEach
   void clearProperty() {
-    System.clearProperty("lathe.cache");
+    System.clearProperty(LatheFlags.CACHE_ROOT);
   }
 
   // The guard for LatheLayout.Maven: build-neutral modules never name a Maven-only constant. A
@@ -87,14 +87,14 @@ class LatheLayoutTest {
 
   @Test
   void logsDir_underCacheOverride_resolvesToLogsSubdir(@TempDir final Path cache) {
-    System.setProperty("lathe.cache", cache.toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, cache.toString());
 
     assertThat(LatheLayout.logsDir()).isEqualTo(cache.resolve(LatheLayout.LOGS_DIR));
   }
 
   @Test
   void mcpSessionLog_withSessionId_namesFilePerSessionUnderLogsDir(@TempDir final Path cache) {
-    System.setProperty("lathe.cache", cache.toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, cache.toString());
 
     final Path log = LatheLayout.mcpSessionLog("20260922-141233-48210");
 
@@ -106,7 +106,7 @@ class LatheLayoutTest {
 
   @Test
   void mcpSessionLog_pidOnlyFallbackId_stillNamesUnderLogsDir(@TempDir final Path cache) {
-    System.setProperty("lathe.cache", cache.toString());
+    System.setProperty(LatheFlags.CACHE_ROOT, cache.toString());
 
     assertThat(LatheLayout.mcpSessionLog("48210"))
         .isEqualTo(cache.resolve("logs").resolve("mcp-48210.log"));

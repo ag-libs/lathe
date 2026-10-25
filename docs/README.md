@@ -7,7 +7,7 @@ Start here. This page describes how `docs/` is organized; it does not contain de
 These four define the project's direction and current truth:
 
 - [lathe-design.md](lathe-design.md) — the stable architecture.
-- [roadmap.md](roadmap.md) — release milestones (M1–M3, post-M3) and exit criteria; authoritative for scope.
+- [roadmap.md](roadmap.md) — the M1 and M2 milestones, the post-beta release model and backlog, and exit criteria; authoritative for scope.
 - [status.md](status.md) — what works today and the known gaps; authoritative for the implemented baseline.
 - [design-index.md](design-index.md) — maps every design document to the roadmap.
 

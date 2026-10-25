@@ -1,5 +1,9 @@
 # Lathe — Java Language Server Design (v3)
 
+> This document records the original architecture and may lag the code.
+> For current behaviour see [status.md](status.md), [lathe-workspace-contract.md](lathe-workspace-contract.md),
+> and the [user guide](guide/).
+
 ## 1. Vision & Scope
 
 Lathe is a JPMS-first Java Language Server for Maven projects.

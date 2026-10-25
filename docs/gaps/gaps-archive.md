@@ -6716,7 +6716,7 @@ Consequently, the client cannot distinguish:
 - a bug in result aggregation.
 
 This conflicts with the fail-fast policy in
-[lathe-m1-refactoring.md](../planned/lathe-m1-refactoring.md).
+[lathe-m1-refactoring.md](../done/lathe-m1-refactoring.md).
 
 ### Required behavior
 
@@ -8697,7 +8697,7 @@ Not yet decided; options to weigh when scheduled, cheapest first:
    affected reactor type-index entries between syncs.
 3. A fuller freshness model that reconciles the reactor index and mirror with on-disk sources
    without a Maven round trip; overlaps with [Sibling Recompilation](../done/lathe-sibling-recompilation.md)
-   and the [Reactor Type Index](../planned/lathe-reactor-type-index.md) freshness follow-ups.
+   and the [Reactor Type Index](../done/lathe-reactor-type-index.md) freshness follow-ups.
 
 Scheduled for M2 as **WS-5**. The original plan was option 2 (in-process recompile), but that is
 **parked** — correct only for single-module change sets — in favour of **option 1**: detect source

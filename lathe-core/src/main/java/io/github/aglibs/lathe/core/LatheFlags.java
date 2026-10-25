@@ -20,6 +20,8 @@ public final class LatheFlags {
   public static final String TEST_FINISHED_MARKER = "\u0001lathe:test-finished\t";
   // How often the server scans for files changed outside the editor, in ms (default 2000).
   public static final String SCAN_INTERVAL_MS = "lathe.scanIntervalMs";
+  // Overrides the user cache root, ~/.cache/lathe by default.
+  public static final String CACHE_ROOT = "lathe.cache";
   // For every JVM Lathe starts (its server, launched runs and tests): stdout and stderr in UTF-8,
   // as Lathe reads them, instead of the console code page on Windows. JDK 19+; older JDKs ignore
   // the properties.
