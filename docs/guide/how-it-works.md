@@ -91,6 +91,10 @@ Saves, outside changes, and renames all go through the same write: changed files
 A file that does not compile keeps its last good classes and is retried when it or a file it depends on changes.
 
 Only a change to a **build file** (a `pom.xml`, or a dependency change) asks you to sync, as Lathe cannot reproduce dependency resolution itself.
+The sync runs `.lathe/lathe-sync.sh`, a script the build writes, so the editor never needs to know your build tool.
+The Neovim client runs it when you answer the prompt; in other editors, run it (or your Maven build) yourself.
+You can run it any time: `.lathe/lathe-sync.sh` refreshes everything, `.lathe/lathe-sync.sh app core` only those modules (with their upstream), and `--tests` also re-captures test launches without running the tests.
+It prints the exact build command first.
 While a build holds `.lathe/lathe.lock`, Lathe still compiles the files you save and catches up on outside changes when the build ends.
 
 ## Partial builds

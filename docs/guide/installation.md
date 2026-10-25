@@ -22,6 +22,9 @@ Both produce the identical effective build.
 - **Maven 3.6.3+** and **`maven-compiler-plugin` 3.6.2+**; with the extension, an older Maven or
   compiler plugin fails the build with a message naming the fix (or add `-Dlathe.disabled=true` to build
   without Lathe).
+- Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not
+  captured, so they can't be run or debugged from the editor; see [test capture](test-capture.md) for
+  the other test requirements.
 
 Lathe stays out of CI builds: when the `CI` environment variable is set, it injects nothing, unless
 you pass `-Dlathe.disabled=false`.
@@ -171,6 +174,11 @@ Lathe shim rather than skipping up-to-date output. If your build sets
 
 After that, any normal build (`mvn test` / `verify` / `install`) refreshes the templates automatically.
 Add `.lathe/` to `.gitignore`.
+
+The [Maven Daemon (`mvnd`)](https://github.com/apache/maven-mvnd) makes these builds noticeably faster; use it in place of `mvn` where you can.
+
+If your build uses the Maven build cache extension, turn it off for Lathe builds with `-Dmaven.build.cache.enabled=false`.
+A cache hit skips compilation, so Lathe would not see the real build and its captured configuration would go stale.
 
 ## What and where Lathe writes
 
@@ -447,9 +455,31 @@ table you pass to `start_or_attach`.
 > harness drives both over identical probe points and reports divergences — see
 > [the differential-testing design](../done/lathe-jdtls-differential-testing.md).
 
+## Turning Lathe off
+
+Lathe is on by default and stays out of CI builds.
+To turn it off for everyone building a project, commit the property in the reactor `pom.xml`:
+
+```xml
+<properties>
+  <lathe.disabled>true</lathe.disabled>
+</properties>
+```
+
+| Condition                                       | Effect                                  |
+|-------------------------------------------------|-----------------------------------------|
+| `<lathe.disabled>true</...>` in the reactor POM | disabled for everyone building the repo |
+| `-Dlathe.disabled=true`                         | disabled regardless of other settings   |
+| `-Dlathe.disabled=false`                        | enabled, overrides `CI`                 |
+| `CI` environment variable is set                | Lathe does not run                      |
+
+When the POM opts out, a developer can opt back in by creating an empty `.lathe/` at the repo root.
+It overrides the POM opt-out, so the next build wires Lathe up and fills the directory.
+A `-Dlathe.disabled=true` or `CI` stays absolute; `.lathe/` does not override it.
+
 ## Verify
 
 After the recommended first run above, confirm `.lathe/` exists at the reactor root and that each
 module directory holds its parameter files plus a `test-launch.json` (proof that capture ran). If
-`.lathe/` is missing, see the README **Troubleshooting** section (and confirm you are running `mvn`
+`.lathe/` is missing, see [Troubleshooting](troubleshooting.md) (and confirm you are running `mvn`
 from the directory that contains `.mvn/`).
