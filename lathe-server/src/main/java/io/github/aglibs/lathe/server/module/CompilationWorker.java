@@ -421,16 +421,19 @@ public final class CompilationWorker {
       final int version,
       final Range range,
       final List<CodeActionRequest> requests,
-      final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex));
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
+    return submit(
+        ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex, staticImports));
   }
 
   public CompletableFuture<MissingImportsResult> missingImports(
       final String uri,
       final String content,
       final int version,
-      final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex));
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
+    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex, staticImports));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

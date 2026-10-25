@@ -3048,6 +3048,7 @@ final class WorkspaceSession {
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
@@ -3057,7 +3058,13 @@ final class WorkspaceSession {
                     openEntries -> {
                       final var enriched = buildEnrichedIndex(baseIndex, openEntries);
                       return moduleWorker.codeAction(
-                          uri, openFile.content(), openFile.version(), range, requests, enriched);
+                          uri,
+                          openFile.content(),
+                          openFile.version(),
+                          range,
+                          requests,
+                          enriched,
+                          staticImports);
                     })
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
@@ -3071,11 +3078,13 @@ final class WorkspaceSession {
     }
 
     final var indexSnapshot = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .missingImports(uri, openFile.content(), openFile.version(), indexSnapshot)
+                .missingImports(
+                    uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
                 .exceptionally(
                     ex ->
                         logAndReturn(

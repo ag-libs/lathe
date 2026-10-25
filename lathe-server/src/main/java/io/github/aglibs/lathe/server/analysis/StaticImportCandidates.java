@@ -83,6 +83,16 @@ public final class StaticImportCandidates {
         .toList();
   }
 
+  // What follows `import` for each candidate of exactly this name: `static owner.member`.
+  public static List<String> importSpellings(
+      final LearnedStaticImports learned,
+      final AttributedFileAnalysis analysis,
+      final String name) {
+    return find(learned, analysis, name::equals).stream()
+        .map(candidate -> "static %s".formatted(candidate.qualifiedName()))
+        .toList();
+  }
+
   private static Stream<Candidate> resolve(
       final String learnedImport,
       final int count,
