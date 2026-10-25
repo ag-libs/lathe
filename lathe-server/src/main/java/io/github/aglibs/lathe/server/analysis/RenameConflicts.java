@@ -23,8 +23,9 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.util.Types;
 
 // Why a rename would collide with a declaration of the new name: a member of the same kind the
-// owner has or inherits, a sibling type, or a variable in scope. Shadowing the renamed symbol at a
-// use elsewhere is not detected.
+// owner has or inherits, a sibling type, or a variable in scope. Not detected: the new name
+// shadowing the symbol at a use (a local of that name where the renamed field is read), a subclass
+// member the renamed one would override or hide, and a type name other files import.
 public final class RenameConflicts {
 
   private static final Set<ElementKind> VARIABLES =
