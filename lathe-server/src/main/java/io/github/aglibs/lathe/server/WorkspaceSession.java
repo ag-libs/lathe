@@ -32,6 +32,7 @@ import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
@@ -3001,6 +3002,7 @@ final class WorkspaceSession {
       final String uri, final Position pos, final CompletionContext context) {
     final var indexSnapshot = typeIndex;
     final var route = routeCompiler(uri);
+    final LearnedStaticImports staticImports = learnedStaticImports(route);
     return openDocFeature(
         uri,
         CompletionOutcome.of(List.of()),
@@ -3013,7 +3015,8 @@ final class WorkspaceSession {
                     pos,
                     context,
                     indexSnapshot,
-                    completionModuleNames(route, uri))
+                    completionModuleNames(route, uri),
+                    staticImports)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -3045,6 +3048,7 @@ final class WorkspaceSession {
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
@@ -3054,7 +3058,13 @@ final class WorkspaceSession {
                     openEntries -> {
                       final var enriched = buildEnrichedIndex(baseIndex, openEntries);
                       return moduleWorker.codeAction(
-                          uri, openFile.content(), openFile.version(), range, requests, enriched);
+                          uri,
+                          openFile.content(),
+                          openFile.version(),
+                          range,
+                          requests,
+                          enriched,
+                          staticImports);
                     })
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
@@ -3068,11 +3078,13 @@ final class WorkspaceSession {
     }
 
     final var indexSnapshot = typeIndex;
+    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
-                .missingImports(uri, openFile.content(), openFile.version(), indexSnapshot)
+                .missingImports(
+                    uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
                 .exceptionally(
                     ex ->
                         logAndReturn(
@@ -4767,6 +4779,14 @@ final class WorkspaceSession {
                   uri,
                   "This file is not under any Lathe module source root, so Lathe cannot analyze it.");
             });
+  }
+
+  // The static imports the file's own scope declares: test files learn from test files, main files
+  // from main files, and a file outside any module from nothing.
+  private LearnedStaticImports learnedStaticImports(final CompilerRoute route) {
+    return route instanceof final CompilerRoute.Module module
+        ? candidateIndex.staticImports(module.config().isTestTree())
+        : LearnedStaticImports.empty();
   }
 
   private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {

@@ -82,7 +82,7 @@ Like the editor, it reads from a populated `.lathe/`, so run a build once first.
 | `run_test`             | replay a test / class / package from captured bytecode — no build   |
 | `analyze_change`       | pre-edit impact of a symbol: override family, production/test reference counts, affected modules, relevant tests |
 | `format_file`          | format a file in place with the project's pinned formatter, so edits pass Spotless |
-| `fix_imports`          | add a file's missing imports that have one match; list the ambiguous ones with their candidates |
+| `fix_imports`          | add a file's missing imports that have one match, static ones included; list the ambiguous ones with their candidates |
 | `verify_change`        | recompile the changed files (incl. Lathe's own writes) and their callers in-process, report errors first, one `path:line:column:` line each (callers: errors only, no hints) + the scoped `.lathe/lathe-sync.sh` for cross-module impact — no build |
 
 Each tool declares the MCP annotations that say whether it writes: only `rename_symbol`, `run_test`,
@@ -109,11 +109,11 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
-| Completion                   | types, methods, and variables, with automatic import insertion                                    | `textDocument/completion`                         |
+| Completion                   | types, methods, and variables, with automatic import insertion; static members the project already imports statically elsewhere in the same scope (test or main), with their `import static` | `textDocument/completion`                         |
 | Document / workspace symbols | file outline; workspace search by name prefix, simple or qualified (`java.util.Map.Entry`), with CamelCase-hump matching for reactor types (`ASF` finds `AbstractServerFactory`) | `textDocument/documentSymbol`, `workspace/symbol` |
 | Type hierarchy               | supertypes and subtypes of the symbol under the cursor, one level at a time                        | `textDocument/prepareTypeHierarchy`               |
 | Full type hierarchy          | all transitive supertypes and subtypes of the type under the cursor at once, tagged by relation    | `workspace/executeCommand` · `lathe.typeHierarchy` |
-| Add missing imports          | resolve every unimported type in the file in one pass — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |
+| Add missing imports          | resolve every unimported type in the file in one pass, and every unresolved call the scope statically imports elsewhere — unambiguous names are added automatically, ambiguous ones prompt | `workspace/executeCommand` · `lathe.missingImports` |
 | Call hierarchy               | incoming and outgoing calls of a method                                                           | `textDocument/prepareCallHierarchy`               |
 | Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
 | Folding                      | classes, methods, blocks, and import groups                                                       | `textDocument/foldingRange`                       |
@@ -123,7 +123,7 @@ DAP), so any LSP client can drive it; see [Editors](#editors) for the clients an
 | Feature             | What it does                                                                                 | LSP method                        |
 |---------------------|----------------------------------------------------------------------------------------------|-----------------------------------|
 | Diagnostics         | `javac` errors and warnings exactly as your build configures them, plus unused private members and locals | `textDocument/publishDiagnostics` |
-| Code actions        | quick fixes and refactors: missing imports, add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
+| Code actions        | quick fixes and refactors: missing imports (including `import static` for members the scope imports elsewhere), add `throws`, wrap in `try/catch`, declare local, replace `var` with the inferred type, extract variable / constant / field, add a `final` field as a constructor parameter, stub a missing method | `textDocument/codeAction`         |
 | Formatting          | the project's own formatter, detected from its Spotless setup — google-java-format, palantir-java-format, or Eclipse at the exact version it pins — run in-process in milliseconds, selections included | `textDocument/formatting`, `rangeFormatting`, `rangesFormatting` |
 
 Lathe applies the formatter step only, not other Spotless steps such as import order or license headers.

@@ -142,7 +142,9 @@ vim.keymap.set('n', 'grh', '<cmd>LatheTypeHierarchy<cr>', { desc = 'Lathe: full 
 ```
 
 `:LatheMissingImports` adds an import for **every unresolved type in the buffer** in one pass — the
-fix for pasting a snippet with several unimported types. It works off the live buffer (no save
+fix for pasting a snippet with several unimported types.
+It also adds `import static` lines for unresolved calls such as `assertThat(…)` or `mock(…)` when other
+files of the same scope already import them statically (see [Static imports](#static-imports)). It works off the live buffer (no save
 needed): names with a single candidate are added automatically, and a name with several candidates is
 offered one at a time via `vim.ui.select` so you pick (or skip); everything chosen lands in one edit,
 then a summary reports what was added and any name it could not resolve. The same action is offered in
@@ -177,6 +179,19 @@ The server auto-starts when you open a `.java` file. To use workspace navigation
 symbols) *before* opening one — from a dashboard or an empty buffer — run **`:LatheStart`**, which
 starts the server for the current directory's `.lathe` workspace and attaches it to the current
 buffer.
+
+### Static imports
+
+Lathe learns static imports from the ones your project already declares; there is no list to
+configure.
+In a test, typing `assertTh` offers `assertThat` from the class your other tests import it from, and
+accepting it adds the `import static` line; an unresolved `assertThat(x)` gets an
+**"Import 'static …'"** quick fix, and `:LatheMissingImports` adds it with the others.
+Each scope learns from its own files: a test file from test files, a main file from main files.
+So main code whose files have no static imports is never offered one, while test code gets AssertJ,
+Mockito, WireMock or your own fixture helpers, whatever its tests already use.
+A library's first static import in a scope is typed by hand; from then on it is offered everywhere in
+that scope.
 
 ## Formatting & indentation
 

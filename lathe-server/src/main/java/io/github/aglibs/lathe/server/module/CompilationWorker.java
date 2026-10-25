@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
@@ -392,9 +393,12 @@ public final class CompilationWorker {
       final Position position,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames) {
+      final List<String> moduleNames,
+      final LearnedStaticImports staticImports) {
     return submit(
-        ctx -> ctx.complete(uri, content, version, position, context, typeIndex, moduleNames));
+        ctx ->
+            ctx.complete(
+                uri, content, version, position, context, typeIndex, moduleNames, staticImports));
   }
 
   public CompletableFuture<CompletionOutcome> completeTransient(
@@ -417,16 +421,19 @@ public final class CompilationWorker {
       final int version,
       final Range range,
       final List<CodeActionRequest> requests,
-      final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex));
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
+    return submit(
+        ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex, staticImports));
   }
 
   public CompletableFuture<MissingImportsResult> missingImports(
       final String uri,
       final String content,
       final int version,
-      final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex));
+      final WorkspaceTypeIndex typeIndex,
+      final LearnedStaticImports staticImports) {
+    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex, staticImports));
   }
 
   public CompletableFuture<List<SemanticToken>> semanticTokens(

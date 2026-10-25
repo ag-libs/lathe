@@ -5,6 +5,7 @@ import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
+import io.github.aglibs.lathe.server.analysis.StaticImportCandidates;
 import io.github.aglibs.lathe.server.analysis.Strings;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.ArrayList;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -260,7 +262,11 @@ public final class CompletionEngine {
               .toList();
     }
 
-    final List<CompletionItem> items = presentSimpleNameCandidates(candidates, rankingContext);
+    final List<CompletionItem> items =
+        Stream.concat(
+                presentSimpleNameCandidates(candidates, rankingContext).stream(),
+                learnedStaticImportItems(parsed, injected.prefix(), semanticContext, req).stream())
+            .toList();
 
     // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
     // that
@@ -516,6 +522,57 @@ public final class CompletionEngine {
     }
 
     return null;
+  }
+
+  // Static members the file's scope already imports elsewhere, ranked after everything in scope and
+  // among themselves by how many files import them; accepting one adds its `import static`.
+  private static List<CompletionItem> learnedStaticImportItems(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext,
+      final CompletionRequest req) {
+    if (semanticContext == null
+        || prefix.isEmpty()
+        || parsed.sentinelContext() == SentinelContext.CASE_LABEL) {
+      return List.of();
+    }
+
+    final List<StaticImportCandidates.Candidate> found =
+        StaticImportCandidates.find(
+            req.staticImports(), semanticContext.analysis(), name -> name.startsWith(prefix));
+    final var factory = new CandidateFactory(semanticContext.analysis().types());
+    final List<CompletionCandidate> candidates =
+        IntStream.range(0, found.size())
+            .mapToObj(rank -> learnedStaticImportCandidate(found.get(rank), rank, factory))
+            .toList();
+    final List<CompletionItem> items =
+        candidates.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(candidates, items, semanticContext.analysis());
+    return items;
+  }
+
+  // One item per name: an overloaded method shows `(…)` rather than one overload's parameters.
+  private static CompletionCandidate learnedStaticImportCandidate(
+      final StaticImportCandidates.Candidate found,
+      final int rank,
+      final CandidateFactory factory) {
+    final CompletionCandidate base =
+        factory.memberCandidate(found.overloads().get(0), (DeclaredType) found.owner().asType());
+    final boolean overloaded = found.overloads().size() > 1;
+    final String owner = found.owner().getQualifiedName().toString();
+    return new CompletionCandidate(
+        base.name(),
+        base.label(),
+        base.kind(),
+        owner,
+        overloaded ? "%s($1)".formatted(base.name()) : base.insertText(),
+        overloaded || base.snippet(),
+        "9_%04d_%s".formatted(rank, base.name()),
+        overloaded ? "(…)" : base.labelDetail(),
+        found.owner().getSimpleName().toString(),
+        base.valueType(),
+        owner,
+        new ImportEdit(found.qualifiedName(), true));
   }
 
   private static List<CompletionItem> presentSimpleNameCandidates(

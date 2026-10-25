@@ -747,6 +747,32 @@ class LatheEngineTest {
     assertThat(again.unresolved()).extracting(MissingImport::name).contains("Widget", "Fooo");
   }
 
+  // A call that another file of the same scope imports statically gets that static import, learned
+  // from the workspace's own import lines with nothing configured.
+  @Test
+  void fixImports_memberImportedStaticallyElsewhere_addsTheStaticImport() throws Exception {
+    TestCompiler.writeModuleSource(
+        tmp,
+        "com/example/Checked.java",
+        "package com.example;\nimport static java.util.Objects.requireNonNull;\n"
+            + "class Checked { Checked(Object o) { requireNonNull(o); } }\n");
+    final Path source =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Unchecked.java",
+            "package com.example;\nclass Unchecked { Unchecked(Object o) { requireNonNull(o); } }\n");
+    engine = new LatheEngine(tmp);
+
+    final LatheImports imports = engine.fixImports(source);
+
+    assertThat(imports.added()).containsExactly("static java.util.Objects.requireNonNull");
+    assertThat(imports.unresolved()).isEmpty();
+    assertThat(Files.readString(source))
+        .startsWith(
+            "package com.example;\nimport static java.util.Objects.requireNonNull;\n"
+                + "class Unchecked {");
+  }
+
   @Test
   void fixImports_nothingMissing_writesNothing() throws Exception {
     final String clean =

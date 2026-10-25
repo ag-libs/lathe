@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -36,10 +38,25 @@ final class ReferenceCandidateIndex {
   // The mtime each file was read at, for files whose tokens came from disk; a file whose tokens
   // came from an editor buffer has none. Generated sources are left out: only a sync rewrites them.
   private final Map<Path, Long> diskMtimes = new HashMap<>();
+  // Each file's static imports, and per scope how many of its files declare each one: completion
+  // and import fixes learn from them, a test file from test files and a main file from main files.
+  private final Map<String, Set<String>> uriToStaticImports = new HashMap<>();
+  private final Map<String, Integer> testStaticImports = new HashMap<>();
+  private final Map<String, Integer> mainStaticImports = new HashMap<>();
+  private final Set<Path> testRoots;
+
+  private ReferenceCandidateIndex(final Set<Path> testRoots) {
+    this.testRoots = testRoots;
+  }
 
   static ReferenceCandidateIndex build(final List<ModuleSourceConfig> allConfigs) {
     final var t = Stopwatch.start();
-    final var index = new ReferenceCandidateIndex();
+    final var index =
+        new ReferenceCandidateIndex(
+            allConfigs.stream()
+                .filter(ModuleSourceConfig::isTestTree)
+                .flatMap(config -> config.searchRoots().stream())
+                .collect(Collectors.toUnmodifiableSet()));
     allConfigs.stream()
         .flatMap(
             config ->
@@ -84,17 +101,35 @@ final class ReferenceCandidateIndex {
   }
 
   private void index(final String uri, final String content) {
-    final Set<String> tokens = extractTokens(content);
-    uriToTokens.put(uri, tokens);
-    for (final var token : tokens) {
+    final Scan scan = scan(content);
+    uriToTokens.put(uri, scan.tokens());
+    for (final var token : scan.tokens()) {
       tokenToUris.computeIfAbsent(token, k -> new HashSet<>()).add(uri);
     }
+
+    final Map<String, Integer> counts = staticImportCounts(uri);
+    uriToStaticImports.put(uri, scan.staticImports());
+    scan.staticImports().forEach(imp -> counts.merge(imp, 1, Integer::sum));
+  }
+
+  LearnedStaticImports staticImports(final boolean testScope) {
+    return new LearnedStaticImports(testScope ? testStaticImports : mainStaticImports);
+  }
+
+  private Map<String, Integer> staticImportCounts(final String uri) {
+    return LatheUri.isFileUri(uri) && testRoots.stream().anyMatch(LatheUri.toPath(uri)::startsWith)
+        ? testStaticImports
+        : mainStaticImports;
   }
 
   void remove(final String uri) {
     if (LatheUri.isFileUri(uri)) {
       diskMtimes.remove(LatheUri.toPath(uri));
     }
+
+    final Map<String, Integer> counts = staticImportCounts(uri);
+    Objects.requireNonNullElse(uriToStaticImports.remove(uri), Set.<String>of())
+        .forEach(imp -> counts.computeIfPresent(imp, (key, count) -> count > 1 ? count - 1 : null));
 
     final var tokens = uriToTokens.remove(uri);
     if (tokens == null) {
@@ -147,8 +182,18 @@ final class ReferenceCandidateIndex {
     }
   }
 
-  private static Set<String> extractTokens(final String content) {
+  // A file's identifier and import tokens, and the static imports among its imports.
+  private record Scan(Set<String> tokens, Set<String> staticImports) {
+
+    Scan {
+      tokens = Set.copyOf(tokens);
+      staticImports = Set.copyOf(staticImports);
+    }
+  }
+
+  private static Scan scan(final String content) {
     final var tokens = new HashSet<String>();
+    final var staticImports = new HashSet<String>();
 
     // 1. Extract all simple Java identifiers
     int i = 0;
@@ -171,7 +216,8 @@ final class ReferenceCandidateIndex {
       final int endSemi = content.indexOf(';', importIdx);
       if (endSemi > importIdx && endSemi - importIdx < 200) {
         String imp = content.substring(importIdx + 7, endSemi).trim();
-        if (imp.startsWith("static ")) {
+        final boolean staticImport = imp.startsWith("static ");
+        if (staticImport) {
           imp = imp.substring(7).trim();
         }
         imp = imp.replace(" ", "").replace("\t", "").replace("\n", "").replace("\r", "");
@@ -179,11 +225,15 @@ final class ReferenceCandidateIndex {
           tokens.add(imp);
           addEnclosingTypeToken(tokens, imp);
         }
+
+        if (staticImport && !imp.isEmpty()) {
+          staticImports.add(imp);
+        }
       }
       importIdx = content.indexOf("import ", importIdx + 7);
     }
 
-    return Set.copyOf(tokens);
+    return new Scan(tokens, staticImports);
   }
 
   // A nested-type or static-member import (`import pkg.Outer.Inner`) also references the enclosing

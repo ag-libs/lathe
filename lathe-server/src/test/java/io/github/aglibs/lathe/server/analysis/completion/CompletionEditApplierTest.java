@@ -61,7 +61,7 @@ class CompletionEditApplierTest {
 
   private static CompletionRequest requestWith(final String content) {
     return new CompletionRequest(
-        "file:///Test.java", content, new Position(0, 0), null, null, null, null);
+        "file:///Test.java", content, new Position(0, 0), null, null, null, null, null);
   }
 
   private static int rangeEndCharacter(final CompletionItem item) {
