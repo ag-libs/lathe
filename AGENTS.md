@@ -99,8 +99,8 @@ The two `-pl lathe-maven-plugin` commands take the Lathe jars the fixtures need 
 
 `lathe-gradle-plugin` runs `gradle` from the PATH (Gradle 9.8.2, no wrapper); `-Dlathe.gradle.home=<dir>`
 runs `<dir>/bin/gradle` instead, and `-Dlathe.gradle.skip=true` skips it.
-`-Dlathe.gradle.fixturesHome=<dir>` runs its TestKit fixtures on another Gradle (and `-Dinvoker.javaHome`
-on another JDK), as the older-Maven CI jobs do.
+`-Dlathe.gradle.fixturesHome=<dir>` runs its TestKit fixtures on another Gradle (and
+`-Dlathe.gradle.fixturesJavaHome=<dir>` on another JDK), as CI's older-Gradle jobs do.
 
 ## Test projects
 
