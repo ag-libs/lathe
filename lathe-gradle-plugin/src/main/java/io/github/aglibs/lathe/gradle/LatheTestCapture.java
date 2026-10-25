@@ -11,6 +11,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.gradle.api.Project;
+import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.tasks.SourceSet;
@@ -76,7 +77,18 @@ final class LatheTestCapture {
                   }
                 });
     if (captureOnly) {
-      facts.configure(task -> task.dependsOn(testTask));
+      facts.configure(
+          task -> {
+            task.dependsOn(testTask);
+            // Runs every capture-only sync, which is when a test task too old to capture warns.
+            task.getOutputs().upToDateWhen(ignored -> false);
+            task.getTestTask().set(testTask.map(Task::getPath));
+            task.getTestJavaVersion()
+                .set(
+                    testTask
+                        .flatMap(Test::getJavaLauncher)
+                        .map(launcher -> launcher.getMetadata().getLanguageVersion().asInt()));
+          });
     }
 
     facts.configure(task -> task.getRunnerClasspath().from(runnerClasspath(project, test)));

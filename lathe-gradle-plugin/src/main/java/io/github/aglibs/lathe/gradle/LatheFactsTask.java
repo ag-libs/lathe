@@ -20,6 +20,7 @@ import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
@@ -74,9 +75,29 @@ public abstract class LatheFactsTask extends DefaultTask {
   @Internal
   public abstract Property<LatheBuildLockService> getBuildLock();
 
+  // The editor's capture-only sync only: the test task, and the Java its JVM runs on. A test JVM
+  // older than Lathe's code captures nothing, and Gradle hides what it prints there.
+  @Internal
+  public abstract Property<String> getTestTask();
+
+  @Input
+  @Optional
+  public abstract Property<Integer> getTestJavaVersion();
+
   @TaskAction
   public void write() throws IOException {
     getBuildLock().get();
+    if (getTestJavaVersion().isPresent()
+        && getTestJavaVersion().get() < LatheLayout.MIN_JAVA_VERSION) {
+      getLogger()
+          .warn(
+              "[lathe] {} runs on Java {}, older than the {} Lathe captures on: its tests are not"
+                  + " captured, so they can't be run from the editor",
+              getTestTask().get(),
+              getTestJavaVersion().get(),
+              LatheLayout.MIN_JAVA_VERSION);
+    }
+
     final List<String> trees =
         Stream.of(
                 Map.entry(LatheLayout.CLASSES_DIR, getMainSources()),
