@@ -1994,7 +1994,15 @@ final class WorkspaceSession {
         workspace.moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
     return cursorWorker
-        .resolveRenameTarget(request)
+        .renameConflict(request, newName)
+        .thenCompose(
+            conflict -> {
+              conflict.ifPresent(
+                  reason -> {
+                    throw renameRefused(reason);
+                  });
+              return cursorWorker.resolveRenameTarget(request);
+            })
         .thenCompose(
             target -> {
               cancelChecker.checkCanceled();

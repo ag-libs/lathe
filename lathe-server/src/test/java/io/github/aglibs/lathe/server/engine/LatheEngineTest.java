@@ -539,6 +539,28 @@ class LatheEngineTest {
     assertThat(Files.readString(file)).isEqualTo(source);
   }
 
+  @Test
+  void rename_toANameTheOwnerAlreadyDeclares_refusesWithTheReasonAndEditsNothing()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          int count;
+          int total;
+          int sum() { return count + total; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(file, source, "count", "total"))
+        .hasMessageContaining(
+            "`count` cannot be renamed to `total`: Sample already declares field `total`");
+    assertThat(Files.readString(file)).isEqualTo(source);
+  }
+
   // Task has no Task.java of its own; its members and its nested type's are still the project's,
   // while its override of a JDK method stays refused.
   @Test
