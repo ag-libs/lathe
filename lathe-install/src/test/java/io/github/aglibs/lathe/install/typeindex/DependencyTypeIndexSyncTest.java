@@ -35,6 +35,20 @@ class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
     assertThat(file.types()).isEmpty();
   }
 
+  // A POM-only module's .pom on a Gradle classpath: skipped, and the jar beside it still indexed.
+  @Test
+  void index_unreadableArchive_skipsItAndIndexesTheRest() throws Exception {
+    useTempCache();
+    final ResolvedJar jar = artifact();
+    final Path pom = Files.writeString(tmp.resolve("tools-1.0.pom"), "<project/>");
+    final var unreadable = new ResolvedJar("com.example", "tools", "1.0", "", pom);
+
+    DependencyTypeIndexSync.index(List.of(unreadable, jar));
+
+    assertThat(DependencyTypeIndexSync.indexPath(unreadable)).doesNotExist();
+    assertThat(readIndex(jar).origin().dependency().gav()).isEqualTo("com.example:dep:1.0");
+  }
+
   @Test
   void index_freshIndex_reusesShard() throws Exception {
     useTempCache();

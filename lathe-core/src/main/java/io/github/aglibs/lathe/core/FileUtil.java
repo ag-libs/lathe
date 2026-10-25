@@ -53,6 +53,10 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".class");
   }
 
+  public static boolean isJarFile(final Path path) {
+    return path.getFileName().toString().endsWith(".jar");
+  }
+
   // CRC32C (a CPU instruction on x86 and ARM) plus the size: cheap, and only compared for equality.
   public static ContentFingerprint fingerprint(final Path file) throws IOException {
     final byte[] content = Files.readAllBytes(file);

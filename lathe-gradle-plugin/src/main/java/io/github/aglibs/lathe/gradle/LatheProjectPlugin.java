@@ -387,7 +387,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
         task -> {
           task.getLibraries()
               .set(libraries.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
-          task.getLibraryFiles().from(libraries.getArtifactFiles());
+          task.getLibraryFiles()
+              .from(libraries.getArtifactFiles().filter(file -> FileUtil.isJarFile(file.toPath())));
           task.getLibrarySources()
               .set(librarySources.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
           task.getLibraryClasspath().from(mainLibraries.getArtifactFiles());
@@ -431,8 +432,10 @@ public class LatheProjectPlugin implements Plugin<Project> {
         .toList();
   }
 
+  // Jars only: a POM-only module (GraalVM's polyglot "tools") puts its .pom on the classpath.
   private static Map<String, String> byCoordinates(final Set<ResolvedArtifactResult> artifacts) {
     return artifacts.stream()
+        .filter(artifact -> FileUtil.isJarFile(artifact.getFile().toPath()))
         .collect(
             Collectors.toUnmodifiableMap(
                 LatheProjectPlugin::coordinates,
