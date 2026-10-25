@@ -167,6 +167,8 @@ What it still cannot vouch for comes as a note at the end of the result:
 touch a file outside the reactor**.
 It also refuses a symbol declared outside the project (JDK or a dependency) or in generated source,
 and a method overriding one, since renaming only its uses would break them; the error says which.
+It refuses a method one of whose overrides also overrides an unrelated method, which the rename would
+leave behind.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 

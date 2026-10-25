@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.engine;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
@@ -30,6 +31,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.AfterEach;
@@ -408,9 +410,7 @@ class LatheEngineTest {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
-    final LatheRename rename =
-        engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
 
     assertThat(rename.newName()).isEqualTo("welcome");
     assertThat(rename.totalEdits()).isGreaterThanOrEqualTo(2);
@@ -429,13 +429,12 @@ class LatheEngineTest {
     // A query leaves no open document behind to answer the rename back from its old text.
     engine.diagnostics(fx.caller());
 
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
-    engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
+    renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
     assertThat(Files.readString(fx.caller())).contains("c.welcome()");
 
     // The renamed caller was written to disk, never opened: only a candidate index that follows
     // the disk finds it again.
-    final LatheRename back = engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "greet");
+    final LatheRename back = renameAt(fx.callee(), fx.calleeSource(), "greet", "greet");
 
     assertThat(back.files())
         .extracting(LatheFileEdit::uri)
@@ -481,9 +480,7 @@ class LatheEngineTest {
             1_000L);
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
-    final LatheRename rename =
-        engine.rename(fx.callee(), pos.getLine(), pos.getCharacter(), "welcome");
+    final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
 
     assertThat(rename.files())
         .extracting(LatheFileEdit::uri)
@@ -511,13 +508,114 @@ class LatheEngineTest {
     List.of("String text", "length", "toString")
         .forEach(
             symbol -> {
-              final var pos = offsetToPosition(source, source.indexOf(symbol));
-              assertThatThrownBy(
-                      () -> engine.rename(file, pos.getLine(), pos.getCharacter(), "renamed"))
+              assertThatThrownBy(() -> renameAt(file, source, symbol, "renamed"))
                   .as(symbol)
                   .hasMessageContaining("outside the project");
             });
     assertThat(Files.readString(file)).isEqualTo(source);
+  }
+
+  // Task has no Task.java of its own; its members and its nested type's are still the project's,
+  // while its override of a JDK method stays refused.
+  @Test
+  void rename_memberOfASecondaryTopLevelType_renamesItAndStillRefusesAJdkOverride()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          void use(Task task, Task.Step step) { task.run(); step.next(); }
+        }
+        interface Task {
+          void run();
+          class Step { void next() {} @Override public String toString() { return "step"; } }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(file, source, "toString", "renamed"))
+        .hasMessageContaining("outside the project");
+    // From each first occurrence, a use, on the text the previous rename left.
+    for (final String name : List.of("run", "next", "Step", "Task")) {
+      renameAt(file, Files.readString(file), name, "%sRenamed".formatted(name));
+    }
+
+    assertThat(Files.readString(file))
+        .contains("void use(TaskRenamed task, TaskRenamed.StepRenamed step)")
+        .contains("task.runRenamed(); step.nextRenamed();")
+        .contains("interface TaskRenamed {")
+        .contains("void runRenamed();")
+        .contains("class StepRenamed { void nextRenamed() {}");
+  }
+
+  // Renaming the interface method also edits the override, which then no longer overrides its
+  // superclass's run: Thread's outside the project (Task), Base's inside it (Step). Starting from
+  // the override hits the same conflict. A diamond whose every parent is in the family renames.
+  @Test
+  void rename_overrideAlsoOverridingAnUnrelatedSupertype_refusesButAFamilyDiamondRenames()
+      throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Task", "package com.example; interface Task { void run(); }",
+            "Step", "package com.example; interface Step { void run(); }",
+            "Base", "package com.example; class Base { public void run() {} }",
+            "Worker",
+                "package com.example; class Worker extends Thread implements Task {"
+                    + " @Override public void run() {} }",
+            "Job",
+                "package com.example; class Job extends Base implements Step {"
+                    + " @Override public void run() {} }",
+            "Plan", "package com.example; interface Plan { void run(); }",
+            "Phase", "package com.example; interface Phase extends Plan { void run(); }",
+            "Impl",
+                "package com.example; class Impl implements Plan, Phase {"
+                    + " @Override public void run() {} }");
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    source -> "com/example/%s.java".formatted(source.getKey()),
+                    Map.Entry::getValue)),
+        List.of(),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    Map.of("Task", "Worker.java", "Step", "Job.java", "Job", "Job.java")
+        .forEach(
+            (start, override) ->
+                assertThat(
+                        catchThrowable(
+                            () ->
+                                renameAt(exampleFile(start), sources.get(start), "run", "execute")))
+                    .as(start)
+                    .hasMessageContaining("override in %s".formatted(override)));
+    sources.forEach(
+        (type, source) -> assertThat(exampleFile(type)).as(type).content().isEqualTo(source));
+
+    renameAt(exampleFile("Plan"), sources.get("Plan"), "run", "execute");
+    List.of("Plan", "Phase", "Impl")
+        .forEach(
+            type ->
+                assertThat(exampleFile(type))
+                    .as(type)
+                    .content()
+                    .contains("void execute()")
+                    .doesNotContain("run"));
+  }
+
+  private Path exampleFile(final String type) {
+    return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
+  }
+
+  // Renames the symbol at the first occurrence of `at` in the file's source.
+  private LatheRename renameAt(
+      final Path file, final String source, final String at, final String newName) {
+    final var pos = offsetToPosition(source, source.indexOf(at));
+    return engine.rename(file, pos.getLine(), pos.getCharacter(), newName);
   }
 
   @Test
@@ -542,8 +640,7 @@ class LatheEngineTest {
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file, generated);
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(source, source.indexOf("name"));
-    assertThatThrownBy(() -> engine.rename(file, pos.getLine(), pos.getCharacter(), "label"))
+    assertThatThrownBy(() -> renameAt(file, source, "name", "label"))
         .hasMessageContaining("generated source");
     assertThat(Files.readString(file)).isEqualTo(source);
   }
@@ -571,8 +668,7 @@ class LatheEngineTest {
     final NestedFixture fx = nestedFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.userSource(), fx.userSource().indexOf("Inner"));
-    engine.rename(fx.user(), pos.getLine(), pos.getCharacter(), "Nested");
+    renameAt(fx.user(), fx.userSource(), "Inner", "Nested");
 
     assertThat(Files.readString(fx.outer())).contains("class Nested").doesNotContain("Inner");
     assertThat(Files.readString(fx.user())).contains("Outer.Nested a");
@@ -615,8 +711,7 @@ class LatheEngineTest {
             .get(0);
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(apiSource, apiSource.indexOf("Api {"));
-    final LatheRename rename = engine.rename(api, pos.getLine(), pos.getCharacter(), "Renamed");
+    final LatheRename rename = renameAt(api, apiSource, "Api {", "Renamed");
 
     final Path renamed = api.resolveSibling("Renamed.java");
     assertThat(api).doesNotExist();
@@ -651,9 +746,7 @@ class LatheEngineTest {
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
     engine = new LatheEngine(tmp);
 
-    final String calleeSource = sources.get("com/example/Callee.java");
-    final var pos = offsetToPosition(calleeSource, calleeSource.indexOf("greet"));
-    engine.rename(files.get(0), pos.getLine(), pos.getCharacter(), "welcome");
+    renameAt(files.get(0), sources.get("com/example/Callee.java"), "greet", "welcome");
 
     // Every touched file is compiled and stamped before rename returns, not deferred to a sync.
     final Map<Path, Long> stamps = CompiledStamps.load(tmp.resolve(".lathe/module"), "classes");
@@ -1068,8 +1161,7 @@ class LatheEngineTest {
     stampModule(callee, sub);
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(source, source.indexOf("greet"));
-    engine.rename(callee, pos.getLine(), pos.getCharacter(), "welcome");
+    renameAt(callee, source, "greet", "welcome");
     // Callee compiled and was stamped by the rename's write, so nothing on disk reads as stale.
     final LatheVerifyChange verify = engine.verifyChange(List.of());
 

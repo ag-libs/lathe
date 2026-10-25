@@ -1,19 +1,25 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.List;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightKind;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Range;
 
-public record ReferenceMatch(String uri, Range range, ReferenceRole role) {
+// alsoOverrides: for an override's declaration, what it also overrides outside the searched family
+// (Type.method), which a rename must not leave behind; empty for every other match.
+public record ReferenceMatch(
+    String uri, Range range, ReferenceRole role, List<String> alsoOverrides) {
 
   public ReferenceMatch {
     ValidCheck.check()
         .notBlank(uri, "uri")
         .notNull(range, "range")
         .notNull(role, "role")
+        .notNull(alsoOverrides, "alsoOverrides")
         .validate();
+    alsoOverrides = List.copyOf(alsoOverrides);
     final var start = range.getStart();
     final var end = range.getEnd();
     ValidCheck.check().notNull(start, "range.start").notNull(end, "range.end").validate();
