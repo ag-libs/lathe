@@ -71,6 +71,11 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @PathSensitive(PathSensitivity.RELATIVE)
   public abstract DirectoryProperty getGeneratedSourcesDir();
 
+  // The source set's processed resources, mirrored with the classes as Maven's output holds them.
+  @InputFiles
+  @PathSensitive(PathSensitivity.RELATIVE)
+  public abstract DirectoryProperty getResourcesDir();
+
   @Classpath
   public abstract ConfigurableFileCollection getClasspath();
 
@@ -124,7 +129,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
     LatheLock.acquire(lock);
     try {
       CompileCapture.writeParams(moduleDir, config);
-      CompileCapture.mirror(moduleDir, config);
+      CompileCapture.mirror(
+          moduleDir, config, List.of(getResourcesDir().get().getAsFile().toPath()));
     } finally {
       LatheLock.release(lock);
     }

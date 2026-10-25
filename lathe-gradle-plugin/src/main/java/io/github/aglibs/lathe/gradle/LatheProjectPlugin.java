@@ -444,8 +444,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
     return "%s:%s:%s".formatted(id.getGroup(), id.getModule(), id.getVersion());
   }
 
-  // Both shapes a sibling takes on another project's classpath, its classes directory and its jar,
-  // map to the mirror.
+  // Every shape a sibling takes on another project's classpath, its classes and resources
+  // directories and its jar, maps to the mirror, which holds both.
   private static ProjectFacts javaFacts(
       final Project project, final SourceSet main, final SourceSet test) {
     final var tasks = project.getTasks();
@@ -458,15 +458,18 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final Path root = project.getRootDir().toPath();
     final List<OutputData> outputs =
         Stream.of(
-                Map.entry(mainCompile.getDestinationDirectory(), LatheLayout.CLASSES_DIR),
-                Map.entry(jar.getArchiveFile(), LatheLayout.CLASSES_DIR),
-                Map.entry(testCompile.getDestinationDirectory(), LatheLayout.TEST_CLASSES_DIR))
+                Map.entry(
+                    mainCompile.getDestinationDirectory().get().getAsFile(),
+                    LatheLayout.CLASSES_DIR),
+                Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR),
+                Map.entry(main.getOutput().getResourcesDir(), LatheLayout.CLASSES_DIR),
+                Map.entry(
+                    testCompile.getDestinationDirectory().get().getAsFile(),
+                    LatheLayout.TEST_CLASSES_DIR),
+                Map.entry(test.getOutput().getResourcesDir(), LatheLayout.TEST_CLASSES_DIR))
             .map(
                 output ->
-                    new OutputData(
-                        relative(root, output.getKey().get().getAsFile()),
-                        module,
-                        output.getValue()))
+                    new OutputData(relative(root, output.getKey()), module, output.getValue()))
             .toList();
     final List<ResourceRootData> resourceRoots =
         Stream.of(main, test).flatMap(sourceSet -> resourceRoots(root, module, sourceSet)).toList();
@@ -518,13 +521,14 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 LatheCaptureTask.class,
                 task -> {
                   final JavaCompile javac = compile.get();
-                  task.dependsOn(compile);
+                  task.dependsOn(compile, sourceSet.getProcessResourcesTaskName());
                   useBuildLock(project, task, task.getBuildLock());
                   task.getSourceTree().set(sourceTree);
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
                   task.getClassesDir().set(javac.getDestinationDirectory());
+                  task.getResourcesDir().set(sourceSet.getOutput().getResourcesDir());
                   task.getGeneratedSourcesDir()
                       .set(javac.getOptions().getGeneratedSourceOutputDirectory());
                   task.getClasspath().from(javac.getClasspath());

@@ -33,10 +33,12 @@ class LatheSyncTaskFunctionalTest {
   @TempDir Path dir;
 
   // A library and an app using it: latheSync writes the workspace files from both projects' facts,
-  // installs the server, and is configuration-cache safe.
+  // installs the server, and is configuration-cache safe. The library's mirror holds its resources
+  // beside its classes, as its jar does, since replay stands the mirror in for the jar.
   @Test
   void sync_multiProjectBuild_writesTheWorkspaceFilesAndInstallsTheServer() throws Exception {
-    final var fixture = multiProject();
+    final var fixture =
+        multiProject().file("lib/src/main/resources/META-INF/services/com.example.Api", "lib\n");
 
     fixture.runner("latheSync", "--configuration-cache").build();
     final var second = fixture.runner("latheSync", "--configuration-cache").build();
@@ -48,6 +50,7 @@ class LatheSyncTaskFunctionalTest {
         .contains(
             new OutputData("lib/build/classes/java/main", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("lib/build/resources/main", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("app/build/classes/java/test", "app", LatheLayout.TEST_CLASSES_DIR));
     assertThat(workspace.resourceRoots())
         .contains(
@@ -61,6 +64,7 @@ class LatheSyncTaskFunctionalTest {
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
         .contains("latheSync", "--module");
     assertThat(lathe.resolve("app/classes/com/example/app/App.class")).exists();
+    assertThat(lathe.resolve("lib/classes/META-INF/services/com.example.Api")).exists();
     final MainLaunchData launch =
         Json.read(lathe.resolve("app").resolve(LatheLayout.MAIN_LAUNCH_FILE), MainLaunchData.class);
     assertThat(launch.mode()).isEqualTo(LaunchMode.CLASSPATH);
