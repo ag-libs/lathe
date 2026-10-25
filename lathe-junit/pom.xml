@@ -44,6 +44,47 @@
         <artifactId>spotless-maven-plugin</artifactId>
       </plugin>
       <plugin>
+        <!-- JUnit loads the listener and the filter in every test JVM, including one older than
+             Lathe's code (Java 17), which then must not fail to load them: they are compiled for
+             Java 8 and leave the capture alone below 17. The rest stays Java 17. Plain javac, not
+             Lathe's capturing compiler, so the editor keeps analysing this module as Java 17. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <configuration>
+              <excludes>
+                <exclude>**/CaptureLauncherSessionListener.java</exclude>
+                <exclude>**/CaptureOnlyPostDiscoveryFilter.java</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+          <execution>
+            <id>compile-for-any-test-jvm</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <phase>compile</phase>
+            <configuration>
+              <compilerId>javac</compilerId>
+              <release>8</release>
+              <includes>
+                <include>**/CaptureLauncherSessionListener.java</include>
+                <include>**/CaptureOnlyPostDiscoveryFilter.java</include>
+              </includes>
+              <compilerArgs combine.children="append">
+                <!-- -Werror would fail on two harmless warnings: javac's that release 8 is
+                     deprecated, and newer libraries' @Deprecated(since, forRemoval), which Java 8's
+                     API does not have. -->
+                <arg>-Xlint:-options</arg>
+                <arg>-Xlint:-classfile</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>

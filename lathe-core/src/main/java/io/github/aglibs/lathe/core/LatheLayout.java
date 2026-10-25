@@ -7,6 +7,10 @@ import java.util.Properties;
 
 public final class LatheLayout {
 
+  // The oldest JDK Lathe's code runs on. A compile-time constant, so a class built for an older
+  // release (lathe-junit's listener) can compare against it without loading this one.
+  public static final int MIN_JAVA_VERSION = 17;
+
   public static final String LATHE_DIR = ".lathe";
   public static final String CACHE_DIR = ".cache";
   public static final String CACHE_LATHE_DIR = "lathe";
