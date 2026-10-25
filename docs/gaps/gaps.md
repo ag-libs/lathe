@@ -321,32 +321,6 @@ None yet.
 
 ---
 
-## EG-061 — Renaming a method also renames an override that implements a second, unrelated method
-
-**Status: deferred — Target: backlog**
-
-### Observed behaviour
-
-Found while fixing [EG-059](gaps-archive.md#eg-059--rename-accepts-a-jdk-or-dependency-symbol-and-rewrites-every-use-in-the-reactor--done); not yet probed.
-Given `class Impl extends LibBase implements MyIface`, where `MyIface.foo()` and `LibBase.foo()` share a
-signature and `Impl.foo()` overrides both, renaming `MyIface.foo` also renames `Impl.foo`, which then
-no longer overrides `LibBase.foo`.
-The rename refuses a target that itself overrides a method declared outside the project, but not a
-member of its override family that also overrides a method outside the family.
-The same break happens when the second supertype is in the reactor, so it is not specific to
-dependencies.
-
-### Fix direction
-
-During the reference search, collect the overridden declarers of every override the rename edits, and
-refuse when one lies outside the renamed family (or, in the reactor, include its family in the rename).
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
 **Status: documented**

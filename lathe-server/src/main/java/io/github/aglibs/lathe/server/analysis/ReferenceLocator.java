@@ -391,6 +391,11 @@ final class ReferenceLocator extends SourceTreeLocator {
       return;
     }
 
-    results.add(new ReferenceMatch(uri, range, role));
+    final List<String> alsoOverrides =
+        role == ReferenceRole.DECLARATION
+            ? target.overriddenOutsideFamily(
+                trees.getElement(getCurrentPath()), types, elements, targetMethod)
+            : List.of();
+    results.add(new ReferenceMatch(uri, range, role, alsoOverrides));
   }
 }

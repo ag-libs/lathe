@@ -1808,16 +1808,16 @@ final class WorkspaceSession {
                       });
             })
         .thenApply(
-            locations -> {
+            matches -> {
               cancelChecker.checkCanceled();
               final var name = targetName.get();
               if (name != null) {
                 LOG.info(
                     () ->
                         "[references] %s %dms target=%s hits=%d"
-                            .formatted(uri, t.elapsedMs(), name, locations.size()));
+                            .formatted(uri, t.elapsedMs(), name, matches.size()));
               }
-              return locations;
+              return toLocations(matches);
             })
         .exceptionally(
             ex -> {
@@ -1889,22 +1889,38 @@ final class WorkspaceSession {
                 declaration.getValue().isEmpty()
                     && !typeIndex.isReactorType(declaration.getKey()))) {
       throw renameRefused(
-          target, "outside the project (JDK or a dependency), so it cannot be renamed");
+          "`%s` is declared, or overrides a method declared, outside the project (JDK or a dependency), so it cannot be renamed"
+              .formatted(target.simpleName()));
     }
 
     if (declarations.values().stream()
         .flatMap(Optional::stream)
         .anyMatch(this::isGeneratedSource)) {
       throw renameRefused(
-          target, "in generated source; rename the source it is generated from instead");
+          "`%s` is declared, or overrides a method declared, in generated source; rename the source it is generated from instead"
+              .formatted(target.simpleName()));
     }
   }
 
-  private static ResponseErrorException renameRefused(
-      final ReferenceTarget target, final String where) {
-    final String message =
-        "`%s` is declared, or overrides a method declared, %s"
-            .formatted(target.simpleName(), where);
+  // An override the rename edits must not also override a method outside the renamed family:
+  // renamed, it would silently stop overriding that one.
+  private static void requireNoOverrideLeftBehind(
+      final ReferenceTarget target, final List<ReferenceMatch> matches) {
+    matches.stream()
+        .filter(match -> !match.alsoOverrides().isEmpty())
+        .findFirst()
+        .ifPresent(
+            match -> {
+              throw renameRefused(
+                  "`%s` cannot be renamed: its override in %s also overrides %s, which the rename would leave behind"
+                      .formatted(
+                          target.simpleName(),
+                          LatheUri.toPath(match.uri()).getFileName(),
+                          String.join(", ", match.alsoOverrides())));
+            });
+  }
+
+  private static ResponseErrorException renameRefused(final String message) {
     return new ResponseErrorException(
         new ResponseError(ResponseErrorCode.RequestFailed, message, null));
   }
@@ -1998,7 +2014,7 @@ final class WorkspaceSession {
                                   progress,
                                   "Renaming %s".formatted(searchTarget.simpleName()))
                               .thenApply(
-                                  locations -> {
+                                  matches -> {
                                     LOG.info(
                                         () ->
                                             "[rename] %s %dms target=%s edits=%d"
@@ -2006,9 +2022,13 @@ final class WorkspaceSession {
                                                     uri,
                                                     t.elapsedMs(),
                                                     searchTarget.simpleName(),
-                                                    locations.size()));
+                                                    matches.size()));
+                                    requireNoOverrideLeftBehind(searchTarget, matches);
                                     return renameEdit(
-                                        searchTarget, locations, newName, fileRenameSupported);
+                                        searchTarget,
+                                        toLocations(matches),
+                                        newName,
+                                        fileRenameSupported);
                                   }));
             });
   }
@@ -2067,7 +2087,7 @@ final class WorkspaceSession {
               // `new XXX` identifier, so these are exactly the instantiation sites. All overloads
               // share the one progress task the caller finishes, so a multi-ctor type shows one
               // bar.
-              final List<CompletableFuture<List<Location>>> searches =
+              final List<CompletableFuture<List<ReferenceMatch>>> searches =
                   targets.stream()
                       .map(
                           target ->
@@ -2081,7 +2101,8 @@ final class WorkspaceSession {
                                   progress,
                                   "Finding instantiation sites"))
                       .toList();
-              return joinCandidateResults(searches, cancelChecker);
+              return joinCandidateResults(searches, cancelChecker)
+                  .thenApply(WorkspaceSession::toLocations);
             })
         .thenApply(
             locations -> {
@@ -2108,7 +2129,7 @@ final class WorkspaceSession {
         .thenApply(contract -> contract != null ? contract : target);
   }
 
-  private CompletableFuture<List<Location>> searchReferencesForTarget(
+  private CompletableFuture<List<ReferenceMatch>> searchReferencesForTarget(
       final OpenDocument openFile,
       final CompilationWorker cursorWorker,
       final ModuleSourceConfig cursorConfig,
@@ -2127,11 +2148,10 @@ final class WorkspaceSession {
               target,
               includeDeclaration,
               cancelChecker)
-          .thenApply(WorkspaceSession::toLocations)
           .whenComplete(
-              (locations, failure) -> {
+              (matches, failure) -> {
                 if (failure == null) {
-                  progress.advance(false, locations.size());
+                  progress.advance(false, matches.size());
                 }
               });
     }
@@ -2184,7 +2204,7 @@ final class WorkspaceSession {
             .mapToInt(WorkspaceSearchInputs::size)
             .sum());
 
-    final List<CompletableFuture<List<Location>>> searches =
+    final List<CompletableFuture<List<ReferenceMatch>>> searches =
         searchInputs.stream()
             .flatMap(
                 inputs ->
@@ -2193,7 +2213,7 @@ final class WorkspaceSession {
     return joinCandidateResults(searches, cancelChecker);
   }
 
-  private Stream<CompletableFuture<List<Location>>> searchFutures(
+  private Stream<CompletableFuture<List<ReferenceMatch>>> searchFutures(
       final ModuleSearchInputs searchInputs,
       final ReferenceTarget target,
       final boolean includeDeclaration,
@@ -2202,13 +2222,13 @@ final class WorkspaceSession {
     cancelChecker.checkCanceled();
     final CompilationWorker worker = searchInputs.worker();
     final WorkspaceSearchInputs inputs = searchInputs.inputs();
-    final Stream<CompletableFuture<List<Location>>> openSearches =
+    final Stream<CompletableFuture<List<ReferenceMatch>>> openSearches =
         inputs.openDocuments().stream()
             .map(
                 doc ->
                     searchOpenDocument(
                         worker, doc, target, includeDeclaration, cancelChecker, progress));
-    final Stream<CompletableFuture<List<Location>>> diskSearches =
+    final Stream<CompletableFuture<List<ReferenceMatch>>> diskSearches =
         CollectionUtil.partition(inputs.diskCandidates(), REFERENCE_BATCH_SIZE).stream()
             .map(
                 chunk ->
@@ -2217,7 +2237,7 @@ final class WorkspaceSession {
     return Stream.concat(openSearches, diskSearches);
   }
 
-  private CompletableFuture<List<Location>> searchOpenDocument(
+  private CompletableFuture<List<ReferenceMatch>> searchOpenDocument(
       final CompilationWorker worker,
       final OpenDocument doc,
       final ReferenceTarget target,
@@ -2229,16 +2249,15 @@ final class WorkspaceSession {
     return worker
         .searchReferences(
             doc.uri(), doc.content(), doc.version(), target, includeDeclaration, cancelChecker)
-        .thenApply(WorkspaceSession::toLocations)
         .whenComplete(
-            (locations, failure) -> {
+            (matches, failure) -> {
               if (failure == null) {
-                progress.advance(false, locations.size());
+                progress.advance(false, matches.size());
               }
             });
   }
 
-  private CompletableFuture<List<Location>> searchDiskChunk(
+  private CompletableFuture<List<ReferenceMatch>> searchDiskChunk(
       final CompilationWorker worker,
       final List<DiskCandidate> chunk,
       final ReferenceTarget target,
@@ -2248,14 +2267,8 @@ final class WorkspaceSession {
     cancelChecker.checkCanceled();
     final List<TransientSource> sources =
         chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
-    return worker
-        .searchReferencesTransient(
-            sources,
-            target,
-            includeDeclaration,
-            hits -> progress.advance(true, hits),
-            cancelChecker)
-        .thenApply(WorkspaceSession::toLocations);
+    return worker.searchReferencesTransient(
+        sources, target, includeDeclaration, hits -> progress.advance(true, hits), cancelChecker);
   }
 
   private List<ModuleSourceConfig> planSearchScope(

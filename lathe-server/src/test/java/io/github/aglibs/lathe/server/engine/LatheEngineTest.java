@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.engine;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
@@ -557,6 +558,70 @@ class LatheEngineTest {
         .contains("interface TaskRenamed {")
         .contains("void runRenamed();")
         .contains("class StepRenamed { void nextRenamed() {}");
+  }
+
+  // Renaming the interface method also edits the override, which then no longer overrides its
+  // superclass's run: Thread's outside the project (Task), Base's inside it (Step). Starting from
+  // the override hits the same conflict. A diamond whose every parent is in the family renames.
+  @Test
+  void rename_overrideAlsoOverridingAnUnrelatedSupertype_refusesButAFamilyDiamondRenames()
+      throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Task", "package com.example; interface Task { void run(); }",
+            "Step", "package com.example; interface Step { void run(); }",
+            "Base", "package com.example; class Base { public void run() {} }",
+            "Worker",
+                "package com.example; class Worker extends Thread implements Task {"
+                    + " @Override public void run() {} }",
+            "Job",
+                "package com.example; class Job extends Base implements Step {"
+                    + " @Override public void run() {} }",
+            "Plan", "package com.example; interface Plan { void run(); }",
+            "Phase", "package com.example; interface Phase extends Plan { void run(); }",
+            "Impl",
+                "package com.example; class Impl implements Plan, Phase {"
+                    + " @Override public void run() {} }");
+    for (final Map.Entry<String, String> source : sources.entrySet()) {
+      TestCompiler.writeModuleSource(tmp, exampleSource(source.getKey()), source.getValue());
+    }
+
+    TestCompiler.compileToDir(
+        tmp.resolve(".lathe/module/classes"),
+        sources.keySet().stream().map(this::exampleFile).toArray(Path[]::new));
+    engine = new LatheEngine(tmp);
+
+    Map.of("Task", "Worker.java", "Step", "Job.java", "Job", "Job.java")
+        .forEach(
+            (start, override) ->
+                assertThat(catchThrowable(() -> renameRunIn(sources, start)))
+                    .as(start)
+                    .hasMessageContaining("override in %s".formatted(override)));
+    sources.forEach(
+        (type, source) -> assertThat(exampleFile(type)).as(type).content().isEqualTo(source));
+
+    renameRunIn(sources, "Plan");
+    List.of("Plan", "Phase", "Impl")
+        .forEach(
+            type ->
+                assertThat(exampleFile(type))
+                    .as(type)
+                    .content()
+                    .contains("void execute()")
+                    .doesNotContain("run"));
+  }
+
+  private void renameRunIn(final Map<String, String> sources, final String type) {
+    final var pos = offsetToPosition(sources.get(type), sources.get(type).indexOf("run"));
+    engine.rename(exampleFile(type), pos.getLine(), pos.getCharacter(), "execute");
+  }
+
+  private static String exampleSource(final String type) {
+    return "com/example/%s.java".formatted(type);
+  }
+
+  private Path exampleFile(final String type) {
+    return tmp.resolve("module/src/main/java").resolve(exampleSource(type));
   }
 
   @Test
