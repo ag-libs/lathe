@@ -28,6 +28,9 @@
     <lathe.gradle.fixturesJavaHome>${invoker.javaHome}</lathe.gradle.fixturesJavaHome>
     <skipTests>false</skipTests>
     <maven.test.skip.exec>false</maven.test.skip.exec>
+    <!-- The plugin's unit tests follow maven.test.skip.exec, as everywhere else; a CI job that builds
+         the plugin's dependencies without their tests sets this to false to run them anyway. -->
+    <lathe.gradle.skipUnitTests>${maven.test.skip.exec}</lathe.gradle.skipUnitTests>
   </properties>
 
   <!-- Not compiled against: orders this module after the jars it consumes, also under -T, and is what
@@ -121,7 +124,7 @@
                 <argument>-Pjunit.version=${junit.version}</argument>
                 <argument>-Passertj.version=${assertj.version}</argument>
                 <argument>-PskipTests=${skipTests}</argument>
-                <argument>-PskipUnitTests=${maven.test.skip.exec}</argument>
+                <argument>-PskipUnitTests=${lathe.gradle.skipUnitTests}</argument>
                 <argument>-Plathe.gradle.fixturesHome=${lathe.gradle.fixturesHome}</argument>
                 <argument>-Plathe.gradle.fixturesJavaHome=${lathe.gradle.fixturesJavaHome}</argument>
               </arguments>
