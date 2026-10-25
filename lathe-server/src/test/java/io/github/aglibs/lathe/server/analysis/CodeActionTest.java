@@ -38,7 +38,14 @@ class CodeActionTest {
         TempSourceCompiler.typeIndex(
             tmp.resolve("index.json"),
             new TypeIndexEntry(
-                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()));
+                "ArrayList", "java.util.ArrayList", "java.util", TypeKind.CLASS, true, List.of()),
+            new TypeIndexEntry(
+                "Generated",
+                "javax.annotation.processing.Generated",
+                "javax.annotation.processing",
+                TypeKind.ANNOTATION,
+                true,
+                List.of()));
     session = new SourceAnalysisSession(new TempSourceCompiler());
   }
 
@@ -67,6 +74,32 @@ class CodeActionTest {
     final DiagnosticPayload payload = (DiagnosticPayload) diag.getData();
     assertThat(payload.kind()).isEqualTo(DiagnosticPayload.Kind.TYPE_REF);
     assertThat(payload.name()).isEqualTo("ArrayList");
+  }
+
+  // An annotation's name is a type wherever it is used, so it gets the same import fix.
+  @Test
+  void codeAction_unresolvedAnnotation_classifiedAsTypeWithImportQuickFix() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          @Generated String field;
+          @Generated void method() {}
+        }
+        """;
+
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+    assertThat(diags)
+        .filteredOn(d -> d.getData() instanceof DiagnosticPayload)
+        .extracting(d -> (DiagnosticPayload) d.getData())
+        .hasSize(2)
+        .allMatch(payload -> payload.kind() == DiagnosticPayload.Kind.TYPE_REF)
+        .allMatch(payload -> payload.name().equals("Generated"));
+    assertThat(codeActions(diagnosticActions(source, diags)))
+        .extracting(CodeAction::getTitle)
+        .contains("Import 'javax.annotation.processing.Generated'");
   }
 
   @Test
