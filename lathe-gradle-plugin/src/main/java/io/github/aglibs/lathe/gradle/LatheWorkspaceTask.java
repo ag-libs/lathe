@@ -242,10 +242,13 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   }
 
   // The newest JDK any project compiles with, as the server's: the server then parses what every
-  // module's compile accepts. A build without Java runs the server on the JDK Gradle runs on.
-  private static JdkSource compilingJdk(final List<ProjectFacts> facts) {
+  // module's compile accepts. One older than the server runs on does not count (a toolchain on JDK
+  // 11; the server's javac then compiles for 11 with --release); a build with none runs the server
+  // on the JDK Gradle runs on, which is new enough.
+  static JdkSource compilingJdk(final List<ProjectFacts> facts) {
     return facts.stream()
-        .filter(fact -> fact.javaHome() != null)
+        .filter(
+            fact -> fact.javaHome() != null && fact.javaVersion() >= LatheLayout.MIN_JAVA_VERSION)
         .max(Comparator.comparingInt(ProjectFacts::javaVersion))
         .map(fact -> JdkSourceResolver.resolveAt(Path.of(fact.javaHome())))
         .orElseGet(JdkSourceResolver::resolve);
