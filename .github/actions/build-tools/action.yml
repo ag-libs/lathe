@@ -45,3 +45,6 @@ runs:
       uses: gradle/actions/setup-gradle@v6
       with:
         gradle-version: 9.8.2
+        # Off the default branch the action only reads caches by default, and main runs no Gradle
+        # build to fill one; writing them too lets a branch's next run start with a warm Gradle home.
+        cache-read-only: false
