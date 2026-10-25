@@ -59,6 +59,9 @@ run a normal build (`mvn process-test-classes`), which re-filters them through M
 - **A modern, JPMS-capable Surefire (e.g. 3.5.5+).**
   An old Surefire forks non-modularly and yields an empty argument list, so nothing meaningful is
   captured. Pin `maven-surefire-plugin` to a recent version if your build inherits an older one.
+- **A test JVM on JDK 17 or newer.**
+  Tests the build runs on an older JDK (Surefire's `<jvm>` or a toolchain) run as usual but are not
+  captured, so they can't be run from the editor; the listener does nothing there.
 - **JUnit Platform (JUnit 5/6, or the JUnit 4 vintage engine).**
   The listener rides the JUnit Platform launcher; pure TestNG forks are not captured.
 - **`<systemPropertyVariables>` are not captured yet** — Surefire sets them via a booter properties
