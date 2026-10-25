@@ -468,12 +468,13 @@ public final class LatheEngine {
         await(service.runTestFuture(target.moduleRel(), List.of(selection), token)));
   }
 
-  private static RunTarget selectTarget(
+  static RunTarget selectTarget(
       final List<RunTarget> targets, final TestScope scope, final String method, final Path file) {
+    // The scan lists a nested class before its enclosing one; the outermost runs them all.
     return targets.stream()
         .filter(target -> target.kind() == scope.runnableKind())
         .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
-        .findFirst()
+        .min(Comparator.comparingLong(LatheEngine::nestingDepth))
         .orElseThrow(
             () ->
                 new IllegalStateException(
@@ -481,6 +482,10 @@ public final class LatheEngine {
                         ? "no test method '%s' in %s".formatted(method, file.getFileName())
                         : "no %s test target in %s"
                             .formatted(scope.wireName(), file.getFileName())));
+  }
+
+  private static long nestingDepth(final RunTarget target) {
+    return target.id().chars().filter(c -> c == '$').count();
   }
 
   /**
