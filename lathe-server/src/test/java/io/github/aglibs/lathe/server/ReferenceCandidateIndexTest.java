@@ -3,11 +3,13 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,6 +41,56 @@ class ReferenceCandidateIndexTest {
     assertThat(index.candidateUris("bar")).containsExactly(uri(foo));
     assertThat(index.candidateUris("Foo")).containsExactlyInAnyOrder(uri(foo), uri(baz));
     assertThat(index.candidateUris("absent")).isEmpty();
+  }
+
+  // Static imports are learned per scope: test files count only toward the test scope and main
+  // files
+  // toward the main one; an ordinary import is not counted, and buffer edits and removals update
+  // the counts while the identifier tokens stay as before.
+  @Test
+  void staticImports_testAndMainFiles_countedPerScopeAndFollowEdits() throws IOException {
+    final var main = Files.createDirectories(root.resolve("src/main/java"));
+    final var test = Files.createDirectories(root.resolve("src/test/java"));
+    Files.writeString(
+        main.resolve("Service.java"),
+        "import static java.util.Objects.requireNonNull;\nclass Service {}");
+    final var first =
+        Files.writeString(
+            test.resolve("FirstTest.java"),
+            "import static org.mockito.Mockito.when;\nimport static org.mockito.Mockito.*;\n"
+                + "import org.example.Helper;\nclass FirstTest {}");
+    final var second =
+        Files.writeString(
+            test.resolve("SecondTest.java"),
+            "import static org.mockito.Mockito.when;\nclass SecondTest {}");
+    final var index =
+        ReferenceCandidateIndex.build(
+            List.of(
+                TestCompiler.moduleConfig(root, main),
+                TestCompiler.moduleConfig(
+                    root.resolve(".lathe/module"),
+                    root.resolve("target/test-classes"),
+                    test,
+                    null,
+                    LatheLayout.TEST_CLASSES_DIR)));
+
+    assertThat(index.staticImports(true).counts())
+        .isEqualTo(Map.of("org.mockito.Mockito.when", 2, "org.mockito.Mockito.*", 1));
+    assertThat(index.staticImports(false).counts())
+        .isEqualTo(Map.of("java.util.Objects.requireNonNull", 1));
+    assertThat(index.candidateUris("org.mockito.Mockito.when"))
+        .containsExactlyInAnyOrder(uri(first), uri(second));
+
+    index.update(uri(second), "class SecondTest {}");
+    index.remove(uri(first));
+
+    assertThat(index.staticImports(true).counts()).isEmpty();
+    assertThat(index.staticImports(false).counts()).hasSize(1);
+
+    index.update(uri(second), "import static org.mockito.Mockito.verify;\nclass SecondTest {}");
+
+    assertThat(index.staticImports(true).counts())
+        .isEqualTo(Map.of("org.mockito.Mockito.verify", 1));
   }
 
   @Test
