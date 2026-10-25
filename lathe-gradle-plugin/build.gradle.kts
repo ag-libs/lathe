@@ -82,8 +82,9 @@ val functionalTestTask =
       classpath = functionalTest.runtimeClasspath
       shouldRunAfter(tasks.test)
       // Each fixture is a real Gradle build, slow to start (most on Windows): test classes run in
-      // parallel JVMs. One class's tests stay in one JVM, in order.
-      maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+      // parallel JVMs, one core left for the build itself. One class's tests stay in one JVM, in
+      // order.
+      maxParallelForks = (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1)
       dependsOn("publishAllPublicationsToFixturesRepository")
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
