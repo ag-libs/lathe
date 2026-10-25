@@ -4,8 +4,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.Map;
 
 // The static imports one source scope (test or main) declares, each spelled as in its import line
-// (`org.mockito.Mockito.when`, `org.mockito.Mockito.*`) with the number of that scope's files that
-// declare it.
+// (`org.mockito.Mockito.when`, `org.mockito.Mockito.*`), with how many of the scope's files do.
 public record LearnedStaticImports(Map<String, Integer> counts) {
 
   public LearnedStaticImports {

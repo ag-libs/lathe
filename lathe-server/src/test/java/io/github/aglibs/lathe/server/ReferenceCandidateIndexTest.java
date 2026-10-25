@@ -43,8 +43,7 @@ class ReferenceCandidateIndexTest {
     assertThat(index.candidateUris("absent")).isEmpty();
   }
 
-  // Static imports are learned per scope: test files count only toward the test scope and main
-  // files
+  // Static imports are learned per scope: test files count toward the test scope and main files
   // toward the main one; an ordinary import is not counted, and buffer edits and removals update
   // the counts while the identifier tokens stay as before.
   @Test

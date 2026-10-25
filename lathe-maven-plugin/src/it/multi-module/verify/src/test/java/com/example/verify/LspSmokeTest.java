@@ -625,7 +625,7 @@ class LspSmokeTest {
   }
 
   // A new test is offered the static members the module's other tests import, with the import
-  // line; nothing of the kind was configured, it is learned from `import static` in the shapes tests.
+  // line: nothing is configured, it is learned from the `import static` lines of the shapes tests.
   @Test
   void completion_newTestFile_offersStaticMembersOtherTestsImport() throws Exception {
     final var uri =
