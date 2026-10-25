@@ -2,7 +2,7 @@
 
 The Neovim client: how to install it and a suggested keymap for every action, so you can wire your own
 config. For *what* each feature does (editor-agnostic), see the
-[feature reference in the README](../../../README.md#features).
+[feature reference](../features.md).
 Requires **Neovim 0.12+** and the Java Treesitter parser for indentation (`:TSInstall java`), on Linux
 or macOS; on Windows, use [VS Code or Cursor](vscode.md) or [Zed](zed.md). The
 default `editorconfig` indent profile follows `.editorconfig` via Neovim's native EditorConfig support.
@@ -578,8 +578,7 @@ LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging.
 A server that fails before it starts (a bad JDK, a module missing from the server's module path) also
 reports there: the JVM's startup errors appear as `stderr` lines in the LSP log. If it does not attach at all,
 confirm the launcher exists (`:LatheStart` reports when it is missing) and run `mvn process-test-classes`.
-For workspace-level issues (`.lathe/` not found, missing params file), see the **Troubleshooting**
-section of the [README](../../../README.md#troubleshooting).
+For workspace-level issues (`.lathe/` not found, missing params file), see [Troubleshooting](../troubleshooting.md).
 
 **`Lathe: launcher not found at ~/.cache/lathe/current/lathe-launcher.sh; run mvn process-test-classes`**
 — this is an **outdated client**. Older versions resolved the server through a machine-global

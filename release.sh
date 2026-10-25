@@ -85,8 +85,17 @@ fi
 #   - Gradle-style io.github.ag-libs:lathe-*:x.y.z coordinates (the init script's classpath).
 # The [0-9] anchor leaves ${lathe.version} references alone; the artifactId
 # address leaves unrelated dependencies' <version> tags untouched.
-docs=(README.md docs/guide/installation.md docs/guide/gradle.md)
+# Every tracked text doc is a candidate, so a new guide or client README with a snippet is bumped
+# without editing this list. Dated records (design docs, gaps, dev notes) mention past versions on
+# purpose and are left alone.
+public_docs=(
+  -- '*.md' '*.txt'
+  ':!docs/done/' ':!docs/planned/' ':!docs/potential/' ':!docs/gaps/' ':!dev/'
+)
+mapfile -t docs < <(git ls-files "${public_docs[@]}")
 for f in "${docs[@]}"; do
+  # sed -i would replace a symlink (CLAUDE.md -> AGENTS.md) with a copy; its target is bumped anyway.
+  [ -L "$f" ] && continue
   sed -i \
     -e "\#<artifactId>lathe-[a-z-]*</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
     -e "s#<lathe.version>[0-9][^<]*</lathe.version>#<lathe.version>${version}</lathe.version>#" \
@@ -105,7 +114,16 @@ files=("${docs[@]}")
 # A no-op means the docs drifted out from under the patterns above — fail loudly rather than commit
 # an empty bump and tag a version they never show.
 git diff --quiet -- "${files[@]}" \
-  && die "no version snippets matched in ${files[*]} — did the install docs change shape?"
+  && die "no version snippets matched in the docs — did the install snippets change shape?"
+
+# The patterns know the XML and Gradle snippets. Any other mention of the previous release left in the
+# docs (a version in prose) would ship stale, so stop and name it.
+git fetch --tags --quiet 2>/dev/null || true
+previous="$(latest_release_version)"
+if [ -n "$previous" ] && git grep -n -w -F "$previous" "${public_docs[@]}"; then
+  git checkout -- "${files[@]}"
+  die "the lines above still name ${previous} — update them (or the patterns above), then rerun"
+fi
 
 echo "Version bump for ${tag}:"
 echo

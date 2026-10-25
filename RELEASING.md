@@ -35,8 +35,9 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    ```
    This validates the version, checks preconditions (on `main`, clean tree, in sync with `origin/main`,
    tag unused), updates the
-   install-snippet version in `README.md` and `docs/guide/installation.md`, shows the diff for you to
-   confirm, then commits and creates the tag `v0.1.1`. Use `--dry-run` to preview without committing.
+   install-snippet version in every public doc (all tracked `*.md`/`*.txt` outside `docs/done`,
+   `docs/planned`, `docs/potential`, `docs/gaps` and `dev/`), stops if any of those docs still names the
+   previous release, shows the diff for you to confirm, then commits and creates the tag `v0.1.1`. Use `--dry-run` to preview without committing.
    It then asks whether to push and publish now; answering yes runs steps 3 and 4 for you.
 3. Push the commit and tag:
    ```bash
