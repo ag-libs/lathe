@@ -182,8 +182,13 @@ final class TypeReferenceCompleter {
       return CompletionOutcome.of(List.of());
     }
 
-    final var candidates =
-        req.typeIndex().search(injected.prefix(), TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT);
+    // The index's own kind narrows to what fits the position before the validation limit, so a
+    // short prefix still reaches an annotation (or interface) behind a thousand classes.
+    final List<TypeIndexEntry> candidates =
+        req.typeIndex().search(injected.prefix(), Integer.MAX_VALUE).stream()
+            .filter(entry -> indexKindAllows(entry.kind(), role))
+            .limit(TYPE_INDEX_VALIDATION_CANDIDATE_LIMIT)
+            .toList();
     final var analysis = req.cached() != null ? req.cached().analysis() : null;
     LOG.fine(
         () ->
@@ -481,6 +486,21 @@ final class TypeReferenceCompleter {
     return new ImportAnalyzer(analysis).needsImport(qualifiedName)
         ? new ImportEdit(qualifiedName, false)
         : null;
+  }
+
+  private static boolean indexKindAllows(final TypeKind kind, final TypeReferenceRole role) {
+    if (kind == TypeKind.UNKNOWN) {
+      return true;
+    }
+
+    return switch (role) {
+      case ORDINARY -> true;
+      case CONSTRUCTOR ->
+          kind == TypeKind.CLASS || kind == TypeKind.RECORD || kind == TypeKind.INTERFACE;
+      case CLASS_EXTENDS, THROWS -> kind == TypeKind.CLASS;
+      case CLASS_IMPLEMENTS, INTERFACE_EXTENDS, RECORD_IMPLEMENTS -> kind == TypeKind.INTERFACE;
+      case ANNOTATION -> kind == TypeKind.ANNOTATION;
+    };
   }
 
   private static boolean typeIndexRoleAllows(
