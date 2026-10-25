@@ -25,7 +25,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -55,12 +54,13 @@ public final class FileUtil {
     return ContentFingerprint.of(Files.readAllBytes(file));
   }
 
-  // Empty when the file cannot be read (deleted, say): it then matches no recorded fingerprint.
-  public static Optional<ContentFingerprint> readFingerprint(final Path file) {
+  // Whether the file still holds the content the fingerprint recorded: never for no record, nor for
+  // a file that cannot be read (deleted, say).
+  public static boolean hasContent(final Path file, final ContentFingerprint fingerprint) {
     try {
-      return Optional.of(fingerprint(file));
+      return fingerprint != null && fingerprint.equals(fingerprint(file));
     } catch (final IOException e) {
-      return Optional.empty();
+      return false;
     }
   }
 

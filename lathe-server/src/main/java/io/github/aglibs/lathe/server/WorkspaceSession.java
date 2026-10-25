@@ -3832,9 +3832,7 @@ final class WorkspaceSession {
     }
 
     final ContentFingerprint compiled = built.get(root.relativize(file));
-    return Files.notExists(file)
-        ? compiled == null
-        : compiled != null && Optional.of(compiled).equals(FileUtil.readFingerprint(file));
+    return Files.notExists(file) ? compiled == null : FileUtil.hasContent(file, compiled);
   }
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that mention
@@ -4507,7 +4505,7 @@ final class WorkspaceSession {
     List<Path> stale() {
       return moved(sourcesByRoot, stamps)
           .filter(source -> !touched.containsKey(source.rel()))
-          .map(MovedSource::file)
+          .map(ScannedSource::file)
           .toList();
     }
 
@@ -4516,41 +4514,44 @@ final class WorkspaceSession {
     private static Map<Path, SourceStamp> touched(
         final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
       return moved(sourcesByRoot, stamps)
-          .filter(source -> compiledFrom(stamps.get(source.rel()), source.file()))
-          .collect(
-              Collectors.toUnmodifiableMap(
-                  MovedSource::rel,
-                  source -> new SourceStamp(source.mtime(), stamps.get(source.rel()).content())));
+          .filter(ScannedSource::touched)
+          .collect(Collectors.toUnmodifiableMap(ScannedSource::rel, ScannedSource::restamped));
     }
 
-    private static boolean compiledFrom(final SourceStamp stamp, final Path file) {
-      return stamp != null
-          && stamp.content() != null
-          && FileUtil.readFingerprint(file).filter(stamp.content()::equals).isPresent();
-    }
-
-    private static Stream<MovedSource> moved(
+    private static Stream<ScannedSource> moved(
         final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
       return sourcesByRoot.entrySet().stream()
           .flatMap(
               root ->
                   root.getValue().entrySet().stream()
-                      .map(
-                          source ->
-                              new MovedSource(
-                                  source.getKey(),
-                                  root.getKey().relativize(source.getKey()),
-                                  source.getValue())))
-          .filter(
-              source ->
-                  Optional.ofNullable(stamps.get(source.rel()))
-                      .filter(stamp -> stamp.mtime() == source.mtime())
-                      .isEmpty());
+                      .map(source -> ScannedSource.of(root.getKey(), source, stamps)))
+          .filter(ScannedSource::moved);
     }
 
-    private record MovedSource(Path file, Path rel, long mtime) {
-      MovedSource {
+    // A source on disk with its stamp, null when it was never compiled.
+    private record ScannedSource(Path file, Path rel, long mtime, SourceStamp stamp) {
+      ScannedSource {
         ValidCheck.check().notNull(file, "file").notNull(rel, "rel").validate();
+      }
+
+      static ScannedSource of(
+          final Path root,
+          final Map.Entry<Path, Long> source,
+          final Map<Path, SourceStamp> stamps) {
+        final Path rel = root.relativize(source.getKey());
+        return new ScannedSource(source.getKey(), rel, source.getValue(), stamps.get(rel));
+      }
+
+      boolean moved() {
+        return stamp == null || stamp.mtime() != mtime;
+      }
+
+      boolean touched() {
+        return stamp != null && FileUtil.hasContent(file, stamp.content());
+      }
+
+      SourceStamp restamped() {
+        return new SourceStamp(mtime, stamp.content());
       }
     }
 
