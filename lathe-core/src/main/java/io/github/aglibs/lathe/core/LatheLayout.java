@@ -231,9 +231,11 @@ public final class LatheLayout {
     public static final String TEST_WORKER_JAR = "gradle-worker.jar";
     public static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
     public static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
-    // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/agent/, a
-    // path known as the plugin applies, before a build script can move the build directory.
-    public static final String AGENT_DIR = "agent";
+    // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/.agent/, a
+    // path known as the plugin applies, before a build script can move the build directory. Hidden,
+    // since .lathe/<module>/<child> is also the module directory of a child project in <child>/,
+    // which the copy into this directory would empty.
+    public static final String AGENT_DIR = ".agent";
     public static final String AGENT_JAR = "lathe-junit.jar";
     // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
     public static final String FACTS_FILE = "lathe-facts.json";

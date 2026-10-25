@@ -13,9 +13,9 @@ import java.util.stream.Stream;
 import org.gradle.api.DefaultTask;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
+import org.gradle.api.provider.ListProperty;
 import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
-import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
@@ -64,9 +64,11 @@ public abstract class LatheFactsTask extends DefaultTask {
   @PathSensitive(PathSensitivity.ABSOLUTE)
   public abstract ConfigurableFileCollection getLibraryClasspath();
 
-  // What replays the tests beside the test classpath: the test runner and the JUnit launcher.
-  @Classpath
-  public abstract ConfigurableFileCollection getRunnerClasspath();
+  // What replays the tests beside the test classpath: the test runner and the JUnit launcher. Its
+  // paths, not its files: from the test runtime, they would make each test compile build every
+  // sibling's jar.
+  @Input
+  public abstract ListProperty<String> getRunnerClasspath();
 
   @OutputFile
   public abstract RegularFileProperty getFactsFile();
@@ -120,7 +122,7 @@ public abstract class LatheFactsTask extends DefaultTask {
         file,
         Json.toJson(
             Json.fromJson(getFacts().get(), ProjectFacts.class)
-                .withResolved(trees, libraries, classpath, paths(getRunnerClasspath()))),
+                .withResolved(trees, libraries, classpath, getRunnerClasspath().get())),
         StandardCharsets.UTF_8);
   }
 

@@ -357,7 +357,7 @@ Putting the jar on the classpath would change every `test` task's cache key
 ([the cache-key rule](#design-principle--leave-the-builds-cache-keys-alone-decided-2026-10-23)), so it enters
 through the environment instead:
 
-- a `latheAgent` task (a plain `Sync`) copies the resolved `lathe-junit` jar to `.lathe/<module>/agent/lathe-junit.jar`,
+- a `latheAgent` task (a plain `Sync`) copies the resolved `lathe-junit` jar to `.lathe/<module>/.agent/lathe-junit.jar` (hidden, so it never collides with a child project in a folder of that name),
   and `test` depends on it — a task dependency is not an input;
 - `test` gets `JDK_JAVA_OPTIONS="… -javaagent:<that jar>"`, appended to what the build already sets there.
   The environment is not part of the cache key. The value names the fixed path, read as the worker starts, and leaves

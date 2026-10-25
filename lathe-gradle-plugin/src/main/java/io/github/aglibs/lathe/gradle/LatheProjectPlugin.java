@@ -21,7 +21,6 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 import org.gradle.api.GradleException;
-import org.gradle.api.JavaVersion;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -539,17 +538,10 @@ public class LatheProjectPlugin implements Plugin<Project> {
                               () -> javac.getOptions().getAnnotationProcessorPath());
                   task.getCompilerArgs()
                       .set(project.provider(() -> javac.getOptions().getAllCompilerArgs()));
-                  task.getRelease()
-                      .set(
-                          javac
-                              .getOptions()
-                              .getRelease()
-                              .map(String::valueOf)
-                              .orElse(
-                                  project.provider(
-                                      () ->
-                                          JavaVersion.toVersion(javac.getSourceCompatibility())
-                                              .getMajorVersion())));
+                  // Only a --release the compile used, as on Maven: one Gradle did not pass
+                  // (it compiled with -source/-target) would forbid the --add-exports of JDK
+                  // internals the compile may also pass.
+                  task.getRelease().set(javac.getOptions().getRelease().map(String::valueOf));
                   task.getEncoding().set(project.provider(() -> javac.getOptions().getEncoding()));
                   task.getInferModulePath().set(javac.getModularity().getInferModulePath());
                 });

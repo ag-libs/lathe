@@ -17,22 +17,24 @@ import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
-import org.gradle.work.DisableCachingByDefault;
+import org.gradle.api.tasks.UntrackedTask;
 
 // The module's main-run launch, .lathe/<module>/main-launch.json, derived here since no main run
 // happens during a build: the main runtime classpath, split for a modular main by Gradle's own rule
-// so a run matches Gradle's JavaExec, on the project's Java launcher.
-@DisableCachingByDefault(because = "It holds this machine's absolute paths.")
+// so a run matches Gradle's JavaExec, on the project's Java launcher. The classpath is no input:
+// as one it would make every build that compiles also build each sibling's jar, which only the
+// paths are needed of. So the task runs every time, cheaply, and a modular split made before a
+// sibling's jar existed is corrected by the next build that has it.
+@UntrackedTask(because = "Its classpath is read for its paths, not built.")
 public abstract class LatheMainLaunchTask extends DefaultTask {
 
   private static final String MODULE_INFO_CLASS = "module-info.class";
 
-  @Classpath
+  @Internal
   public abstract ConfigurableFileCollection getRuntimeClasspath();
 
   @Internal

@@ -91,7 +91,14 @@ final class LatheTestCapture {
           });
     }
 
-    facts.configure(task -> task.getRunnerClasspath().from(runnerClasspath(project, test)));
+    // A plain Callable provider carries no task dependencies, so the paths are read, never built.
+    final FileCollection runner = runnerClasspath(project, test);
+    facts.configure(
+        task ->
+            task.getRunnerClasspath()
+                .set(
+                    project.provider(
+                        () -> runner.getFiles().stream().map(File::getPath).toList())));
   }
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always

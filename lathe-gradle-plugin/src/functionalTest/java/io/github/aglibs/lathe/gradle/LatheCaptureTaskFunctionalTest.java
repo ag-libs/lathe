@@ -48,7 +48,8 @@ class LatheCaptureTaskFunctionalTest {
     final var main = params("", LatheLayout.CLASSES_DIR);
     assertThat(main.sourceRoots()).containsExactly(fixture.path("src/main/java"));
     assertThat(main.outputDir()).isEqualTo(fixture.path("build/classes/java/main"));
-    assertThat(main.release()).containsOnlyDigits();
+    // No --release recorded: Gradle compiled with -source/-target, as nothing set options.release.
+    assertThat(main.release()).isNull();
     assertThat(main.proc()).isEqualTo("none");
     assertThat(main.compilerArgs()).containsExactly("-proc:none");
     assertThat(params("", LatheLayout.TEST_CLASSES_DIR).classpath())
@@ -115,7 +116,7 @@ class LatheCaptureTaskFunctionalTest {
                 "app/build.gradle.kts",
                 """
                 plugins { java }
-                java { sourceCompatibility = JavaVersion.VERSION_17 }
+                tasks.compileJava { options.release = 17 }
                 dependencies {
                   implementation(project(":lib"))
                   annotationProcessor(project(":processor"))
