@@ -100,8 +100,9 @@ What works today, in detail, is in [status](docs/status.md).
 
 ## Contributing
 
-Bug reports, questions and feedback are welcome: please [open an issue](https://github.com/ag-libs/lathe/issues).
-If you'd like to contribute code, open an issue first so we can agree on the change; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Feedback, bug reports, and questions are welcome: please [open an issue](https://github.com/ag-libs/lathe/issues).
+Lathe isn't accepting code contributions at the moment, so please open an issue rather than a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md).
+Thank you for trying Lathe.
 
 Lathe is developed with AI coding tools, mainly Claude Code.
 A maintainer reviews every change and takes responsibility for it, and AI-assisted commits carry a `Co-Authored-By` trailer.
