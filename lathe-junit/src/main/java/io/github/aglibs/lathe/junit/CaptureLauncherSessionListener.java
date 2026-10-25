@@ -12,10 +12,17 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
   @Override
   public void launcherSessionOpened(final LauncherSession session) {
     try {
-      if (featureVersion(System.getProperty("java.specification.version"))
-          >= LatheLayout.MIN_JAVA_VERSION) {
-        LaunchCapture.capture();
+      final int javaVersion = featureVersion(System.getProperty("java.specification.version"));
+      if (javaVersion < LatheLayout.MIN_JAVA_VERSION) {
+        // In the build's test output: the reason these tests can't be run from the editor.
+        System.err.printf(
+            "[lathe] test launch not captured: this test JVM runs Java %d; Lathe captures on Java"
+                + " %d or newer%n",
+            javaVersion, LatheLayout.MIN_JAVA_VERSION);
+        return;
       }
+
+      LaunchCapture.capture();
     } catch (final Throwable ignored) {
       // Capture must never change the user's test result.
     }

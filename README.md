@@ -206,6 +206,8 @@ configuration, and **Zed** needs only a project settings file.
 
 Test run and debug have additional requirements (Surefire and JUnit Platform
 versions); see [test-capture.md](docs/guide/test-capture.md).
+Tests your build runs on a JDK older than 17 (through `<jvm>` or a toolchain) still run, but are not
+captured, so they can't be run or debugged from the editor.
 
 ## Setup
 
