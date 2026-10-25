@@ -677,7 +677,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                   .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {
-      throw new UncheckedIOException("[references] failed to read source for %s".formatted(uri), e);
+      throw new UncheckedIOException("cannot read the source of %s".formatted(uri), e);
     }
   }
 

@@ -370,14 +370,8 @@ class LatheMcpToolsTest {
         .allSatisfy(schema -> assertThat(schema.toString()).contains("minimum=1"));
   }
 
-  // Engine messages lead with log tags; the agent reads the reason alone.
   @Test
-  void agentMessage_engineMessage_dropsLogTagsAndKeepsTheReason() {
-    assertThat(
-            LatheMcpTools.agentMessage(
-                "fix_imports",
-                new IllegalStateException("[fixImports] refusing: X.java is not a reactor file")))
-        .isEqualTo("refusing: X.java is not a reactor file");
+  void agentMessage_withAndWithoutAMessage_givesTheReasonOrPointsAtTheLog() {
     assertThat(
             LatheMcpTools.agentMessage(
                 "run_test", new IllegalStateException("no test method 'm' in T.java")))

@@ -44,7 +44,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
@@ -718,11 +717,10 @@ final class LatheMcpTools {
     }
   }
 
-  // Engine messages lead with their log tags ("[rename] refusing: ..."); the agent gets the reason.
   static String agentMessage(final String tool, final RuntimeException e) {
     return e.getMessage() == null
         ? "%s failed; see the server log".formatted(tool)
-        : LOG_TAGS.matcher(e.getMessage()).replaceFirst("");
+        : e.getMessage();
   }
 
   @FunctionalInterface
@@ -1140,8 +1138,6 @@ final class LatheMcpTools {
     return items.isEmpty() ? "none" : String.join(", ", items);
   }
 
-  private static final Pattern LOG_TAGS = Pattern.compile("^(\\[[^]]*] )+");
-
   static final LatheNotes NO_NOTES = LatheNotes.ofNotChecked(List.of());
 
   private static CallToolResult verifyChangeResult(
@@ -1422,12 +1418,7 @@ final class LatheMcpTools {
 
   private static Path filePath(final CallToolRequest request) {
     final String file = stringArg(request, "file");
-    return file == null ? null : pathOf(file);
-  }
-
-  // The engine keys files by absolute path; a relative one is taken from the server's cwd.
-  private static Path pathOf(final String file) {
-    return Path.of(file).toAbsolutePath().normalize();
+    return file == null ? null : FileUtil.absolute(file);
   }
 
   private static String stringArg(final CallToolRequest request, final String name) {
@@ -1445,7 +1436,7 @@ final class LatheMcpTools {
       return List.of();
     }
 
-    return files.stream().map(String::valueOf).map(LatheMcpTools::pathOf).toList();
+    return files.stream().map(String::valueOf).map(FileUtil::absolute).toList();
   }
 
   private static CallToolResult error(final String message) {

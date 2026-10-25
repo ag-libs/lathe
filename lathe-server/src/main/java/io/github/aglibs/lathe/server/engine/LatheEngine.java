@@ -322,7 +322,7 @@ public final class LatheEngine {
             .toList();
     if (!nonReactor.isEmpty()) {
       throw new IllegalStateException(
-          "[rename] refusing: would edit non-reactor file(s) %s".formatted(nonReactor));
+          "the rename would edit files outside the reactor: %s".formatted(nonReactor));
     }
 
     final List<LatheFileEdit> files =
@@ -380,7 +380,7 @@ public final class LatheEngine {
   // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
   // like a rename. Empty when the file was already formatted.
   public Optional<LatheFormat> format(final Path file) {
-    requireReactorFile("format", file);
+    requireReactorFile(file);
     compileFromDisk(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
     final List<TextEdit> edits = await(service.formatFuture(uri));
@@ -398,7 +398,7 @@ public final class LatheEngine {
   // Adds the imports that have one candidate; the rest are the agent's to choose (ambiguous) or
   // fix (unknown names).
   public LatheImports fixImports(final Path file) {
-    requireReactorFile("fixImports", file);
+    requireReactorFile(file);
     compileFromDisk(file); // missing imports are read from the file's document, so register it
     final String uri = LatheUri.fromPath(file);
     final MissingImportsResult missing = await(service.missingImportsFuture(uri));
@@ -415,10 +415,10 @@ public final class LatheEngine {
   }
 
   // The tools that write one file leave dependency, JDK and generated sources alone.
-  private void requireReactorFile(final String operation, final Path file) {
+  private void requireReactorFile(final Path file) {
     if (origin(file) != LatheLocation.Origin.REACTOR) {
       throw new IllegalStateException(
-          "[%s] refusing: %s is not a reactor file".formatted(operation, file));
+          "%s is not a reactor file, so Lathe does not edit it".formatted(file));
     }
   }
 
@@ -738,13 +738,13 @@ public final class LatheEngine {
       return future.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException("[engine] request interrupted", e);
+      throw new IllegalStateException("the request was interrupted", e);
     } catch (final ExecutionException | TimeoutException e) {
       // A request the server refused carries its reason, which the caller must see.
       final String message =
           ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused
               ? refused.getMessage()
-              : "[engine] request failed";
+              : "the request failed; see the server log";
       throw new IllegalStateException(message, e);
     }
   }

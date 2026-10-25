@@ -42,6 +42,11 @@ public final class FileUtil {
 
   private FileUtil() {}
 
+  // One identity per file for a path given as text; a relative one resolves against the cwd.
+  public static Path absolute(final String path) {
+    return Path.of(path).toAbsolutePath().normalize();
+  }
+
   public static boolean isJavaFile(final Path path) {
     return path.getFileName().toString().endsWith(".java");
   }

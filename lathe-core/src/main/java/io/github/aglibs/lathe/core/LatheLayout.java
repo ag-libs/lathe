@@ -199,7 +199,7 @@ public final class LatheLayout {
     private static final String TREE_PROPERTY_PREFIX = "lathe.tree:";
 
     public static String treeProperty(final String outputDirectory) {
-      return TREE_PROPERTY_PREFIX + Path.of(outputDirectory).toAbsolutePath().normalize();
+      return TREE_PROPERTY_PREFIX + FileUtil.absolute(outputDirectory);
     }
 
     private Maven() {}
