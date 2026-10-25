@@ -11,7 +11,6 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -109,8 +108,7 @@ final class WorkspaceWatcher {
   // A file watched by touch differs whenever it moved; one watched by content only when its
   // content is not what the sync saw (a touch, or an edit put back, is not a change).
   private boolean differsFromSync(final Path file) {
-    final ContentFingerprint synced = syncedContent.get(file);
-    return synced == null || !Optional.of(synced).equals(FileUtil.readFingerprint(file));
+    return !FileUtil.hasContent(file, syncedContent.get(file));
   }
 
   // A file watched by touch is taken as changed before startup when it is newer than the manifest

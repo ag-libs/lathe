@@ -472,39 +472,6 @@ None yet.
 
 ---
 
-## WS-18 — A source whose time changed but whose content did not is recompiled in-process
-
-**Status: documented**
-**Affects: the editor and MCP, on every build tool; most on Gradle.**
-Found by the Gradle plugin's touch probe (2026-10-25) on JUnit's own build.
-
-### Observed behaviour
-
-After `touch` on all 1,805 sources of JUnit's Gradle build, `./gradlew testClasses` compiled nothing
-(Gradle decides by content), so no capture task ran and the compile stamps kept their old times.
-The server's stale scan compares each source's mtime with its stamp, found all 1,653 compiled sources
-stale, and recompiled them in-process, upstream first: about 39 s of background compiles, all
-successful, after which the new stamps made the next start quiet.
-The editor stayed usable (workspace ready in 1.6 s), so this is wasted work, not a wrong result.
-Maven hides it after a build, since its compiler recompiles by mtime and refreshes the stamps, but
-not when the server sees the touch first; a branch switch and back does the same on either tool.
-
-### Fix direction
-
-Let the stale scan treat a source whose mtime differs from its stamp but whose content matches the
-fingerprint the build recorded (`CompiledStamps.loadBuilt`) as current, and only re-stamp it: hashing
-1,653 files takes well under a second.
-`differingFromBuild` already makes this comparison for `verify_change`; reuse it rather than adding
-a second one.
-A tree with no recorded fingerprints (OpenJDK, older stamps) keeps today's mtime rule.
-
-### Regression targets
-
-Touch every source of the `multi-module` invoker workspace with no build: no in-process recompile,
-and the stamps carry the new mtimes.
-
----
-
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone

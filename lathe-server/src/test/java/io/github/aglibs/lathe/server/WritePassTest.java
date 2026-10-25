@@ -10,12 +10,14 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -38,6 +40,10 @@ import org.junit.jupiter.api.parallel.Isolated;
 // resources. Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
 @Isolated
 class WritePassTest extends ServiceTestBase {
+
+  private static final Path FOO_KEY = Path.of("com/example/Foo.java");
+  private static final String FOO = "package com.example; class Foo {}";
+  private static final String CHANGED_FOO = "package com.example; class Foo { int changed; }";
 
   @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
@@ -69,7 +75,7 @@ class WritePassTest extends ServiceTestBase {
     service.initialize(tmp);
     service.reconcileNow(true).get(30, TimeUnit.SECONDS); // runs after the startup pass
 
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .as("every changed source compiled and stamped")
         .hasSize(61)
         .allSatisfy((source, mtime) -> assertThat(mtime).isEqualTo(5_000L));
@@ -99,7 +105,7 @@ class WritePassTest extends ServiceTestBase {
         5_000L);
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
 
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .as("stamps: the good file written, the broken one left stale")
         .containsEntry(Path.of("com/example/Good.java"), 5_000L)
         .containsEntry(Path.of("com/example/Broken.java"), 1_000L);
@@ -134,7 +140,7 @@ class WritePassTest extends ServiceTestBase {
         6_000L);
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
 
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .as("both written together once B's write takes the failed A along")
         .containsEntry(Path.of("com/example/A.java"), 5_000L)
         .containsEntry(Path.of("com/example/B.java"), 6_000L);
@@ -241,7 +247,7 @@ class WritePassTest extends ServiceTestBase {
     assertThat(Files.readString(classes.resolve("B.class"), StandardCharsets.ISO_8859_1))
         .as("B written though its mtime equals its stamp")
         .contains("addedB");
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .as("stamps during the build: the reported A written, the external C left for later")
         .containsEntry(Path.of("com/example/A.java"), 5_000L)
         .containsEntry(Path.of("com/example/C.java"), 1_000L);
@@ -249,7 +255,7 @@ class WritePassTest extends ServiceTestBase {
 
     LatheLock.release(lock);
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .as("after the build, the external change catches up")
         .containsEntry(Path.of("com/example/C.java"), 5_000L);
   }
@@ -259,13 +265,12 @@ class WritePassTest extends ServiceTestBase {
     writeStaleModule(1_000L, 1_000L); // fresh at init (mtime == stamp) → startup eager is a no-op
     service.initialize(tmp);
     awaitStartup(); // let startup reconciliation finish before mutating the source
-    touchFoo(5_000L); // now newer than its stamp → stale
+    writeFoo(CHANGED_FOO, 5_000L); // changed since its stamp → stale
 
     // A single eager pass compiles it (no two-tick wait), advancing the stamp to the source mtime.
     service.reconcileNow(true).get(5, TimeUnit.SECONDS);
 
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry(Path.of("com/example/Foo.java"), 5_000L);
+    assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
   }
 
   @Test
@@ -287,7 +292,7 @@ class WritePassTest extends ServiceTestBase {
     service.reconcileNow(true).get(5, TimeUnit.SECONDS);
 
     assertThat(classesDir.resolve("shapes/Square.class")).exists();
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
+    assertThat(moduleStamps())
         .containsEntry(Path.of("shapes/Shape.java"), 5_000L)
         .containsEntry(Path.of("shapes/Square.java"), 5_000L);
   }
@@ -332,9 +337,9 @@ class WritePassTest extends ServiceTestBase {
 
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
 
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/api"), "classes"))
+    assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/api"), "classes"))
         .containsEntry(Path.of("com/example/api/Api.java"), 5_000L);
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/app"), "classes"))
+    assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
         .containsEntry(Path.of("com/example/app/App.java"), 5_000L);
   }
 
@@ -366,15 +371,14 @@ class WritePassTest extends ServiceTestBase {
     service.setWorkDoneProgressSupported(true);
     service.initialize(tmp);
     awaitStartup();
-    touchFoo(5_000L); // now stale
+    writeFoo(CHANGED_FOO, 5_000L); // now stale
 
     // First pass records the change as pending (two-tick stability); the second recompiles it.
     service.reconcileNow().get(5, TimeUnit.SECONDS);
     service.reconcileNow().get(5, TimeUnit.SECONDS);
 
     // Recompiled in-process (its stamp advanced to the source's mtime) and not prompted for Maven.
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry(Path.of("com/example/Foo.java"), 5_000L);
+    assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
     verify(client, never()).showMessageRequest(any());
     // The in-process recompile reports a self-clearing progress task (begin "recompiling" + end).
     verify(client, timeout(5_000).atLeastOnce())
@@ -413,6 +417,50 @@ class WritePassTest extends ServiceTestBase {
         .toList();
   }
 
+  // Only the content tells a touch from a change; the reference is what the mirror holds, so a
+  // change put back after the server compiled it is a change again.
+  @Test
+  void reconcileNow_touchedSource_restampsWithoutCompiling_changedOrPutBackOneCompiles()
+      throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+
+    writeFoo(FOO, 5_000L);
+    assertPassCompiles(false, 5_000L);
+    writeFoo(CHANGED_FOO, 6_000L);
+    assertPassCompiles(true, 6_000L);
+    // Back to what the build compiled, but the mirror holds the change.
+    writeFoo(FOO, 9_000L);
+    assertPassCompiles(true, 9_000L);
+  }
+
+  // A stamp without content (OpenJDK's) leaves the mtime alone to decide.
+  @Test
+  void reconcileNow_touchedSourceStampedWithoutContent_compiles() throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    CompiledStamps.writeAll(
+        tmp.resolve(".lathe/module"),
+        "classes",
+        Map.of(FOO_KEY, new SourceStamp(1_000L, null)),
+        Map.of());
+    service.initialize(tmp);
+    awaitStartup();
+
+    writeFoo(FOO, 5_000L);
+    assertPassCompiles(true, 5_000L);
+  }
+
+  private void assertPassCompiles(final boolean compiles, final long stampedMtime)
+      throws Exception {
+    try (final var compileLog = new CompileLog()) {
+      service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+      assertThat(writes(compileLog)).as("compiled at %d", stampedMtime).hasSize(compiles ? 1 : 0);
+    }
+
+    assertThat(moduleStamps()).containsEntry(FOO_KEY, stampedMtime);
+  }
+
   @Test
   void reconcileNow_compileFails_doesNotAdvanceStamp() throws Exception {
     writeStaleModule(1_000L, 1_000L);
@@ -429,8 +477,7 @@ class WritePassTest extends ServiceTestBase {
 
     // A failed compile must not stamp the source fresh: it stays stale so a later batch retries it
     // once its dependency lands, instead of leaving a stale mirror class marked up to date.
-    assertThat(CompiledStamps.load(tmp.resolve(".lathe/module"), "classes"))
-        .containsEntry(Path.of("com/example/Foo.java"), 1_000L);
+    assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 1_000L);
   }
 
   @Test
@@ -500,24 +547,23 @@ class WritePassTest extends ServiceTestBase {
   // mtimes, so the startup source-staleness scan sees the source as stale (source > class) or
   // fresh.
   private void writeStaleModule(final long sourceMtime, final long stampMtime) throws Exception {
-    final Path sourceRoot = tmp.resolve("module/src/main/java");
-    TestCompiler.writeAt(
-        sourceRoot.resolve("com/example/Foo.java"),
-        "package com.example; class Foo {}",
-        sourceMtime);
+    final Path foo = writeFoo(FOO, sourceMtime);
+    final var compiled = FileUtil.fingerprint(foo);
     CompiledStamps.writeAll(
         tmp.resolve(".lathe/module"),
         "classes",
-        Map.of(Path.of("com/example/Foo.java"), stampMtime),
-        Map.of());
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
+        Map.of(FOO_KEY, new SourceStamp(stampMtime, compiled)),
+        Map.of(FOO_KEY, compiled));
+    TestCompiler.writeModuleParams(tmp, "module", tmp.resolve("module/src/main/java"), null);
   }
 
-  private void touchFoo(final long mtime) throws Exception {
-    TestCompiler.writeAt(
-        tmp.resolve("module/src/main/java/com/example/Foo.java"),
-        "package com.example; class Foo {}",
-        mtime);
+  private Map<Path, Long> moduleStamps() {
+    return TestCompiler.stampedMtimes(tmp.resolve(".lathe/module"), "classes");
+  }
+
+  private Path writeFoo(final String content, final long mtime) throws Exception {
+    return TestCompiler.writeAt(
+        tmp.resolve("module/src/main/java").resolve(FOO_KEY), content, mtime);
   }
 
   // A $/progress "begin" for the in-process recompile (its title carries "recompiling"), as opposed

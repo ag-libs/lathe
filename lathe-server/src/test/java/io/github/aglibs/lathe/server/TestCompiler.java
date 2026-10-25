@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
@@ -165,6 +166,19 @@ public final class TestCompiler {
     return path;
   }
 
+  // A source's stamp as a build writes it: its mtime and the content compiled.
+  public static SourceStamp buildStamp(final Path source) throws IOException {
+    return new SourceStamp(
+        Files.getLastModifiedTime(source).toMillis(), FileUtil.fingerprint(source));
+  }
+
+  // The tree's stamped mtimes, to check what a write stamped.
+  public static Map<Path, Long> stampedMtimes(final Path moduleDir, final String sourceTree) {
+    return CompiledStamps.load(moduleDir, sourceTree).entrySet().stream()
+        .collect(
+            Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().mtime()));
+  }
+
   /**
    * Writes a module whose sources (root-relative path to content) are already compiled into its
    * mirror and stamped at {@code mtimeMillis}, so the workspace starts fresh. {@code dependencies}
@@ -191,15 +205,21 @@ public final class TestCompiler {
                 dep -> workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(dep).resolve("classes"))
             .toList();
     compileToDir(latheModuleDir.resolve("classes"), mirrors, paths.toArray(Path[]::new));
+    final Map<Path, SourceStamp> stamps =
+        sources.keySet().stream()
+            .map(Path::of)
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    rel -> rel,
+                    rel -> IOUtil.unchecked(() -> buildStamp(sourceRoot.resolve(rel)))));
     CompiledStamps.writeAll(
         latheModuleDir,
         "classes",
-        sources.keySet().stream().collect(Collectors.toMap(Path::of, rel -> mtimeMillis)),
-        sources.keySet().stream()
+        stamps,
+        stamps.entrySet().stream()
             .collect(
-                Collectors.toMap(
-                    Path::of,
-                    rel -> IOUtil.unchecked(() -> FileUtil.fingerprint(sourceRoot.resolve(rel))))));
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, entry -> entry.getValue().content())));
     writeModuleParams(
         workspaceRoot,
         moduleName,

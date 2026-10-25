@@ -28,8 +28,8 @@ Two things carry all the state that matters:
 
 - **The mirror** `.lathe/<module>/classes` and `test-classes`: compiled classes every analysis resolves against.
   Maven fills it during a sync; the server rewrites parts of it.
-- **Compile stamps** `.lathe/<module>/lsp-stamps-<tree>.json`: per source, the mtime it had when its class was last written.
-  A source whose mtime differs from its stamp is **stale**.
+- **Compile stamps** `.lathe/<module>/lsp-stamps-<tree>.json`: per source, the mtime and content it had when its class was last written.
+  A source whose mtime differs from its stamp is **stale**, unless its content is still the stamp's (a touch, which is only re-stamped).
 
 ### One pass
 

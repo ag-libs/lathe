@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.OutputData;
+import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -164,10 +165,11 @@ class LatheLifecycleParticipantTest {
     final Path foo = Path.of("com", "example", "Foo.java");
     final ContentFingerprint compiled = new ContentFingerprint(1, 1);
     final Path appDir = moduleWithSource(root, "app", foo);
-    CompiledStamps.writeAll(appDir, LatheLayout.CLASSES_DIR, Map.of(foo, 100L), Map.of());
+    final var stamp = new SourceStamp(100L, null);
+    CompiledStamps.writeAll(appDir, LatheLayout.CLASSES_DIR, Map.of(foo, stamp), Map.of());
     final Path libDir = moduleWithSource(root, "lib", foo);
     CompiledStamps.writeAll(
-        libDir, LatheLayout.CLASSES_DIR, Map.of(foo, 100L), Map.of(foo, compiled));
+        libDir, LatheLayout.CLASSES_DIR, Map.of(foo, stamp), Map.of(foo, compiled));
 
     LatheLifecycleParticipant.recordBuilt(
         root, List.of(root.resolve("app"), root.resolve("lib"), root.resolve("docs")));
@@ -176,7 +178,7 @@ class LatheLifecycleParticipantTest {
         .containsExactly(
             Map.entry(foo, FileUtil.fingerprint(root.resolve("app/src/main/java").resolve(foo))));
     assertThat(CompiledStamps.load(appDir, LatheLayout.CLASSES_DIR))
-        .containsExactly(Map.entry(foo, 100L));
+        .containsExactly(Map.entry(foo, stamp));
     assertThat(CompiledStamps.loadBuilt(libDir, LatheLayout.CLASSES_DIR))
         .containsExactly(Map.entry(foo, compiled));
     assertThat(root.resolve(LatheLayout.LATHE_DIR).resolve("docs")).doesNotExist();
