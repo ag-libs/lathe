@@ -498,6 +498,39 @@ None yet.
 
 ---
 
+## WS-18 — A source whose time changed but whose content did not is recompiled in-process
+
+**Status: documented**
+**Affects: the editor and MCP, on every build tool; most on Gradle.**
+Found by the Gradle plugin's touch probe (2026-10-25) on JUnit's own build.
+
+### Observed behaviour
+
+After `touch` on all 1,805 sources of JUnit's Gradle build, `./gradlew testClasses` compiled nothing
+(Gradle decides by content), so no capture task ran and the compile stamps kept their old times.
+The server's stale scan compares each source's mtime with its stamp, found all 1,653 compiled sources
+stale, and recompiled them in-process, upstream first: about 39 s of background compiles, all
+successful, after which the new stamps made the next start quiet.
+The editor stayed usable (workspace ready in 1.6 s), so this is wasted work, not a wrong result.
+Maven hides it after a build, since its compiler recompiles by mtime and refreshes the stamps, but
+not when the server sees the touch first; a branch switch and back does the same on either tool.
+
+### Fix direction
+
+Let the stale scan treat a source whose mtime differs from its stamp but whose content matches the
+fingerprint the build recorded (`CompiledStamps.loadBuilt`) as current, and only re-stamp it: hashing
+1,653 files takes well under a second.
+`differingFromBuild` already makes this comparison for `verify_change`; reuse it rather than adding
+a second one.
+A tree with no recorded fingerprints (OpenJDK, older stamps) keeps today's mtime rule.
+
+### Regression targets
+
+Touch every source of the `multi-module` invoker workspace with no build: no in-process recompile,
+and the stamps carry the new mtimes.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -516,6 +549,35 @@ replay omits them. No project validated against Lathe uses them today; the escap
 `<argLine>-Dkey=value</argLine>` (captured as `jvmArgs`). The design — `lathe:sync` reads the
 effective Surefire model (or a hybrid where sync supplies the key names and the fork supplies the
 values) — is in [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §15.1.
+
+### Regression targets
+
+None yet — to be defined when the fix is scheduled.
+
+---
+
+## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure
+
+**Status: documented**
+**Affects: run, debug and replay on Gradle builds that run tests through the Develocity plugin.**
+Found by the Gradle plugin's end-to-end check (2026-10-25) on JUnit's own build.
+
+### Observed behaviour
+
+The Develocity Gradle plugin starts the test JVM through its own launcher, with that launcher's jar
+and a copy of `opentest4j` in a temporary directory (`/tmp/test-distribution-test-launcher-forked…/`)
+that is deleted after the run; it does so even with the build's own switch for Test Distribution off.
+The capture records the launch it saw, so `test-launch.json` names files that no longer exist.
+The server's completeness gate checks only the reactor's trees, so the replay launches anyway and
+fails with `NoClassDefFoundError: org/opentest4j/AssertionFailedError`.
+
+### Fix direction
+
+Decided 2026-10-25: a known limitation, not worked around (mapping the temporary copies back to
+same-named jars is a guess; switching Develocity off needs the Develocity plugin's API).
+The gate blocks a replay whose class or module path names a missing file outside the reactor, with
+a reason naming the file and suggesting a launch outside the Develocity plugin's test acceleration;
+the Gradle guide documents the limitation.
 
 ### Regression targets
 
