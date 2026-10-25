@@ -111,6 +111,8 @@ starts each test task with every test skipped, which is all capture needs.
   Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which
   leaves the test task's cache key alone; the JVM announces it with
   `NOTE: Picked up JDK_JAVA_OPTIONS: -javaagent:…/lathe-junit.jar`, and nothing suppresses that line.
+  JVMs the tests start inherit the variable: they print the notice too, and one that runs JUnit inside
+  the project's directory captures its own launch over the test JVM's.
 - **Tests run through the Develocity plugin's test launcher** (as JUnit's own build does) start from copies of some
   jars in a temporary directory that is gone after the run, so replaying those tests from the editor fails to load
   classes.

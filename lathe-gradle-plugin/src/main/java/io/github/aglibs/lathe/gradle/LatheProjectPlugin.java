@@ -84,6 +84,16 @@ public class LatheProjectPlugin implements Plugin<Project> {
 
   @Override
   public void apply(final Project project) {
+    if (!insideRoot(project.getRootDir().toPath(), project.getProjectDir().toPath())) {
+      // Its module would name a directory outside .lathe/ (../shared): left out, as an included
+      // build's projects are.
+      project
+          .getLogger()
+          .info(
+              "[lathe] {} left out: its directory is outside the root build's", project.getPath());
+      return;
+    }
+
     final TaskProvider<LatheFactsTask> facts =
         project
             .getTasks()
@@ -129,13 +139,14 @@ public class LatheProjectPlugin implements Plugin<Project> {
   static void registerSync(
       final Project project, final Map<String, String> modulePaths, final boolean addMavenCentral) {
     final Configuration projectFacts = factsConfiguration(project, PROJECT_FACTS, true);
-    modulePaths.values().stream()
-        .filter(path -> !path.equals(project.getPath()))
-        .forEach(
-            path ->
-                project
-                    .getDependencies()
-                    .add(PROJECT_FACTS, project.getDependencies().project(Map.of("path", path))));
+    for (final String path : modulePaths.values()) {
+      if (!path.equals(project.getPath())) {
+        project
+            .getDependencies()
+            .add(PROJECT_FACTS, project.getDependencies().project(Map.of("path", path)));
+      }
+    }
+
     final Configuration server = resolvable(project, SERVER, ServerInstaller.SERVER_COORDINATES);
     final Configuration mcpServer =
         resolvable(project, MCP_SERVER, ServerInstaller.MCP_SERVER_COORDINATES);
@@ -247,7 +258,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final Configuration configuration = configuration(project, name, true);
     final DependencyFactory factory = project.getDependencyFactory();
     configuration.withDependencies(
-        dependencies -> Stream.of(coordinates).map(factory::create).forEach(dependencies::add));
+        dependencies ->
+            List.of(coordinates)
+                .forEach(coordinate -> dependencies.add(factory.create(coordinate))));
     return configuration;
   }
 
@@ -332,6 +345,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
               final JavaCompile javac =
                   project.getTasks().named(main.getCompileJavaTaskName(), JavaCompile.class).get();
               task.getRuntimeClasspath().from(main.getRuntimeClasspath());
+              // It reads the compiled module-info.class, and the classpath, which only its paths
+              // are taken from, no longer orders it after the compile.
+              task.dependsOn(javac);
               task.getClassesDir().set(javac.getDestinationDirectory());
               task.getInferModulePath().set(javac.getModularity().getInferModulePath());
               task.getJavaHome()
@@ -500,6 +516,10 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final String output = relative(root, sourceSet.getOutput().getResourcesDir());
     return sourceSet.getResources().getSrcDirs().stream()
         .map(dir -> new ResourceRootData(relative(root, dir), output, "", false, module));
+  }
+
+  static boolean insideRoot(final Path root, final Path projectDir) {
+    return projectDir.normalize().startsWith(root.normalize());
   }
 
   private static String module(final Project project) {

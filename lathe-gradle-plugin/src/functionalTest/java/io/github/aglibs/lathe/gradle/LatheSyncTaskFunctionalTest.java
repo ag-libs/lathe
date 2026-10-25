@@ -330,6 +330,43 @@ class LatheSyncTaskFunctionalTest {
     assertThat(dir.resolve(".lathe/app/agent/classes/com/example/agent/Agent.class")).exists();
   }
 
+  // A project whose directory is outside the root build's has no place under .lathe/ (its module
+  // would be ../shared, and .lathe/../shared a directory of the build): it is left out.
+  @Test
+  void sync_projectOutsideTheRoot_leftOutAndWritesNothingThere() throws Exception {
+    final Path root = dir.resolve("root");
+    final var fixture =
+        new GradleFixture(root)
+            .file(
+                "settings.gradle.kts",
+                "%sinclude(\"app\", \"shared\")\nproject(\":shared\").projectDir = file(\"../shared\")\n%s"
+                    .formatted(
+                        GradleFixture.latheSettings("root"), GradleFixture.latheRepositories()))
+            .file("build.gradle.kts", "")
+            .file("../shared/build.gradle.kts", "plugins { `java-library` }\n")
+            .file(
+                "../shared/src/main/java/com/example/shared/Shared.java",
+                "package com.example.shared; public class Shared {}\n")
+            .file(
+                "app/build.gradle.kts",
+                GradleFixture.JAVA + "dependencies { implementation(project(\":shared\")) }\n")
+            .file(
+                "app/src/main/java/com/example/app/App.java",
+                "package com.example.app; class App { com.example.shared.Shared shared; }\n");
+
+    fixture.runner("latheSync").build();
+
+    assertThat(root.resolve("shared")).doesNotExist();
+    assertThat(root.resolve(".lathe/app/classes/com/example/app/App.class")).exists();
+    assertThat(
+            Json.read(
+                    root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+                    WorkspaceManifestData.class)
+                .outputs())
+        .extracting(OutputData::module)
+        .containsOnly("app");
+  }
+
   // Without lathe-junit the capture-only filter is missing too: a capture-only sync skips the test
   // task, and says why, rather than run every test. Here app's own repositories lack it, as a
   // project that declares its repositories can.

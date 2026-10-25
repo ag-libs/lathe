@@ -61,6 +61,11 @@ public final class JdkSourceResolver {
     return JdkSource.missing(vendor, version, key, home);
   }
 
+  private static boolean isRunningJdk(final Path home) {
+    return home == null
+        || home.equals(realPath(Path.of(System.getProperty(LatheLayout.JAVA_HOME_PROPERTY))));
+  }
+
   private static Path realPath(final Path path) {
     try {
       return path.toRealPath();
@@ -83,8 +88,10 @@ public final class JdkSourceResolver {
       return sanitize("%s-%s".formatted(stripLegalSuffix(implementor), javaVersion));
     }
 
+    // The running JVM's own vendor version describes only the running JDK: another one (a Gradle
+    // toolchain) would otherwise take its key, and share or overwrite its extracted sources.
     final var vendorVersion = System.getProperty("java.vendor.version");
-    if (vendorVersion != null && !vendorVersion.isBlank()) {
+    if (vendorVersion != null && !vendorVersion.isBlank() && isRunningJdk(home)) {
       return sanitize(vendorVersion);
     }
 

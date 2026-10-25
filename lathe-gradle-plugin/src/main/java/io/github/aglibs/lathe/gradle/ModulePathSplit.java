@@ -39,17 +39,19 @@ final class ModulePathSplit {
       return false;
     }
 
+    // The direct lookups first; a versioned descriptor, which Gradle counts without a Multi-Release
+    // manifest, only by name, in the entry list the jar has read already.
     try (final var jar = new JarFile(entry.toFile())) {
-      return jar.stream().anyMatch(file -> isModuleInfo(file.getName()))
-          || hasAutomaticModuleName(jar.getManifest());
+      return jar.getEntry(LatheLayout.MODULE_INFO_CLASS) != null
+          || hasAutomaticModuleName(jar.getManifest())
+          || jar.stream().anyMatch(file -> isVersionedModuleInfo(file.getName()));
     } catch (final IOException e) {
       return false;
     }
   }
 
-  private static boolean isModuleInfo(final String name) {
-    return name.equals(LatheLayout.MODULE_INFO_CLASS)
-        || (name.startsWith(VERSIONS_DIR) && name.endsWith("/" + LatheLayout.MODULE_INFO_CLASS));
+  private static boolean isVersionedModuleInfo(final String name) {
+    return name.startsWith(VERSIONS_DIR) && name.endsWith("/" + LatheLayout.MODULE_INFO_CLASS);
   }
 
   private static boolean hasAutomaticModuleName(final Manifest manifest) {

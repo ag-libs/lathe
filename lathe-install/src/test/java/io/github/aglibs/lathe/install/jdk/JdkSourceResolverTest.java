@@ -92,6 +92,17 @@ class JdkSourceResolverTest {
     assertThat(JdkSourceResolver.cacheKey(tmp, "any", "0")).isEqualTo("corretto-26.0.0.35.2");
   }
 
+  // A JDK other than the running one (a Gradle toolchain) whose release file names no implementor:
+  // its own vendor and version, never the running JVM's vendor version, which would share its key.
+  @Test
+  void cacheKey_otherJdkWithoutImplementor_keysOnItsOwnVersion() throws IOException {
+    writeRelease(
+        """
+        JAVA_VERSION="11.0.25"
+        """);
+    assertThat(JdkSourceResolver.cacheKey(tmp, "unknown", "11.0.25")).isEqualTo("unknown-11.0.25");
+  }
+
   @Test
   void cacheKey_temurinRelease_returnsTemurinKey() throws IOException {
     writeRelease(

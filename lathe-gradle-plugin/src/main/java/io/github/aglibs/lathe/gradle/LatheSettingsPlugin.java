@@ -58,8 +58,11 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
     final var pending = new ArrayDeque<ProjectDescriptor>(List.of(settings.getRootProject()));
     while (!pending.isEmpty()) {
       final ProjectDescriptor project = pending.pop();
-      paths.put(
-          FileUtil.slashed(root.relativize(project.getProjectDir().toPath())), project.getPath());
+      final Path dir = project.getProjectDir().toPath();
+      if (LatheProjectPlugin.insideRoot(root, dir)) {
+        paths.put(FileUtil.slashed(root.relativize(dir)), project.getPath());
+      }
+
       pending.addAll(project.getChildren());
     }
 
