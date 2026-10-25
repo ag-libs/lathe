@@ -167,6 +167,9 @@ final class LaunchCapture {
     return ownJarLocation != null && Path.of(entry).normalize().equals(ownJarLocation.normalize());
   }
 
+  // Each entry through Path, which collapses repeated separators: on Windows, Gradle passes the
+  // worker's class path in an argfile with its backslashes escaped but unquoted, and the launcher
+  // unescapes only inside quotes, so they arrive doubled.
   private static List<String> splitPath(final String value) {
     if (value == null || value.isBlank()) {
       return List.of();
@@ -174,6 +177,7 @@ final class LaunchCapture {
 
     return Stream.of(value.split(java.util.regex.Pattern.quote(File.pathSeparator)))
         .filter(entry -> !entry.isBlank())
+        .map(entry -> Path.of(entry).toString())
         .toList();
   }
 
