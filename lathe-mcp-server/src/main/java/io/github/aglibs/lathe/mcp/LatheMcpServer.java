@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheLogging;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
@@ -89,7 +90,10 @@ public final class LatheMcpServer {
     LatheLogging.initFile(logFile);
     pruneSessionLogs();
     // The client keeps only the startup burst of stderr, so this line points at the full log.
-    LOG.info(() -> "[startup] pid=%d cwd=%s log=%s".formatted(pid, cwd, logFile));
+    LOG.info(
+        () ->
+            "[startup] %s pid=%d cwd=%s log=%s"
+                .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile));
 
     final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
     if (workspaceRoot.isEmpty()) {
