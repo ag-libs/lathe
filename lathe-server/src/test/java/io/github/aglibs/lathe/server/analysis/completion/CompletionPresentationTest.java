@@ -196,7 +196,7 @@ class CompletionPresentationTest extends CompletionTestSupport {
   }
 
   @Test
-  void completionItem_importEdit_insertedAfterLastExistingImport() throws IOException {
+  void completionItem_importEdit_insertedAtItsSortedPlace() throws IOException {
     localFixture =
         new CompletionFixture(
             TempSourceCompiler.typeIndex(
@@ -217,7 +217,9 @@ class CompletionPresentationTest extends CompletionTestSupport {
     final var item = itemLabeled(items, "ArrayList").orElseThrow();
     final var edit = item.getAdditionalTextEdits().get(0);
     assertThat(edit.getNewText()).isEqualTo("import java.util.ArrayList;\n");
-    assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
+    assertThat(edit.getRange())
+        .as("before List")
+        .isEqualTo(new Range(new Position(2, 0), new Position(2, 0)));
   }
 
   @Test

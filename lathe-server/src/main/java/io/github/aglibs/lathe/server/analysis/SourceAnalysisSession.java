@@ -469,26 +469,36 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // renameable element (the file move a public top-level type needs is gated in WorkspaceSession).
   public ReferenceTarget resolveRenameTarget(final SourceFeatureRequest request) {
     final var cur = resolve(request);
-    if (cur == null) {
+    final Element element = cur == null ? null : renameElement(request, cur);
+    return element == null
+        ? null
+        : ReferenceTarget.from(
+            element, cur.analysis().trees(), cur.analysis().types(), cur.analysis().elements());
+  }
+
+  // Why renaming the symbol at the cursor to newName would collide with an existing declaration.
+  public Optional<String> renameConflict(final SourceFeatureRequest request, final String newName) {
+    final var cur = resolve(request);
+    final Element element = cur == null ? null : renameElement(request, cur);
+    return element == null
+        ? Optional.empty()
+        : RenameConflicts.find(element, newName, cur.analysis());
+  }
+
+  private static Element renameElement(
+      final SourceFeatureRequest request, final CursorContext cur) {
+    final Element constructor =
+        SourceLocator.constructorAtNewClassType(cur.analysis().trees(), cur.path());
+    final Element named = constructor != null ? constructor : elementOrJavadocReference(cur);
+    if (named == null) {
       return null;
     }
 
-    final var trees = cur.analysis().trees();
-    final Element constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
-    Element element = constructor != null ? constructor : elementOrJavadocReference(cur);
-    if (element == null) {
-      return null;
-    }
-
-    if (element.getKind() == ElementKind.CONSTRUCTOR) {
-      element = element.getEnclosingElement();
-    }
-
-    if (!isRenameable(element) || !cursorNames(request.content(), cur.offset(), element)) {
-      return null;
-    }
-
-    return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
+    final Element element =
+        named.getKind() == ElementKind.CONSTRUCTOR ? named.getEnclosingElement() : named;
+    return isRenameable(element) && cursorNames(request.content(), cur.offset(), element)
+        ? element
+        : null;
   }
 
   private static boolean isRenameable(final Element element) {
@@ -667,7 +677,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                   .formatted(uri, target.simpleName(), results.size()));
       return results;
     } catch (final IOException e) {
-      throw new UncheckedIOException("[references] failed to read source for %s".formatted(uri), e);
+      throw new UncheckedIOException("cannot read the source of %s".formatted(uri), e);
     }
   }
 
@@ -1101,8 +1111,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
+    final Optional<ImportLayout> layout = importAnalyzer.layout();
+    if (layout.isEmpty()) {
       return MissingImportsResult.empty();
     }
 
@@ -1132,7 +1142,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final List<MissingImportsResult.MissingImport> items = Stream.concat(types, members).toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
-    return new MissingImportsResult(insertionRange, items);
+    return new MissingImportsResult(layout.get(), items);
   }
 
   // Distinct unresolved type names in encounter order, each mapped to the first diagnostic position

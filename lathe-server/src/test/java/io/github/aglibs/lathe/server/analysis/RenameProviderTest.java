@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -344,6 +345,79 @@ class RenameProviderTest {
           assertThat(session.compile(TempSourceCompiler.TEST_URI, renamed, 2, CompileMode.OPEN))
               .noneMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
         });
+  }
+
+  // --- rename conflicts: a clash with an existing declaration is refused, a near miss is not ---
+
+  @Test
+  void renameConflict_eachKind_refusesAClashButNotANearMiss() {
+    final var source =
+        """
+        class Base { int inherited; void take(String s) {} }
+        class T extends Base {
+            int field; int other;
+            enum Color { RED, GREEN }
+            class Inner {} class Other {}
+            void run(int count, int limit) {
+                int local = 0;
+                for (int i = 0; i < count; i++) { int seen = i; }
+                for (int j = 0; j < count; j++) {}
+            }
+            void put(String s) {}
+            <A, B> void generic() {}
+        }
+        """;
+    withSession(
+        source,
+        session -> {
+          assertThat(conflict(session, source, "int field", "field", "other"))
+              .hasValue("`field` cannot be renamed to `other`: T already declares field `other`");
+          assertThat(conflict(session, source, "int field", "field", "inherited"))
+              .hasValueSatisfying(
+                  reason -> assertThat(reason).endsWith("Base already declares field `inherited`"));
+          assertThat(conflict(session, source, "int field", "field", "field"))
+              .hasValue("`field` cannot be renamed to `field`: it already has that name");
+          assertThat(conflict(session, source, "int field", "field", "fresh")).isEmpty();
+          assertThat(conflict(session, source, "RED", "RED", "GREEN"))
+              .hasValueSatisfying(
+                  reason ->
+                      assertThat(reason).endsWith("Color already declares enum constant `GREEN`"));
+          assertThat(conflict(session, source, "void put", "put", "take"))
+              .hasValueSatisfying(
+                  reason -> assertThat(reason).endsWith("Base already declares method `take`"));
+          assertThat(conflict(session, source, "void run", "run", "take"))
+              .as("an overload with other parameters")
+              .isEmpty();
+          assertThat(conflict(session, source, "class Inner", "Inner", "Other"))
+              .hasValueSatisfying(
+                  reason ->
+                      assertThat(reason).endsWith("T already has a nested type named `Other`"));
+          assertThat(conflict(session, source, "class T", "T", "Base"))
+              .hasValueSatisfying(
+                  reason -> assertThat(reason).endsWith("a type `Base` already exists"));
+          assertThat(conflict(session, source, "<A", "A", "B")).isPresent();
+          assertThat(conflict(session, source, "int count", "count", "local"))
+              .as("declared within the parameter's scope")
+              .isPresent();
+          assertThat(conflict(session, source, "int local", "local", "limit"))
+              .as("visible where the local is declared")
+              .hasValueSatisfying(
+                  reason ->
+                      assertThat(reason).endsWith("a variable named `limit` is already in scope"));
+          assertThat(conflict(session, source, "int i = 0", "i = 0", "seen")).isPresent();
+          assertThat(conflict(session, source, "int seen", "seen", "j"))
+              .as("a variable of a sibling loop")
+              .isEmpty();
+        });
+  }
+
+  private static Optional<String> conflict(
+      final SourceAnalysisSession session,
+      final String source,
+      final String context,
+      final String token,
+      final String newName) {
+    return session.renameConflict(requestAt(source, posOf(source, context, token)), newName);
   }
 
   private static void withSession(

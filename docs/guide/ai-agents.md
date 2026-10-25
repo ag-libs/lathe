@@ -169,6 +169,7 @@ It also refuses a symbol declared outside the project (JDK or a dependency) or i
 and a method overriding one, since renaming only its uses would break them; the error says which.
 It refuses a method one of whose overrides also overrides an unrelated method, which the rename would
 leave behind.
+It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 

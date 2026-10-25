@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -259,6 +260,23 @@ class LatheMcpToolsTest {
         .doesNotContain("No errors");
   }
 
+  // A named file it could not check must not read as compiling; a non-Java one is a wrong argument.
+  @Test
+  void verifyChange_namedFileNotChecked_saysSoInsteadOfCompiling() throws Exception {
+    final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
+
+    final String answer = text(call("verify_change", Map.of("files", List.of(file.toString()))));
+    final CallToolResult notJava =
+        call("verify_change", Map.of("files", List.of(tmp.resolve("pom.xml").toString())));
+
+    assertThat(answer)
+        .startsWith("No errors in what was checked; 1 named file(s) not checked.")
+        .contains("Not checked: Loose.java is outside the modules the last build compiled")
+        .doesNotContain("callers compile");
+    assertThat(notJava.isError()).isTrue();
+    assertThat(text(notJava)).endsWith("pom.xml is not a .java file");
+  }
+
   @Test
   void locatedDiagnosticLine_warning_grepStyleWithPathLineAndColumn() {
     final var diagnostic =
@@ -340,6 +358,26 @@ class LatheMcpToolsTest {
 
   private SyncToolSpecification tool(final String name) {
     return specs.stream().filter(spec -> spec.tool().name().equals(name)).findFirst().orElseThrow();
+  }
+
+  // The SDK validates arguments against the schema, so a count below 1 is refused with the reason.
+  @Test
+  void maxResults_everyToolTakingIt_declaresAMinimumOfOne() {
+    assertThat(specs)
+        .map(spec -> ((Map<?, ?>) spec.tool().inputSchema().get("properties")).get("maxResults"))
+        .filteredOn(Objects::nonNull)
+        .hasSize(4)
+        .allSatisfy(schema -> assertThat(schema.toString()).contains("minimum=1"));
+  }
+
+  @Test
+  void agentMessage_withAndWithoutAMessage_givesTheReasonOrPointsAtTheLog() {
+    assertThat(
+            LatheMcpTools.agentMessage(
+                "run_test", new IllegalStateException("no test method 'm' in T.java")))
+        .isEqualTo("no test method 'm' in T.java");
+    assertThat(LatheMcpTools.agentMessage("outline", new IllegalStateException()))
+        .isEqualTo("outline failed; see the server log");
   }
 
   @Test
@@ -490,14 +528,23 @@ class LatheMcpToolsTest {
 
   @Test
   void verifyHeadline_errorsAndWarnings_leadsWithErrors() {
-    assertThat(LatheMcpTools.verifyHeadline(0, 0))
+    assertThat(LatheMcpTools.verifyHeadline(0, 0, 0))
         .isEqualTo("No errors — the changed files and their callers compile.");
-    assertThat(LatheMcpTools.verifyHeadline(0, 7))
+    assertThat(LatheMcpTools.verifyHeadline(0, 7, 0))
         .isEqualTo(
             "No errors — the changed files and their callers compile; 7 warning(s) in the changed files.");
-    assertThat(LatheMcpTools.verifyHeadline(2, 1))
+    assertThat(LatheMcpTools.verifyHeadline(2, 1, 0))
         .isEqualTo("2 error(s); 1 warning(s) in the changed files.");
-    assertThat(LatheMcpTools.verifyHeadline(3, 0)).isEqualTo("3 error(s).");
+    assertThat(LatheMcpTools.verifyHeadline(3, 0, 1)).isEqualTo("3 error(s).");
+  }
+
+  @Test
+  void verifyHeadline_namedFileNotChecked_neverSaysEverythingCompiles() {
+    assertThat(LatheMcpTools.verifyHeadline(0, 0, 1))
+        .isEqualTo("No errors in what was checked; 1 named file(s) not checked.");
+    assertThat(LatheMcpTools.verifyHeadline(0, 2, 3))
+        .isEqualTo(
+            "No errors in what was checked; 2 warning(s) in the changed files; 3 named file(s) not checked.");
   }
 
   // A reactor file carries no tag (most answers are reactor code); anything else says where it is.

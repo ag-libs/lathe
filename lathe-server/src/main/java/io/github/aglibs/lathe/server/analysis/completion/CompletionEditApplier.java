@@ -58,7 +58,7 @@ final class CompletionEditApplier {
     }
 
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    if (importAnalyzer.insertionRange() == null) {
+    if (importAnalyzer.layout().isEmpty()) {
       return;
     }
 

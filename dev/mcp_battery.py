@@ -115,7 +115,7 @@ def main():
                ok=lambda t, r: not r.get("isError") and " 0 failed" in t)
         b.call("run_test method", "run_test", {"file": str(test), "scope": "method", "method": cfg["test"][1]},
                ok=lambda t, r: not r.get("isError") and "1 passed" in t)
-        b.call("verify_change (no change)", "verify_change", {}, ok=lambda t, r: "No new diagnostics" in t)
+        b.call("verify_change (no change)", "verify_change", {}, ok=lambda t, r: "No errors" in t)
 
         # break -> verify reports it -> repair -> verify clean
         orig = f.read_text()
@@ -128,7 +128,7 @@ def main():
                ok=lambda t, r: "incompatible" in t)
         f.write_text(orig)
         b.call("verify_change after repair", "verify_change", {"files": [str(f)]},
-               ok=lambda t, r: "No new diagnostics" in t)
+               ok=lambda t, r: "No errors" in t)
 
         # cross-module rename round-trip: the rename back must find every renamed use
         b.call("rename_symbol", "rename_symbol", dict(pos, newName=cfg["newname"]))

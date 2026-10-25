@@ -216,6 +216,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveRenameTarget(request));
   }
 
+  public CompletableFuture<Optional<String>> renameConflict(
+      final SourceFeatureRequest request, final String newName) {
+    return submit(ctx -> ctx.renameConflict(request, newName));
+  }
+
   public CompletableFuture<List<ReferenceTarget>> instantiationTargets(
       final SourceFeatureRequest request, final CancelChecker cancelChecker) {
     return submit(ctx -> ctx.instantiationTargets(request), cancelChecker);

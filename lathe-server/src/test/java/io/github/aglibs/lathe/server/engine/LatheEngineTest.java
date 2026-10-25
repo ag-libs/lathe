@@ -22,7 +22,10 @@ import io.github.aglibs.lathe.server.FormatterFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
+import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
+import io.github.aglibs.lathe.server.run.RunTarget;
+import io.github.aglibs.lathe.server.run.RunnableKind;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
@@ -36,6 +39,8 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
@@ -345,6 +350,28 @@ class LatheEngineTest {
     assertThat(notes.syncRequired()).isEmpty();
   }
 
+  // A deleted source is a change verify_change checks; a path the build never had is a typo, and
+  // must not pass as "no change".
+  @Test
+  void notes_missingFile_notCheckedOnlyWhenTheBuildNeverCompiledIt() throws Exception {
+    final Path deleted =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "module",
+                Map.of("com/example/Sample.java", "package com.example; class Sample {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    Files.delete(deleted);
+    final Path mistyped = deleted.resolveSibling("Smaple.java");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of(deleted, mistyped)).notChecked())
+        .containsExactly(
+            "%s does not exist, and the last build did not compile it"
+                .formatted(Path.of("module/src/main/java/com/example/Smaple.java")));
+  }
+
   @Test
   void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
     writeManifest("0", List.of());
@@ -514,6 +541,53 @@ class LatheEngineTest {
                   .as(symbol)
                   .hasMessageContaining("outside the project");
             });
+    assertThat(Files.readString(file)).isEqualTo(source);
+  }
+
+  // The scan lists a nested class before its enclosing one; running the class runs the outermost,
+  // which JUnit runs with its @Nested classes, and a method in the outer class wins a name clash.
+  @Test
+  void selectTarget_nestedTargetsListedFirst_picksTheOutermost() {
+    final List<RunTarget> targets =
+        List.of(
+            target("demo.Outer$Inner#run()", RunnableKind.TEST_METHOD, "run"),
+            target("demo.Outer$Inner", RunnableKind.TEST_CLASS, "Inner"),
+            target("demo.Outer#run()", RunnableKind.TEST_METHOD, "run"),
+            target("demo.Outer", RunnableKind.TEST_CLASS, "Outer"));
+    final Path file = tmp.resolve("Outer.java");
+
+    assertThat(LatheEngine.selectTarget(targets, TestScope.CLASS, null, file).id())
+        .isEqualTo("demo.Outer");
+    assertThat(LatheEngine.selectTarget(targets, TestScope.METHOD, "run", file).id())
+        .isEqualTo("demo.Outer#run()");
+    assertThatThrownBy(() -> LatheEngine.selectTarget(targets, TestScope.METHOD, "missing", file))
+        .hasMessage("no test method 'missing' in Outer.java");
+  }
+
+  private static RunTarget target(final String id, final RunnableKind kind, final String label) {
+    final var start = new Position(0, 0);
+    return new RunTarget(id, "", kind, label, "app", "file:///Outer.java", new Range(start, start));
+  }
+
+  @Test
+  void rename_toANameTheOwnerAlreadyDeclares_refusesWithTheReasonAndEditsNothing()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Sample {
+          int count;
+          int total;
+          int sum() { return count + total; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(file, source, "count", "total"))
+        .hasMessageContaining(
+            "`count` cannot be renamed to `total`: Sample already declares field `total`");
     assertThat(Files.readString(file)).isEqualTo(source);
   }
 

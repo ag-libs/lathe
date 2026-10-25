@@ -2,12 +2,12 @@ package io.github.aglibs.lathe.server.analysis;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -47,31 +47,27 @@ final class ImportQuickFixProvider implements CodeActionProvider {
       final AttributedFileAnalysis analysis,
       final Function<Set<String>, List<String>> spellings) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
-    final var insertionRange = importAnalyzer.insertionRange();
-    if (insertionRange == null) {
+    final Optional<ImportLayout> layout = importAnalyzer.layout();
+    if (layout.isEmpty()) {
       return List.of();
     }
 
     return spellings.apply(importAnalyzer.importedQualifiedNames()).stream()
         .map(
             spelling ->
-                Either.<Command, CodeAction>forRight(
-                    importAction(request, spelling, insertionRange)))
+                Either.<Command, CodeAction>forRight(importAction(request, spelling, layout.get())))
         .toList();
   }
 
   private static CodeAction importAction(
-      final CodeActionRequest request, final String fqName, final Range insertionRange) {
+      final CodeActionRequest request, final String fqName, final ImportLayout layout) {
     final var action = new CodeAction();
     action.setTitle("Import '%s'".formatted(fqName));
     action.setKind(CodeActionKind.QuickFix);
     action.setDiagnostics(List.of(request.diag()));
 
     final var edit = new WorkspaceEdit();
-    edit.setChanges(
-        Map.of(
-            request.uri(),
-            List.of(MissingImportsResult.importEdit(insertionRange, List.of(fqName)))));
+    edit.setChanges(Map.of(request.uri(), List.of(layout.edit(fqName))));
     action.setEdit(edit);
     return action;
   }

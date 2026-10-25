@@ -292,6 +292,48 @@ class RunnableScannerTest {
     assertThat(outerClass.parentId()).isEqualTo("demo");
   }
 
+  // JUnit runs @Nested classes with their enclosing class, so every enclosing class is a test class
+  // to run; a plain inner class is not run with its outer one.
+  @Test
+  void runnables_testsOnlyInNestedClasses_everyEnclosingClassIsATestClass() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Nested;
+        import org.junit.jupiter.api.Test;
+
+        class Outer {
+          @Nested
+          class Deeper {
+            @Nested
+            class Deepest {
+              @Test
+              void deep_condition_result() {
+              }
+            }
+          }
+        }
+
+        class Other {
+          class Plain {
+            @Test
+            void plain_condition_result() {
+            }
+          }
+        }
+        """;
+
+    assertThat(scan(source))
+        .filteredOn(target -> target.kind() == RunnableKind.TEST_CLASS)
+        .extracting(RunTarget::id, RunTarget::parentId)
+        .containsExactlyInAnyOrder(
+            tuple("demo.Outer$Deeper$Deepest", "demo.Outer$Deeper"),
+            tuple("demo.Outer$Deeper", "demo.Outer"),
+            tuple("demo.Outer", "demo"),
+            tuple("demo.Other$Plain", "demo.Other"));
+  }
+
   @Test
   void runnables_classWithoutTestAnnotations_returnsNoTargets() {
     final String source =
