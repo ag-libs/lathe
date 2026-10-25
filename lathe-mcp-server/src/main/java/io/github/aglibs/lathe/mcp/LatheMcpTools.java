@@ -44,6 +44,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
@@ -152,7 +153,7 @@ final class LatheMcpTools {
                 mapper,
                 positionSchema(
                     """
-                    ,"maxResults":{"type":"integer",
+                    ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max references to return (default 50)."}\
                     """))
             .description(
@@ -244,7 +245,7 @@ final class LatheMcpTools {
                     """
                     ,"direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
-                    "maxResults":{"type":"integer","description":"Max calls to return (default 50)."}\
+                    "maxResults":{"type":"integer","minimum":1,"description":"Max calls to return (default 50)."}\
                     """))
             .description(
                 """
@@ -283,7 +284,7 @@ final class LatheMcpTools {
                 {"type":"object","required":["query"],
                  "properties":{
                    "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
-                   "maxResults":{"type":"integer","description":"Max symbols to return (default 50)."}}}\
+                   "maxResults":{"type":"integer","minimum":1,"description":"Max symbols to return (default 50)."}}}\
                 """)
             .description(
                 """
@@ -304,7 +305,7 @@ final class LatheMcpTools {
                 mapper,
                 positionSchema(
                     """
-                    ,"maxResults":{"type":"integer",
+                    ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max implementations to return (default 50)."}\
                     """))
             .description(
@@ -713,8 +714,15 @@ final class LatheMcpTools {
       return body.get();
     } catch (final RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, context));
-      return error("[%s] %s".formatted(tool, e.getMessage()));
+      return error(agentMessage(tool, e));
     }
+  }
+
+  // Engine messages lead with their log tags ("[rename] refusing: ..."); the agent gets the reason.
+  static String agentMessage(final String tool, final RuntimeException e) {
+    return e.getMessage() == null
+        ? "%s failed; see the server log".formatted(tool)
+        : LOG_TAGS.matcher(e.getMessage()).replaceFirst("");
   }
 
   @FunctionalInterface
@@ -1131,6 +1139,8 @@ final class LatheMcpTools {
   private static String joinOrNone(final List<String> items) {
     return items.isEmpty() ? "none" : String.join(", ", items);
   }
+
+  private static final Pattern LOG_TAGS = Pattern.compile("^(\\[[^]]*] )+");
 
   static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
 

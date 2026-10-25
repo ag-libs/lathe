@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -357,6 +358,32 @@ class LatheMcpToolsTest {
 
   private SyncToolSpecification tool(final String name) {
     return specs.stream().filter(spec -> spec.tool().name().equals(name)).findFirst().orElseThrow();
+  }
+
+  // The SDK validates arguments against the schema, so a count below 1 is refused with the reason.
+  @Test
+  void maxResults_everyToolTakingIt_declaresAMinimumOfOne() {
+    assertThat(specs)
+        .map(spec -> ((Map<?, ?>) spec.tool().inputSchema().get("properties")).get("maxResults"))
+        .filteredOn(Objects::nonNull)
+        .hasSize(4)
+        .allSatisfy(schema -> assertThat(schema.toString()).contains("minimum=1"));
+  }
+
+  // Engine messages lead with log tags; the agent reads the reason alone.
+  @Test
+  void agentMessage_engineMessage_dropsLogTagsAndKeepsTheReason() {
+    assertThat(
+            LatheMcpTools.agentMessage(
+                "fix_imports",
+                new IllegalStateException("[fixImports] refusing: X.java is not a reactor file")))
+        .isEqualTo("refusing: X.java is not a reactor file");
+    assertThat(
+            LatheMcpTools.agentMessage(
+                "run_test", new IllegalStateException("no test method 'm' in T.java")))
+        .isEqualTo("no test method 'm' in T.java");
+    assertThat(LatheMcpTools.agentMessage("outline", new IllegalStateException()))
+        .isEqualTo("outline failed; see the server log");
   }
 
   @Test
