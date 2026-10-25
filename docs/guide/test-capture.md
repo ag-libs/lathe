@@ -29,8 +29,10 @@ guess reconstructed from POM text.
 ## Capture without running tests
 
 To refresh the launch templates without paying for a test run, add `-Dlathe.capture.only=true`: each
-module still forks and writes its `test-launch.json`, but a post-discovery filter excludes every test
-from execution, so nothing actually runs.
+module still forks and writes its `test-launch.json`, but nothing actually runs.
+On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the tests are discovered as usual
+(a `@Suite` included) and reported as skipped.
+On older JUnit, a post-discovery filter excludes every test instead.
 
 ```bash
 mvn test -Dlathe.capture.only=true
@@ -39,8 +41,8 @@ mvn test -Dlathe.capture.only=true
 For the [first run](installation.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
 so every module compiles through Lathe rather than reusing up-to-date output.
 Note `-DskipTests` is **not** a substitute — it skips the fork entirely, so nothing is captured.
-If your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the
-test-free run stays green.
+On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add
+`-DfailIfNoTests=false` so the test-free run stays green.
 
 ## Resources
 

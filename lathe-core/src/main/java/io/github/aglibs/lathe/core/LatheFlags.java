@@ -8,6 +8,9 @@ public final class LatheFlags {
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
+  // JUnit Platform's own switch (1.10+) for discovering tests and reporting them skipped, unrun:
+  // how lathe-junit's capture-only mode skips them.
+  public static final String JUNIT_DRY_RUN = "junit.platform.execution.dryRun.enabled";
   public static final String BUILD_DIR = "lathe.buildDir";
   public static final String RESULTS_SINK = "lathe.results.sink";
   // Set on a test launch to list the tests it would run, into the results sink, without running

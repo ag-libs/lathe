@@ -31,6 +31,7 @@ final class CaptureLauncherSessionListenerTest {
   void classFileVersion_entryPointsAndCapture_entryPointsLoadOnJava8() {
     assertThat(classFileVersion(CaptureLauncherSessionListener.class)).isEqualTo(JAVA_8_CLASS_FILE);
     assertThat(classFileVersion(CaptureOnlyPostDiscoveryFilter.class)).isEqualTo(JAVA_8_CLASS_FILE);
+    assertThat(classFileVersion(CaptureOnly.class)).isEqualTo(JAVA_8_CLASS_FILE);
     assertThat(classFileVersion(LaunchCapture.class)).isEqualTo(JAVA_17_CLASS_FILE);
   }
 
