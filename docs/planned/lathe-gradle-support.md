@@ -10,7 +10,7 @@ identical `.lathe/` contract, so every downstream component — the language ser
 the MCP server, and all editor clients — works unchanged.
 
 **In progress:** slice 1 is done: the module, its build and CI (1a); registration, gating and the requirements check (1b); the capture tasks (1c), probed on four real builds (see [Real-project probes](#real-project-probes-2026-10-24)).
-Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete, and slice 3 (main launch) too; slice 4 (test capture) remains.
+Slices 2a, 2b and 2d are done: `latheSync` writes `workspace.json` with the libraries' extracted sources, `java-home`, the JDK sources, `jvm.args`, the server install and the sync script, and prunes what the build no longer has; builds hold the build lock; a synced project works in the editor, libraries included. 2c (formatter detection) was decided against: formatting comes from a committed `lathe-style.json`. Slice 2 is complete, and slice 3 (main launch) too. Slice 4 (test capture) is in review: as on Maven, every build that compiles tests refreshes the workspace files, and every test run captures its launch (see [The sync command](#the-sync-command)).
 This is a design, sliced for incremental delivery.
 
 **Prerequisites:**
@@ -119,8 +119,9 @@ Two consequences shape the capture points:
   ([Capture point A](#capture-point-a--compiler-arguments--annotation-processing)).
   A finalizer is not an input of the task it finalizes: spiked, `compileJava` stays `FROM-CACHE` from an
   entry stored without Lathe.
-- `lathe-junit` joins the test classpath only in capture-only mode, when the `test` task is uncached anyway
-  ([Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)).
+- `lathe-junit` enters the test JVM as an agent named in the `test` task's environment, which Gradle does not count
+  as a task input ([Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)).
+  Spiked on 8.8 and 9.8.1: `test` stays `FROM-CACHE` from an entry stored without Lathe.
 
 The TestKit suite asserts the rule: a fixture built without Lathe fills a build cache, and the same build
 with Lathe enabled must take every existing task `FROM-CACHE`.
@@ -338,7 +339,7 @@ Capture is driven by `latheSync -Plathe.capture.only=true` running the `test` ta
 **Switching to capture-only — a project property, not a task option (decided 2026-10-23).**
 Every project's plugin reads `lathe.capture.only` through `providers.gradleProperty` while the build is configured (a configuration-cache input), and when it is `true` configures its own real `test` task:
 
-- `lathe-junit` on its classpath (see below), and `systemProperty("lathe.capture.only", "true")`, which the worker's `CaptureOnlyPostDiscoveryFilter` reads;
+- `systemProperty("lathe.capture.only", "true")`, which the worker's `CaptureOnlyPostDiscoveryFilter` reads;
 - `outputs.upToDateWhen { false }` and `outputs.cacheIf { false }` (see the cache interaction below);
 - on Gradle 9+, `failOnNoDiscoveredTests = false` (see below);
 - a dependency from `latheSync` on the `test` task, so the one command runs them.
@@ -348,13 +349,31 @@ The property keeps Maven's flag name (`LatheFlags.CAPTURE_ONLY`), passed with `-
 
 The real `test` task is reconfigured, not copied: a separate `Test` task built from `test`'s settings would reconstruct the launch, missing whatever a build or plugin adds in `doFirst` actions or argument providers it does not copy.
 
-**Getting the listener into the fork — capture mode only (decided 2026-10-23).**
-The project plugin adds `lathe-junit` to the `test` task's runtime classpath only when `lathe.capture.only` is set.
-The Maven extension adds it to every build, so a plain `mvn test` refreshes the capture; on Gradle that would change
-every `test` task's classpath, and so its cache key, on every Lathe-enabled machine
-([the cache-key rule](#design-principle--leave-the-builds-cache-keys-alone-decided-2026-10-23)).
-The cost: a plain `./gradlew test` does not refresh `test-launch.json`; a sync with `-Plathe.capture.only=true` does.
-Test setup changes rarely, and the server already prompts for a sync when a build file changes.
+**Getting the listener into the fork — every run, as an agent (decided 2026-10-24).**
+As on Maven, every run of a `test` task captures its launch, so a plain `./gradlew build` or `test` keeps
+`test-launch.json` current; the first draft (`lathe-junit` on the classpath in capture mode only) left it stale
+after any build but a sync, which a user cannot be expected to remember.
+Putting the jar on the classpath would change every `test` task's cache key
+([the cache-key rule](#design-principle--leave-the-builds-cache-keys-alone-decided-2026-10-23)), so it enters
+through the environment instead:
+
+- a `latheAgent` task (a plain `Sync`) copies the resolved `lathe-junit` jar to `.lathe/<module>/agent/lathe-junit.jar`,
+  and `test` depends on it — a task dependency is not an input;
+- `test` gets `JDK_JAVA_OPTIONS="… -javaagent:<that jar>"`, appended to what the build already sets there.
+  The environment is not part of the cache key. The value names the fixed path, read as the worker starts, and leaves
+  the agent out when `latheAgent` could not resolve the jar (it resolves leniently): a missing agent jar stops the JVM,
+  and capture must never fail the user's tests. It never resolves the configuration itself: while the worker starts,
+  Gradle holds no lock on it, and resolving fails;
+- `lathe-junit`'s manifest names `LatheAgent` as `Premain-Class`; its `premain` only appends the jar to the system
+  class loader, where JUnit's `ServiceLoader` finds the listener as if it were on the class path, on a classpath and
+  a modular run alike (spiked on 8.8 and 9.8.1);
+- `LaunchCapture` drops what Gradle and Lathe add: the worker jar, Gradle's own properties, the worker's main module,
+  and the agent itself, so the captured launch is the build's.
+
+A `test` task served from the cache or up to date forks nothing and captures nothing; the capture from the run that
+filled it stands, and `--rerun` or the editor's sync recaptures.
+The capture-only sync still reconfigures the real `test` task (below), so it runs only on `latheSync -Plathe.capture.only=true`.
+
 Capture needs the JUnit Platform (`useJUnitPlatform()`, including JUnit 4 through the vintage engine); a `Test` task on `useJUnit()` or `useTestNG()` opens no launcher session and is not captured — the same stated limitation as Maven's pure-TestNG forks.
 
 **Gradle 9 fails a run with no tests (spiked 2026-10-23).**
@@ -661,24 +680,41 @@ if there is one, stops the build with one message naming each problem, its fix, 
 
 ### The sync command
 
+Lathe follows Maven's model: **the build keeps `.lathe/` current, and the editor's sync covers a fresh clone**
+(*decided 2026-10-24*).
+
+- **Every build that compiles refreshes the workspace files.** A project's compile tasks are finalized by its
+  capture tasks; `compileTestJava` by the project's `latheFacts`, which writes `.lathe/<module>/lathe-facts.json`
+  (what the root needs from the project: trees, access flags, JDK, libraries, the test runner's classpath); and each
+  `latheFacts` by the root's `latheWorkspace`, which merges every project's facts *from disk* and writes
+  `workspace.json`, `java-home`, `jvm.args`, the server install and the sync script, and prunes what is gone.
+  Reading the facts from disk, not from other projects' tasks, keeps the root from touching other projects' state
+  (Isolated Projects), and lets a build of one project refresh the workspace with the others' last facts.
+  `latheWorkspace` is untracked and best-effort: a failure (no repository for the server, a full disk) is a warning,
+  never a failed build.
+- **Every test run captures `test-launch.json`** (see [Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)).
+- **`latheSync` is the editor's command** for a fresh clone or a wiped `.lathe/`: it runs every project's
+  `latheFacts` (and so its compiles), or the `--module` ones', and `latheWorkspace`.
+  With `-Plathe.capture.only=true` it also runs each `test` task in capture-only mode (**no tests execute**).
+
 ```bash
-./gradlew latheSync -Plathe.capture.only=true   # first time, and when test setup changes
-./gradlew latheSync                             # refresh
+./gradlew latheSync -Plathe.capture.only=true   # the editor's sync: a fresh clone, or when test setup changes
+./gradlew build                                 # what a user runs anyway: refreshes .lathe/
 ```
 
-`latheSync` depends on `compileJava` + `compileTestJava` for every subproject, so one command captures
-compiler options + annotation processing (main & test), mirrors bytecode, derives `main-launch.json`,
-resolves `-sources`/JDK sources, writes `workspace.json`, and installs the server + client into
-`~/.cache/lathe/`.
-With `-Plathe.capture.only=true` it also runs each `test` task in capture-only mode and captures
-`test-launch.json` (in-fork — **no tests execute**; see [Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)).
-The split mirrors Maven's `process-test-classes` vs capture-only `test` (*decided 2026-10-23*).
+**Gradle 8.x with Isolated Projects on.**
+A task finalized by a task of another project (`:app:latheFacts` by `:latheWorkspace`) is what Gradle 9 allows
+under Isolated Projects and Gradle 8 rejects (spiked on 8.8; without Isolated Projects 8.x allows it).
+So when the injected `BuildFeatures` reports Isolated Projects active on Gradle before 9.0, the root's own
+`build`, `check` and `test` are finalized by `latheWorkspace` instead: `./gradlew build` from the root refreshes
+everything, a build of one project (`:app:test`) refreshes its facts but not the workspace files until the next
+root build or sync. Isolated Projects is an opt-in preview on 8.x, so this is a narrow case.
 
 | Maven | Gradle |
 |---|---|
 | `mvn clean test -Dlathe.capture.only=true` | `./gradlew latheSync -Plathe.capture.only=true` |
-| `mvn process-test-classes` (refresh) | `./gradlew latheSync` |
-| auto-refresh on `mvn test`/`verify`/`install` | compiler capture refreshes on any build that compiles (`./gradlew build`/`test`/`assemble`); test capture only through a sync with `-Plathe.capture.only=true` (the cache-key rule) |
+| `mvn process-test-classes` (refresh) | `./gradlew latheSync`, or any build that compiles tests |
+| auto-refresh on `mvn test`/`verify`/`install` | auto-refresh on `./gradlew build`/`test`/`testClasses`; a test run captures unless served from the cache |
 
 Force a clean recapture if the build cache masks staleness: `./gradlew clean latheSync`.
 
@@ -853,8 +889,8 @@ and a capture-only test run on Gradle 9.
    `jvm.args` and `java-home` are workspace-wide (the union of the access flags, the highest compiling JDK), so they come with the per-project `latheFacts` merge, which Isolated Projects requires (*decided 2026-10-24*); the sync script fills in Multi-OS D3's model (tool, goals, `-Plathe.capture.only=true` for `--tests`, a repeatable `--module` task option placed after the task, the replayed `--init-script`); the per-project `latheFacts` merge. Completes the editor
    experience (go-to-definition into libraries/JDK; formatting through a committed `lathe-style.json`, its pinned engines with [Declared Formatters](lathe-declared-formatters.md)).
 3. **Run / main launch** — `MainLaunchData` derivation (incl. modular main).
-4. **Test launch (in-fork)** — `lathe-junit` on the `test` classpath in capture mode + worker-jar filter + `failOnNoDiscoveredTests = false` on Gradle 9+; capture-only (always-run, never-cached) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
-   First confirms Gradle 9's no-tests failure and, if needed, sets `failOnNoDiscoveredTests = false` in capture mode.
+4. **Test launch (in-fork), and the build keeps `.lathe/` current** — `lathe-junit` as a `-javaagent` in every `test` run's `JDK_JAVA_OPTIONS` + worker-jar and agent filtering; capture-only (always-run, never-cached, `failOnNoDiscoveredTests = false` on Gradle 9+) via `latheSync -Plathe.capture.only=true`, which each project's plugin reads to reconfigure its own `test` task.
+   `compileTestJava` → `latheFacts` → `latheWorkspace`, so any build that compiles tests refreshes the workspace files (the root lifecycle tasks on 8.x with Isolated Projects); `latheSync` becomes the editor's command over the same tasks; the facts carry the test runner's classpath.
    Delivers test run/debug/replay for non-modular **and** any modular test whose directives are real JVM
    args (the common case).
 5. **Modular test edge cases** — plugin-awareness + `completeAddOpens` backfill + fallbacks for opaque
@@ -912,7 +948,7 @@ and a capture-only test run on Gradle 9.
    alone; the capture task keeps the last good capture on a failed
    compile and does all of `syncOutput`; `.lathe/<module>` is the project directory; the mirror stays (no
    `externalOutput`); `jvm.args` comes from the compile's fork-option argument providers (where Error Prone puts its flags), its `jvmArgs`, and `org.gradle.jvmargs`; `lathe-junit`
-   joins the `test` classpath only in capture mode; `latheSync -Plathe.capture.only=true` captures tests (a project property, since a task option cannot
+   joins the `test` classpath only in capture mode (*revised 2026-10-24:* every test run loads it as an agent, see [Capture point B](#capture-point-b--test-launch-testlaunchdata-in-fork)); `latheSync -Plathe.capture.only=true` captures tests (a project property, since a task option cannot
    reconfigure other projects' `test` tasks); the sync script places module
    options after the task and replays only `--init-script` (not `-P`/`-D`); per-project `latheFacts` merged at the root
    keep Isolated Projects safe; build logic is in `buildFiles`; composite builds of Java projects are out.
@@ -982,6 +1018,10 @@ What they found:
    Their files get no module configuration in the editor, and the test classpath reads their output from `build/`, so `gradle clean` takes it away. Maven has no counterpart; a later slice decides whether to capture them as more trees.
 3. **Siblings reach the classpath as jars more often than the spike suggested**: a modular consumer, and every Micronaut module, compile against `build/libs/*.jar`, and Micronaut's processor path holds sibling jars too. The `workspace.json` `outputs` map of slice 2 must remap both shapes.
 4. **Mixed Kotlin/Groovy modules** compile Java against `build/classes/kotlin/main`, which Lathe does not mirror; Kotlin sources themselves are out of scope.
+
+*Slice 4, 2026-10-25:* a plain `:junit-vintage-engine:test` on JUnit's own build (Gradle 9, configuration cache,
+JaCoCo and Mockito agents in the test JVM) refreshed the workspace and captured `test-launch.json`: the build's own
+agents kept, Lathe's agent and Gradle's worker jar dropped.
 
 ## Non-goals (this design)
 

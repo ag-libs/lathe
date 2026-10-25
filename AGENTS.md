@@ -108,8 +108,9 @@ After a large Java change, agents may run `mvn spotless:apply` before tests to n
 
 ### Development overrides (dogfooding lathe on lathe)
 
-The lathe repo enables its own `lathe-maven-extension` in the root `pom.xml`, so Neovim selects the
-**published** server pinned by that extension version — not your working tree. A `lathe-server`
+Dogfooding is **off for now**: the root `pom.xml` no longer enables the repo's own `lathe-maven-extension`
+(it pinned every `lathe-junit` dependency, the Gradle fixtures' included, to its released version).
+When it is on, Neovim selects the **published** server pinned by that extension version — not your working tree. A `lathe-server`
 or Lua-client edit is invisible in the editor until you override:
 
 - `LATHE_SERVER_DIR` — point the Neovim launcher at a working-tree server build. By default the client

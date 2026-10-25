@@ -203,6 +203,8 @@ public final class LatheLayout {
     // settings.
     public static final List<String> ROOT_BUILD_FILES =
         List.of("settings.gradle", "settings.gradle.kts", "gradle.properties");
+    public static final List<String> PROJECT_BUILD_FILES =
+        List.of("build.gradle", "build.gradle.kts");
     public static final String CATALOG_DIR = "gradle";
     public static final String CATALOG_SUFFIX = ".toml";
     public static final String BUILD_SRC_DIR = "buildSrc";
@@ -210,7 +212,16 @@ public final class LatheLayout {
         List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
     // The daemon's JVM options; module-access flags there reach a compile that runs in the daemon.
     public static final String DAEMON_JVM_ARGS_PROPERTY = "org.gradle.jvmargs";
-    // Each project's facts for the root's sync to merge, in the project's build directory.
+    // What Gradle's test worker adds to a test JVM's launch, not the build: its own jar (on the
+    // class or module path), its -D properties, and, on a modular run, itself as the main module.
+    public static final String TEST_WORKER_JAR = "gradle-worker.jar";
+    public static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
+    public static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
+    // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/agent/, a
+    // path known as the plugin applies, before a build script can move the build directory.
+    public static final String AGENT_DIR = "agent";
+    public static final String AGENT_JAR = "lathe-junit.jar";
+    // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
     public static final String FACTS_FILE = "lathe-facts.json";
     // Output and state directories inside a build-logic build, never part of it.
     public static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");

@@ -40,6 +40,11 @@ public final class ServerInstaller {
   public static final String SERVER_COORDINATES = latheCoordinates(PluginProps.SERVER_ARTIFACT_ID);
   public static final String MCP_SERVER_COORDINATES =
       latheCoordinates(PluginProps.MCP_SERVER_ARTIFACT_ID);
+  // What replays a test (resolveRunnerClasspath), and what captures its launch.
+  public static final String TEST_RUNNER_COORDINATES =
+      latheCoordinates(PluginProps.TEST_RUNNER_ARTIFACT_ID);
+  public static final String JUNIT_CAPTURE_COORDINATES =
+      latheCoordinates(PluginProps.JUNIT_ARTIFACT_ID);
 
   private final ArtifactResolver artifacts;
 
@@ -186,7 +191,7 @@ public final class ServerInstaller {
   }
 
   Path resolveRunnerJar() throws SyncException {
-    return artifacts.resolve(latheCoordinates(PluginProps.TEST_RUNNER_ARTIFACT_ID));
+    return artifacts.resolve(TEST_RUNNER_COORDINATES);
   }
 
   private List<Path> resolveServerJars() throws SyncException {

@@ -6,13 +6,14 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
 // What one project contributes to the workspace files. Each project writes its own, and the root's
-// latheSync merges them, so no project reads another's model (Isolated Projects). javaHome is the
+// latheWorkspace merges them, so no project reads another's model (Isolated Projects). javaHome is
+// the
 // JDK its main compile runs on, absent for a project without Java. The facts task adds the rest as
 // it runs: the source trees it has Java sources for, which the sync keeps in .lathe/; the external
-// libraries it compiles against; and the classpath to compile their sources with.
+// libraries it compiles against; the classpath to compile their sources with; and what replays its
+// tests beside the test classpath (the test runner and the JUnit launcher).
 record ProjectFacts(
     String module,
-    String buildFile,
     List<OutputData> outputs,
     List<ResourceRootData> resourceRoots,
     String javaHome,
@@ -20,10 +21,11 @@ record ProjectFacts(
     List<String> accessFlags,
     List<String> trees,
     List<DependencyFact> dependencies,
-    List<String> dependencyClasspath) {
+    List<String> dependencyClasspath,
+    List<String> runnerClasspath) {
 
   ProjectFacts {
-    ValidCheck.check().notNull(module, "module").notNull(buildFile, "buildFile").validate();
+    ValidCheck.check().notNull(module, "module").validate();
     outputs = outputs != null ? List.copyOf(outputs) : List.of();
     resourceRoots = resourceRoots != null ? List.copyOf(resourceRoots) : List.of();
     accessFlags = accessFlags != null ? List.copyOf(accessFlags) : List.of();
@@ -31,12 +33,13 @@ record ProjectFacts(
     dependencies = dependencies != null ? List.copyOf(dependencies) : List.of();
     dependencyClasspath =
         dependencyClasspath != null ? List.copyOf(dependencyClasspath) : List.of();
+    runnerClasspath = runnerClasspath != null ? List.copyOf(runnerClasspath) : List.of();
   }
 
-  // A project without Java: its directory and build file only.
-  static ProjectFacts of(final String module, final String buildFile) {
+  // A project without Java: its directory only.
+  static ProjectFacts of(final String module) {
     return new ProjectFacts(
-        module, buildFile, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(),
+        module, List.of(), List.of(), null, 0, List.of(), List.of(), List.of(), List.of(),
         List.of());
   }
 
@@ -44,10 +47,10 @@ record ProjectFacts(
   ProjectFacts withResolved(
       final List<String> sourceTrees,
       final List<DependencyFact> libraries,
-      final List<String> libraryClasspath) {
+      final List<String> libraryClasspath,
+      final List<String> testRunner) {
     return new ProjectFacts(
         module,
-        buildFile,
         outputs,
         resourceRoots,
         javaHome,
@@ -55,6 +58,7 @@ record ProjectFacts(
         accessFlags,
         sourceTrees,
         libraries,
-        libraryClasspath);
+        libraryClasspath,
+        testRunner);
   }
 }

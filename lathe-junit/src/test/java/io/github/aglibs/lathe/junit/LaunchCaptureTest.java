@@ -43,6 +43,32 @@ final class LaunchCaptureTest {
         .containsEntry("com.example.app", "/workspace/app/target/test-classes");
   }
 
+  // A Gradle test worker's launch, with this jar loaded as an agent: the worker jar, the agent and
+  // Gradle's own properties go; what the build set stays.
+  @Test
+  void toLaunchData_gradleWorkerWithAgent_keepsOnlyTheBuildsLaunch() {
+    final Path ownJar = Path.of("/repo/lathe-junit.jar");
+    final String worker = "/gradle/caches/9.8.1/workerMain/gradle-worker.jar";
+
+    final var data =
+        LaunchCapture.toLaunchData(
+            "/jdk",
+            String.join(File.pathSeparator, worker, "/app/build/classes/java/test"),
+            List.of(
+                "-javaagent:/repo/lathe-junit.jar",
+                "-Dorg.gradle.internal.worker.tmpdir=/app/build/tmp/test/work",
+                "--module-path=%s%s/mods/opentest4j.jar".formatted(worker, File.pathSeparator),
+                "-Xmx512m",
+                "-ea",
+                "-Djdk.module.main=gradle.worker"),
+            ownJar,
+            "app");
+
+    assertThat(data.classPath()).containsExactly("/app/build/classes/java/test");
+    assertThat(data.modulePath()).containsExactly("/mods/opentest4j.jar");
+    assertThat(data.jvmArgs()).containsExactly("-Xmx512m", "-ea");
+  }
+
   @Test
   void toLaunchData_splitOptions_capturesValues() {
     final var data =

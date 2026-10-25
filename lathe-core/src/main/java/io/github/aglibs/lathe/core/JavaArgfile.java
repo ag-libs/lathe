@@ -40,7 +40,9 @@ public final class JavaArgfile {
     }
   }
 
-  private static String quote(final String arg) {
+  // One argument as the launcher reads it from an argfile, and from JDK_JAVA_OPTIONS, which it
+  // parses the same way.
+  public static String quote(final String arg) {
     if (!arg.isEmpty() && !NEEDS_QUOTES.matcher(arg).find()) {
       return arg;
     }

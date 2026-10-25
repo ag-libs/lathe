@@ -15,6 +15,7 @@ import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.MapProperty;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.Classpath;
 import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
@@ -62,11 +63,20 @@ public abstract class LatheFactsTask extends DefaultTask {
   @PathSensitive(PathSensitivity.ABSOLUTE)
   public abstract ConfigurableFileCollection getLibraryClasspath();
 
+  // What replays the tests beside the test classpath: the test runner and the JUnit launcher.
+  @Classpath
+  public abstract ConfigurableFileCollection getRunnerClasspath();
+
   @OutputFile
   public abstract RegularFileProperty getFactsFile();
 
+  // Asked for as the task starts, so the build holds .lathe/lathe.lock from here until it ends.
+  @Internal
+  public abstract Property<LatheBuildLockService> getBuildLock();
+
   @TaskAction
   public void write() throws IOException {
+    getBuildLock().get();
     final List<String> trees =
         Stream.of(
                 Map.entry(LatheLayout.CLASSES_DIR, getMainSources()),
@@ -82,15 +92,18 @@ public abstract class LatheFactsTask extends DefaultTask {
                     DependencyFact.of(
                         library.getKey(), library.getValue(), sources.get(library.getKey())))
             .toList();
-    final List<String> classpath =
-        getLibraryClasspath().getFiles().stream().map(File::getPath).toList();
+    final List<String> classpath = paths(getLibraryClasspath());
     final Path file = getFactsFile().get().getAsFile().toPath();
     Files.createDirectories(file.getParent());
     Files.writeString(
         file,
         Json.toJson(
             Json.fromJson(getFacts().get(), ProjectFacts.class)
-                .withResolved(trees, libraries, classpath)),
+                .withResolved(trees, libraries, classpath, paths(getRunnerClasspath()))),
         StandardCharsets.UTF_8);
+  }
+
+  private static List<String> paths(final ConfigurableFileCollection files) {
+    return files.getFiles().stream().map(File::getPath).toList();
   }
 }

@@ -47,7 +47,7 @@ public final class CaptureLauncherSessionListener implements LauncherSessionList
     FileUtil.writeAtomically(moduleDir, target, Json.toJson(data), false);
   }
 
-  private static Optional<Path> ownJarLocation() throws URISyntaxException {
+  static Optional<Path> ownJarLocation() throws URISyntaxException {
     final CodeSource codeSource =
         CaptureLauncherSessionListener.class.getProtectionDomain().getCodeSource();
     if (codeSource == null || codeSource.getLocation() == null) {

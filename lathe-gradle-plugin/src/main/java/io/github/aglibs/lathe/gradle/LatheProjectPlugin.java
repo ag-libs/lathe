@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.gradle;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
@@ -18,6 +19,7 @@ import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import javax.inject.Inject;
 import org.gradle.api.GradleException;
 import org.gradle.api.JavaVersion;
 import org.gradle.api.Plugin;
@@ -34,6 +36,7 @@ import org.gradle.api.artifacts.result.ResolvedArtifactResult;
 import org.gradle.api.artifacts.result.ResolvedComponentResult;
 import org.gradle.api.artifacts.result.ResolvedDependencyResult;
 import org.gradle.api.attributes.Usage;
+import org.gradle.api.configuration.BuildFeatures;
 import org.gradle.api.file.FileCollection;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.plugins.JavaPlugin;
@@ -47,14 +50,16 @@ import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaToolchainService;
+import org.gradle.util.GradleVersion;
 
 // Applied to every project by LatheSettingsPlugin. A Java project gets a capture task per main and
 // test source set, finalizing its compile; the compile itself is left untouched, so its build-cache
-// key is the same with or without Lathe. Every project publishes its facts, which the root
-// project's latheSync merges.
+// key is the same with or without Lathe. Every project writes its facts, which the root
+// project's latheWorkspace merges.
 public class LatheProjectPlugin implements Plugin<Project> {
 
   static final String SYNC_TASK = "latheSync";
+  static final String WORKSPACE_TASK = "latheWorkspace";
   static final String FACTS_TASK = "latheFacts";
   private static final String FACTS_USAGE = "io.github.ag-libs.lathe-facts";
   private static final String FACTS_ELEMENTS = "latheFactsElements";
@@ -62,7 +67,21 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String SERVER = "latheServer";
   private static final String MCP_SERVER = "latheMcpServer";
   private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
+  private static final String ROOT_PATH = ":";
   private static final String LIBRARY_SOURCES = "latheLibrarySources";
+
+  // Gradle 8.x under Isolated Projects rejects a project naming another's task, so there only the
+  // root's own lifecycle tasks trigger the workspace write: a whole-build run refreshes it, a
+  // one-project run does not, as Maven's -pl.
+  private static final GradleVersion CROSS_PROJECT_TRIGGER = GradleVersion.version("9.0");
+  private static final Set<String> ROOT_LIFECYCLE = Set.of("build", "check", "test");
+
+  private final BuildFeatures features;
+
+  @Inject
+  public LatheProjectPlugin(final BuildFeatures features) {
+    this.features = features;
+  }
 
   @Override
   public void apply(final Project project) {
@@ -74,26 +93,40 @@ public class LatheProjectPlugin implements Plugin<Project> {
                 LatheFactsTask.class,
                 task -> {
                   task.getFacts()
-                      .set(
-                          project.provider(
-                              () ->
-                                  Json.toJson(
-                                      ProjectFacts.of(module(project), buildFile(project)))));
+                      .set(project.provider(() -> Json.toJson(ProjectFacts.of(module(project)))));
                   task.getFactsFile()
                       .set(
-                          project
-                              .getLayout()
-                              .getBuildDirectory()
-                              .file(LatheLayout.Gradle.FACTS_FILE));
+                          LatheWorkspaceTask.factsFile(
+                                  project.getRootDir().toPath(), module(project))
+                              .toFile());
+                  useBuildLock(project, task, task.getBuildLock());
                 });
     factsConfiguration(project, FACTS_ELEMENTS, false)
         .getOutgoing()
         .artifact(facts.flatMap(LatheFactsTask::getFactsFile));
+    triggerWorkspace(project, facts);
     project.getPlugins().withType(JavaPlugin.class, java -> registerJava(project, facts));
   }
 
-  // The root's sync: every other project's facts arrive through a configuration, so the root reads
-  // no other project's model, and the server jars are declared now so Gradle can resolve them.
+  private void triggerWorkspace(final Project project, final TaskProvider<LatheFactsTask> facts) {
+    final boolean isolated = features.getIsolatedProjects().getActive().getOrElse(false);
+    if (!isolated
+        || GradleVersion.current().getBaseVersion().compareTo(CROSS_PROJECT_TRIGGER) >= 0) {
+      facts.configure(task -> task.finalizedBy(ROOT_PATH + WORKSPACE_TASK));
+      return;
+    }
+
+    if (ROOT_PATH.equals(project.getPath())) {
+      project
+          .getTasks()
+          .matching(task -> ROOT_LIFECYCLE.contains(task.getName()))
+          .configureEach(task -> task.finalizedBy(WORKSPACE_TASK));
+    }
+  }
+
+  // The root's workspace write and sync: the sync builds every other project's facts through a
+  // configuration, so the root reads no other project's model, and the server jars are declared
+  // now so Gradle can resolve them.
   static void registerSync(
       final Project project, final Map<String, String> modulePaths, final boolean addMavenCentral) {
     final Configuration projectFacts = factsConfiguration(project, PROJECT_FACTS, true);
@@ -120,6 +153,35 @@ public class LatheProjectPlugin implements Plugin<Project> {
 
     final TaskProvider<LatheFactsTask> ownFacts =
         project.getTasks().named(FACTS_TASK, LatheFactsTask.class);
+    final TaskProvider<LatheWorkspaceTask> workspace =
+        project
+            .getTasks()
+            .register(
+                WORKSPACE_TASK,
+                LatheWorkspaceTask.class,
+                task -> {
+                  task.setDescription(
+                      "Writes the Lathe workspace files from every project's facts.");
+                  useBuildLock(project, task, task.getBuildLock());
+                  task.getModuleDirs().set(modulePaths.keySet().stream().sorted().toList());
+                  task.getServerJars().from(lenient(server));
+                  task.getMcpServerJars().from(lenient(mcpServer));
+                  task.getWorkspaceRoot().set(project.getLayout().getProjectDirectory());
+                  task.getBuildLogicDirs().set(project.provider(() -> buildLogicDirs(project)));
+                  task.getGradleHome().set(project.getGradle().getGradleHomeDir().getPath());
+                  task.getDaemonJavaHome()
+                      .set(project.getProviders().systemProperty(LatheLayout.JAVA_HOME_PROPERTY));
+                  task.getInitScripts()
+                      .set(
+                          project.getGradle().getStartParameter().getInitScripts().stream()
+                              .map(File::getPath)
+                              .toList());
+                  task.getDaemonJvmArgs()
+                      .set(
+                          project
+                              .getProviders()
+                              .gradleProperty(LatheLayout.Gradle.DAEMON_JVM_ARGS_PROPERTY));
+                });
     project
         .getTasks()
         .register(
@@ -127,37 +189,15 @@ public class LatheProjectPlugin implements Plugin<Project> {
             LatheSyncTask.class,
             task -> {
               task.setDescription("Syncs the workspace for the Lathe language server.");
-              useBuildLock(project, task, task.getBuildLock());
-              task.getFacts()
-                  .from(
-                      (Callable<List<Object>>)
-                          () ->
-                              task.getModules().get().isEmpty()
-                                  ? List.of(projectFacts, ownFacts)
-                                  : List.of());
               task.dependsOn(
-                  (Callable<List<String>>)
+                  (Callable<List<Object>>)
                       () ->
-                          task.getModules().get().stream()
-                              .map(module -> factsTaskPath(modulePaths, module))
-                              .toList());
-              task.getServerJars().from(server);
-              task.getMcpServerJars().from(mcpServer);
-              task.getWorkspaceRoot().set(project.getLayout().getProjectDirectory());
-              task.getBuildLogicDirs().set(project.provider(() -> buildLogicDirs(project)));
-              task.getGradleHome().set(project.getGradle().getGradleHomeDir().getPath());
-              task.getDaemonJavaHome()
-                  .set(project.getProviders().systemProperty(LatheLayout.JAVA_HOME_PROPERTY));
-              task.getInitScripts()
-                  .set(
-                      project.getGradle().getStartParameter().getInitScripts().stream()
-                          .map(File::getPath)
-                          .toList());
-              task.getDaemonJvmArgs()
-                  .set(
-                      project
-                          .getProviders()
-                          .gradleProperty(LatheLayout.Gradle.DAEMON_JVM_ARGS_PROPERTY));
+                          task.getModules().get().isEmpty()
+                              ? List.of(projectFacts, ownFacts)
+                              : task.getModules().get().stream()
+                                  .<Object>map(module -> factsTaskPath(modulePaths, module))
+                                  .toList());
+              task.finalizedBy(workspace);
             });
   }
 
@@ -197,14 +237,19 @@ public class LatheProjectPlugin implements Plugin<Project> {
               .formatted(module, LatheSyncTask.MODULE_OPTION));
     }
 
-    return ":".equals(path) ? ":" + FACTS_TASK : "%s:%s".formatted(path, FACTS_TASK);
+    return ROOT_PATH.equals(path) ? ROOT_PATH + FACTS_TASK : "%s:%s".formatted(path, FACTS_TASK);
   }
 
-  private static Configuration resolvable(
+  static Configuration resolvable(
       final Project project, final String name, final String coordinates) {
     final Configuration configuration = configuration(project, name, true);
     project.getDependencies().add(name, coordinates);
     return configuration;
+  }
+
+  // A configuration's files, without failing when some cannot be resolved.
+  static FileCollection lenient(final Configuration configuration) {
+    return configuration.getIncoming().artifactView(view -> view.lenient(true)).getFiles();
   }
 
   // Facts travel between projects as a variant of their own usage, which no Java configuration
@@ -252,6 +297,20 @@ public class LatheProjectPlugin implements Plugin<Project> {
           task.getMainSources().from(main.getJava());
           task.getTestSources().from(test.getJava());
         });
+    project
+        .getTasks()
+        .named(test.getCompileJavaTaskName())
+        .configure(task -> task.finalizedBy(facts));
+    LatheTestCapture.register(
+        project,
+        facts,
+        test,
+        moduleDir,
+        project
+            .getProviders()
+            .gradleProperty(LatheFlags.CAPTURE_ONLY)
+            .map("true"::equals)
+            .getOrElse(false));
     registerLibraries(project, facts, main, test);
     final TaskProvider<LatheMainLaunchTask> mainLaunch = registerMainLaunch(project, main);
     facts.configure(task -> task.dependsOn(mainLaunch));
@@ -414,7 +473,6 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final JavaInstallationMetadata jdk = mainCompile.getJavaCompiler().get().getMetadata();
     return new ProjectFacts(
         module,
-        buildFile(project),
         outputs,
         resourceRoots,
         jdk.getInstallationPath().getAsFile().getPath(),
@@ -423,6 +481,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
             Stream.of(mainCompile, testCompile)
                 .flatMap(javac -> javac.getOptions().getForkOptions().getAllJvmArgs().stream())
                 .toList()),
+        List.of(),
         List.of(),
         List.of(),
         List.of());
@@ -437,10 +496,6 @@ public class LatheProjectPlugin implements Plugin<Project> {
 
   private static String module(final Project project) {
     return relative(project.getRootDir().toPath(), project.getProjectDir());
-  }
-
-  private static String buildFile(final Project project) {
-    return relative(project.getRootDir().toPath(), project.getBuildFile());
   }
 
   private static String relative(final Path root, final File file) {
