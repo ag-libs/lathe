@@ -41,7 +41,7 @@ public final class RenameConflicts {
       final Element element, final String newName, final AttributedFileAnalysis analysis) {
     final String renaming =
         "`%s` cannot be renamed to `%s`".formatted(element.getSimpleName(), newName);
-    if (element.getSimpleName().contentEquals(newName)) {
+    if (named(element, newName)) {
       return Optional.of("%s: it already has that name".formatted(renaming));
     }
 
@@ -72,7 +72,7 @@ public final class RenameConflicts {
       case TYPE_PARAMETER ->
           ((Parameterizable) owner)
               .getTypeParameters().stream()
-                  .filter(parameter -> parameter.getSimpleName().contentEquals(newName))
+                  .filter(parameter -> named(parameter, newName))
                   .findFirst()
                   .map(
                       parameter ->
@@ -91,7 +91,7 @@ public final class RenameConflicts {
     }
 
     return analysis.elements().getAllMembers(type).stream()
-        .filter(found -> found.getSimpleName().contentEquals(newName))
+        .filter(found -> named(found, newName))
         .filter(sameKind)
         .findFirst()
         .map(
@@ -124,7 +124,7 @@ public final class RenameConflicts {
 
     return owner.getEnclosedElements().stream()
         .filter(found -> found.getKind().isClass() || found.getKind().isInterface())
-        .filter(found -> found.getSimpleName().contentEquals(newName))
+        .filter(found -> named(found, newName))
         .findFirst()
         .map(
             found ->
@@ -169,9 +169,11 @@ public final class RenameConflicts {
   }
 
   private static boolean isVariableNamed(final Element found, final String newName) {
-    return found != null
-        && VARIABLES.contains(found.getKind())
-        && found.getSimpleName().contentEquals(newName);
+    return found != null && VARIABLES.contains(found.getKind()) && named(found, newName);
+  }
+
+  private static boolean named(final Element element, final String name) {
+    return element.getSimpleName().contentEquals(name);
   }
 
   private static String kindName(final Element found) {

@@ -75,11 +75,8 @@ final class CompletionItemPresenter {
         continue;
       }
 
-      final String spelling =
-          edit.isStatic()
-              ? ImportLayout.staticSpelling(edit.qualifiedName())
-              : edit.qualifiedName();
-      items.get(i).setAdditionalTextEdits(layout.get().edits(List.of(spelling)));
+      final String spelling = ImportLayout.spelling(edit.qualifiedName(), edit.isStatic());
+      items.get(i).setAdditionalTextEdits(List.of(layout.get().edit(spelling)));
     }
   }
 

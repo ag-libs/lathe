@@ -574,7 +574,7 @@ final class LatheMcpTools {
         () ->
             verifyChangeResult(
                 engine.verifyChange(files),
-                new LatheNotes(List.of(), List.of(), engine.notes(files).notChecked(), false)));
+                LatheNotes.ofNotChecked(engine.notes(files).notChecked())));
   }
 
   private static CallToolResult handleFormatFile(
@@ -1142,7 +1142,7 @@ final class LatheMcpTools {
 
   private static final Pattern LOG_TAGS = Pattern.compile("^(\\[[^]]*] )+");
 
-  static final LatheNotes NO_NOTES = new LatheNotes(List.of(), List.of(), List.of(), false);
+  static final LatheNotes NO_NOTES = LatheNotes.ofNotChecked(List.of());
 
   private static CallToolResult verifyChangeResult(
       final LatheVerifyChange verify, final LatheNotes notes) {

@@ -27,8 +27,12 @@ public record ImportLayout(List<ImportLine> imports, Position fallback) {
     imports = List.copyOf(imports);
   }
 
-  public static String staticSpelling(final String qualifiedName) {
-    return STATIC_PREFIX + qualifiedName;
+  public static String spelling(final String qualifiedName, final boolean isStatic) {
+    return isStatic ? STATIC_PREFIX + qualifiedName : qualifiedName;
+  }
+
+  public TextEdit edit(final String spelling) {
+    return edits(List.of(spelling)).get(0);
   }
 
   // One edit per insertion point, its imports in order: edits at one position apply in no defined

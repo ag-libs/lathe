@@ -488,14 +488,7 @@ class CodeActionTest {
             TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
 
     // Insertion goes right after the package line (no imports yet).
-    assertThat(
-            result
-                .layout()
-                .edits(List.of("java.util.ArrayList"))
-                .get(0)
-                .getRange()
-                .getStart()
-                .getLine())
+    assertThat(result.layout().edit("java.util.ArrayList").getRange().getStart().getLine())
         .isEqualTo(1);
     assertThat(result.items())
         .extracting(MissingImportsResult.MissingImport::name)

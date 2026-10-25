@@ -67,7 +67,7 @@ final class ImportQuickFixProvider implements CodeActionProvider {
     action.setDiagnostics(List.of(request.diag()));
 
     final var edit = new WorkspaceEdit();
-    edit.setChanges(Map.of(request.uri(), layout.edits(List.of(fqName))));
+    edit.setChanges(Map.of(request.uri(), List.of(layout.edit(fqName))));
     action.setEdit(edit);
     return action;
   }

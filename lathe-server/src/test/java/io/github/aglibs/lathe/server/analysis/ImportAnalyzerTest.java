@@ -88,10 +88,9 @@ class ImportAnalyzerTest {
             """);
     final var atStart = layoutOf("class Foo {}\n");
 
-    assertThat(afterPackage.edits(List.of("java.util.List")).get(0).getRange().getStart())
+    assertThat(afterPackage.edit("java.util.List").getRange().getStart())
         .isEqualTo(new Position(1, 0));
-    assertThat(atStart.edits(List.of("java.util.List")).get(0).getRange().getStart())
-        .isEqualTo(new Position(0, 0));
+    assertThat(atStart.edit("java.util.List").getRange().getStart()).isEqualTo(new Position(0, 0));
   }
 
   private ImportLayout layoutOf(final String source) throws IOException {

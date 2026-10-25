@@ -36,18 +36,22 @@ public final class ImportAnalyzer {
                 imp ->
                     new ImportLayout.ImportLine(
                         spelling(imp),
-                        (int) lineMap.getLineNumber(positions.getStartPosition(cu, imp)) - 1,
-                        (int) lineMap.getLineNumber(positions.getEndPosition(cu, imp)) - 1))
+                        lineOf(lineMap, positions.getStartPosition(cu, imp)),
+                        lineOf(lineMap, positions.getEndPosition(cu, imp))))
             .toList();
     final long packageEnd =
         cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
-    final int afterPackage = packageEnd < 0 ? 0 : (int) lineMap.getLineNumber(packageEnd);
+    final int afterPackage = packageEnd < 0 ? 0 : lineOf(lineMap, packageEnd) + 1;
     return Optional.of(new ImportLayout(lines, new Position(afterPackage, 0)));
   }
 
+  // 0-based, as LSP counts lines.
+  private static int lineOf(final LineMap lineMap, final long offset) {
+    return (int) lineMap.getLineNumber(offset) - 1;
+  }
+
   private static String spelling(final ImportTree imp) {
-    final String name = imp.getQualifiedIdentifier().toString();
-    return imp.isStatic() ? ImportLayout.staticSpelling(name) : name;
+    return ImportLayout.spelling(imp.getQualifiedIdentifier().toString(), imp.isStatic());
   }
 
   public Set<String> importedQualifiedNames() {
@@ -87,7 +91,7 @@ public final class ImportAnalyzer {
       return null;
     }
 
-    return layout().map(found -> found.edits(List.of(qualifiedName)).get(0)).orElse(null);
+    return layout().map(found -> found.edit(qualifiedName)).orElse(null);
   }
 
   public Set<String> importedStaticNames() {
