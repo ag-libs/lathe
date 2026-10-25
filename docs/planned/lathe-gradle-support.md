@@ -370,6 +370,15 @@ through the environment instead:
 - `LaunchCapture` drops what Gradle and Lathe add: the worker jar, Gradle's own properties, the worker's main module,
   and the agent itself, so the captured launch is the build's.
 
+**Two costs, accepted (decided 2026-10-25).**
+The JVM announces the variable on every test run (`NOTE: Picked up JDK_JAVA_OPTIONS: -javaagent:…`), and Gradle
+shows it even with `-q`; nothing suppresses it (`JAVA_TOOL_OPTIONS` prints the same), and it is the price of
+leaving the cache key alone.
+And a build that runs its tests through the Develocity plugin (JUnit's own, for one) starts the test JVM through
+Develocity's launcher, from copies of some jars in a temporary directory deleted after the run: the capture names
+files that are gone, and the replay fails to load classes. Mapping the copies back would be a guess, and switching
+Develocity off needs its API, not Gradle's; the server is to refuse such a replay with a clear reason (gap TE-7).
+
 A `test` task served from the cache or up to date forks nothing and captures nothing; the capture from the run that
 filled it stands, and `--rerun` or the editor's sync recaptures.
 The capture-only sync still reconfigures the real `test` task (below), so it runs only on `latheSync -Plathe.capture.only=true`.
@@ -1022,6 +1031,10 @@ What they found:
 *Slice 4, 2026-10-25:* a plain `:junit-vintage-engine:test` on JUnit's own build (Gradle 9, configuration cache,
 JaCoCo and Mockito agents in the test JVM) refreshed the workspace and captured `test-launch.json`: the build's own
 agents kept, Lathe's agent and Gradle's worker jar dropped.
+The same day's editor check found the mirror lacked each project's processed resources (replay found no test engine,
+whose registration is a resource), fixed by mirroring them with the classes; on a two-project build a test reading
+the library's `ServiceLoader` registration then passed through the server's replay and stopped at a breakpoint
+under the debugger. JUnit's own replay stops at the Develocity limitation above.
 
 ## Non-goals (this design)
 
