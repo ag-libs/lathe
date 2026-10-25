@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -342,15 +343,30 @@ public final class FileUtil {
     }
   }
 
+  // Another caller deleting the same tree (see deleteRetrying) can remove the root or a child
+  // while the walk lists it, which fails the walk on a path already gone: the delete then starts
+  // over, and ends once nothing is left.
   public static void deleteDir(final Path dir) throws IOException {
-    if (!Files.exists(dir)) {
-      return;
-    }
+    for (int attempt = 1; ; attempt++) {
+      if (!Files.exists(dir)) {
+        return;
+      }
 
-    try (final var walk = Files.walk(dir)) {
-      final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
-      for (final var path : sorted) {
-        deleteRetrying(path);
+      try (final var walk = Files.walk(dir)) {
+        final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
+        for (final var path : sorted) {
+          deleteRetrying(path);
+        }
+
+        return;
+      } catch (final NoSuchFileException e) {
+        pauseBeforeRetry(attempt, e);
+      } catch (final UncheckedIOException e) {
+        if (!(e.getCause() instanceof NoSuchFileException gone)) {
+          throw e;
+        }
+
+        pauseBeforeRetry(attempt, gone);
       }
     }
   }
@@ -376,7 +392,7 @@ public final class FileUtil {
   }
 
   // Rethrows the last attempt's failure; before any other, waits a little longer than last time.
-  private static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
+  static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
       throws IOException {
     if (attempt == RETRY_ATTEMPTS) {
       throw failure;

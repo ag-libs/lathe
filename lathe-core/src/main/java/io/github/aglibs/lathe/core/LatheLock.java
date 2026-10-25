@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.core;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -12,9 +13,18 @@ public final class LatheLock {
 
   private LatheLock() {}
 
+  // On Windows a lock file just released stays "delete pending" while another process (a virus
+  // scanner, an indexer) still holds it open, and writing it again is refused until that ends.
   public static void acquire(final Path lockFile) throws IOException {
     Files.createDirectories(lockFile.getParent());
-    Files.writeString(lockFile, "");
+    for (int attempt = 1; ; attempt++) {
+      try {
+        Files.writeString(lockFile, "");
+        return;
+      } catch (final AccessDeniedException e) {
+        FileUtil.pauseBeforeRetry(attempt, e);
+      }
+    }
   }
 
   public static void release(final Path lockFile) throws IOException {
