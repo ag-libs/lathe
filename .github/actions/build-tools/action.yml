@@ -14,7 +14,17 @@ runs:
       with:
         java-version: ${{ inputs.java }}
         distribution: 'temurin'
-        cache: maven
+
+    - name: Restore the Maven repository
+      # Keyed by every POM, falling back to the OS's newest entry, so a POM change downloads only
+      # what is new. Only the build rows that build the whole reactor save it (see ci.yml).
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.m2/repository
+          !~/.m2/repository/io/github/ag-libs
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: maven-${{ runner.os }}-
 
     - name: Set up JDK 21 to build (JDK 17 row)
       # lathe-server's src/main/java21 needs a JDK 21+ compiler; this JDK becomes JAVA_HOME and

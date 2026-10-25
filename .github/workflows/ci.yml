@@ -100,6 +100,18 @@ jobs:
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
+      - name: Save the Maven repository
+        # From the row per OS that builds the most of the reactor, so the cache holds what every
+        # job needs; a job building part of it would save a partial repository first.
+        if: success() && ((matrix.java == '21' && runner.os == 'Linux') || runner.os != 'Linux')
+        uses: actions/cache/save@v6
+        with:
+          # Lathe's own SNAPSHOTs, which the build installs, stay out: each run builds them afresh.
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/io/github/ag-libs
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+
       - name: Verify javadoc and sources generate
         # Catch javadoc/source-jar breakage here rather than mid-release, since
         # the release profile requires both for Maven Central. They don't depend on the OS or the
