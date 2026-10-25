@@ -36,6 +36,7 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.platform.suite.api.Suite;
 
 public final class TestCompiler {
 
@@ -46,7 +47,10 @@ public final class TestCompiler {
   // JUnit's API jars from the test JVM's own classpath, for fixtures whose @Test must resolve as in
   // a real project: javac only reports annotations it can resolve.
   public static final List<Path> JUNIT_CLASSPATH =
-      List.of(jarOf(org.junit.jupiter.api.Test.class), jarOf(ParameterizedTest.class));
+      List.of(
+          jarOf(org.junit.jupiter.api.Test.class),
+          jarOf(ParameterizedTest.class),
+          jarOf(Suite.class));
 
   public record ParsedSource(
       JavacTask task,
