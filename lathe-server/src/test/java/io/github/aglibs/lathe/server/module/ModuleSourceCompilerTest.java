@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
@@ -421,7 +422,8 @@ class ModuleSourceCompilerTest {
               SourceLocator.offsetToPosition(content, cursor),
               null,
               typeIndex,
-              List.of());
+              List.of(),
+              LearnedStaticImports.empty());
 
       assertThat(outcome.items()).extracting(CompletionItem::getLabel).contains("ReactorOnlyType");
     }

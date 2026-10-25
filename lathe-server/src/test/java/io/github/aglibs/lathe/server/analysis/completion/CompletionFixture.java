@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
@@ -25,6 +26,7 @@ final class CompletionFixture implements AutoCloseable {
   private final WorkspaceTypeIndex typeIndex;
   private final Path tmpDir;
   private final List<String> moduleNames;
+  private final LearnedStaticImports staticImports;
 
   CompletionFixture() {
     this(WorkspaceTypeIndex.empty(), null, List.of());
@@ -40,12 +42,26 @@ final class CompletionFixture implements AutoCloseable {
 
   CompletionFixture(
       final WorkspaceTypeIndex typeIndex, final Path tmpDir, final List<String> moduleNames) {
+    this(typeIndex, tmpDir, moduleNames, LearnedStaticImports.empty());
+  }
+
+  private CompletionFixture(
+      final WorkspaceTypeIndex typeIndex,
+      final Path tmpDir,
+      final List<String> moduleNames,
+      final LearnedStaticImports staticImports) {
     this.sourceParser = new SourceParser();
     this.compiler = new TempSourceCompiler();
     this.engine = new CompletionEngine(sourceParser, compiler);
     this.typeIndex = typeIndex;
     this.tmpDir = tmpDir;
     this.moduleNames = List.copyOf(moduleNames);
+    this.staticImports = staticImports;
+  }
+
+  // This fixture with the static imports the file's scope has learned.
+  CompletionFixture learning(final LearnedStaticImports learned) {
+    return new CompletionFixture(typeIndex, tmpDir, moduleNames, learned);
   }
 
   List<CompletionItem> complete(final String markedSource) {
@@ -75,7 +91,8 @@ final class CompletionFixture implements AutoCloseable {
                 null,
                 null,
                 typeIndex,
-                moduleNames))
+                moduleNames,
+                staticImports))
         .items();
   }
 
@@ -155,7 +172,8 @@ final class CompletionFixture implements AutoCloseable {
         null,
         cached,
         typeIndex,
-        moduleNames);
+        moduleNames,
+        staticImports);
   }
 
   @Override

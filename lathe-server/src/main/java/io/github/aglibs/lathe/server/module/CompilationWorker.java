@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
@@ -392,9 +393,12 @@ public final class CompilationWorker {
       final Position position,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames) {
+      final List<String> moduleNames,
+      final LearnedStaticImports staticImports) {
     return submit(
-        ctx -> ctx.complete(uri, content, version, position, context, typeIndex, moduleNames));
+        ctx ->
+            ctx.complete(
+                uri, content, version, position, context, typeIndex, moduleNames, staticImports));
   }
 
   public CompletableFuture<CompletionOutcome> completeTransient(

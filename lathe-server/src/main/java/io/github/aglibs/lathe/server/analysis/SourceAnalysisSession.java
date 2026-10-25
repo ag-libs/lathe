@@ -161,10 +161,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final Position pos,
       final CompletionContext context,
       final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames) {
+      final List<String> moduleNames,
+      final LearnedStaticImports staticImports) {
     final var t = Stopwatch.start();
     final var request =
-        new CompletionRequest(uri, content, pos, context, cache.get(uri), typeIndex, moduleNames);
+        new CompletionRequest(
+            uri, content, pos, context, cache.get(uri), typeIndex, moduleNames, staticImports);
     final var outcome = completionEngine.complete(request);
     if (outcome.freshAnalysis() != null) {
       cache.put(uri, new CachedFileAnalysis(content, version, outcome.freshAnalysis()));
@@ -200,7 +202,15 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final CachedFileAnalysis prior =
         analysis != null ? new CachedFileAnalysis(baseline, -1, analysis) : null;
     final var request =
-        new CompletionRequest(uri, content, pos, context, prior, typeIndex, moduleNames);
+        new CompletionRequest(
+            uri,
+            content,
+            pos,
+            context,
+            prior,
+            typeIndex,
+            moduleNames,
+            LearnedStaticImports.empty());
     final var outcome = completionEngine.complete(request);
     LOG.fine(
         () ->

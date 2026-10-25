@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -15,7 +16,8 @@ public record CompletionRequest(
     CompletionContext context,
     CachedFileAnalysis cached,
     WorkspaceTypeIndex typeIndex,
-    List<String> moduleNames) {
+    List<String> moduleNames,
+    LearnedStaticImports staticImports) {
 
   public CompletionRequest {
     ValidCheck.check()
@@ -24,6 +26,7 @@ public record CompletionRequest(
         .notNull(pos, "pos")
         .validate();
     moduleNames = moduleNames != null ? List.copyOf(moduleNames) : List.of();
+    staticImports = staticImports != null ? staticImports : LearnedStaticImports.empty();
   }
 
   int cursorOffset() {
