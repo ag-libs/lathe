@@ -112,8 +112,14 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     JdkSourceSync.extract(jdk);
     final List<ResourceRootData> resourceRoots =
         facts.stream().flatMap(fact -> fact.resourceRoots().stream()).toList();
+    // Only a tree with Java sources has a mirror to stand in for its outputs: a project without
+    // (Micronaut's runtime, resources only) still has a jar, which replay must take as it is.
     final List<OutputData> outputs =
-        facts.stream().flatMap(fact -> fact.outputs().stream()).toList();
+        facts.stream()
+            .flatMap(
+                fact ->
+                    fact.outputs().stream().filter(output -> fact.trees().contains(output.tree())))
+            .toList();
     final SyncScript script =
         GradleSyncScript.of(
             Path.of(getGradleHome().get()),

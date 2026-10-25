@@ -34,11 +34,16 @@ class LatheSyncTaskFunctionalTest {
 
   // A library and an app using it: latheSync writes the workspace files from both projects' facts,
   // installs the server, and is configuration-cache safe. The library's mirror holds its resources
-  // beside its classes, as its jar does, since replay stands the mirror in for the jar.
+  // beside its classes, as its jar does, since replay stands the mirror in for the jar. A project
+  // without Java sources has no mirror, so its outputs are not listed: replay takes its jar.
   @Test
   void sync_multiProjectBuild_writesTheWorkspaceFilesAndInstallsTheServer() throws Exception {
     final var fixture =
-        multiProject().file("lib/src/main/resources/META-INF/services/com.example.Api", "lib\n");
+        multiProject()
+            .file("settings.gradle.kts", SETTINGS + "include(\"res\")\n")
+            .file("res/build.gradle.kts", "plugins { `java-library` }\n")
+            .file("res/src/main/resources/res.properties", "name=res\n")
+            .file("lib/src/main/resources/META-INF/services/com.example.Api", "lib\n");
 
     fixture.runner("latheSync", "--configuration-cache").build();
     final var second = fixture.runner("latheSync", "--configuration-cache").build();
@@ -52,6 +57,7 @@ class LatheSyncTaskFunctionalTest {
             new OutputData("lib/build/libs/lib.jar", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("lib/build/resources/main", "lib", LatheLayout.CLASSES_DIR),
             new OutputData("app/build/classes/java/test", "app", LatheLayout.TEST_CLASSES_DIR));
+    assertThat(workspace.outputs()).extracting(OutputData::module).doesNotContain("res");
     assertThat(workspace.resourceRoots())
         .contains(
             new ResourceRootData(
