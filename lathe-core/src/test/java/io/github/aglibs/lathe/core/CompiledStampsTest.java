@@ -22,21 +22,22 @@ final class CompiledStampsTest {
 
   @TempDir private Path moduleDir;
 
-  // A stamp without content (OpenJDK's) round-trips too; the server's batch write replaces and adds
-  // stamps in one go, leaving what the build compiled.
+  // A stamp without content (OpenJDK's), and one from before 1970, round-trip too; the server's
+  // batch
+  // write replaces and adds stamps in one go, leaving what the build compiled.
   @Test
   void writeAllThenLoad_roundTripsAndRecordUpdatesStampsButKeepsWhatTheBuildCompiled()
       throws IOException {
     CompiledStamps.writeAll(
         moduleDir,
         "classes",
-        Map.of(FOO, new SourceStamp(100L, BUILT), GONE, new SourceStamp(50L, null)),
+        Map.of(FOO, new SourceStamp(100L, BUILT), GONE, new SourceStamp(-50L, null)),
         Map.of(FOO, BUILT));
 
     assertThat(CompiledStamps.load(moduleDir, "classes"))
         .containsOnly(
             Map.entry(FOO, new SourceStamp(100L, BUILT)),
-            Map.entry(GONE, new SourceStamp(50L, null)));
+            Map.entry(GONE, new SourceStamp(-50L, null)));
     // Saved '/'-separated on every OS, so a .lathe/ written on Windows reads the same elsewhere.
     assertThat(moduleDir.resolve(LatheLayout.compiledStampsFileName("classes")))
         .content()
@@ -51,7 +52,7 @@ final class CompiledStampsTest {
         .containsOnly(
             Map.entry(FOO, new SourceStamp(150L, EDITED)),
             Map.entry(BAR, new SourceStamp(200L, BUILT)),
-            Map.entry(GONE, new SourceStamp(50L, null)));
+            Map.entry(GONE, new SourceStamp(-50L, null)));
     assertThat(CompiledStamps.loadBuilt(moduleDir, "classes"))
         .as("the server's writes leave what the build compiled")
         .containsExactly(Map.entry(FOO, BUILT));
