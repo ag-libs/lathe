@@ -126,6 +126,39 @@ class WorkspaceManifestTest extends SampleFixture {
     assertThat(manifest.depClasspathForFile(sourceFile)).containsExactly(selfJar, transitiveJar);
   }
 
+  // Per-platform classifier jars of one artifact share its sources dir.
+  @Test
+  void load_classifierJarsSharingASourceDir_loadsWithTheFirstJar() throws Exception {
+    final Path sourceDir = tmp.resolve("sources/natives");
+    final Path sourceFile = sourceDir.resolve("com/example/Natives.java");
+    final Path linuxJar = tmp.resolve("repo/natives-linux-x86_64.jar");
+    final Path osxJar = tmp.resolve("repo/natives-osx-aarch_64.jar");
+    final Path otherJar = tmp.resolve("repo/other.jar");
+    writeWorkspaceManifest(
+        List.of(
+            new DependencyData(
+                "com.example:natives:1",
+                linuxJar.toString(),
+                SourceStatus.PRESENT,
+                sourceDir.toString(),
+                List.of(otherJar.toString()),
+                null),
+            new DependencyData(
+                "com.example:natives:1",
+                osxJar.toString(),
+                SourceStatus.PRESENT,
+                sourceDir.toString(),
+                List.of(),
+                null)));
+
+    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.externalSourceDirs()).containsOnly(sourceDir);
+    assertThat(manifest.depClasspathForFile(sourceFile))
+        .startsWith(linuxJar, otherJar)
+        .contains(osxJar);
+  }
+
   @Test
   void load_jdkTypeIndex_includesShardPath() throws Exception {
     final Path typeIndex = tmp.resolve("cache/type-index/jdks/vendor/21/index.json");

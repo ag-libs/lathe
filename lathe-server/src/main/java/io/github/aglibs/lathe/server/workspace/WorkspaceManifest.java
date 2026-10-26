@@ -136,16 +136,22 @@ public final class WorkspaceManifest {
           entries.stream()
               .filter(e -> e.dir() != null)
               .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), e -> Path.of(e.dir())));
+      // Classifier jars of one artifact (netty's per-platform natives) share its sources dir; the
+      // first entry stands for them all.
       final var sourceDirToJar =
           entries.stream()
               .filter(e -> e.dir() != null)
-              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.dir()), e -> Path.of(e.jar())));
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      e -> Path.of(e.dir()), e -> Path.of(e.jar()), (first, ignored) -> first));
       final var sourceDirToClasspath =
           entries.stream()
               .filter(e -> e.dir() != null && e.classpath() != null && !e.classpath().isEmpty())
               .collect(
                   Collectors.toUnmodifiableMap(
-                      e -> Path.of(e.dir()), e -> e.classpath().stream().map(Path::of).toList()));
+                      e -> Path.of(e.dir()),
+                      e -> e.classpath().stream().map(Path::of).toList(),
+                      (first, ignored) -> first));
       final var jdk = data.jdk();
       final var typeIndexShardPaths =
           Stream.concat(
