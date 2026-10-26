@@ -170,7 +170,7 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    assertThat(manifest.externalSourceDirs()).containsOnly(sourceDir);
+    assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
     assertThat(manifest.depClasspathForFile(sourceFile))
         .startsWith(linuxJar, otherJar)
         .contains(osxJar);

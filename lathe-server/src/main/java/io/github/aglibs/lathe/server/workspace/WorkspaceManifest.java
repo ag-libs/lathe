@@ -295,6 +295,7 @@ public final class WorkspaceManifest {
     return Stream.concat(
             jarToSourceDir.values().stream(),
             jdkSourceDir != null ? Stream.of(jdkSourceDir) : Stream.empty())
+        .distinct()
         .toList();
   }
 
