@@ -644,6 +644,40 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "new Item()", "Item")));
   }
 
+  // javac gives each enum constant an implicit type and `new` expression, positioned at the
+  // constant's name; neither spells the type, so neither is a use of the type or its constructor.
+  @Test
+  void type_enumConstants_onlySpelledUsesReported() throws IOException {
+    final var source =
+        """
+        enum Level {
+            LOW, HIGH(Level.max()) { int weight() { return 2; } };
+            Level() {}
+            Level(int n) {}
+            int weight() { return 1; }
+            static int max() { return 9; }
+            static Level parse() { return LOW; }
+        }
+        """;
+    final var analysis = compile(source);
+
+    final List<ReferenceMatch> typeUses =
+        refs(analysis, targetAt(analysis, "enum Level", "Level"), false);
+    final List<ReferenceMatch> constructorUses =
+        refs(analysis, targetAt(analysis, "Level(int n)", "Level"), false);
+    final List<ReferenceMatch> methodUses =
+        refs(analysis, targetAt(analysis, "static int max", "max"), false);
+
+    assertThat(typeUses)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "Level.max", "Level"), posOf(source, "static Level parse", "Level"));
+    assertThat(constructorUses).isEmpty();
+    assertThat(methodUses)
+        .extracting(match -> match.range().getStart())
+        .containsExactly(posOf(source, "Level.max", "max"));
+  }
+
   // --- locals ---
 
   @Test
