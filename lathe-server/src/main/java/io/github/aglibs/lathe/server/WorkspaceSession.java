@@ -4041,7 +4041,7 @@ final class WorkspaceSession {
         files.stream().filter(this::uncheckable).map(this::notCheckedReason).toList();
     return new LatheNotes(
         notCompiled,
-        Stream.concat(pendingBuildFiles, manifest.schemaMismatch().stream()).toList(),
+        Stream.concat(pendingBuildFiles, manifest.loadProblem().stream()).toList(),
         notChecked,
         reactorBuildInProgress());
   }
@@ -4755,11 +4755,12 @@ final class WorkspaceSession {
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 
-  // A workspace.json from another schema loads as empty, so say why instead of "ready".
+  // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
+  // instead of "ready".
   private void showWorkspaceStatus(final String okText) {
     client.showMessage(
         manifest
-            .schemaMismatch()
+            .loadProblem()
             .map(text -> new MessageParams(MessageType.Warning, text))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }

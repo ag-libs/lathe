@@ -37,18 +37,35 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final var mismatched = WorkspaceManifest.load(tmp);
 
-    assertThat(matching.schemaMismatch()).isEmpty();
+    assertThat(matching.loadProblem()).isEmpty();
     assertThat(matching.runnerClasspath()).isNotEmpty();
     assertThat(matching.reactorRewrite().toLathe(appClasses))
         .isEqualTo(tmp.resolve(".lathe/app/classes"));
     assertThat(mismatched.runnerClasspath()).isEmpty();
     assertThat(mismatched.reactorRewrite().toLathe(appClasses)).isEqualTo(appClasses);
-    assertThat(mismatched.schemaMismatch())
+    assertThat(mismatched.loadProblem())
         .hasValueSatisfying(
             text ->
                 assertThat(text)
                     .contains("schema 0, expected %s".formatted(LatheLayout.SCHEMA_VERSION))
                     .contains(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
+  void load_unreadableFile_loadsEmptyWithTheCauseAndRemediation() throws Exception {
+    final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{\"schemaVersion\": [");
+
+    final var manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.typeIndexShardPaths()).isEmpty();
+    assertThat(manifest.loadProblem())
+        .hasValueSatisfying(
+            text ->
+                assertThat(text)
+                    .contains("could not be read (")
+                    .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND)));
   }
 
   @Test

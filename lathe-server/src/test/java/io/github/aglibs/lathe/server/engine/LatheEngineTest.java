@@ -385,6 +385,20 @@ class LatheEngineTest {
   }
 
   @Test
+  void notes_unreadableManifest_syncRequiredWithTheCommand() throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON), "not json");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of()).syncRequired())
+        .singleElement()
+        .asString()
+        .contains("could not be read")
+        .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
   void notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile()
       throws Exception {
     final GreetFixture fx = greetFixture();

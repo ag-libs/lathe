@@ -125,6 +125,11 @@ public final class LatheLayout {
       "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."
           .formatted(SYNC_SCRIPT_COMMAND);
 
+  // The remaining %s is the error's root cause.
+  public static final String MANIFEST_UNREADABLE_REMEDIATION =
+      "Lathe: %s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
+          .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
+
   private LatheLayout() {}
 
   // Names only the Maven front-end uses (lathe-compiler, lathe-maven-extension, lathe-maven-plugin,

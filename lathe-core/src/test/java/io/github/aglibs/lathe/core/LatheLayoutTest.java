@@ -48,6 +48,9 @@ class LatheLayoutTest {
         .isEqualTo("%s app core".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(LatheLayout.SCHEMA_REMEDIATION)
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+    assertThat(LatheLayout.MANIFEST_UNREADABLE_REMEDIATION.formatted("bad"))
+        .contains(".lathe/workspace.json could not be read (bad)")
+        .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(LatheLayout.captureTestsCommand("app"))
         .isEqualTo("%s --tests app".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     // No script exists before the first sync, so setup names each front-end's first command.

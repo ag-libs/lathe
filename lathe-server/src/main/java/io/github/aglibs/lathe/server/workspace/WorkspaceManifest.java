@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.workspace;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
@@ -15,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -46,9 +48,9 @@ public final class WorkspaceManifest {
   private final List<Path> runnerClasspath;
   private final ResourceRootIndex resourceRoots;
   private final ReactorRewrite reactorRewrite;
-  // The user-facing remediation when workspace.json has another schema version; null when it
-  // matches or is absent.
-  private final String schemaMismatch;
+  // The user-facing remediation when workspace.json has another schema version or cannot be read;
+  // null when it loaded or is absent.
+  private final String loadProblem;
   private final Path buildTool;
   private final List<Path> builtModuleDirs;
 
@@ -65,7 +67,7 @@ public final class WorkspaceManifest {
       final List<Path> runnerClasspath,
       final ResourceRootIndex resourceRoots,
       final ReactorRewrite reactorRewrite,
-      final String schemaMismatch,
+      final String loadProblem,
       final Path buildTool,
       final List<Path> builtModuleDirs) {
     this.jarToGav = jarToGav;
@@ -80,7 +82,7 @@ public final class WorkspaceManifest {
     this.runnerClasspath = runnerClasspath;
     this.resourceRoots = resourceRoots;
     this.reactorRewrite = reactorRewrite;
-    this.schemaMismatch = schemaMismatch;
+    this.loadProblem = loadProblem;
     this.buildTool = buildTool;
     this.builtModuleDirs = builtModuleDirs;
   }
@@ -89,7 +91,7 @@ public final class WorkspaceManifest {
     return emptyWith(null);
   }
 
-  private static WorkspaceManifest emptyWith(final String schemaMismatch) {
+  private static WorkspaceManifest emptyWith(final String loadProblem) {
     return new WorkspaceManifest(
         Map.of(),
         Map.of(),
@@ -103,7 +105,7 @@ public final class WorkspaceManifest {
         List.of(),
         ResourceRootIndex.empty(),
         ReactorRewrite.none(),
-        schemaMismatch,
+        loadProblem,
         null,
         List.of());
   }
@@ -198,7 +200,10 @@ public final class WorkspaceManifest {
               .toList());
     } catch (final Exception e) {
       LOG.log(Level.WARNING, e, () -> "[manifest] failed to load workspace manifest");
-      return empty();
+      final Throwable cause = ExceptionUtil.rootCause(e);
+      return emptyWith(
+          LatheLayout.MANIFEST_UNREADABLE_REMEDIATION.formatted(
+              Objects.requireNonNullElse(cause.getMessage(), cause.getClass().getSimpleName())));
     }
   }
 
@@ -238,8 +243,8 @@ public final class WorkspaceManifest {
     return builtModuleDirs.stream().anyMatch(normalized::startsWith);
   }
 
-  public Optional<String> schemaMismatch() {
-    return Optional.ofNullable(schemaMismatch);
+  public Optional<String> loadProblem() {
+    return Optional.ofNullable(loadProblem);
   }
 
   public boolean containsFile(final Path file) {
