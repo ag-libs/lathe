@@ -3,7 +3,7 @@
 ## Status
 
 **Potential.**
-Records a design discussion held on 2026-10-25 and 2026-10-26, and a survey of how other Java tools support projects with no build tool.
+Records a design discussion held on 2026-10-25 to 2026-10-27, and a survey of how other Java tools support projects with no build tool.
 Nothing here is approved; the new module and its dependencies need a design summary and approval first.
 Items marked **recommended** are proposals from the discussion, not decisions.
 
@@ -14,7 +14,11 @@ Items marked **recommended** are proposals from the discussion, not decisions.
 - **No libraries.** A user who needs libraries (and their sources) uses Maven or Gradle; this front-end serves plain Java only.
 - **The user chooses the formatter**, by engine and version, written to the committed `lathe-style.json`; Lathe resolves the formatter's jars itself.
   The same declaration, a name and version instead of a classpath, is what [Declared Formatters](../planned/lathe-declared-formatters.md) proposes for every build tool.
-- **Neovim downloads with its own HTTP client**, `vim.net.request` (Neovim 0.12, the client's minimum).
+- **Neovim downloads the CLI jar** with its own HTTP client, `vim.net.request` (Neovim 0.12, the client's minimum).
+  Shipping it would add binaries to the `lathe.nvim` git history on every release.
+- **VS Code ships the CLI jar in the `.vsix`** (the Metals pattern, see [Downloading from an extension](#downloading-from-an-extension)).
+  This makes `lathe-vscode` depend on `lathe-cli` in the build order, which is **awaiting approval**.
+- **The jar is small and resolves the rest.** It embeds a Maven repository resolver (a library, not a Maven install) and resolves the server's and the formatter's jars from Central itself; there is no bundle of server jars.
 - **`lathe-openjdk-maven-plugin` is retired** once the documented `curl` path exists.
 
 Related designs:
@@ -101,12 +105,12 @@ This design adds a writer for projects with no build, borrowing what works from 
 
 ## Sketch
 
-One runnable jar, `lathe-cli-<version>-bundle.jar`, published to Maven Central with the other modules, with three commands:
+One small runnable jar, `lathe-cli-<version>.jar`, published to Maven Central with the other modules, with three commands:
 
 ```
-java -jar lathe-cli-<version>-bundle.jar init      # a plain Java project: write .lathe/, compile once
-java -jar lathe-cli-<version>-bundle.jar sync      # re-sync it; what lathe-sync.sh runs
-java -jar lathe-cli-<version>-bundle.jar openjdk   # the OpenJDK front-end, without Maven
+java -jar lathe-cli-<version>.jar init      # a plain Java project: write .lathe/, compile once
+java -jar lathe-cli-<version>.jar sync      # re-sync it; what lathe-sync.sh runs
+java -jar lathe-cli-<version>.jar openjdk   # the OpenJDK front-end, without Maven
 ```
 
 How each audience gets the jar, in delivery order:
@@ -114,69 +118,88 @@ How each audience gets the jar, in delivery order:
 | Audience | Who downloads the jar | Command |
 |---|---|---|
 | Neovim, no build tool | the client, with `vim.net.request` | `init` |
-| VS Code novice | the extension, with Node's `fetch` | `init` |
+| VS Code novice | nobody: it ships in the `.vsix` | `init` |
 | OpenJDK developer | the user, with a documented `curl` command | `openjdk` |
 
-All three use one artifact and one cache location, `~/.cache/lathe/bootstrap/<version>/`.
+Neovim and the OpenJDK command put it in one place, `~/.cache/lathe/bootstrap/<version>/`; VS Code runs it from the extension's directory.
+The user needs a JDK and nothing else: no Maven, no Gradle.
 
 The survey's conventions are narrowed on purpose:
 a fixed `src/` replaces source-root detection, and there is no `lib/`, since a project with libraries belongs to a build tool.
 
-### The jar carries the server
+### The jar and its resolver
 
-The jar bundles the server's and MCP server's module paths, `lathe-test-runner`, and the JUnit Platform jars.
-Measured from the 0.1.23 install: the server's module path is 12 jars, about 6 MB; the MCP server's about 12 MB, mostly the same jars; the whole jar would be roughly 13–15 MB.
+The jar holds the CLI, `lathe-install`, and an embedded Maven repository resolver, shaded into one file so a single download runs.
+The CLI runs on the class path, so shading is safe; the server it installs is never shaded and runs on the module path as today.
 
-The nested jars stay separate files, never shaded: the server runs on the module path.
-On first use the jar extracts them into the version's cache directory, which today holds only launchers and argfiles:
+**The resolver is Maven Resolver as a library.**
+`MavenArtifactResolver` in `lathe-install-maven` is plain Maven Resolver ("Aether") API: it takes a `RepositorySystem` and a session, which Maven's build hands it today.
+`maven-resolver-supplier` (Maven Resolver 1.9+) builds a working `RepositorySystem` with no Maven present, so the same `MavenArtifactResolver` serves the CLI.
+It handles what a hand-written resolver would get wrong: parent POMs, imported BOMs (the MCP server's Jackson), version ranges (Eclipse JDT), exclusions and conflicts.
+It is a new dependency and needs approval.
 
-```
-~/.cache/lathe/servers/<version>/
-  lib/                     extracted from the bundle jar
-  lathe-server.args        module path into lib/ (today: into ~/.m2)
-  lathe-mcp.args
-  lathe-launcher.sh, lathe-mcp-launcher.sh
-```
+**It resolves the server.**
+`ServerInstaller` asks for the server, MCP server, runner and JUnit Platform as it does on Maven, and writes argfiles and launchers unchanged.
+- The jars land in the local repository, `~/.m2/repository` (recommended): shared with any Maven use on the machine, and the same layout a Maven install produces, so the argfiles look the same on both paths.
+  The resolver creates the directory; it is a cache, not a Maven install.
+- An upgrade downloads only the jars that changed.
+- The first `init` downloads about 25 jars from Central or the configured mirror.
 
-A bundled-jar `ArtifactResolver` maps the coordinates `ServerInstaller` asks for (server, MCP server, runner, JUnit Platform) to the paths under `lib/`.
-`ServerInstaller.install()` then writes argfiles and launchers as it does now, so launchers, `.lathe/` copies, `latest/` and every editor client are unchanged.
-
-- Extraction is skipped when a complete `lib/` exists; it writes to a temporary directory and renames, so a crash or two concurrent runs never leave half a `lib/`.
-  A `-SNAPSHOT` version needs a content check, since one version string covers many builds.
-- A Maven install and a jar install of the same version both write valid argfiles; the last writer wins.
+This replaces an earlier idea of a 13–15 MB bundle carrying the server jars, which needed its own resolver, extraction into the cache, a content check for SNAPSHOTs and a `bundle` artifact, and still needed a resolver for formatters.
 
 ### Client bootstrap
 
-The client fetches the jar; the jar does everything else.
-The client's part is small and the same in Neovim and VS Code: download and check one file, ask a few questions, start one `java` process, wait for the launcher.
+The client provides the jar; the jar does everything else.
+The client's part is small: get one file (Neovim downloads and checks it, VS Code has it), ask a few questions, start one `java` process, wait for the launcher.
 
 1. The user runs `:LatheInit` (Neovim) or **Lathe: Set Up This Folder** (VS Code).
 2. The client asks the [init questions](#init-questions).
-3. It downloads `lathe-cli-<version>-bundle.jar` into `~/.cache/lathe/bootstrap/<version>/`, unless it is already there, with a progress notification.
-   Neovim uses `vim.net.request` with `outpath`; VS Code uses Node's `fetch`.
-4. It runs `<jdk>/bin/java -jar <bundle> init` with the answers as flags.
+3. Neovim downloads `lathe-cli-<version>.jar` into `~/.cache/lathe/bootstrap/<version>/` with `vim.net.request` and `outpath`, unless it is already there.
+   VS Code uses the jar inside the extension.
+4. It runs `<jdk>/bin/java -jar <cli jar> init` with the answers as flags, showing its progress (the server download) in a notification.
 5. The launcher appears, and the client attaches as it does for any Lathe workspace.
 
 VS Code's New Java Project gets a **Plain Java (no build tool)** choice next to **Maven project**:
-it writes `src/Main.java` and runs the same steps, ready in seconds with no Maven download.
+it writes `src/Main.java` and runs the same steps, with no Maven download.
+
+**Neovim downloads, VS Code ships.**
+Shipping the jar in `lathe.nvim` would add a few MB of binaries to its git history on every release, kept forever, and Neovim users expect plugins to download (mason.nvim).
+The `.vsix` has no such cost, and VS Code practice favours shipping (below).
+Either way `init` needs the network to resolve the server, so neither client works offline on first use.
+
+#### Downloading from an extension
+
+Checked 2026-10-27:
+
+- **Allowed and common.** No Marketplace rule against runtime downloads was found; Microsoft's own Remote-SSH and C# extensions download on first activation ([vsmarketplace #211](https://github.com/microsoft/vsmarketplace/discussions/211)), and the [remote development guide](https://code.visualstudio.com/api/advanced-topics/remote-extensions) tells authors to "include (or dynamically acquire)" binaries.
+  Extensions run with VS Code's full rights, network included ([extension runtime security](https://code.visualstudio.com/docs/configure/extensions/extension-runtime-security)).
+- **Metals is this design's pattern.** The [Metals extension](https://marketplace.visualstudio.com/items?itemName=scalameta.metals) ships a small Coursier launcher and downloads the Metals server from Maven Central on startup, with repository, mirror and proxy settings ([proxy docs](http://scalameta.org/metals/docs/troubleshooting/proxy/)).
+  Offline and corporate users report friction ([metals-vscode #1617](https://github.com/scalameta/metals-vscode/issues/1617), [metals #7276](https://github.com/scalameta/metals/discussions/7276)).
+- **VS Code moved the extension's own files to shipping.** Since VS Code 1.61, platform-specific packages let C/C++ and Terraform drop their first-activation downloads ([vscode #23251](https://github.com/microsoft/vscode/issues/23251), [cpptools #8152](https://github.com/microsoft/vscode-cpptools/issues/8152), [vscode-terraform #905](https://github.com/hashicorp/vscode-terraform/pull/905)),
+  because an installed extension that is still installing itself is a poor experience, every downloader must copy VS Code's proxy handling, and offline installs break.
+
+So the extension ships the launcher (the CLI jar, which needs no per-platform package) and the launcher downloads the server, as Metals does.
+The jar's own downloads still need the proxy and mirror settings below.
 
 **The jar's version is the client's version.**
 Neovim's `VERSION` is stamped by `publish-nvim.sh` and VS Code's `package.json` version by CI, both from the release tag that also publishes the jar.
 So the client downloads exactly its own version: no `maven-metadata.xml` lookup, no compatibility check, and nothing pinned in the project.
 - Upgrading the client is upgrading Lathe: a client that finds `.lathe/` written by another version (`workspace.json` `serverVersion`) runs its own jar's `sync`, which rewrites `lathe-sync.sh` to point at the new jar.
 - Teammates on different client versions share the same committed files, which carry no Lathe version.
-- Development builds (Neovim `0.0.0-dev`, VS Code `0.1.0-SNAPSHOT`) have no published jar; a setting or environment variable names a local bundle jar instead, like `LATHE_SERVER_DIR` today.
+- Neovim development builds (`0.0.0-dev`) have no published jar; a setting or environment variable names a local CLI jar instead, like `LATHE_SERVER_DIR` today.
+  A VS Code development `.vsix` carries the checkout's jar.
+  The checkout's CLI then resolves the SNAPSHOT server from the local repository.
 
 **Only where there is no build file.**
 `:LatheInit` in a folder with a `pom.xml` or `build.gradle` explains the Maven (or later Gradle) path instead, so the two never overlap.
 
 **Integrity (recommended).**
-HTTPS from Central, plus a check against Central's `.sha1` (or a published `.sha256`), which catches a truncated or corrupt download, not tampering.
-PGP signature checks in two clients are heavy; the confirmation prompt and the docs say what is downloaded and from where.
+Neovim checks the jar against Central's `.sha1` (or a published `.sha256`), which catches a truncated or corrupt download, not tampering; the resolver verifies checksums of everything it downloads.
+The confirmation prompt and the docs say what is downloaded and from where.
 
 **Corporate networks (recommended).**
-A repository URL setting (a Nexus or Artifactory mirror of Central) and the local-jar setting above (no network at all).
-The jar's own downloads (the [formatter](#formatter)) use the same URL, passed as a flag.
+One repository URL setting (a Nexus or Artifactory mirror of Central), used by Neovim for the CLI jar and passed to the jar as a flag for everything else.
+Reading mirrors from `~/.m2/settings.xml` can follow if users ask.
 
 **Updates.**
 None of their own: a new Lathe arrives with a client update.
@@ -195,7 +218,7 @@ The client only collects the answers; the jar validates them and writes them dow
 The same flags work without an editor, for scripts and the docs:
 
 ```
-java -jar lathe-cli-<version>-bundle.jar init --release 17 --formatter google:1.35.0
+java -jar lathe-cli-<version>.jar init --release 17 --formatter google:1.35.0
 ```
 
 Where each answer lives:
@@ -230,12 +253,12 @@ No `bin/` or `out/` appears in the user's folder, and there is no "build first" 
 | `java-home` | yes | the JDK chosen at init |
 | `lsp-stamps-classes.json` | yes | from the compile |
 | bytecode mirror | yes | from the compile |
-| `workspace.json` | yes | `buildFiles` = `lathe-project.json` and `lathe-style.json` with fingerprints; `jdk` from `JdkSourceSync`; `runnerClasspath` from the bundled runner |
+| `workspace.json` | yes | `buildFiles` = `lathe-project.json` and `lathe-style.json` with fingerprints; `jdk` from `JdkSourceSync`; `runnerClasspath` resolved like the server |
 | `lathe-sync.sh` | yes | `SyncScript` with the chosen JDK's `java` as the tool and `-jar <abs path> sync` as fixed arguments |
 | `main-launch.json` | yes | classpath = the mirror; no build to capture from, so derived |
-| `style.json` | when a formatter is chosen | the declared engine and version, with the classpath the jar resolved |
+| `style.json` | when a formatter is chosen | the declared engine and version, with the classpath the resolver produced |
 | `jvm.args` | when the formatter needs grants | as Maven writes them |
-| test files | no | see open question 2 |
+| test files | no | see open question 1 |
 
 ### Formatter
 
@@ -247,29 +270,23 @@ The user picks the formatter at init: none, or an engine (`google`, `aosp`, `pal
 ```
 
 This is the declaration [Declared Formatters](../planned/lathe-declared-formatters.md) proposes for every build tool, so one file format serves Maven, Gradle and this front-end.
-`sync` resolves the engine's jars from the declaration and writes them into `.lathe/style.json`, as the Maven sync does from Spotless.
-
-**Lathe resolves the jars itself.**
-With no build tool there is no Aether, so the jar carries its own resolver for formatter coordinates: a second `ArtifactResolver` that downloads from Central (or the configured mirror) into `~/.cache/lathe/repository/`, with checksums.
-It needs only what formatter POMs use: parent POMs, properties, `dependencyManagement`, and compile and runtime scopes.
-Alternative: each Lathe release ships a pre-resolved jar list for each engine and version it supports, so the jar downloads a flat list and resolves nothing, but only those versions work.
-Which one is open question 1.
+`sync` resolves the engine's jars with the [embedded resolver](#the-jar-and-its-resolver), any version, and writes them into `.lathe/style.json`, as the Maven sync does from Spotless.
 
 `eclipse` needs a settings file (`options.file`); `init` offers it only when the user names one.
 
 ### `openjdk`: OpenJDK without Maven
 
 Only `SyncMojo` in `lathe-openjdk-maven-plugin` imports Maven; `OpenJdkSync`, `BuildDiscovery` and `CmdlineReader` do not.
-`openjdk` is a thin entry point over the same classes with the bundled-jar resolver.
+`openjdk` is a thin entry point over the same classes, installing the server through the embedded resolver.
 There is no client code for it: the [OpenJDK guide](../guide/openjdk.md) documents fetching the jar, and JDK developers run it on the JDK they just built:
 
 ```sh
 v=<version>
 mkdir -p ~/.cache/lathe/bootstrap/$v
-curl -fL -o ~/.cache/lathe/bootstrap/$v/lathe-cli-$v-bundle.jar \
-  https://repo1.maven.org/maven2/io/github/ag-libs/lathe-cli/$v/lathe-cli-$v-bundle.jar
+curl -fL -o ~/.cache/lathe/bootstrap/$v/lathe-cli-$v.jar \
+  https://repo1.maven.org/maven2/io/github/ag-libs/lathe-cli/$v/lathe-cli-$v.jar
 build/linux-x86_64-server-release/images/jdk/bin/java \
-  -jar ~/.cache/lathe/bootstrap/$v/lathe-cli-$v-bundle.jar openjdk
+  -jar ~/.cache/lathe/bootstrap/$v/lathe-cli-$v.jar openjdk
 ```
 
 - The command downloads into the shared cache, not the checkout: `lathe-sync.sh` names the jar by absolute path, so it must stay where it was downloaded.
@@ -279,26 +296,29 @@ build/linux-x86_64-server-release/images/jdk/bin/java \
 
 ## Cost
 
-- **One new module**, for example `lathe-cli`, depending on `lathe-install` and the OpenJDK sync classes, and packing the server, MCP server, runner and JUnit Platform jars as resources (`maven-dependency-plugin` copy plus an index of coordinates to file names), attached as the `bundle` classifier.
-- **Two `ArtifactResolver`s:** the bundled-jar one for Lathe's own jars, and the Central one for formatters.
+- **One new module**, for example `lathe-cli`: the CLI, depending on `lathe-install`, `lathe-install-maven`'s `MavenArtifactResolver` and the OpenJDK sync classes, shaded with the resolver into one runnable jar.
+- **One new dependency**, `maven-resolver-supplier` and its closure, to be approved.
+  `MavenArtifactResolver` may move out of `lathe-install-maven` if that module's `maven-core` dependency gets in the way.
 - **The `init` front-end:** `lathe-project.json` (a schema record in `lathe-core`, its name a `LatheLayout` constant, listed in the contract's user-owned files), the one-shot compile, and the derived launch file.
-- **Neovim bootstrap:** `:LatheInit`, the questions, the download and checksum, the repository-URL and local-jar settings. VS Code repeats it later.
+- **Neovim bootstrap:** `:LatheInit`, the questions, the download and checksum, the repository-URL and local-jar settings.
+- **VS Code, later:** the same questions, the jar packed into the `.vsix`, and `lathe-vscode` built after `lathe-cli` (awaiting approval).
 - **OpenJDK:** the sync classes move out of `lathe-openjdk-maven-plugin` (into `lathe-install` or the new module), and the plugin is removed.
 - **Release:** one more artifact on Central.
 
 ## Open questions
 
-1. Formatter resolution: a small POM resolver (any version), or pre-resolved lists per tested version (no resolver, fixed versions)?
-2. Tests: is there a test tree (`test/`), and does the jar put the bundled JUnit Jupiter API on its classpath, since there are no libraries?
-3. Does `sync` recompile all of `src/`, or only stale sources by stamp? Recompiling all is simplest and fast at the sizes this targets.
-4. Does a folder of `.java` files with no `src/` (JEP 330/458 single-file programs) get an offer to move them, or is it out of scope?
+1. Tests: is there a test tree (`test/`), and does the jar resolve the JUnit Jupiter API onto its classpath, since there are no libraries?
+2. Does `sync` recompile all of `src/`, or only stale sources by stamp? Recompiling all is simplest and fast at the sizes this targets.
+3. Does a folder of `.java` files with no `src/` (JEP 330/458 single-file programs) get an offer to move them, or is it out of scope?
+4. Local repository: `~/.m2/repository` (shared, recommended) or `~/.cache/lathe/repository` (no Maven-looking directory for users who never use Maven)?
+5. The shaded jar's size, to measure once the resolver's closure is known.
 
 ## Milestone candidate
 
 Untriaged.
 Slices, in order:
 
-1. **Neovim:** the bundle jar with `init` and `sync` (no formatter), and `:LatheInit` with the JDK and release questions.
+1. **Neovim:** `lathe-cli` with the resolver, `init` and `sync` (no formatter), and `:LatheInit` with the JDK and release questions.
 2. **Formatter:** the question, the `lathe-style.json` declaration, and resolution.
 3. **VS Code:** the same bootstrap, and the Plain Java choice in New Java Project.
 4. **OpenJDK:** the `openjdk` command, the documented `curl`, and removing the Maven plugin.
