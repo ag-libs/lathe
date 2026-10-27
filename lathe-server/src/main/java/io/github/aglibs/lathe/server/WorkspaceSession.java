@@ -3423,7 +3423,10 @@ final class WorkspaceSession {
       final var deletedClassFiles =
           stream
               .filter(path -> path.getFileName().toString().endsWith(".class"))
-              .filter(path -> !keptBinaryNames.contains(toBinaryName(config, path)))
+              .filter(
+                  path ->
+                      !keptBinaryNames.contains(
+                          FileUtil.classBinaryName(config.latheClassesDir(), path)))
               .filter(path -> classOutputOf(source, path))
               .toList();
       deletedClassFiles.forEach(path -> IOUtil.unchecked(() -> Files.deleteIfExists(path)));
@@ -4621,13 +4624,6 @@ final class WorkspaceSession {
 
     final var sourceName = source.getFileName().toString();
     return ClassSourceFile.of(classFile).filter(sourceName::equals).isPresent();
-  }
-
-  private static String toBinaryName(final ModuleSourceConfig config, final Path classFile) {
-    final var relative = config.latheClassesDir().relativize(classFile).toString();
-    return relative
-        .substring(0, relative.length() - ".class".length())
-        .replace(classFile.getFileSystem().getSeparator(), ".");
   }
 
   // Once a rename's first file is saved, this long without another of its files' events commits

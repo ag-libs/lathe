@@ -55,6 +55,14 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".class");
   }
 
+  // A class file's binary name: its path below the class-output root, dotted, without .class.
+  public static String classBinaryName(final Path root, final Path classFile) {
+    final var relative = root.relativize(classFile).toString();
+    return relative
+        .substring(0, relative.length() - ".class".length())
+        .replace(classFile.getFileSystem().getSeparator(), ".");
+  }
+
   public static ContentFingerprint fingerprint(final Path file) throws IOException {
     return ContentFingerprint.of(Files.readAllBytes(file));
   }
