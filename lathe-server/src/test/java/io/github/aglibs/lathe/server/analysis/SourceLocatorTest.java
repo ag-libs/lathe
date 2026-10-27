@@ -301,28 +301,66 @@ class SourceLocatorTest extends SampleFixture {
     assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
   }
 
-  // --- identifier lookup ---
+  // --- declaration names ---
+
+  // Each declaration repeats its name before it (an annotation string, the type itself); the name
+  // is found after the modifiers and type, never inside them.
+  private static final String REPEATED_NAMES =
+      """
+      class Test {
+        @SuppressWarnings("items") int items;
+        @SuppressWarnings("run") void run() {}
+        Test Test;
+        @SuppressWarnings("Test") Test() {}
+        void take(@SuppressWarnings("arg") int arg) {
+          var local = arg;
+          Runnable lambda = () -> {};
+        }
+        enum Color { Color }
+        record Point(@SuppressWarnings("x") int x) {}
+      }
+      @SuppressWarnings("Other") class Other {}
+      """;
 
   @Test
-  void findLastIdentifierBetween_repeatedIdentifier_returnsLastBoundedMatch() {
-    final String source = "class Foo { Foo Foo; }";
+  void declarationNameOffset_nameRepeatedBeforeIt_findsTheDeclaredName() {
+    try (var compiler = new TempSourceCompiler()) {
+      final var analysis =
+          compiler
+              .compile(TempSourceCompiler.TEST_URI, REPEATED_NAMES, CompileMode.OPEN)
+              .fileAnalysis();
 
-    final long result =
-        SourceLocator.findLastIdentifierBetween(
-            source, source.indexOf("{"), source.indexOf(";"), "Foo");
-
-    assertThat(result).isEqualTo(source.lastIndexOf("Foo"));
+      assertFindsName(analysis, "int items", 4, "items");
+      assertFindsName(analysis, "void run", 5, "run");
+      assertFindsName(analysis, "Test Test;", 5, "Test");
+      assertFindsName(analysis, "Test() {}", 0, "Test");
+      assertFindsName(analysis, "int arg", 4, "arg");
+      assertFindsName(analysis, "var local", 4, "local");
+      assertFindsName(analysis, "Runnable lambda", 9, "lambda");
+      assertFindsName(analysis, "{ Color }", 2, "Color");
+      assertFindsName(analysis, "int x)", 4, "x");
+      assertFindsName(analysis, "class Other", 6, "Other");
+    }
   }
 
-  @Test
-  void findLastIdentifierBetween_partialIdentifier_returnsNoMatch() {
-    final String source = "class Test { int Foobar; }";
+  // The declaration found at the name's place, then its name looked up from that tree.
+  private static void assertFindsName(
+      final AttributedFileAnalysis analysis,
+      final String context,
+      final int nameColumn,
+      final String name) {
+    final long declared = REPEATED_NAMES.indexOf(context) + nameColumn;
+    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), declared);
 
-    final long result =
-        SourceLocator.findLastIdentifierBetween(
-            source, source.indexOf("{"), source.indexOf(";"), "Foo");
-
-    assertThat(result).isEqualTo(-1L);
+    assertThat(
+            SourceLocator.declarationNameOffset(
+                REPEATED_NAMES,
+                analysis.trees().getSourcePositions(),
+                analysis.tree(),
+                path.getLeaf(),
+                name))
+        .as(context)
+        .isEqualTo(declared);
   }
 
   // --- offsetToPosition ---

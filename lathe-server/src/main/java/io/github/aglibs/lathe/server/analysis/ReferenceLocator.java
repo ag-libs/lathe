@@ -385,8 +385,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   }
 
   private void addDeclarationMatch(final Tree node, final String name) {
-    final long namePos =
-        SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+    final long namePos = SourceLocator.declarationNameOffset(content, positions, cu, node, name);
     if (namePos >= 0) {
       addMatch(namePos, name.length(), ReferenceRole.DECLARATION);
     }

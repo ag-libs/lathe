@@ -194,6 +194,21 @@ class SemanticTokensTest extends SampleFixture {
         .satisfies(t -> assertThat(t.type()).isEqualTo("property"));
   }
 
+  // A declaration token lands on the name, not on the same word in an annotation string before it.
+  @Test
+  void declaration_nameRepeatedInItsAnnotation_tokenOnTheName() throws IOException {
+    final var source =
+        """
+        class T {
+          @SuppressWarnings("items") int items;
+        }
+        """;
+    final List<SemanticToken> toks = TokenScannerTestHelper.scanFile(tmp, "T.java", source);
+
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 1, 33).type()).isEqualTo("property");
+    assertThat(TokenScannerTestHelper.tokenAt(toks, 1, 22)).isNull();
+  }
+
   @Test
   void encode_produces_five_ints_per_token() {
     final int[] encoded = TokenScanner.encode(tokens);

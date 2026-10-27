@@ -148,6 +148,26 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(FIELD_SOURCE, "String name", "name")));
   }
 
+  // Rename edits these matches: with the field's name also in its annotation string, the string was
+  // reported as the declaration, so a rename rewrote the string and left the field.
+  @Test
+  void field_nameRepeatedInItsAnnotation_declarationSiteIsTheFieldName() throws IOException {
+    final var source =
+        """
+        class Test {
+            @SuppressWarnings("items") int items;
+            int twice() { return items * 2; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "return items", "items");
+
+    assertThat(refs(analysis, target, true))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "int items", "items"), posOf(source, "return items", "items"));
+  }
+
   @Test
   void field_parameterWithSameName_notConfusedWithField() throws IOException {
     final var source =

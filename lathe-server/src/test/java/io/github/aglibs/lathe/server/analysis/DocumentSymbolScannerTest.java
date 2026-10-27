@@ -120,6 +120,24 @@ class DocumentSymbolScannerTest {
     assertThat(field.getSelectionRange().getStart().getCharacter()).isEqualTo(6);
   }
 
+  // The name is the field's, not the same word in its annotation or in its initializer.
+  @Test
+  void scan_fieldNameRepeatedAroundIt_selectionRangeUsesFieldName() {
+    final String source =
+        """
+        class Foo {
+          @SuppressWarnings("count") int count = count();
+          static int count() { return 0; }
+        }
+        """;
+
+    final var field = scan(source).get(0).getChildren().get(0);
+
+    assertThat(field.getName()).isEqualTo("count");
+    assertThat(field.getSelectionRange().getStart().getLine()).isEqualTo(1);
+    assertThat(field.getSelectionRange().getStart().getCharacter()).isEqualTo(33);
+  }
+
   @Test
   void scan_localVariablesAndParameters_returnsNoSymbols() {
     final String source =

@@ -11,6 +11,7 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.OpensTree;
 import com.sun.source.tree.RequiresTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
@@ -163,7 +164,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     final var name = node.getSimpleName().toString();
     final String type = element == null ? null : typeTokenType(element.getKind());
     if (type != null && !name.isEmpty()) {
-      emitDeclaration(positions.getStartPosition(cu, node), name, type, Set.of());
+      emitDeclaration(node, name, type, Set.of());
     }
     return super.visitClass(node, ignored);
   }
@@ -175,11 +176,7 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     }
     final var element = trees.getElement(getCurrentPath());
     if (element != null) {
-      emitDeclaration(
-          positions.getStartPosition(cu, node),
-          node.getName().toString(),
-          "method",
-          interestingModifiers(element));
+      emitDeclaration(node, node.getName().toString(), "method", interestingModifiers(element));
     }
     return super.visitMethod(node, ignored);
   }
@@ -203,17 +200,20 @@ public final class TokenScanner extends TreePathScanner<Void, Void> {
     if (type != null) {
       final Set<String> baseModifiers =
           kind == ElementKind.ENUM_CONSTANT ? Set.of() : interestingModifiers(element);
-      emitDeclaration(
-          positions.getStartPosition(cu, node), node.getName().toString(), type, baseModifiers);
+      emitDeclaration(node, node.getName().toString(), type, baseModifiers);
     }
     return super.visitVariable(node, ignored);
   }
 
-  // Emits a declaration-site token: locates the name from the declaration start, then tags it with
+  // Emits a declaration-site token: locates the declaration's name, then tags it with
   // `declaration` on top of any element modifiers. Shared by class, method, and variable decls.
   private void emitDeclaration(
-      final long declStart, final String name, final String type, final Set<String> baseModifiers) {
-    final long namePos = SourceLocator.findIdentifierFrom(content, declStart, name);
+      final Tree declaration,
+      final String name,
+      final String type,
+      final Set<String> baseModifiers) {
+    final long namePos =
+        SourceLocator.declarationNameOffset(content, positions, cu, declaration, name);
     if (namePos < 0) {
       return;
     }
