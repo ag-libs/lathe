@@ -405,10 +405,11 @@ reused):
   `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
   and the project's registration winning over any other copy.
 - [Plain Java Without a Build Tool](potential/lathe-plain-java.md) — **potential; design goal decided
-  2026-10-28.** `:LatheInitPlain` (Neovim first, then VS Code) generates a hidden Maven project
+  2026-10-28, adjusted 2026-10-29.** `:LatheInitPlain` (Neovim first, then VS Code) generates a hidden Maven project
   (`.lathe-pom.xml`, output under `.lathe/`) for a plain `src/` folder and runs it with a bundled
   "only-script" Maven Wrapper, so the user installs only a JDK and everything after is today's Maven
-  path; the user picks JDK, release and formatter (a Spotless step). Also gives OpenJDK developers
+  path; the JDK comes from `JAVA_HOME`, the formatter is the one question, and `.lathe-pom.xml`
+  then belongs to the user (release, formatter, libraries). Also gives OpenJDK developers
   Lathe without Maven on `PATH`. Records the survey of how other IDEs handle projects with no build
   tool, a probe of the server filling an empty mirror, and the alternatives set aside (a CLI jar with
   an embedded resolver, a self-installing bundle, the server setting folders up).

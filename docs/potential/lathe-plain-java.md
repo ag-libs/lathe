@@ -2,8 +2,8 @@
 
 ## Status
 
-**Potential; design goal decided 2026-10-28.**
-Records a design discussion held on 2026-10-25 to 2026-10-28, a survey of how other Java tools support projects with no build tool, and the alternatives considered.
+**Potential; design goal decided 2026-10-28, adjusted 2026-10-29.**
+Records a design discussion held on 2026-10-25 to 2026-10-29, a survey of how other Java tools support projects with no build tool, and the alternatives considered.
 Nothing here is approved for implementation; the changes listed in [What changes](#what-changes) need a design summary and approval first.
 
 **The design goal is a hidden Maven project run through a bundled Maven Wrapper** ([Design](#design)):
@@ -13,13 +13,16 @@ Three other designs were worked through and set aside ([Alternatives considered]
 **Decided:**
 
 - **Neovim first, then VS Code**, both with the same bundled templates (2026-10-28).
-- **Plain Java only: sources in `src/`, no libraries, no tests** (2026-10-27). A user who needs libraries or tests moves to a real Maven or Gradle project; the hidden project makes that step small.
-- **The user chooses the JDK, the release and the formatter** at `:LatheInitPlain` (2026-10-27).
+- **Plain Java: sources and resources in `src/`, no tests** (2026-10-27). Libraries can be added by editing `.lathe-pom.xml` ([Growing the project](#growing-the-project), 2026-10-29); tests mean moving to a real Maven or Gradle project.
+- **No JDK or release question** (2026-10-29): the JDK comes from `$LATHE_JAVA_HOME`, else `$JAVA_HOME`, as documented; the release defaults to that JDK's version and is edited in the POM.
+  The formatter is the only question.
+- **`.lathe-pom.xml` is written once and then belongs to the user** (2026-10-29): re-running `:LatheInitPlain` never rewrites it, only updates the Lathe version property, so the user's edits (release, formatter, dependencies) survive.
+- **No build-file detection** (2026-10-29): `:LatheInitPlain` does not look for a `pom.xml` or Gradle files; it refuses only a folder whose `.lathe/` already exists without `.lathe-pom.xml`, which some other build set up.
 - **Nothing for the user to install but a JDK**, and no visible build in the user's sources (2026-10-27).
 - **Hidden Maven project via the Maven Wrapper** (2026-10-28), replacing an earlier CLI-jar design ([alternative A](#a-a-cli-jar-with-an-embedded-resolver)).
 - **The command is `:LatheInitPlain`** (2026-10-28); VS Code: **Lathe: Initialize Plain Java Folder**.
   It is the only command that creates `.lathe/` from the editor: Maven projects keep registering the extension in their build, and Gradle will use its plugin.
-  The `Plain` suffix keeps Maven users from running it on their project, and leaves room for a sibling such as `:LatheInitOpenJdk`.
+  The `Plain` suffix tells Maven users it is not for their project, and leaves room for a sibling such as `:LatheInitOpenJdk`.
   `:LatheNew…` and `:LatheStart…` were avoided: both prefixes are taken.
 
 Related designs:
@@ -142,17 +145,25 @@ A root POM named `pom.xml` would turn the folder into a Maven project for every 
   <artifactId><!-- folder name --></artifactId>
   <version>0</version>
   <properties>
-    <maven.compiler.release><!-- answer --></maven.compiler.release>
+    <lathe.version><!-- client version --></lathe.version>
+    <maven.compiler.release><!-- the JDK's feature version --></maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
+  <!-- <dependencies> go here; see "Growing the project" -->
   <build>
     <directory>${project.basedir}/.lathe/build/target</directory>
     <sourceDirectory>src</sourceDirectory>
+    <!-- Maven's defaults (src/test/java, src/test/resources) sit inside src/: point them at a
+         directory that never exists, so a user folder src/test/ is plain sources, not a test tree -->
+    <testSourceDirectory>${project.basedir}/.lathe/build/no-tests</testSourceDirectory>
     <resources>
       <resource><directory>src</directory><excludes><exclude>**/*.java</exclude></excludes></resource>
     </resources>
+    <testResources>
+      <testResource><directory>${project.basedir}/.lathe/build/no-tests</directory></testResource>
+    </testResources>
     <extensions>
-      <extension><!-- io.github.ag-libs:lathe-maven-extension:<client version> --></extension>
+      <extension><!-- io.github.ag-libs:lathe-maven-extension:${lathe.version} --></extension>
     </extensions>
     <plugins>
       <!-- maven-compiler-plugin pinned (3.6.2+, Lathe's floor); spotless-maven-plugin with the
@@ -169,7 +180,9 @@ A root POM named `pom.xml` would turn the folder into a Maven project for every 
   The [probe](#probe-2026-10-27) showed the copy without it.
 - **The formatter** is a Spotless step (`googleJavaFormat`, `palantirJavaFormat`, `eclipse`) with the chosen version; `MavenStyle` reads it and resolves the formatter as it does for any project, so any version works.
   Spotless is only declared, not bound to a phase, so the build never formats or checks.
-- **The Lathe extension version is the client's version.** Neovim's `VERSION` is stamped by `publish-nvim.sh` and VS Code's `package.json` version by CI, both from the release tag that publishes the extension.
+- **The Lathe extension version is the client's version**, kept in the `lathe.version` property so it is one line to update. Neovim's `VERSION` is stamped by `publish-nvim.sh` and VS Code's `package.json` version by CI, both from the release tag that publishes the extension.
+  The prototype checks that Maven interpolates a property in a build extension's version.
+- **Every managed value is a property or a plain element** the user can edit: the release (`maven.compiler.release`), the formatter step, the dependencies.
 
 ### The wrapper
 
@@ -190,40 +203,69 @@ Text files only, so no binary history in `lathe.nvim` and no reactor-built jar i
 
 ### `:LatheInitPlain`
 
-1. **Check the folder.** Plain Java only, so any sign of a real build stops it with an explanation, and it never falls back silently:
-   - It looks for `pom.xml`, `build.gradle(.kts)` and `settings.gradle(.kts)` upward to the git root (the filesystem root outside git) and a few levels down (as jdtls stops at depth 3), since the build file need not sit in the opened folder.
-   - Found one: *"This folder belongs to ../pom.xml (Maven): register the Lathe extension there"*, with the `.mvn/extensions.xml` snippet at the client's version; for Gradle, the Gradle setup once it exists.
-     Compiling a Maven or Gradle project's sources as plain Java (wrong source root, empty classpath) would look like a Lathe bug.
-   - An OpenJDK checkout (a built `build/<conf>/jdk/modules`) points at the [OpenJDK path](#openjdk).
-   - No `src/`: explain the expected layout.
-   - An existing `.lathe-pom.xml` means re-running: its answers are the defaults.
-   - A `.lathe-pom.xml` next to a real `pom.xml` (the project moved to Maven): the real build wins, and the command offers to delete the hidden one, which the server would otherwise keep watching.
-2. **Ask** (VS Code: quick picks):
-   - **JDK**: the detected one with its version, confirmed or replaced: `$LATHE_JAVA_HOME`, else `$JAVA_HOME`, else `java` on `PATH`, or a path the user enters.
-     17 or newer, since Maven runs the Lathe extension on it; older is explained and refused.
-     A JDK without `lib/src.zip` (a distro package without its `-source` package) gets a warning: no navigation into the JDK.
-   - **Release** the code targets: default the JDK's feature version.
-   - **Formatter**: none, or an engine and version; the default version is the one the Lathe release was tested with.
-3. **Write** `.lathe-pom.xml` and the wrapper files.
-4. **Run** `.lathe/build/mvnw -f .lathe-pom.xml process-test-classes` with `JAVA_HOME` set to the chosen JDK, showing its output (the first run downloads Maven, the plugins and the server).
+1. **Check the folder**, with no build-file detection:
+   - **`.lathe/` exists, `.lathe-pom.xml` does not:** some other build (Maven, OpenJDK, later Gradle) set this workspace up.
+     Warn and stop: *"This folder is already a Lathe workspace set up by its build; `:LatheSync` refreshes it."*
+   - **`.lathe-pom.xml` exists:** a re-run, see step 3.
+   - **No `src/`:** explain the expected layout and stop.
+   - Otherwise: a first run.
+2. **Find the JDK** from the environment, no question asked: `$LATHE_JAVA_HOME`, else `$JAVA_HOME`.
+   - Neither set, or not a JDK: stop and point at the docs (*"Set JAVA_HOME to a JDK 17 or newer"*). No guessing from `PATH`.
+   - Older than 17 (read from `<home>/release`): explained and refused, since Maven runs the Lathe extension on it.
+   - No `lib/src.zip` (a distro package without its `-source` package): a warning, no navigation into the JDK.
+3. **Write the files.**
+   - First run: ask the one question, the **formatter** (none, or an engine and version; the default version is the one the Lathe release was tested with), then write `.lathe-pom.xml` with the release set to the JDK's feature version.
+   - Re-run: leave `.lathe-pom.xml` as the user has it, except the `lathe.version` property, set to the client's version when it differs.
+   - Both: (re)write the wrapper files under `.lathe/build/`.
+4. **Run** `.lathe/build/mvnw -f .lathe-pom.xml process-test-classes` with `JAVA_HOME` set to that JDK, showing its output (the first run downloads Maven, the plugins and the server).
+   The wrapper reads its properties relative to its own location (`scriptDir/.mvn/wrapper/…` in `only-mvnw`), so it runs from `.lathe/build/` with the root as the working directory.
 5. **Attach** when `.lathe/lathe-launcher.sh` appears, as for any Lathe workspace.
 
-The JDK is passed only through `JAVA_HOME` for the run; Lathe's sync records it in `.lathe/java-home` as it does on Maven today.
+Lathe's sync records the JDK in `.lathe/java-home`, as it does on Maven today.
+
+**Accepted risk.** Without build-file detection, running `:LatheInitPlain` in a Maven or Gradle project that Lathe has not set up yet makes it a plain project: `src/` compiles as one source root, so `src/main/java/com/x` reads as package `main.java.com.x` and every import fails.
+The errors make it visible, and deleting `.lathe-pom.xml` and `.lathe/` undoes it; the docs say `:LatheInitPlain` is for folders without a build.
 
 ### After `:LatheInitPlain`
 
 It is a Maven workspace:
 - The server keeps `.lathe/classes` current between builds: save compiles, sibling recompilation, external changes (a `git pull`, an agent's edits), stale-class cleanup.
-- `.lathe-pom.xml` is a build file in `workspace.json`: editing it (or re-running `:LatheInitPlain` with other answers) prompts a sync, as a POM edit does.
+- `.lathe-pom.xml` is a build file in `workspace.json`: editing it (the release, the formatter, a dependency) prompts a sync, as a POM edit does.
 - `.lathe/lathe-sync.sh` re-runs the build on the Maven the wrapper installed, recorded by absolute path as on any Maven workspace.
   It must pass `-f .lathe-pom.xml`: `MavenSyncScript` adds `-f` when the session's POM is not `<root>/pom.xml` (one change).
-- Run and debug of `main` classes work as on Maven (`main-launch.json`).
+- A new Lathe version (after a client update): the client sees `workspace.json`'s `serverVersion` differ from its own and suggests `:LatheInitPlain`, which updates `lathe.version` and re-runs the build.
 
-### Graduating to a real Maven project
+### Running `main` and loading resources
 
-The hidden project is a real one, so graduating is a rename: `.lathe-pom.xml` becomes `pom.xml`, the `<directory>` override goes, and `src` moves to `src/main/java` or stays with `<sourceDirectory>`.
-A **Lathe: Convert to Maven Project** command can do it once users ask; until then the docs describe it.
-Libraries and tests start there.
+- **Running.** `lathe:sync` writes `main-launch.json` (`MavenMainLaunch`); runs execute from `.lathe/classes`, which the server keeps current, with the project root as the working directory, so `Path.of("data.txt")` resolves where a novice expects.
+  `RunnableScanner` finds the classic `public static void main(String[])` and a bare instance `void main()` (JEP 512, Java 25's compact source files), in named packages and the default package alike.
+  No client change: `:LatheRun` and the gutter work as on Maven.
+- **Resources.** Every non-`.java` file in `src/` is a resource:
+  Maven copies it into the build output at init (the `**/*.java` exclude), which Lathe mirrors into `.lathe/classes`,
+  and afterwards the server copies resource edits and new resource files into `.lathe/classes` itself, which needs the server rule above.
+  Both lookup styles work at run time: `Main.class.getResourceAsStream("app.properties")` for a file beside `Main.java`, and `getClassLoader().getResource("com/example/app.properties")`.
+
+### Creating classes and packages (`:LatheNew`)
+
+The server is layout-neutral: `lathe.createType`, `lathe.packages` and `lathe.resolveContext` use each module's first source root from its params (`primarySourceRoot` in `WorkspaceSession`), so new files land in `src/<package>/`, a dotted name (`jobs.Scheduler`) creates a package, and `createType` handles the default package (no `package` line).
+The Neovim client (`lathe/new.lua`) needs three changes:
+
+1. **Offer the default package.** `collect_destinations` drops every entry with an empty package, so in a project with only `src/Main.java`, or an empty `src/`, the "Where:" picker is empty and the first class cannot be created.
+   Offer a "(default package)" row for a module that has default-package files or no packages yet.
+2. **No test kinds in a plain project.** There is no test tree, so `Test` fails with the server's raw "no test source root for module ''".
+   Hide `Test` (and `module-info`, which would make the project modular) when the root has `.lathe-pom.xml`; the server's message also becomes readable for any project without a test tree.
+3. **Wording.** The root module's label is empty (`com.example ( · main)`, already so for single-module Maven projects): show "(root)".
+   "no modules found — run a build first" names `:LatheInitPlain` in a plain folder.
+
+### Growing the project
+
+`.lathe-pom.xml` belongs to the user after the first run, so it can grow without clashing with `:LatheInitPlain`:
+
+- **Libraries.** Add a `<dependencies>` block to `.lathe-pom.xml` and save: the server sees the build file change and prompts a sync, Maven resolves the jars, and Lathe adds their sources and type index as for any Maven project.
+  The docs show one example (a library with its `<dependency>`).
+- **Release or formatter.** Edit `maven.compiler.release` or the Spotless step, and save.
+- **Tests, or a real Maven project.** Rename `.lathe-pom.xml` to `pom.xml`, drop the `<directory>` and test-directory overrides, and move `src` to `src/main/java` (or keep `<sourceDirectory>`); tests go in `src/test/java`.
+  A **Lathe: Convert to Maven Project** command can do it once users ask; until then the docs describe it.
 
 ### OpenJDK
 
@@ -238,11 +280,12 @@ The [prototype](#open-questions) measures the real time and size before this is 
 
 ## What changes
 
-- **Neovim:** `:LatheInitPlain` (folder check, questions, templates, the wrapper run, attach); the templates under `runtime/templates/`.
+- **Neovim:** `:LatheInitPlain` (folder check, JDK from the environment, the formatter question, templates, the `lathe.version` update on re-run, the wrapper run, attach); the templates under `runtime/templates/`; the three `:LatheNew` changes; the version-mismatch suggestion.
+  The runner in `sync.lua` (output split, progress, lock) is shared: its body becomes a function that takes a command and an environment, used by `:LatheSync` and `:LatheInitPlain`.
 - **VS Code (later):** **Lathe: Initialize Plain Java Folder** with quick picks; the packaging copies the templates; New Java Project gains a **Plain Java (no build tool)** choice that writes `src/Main.java` and runs the same steps.
 - **`MavenSyncScript`:** `-f <pom>` when the POM is not `<root>/pom.xml`.
-- **Server:** skip `.java` files under a source root when copying resources.
-- **Docs:** the Neovim and VS Code cheatsheets ("No build tool"), the OpenJDK guide (the wrapper path), `status.md`.
+- **Server:** skip `.java` files under a source root when copying resources; a readable message when a module has no test tree.
+- **Docs:** the Neovim and VS Code cheatsheets ("No build tool": `JAVA_HOME`, the command, adding a library, growing into Maven, resource lookup), the OpenJDK guide (the wrapper path), `status.md`.
 
 No new module, no new dependency, no new Java front-end.
 
@@ -299,9 +342,15 @@ Researched for alternative A (2026-10-27). Under C the extension ships only text
 
 ## Open questions
 
-1. **Prototype:** a hand-written `.lathe-pom.xml` and wrapper for the probe project; measure the first run (time, download size), and check the server attaches with `target/` and the mirror under `.lathe/`, the Spotless step is read without binding it, and `main` runs.
+1. **Prototype:** a hand-written `.lathe-pom.xml` and wrapper for the probe project. Measure the first run (time, download size), and check:
+   - `.lathe/` lands at the root with `target/` under `.lathe/build/`, and the server attaches;
+   - `${lathe.version}` is interpolated in the build extension's version;
+   - the Spotless step is read without binding it;
+   - a default-package `Main` and a Java 25 `void main()` file run;
+   - `getResourceAsStream` finds a resource placed in `src/` before init, and one added after init without a sync;
+   - a `<dependencies>` edit prompts a sync and the library resolves.
 2. **The POM's name:** `.lathe-pom.xml` at the root (a hidden file next to `.lathe/`), or another name.
-3. **Commit it?** `.lathe-pom.xml` holds the release and the formatter, so committing it shares them with teammates (and is what graduation renames); it also puts a generated file in the repository.
+3. **Commit it?** `.lathe-pom.xml` holds the release, the formatter and any dependencies, and belongs to the user after the first run, so committing it is natural (and it is what graduation renames).
 4. **First start that does not compile:** does the Maven build stop the setup, or does `:LatheInitPlain` attach anyway and let the server compile what it can?
 5. **A folder of `.java` files with no `src/`** (JEP 330/458 single-file programs): offer to move them, or out of scope?
 
@@ -312,6 +361,6 @@ Slices, in order:
 
 1. **Prototype** (open question 1).
 2. **Lathe changes:** `-f` in `MavenSyncScript`, the server's resource rule.
-3. **Neovim:** `:LatheInitPlain` with the templates, the questions and the wrapper run.
+3. **Neovim:** `:LatheInitPlain` with the templates and the wrapper run, and the `:LatheNew` changes.
 4. **OpenJDK:** the wrapper path in the OpenJDK guide.
 5. **VS Code:** the same command, the packaged templates, and the Plain Java choice in New Java Project.
