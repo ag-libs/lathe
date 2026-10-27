@@ -409,7 +409,10 @@ reused):
   (`.lathe-pom.xml`, output under `.lathe/`) for a plain `src/` folder and runs it with a bundled
   "only-script" Maven Wrapper, so the user installs only a JDK and everything after is today's Maven
   path; the JDK comes from `JAVA_HOME`, the formatter is the one question, and `.lathe-pom.xml`
-  then belongs to the user (release, formatter, libraries). Also gives OpenJDK developers
+  then belongs to the user (release, formatter, libraries). A 2026-10-29 review for students left
+  open issues for a follow-up session: compile errors blocking the sync and runs without stdin
+  (blockers), the JDK lookup, flat layouts, readable errors, and one `:LatheInit` with a dialog
+  that also covers personal setup. Also gives OpenJDK developers
   Lathe without Maven on `PATH`. Records the survey of how other IDEs handle projects with no build
   tool, a probe of the server filling an empty mirror, and the alternatives set aside (a CLI jar with
   an embedded resolver, a self-installing bundle, the server setting folders up).

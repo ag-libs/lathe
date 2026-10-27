@@ -5,6 +5,7 @@
 **Potential; design goal decided 2026-10-28, adjusted 2026-10-29.**
 Records a design discussion held on 2026-10-25 to 2026-10-29, a survey of how other Java tools support projects with no build tool, and the alternatives considered.
 Nothing here is approved for implementation; the changes listed in [What changes](#what-changes) need a design summary and approval first.
+A review on 2026-10-29 for the target audience (students and others with little Maven experience) left [open issues](#open-issues-review-2026-10-29), two of them blockers, for a follow-up design session; decisions they question are marked *under review*.
 
 **The design goal is a hidden Maven project run through a bundled Maven Wrapper** ([Design](#design)):
 the client generates a Maven build Lathe already understands, the wrapper fetches Maven on first use, and everything after that is today's Maven path.
@@ -14,13 +15,13 @@ Three other designs were worked through and set aside ([Alternatives considered]
 
 - **Neovim first, then VS Code**, both with the same bundled templates (2026-10-28).
 - **Plain Java: sources and resources in `src/`, no tests** (2026-10-27). Libraries can be added by editing `.lathe-pom.xml` ([Growing the project](#growing-the-project), 2026-10-29); tests mean moving to a real Maven or Gradle project.
-- **No JDK or release question** (2026-10-29): the JDK comes from `$LATHE_JAVA_HOME`, else `$JAVA_HOME`, as documented; the release defaults to that JDK's version and is edited in the POM.
+- **No JDK or release question** (2026-10-29; JDK lookup *under review*, [issue 4](#4-jdk-only-from-java_home)): the JDK comes from `$LATHE_JAVA_HOME`, else `$JAVA_HOME`, as documented; the release defaults to that JDK's version and is edited in the POM.
   The formatter is the only question.
 - **`.lathe-pom.xml` is written once and then belongs to the user** (2026-10-29): re-running `:LatheInitPlain` never rewrites it, only updates the Lathe version property, so the user's edits (release, formatter, dependencies) survive.
-- **No build-file detection** (2026-10-29): `:LatheInitPlain` does not look for a `pom.xml` or Gradle files; it refuses only a folder whose `.lathe/` already exists without `.lathe-pom.xml`, which some other build set up.
+- **No build-file detection** (2026-10-29; *under review*, [issues 3 and 8](#3-a-pomxml-in-the-same-folder)): `:LatheInitPlain` does not look for a `pom.xml` or Gradle files; it refuses only a folder whose `.lathe/` already exists without `.lathe-pom.xml`, which some other build set up.
 - **Nothing for the user to install but a JDK**, and no visible build in the user's sources (2026-10-27).
 - **Hidden Maven project via the Maven Wrapper** (2026-10-28), replacing an earlier CLI-jar design ([alternative A](#a-a-cli-jar-with-an-embedded-resolver)).
-- **The command is `:LatheInitPlain`** (2026-10-28); VS Code: **Lathe: Initialize Plain Java Folder**.
+- **The command is `:LatheInitPlain`** (2026-10-28; *under review*, [issue 8](#8-one-latheinit-with-a-dialog)); VS Code: **Lathe: Initialize Plain Java Folder**.
   It is the only command that creates `.lathe/` from the editor: Maven projects keep registering the extension in their build, and Gradle will use its plugin.
   The `Plain` suffix tells Maven users it is not for their project, and leaves room for a sibling such as `:LatheInitOpenJdk`.
   `:LatheNew…` and `:LatheStart…` were avoided: both prefixes are taken.
@@ -339,6 +340,73 @@ Checked 2026-10-27:
   because an installed extension that is still installing itself is a poor experience, every downloader must copy VS Code's proxy handling, and offline installs break.
 
 Researched for alternative A (2026-10-27). Under C the extension ships only text templates and the wrapper downloads Maven, the same split Metals uses: the launcher ships, the heavy parts download.
+
+## Open issues (review 2026-10-29)
+
+A review against the goal: a student, or anyone with little Maven experience, sets up a simple project.
+The foundation holds (only a JDK to install, nothing Maven-shaped in `src/`, Lathe's existing Maven path reused, a path to libraries and to real Maven); these issues are left for a follow-up design session.
+Each has a direction from the review, not a decision.
+
+### Blockers
+
+#### 1. Code that does not compile blocks the setup, and every later sync
+
+`lathe:sync` runs at `process-test-classes`, after compilation, and nothing in Lathe sets the compiler's `failOnError`.
+A compile error, normal while learning, stops Maven before Lathe's sync: on the first run no launcher or `workspace.json` is written, so the editor never attaches and the student cannot use it to fix the error; every later sync fails the same way.
+
+Direction: the POM template sets `<failOnError>false</failOnError>` on `maven-compiler-plugin`.
+The build then reaches Lathe's sync, the compiler shim still writes the params (it writes them before checking success), and the server compiles what it can itself (the [probe](#probe-2026-10-27)) and shows the errors in the editor.
+To be confirmed by the prototype.
+
+#### 2. A run from the editor cannot read keyboard input
+
+`Launcher` (`lathe-server/.../run/Launcher.java`) closes the program's stdin ("Nothing ever writes to the program's input"), so `new Scanner(System.in).nextInt()` fails at once with `NoSuchElementException`.
+Student programs are full of these.
+It is a gap in Lathe generally, not only in plain projects, but it hits this audience hardest.
+
+Direction: a run mode in a real terminal: the server returns the command line it would run (it already builds it), and the client runs it in `:terminal` or a VS Code terminal.
+Its own small design, needed before this is offered to students.
+
+### Worth changing
+
+#### 3. A `pom.xml` in the same folder
+
+Course repositories often come with a `pom.xml`.
+Without any detection, `:LatheInitPlain` turns such a folder into a broken plain project (`src/main/java/com/x` read as package `main.java.com.x`), and this audience cannot tell why.
+Direction: one check in the opened folder only (not the deep search set aside on 2026-10-29), warning with "continue anyway?" rather than stopping; see also [issue 8](#8-one-latheinit-with-a-dialog).
+
+#### 4. JDK only from `JAVA_HOME`
+
+A JDK installed by a package manager, an installer or an IDE often leaves `JAVA_HOME` unset, so the requirement fails many students who have a working JDK.
+Direction: fall back to `java` on `PATH`, resolved to its home, and always show which JDK was used and how to override it.
+
+#### 5. A folder without `src/`
+
+The commonest student layout is `.java` files directly in the folder, which the design refuses.
+Direction: offer to move them into `src/` with one confirmation (this also settles open question 5).
+
+#### 6. Raw Maven output and errors
+
+The output split shows Maven's log.
+Direction: run Maven quietly (`-q`), open the output only on failure, and translate the common failures into plain messages: no network or a proxy, `JAVA_HOME` wrong or too old, a failed download; compile errors then show as diagnostics ([issue 1](#1-code-that-does-not-compile-blocks-the-setup-and-every-later-sync)).
+
+#### 7. The formatter question
+
+Students do not know google from palantir.
+Direction: no question; default to no formatter, and document the Spotless lines to add to `.lathe-pom.xml`, so setup asks nothing.
+
+#### 8. One `:LatheInit` with a dialog
+
+Personal setup ([Personal Setup](lathe-personal-setup.md)) has since been requested by another user, which revives the earlier idea of a single entry point: `:LatheInit` with a dialog (Plain Java, Maven, later Gradle, OpenJDK), rather than `:LatheInitPlain` alone.
+The workspace state can be detected from build files in the opened folder only (a `pom.xml`, `build.gradle(.kts)` or `settings.gradle(.kts)` at the root), which covers the large majority of projects (estimated 95%), and only proposes the dialog's default.
+This would also answer [issue 3](#3-a-pomxml-in-the-same-folder).
+
+### Minor
+
+- **Libraries mean editing XML** in a hidden file: fine as the next step, but the docs need a copy-paste example; a later `:LatheAddLibrary` could hide the XML.
+- **Students mostly use VS Code, often on Windows.** Neovim first suits dogfooding, but students see nothing until the VS Code step, so it should follow right after.
+- **The first run downloads a lot** (Maven, plugins, server): a message such as "first-time setup, about a minute" keeps it from looking hung; the prototype gives the real figure.
+- **Java 25's `void main()` needs release 25 or newer.** The release defaults to the JDK's version, so a student on JDK 21 gets a confusing error; a hint when an instance `main` meets an older release would help.
 
 ## Open questions
 
