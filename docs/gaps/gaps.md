@@ -376,7 +376,7 @@ Found by the pre-release probes (2026-10-27) on a custom Maven project (JDK 21, 
 
 ### Observed behaviour
 
-**1. The server exits on any compile in a Lombok module — a regression in 0.1.23.**
+**1. The server exits on any compile in a Lombok module — a regression in 0.1.23, fixed in 1bc16c11.**
 Any write-pass compile of a module that has Lombok on its processor path makes the server exit with status 1:
 an editor save, an agent's edit on disk, or a `git pull` or branch switch (any file, not only an annotated one).
 The MCP server exits the same way on its next tool call.
@@ -411,6 +411,9 @@ so every use of a generated member inside the annotated class is an error on ope
 `cannot find symbol: variable log` (`@Log`), `method getName()` (`@Data`), `method getCents()` (`@Value`).
 MCP `get_diagnostics` and `verify_change` report the same errors, and an agent will try to fix them.
 Files that only use the class from another module are clean, since they compile against its built classes.
+With part 1 fixed, the save's full compile runs Lombok (the mirror class gains the generated members),
+yet the diagnostics published after the save still show these errors, contrary to
+[how it works](../guide/how-it-works.md#diagnostics-live-vs-on-save).
 
 **3. Generated members have no source link** (issue #38).
 Go to definition on a call to a generated accessor finds nothing.
@@ -422,11 +425,12 @@ The guides do not mention Lombok.
 
 ### Fix direction
 
-1. Name written classes without asking the file object for it (relativize `jfo.toUri()` against the
-   class-output root resolved the way javac resolves it, keeping the symlink fix), and test it with a
-   file object that, like Lombok's, implements only the public `JavaFileObject` methods.
-   Report the wrapper to Lombok as well.
-   Narrow the process-fatal set to `VirtualMachineError`; fail only the compile for any other `Error`.
+1. Done in 1bc16c11: written classes are named from `jfo.toUri()` and the class-output root, both
+   resolved with `toRealPath()` (`FileUtil.classBinaryName`), which gives the same names as
+   `inferBinaryName`, symlinked workspaces and `module-info` included. The wrapper could still be
+   reported to Lombok.
+   Narrowing the process-fatal set to `VirtualMachineError` is deferred until GA (decision
+   2026-10-27): until then a processor's `Error` should end the server visibly, and its cause be fixed.
 2. Run Lombok on the live pass when it is on the processor path (measure the cost first), or drop
    diagnostics that name a member Lombok would generate.
 3. Map a generated member back to its field or annotation for definition, and make field references and
@@ -435,15 +439,17 @@ The guides do not mention Lombok.
 
 ### Regression targets
 
-- A module test compiling a Lombok-annotated class through the write pass: the server keeps running and
-  records the written classes.
-- An `Error` thrown by a processor fails that compile only.
+- Part 1: `FileUtilTest.classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage` and
+  `ModuleSourceCompilerTest.compileBatch_workspaceBehindSymlink_reportsBinaryNames`; the Lombok case itself
+  was verified by hand on a Lombok 1.18.38 project (no Lombok test dependency).
+- Parts 2 and 3: none yet.
 
 ---
 
 ## EG-066 — Started from a module subdirectory, Lathe runs on the wrong JDK or does not start
 
-**Status: documented**
+**Status: deferred — Target: backlog.**
+Decision (2026-10-27): not before the release; the fix touches the generated launchers on every OS.
 **Affects: the editor and MCP.**
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
@@ -593,38 +599,6 @@ so the common case needs no manual invocation. A Neovim-client concern layered o
 keep it opt-in like `format_on_save`. Unused-import removal and import sorting for this command (a fuller
 "organize imports") are separate later slices; formatting with a pinned google-java-format or palantir already
 removes unused imports and reorders them as the project's Spotless does.
-
----
-
-## CA-11 — Missing-import fixes skip a type used as a method-call qualifier
-
-**Status: documented**
-**Affects: MCP `fix_imports`; the editor's import quick fix and "Add missing imports" read the same
-diagnostic classification but were not probed.**
-Found by the pre-release probes (2026-10-27) on Dropwizard; reproduced on EqualsVerifier.
-
-### Observed behaviour
-
-A file with no imports that uses `Objects.requireNonNull(o)`, `Collections.emptyList()` and
-`ConcurrentHashMap<String, String> map`:
-`fix_imports` adds only `java.util.concurrent.ConcurrentHashMap`.
-`Objects` and `Collections` each have one JDK match, yet they are neither added nor listed as unmatched.
-For `Duration.seconds(1)` with two candidates it answers "No import added" with no ambiguous list,
-although the agent guide promises both lists.
-The added import also lands on the line right under `package`, with no blank line between them.
-
-`JavacDiagnosticMapper.resolveKind` sends a name whose parent is a member select to the
-`default -> VARIABLE_REF` branch, and `SourceAnalysisSession` offers type imports only for `TYPE_REF`.
-
-### Fix direction
-
-Classify an unresolved simple name that qualifies a member select (`Name.member(...)`, `Name.FIELD`) as a
-possible type, and offer the type imports for it as well.
-Keep one blank line between `package` and the first import.
-
-### Regression targets
-
-None yet.
 
 ---
 
@@ -1378,6 +1352,54 @@ The agent guide steers every rename into a `verify_change`, so each rename costs
 
 Measure what `verify_change` recompiles after a rename; reuse the rename's compile results for the files it
 already compiled and check only their callers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-41 — MCP edits written to a CRLF file add LF line endings
+
+**Status: deferred — Target: backlog.**
+Decision (2026-10-27): a real but narrow problem; a fix was written and reverted (see below).
+**Affects: MCP `fix_imports`.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+Server edits break lines with `\n`, which is right for an editor: it applies them in its buffer, in the
+document's own line separator.
+`LatheEngine.applyFileEdits` writes them to disk verbatim, so in a CRLF file (Git for Windows'
+default `core.autocrlf=true` checkout) `fix_imports` leaves mixed line endings:
+
+```
+package nl.jqno.equalsverifier;\r\n
+\n
+import java.util.Objects;\n
+\r\n
+public class LatheCrlf {\r\n
+```
+
+Only `fix_imports` inserts line breaks today: `rename_symbol` replaces identifiers, and `format_file`
+writes the formatter's output, which keeps one separator.
+The effect is small: `git` with `autocrlf=true` normalizes the lines on commit; a local Spotless
+`check` (line endings from git attributes, so CRLF on such a machine) likely reports the file until it is
+formatted; Vim and Emacs show `^M` on the original lines; VS Code picks one separator. Placement is
+unaffected, since javac's line map counts `\r\n` as one break.
+The tests do not cover it: their sources are text blocks, so LF even on the Windows CI row.
+
+### Fix direction
+
+Convert at the disk-write boundary only, never in the edits an editor applies (a `\r` inside Neovim
+buffer lines): in `LatheEngine.applyFileEdits`, write each edit's line breaks in the file's separator,
+normalizing a `\r\n` already in an edit first so a CRLF formatter result does not become `\r\r\n`.
+Keep the check private to that method; the reverted attempt shared a `lineSeparatorOf` helper with
+`EclipseFormatEngine` through `SourceLocator`, which was the wrong home.
+Matching the separator of the line an edit lands next to, instead of a whole-file guess, would also
+handle files that are already mixed.
+Tests must build CRLF content explicitly (`"…\r\n"`): `fix_imports` and `format_file` on a CRLF file,
+asserting no bare `\n` and no `\r\r`.
 
 ### Regression targets
 

@@ -7,6 +7,52 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-11 — Missing-import fixes skip a type used as a method-call qualifier — done
+
+**Status: done — Target: next.**
+**Affects: MCP `fix_imports`; the editor's import quick fix and "Add missing imports" read the same
+diagnostic classification but were not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard; reproduced on EqualsVerifier.
+
+### Observed behaviour
+
+A file with no imports that uses `Objects.requireNonNull(o)`, `Collections.emptyList()` and
+`ConcurrentHashMap<String, String> map`:
+`fix_imports` adds only `java.util.concurrent.ConcurrentHashMap`.
+`Objects` and `Collections` each have one JDK match, yet they are neither added nor listed as unmatched.
+For `Duration.seconds(1)` with two candidates it answers "No import added" with no ambiguous list,
+although the agent guide promises both lists.
+The added import also lands on the line right under `package`, with no blank line between them.
+
+`JavacDiagnosticMapper.resolveKind` sends a name whose parent is a member select to the
+`default -> VARIABLE_REF` branch, and `SourceAnalysisSession` offers type imports only for `TYPE_REF`.
+
+### Fix direction
+
+Classify an unresolved simple name that qualifies a member select (`Name.member(...)`, `Name.FIELD`) as a
+possible type, and offer the type imports for it as well.
+Keep one blank line between `package` and the first import.
+
+### Resolution
+
+Fixed in a1eadaab. A member-select qualifier gets its own kind, `QUALIFIER_REF`, since it may be a type
+to import or a statically imported field (Helidon uses statically imported constants as qualifiers in
+about 75 files). `resolveKind` returns it only when the unresolved name is the qualifier identifier itself
+(`java.util.Lisst` starts at a qualifier but names a member of it). `DiagnosticPayload.Kind` gained
+`offersTypeImport()` and `offersStaticImport()`, so the code actions, the "Add missing imports" trigger,
+missing imports and the type-index lookup ask what a kind offers. Missing imports lists each name once
+with candidates of both kinds; a name with none is still listed only as a plain type.
+`ImportLayout` puts a blank line between the package clause and a file's first import.
+
+### Regression targets
+
+- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`
+- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports`
+- `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`
+- `ImportAnalyzerTest.layout_noImports_placesBelowThePackageAfterABlankLineOrAtTheStart`
+
+---
+
 ## EG-061 — Renaming a method also renames an override that implements a second, unrelated method — done
 
 **Status: done — Target: next.**
