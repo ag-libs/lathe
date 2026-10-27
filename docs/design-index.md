@@ -404,16 +404,14 @@ reused):
   (2026-10-24): the path from personal to team mode — an explicit command, one previewed
   `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
   and the project's registration winning over any other copy.
-- [Standalone Jar](potential/lathe-standalone-jar.md) — **potential; direction decided 2026-10-27.**
-  Lathe for plain Java with no build tool: a small runnable `lathe-cli` jar on Maven Central that
-  embeds Maven Resolver (a library, not a Maven install) and resolves the server and formatter jars
-  itself. Neovim first (`:LatheInit`, downloading its own version with `vim.net.request`), then
-  VS Code (the jar shipped in the `.vsix`, the Metals pattern), then OpenJDK (a documented `curl`,
-  retiring `lathe-openjdk-maven-plugin`). Fixed `src/`, no libraries (those need Maven or Gradle),
-  one compile into the mirror; the user picks JDK, release and formatter, the formatter declared by
-  name and version in `lathe-style.json`. Includes a survey of how Eclipse/jdtls, IntelliJ,
-  NetBeans, Metals, BSP, Bazel and JBang handle projects with no build tool, and of runtime downloads
-  in VS Code extensions.
+- [Plain Java Without a Build Tool](potential/lathe-plain-java.md) — **potential; design goal decided
+  2026-10-28.** `:LatheInitPlain` (Neovim first, then VS Code) generates a hidden Maven project
+  (`.lathe-pom.xml`, output under `.lathe/`) for a plain `src/` folder and runs it with a bundled
+  "only-script" Maven Wrapper, so the user installs only a JDK and everything after is today's Maven
+  path; the user picks JDK, release and formatter (a Spotless step). Also gives OpenJDK developers
+  Lathe without Maven on `PATH`. Records the survey of how other IDEs handle projects with no build
+  tool, a probe of the server filling an empty mirror, and the alternatives set aside (a CLI jar with
+  an embedded resolver, a self-installing bundle, the server setting folders up).
 - [Lessons from Metals v2](potential/lathe-metals-v2-lessons.md) — **potential.** Review of the
   Metals v2 Java language server (2026-10-25), judged by Lathe's simplicity: most of Metals'
   complexity comes from not trusting the build. Recommends `TaskListener` cancellation, a saved
