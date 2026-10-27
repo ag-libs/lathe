@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -9,6 +10,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
@@ -196,6 +198,79 @@ public final class SourceLocator {
     final long afterPrefix =
         findIdentifierFrom(content, Math.max(start, prefixEnd(positions, cu, declaration)), name);
     return afterPrefix >= 0 ? afterPrefix : findIdentifierFrom(content, start, name);
+  }
+
+  // Whether a name sits exactly at offset: an identifier, the name ending a member select or method
+  // reference, a declaration's own name, or a Javadoc reference. A word in a comment or a literal
+  // is none of these, though it looks like a name: javac has no tree there, and answers for the
+  // enclosing one (the method, the class, the variable a string is assigned to).
+  public static boolean onName(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset)
+      throws IOException {
+    if (path != null && nameCovers(analysis, path, offset)) {
+      return true;
+    }
+
+    return JavadocReferenceResolver.referenceAt(analysis, offset) != null;
+  }
+
+  private static boolean nameCovers(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset)
+      throws IOException {
+    final Tree leaf = path.getLeaf();
+    if (leaf instanceof IdentifierTree) {
+      return true;
+    }
+
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final long end = positions.getEndPosition(cu, leaf);
+    if (leaf instanceof final MemberSelectTree select) {
+      return within(offset, end - select.getIdentifier().length(), select.getIdentifier().length());
+    }
+
+    if (leaf instanceof final MemberReferenceTree reference) {
+      return within(offset, end - reference.getName().length(), reference.getName().length());
+    }
+
+    final String name = declaredName(path);
+    if (name == null || name.isEmpty()) {
+      return false; // not a declaration, or an anonymous class
+    }
+
+    final String content = cu.getSourceFile().getCharContent(false).toString();
+    return within(offset, declarationNameOffset(content, positions, cu, leaf, name), name.length());
+  }
+
+  private static boolean within(final long offset, final long start, final int length) {
+    return start >= 0 && offset >= start && offset < start + length;
+  }
+
+  // The name a declaration declares, as written; a constructor's is its class's.
+  private static String declaredName(final TreePath path) {
+    final Tree leaf = path.getLeaf();
+    if (leaf instanceof final ClassTree type) {
+      return type.getSimpleName().toString();
+    }
+
+    if (leaf instanceof final VariableTree variable) {
+      return variable.getName().toString();
+    }
+
+    if (leaf instanceof final TypeParameterTree parameter) {
+      return parameter.getName().toString();
+    }
+
+    if (!(leaf instanceof final MethodTree method)) {
+      return null;
+    }
+
+    if (method.getName().contentEquals("<init>")
+        && path.getParentPath().getLeaf() instanceof final ClassTree owner) {
+      return owner.getSimpleName().toString();
+    }
+
+    return method.getName().toString();
   }
 
   // Where the part of a declaration before its name ends: its type (a variable's, a method's return

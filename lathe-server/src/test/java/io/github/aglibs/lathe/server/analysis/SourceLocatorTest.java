@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
@@ -361,6 +362,75 @@ class SourceLocatorTest extends SampleFixture {
                 name))
         .as(context)
         .isEqualTo(declared);
+  }
+
+  // --- onName ---
+
+  // Each word below looks like a name; only some are names to javac.
+  private static final String WORDS =
+      """
+      import java.util.List;
+
+      class Test {
+        // items in a line comment
+        /** The items, see {@link List}. */
+        List<String> items;
+        Runnable anonymous = new Runnable() { /* items */ public void run() {} };
+
+        Test() {}
+
+        int size() {
+          String note = "items in a string";
+          String block = \"""
+              items in a text block
+              \""";
+          java.util.function.Supplier<Integer> count = items::size;
+          return items.size() + note.length() + block.length() + foo(/* items */ 1);
+        }
+
+        int foo(int x) { return x; }
+      }
+      """;
+
+  @Test
+  void onName_namesInCode_accepted_wordsInCommentsAndLiterals_rejected() {
+    try (var compiler = new TempSourceCompiler()) {
+      final var analysis =
+          compiler.compile(TempSourceCompiler.TEST_URI, WORDS, CompileMode.OPEN).fileAnalysis();
+
+      assertOnName(analysis, "java.util.List;", 0, true); // an import's qualifier
+      assertOnName(analysis, "java.util.List;", 10, true); // an import's type
+      assertOnName(analysis, "{@link List}", 7, true); // a Javadoc reference
+      assertOnName(analysis, "List<String> items;", 0, true); // a type
+      assertOnName(analysis, "List<String> items;", 13, true); // a field's name
+      assertOnName(analysis, "class Test", 6, true); // a class's name
+      assertOnName(analysis, "Test() {}", 0, true); // a constructor's name
+      assertOnName(analysis, "int size()", 4, true); // a method's name
+      assertOnName(analysis, "String note", 7, true); // a local's name
+      assertOnName(analysis, "items::size", 7, true); // a method reference's name
+      assertOnName(analysis, "items.size()", 0, true); // a qualifier
+      assertOnName(analysis, "items.size()", 6, true); // a member select's name
+
+      assertOnName(analysis, "// items in a line", 3, false);
+      assertOnName(analysis, "The items, see", 4, false); // Javadoc text
+      assertOnName(analysis, "/* items */ public", 3, false); // in an anonymous class body
+      assertOnName(analysis, "\"items in a string", 1, false);
+      assertOnName(analysis, "items in a text block", 0, false);
+      assertOnName(analysis, "/* items */ 1", 3, false); // in the middle of a call
+    }
+  }
+
+  private static void assertOnName(
+      final AttributedFileAnalysis analysis,
+      final String context,
+      final int column,
+      final boolean expected) {
+    final long offset = WORDS.indexOf(context) + column;
+    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+
+    assertThat(IOUtil.unchecked(() -> SourceLocator.onName(analysis, path, offset)))
+        .as("%s at %d", context, column)
+        .isEqualTo(expected);
   }
 
   // --- offsetToPosition ---

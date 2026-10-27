@@ -202,6 +202,10 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.hover(request));
   }
 
+  public CompletableFuture<Boolean> onName(final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.onName(request));
+  }
+
   public CompletableFuture<ReferenceTarget> resolveTarget(
       final SourceFeatureRequest request, final CancelChecker cancelChecker) {
     return submit(ctx -> ctx.resolveTarget(request), cancelChecker);

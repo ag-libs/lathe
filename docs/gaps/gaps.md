@@ -1171,40 +1171,6 @@ None yet.
 
 ---
 
-## MC-34 — Position tools still answer for the enclosing tree inside comments and string literals
-
-**Status: documented**
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-[MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
-made a position off a name an error, but `LatheEngine.onName` checks only that the text under the column
-is a word, so a word inside a comment, javadoc or string literal passes:
-
-| Position (EqualsVerifier) | Answer |
-|---|---|
-| a word in the javadoc of `Warning.ALL_FIELDS_SHOULD_BE_USED` (`get_definition`) | the enclosing `enum Warning` |
-| a word in the string argument of `new ModuleException("…", e)` in `Rethrow` (`get_definition`) | the `ModuleException` constructor |
-| the same (`find_references`) | the constructor's 3 call sites |
-| the same (`describe_symbol`) | the parameter `String message` |
-| the same (`rename_symbol`) | `No references to rename.` with `isError=false` |
-
-The guide promises an error that shows the line instead.
-`line: 0` answers "the file is shorter" rather than saying positions are 1-based.
-
-### Fix direction
-
-After the text check, confirm the resolved tree's name covers the position: reject positions inside
-comments (javac's comment ranges, or `DocTrees` for javadoc) and inside literals.
-Answer `line: 0` and `column: 0` with "positions are 1-based".
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
 
 **Status: documented**

@@ -2443,6 +2443,19 @@ final class WorkspaceSession {
         });
   }
 
+  // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
+  // check) passes, and the tool gives its own answer.
+  CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
+    return openDocFeature(
+        uri,
+        true,
+        (worker, doc) ->
+            worker
+                .onName(featureRequest(doc, pos))
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[onName] failed for %s".formatted(uri), true)));
+  }
+
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
     return openDocFeature(
         uri,

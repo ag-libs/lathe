@@ -10254,6 +10254,55 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-34 — Position tools still answer for the enclosing tree inside comments and string literals — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+[MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
+made a position off a name an error, but `LatheEngine.onName` checks only that the text under the column
+is a word, so a word inside a comment, javadoc or string literal passes:
+
+| Position (EqualsVerifier) | Answer |
+|---|---|
+| a word in the javadoc of `Warning.ALL_FIELDS_SHOULD_BE_USED` (`get_definition`) | the enclosing `enum Warning` |
+| a word in the string argument of `new ModuleException("…", e)` in `Rethrow` (`get_definition`) | the `ModuleException` constructor |
+| the same (`find_references`) | the constructor's 3 call sites |
+| the same (`describe_symbol`) | the parameter `String message` |
+| the same (`rename_symbol`) | `No references to rename.` with `isError=false` |
+
+The guide promises an error that shows the line instead.
+`line: 0` answers "the file is shorter" rather than saying positions are 1-based.
+
+### Fix direction
+
+After the text check, confirm the resolved tree's name covers the position: reject positions inside
+comments (javac's comment ranges, or `DocTrees` for javadoc) and inside literals.
+Answer `line: 0` and `column: 0` with "positions are 1-based".
+
+### Resolution
+
+After the word check, `LatheEngine.onName` asks the server whether javac's tree has a name exactly at
+the position (`SourceLocator.onName`): an identifier, the name ending a member select or method
+reference, a declaration's own name, or a Javadoc reference (`JavadocReferenceResolver`). Comments
+are not in javac's tree and a literal has no name, so a word in either answers the "must be on a name"
+error that shows the line; no comment is scanned. What cannot be checked (a file no module compiles)
+passes, and the tool answers for it as before. A line or column below 1 answers "Positions are
+1-based". The declaration-name check relies on names being found after a declaration's annotations
+and type (`SourceLocator.declarationNameOffset`), which also fixed a rename that rewrote an annotation
+string spelling the field's name instead of the field.
+
+### Regression targets
+
+- `SourceLocatorTest.onName_namesInCode_accepted_wordsInCommentsAndLiterals_rejected`
+- `SourceLocatorTest.declarationNameOffset_nameRepeatedBeforeIt_findsTheDeclaredName`
+- `LatheEngineTest.onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine` (the 1-based answer)
+
+---
+
 ## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on — done
 
 **Status: done — Target: next**

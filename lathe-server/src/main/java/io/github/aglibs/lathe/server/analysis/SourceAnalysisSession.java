@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -395,6 +396,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
     return SignatureHelpResolver.resolve(
         cur.analysis(), cur.path(), offset, parser, allRoots(request), javadocLocator);
+  }
+
+  // Whether the request's position is on a name, not on a word of a comment or a literal; true
+  // when the file has no analysis to check against.
+  public boolean onName(final SourceFeatureRequest request) {
+    final CursorContext cur = resolve(request);
+    return cur == null
+        || IOUtil.unchecked(() -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset()));
   }
 
   public Hover hover(final SourceFeatureRequest request) {

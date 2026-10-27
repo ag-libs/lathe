@@ -728,6 +728,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
   }
 
+  public CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
+    return worker.submit(() -> session.onNameFuture(uri, pos)).thenCompose(f -> f);
+  }
+
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {
     return worker.submit(() -> session.createType(args));
   }

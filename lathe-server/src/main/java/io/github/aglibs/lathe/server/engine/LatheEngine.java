@@ -207,10 +207,19 @@ public final class LatheEngine {
   }
 
   // An agent's column is easily off by one, and javac answers for the smallest tree around a
-  // position: a method for its modifiers or indentation, the class past a line's end. So the
-  // position tools answer only on a name, checked as text (one word on one line) because javac's
-  // trees give a declaration's span, not its name's.
+  // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
+  // method for a word in a comment. So the position tools answer only on a name: first a word
+  // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
   public boolean onName(final Path file, final int line, final int column) {
+    if (!onWord(file, line, column)) {
+      return false;
+    }
+
+    compileFromDisk(file); // register the file and warm its analysis before resolving
+    return await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)));
+  }
+
+  private boolean onWord(final Path file, final int line, final int column) {
     return sourceLine(file, line)
         .filter(text -> column >= 0 && column < text.length())
         .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))

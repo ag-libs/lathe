@@ -198,6 +198,35 @@ class LatheEngineTest {
     assertThat(engine.onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
   }
 
+  // A word in a comment or a string looks like a name, but javac would answer there for the
+  // enclosing class, method or variable.
+  @Test
+  void onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink() throws Exception {
+    final String javadoc = "/** Greets, see {@link Object}. */";
+    final String method = "  String greet() { return \"greet the world\"; }";
+    final Path file =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Words.java",
+            String.join(
+                "\n",
+                "package com.example;",
+                "",
+                javadoc,
+                "class Words {",
+                "  // greet the world",
+                method,
+                "}",
+                ""));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.onName(file, 2, javadoc.indexOf("Greets"))).as("Javadoc text").isFalse();
+    assertThat(engine.onName(file, 2, javadoc.indexOf("Object"))).as("a {@link}").isTrue();
+    assertThat(engine.onName(file, 4, 5)).as("a line comment").isFalse();
+    assertThat(engine.onName(file, 5, method.indexOf("greet"))).as("the method's name").isTrue();
+    assertThat(engine.onName(file, 5, method.indexOf("\"greet") + 1)).as("a string").isFalse();
+  }
+
   @Test
   void describe_methodInADependencySource_returnsSignatureAndJavadoc() throws Exception {
     final Path sourceDir = tmp.resolve("sources/lib");
