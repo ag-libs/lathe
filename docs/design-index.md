@@ -404,12 +404,14 @@ reused):
   (2026-10-24): the path from personal to team mode — an explicit command, one previewed
   `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
   and the project's registration winning over any other copy.
-- [Standalone Jar](potential/lathe-standalone-jar.md) — **potential.** Lathe without a build tool
-  (2026-10-25): one runnable `lathe.jar` on Maven Central that carries the server and extracts it into
-  the user cache, with `install` (server only, for VS Code), `init` (a `src/` + `lib/` project:
-  detection written to a committed `lathe-project.json`, one compile into the mirror) and `openjdk`
-  (the OpenJDK front-end without Maven). Includes a survey of how Eclipse/jdtls, IntelliJ, NetBeans,
-  Metals, BSP, Bazel and JBang handle projects with no build tool.
+- [Standalone Jar](potential/lathe-standalone-jar.md) — **potential; direction decided 2026-10-27.**
+  Lathe for plain Java with no build tool: one runnable `lathe-cli-<version>-bundle.jar` on Maven
+  Central that carries the server and extracts it into the user cache. Neovim first (`:LatheInit`,
+  downloading its own version with `vim.net.request`), then VS Code, then OpenJDK (a documented
+  `curl`, retiring `lathe-openjdk-maven-plugin`). Fixed `src/`, no libraries (those need Maven or
+  Gradle), one compile into the mirror; the user picks JDK, release and formatter, the formatter
+  declared by name and version in `lathe-style.json` and resolved by Lathe. Includes a survey of how
+  Eclipse/jdtls, IntelliJ, NetBeans, Metals, BSP, Bazel and JBang handle projects with no build tool.
 - [Lessons from Metals v2](potential/lathe-metals-v2-lessons.md) — **potential.** Review of the
   Metals v2 Java language server (2026-10-25), judged by Lathe's simplicity: most of Metals'
   complexity comes from not trusting the build. Recommends `TaskListener` cancellation, a saved
