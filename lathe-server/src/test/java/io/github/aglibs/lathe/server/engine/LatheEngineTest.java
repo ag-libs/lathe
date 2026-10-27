@@ -923,7 +923,7 @@ class LatheEngineTest {
             tuple("Widget", List.of("com.example.a.Widget", "com.example.b.Widget")),
             tuple("Fooo", List.of()));
     assertThat(Files.readString(source))
-        .startsWith("package com.example.app;\nimport com.example.util.Helper;\nclass App {");
+        .startsWith("package com.example.app;\n\nimport com.example.util.Helper;\nclass App {");
 
     final LatheImports again = engine.fixImports(source);
 
@@ -953,7 +953,7 @@ class LatheEngineTest {
     assertThat(imports.unresolved()).isEmpty();
     assertThat(Files.readString(source))
         .startsWith(
-            "package com.example;\nimport static java.util.Objects.requireNonNull;\n"
+            "package com.example;\n\nimport static java.util.Objects.requireNonNull;\n"
                 + "class Unchecked {");
   }
 

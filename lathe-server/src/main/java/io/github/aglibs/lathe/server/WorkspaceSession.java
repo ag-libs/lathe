@@ -3078,7 +3078,7 @@ final class WorkspaceSession {
 
     final Set<String> neededTypeNames =
         requests.stream()
-            .filter(r -> r.payload().kind() == DiagnosticPayload.Kind.TYPE_REF)
+            .filter(r -> r.payload().kind().offersTypeImport())
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
