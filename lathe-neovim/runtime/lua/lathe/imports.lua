@@ -1,8 +1,8 @@
 -- :LatheMissingImports -- add an import for every unresolved type in the buffer, via the server's
 -- `lathe.missingImports` command. Unambiguous names (one candidate) are added automatically; a name
 -- with several candidates is presented one at a time with vim.ui.select so the user picks (or skips).
--- All chosen imports are inserted in one edit, then a summary is shown. Also wired as the client-side
--- handler for the "Add missing imports…" code action.
+-- The chosen imports go in with the edits `lathe.importEdits` returns, then a summary is shown. Also
+-- wired as the client-side handler for the "Add missing imports…" code action.
 
 local M = {}
 
@@ -10,16 +10,27 @@ local function notify(message, level)
   vim.notify('Lathe: ' .. message, level, { title = 'Lathe' })
 end
 
--- Insert the chosen `import <fqn>;` lines at the server's insertion range as a single edit.
-local function insert_imports(bufnr, client, insertion_range, fqns)
-  if #fqns == 0 or not insertion_range then
+-- Apply the chosen imports with the edits the server places (each at its sorted spot in its group),
+-- then call on_added. A server without lathe.importEdits answers nothing: warn, add nothing.
+local function insert_imports(bufnr, client, fqns, on_added)
+  if #fqns == 0 then
+    on_added()
     return
   end
-  local lines = vim.tbl_map(function(fqn)
-    return 'import ' .. fqn .. ';'
-  end, fqns)
-  local edit = { range = insertion_range, newText = table.concat(lines, '\n') .. '\n' }
-  vim.lsp.util.apply_text_edits({ edit }, bufnr, client.offset_encoding)
+  client:request('workspace/executeCommand', {
+    command = 'lathe.importEdits',
+    arguments = { { uri = vim.uri_from_bufnr(bufnr), imports = fqns } },
+  }, function(err, edits)
+    if err or edits == nil or edits == vim.NIL then
+      notify(
+        err and err.message or 'this server cannot add imports -- update the Lathe build plugin and sync again',
+        vim.log.levels.WARN
+      )
+      return
+    end
+    vim.lsp.util.apply_text_edits(edits, bufnr, client.offset_encoding)
+    on_added()
+  end, bufnr)
 end
 
 -- Partition items into auto-add (one candidate), needs-choice (several), and unresolved (none),
@@ -45,8 +56,7 @@ local function resolve(bufnr, client, result)
     end
   end
 
-  local function finish()
-    insert_imports(bufnr, client, result.insertionRange, chosen)
+  local function report()
     local message
     if #chosen == 0 then
       message = 'no imports added'
@@ -59,6 +69,10 @@ local function resolve(bufnr, client, result)
       message = message .. "; couldn't resolve: " .. table.concat(unresolved, ', ')
     end
     notify(message, vim.log.levels.INFO)
+  end
+
+  local function finish()
+    insert_imports(bufnr, client, chosen, report)
   end
 
   local index = 0

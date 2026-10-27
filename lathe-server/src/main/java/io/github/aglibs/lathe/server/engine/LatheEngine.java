@@ -408,9 +408,7 @@ public final class LatheEngine {
     final List<String> added =
         byUnambiguous.get(true).stream().map(item -> item.candidates().get(0)).sorted().toList();
     final String path =
-        added.isEmpty()
-            ? displayPath(file, uri)
-            : writeFile(file, uri, missing.layout().edits(added));
+        added.isEmpty() ? displayPath(file, uri) : writeFile(file, uri, missing.edits(added));
     return new LatheImports(path, added, byUnambiguous.get(false));
   }
 
