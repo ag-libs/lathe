@@ -1762,14 +1762,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
 
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
@@ -1849,7 +1842,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
-    final var request = renameRequest(openFile, pos);
+    final var request = featureRequest(openFile, pos);
     return module
         .worker()
         .resolveRenameTarget(request)
@@ -1989,7 +1982,7 @@ final class WorkspaceSession {
     }
 
     final var cursorWorker = module.worker();
-    final var request = renameRequest(openFile, pos);
+    final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         workspace.moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
@@ -2043,14 +2036,10 @@ final class WorkspaceSession {
             });
   }
 
-  private SourceFeatureRequest renameRequest(final OpenDocument openFile, final Position pos) {
+  // The request a position feature sends to the module's worker, for the open document.
+  private SourceFeatureRequest featureRequest(final OpenDocument doc, final Position pos) {
     return new SourceFeatureRequest(
-        openFile.uri(),
-        openFile.content(),
-        openFile.version(),
-        pos,
-        workspace.allSourceRoots(),
-        manifest);
+        doc.uri(), doc.content(), doc.version(), pos, workspace.allSourceRoots(), manifest);
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(
@@ -2064,14 +2053,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
 
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
@@ -2333,14 +2315,7 @@ final class WorkspaceSession {
         uri,
         List.of(),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
               .resolveTarget(request)
@@ -2461,14 +2436,7 @@ final class WorkspaceSession {
         uri,
         null,
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .hover(request)
               .exceptionally(ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null));
@@ -2480,14 +2448,7 @@ final class WorkspaceSession {
         uri,
         null,
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .signatureHelp(request)
               .exceptionally(
@@ -2505,14 +2466,7 @@ final class WorkspaceSession {
         uri,
         Either.forLeft(List.of()),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .definition(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -2535,14 +2489,7 @@ final class WorkspaceSession {
         uri,
         Either.forLeft(List.of()),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .declaration(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -2562,14 +2509,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
     final var indexSnapshot = typeIndex;
     final var lambdaSnapshot = reactorLambdaImplementors;
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
@@ -2900,14 +2840,7 @@ final class WorkspaceSession {
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request =
-                  new SourceFeatureRequest(
-                      doc.uri(),
-                      doc.content(),
-                      doc.version(),
-                      pos,
-                      workspace.allSourceRoots(),
-                      manifest);
+              final var request = featureRequest(doc, pos);
               return worker.prepareCallHierarchy(request);
             })
         .thenApply(
@@ -2928,14 +2861,7 @@ final class WorkspaceSession {
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request =
-                  new SourceFeatureRequest(
-                      doc.uri(),
-                      doc.content(),
-                      doc.version(),
-                      pos,
-                      workspace.allSourceRoots(),
-                      manifest);
+              final var request = featureRequest(doc, pos);
               return worker.prepareTypeHierarchy(request, indexSnapshot);
             })
         .thenApply(
