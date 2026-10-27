@@ -366,6 +366,177 @@ None yet.
 
 ---
 
+## EG-065 — Lombok projects: the server exits on the first compile, and generated members are invisible
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release probes (2026-10-27) on a custom Maven project (JDK 21, Lombok 1.18.38 in the parent's
+`annotationProcessorPaths`, `@Data`/`@Builder`/`@Value`/`@Log`), and reported by a user in
+[issue #38](https://github.com/ag-libs/lathe/issues/38) (0.1.22).
+
+### Observed behaviour
+
+**1. The server exits on any compile in a Lombok module — a regression in 0.1.23.**
+Any write-pass compile of a module that has Lombok on its processor path makes the server exit with status 1:
+an editor save, an agent's edit on disk, or a `git pull` or branch switch (any file, not only an annotated one).
+The MCP server exits the same way on its next tool call.
+
+```
+SEVERE  [compiler] process fatal-error fatal 373ms
+java.lang.AbstractMethodError: Receiver class lombok.javac.apt.Javac9BaseFileObjectWrapper does not define
+or inherit an implementation of the resolved method 'abstract java.lang.String inferBinaryName(java.lang.Iterable)'
+  at jdk.compiler/com.sun.tools.javac.file.JavacFileManager.inferBinaryName
+  at ...server.module.JavacRunner.writtenBinaryNames(JavacRunner.java:155)
+```
+
+- The defect is Lombok's: `Javac9BaseFileObjectWrapper` extends javac's internal `PathFileObject` without
+  implementing its abstract `inferBinaryName(Iterable)`.
+  javac's own compile never asks an output file for its binary name, so Lombok never hits it.
+  Lathe does: `JavacRunner.writtenBinaryNames` has called the public
+  `JavaFileManager.inferBinaryName(CLASS_OUTPUT, jfo)` since the symlinked-workspace fix (5d034fe9, first
+  shipped in 0.1.23), and javac's implementation reaches the missing method.
+  Before that it derived the name from `jfo.toUri()`, which the wrapper implements; the 0.1.22 report in
+  issue #38 sees saves and diagnostics work.
+  So it is a Lathe regression for Lombok users, even though the call is correct use of public API.
+- The crash repeats on every start: a restarted server compiles the files changed on disk while it was
+  down, and exits within a second.
+  Only a full Maven build, which brings the compile stamps up to date, lets it start.
+- `CompilationWorker` treats every `Error` in a failed compile as fatal to the process, so a `LinkageError`
+  thrown by any annotation processor or javac plugin takes the whole server down, not just this one.
+- A debug session's test JVM, launched suspended, is left running when the server exits.
+
+**2. Annotated files show false errors until saved.**
+The live pass runs no annotation processors ([how it works](../guide/how-it-works.md#diagnostics-live-vs-on-save)),
+so every use of a generated member inside the annotated class is an error on open and while editing:
+`cannot find symbol: variable log` (`@Log`), `method getName()` (`@Data`), `method getCents()` (`@Value`).
+MCP `get_diagnostics` and `verify_change` report the same errors, and an agent will try to fix them.
+Files that only use the class from another module are clean, since they compile against its built classes.
+
+**3. Generated members have no source link** (issue #38).
+Go to definition on a call to a generated accessor finds nothing.
+Find references on a field returns only direct field accesses, so `analyze_change` reports one reference
+and a field rename leaves `getX()`/`setX()` callers broken without a warning.
+References from a usage of the accessor itself work.
+
+The guides do not mention Lombok.
+
+### Fix direction
+
+1. Name written classes without asking the file object for it (relativize `jfo.toUri()` against the
+   class-output root resolved the way javac resolves it, keeping the symlink fix), and test it with a
+   file object that, like Lombok's, implements only the public `JavaFileObject` methods.
+   Report the wrapper to Lombok as well.
+   Narrow the process-fatal set to `VirtualMachineError`; fail only the compile for any other `Error`.
+2. Run Lombok on the live pass when it is on the processor path (measure the cost first), or drop
+   diagnostics that name a member Lombok would generate.
+3. Map a generated member back to its field or annotation for definition, and make field references and
+   rename include the accessors (rename refuses or warns at the least).
+4. Document Lombok support and its limits in the guides.
+
+### Regression targets
+
+- A module test compiling a Lombok-annotated class through the write pass: the server keeps running and
+  records the written classes.
+- An `Error` thrown by a processor fails that compile only.
+
+---
+
+## EG-066 — Started from a module subdirectory, Lathe runs on the wrong JDK or does not start
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+- **Launchers.** `lathe-launcher.sh` and `lathe-mcp-launcher.sh` read `.lathe/java-home` and
+  `.lathe/jvm.args` relative to the working directory, while the server itself walks up to the nearest
+  `.lathe/`.
+  The user-global `~/.cache/lathe/latest/lathe-mcp-launcher.sh`, started in `equalsverifier-core/` (an agent
+  launched in a module), finds neither and runs on the `java` on `PATH`.
+  With JDK 17 first on `PATH`, files of the release-17 modules work, but a file of `equalsverifier-26` takes
+  30 s and answers `the request failed; see the server log`; the log has
+  `IllegalArgumentException: error: release version 26 not supported`.
+  The module-access flags of `jvm.args` are dropped too.
+  The `[startup]` line does not name the JVM, so the mismatch is invisible.
+- **VS Code.** The extension looks only for `<opened folder>/.lathe/lathe-launcher.sh`.
+  Opening a module folder answers "no launcher … run a Lathe-enabled build to generate it", although the
+  build already ran at the root.
+
+### Fix direction
+
+Launchers resolve `.lathe/` the way the server does (walk up from the working directory) and read
+`java-home` and `jvm.args` from there.
+The VS Code extension walks up from the opened folder.
+`[startup]` logs `java.home` and the Java version.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-067 — The first build floods the log with warnings, and a disabled Lathe says nothing
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+The README quick start (`mvn clean test -Dlathe.capture.only=true`) prints 199 `[WARNING]` lines on
+EqualsVerifier, a small reactor:
+
+- 164 are Surefire's `Tests run: N, Failures: 0, Errors: 0, Skipped: N`, one per test class, because
+  capture-only excludes every test and Surefire reports skipped classes as warnings.
+- 9 are blocks of `The following dependencies could not be resolved at this point of the build but seem to
+  be part of the reactor`, printed before `lathe:sync` on the parent.
+  `lathe:sync` is an aggregator with `requiresDependencyResolution = TEST`, bound to the parent's
+  `process-test-classes`, which runs before any child module is built.
+  The sync itself is complete.
+
+A first-time user sees a wall of warnings from a command the README told them to run; a Helidon-size
+reactor prints thousands.
+
+The other way round, `CI=true` or `-Dlathe.disabled=true` switches Lathe off with no line at the default
+log level, so a developer whose environment sets `CI` gets no hint why `.lathe/` stops updating.
+
+### Fix direction
+
+Find a capture-only filter that Surefire does not count as skipped, or say in the README and test-capture
+guide that the warnings are expected.
+Resolve the sync's dependencies without the reactor warnings, or bind the sync to a later project.
+Log one `INFO` line when Lathe is disabled, naming the switch.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-068 — Hover and `describe_symbol` render javadoc loosely and describe the class at a constructor call
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release probes (2026-10-27) on Dropwizard, Helidon and EqualsVerifier.
+
+### Observed behaviour
+
+- Each `<p>` becomes three or four blank lines (`Warning.NONFINAL_FIELDS`, `java.util.function.Function`).
+- An `@see <a href=…>` link breaks across lines.
+- On `new BlockingArrayQueue<>(min, max)` (Dropwizard), the answer describes the class, not the constructor
+  the call resolves to.
+
+### Fix direction
+
+Collapse paragraph breaks to one blank line and keep links on one line.
+At a `new` expression, describe the resolved constructor (its parameters and javadoc), with the class as context.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -425,6 +596,63 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ---
 
+## CA-11 — Missing-import fixes skip a type used as a method-call qualifier
+
+**Status: documented**
+**Affects: MCP `fix_imports`; the editor's import quick fix and "Add missing imports" read the same
+diagnostic classification but were not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard; reproduced on EqualsVerifier.
+
+### Observed behaviour
+
+A file with no imports that uses `Objects.requireNonNull(o)`, `Collections.emptyList()` and
+`ConcurrentHashMap<String, String> map`:
+`fix_imports` adds only `java.util.concurrent.ConcurrentHashMap`.
+`Objects` and `Collections` each have one JDK match, yet they are neither added nor listed as unmatched.
+For `Duration.seconds(1)` with two candidates it answers "No import added" with no ambiguous list,
+although the agent guide promises both lists.
+The added import also lands on the line right under `package`, with no blank line between them.
+
+`JavacDiagnosticMapper.resolveKind` sends a name whose parent is a member select to the
+`default -> VARIABLE_REF` branch, and `SourceAnalysisSession` offers type imports only for `TYPE_REF`.
+
+### Fix direction
+
+Classify an unresolved simple name that qualifies a member select (`Name.member(...)`, `Name.FIELD`) as a
+possible type, and offer the type imports for it as well.
+Keep one blank line between `package` and the first import.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice
+
+**Status: documented**
+**Affects: MCP `fix_imports`, and the editor's import quick fix.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`fix_imports` reports `List: java.awt.List, java.util.List` and
+`Function: kotlin.Function, java.util.function.Function` as ambiguous, and the editor quick fix offers
+`Import 'kotlin.Function'` first.
+An agent has to pick, and in a Java module the answer is almost always the `java.util` one.
+
+### Fix direction
+
+Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
+then the module's own dependencies, then the rest.
+`fix_imports` could add the top candidate when the ranking is decisive, and list the others.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
@@ -465,6 +693,60 @@ periodic collection (`-XX:G1PeriodicGCInterval`) so an idle server returns memor
 `LATHE_JVM_OPTS` as the override. Measure the cap against the largest probes first.
 Related: [EG-058](#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session)
 (sessions never released), which an uncapped `verify_change` exercises more than before.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-19 — An outside edit to a Helidon blueprint sometimes does not regenerate its builder
+
+**Status: documented**
+**Affects: the editor and MCP.** Intermittent: 1 of 3 full runs.
+Found by the pre-release probes (2026-10-27) on Helidon, with `dev/mcp_staleness.py` (scenarios N1, N1b).
+
+### Observed behaviour
+
+N1 adds an option to a blueprint outside the editor and then uses the generated accessor.
+In the failing run the use stayed `cannot find symbol latheProbeOpt` after 8 s, and the generated
+`AllowListConfig.java` in `.lathe/` never gained the option.
+That run's first in-process compiles in the scenario took 24 ms and 86 ms (`failed=1`); whenever the
+processors ran, it took 1.1–1.3 s, so the blueprint change was missed or compiled without its processors.
+The processors' `META-INF/services` files were in the mirror, so this is not the cause fixed in
+[WS-15](gaps-archive.md#ws-15--annotation-processors-built-in-the-reactor-never-run-in-process--done).
+It did not reproduce alone, after the `pom` or `two` scenarios, after a sync during the session, or in two
+more full runs (one right after a fresh sync).
+The failing run had no `LATHE_DEBUG`.
+
+### Fix direction
+
+Repeat the full Helidon staleness run with `LATHE_DEBUG=1` until it fails, then follow the blueprint
+through the write pass: was it detected, and which options and processor path did its compile get.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
+
+### Observed behaviour
+
+After an agent or `git` adds a class in an upstream module, an open downstream file that uses it shows
+`cannot find symbol` for about 8 s before the server republishes clean diagnostics.
+The scan runs every 2 s, and the other outside-change scenarios settle in 2–4 s.
+Adding a class and using it straight away is the common agent pattern this delay hits.
+
+### Fix direction
+
+Measure where the 8 s goes (scan, write pass, type-index refresh, re-check of open files) and bring it
+in line with the other outside changes.
 
 ### Regression targets
 
@@ -523,6 +805,60 @@ the Gradle guide documents the limitation.
 ### Regression targets
 
 None yet — to be defined when the fix is scheduled.
+
+---
+
+## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them
+
+**Status: documented**
+**Affects: MCP `run_test` and `workspace_summary`.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-test-signedjar` has only `SignedJarIT`, run by Failsafe.
+`run_test` on it answers
+`Test run blocked: no captured test launch for equalsverifier-test-signedjar; run
+.lathe/lathe-sync.sh --tests equalsverifier-test-signedjar to capture it`,
+and `workspace_summary` lists the module as `tests: not captured` with the same command.
+That command succeeds (`No tests to run.`) and captures nothing, since capture rides the Surefire `test`
+fork, so an agent that follows the advice loops.
+The limit is stated only in the Neovim guide, not in the test-capture guide's limits or the agent guide.
+
+### Fix direction
+
+Tell a Failsafe test (a class matching the Failsafe includes, or a module whose only test plugin is Failsafe)
+apart from a missing capture, and say it cannot be run from Lathe yet instead of naming a sync.
+Add the limit to `test-capture.md` and `ai-agents.md`.
+Capturing the Failsafe fork is the larger, separate step.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-9 — Running a file with two top-level test classes runs only the first
+
+**Status: documented**
+**Affects: MCP `run_test` (class scope); the editor's run of a file was not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard.
+
+### Observed behaviour
+
+`DropwizardExtensionsSupportDeepNestingTest.java` declares a second top-level test class
+(`…ExtensionAtEachLevelTest`), which Surefire runs.
+`run_test` with the default class scope answers `PASS — 4 passed` for the first class only, and its output
+does not name the class it ran, so the skipped one goes unnoticed.
+A method of the second class runs when named.
+
+### Fix direction
+
+Class scope runs every top-level test class in the file, and the result names the classes it ran.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -854,6 +1190,194 @@ The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
 ([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
 structured content without one. It helps programmatic clients, not models, so it waits for a client
 that needs it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-34 — Position tools still answer for the enclosing tree inside comments and string literals
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+[MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
+made a position off a name an error, but `LatheEngine.onName` checks only that the text under the column
+is a word, so a word inside a comment, javadoc or string literal passes:
+
+| Position (EqualsVerifier) | Answer |
+|---|---|
+| a word in the javadoc of `Warning.ALL_FIELDS_SHOULD_BE_USED` (`get_definition`) | the enclosing `enum Warning` |
+| a word in the string argument of `new ModuleException("…", e)` in `Rethrow` (`get_definition`) | the `ModuleException` constructor |
+| the same (`find_references`) | the constructor's 3 call sites |
+| the same (`describe_symbol`) | the parameter `String message` |
+| the same (`rename_symbol`) | `No references to rename.` with `isError=false` |
+
+The guide promises an error that shows the line instead.
+`line: 0` answers "the file is shorter" rather than saying positions are 1-based.
+
+### Fix direction
+
+After the text check, confirm the resolved tree's name covers the position: reject positions inside
+comments (javac's comment ranges, or `DocTrees` for javadoc) and inside literals.
+Answer `line: 0` and `column: 0` with "positions are 1-based".
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
+
+### Observed behaviour
+
+- `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
+  `No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet
+  (run .lathe/lathe-sync.sh)`.
+  `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
+  and an agent following the advice runs a 2–3 minute sync for nothing.
+- `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
+  `is in no synced module — run .lathe/lathe-sync.sh`.
+- `run_test` on a test in a module the build leaves out (Helidon `webserver/tests/static-content`, behind the
+  `tests` profile) answers `no class test target in StaticContentTest.java`, as if the file held no test;
+  `get_diagnostics` on the same file correctly says the module is outside the build.
+  On a non-test file the same terse line gives no hint toward the matching test class.
+
+### Fix direction
+
+Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
+"this file is in no source root", and "this module is not in the last build (a profile may add it)".
+For a non-test file, name the test class that tests it when one exists.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27).
+
+### Observed behaviour
+
+Started where no `.lathe/` is above the working directory, `LatheMcpServer` logs one `SEVERE` line,
+`If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run …`, and exits
+with status 2.
+The line does not say what is missing or where it looked.
+An MCP client shows only that the server failed to connect; the agent gets no tool, no instructions and no hint.
+
+### Fix direction
+
+Start anyway and answer the handshake: the server instructions and every tool say that no `.lathe/` was
+found above the working directory, and give the setup remediation.
+The log line names the missing `.lathe/` and the directory searched.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
+`get_diagnostics` then ends with the right note, but with a doubled prefix:
+`Sync required: Lathe: .lathe/ was written by another Lathe version (schema 5, expected 6)`.
+`workspace_summary`, the tool the instructions tell an agent to call first, drops every `depends on`
+edge and carries no note.
+
+### Fix direction
+
+`workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
+
+**Status: documented**
+**Affects: MCP `search_symbols` and the editor's workspace symbols.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
+`com.sun.tools.javac.comp.WarningAnalyzer`, `com.sun.tools.javac.util.JCDiagnostic.Warning` and
+`javax.swing.plaf.metal.MetalBorders.WarningDialogBorder`: types in packages the JDK does not export, and
+no code in the project can use them.
+`*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
+
+### Fix direction
+
+Leave out JDK packages a module does not export, at least for a classpath module.
+Strip a leading or trailing `*` (or treat the query as a glob).
+Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
+[MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-39 — `find_references` lists generated code before the user's call sites
+
+**Status: documented**
+**Affects: MCP `find_references`.**
+Found by the pre-release probes (2026-10-27) on Helidon.
+
+### Observed behaviour
+
+On a Helidon builder method (`allowAll`), all of the first `maxResults=4` results are `[GENERATED]` builder
+internals, and none is a user call site.
+`rename_symbol` there correctly refuses generated code, but does not name the blueprint method to rename
+instead.
+
+### Fix direction
+
+Order hand-written sources before generated ones (and production before tests, as `analyze_change`
+counts them), so a capped answer shows what an agent edits.
+When refusing a generated symbol, name its blueprint declaration when the generator links one.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-40 — `verify_change` right after a rename recompiles for seconds
+
+**Status: documented**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier and Dropwizard.
+
+### Observed behaviour
+
+`rename_symbol` already compiles the changed files into the mirror before it returns, yet the
+`verify_change` that follows takes 6.8 s on EqualsVerifier (16 files) and 6.2 s on Dropwizard, and 18–23 s on
+Dropwizard while a Helidon build runs on the machine.
+The agent guide steers every rename into a `verify_change`, so each rename costs twice.
+
+### Fix direction
+
+Measure what `verify_change` recompiles after a rename; reuse the rename's compile results for the files it
+already compiled and check only their callers.
 
 ### Regression targets
 
