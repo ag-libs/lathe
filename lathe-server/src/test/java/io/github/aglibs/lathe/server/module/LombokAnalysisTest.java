@@ -144,6 +144,26 @@ class LombokAnalysisTest {
     }
   }
 
+  // A field and what Lombok generates from it go together: renaming either alone breaks them apart.
+  @Test
+  void renameConflict_lombokFieldOrGeneratedMember_refused_ordinaryMethodAllowed() {
+    try (var session = session()) {
+      session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
+
+      assertThat(
+              session.renameConflict(requestAt(position("private String name", "name")), "label"))
+          .hasValueSatisfying(
+              reason ->
+                  assertThat(reason).contains("Lombok generates getName(), setName() from it"));
+      assertThat(session.renameConflict(requestAt(position("+ getName()", "getName")), "label"))
+          .hasValueSatisfying(
+              reason -> assertThat(reason).contains("Lombok generates it from `name`"));
+      assertThat(
+              session.renameConflict(requestAt(position("String greeting", "greeting")), "hello"))
+          .isEmpty();
+    }
+  }
+
   private Position definitionAt(
       final SourceAnalysisSession session, final String context, final String token) {
     return session

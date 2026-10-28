@@ -2,6 +2,7 @@ package com.example.verify;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.itsupport.LspSession;
 import com.example.itsupport.McpSession;
@@ -18,6 +19,7 @@ import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
+import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.AfterAll;
@@ -79,6 +81,35 @@ class LombokTest {
                     .formatted(Os.json(PERSON), field[0], field[1])))
         .contains("User.java")
         .contains("Person.java");
+
+    final String person = Files.readString(PERSON);
+    assertThat(
+            mcp.callTool(
+                "rename_symbol",
+                "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"newName\":\"label\"}"
+                    .formatted(Os.json(PERSON), field[0], field[1])))
+        .contains("\"isError\":true")
+        .contains("Lombok generates getName(), setName() from it");
+    assertThat(Files.readString(PERSON)).isEqualTo(person);
+  }
+
+  // Renaming a field Lombok generates accessors from would leave their calls behind: the rename is
+  // refused with the reason, and nothing is edited.
+  @Test
+  void rename_lombokField_refusedWithTheReason() throws Exception {
+    final String uri = PERSON.toUri().toString();
+    final String content = Files.readString(PERSON);
+    session.openDoc(uri, content);
+
+    final var params =
+        new RenameParams(
+            new TextDocumentIdentifier(uri),
+            LspSession.findToken(content, "private String name", "name"),
+            "label");
+
+    assertThatThrownBy(() -> session.server.getTextDocumentService().rename(params).get(30, SECONDS))
+        .hasMessageContaining("Lombok generates getName(), setName() from it");
+    assertThat(Files.readString(PERSON)).isEqualTo(content);
   }
 
   // A save compiles the module with Lombok, so the class Lathe keeps gains what Lombok generates
