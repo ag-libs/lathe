@@ -369,6 +369,8 @@ None yet.
 ## EG-065 — Lombok projects: the server exits on the first compile, and generated members are invisible
 
 **Status: documented**
+Decision (2026-10-28): Lathe runs Lombok on every analysis compile, keystrokes included, when a module has
+it on its processor path; the measured cost below is accepted. Not yet scheduled.
 **Affects: the editor and MCP.**
 Found by the pre-release probes (2026-10-27) on a custom Maven project (JDK 21, Lombok 1.18.38 in the parent's
 `annotationProcessorPaths`, `@Data`/`@Builder`/`@Value`/`@Log`), and reported by a user in
@@ -431,7 +433,8 @@ The guides do not mention Lombok.
    reported to Lombok.
    Narrowing the process-fatal set to `VirtualMachineError` is deferred until GA (decision
    2026-10-27): until then a processor's `Error` should end the server visibly, and its cause be fixed.
-2. Parts 2 and 3: see the investigation below; the decision is pending.
+2. Parts 2 and 3: run Lombok on analysis compiles (decided 2026-10-28), then build definition and
+   references for generated members on it; see the investigation below.
 3. Document Lombok support and its limits in the guides.
 
 ### Investigation (2026-10-28)
@@ -471,7 +474,7 @@ body is `return this.name;` or `this.name = name;`. So, with Lombok on analysis 
 - Every feature reading the tree (semantic tokens, document symbols, unused-code hints, references, the
   MCP position check) needs checking against generated members; part of the 1–2 days part 2 takes.
 
-**Options.**
+**Options** (the first is chosen).
 - Part 2 as above, then 3a and 3b on top: about a week together. Cost: about 10 ms a keystroke, about
   2 ms a file in batch work, about 1 s per module once. Risk: a JDK Lombok does not support (27 for
   1.18.38) stops the server on open, not only on save; the project's own build fails there too.
