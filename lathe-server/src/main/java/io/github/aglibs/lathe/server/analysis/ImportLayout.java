@@ -49,8 +49,14 @@ public record ImportLayout(List<ImportLine> imports, Position fallback) {
                     new Range(entry.getKey(), entry.getKey()),
                     entry.getValue().stream()
                         .map("import %s;\n"::formatted)
-                        .collect(Collectors.joining())))
+                        .collect(Collectors.joining("", separator(), ""))))
         .toList();
+  }
+
+  // The first import of a file goes after the package clause, a blank line below it; the fallback
+  // is past line 0 exactly when a package clause is there.
+  private String separator() {
+    return imports.isEmpty() && fallback.getLine() > 0 ? "\n" : "";
   }
 
   private Position positionFor(final String spelling) {

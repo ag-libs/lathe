@@ -33,6 +33,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -207,10 +208,19 @@ public final class LatheEngine {
   }
 
   // An agent's column is easily off by one, and javac answers for the smallest tree around a
-  // position: a method for its modifiers or indentation, the class past a line's end. So the
-  // position tools answer only on a name, checked as text (one word on one line) because javac's
-  // trees give a declaration's span, not its name's.
+  // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
+  // method for a word in a comment. So the position tools answer only on a name: first a word
+  // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
   public boolean onName(final Path file, final int line, final int column) {
+    if (!onWord(file, line, column)) {
+      return false;
+    }
+
+    compileFromDisk(file); // register the file and warm its analysis before resolving
+    return await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)));
+  }
+
+  private boolean onWord(final Path file, final int line, final int column) {
     return sourceLine(file, line)
         .filter(text -> column >= 0 && column < text.length())
         .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))
@@ -408,9 +418,7 @@ public final class LatheEngine {
     final List<String> added =
         byUnambiguous.get(true).stream().map(item -> item.candidates().get(0)).sorted().toList();
     final String path =
-        added.isEmpty()
-            ? displayPath(file, uri)
-            : writeFile(file, uri, missing.layout().edits(added));
+        added.isEmpty() ? displayPath(file, uri) : writeFile(file, uri, missing.edits(added));
     return new LatheImports(path, added, byUnambiguous.get(false));
   }
 
@@ -572,13 +580,20 @@ public final class LatheEngine {
 
     final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    // Every check starts before any is awaited, so the modules compile side by side, each on its
+    // own worker; one at a time, a change with callers across a large reactor took seconds.
+    final Map<Path, CompletableFuture<List<Diagnostic>>> analyses =
+        targets.values().stream()
+            .flatMap(List::stream)
+            .distinct()
+            .collect(Collectors.toUnmodifiableMap(Function.identity(), this::analyze));
     final Set<Path> changedSet = Set.copyOf(changed);
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
                 entry ->
                     new LatheModuleDiagnostics(
-                        entry.getKey(), diagnose(entry.getValue(), changedSet)))
+                        entry.getKey(), diagnose(entry.getValue(), changedSet, analyses)))
             .filter(module -> !module.diagnostics().isEmpty())
             .toList();
     // Every caller is checked, however many: the line shows when that grows costly (a core type's
@@ -613,16 +628,20 @@ public final class LatheEngine {
   // An agent reads any count as something to fix: a caller's warnings predate the change, and hints
   // (unused code) say nothing about whether it compiles. Errors first. Freshened once by
   // verifyChange, not again for each file.
-  private List<LatheDiagnostic> diagnose(final List<Path> files, final Set<Path> changed) {
+  private List<LatheDiagnostic> diagnose(
+      final List<Path> files,
+      final Set<Path> changed,
+      final Map<Path, CompletableFuture<List<Diagnostic>>> analyses) {
     return files.stream()
-        .flatMap(file -> reportedIn(file, changed.contains(file)))
+        .flatMap(file -> reportedIn(file, changed.contains(file), await(analyses.get(file))))
         .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
         .toList();
   }
 
-  private Stream<LatheDiagnostic> reportedIn(final Path file, final boolean changedFile) {
+  private Stream<LatheDiagnostic> reportedIn(
+      final Path file, final boolean changedFile, final List<Diagnostic> diagnostics) {
     final String path = displayPath(file, file.toUri().toString());
-    return analyze(file).stream()
+    return diagnostics.stream()
         .filter(diagnostic -> reported(diagnostic, changedFile))
         .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
   }
@@ -683,13 +702,13 @@ public final class LatheEngine {
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
     await(service.reconcileForVerify());
-    return analyze(file);
+    return await(analyze(file));
   }
 
-  private List<Diagnostic> analyze(final Path file) {
+  private CompletableFuture<List<Diagnostic>> analyze(final Path file) {
     final var uri = LatheUri.fromPath(file);
     final String content = IOUtil.unchecked(() -> Files.readString(file));
-    return await(service.diagnosticsFuture(uri, content, VERSION));
+    return service.diagnosticsFuture(uri, content, VERSION);
   }
 
   public void close() {

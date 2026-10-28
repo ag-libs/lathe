@@ -523,6 +523,7 @@ Each command takes a **single object** passed as the sole element of the request
 | `:LatheTypeHierarchy` | `lathe.typeHierarchy` | position params |
 | `:LatheInstances` | `lathe.instantiations` | position params |
 | `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.missingImports` | `{ uri }` |
+| `:LatheMissingImports` — the edits for the chosen imports, placed by the server | `lathe.importEdits` | `{ uri, imports }` (the chosen candidates) |
 | `:LatheRun` / neotest / `:LatheDebug` — runnables of a file | `lathe.runnables.list` | `{ uri }` |
 | neotest — runnables of a directory (package run) | `lathe.runnables.dir` | `{ uri }` |
 | neotest — modules with tests | `lathe.tests.modules` | none |

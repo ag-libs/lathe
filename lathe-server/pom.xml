@@ -274,7 +274,12 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
+          <!-- Surefire opens only the packages of the selected test classes; the shared
+               SampleFixture (whose @TempDir field JUnit injects) lives in analysis, so a test
+               elsewhere that extends it fails when run alone with -Dtest. -->
           <argLine>@{argLine}
+            --add-opens
+            io.github.aglibs.lathe.server/io.github.aglibs.lathe.server.analysis=ALL-UNNAMED
             --add-exports
             jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED
             --add-exports

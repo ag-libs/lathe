@@ -59,7 +59,8 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     }
   }
 
-  private record Candidate(String name, long nodeStart, Kind kind) {
+  // nameOffset: where the declaration's name is, or -1 when it cannot be found.
+  private record Candidate(String name, long nameOffset, Kind kind) {
     Candidate {
       ValidCheck.check().notNull(name, "name").notNull(kind, "kind").validate();
     }
@@ -310,15 +311,10 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private Optional<Diagnostic> unusedDiag(
       final Candidate candidate, final boolean assignedButNeverRead) {
-    if (candidate.nodeStart() < 0) {
+    if (candidate.nameOffset() < 0) {
       return Optional.empty();
     }
-    final long nameOffset =
-        SourceLocator.findIdentifierFrom(content, candidate.nodeStart(), candidate.name());
-    if (nameOffset < 0) {
-      return Optional.empty();
-    }
-    final var start = SourceLocator.offsetToPosition(cu, nameOffset);
+    final var start = SourceLocator.offsetToPosition(cu, candidate.nameOffset());
     final var end = new Position(start.getLine(), start.getCharacter() + candidate.name().length());
     final String message =
         assignedButNeverRead
@@ -332,6 +328,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   }
 
   private Candidate candidateFor(final Tree node, final String name, final Kind kind) {
-    return new Candidate(name, positions.getStartPosition(cu, node), kind);
+    return new Candidate(
+        name, SourceLocator.declarationNameOffset(content, positions, cu, node, name), kind);
   }
 }

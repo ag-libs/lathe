@@ -148,6 +148,26 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(FIELD_SOURCE, "String name", "name")));
   }
 
+  // Rename edits these matches: with the field's name also in its annotation string, the string was
+  // reported as the declaration, so a rename rewrote the string and left the field.
+  @Test
+  void field_nameRepeatedInItsAnnotation_declarationSiteIsTheFieldName() throws IOException {
+    final var source =
+        """
+        class Test {
+            @SuppressWarnings("items") int items;
+            int twice() { return items * 2; }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "return items", "items");
+
+    assertThat(refs(analysis, target, true))
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "int items", "items"), posOf(source, "return items", "items"));
+  }
+
   @Test
   void field_parameterWithSameName_notConfusedWithField() throws IOException {
     final var source =
@@ -642,6 +662,40 @@ class ReferenceLocatorTest {
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "Item create", "Item")));
     assertThat(result)
         .anyMatch(l -> l.range().getStart().equals(posOf(source, "new Item()", "Item")));
+  }
+
+  // javac gives each enum constant an implicit type and `new` expression, positioned at the
+  // constant's name; neither spells the type, so neither is a use of the type or its constructor.
+  @Test
+  void type_enumConstants_onlySpelledUsesReported() throws IOException {
+    final var source =
+        """
+        enum Level {
+            LOW, HIGH(Level.max()) { int weight() { return 2; } };
+            Level() {}
+            Level(int n) {}
+            int weight() { return 1; }
+            static int max() { return 9; }
+            static Level parse() { return LOW; }
+        }
+        """;
+    final var analysis = compile(source);
+
+    final List<ReferenceMatch> typeUses =
+        refs(analysis, targetAt(analysis, "enum Level", "Level"), false);
+    final List<ReferenceMatch> constructorUses =
+        refs(analysis, targetAt(analysis, "Level(int n)", "Level"), false);
+    final List<ReferenceMatch> methodUses =
+        refs(analysis, targetAt(analysis, "static int max", "max"), false);
+
+    assertThat(typeUses)
+        .extracting(match -> match.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "Level.max", "Level"), posOf(source, "static Level parse", "Level"));
+    assertThat(constructorUses).isEmpty();
+    assertThat(methodUses)
+        .extracting(match -> match.range().getStart())
+        .containsExactly(posOf(source, "Level.max", "max"));
   }
 
   // --- locals ---

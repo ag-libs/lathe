@@ -112,7 +112,8 @@ class LatheLanguageServerTest {
             LatheWorkspaceService.MODULES_COMMAND,
             LatheWorkspaceService.PACKAGES_COMMAND,
             LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
-            LatheWorkspaceService.MISSING_IMPORTS_COMMAND);
+            LatheWorkspaceService.MISSING_IMPORTS_COMMAND,
+            LatheWorkspaceService.IMPORT_EDITS_COMMAND);
   }
 
   @Test

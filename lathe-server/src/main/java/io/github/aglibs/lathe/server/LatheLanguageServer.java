@@ -150,7 +150,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
                 LatheWorkspaceService.MODULES_COMMAND,
                 LatheWorkspaceService.PACKAGES_COMMAND,
                 LatheWorkspaceService.RESOLVE_CONTEXT_COMMAND,
-                LatheWorkspaceService.MISSING_IMPORTS_COMMAND)));
+                LatheWorkspaceService.MISSING_IMPORTS_COMMAND,
+                LatheWorkspaceService.IMPORT_EDITS_COMMAND)));
     capabilities.setExperimental(Map.of(LatheFlags.PROTOCOL_CAPABILITY, LatheFlags.LATHE_PROTOCOL));
     return capabilities;
   }

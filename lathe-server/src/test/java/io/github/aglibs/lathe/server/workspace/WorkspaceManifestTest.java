@@ -37,18 +37,35 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final var mismatched = WorkspaceManifest.load(tmp);
 
-    assertThat(matching.schemaMismatch()).isEmpty();
+    assertThat(matching.loadProblem()).isEmpty();
     assertThat(matching.runnerClasspath()).isNotEmpty();
     assertThat(matching.reactorRewrite().toLathe(appClasses))
         .isEqualTo(tmp.resolve(".lathe/app/classes"));
     assertThat(mismatched.runnerClasspath()).isEmpty();
     assertThat(mismatched.reactorRewrite().toLathe(appClasses)).isEqualTo(appClasses);
-    assertThat(mismatched.schemaMismatch())
+    assertThat(mismatched.loadProblem())
         .hasValueSatisfying(
             text ->
                 assertThat(text)
                     .contains("schema 0, expected %s".formatted(LatheLayout.SCHEMA_VERSION))
                     .contains(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
+  void load_unreadableFile_loadsEmptyWithTheCauseAndRemediation() throws Exception {
+    final Path latheDir = tmp.resolve(LatheLayout.LATHE_DIR);
+    Files.createDirectories(latheDir);
+    Files.writeString(latheDir.resolve(LatheLayout.WORKSPACE_JSON), "{\"schemaVersion\": [");
+
+    final var manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.typeIndexShardPaths()).isEmpty();
+    assertThat(manifest.loadProblem())
+        .hasValueSatisfying(
+            text ->
+                assertThat(text)
+                    .contains("could not be read (")
+                    .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND)));
   }
 
   @Test
@@ -124,6 +141,39 @@ class WorkspaceManifestTest extends SampleFixture {
     assertThat(manifest.containsFile(sourceFile)).isTrue();
     assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
     assertThat(manifest.depClasspathForFile(sourceFile)).containsExactly(selfJar, transitiveJar);
+  }
+
+  // Per-platform classifier jars of one artifact share its sources dir.
+  @Test
+  void load_classifierJarsSharingASourceDir_loadsWithTheFirstJar() throws Exception {
+    final Path sourceDir = tmp.resolve("sources/natives");
+    final Path sourceFile = sourceDir.resolve("com/example/Natives.java");
+    final Path linuxJar = tmp.resolve("repo/natives-linux-x86_64.jar");
+    final Path osxJar = tmp.resolve("repo/natives-osx-aarch_64.jar");
+    final Path otherJar = tmp.resolve("repo/other.jar");
+    writeWorkspaceManifest(
+        List.of(
+            new DependencyData(
+                "com.example:natives:1",
+                linuxJar.toString(),
+                SourceStatus.PRESENT,
+                sourceDir.toString(),
+                List.of(otherJar.toString()),
+                null),
+            new DependencyData(
+                "com.example:natives:1",
+                osxJar.toString(),
+                SourceStatus.PRESENT,
+                sourceDir.toString(),
+                List.of(),
+                null)));
+
+    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
+    assertThat(manifest.depClasspathForFile(sourceFile))
+        .startsWith(linuxJar, otherJar)
+        .contains(osxJar);
   }
 
   @Test

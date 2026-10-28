@@ -46,6 +46,23 @@ class UnusedDeclarationScannerTest {
         .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
   }
 
+  // The hint marks the field's name, not the same word in its annotation before it.
+  @Test
+  void compile_unusedFieldNamedInItsAnnotation_reportsHintOnName() {
+    final var source =
+        """
+        class Test {
+          @Deprecated(since = "flag") private int flag;
+        }
+        """;
+
+    final List<Diagnostic> hints = unusedHintsFor(source);
+
+    assertThat(hints).hasSize(1);
+    assertThat(hints.get(0).getRange().getStart())
+        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("int flag") + 4));
+  }
+
   @Test
   void compile_privateMethodCalledFromPublic_noHint() {
     assertThat(

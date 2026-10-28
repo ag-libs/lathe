@@ -1,6 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import java.util.HashSet;
@@ -86,7 +88,7 @@ public final class JavacDiagnosticMapper {
 
       final String code = codeEither.getLeft();
       if (code.startsWith("compiler.err.cant.resolve") && diag.getData() instanceof String name) {
-        diag.setData(new DiagnosticPayload(resolveKind(diag, analysis), name));
+        diag.setData(new DiagnosticPayload(resolveKind(diag, name, analysis), name));
       } else if (code.startsWith("compiler.err.unreported.exception")) {
         final Either<String, ?> msgEither = diag.getMessage();
         final String name =
@@ -124,7 +126,7 @@ public final class JavacDiagnosticMapper {
   }
 
   private static DiagnosticPayload.Kind resolveKind(
-      final Diagnostic diag, final AttributedFileAnalysis analysis) {
+      final Diagnostic diag, final String name, final AttributedFileAnalysis analysis) {
     if (analysis.tree() == null) {
       return DiagnosticPayload.Kind.TYPE_REF;
     }
@@ -137,6 +139,15 @@ public final class JavacDiagnosticMapper {
     final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
     if (path == null || path.getParentPath() == null) {
       return DiagnosticPayload.Kind.TYPE_REF;
+    }
+
+    // Only when the unresolved name is the qualifier itself: java.util.Lisst also starts at a
+    // qualifier (java), but names a member of it.
+    if (path.getParentPath().getLeaf() instanceof MemberSelectTree select
+        && select.getExpression() instanceof IdentifierTree qualifier
+        && qualifier == path.getLeaf()
+        && qualifier.getName().contentEquals(name)) {
+      return DiagnosticPayload.Kind.QUALIFIER_REF;
     }
 
     return switch (path.getParentPath().getLeaf().getKind()) {

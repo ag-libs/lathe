@@ -692,7 +692,7 @@ class LspSmokeTest {
                 assertThat(item.getAdditionalTextEdits())
                     .extracting(TextEdit::getNewText)
                     .containsExactly(
-                        "import static org.junit.jupiter.api.Assertions.assertTrue;\n"));
+                        "\nimport static org.junit.jupiter.api.Assertions.assertTrue;\n"));
   }
 
   private static void awaitCompletionLabel(final String uri, final Position pos, final String label)

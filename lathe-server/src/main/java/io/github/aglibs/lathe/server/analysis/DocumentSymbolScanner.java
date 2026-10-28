@@ -45,7 +45,7 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
 
     if (node.getPackageName() != null && node.getTypeDecls().isEmpty()) {
       final String name = node.getPackageName().toString();
-      add(symbol(node.getPackageName(), name, SymbolKind.Package, false));
+      add(symbol(node.getPackageName(), name, SymbolKind.Package));
       return null;
     }
 
@@ -55,7 +55,7 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
   @Override
   public Void visitModule(final ModuleTree node, final Void unused) {
     final String name = node.getName().toString();
-    add(symbol(node, name, SymbolKind.Module, false));
+    add(symbol(node, name, SymbolKind.Module));
     return null;
   }
 
@@ -68,7 +68,7 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
       return null;
     }
 
-    final var symbol = symbol(node, name, kind(node), false);
+    final var symbol = symbol(node, name, kind(node));
     add(symbol);
     stack.push(symbol);
     super.visitClass(node, unused);
@@ -81,8 +81,7 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
     final boolean constructor = node.getName().contentEquals("<init>");
     final String name =
         constructor && !stack.isEmpty() ? stack.peek().getName() : node.getName().toString();
-    final var symbol =
-        symbol(node, name, constructor ? SymbolKind.Constructor : SymbolKind.Method, false);
+    final var symbol = symbol(node, name, constructor ? SymbolKind.Constructor : SymbolKind.Method);
     add(symbol);
     stack.push(symbol);
     super.visitMethod(node, unused);
@@ -94,7 +93,7 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
   public Void visitVariable(final VariableTree node, final Void unused) {
     final var parent = getCurrentPath().getParentPath();
     if (parent != null && parent.getLeaf() instanceof ClassTree && !stack.isEmpty()) {
-      add(symbol(node, node.getName().toString(), SymbolKind.Field, true));
+      add(symbol(node, node.getName().toString(), SymbolKind.Field));
     }
 
     return super.visitVariable(node, unused);
@@ -112,29 +111,21 @@ final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
     }
   }
 
-  private DocumentSymbol symbol(
-      final Tree node, final String name, final SymbolKind kind, final boolean useLastName) {
+  private DocumentSymbol symbol(final Tree node, final String name, final SymbolKind kind) {
     final var positions = trees.getSourcePositions();
     final long start = positions.getStartPosition(compilationUnit, node);
     final long end = positions.getEndPosition(compilationUnit, node);
+    final long nameStart =
+        SourceLocator.declarationNameOffset(source, positions, compilationUnit, node, name);
+    final long safeStart = nameStart >= 0L ? nameStart : start;
     return new DocumentSymbol(
-        name, kind, range(start, end), selectionRange(start, end, name, useLastName));
+        name, kind, range(start, end), range(safeStart, safeStart + name.length()));
   }
 
   private Range range(final long start, final long end) {
     return new Range(
         SourceLocator.offsetToPosition(compilationUnit, start),
         SourceLocator.offsetToPosition(compilationUnit, end));
-  }
-
-  private Range selectionRange(
-      final long start, final long end, final String name, final boolean useLastName) {
-    final long nameStart =
-        useLastName
-            ? SourceLocator.findLastIdentifierBetween(source, start, end, name)
-            : SourceLocator.findIdentifierFrom(source, start, name);
-    final long safeStart = nameStart >= 0L ? nameStart : start;
-    return range(safeStart, safeStart + name.length());
   }
 
   private static SymbolKind kind(final ClassTree node) {

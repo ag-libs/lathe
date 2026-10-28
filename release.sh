@@ -120,7 +120,7 @@ git diff --quiet -- "${files[@]}" \
 # docs (a version in prose) would ship stale, so stop and name it.
 git fetch --tags --quiet 2>/dev/null || true
 previous="$(latest_release_version)"
-if [ -n "$previous" ] && git grep -n -w -F "$previous" "${public_docs[@]}"; then
+if [ -n "$previous" ] && git --no-pager grep -n -w -F "$previous" "${public_docs[@]}"; then
   git checkout -- "${files[@]}"
   die "the lines above still name ${previous} — update them (or the patterns above), then rerun"
 fi

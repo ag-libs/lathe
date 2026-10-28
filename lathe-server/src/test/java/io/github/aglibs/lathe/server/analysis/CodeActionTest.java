@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CodeAction;
@@ -150,7 +151,7 @@ class CodeActionTest {
             action ->
                 assertThat(action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI))
                     .extracting(TextEdit::getNewText)
-                    .containsExactly("import static java.util.Objects.requireNonNull;\n"));
+                    .containsExactly("\nimport static java.util.Objects.requireNonNull;\n"));
     assertThat(codeActions(diagnosticActions(UNRESOLVED_MEMBERS, diags)))
         .extracting(CodeAction::getTitle)
         .noneMatch(title -> title.startsWith("Import 'static"));
@@ -170,6 +171,117 @@ class CodeActionTest {
                 "requireNonNull", List.of("static java.util.Objects.requireNonNull")),
             new MissingImportsResult.MissingImport(
                 "emptyList", List.of("static java.util.Collections.emptyList")));
+  }
+
+  // --- Qualifiers: an unresolved X in X.member may be a type or a statically imported field ---
+
+  private static final String UNRESOLVED_QUALIFIERS =
+      """
+      package com.example;
+
+      class Test {
+        void m(Object o) {
+          Objects.requireNonNull(o);
+          Duration.ofSeconds(1);
+          separator.length();
+          typo.run();
+          java.util.Lisst.of();
+        }
+      }
+      """;
+
+  private static final LearnedStaticImports LEARNED_FIELD =
+      new LearnedStaticImports(Map.of("java.io.File.separator", 1));
+
+  private WorkspaceTypeIndex qualifierIndex() throws IOException {
+    return TempSourceCompiler.typeIndex(
+        tmp.resolve("qualifier_index.json"),
+        new TypeIndexEntry(
+            "Objects", "java.util.Objects", "java.util", TypeKind.CLASS, true, List.of()),
+        new TypeIndexEntry(
+            "Duration", "java.time.Duration", "java.time", TypeKind.CLASS, true, List.of()),
+        new TypeIndexEntry(
+            "Duration",
+            "javax.xml.datatype.Duration",
+            "javax.xml.datatype",
+            TypeKind.CLASS,
+            true,
+            List.of()));
+  }
+
+  // The qualifier itself is classified as one; a qualified name that misses its last part
+  // (java.util.Lisst) starts at a qualifier too, but names something else.
+  @Test
+  void compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself() {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, UNRESOLVED_QUALIFIERS, 1, CompileMode.OPEN);
+
+    final Map<String, DiagnosticPayload.Kind> kinds =
+        diags.stream()
+            .filter(d -> d.getData() instanceof DiagnosticPayload)
+            .map(d -> (DiagnosticPayload) d.getData())
+            .collect(
+                Collectors.toMap(DiagnosticPayload::name, DiagnosticPayload::kind, (a, b) -> a));
+    assertThat(kinds)
+        .containsEntry("Objects", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .containsEntry("Duration", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .containsEntry("separator", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .containsEntry("typo", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .doesNotContainEntry("Lisst", DiagnosticPayload.Kind.QUALIFIER_REF);
+  }
+
+  // A qualifier gets the type import and the learned static import, a blank line below the package.
+  @Test
+  void codeAction_unresolvedQualifier_offersTypeAndStaticImports() throws IOException {
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, UNRESOLVED_QUALIFIERS, 1, CompileMode.OPEN);
+
+    final var actions =
+        session.codeAction(
+            TempSourceCompiler.TEST_URI,
+            UNRESOLVED_QUALIFIERS,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            qualifierIndex(),
+            LEARNED_FIELD);
+
+    assertThat(codeActions(actions))
+        .extracting(CodeAction::getTitle)
+        .contains(
+            "Import 'java.util.Objects'",
+            "Import 'java.time.Duration'",
+            "Import 'javax.xml.datatype.Duration'",
+            "Import 'static java.io.File.separator'");
+    assertThat(codeActions(actions))
+        .filteredOn(action -> action.getTitle().equals("Import 'java.util.Objects'"))
+        .singleElement()
+        .satisfies(
+            action ->
+                assertThat(action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI))
+                    .extracting(TextEdit::getNewText)
+                    .containsExactly("\nimport java.util.Objects;\n"));
+    assertThat(actions)
+        .filteredOn(Either::isLeft)
+        .extracting(action -> action.getLeft().getCommand())
+        .containsExactly("lathe.missingImports");
+  }
+
+  // Missing imports lists each qualifier with every candidate of either kind: a single one is
+  // added, several are a choice, and a qualifier matching nothing is a typo, left out.
+  @Test
+  void missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates() throws IOException {
+    final var result =
+        session.missingImports(
+            TempSourceCompiler.TEST_URI, UNRESOLVED_QUALIFIERS, 1, qualifierIndex(), LEARNED_FIELD);
+
+    assertThat(candidatesOf(result, "Objects")).containsExactly("java.util.Objects");
+    assertThat(candidatesOf(result, "Duration"))
+        .containsExactlyInAnyOrder("java.time.Duration", "javax.xml.datatype.Duration");
+    assertThat(candidatesOf(result, "separator")).containsExactly("static java.io.File.separator");
+    assertThat(result.items())
+        .extracting(MissingImportsResult.MissingImport::name)
+        .doesNotContain("typo");
   }
 
   @Test
@@ -240,7 +352,7 @@ class CodeActionTest {
 
     final var edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.get(0).getNewText()).isEqualTo("import java.util.ArrayList;\n");
+    assertThat(edits.get(0).getNewText()).isEqualTo("\nimport java.util.ArrayList;\n");
     assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(1);
   }
 
@@ -558,7 +670,7 @@ class CodeActionTest {
 
     final var importEdit =
         edits.stream().filter(e -> e.getNewText().contains("import")).findFirst().orElseThrow();
-    assertThat(importEdit.getNewText()).isEqualTo("import java.io.IOException;\n");
+    assertThat(importEdit.getNewText()).isEqualTo("\nimport java.io.IOException;\n");
   }
 
   @Test

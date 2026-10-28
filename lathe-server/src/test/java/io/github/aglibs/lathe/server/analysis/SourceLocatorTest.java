@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
@@ -301,28 +302,135 @@ class SourceLocatorTest extends SampleFixture {
     assertThat(param.getKind()).isEqualTo(ElementKind.PARAMETER);
   }
 
-  // --- identifier lookup ---
+  // --- declaration names ---
+
+  // Each declaration repeats its name before it (an annotation string, the type itself); the name
+  // is found after the modifiers and type, never inside them.
+  private static final String REPEATED_NAMES =
+      """
+      class Test {
+        @SuppressWarnings("items") int items;
+        @SuppressWarnings("run") void run() {}
+        Test Test;
+        @SuppressWarnings("Test") Test() {}
+        void take(@SuppressWarnings("arg") int arg) {
+          var local = arg;
+          Runnable lambda = () -> {};
+        }
+        enum Color { Color }
+        record Point(@SuppressWarnings("x") int x) {}
+      }
+      @SuppressWarnings("Other") class Other {}
+      """;
 
   @Test
-  void findLastIdentifierBetween_repeatedIdentifier_returnsLastBoundedMatch() {
-    final String source = "class Foo { Foo Foo; }";
+  void declarationNameOffset_nameRepeatedBeforeIt_findsTheDeclaredName() {
+    try (var compiler = new TempSourceCompiler()) {
+      final var analysis =
+          compiler
+              .compile(TempSourceCompiler.TEST_URI, REPEATED_NAMES, CompileMode.OPEN)
+              .fileAnalysis();
 
-    final long result =
-        SourceLocator.findLastIdentifierBetween(
-            source, source.indexOf("{"), source.indexOf(";"), "Foo");
-
-    assertThat(result).isEqualTo(source.lastIndexOf("Foo"));
+      assertFindsName(analysis, "int items", 4, "items");
+      assertFindsName(analysis, "void run", 5, "run");
+      assertFindsName(analysis, "Test Test;", 5, "Test");
+      assertFindsName(analysis, "Test() {}", 0, "Test");
+      assertFindsName(analysis, "int arg", 4, "arg");
+      assertFindsName(analysis, "var local", 4, "local");
+      assertFindsName(analysis, "Runnable lambda", 9, "lambda");
+      assertFindsName(analysis, "{ Color }", 2, "Color");
+      assertFindsName(analysis, "int x)", 4, "x");
+      assertFindsName(analysis, "class Other", 6, "Other");
+    }
   }
 
+  // The declaration found at the name's place, then its name looked up from that tree.
+  private static void assertFindsName(
+      final AttributedFileAnalysis analysis,
+      final String context,
+      final int nameColumn,
+      final String name) {
+    final long declared = REPEATED_NAMES.indexOf(context) + nameColumn;
+    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), declared);
+
+    assertThat(
+            SourceLocator.declarationNameOffset(
+                REPEATED_NAMES,
+                analysis.trees().getSourcePositions(),
+                analysis.tree(),
+                path.getLeaf(),
+                name))
+        .as(context)
+        .isEqualTo(declared);
+  }
+
+  // --- onName ---
+
+  // Each word below looks like a name; only some are names to javac.
+  private static final String WORDS =
+      """
+      import java.util.List;
+
+      class Test {
+        // items in a line comment
+        /** The items, see {@link List}. */
+        List<String> items;
+        Runnable anonymous = new Runnable() { /* items */ public void run() {} };
+
+        Test() {}
+
+        int size() {
+          String note = "items in a string";
+          String block = \"""
+              items in a text block
+              \""";
+          java.util.function.Supplier<Integer> count = items::size;
+          return items.size() + note.length() + block.length() + foo(/* items */ 1);
+        }
+
+        int foo(int x) { return x; }
+      }
+      """;
+
   @Test
-  void findLastIdentifierBetween_partialIdentifier_returnsNoMatch() {
-    final String source = "class Test { int Foobar; }";
+  void onName_namesInCode_accepted_wordsInCommentsAndLiterals_rejected() {
+    try (var compiler = new TempSourceCompiler()) {
+      final var analysis =
+          compiler.compile(TempSourceCompiler.TEST_URI, WORDS, CompileMode.OPEN).fileAnalysis();
 
-    final long result =
-        SourceLocator.findLastIdentifierBetween(
-            source, source.indexOf("{"), source.indexOf(";"), "Foo");
+      assertOnName(analysis, "java.util.List;", 0, true); // an import's qualifier
+      assertOnName(analysis, "java.util.List;", 10, true); // an import's type
+      assertOnName(analysis, "{@link List}", 7, true); // a Javadoc reference
+      assertOnName(analysis, "List<String> items;", 0, true); // a type
+      assertOnName(analysis, "List<String> items;", 13, true); // a field's name
+      assertOnName(analysis, "class Test", 6, true); // a class's name
+      assertOnName(analysis, "Test() {}", 0, true); // a constructor's name
+      assertOnName(analysis, "int size()", 4, true); // a method's name
+      assertOnName(analysis, "String note", 7, true); // a local's name
+      assertOnName(analysis, "items::size", 7, true); // a method reference's name
+      assertOnName(analysis, "items.size()", 0, true); // a qualifier
+      assertOnName(analysis, "items.size()", 6, true); // a member select's name
 
-    assertThat(result).isEqualTo(-1L);
+      assertOnName(analysis, "// items in a line", 3, false);
+      assertOnName(analysis, "The items, see", 4, false); // Javadoc text
+      assertOnName(analysis, "/* items */ public", 3, false); // in an anonymous class body
+      assertOnName(analysis, "\"items in a string", 1, false);
+      assertOnName(analysis, "items in a text block", 0, false);
+      assertOnName(analysis, "/* items */ 1", 3, false); // in the middle of a call
+    }
+  }
+
+  private static void assertOnName(
+      final AttributedFileAnalysis analysis,
+      final String context,
+      final int column,
+      final boolean expected) {
+    final long offset = WORDS.indexOf(context) + column;
+    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+
+    assertThat(IOUtil.unchecked(() -> SourceLocator.onName(analysis, path, offset)))
+        .as("%s at %d", context, column)
+        .isEqualTo(expected);
   }
 
   // --- offsetToPosition ---

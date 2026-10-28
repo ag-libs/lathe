@@ -7,6 +7,52 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-11 — Missing-import fixes skip a type used as a method-call qualifier — done
+
+**Status: done — Target: next.**
+**Affects: MCP `fix_imports`; the editor's import quick fix and "Add missing imports" read the same
+diagnostic classification but were not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard; reproduced on EqualsVerifier.
+
+### Observed behaviour
+
+A file with no imports that uses `Objects.requireNonNull(o)`, `Collections.emptyList()` and
+`ConcurrentHashMap<String, String> map`:
+`fix_imports` adds only `java.util.concurrent.ConcurrentHashMap`.
+`Objects` and `Collections` each have one JDK match, yet they are neither added nor listed as unmatched.
+For `Duration.seconds(1)` with two candidates it answers "No import added" with no ambiguous list,
+although the agent guide promises both lists.
+The added import also lands on the line right under `package`, with no blank line between them.
+
+`JavacDiagnosticMapper.resolveKind` sends a name whose parent is a member select to the
+`default -> VARIABLE_REF` branch, and `SourceAnalysisSession` offers type imports only for `TYPE_REF`.
+
+### Fix direction
+
+Classify an unresolved simple name that qualifies a member select (`Name.member(...)`, `Name.FIELD`) as a
+possible type, and offer the type imports for it as well.
+Keep one blank line between `package` and the first import.
+
+### Resolution
+
+Fixed in a1eadaab. A member-select qualifier gets its own kind, `QUALIFIER_REF`, since it may be a type
+to import or a statically imported field (Helidon uses statically imported constants as qualifiers in
+about 75 files). `resolveKind` returns it only when the unresolved name is the qualifier identifier itself
+(`java.util.Lisst` starts at a qualifier but names a member of it). `DiagnosticPayload.Kind` gained
+`offersTypeImport()` and `offersStaticImport()`, so the code actions, the "Add missing imports" trigger,
+missing imports and the type-index lookup ask what a kind offers. Missing imports lists each name once
+with candidates of both kinds; a name with none is still listed only as a plain type.
+`ImportLayout` puts a blank line between the package clause and a file's first import.
+
+### Regression targets
+
+- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`
+- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports`
+- `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`
+- `ImportAnalyzerTest.layout_noImports_placesBelowThePackageAfterABlankLineOrAtTheStart`
+
+---
+
 ## EG-061 — Renaming a method also renames an override that implements a second, unrelated method — done
 
 **Status: done — Target: next.**
@@ -8367,6 +8413,50 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-19 — Two servers on one workspace compile the same change at once, and one records a sound file as failed — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP**, whenever two Lathe servers share a workspace: an editor's and an agent's,
+or two agent sessions.
+Found by the pre-release probes (2026-10-27) on Helidon, with `dev/mcp_staleness.py` (scenarios N1, N1b),
+first recorded as "an outside edit to a Helidon blueprint sometimes does not regenerate its builder".
+
+### Observed behaviour
+
+N1 adds an option to a blueprint outside the editor and then uses the generated accessor.
+In the failing run the use stayed `cannot find symbol latheProbeOpt` after 8 s, and the generated
+`AllowListConfig.java` in `.lathe/` never gained the option; that run's first compiles took 24 ms and
+86 ms (`failed=1`).
+It did not reproduce alone, after the `pom` or `two` scenarios, or in two more full runs.
+
+### Cause (2026-10-28)
+
+With one server, 15 full Helidon runs with `LATHE_DEBUG=1` passed N1 and N1b every time.
+With two servers on the checkout, both reacting to the same blueprint edit, it failed in the first
+round: both compiled `common/configurable` at once into the same `.lathe/` output, one moved on to the
+downstream test while the other was still rewriting the generated builder, read it half-written, and
+failed. A failed file is recorded with its mtime and not retried until it changes again, so the
+server kept the stale error. Servers shared only the compile stamps on disk; nothing kept two of them
+from writing the same module together.
+
+### Resolution
+
+A server's write pass runs under `.lathe/write.lock`, an exclusive `FileLock` taken without waiting
+(`LatheLock.tryExclusive`) before the pass scans and released when it ends; the operating system releases
+it if the process dies. While another server holds it, the pass retries every 100 ms, so the server
+keeps answering. When the other pass ends, its stamps show what it wrote as current, and this pass does
+not compile it again.
+On the Helidon race (two MCP servers, the N1 edit, both queried at once),
+10 of 10 rounds pass, each change compiled once by one server, with no failed compile.
+
+### Regression targets
+
+- `WritePassTest.reconcileNow_anotherServerHoldsTheWriteLock_waitsForItThenWrites`: a pass does not
+  write while another holder has the lock, and writes once it is released.
+- `LatheLockTest.tryExclusive_heldOrReleased_emptyUntilTheHolderCloses`.
+
+---
+
 ## WS-18 — A source whose time changed but whose content did not is recompiled in-process — done
 
 **Status: done — Target: next.**
@@ -10207,6 +10297,88 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-40 — `verify_change` right after a rename recompiles for seconds — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier and Dropwizard.
+
+### Observed behaviour
+
+`rename_symbol` already compiles the changed files into the mirror before it returns, yet the
+`verify_change` that follows took 6.8 s on EqualsVerifier (16 files) and 6.2 s on Dropwizard, and 18–23 s on
+Dropwizard while a Helidon build ran on the machine.
+The agent guide steers every rename into a `verify_change`, so each rename costs twice.
+
+### Cause (2026-10-28)
+
+Not a recompile of what the rename wrote: `verify_change` checks the changed files and their callers, and
+checked them one at a time. Renaming `Duration.toMilliseconds` on Dropwizard (15 files) gives 111 files in
+22 modules to check, at about 45 ms each: 5.0 s of the call's 5.6 s.
+On EqualsVerifier, renaming `usingGetClass` (14 files) now checks 19 files in 2 modules, and the call takes
+0.8 s.
+
+### Resolution
+
+`LatheEngine.verifyChange` starts every file's check before it awaits any, so the modules compile side by
+side, each on its own worker, within the compile admission's one-per-core limit.
+On the same Dropwizard rename the check takes 1.9 s instead of 5.0 s, and the call 2.5 s instead of 5.6 s,
+with the same result. One javac task per module for its files would cut more, if a larger reactor needs it.
+
+### Regression targets
+
+The engine's existing `verify_change` tests cover the result; the time was measured by hand on Dropwizard.
+
+---
+
+## MC-34 — Position tools still answer for the enclosing tree inside comments and string literals — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+[MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
+made a position off a name an error, but `LatheEngine.onName` checks only that the text under the column
+is a word, so a word inside a comment, javadoc or string literal passes:
+
+| Position (EqualsVerifier) | Answer |
+|---|---|
+| a word in the javadoc of `Warning.ALL_FIELDS_SHOULD_BE_USED` (`get_definition`) | the enclosing `enum Warning` |
+| a word in the string argument of `new ModuleException("…", e)` in `Rethrow` (`get_definition`) | the `ModuleException` constructor |
+| the same (`find_references`) | the constructor's 3 call sites |
+| the same (`describe_symbol`) | the parameter `String message` |
+| the same (`rename_symbol`) | `No references to rename.` with `isError=false` |
+
+The guide promises an error that shows the line instead.
+`line: 0` answers "the file is shorter" rather than saying positions are 1-based.
+
+### Fix direction
+
+After the text check, confirm the resolved tree's name covers the position: reject positions inside
+comments (javac's comment ranges, or `DocTrees` for javadoc) and inside literals.
+Answer `line: 0` and `column: 0` with "positions are 1-based".
+
+### Resolution
+
+After the word check, `LatheEngine.onName` asks the server whether javac's tree has a name exactly at
+the position (`SourceLocator.onName`): an identifier, the name ending a member select or method
+reference, a declaration's own name, or a Javadoc reference (`JavadocReferenceResolver`). Comments
+are not in javac's tree and a literal has no name, so a word in either answers the "must be on a name"
+error that shows the line; no comment is scanned. What cannot be checked (a file no module compiles)
+passes, and the tool answers for it as before. A line or column below 1 answers "Positions are
+1-based". The declaration-name check relies on names being found after a declaration's annotations
+and type (`SourceLocator.declarationNameOffset`), which also fixed a rename that rewrote an annotation
+string spelling the field's name instead of the field.
+
+### Regression targets
+
+- `SourceLocatorTest.onName_namesInCode_accepted_wordsInCommentsAndLiterals_rejected`
+- `SourceLocatorTest.declarationNameOffset_nameRepeatedBeforeIt_findsTheDeclaredName`
+- `LatheEngineTest.onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink`
+- `LatheMcpToolsTest.describeSymbol_positionNotOnAName_returnsErrorShowingTheLine` (the 1-based answer)
+
+---
 
 ## MC-25 — No workspace summary tool: an agent cannot ask which modules exist and what they depend on — done
 

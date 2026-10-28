@@ -83,6 +83,7 @@ import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -204,6 +205,9 @@ final class WorkspaceSession {
   private CompletableFuture<List<Path>> runningPass;
   private CompletableFuture<List<Path>> nextPass;
   private boolean nextPassEager;
+  // The running pass's hold on .lathe/'s write lock, which another Lathe server on this workspace
+  // (an editor's and an agent's) takes for its passes too.
+  private Closeable writeLock;
   private long passGeneration;
   // What the passes owe once none is left to run: the module dirs whose open files to re-analyze,
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
@@ -1762,14 +1766,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
 
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
@@ -1849,7 +1846,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
-    final var request = renameRequest(openFile, pos);
+    final var request = featureRequest(openFile, pos);
     return module
         .worker()
         .resolveRenameTarget(request)
@@ -1989,7 +1986,7 @@ final class WorkspaceSession {
     }
 
     final var cursorWorker = module.worker();
-    final var request = renameRequest(openFile, pos);
+    final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         workspace.moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
@@ -2043,14 +2040,10 @@ final class WorkspaceSession {
             });
   }
 
-  private SourceFeatureRequest renameRequest(final OpenDocument openFile, final Position pos) {
+  // The request a position feature sends to the module's worker, for the open document.
+  private SourceFeatureRequest featureRequest(final OpenDocument doc, final Position pos) {
     return new SourceFeatureRequest(
-        openFile.uri(),
-        openFile.content(),
-        openFile.version(),
-        pos,
-        workspace.allSourceRoots(),
-        manifest);
+        doc.uri(), doc.content(), doc.version(), pos, workspace.allSourceRoots(), manifest);
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(
@@ -2064,14 +2057,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
 
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
@@ -2333,14 +2319,7 @@ final class WorkspaceSession {
         uri,
         List.of(),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
               .resolveTarget(request)
@@ -2461,18 +2440,24 @@ final class WorkspaceSession {
         uri,
         null,
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .hover(request)
               .exceptionally(ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null));
         });
+  }
+
+  // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
+  // check) passes, and the tool gives its own answer.
+  CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
+    return openDocFeature(
+        uri,
+        true,
+        (worker, doc) ->
+            worker
+                .onName(featureRequest(doc, pos))
+                .exceptionally(
+                    ex -> logAndReturn(ex, "[onName] failed for %s".formatted(uri), true)));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
@@ -2480,14 +2465,7 @@ final class WorkspaceSession {
         uri,
         null,
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .signatureHelp(request)
               .exceptionally(
@@ -2505,14 +2483,7 @@ final class WorkspaceSession {
         uri,
         Either.forLeft(List.of()),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .definition(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -2535,14 +2506,7 @@ final class WorkspaceSession {
         uri,
         Either.forLeft(List.of()),
         (worker, doc) -> {
-          final var request =
-              new SourceFeatureRequest(
-                  doc.uri(),
-                  doc.content(),
-                  doc.version(),
-                  pos,
-                  workspace.allSourceRoots(),
-                  manifest);
+          final var request = featureRequest(doc, pos);
           return worker
               .declaration(request)
               .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
@@ -2562,14 +2526,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    final var request =
-        new SourceFeatureRequest(
-            openFile.uri(),
-            openFile.content(),
-            openFile.version(),
-            pos,
-            workspace.allSourceRoots(),
-            manifest);
+    final var request = featureRequest(openFile, pos);
     final var indexSnapshot = typeIndex;
     final var lambdaSnapshot = reactorLambdaImplementors;
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
@@ -2900,14 +2857,7 @@ final class WorkspaceSession {
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request =
-                  new SourceFeatureRequest(
-                      doc.uri(),
-                      doc.content(),
-                      doc.version(),
-                      pos,
-                      workspace.allSourceRoots(),
-                      manifest);
+              final var request = featureRequest(doc, pos);
               return worker.prepareCallHierarchy(request);
             })
         .thenApply(
@@ -2928,14 +2878,7 @@ final class WorkspaceSession {
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request =
-                  new SourceFeatureRequest(
-                      doc.uri(),
-                      doc.content(),
-                      doc.version(),
-                      pos,
-                      workspace.allSourceRoots(),
-                      manifest);
+              final var request = featureRequest(doc, pos);
               return worker.prepareTypeHierarchy(request, indexSnapshot);
             })
         .thenApply(
@@ -3078,7 +3021,7 @@ final class WorkspaceSession {
 
     final Set<String> neededTypeNames =
         requests.stream()
-            .filter(r -> r.payload().kind() == DiagnosticPayload.Kind.TYPE_REF)
+            .filter(r -> r.payload().kind().offersTypeImport())
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
@@ -3423,7 +3366,10 @@ final class WorkspaceSession {
       final var deletedClassFiles =
           stream
               .filter(path -> path.getFileName().toString().endsWith(".class"))
-              .filter(path -> !keptBinaryNames.contains(toBinaryName(config, path)))
+              .filter(
+                  path ->
+                      !keptBinaryNames.contains(
+                          FileUtil.classBinaryName(config.latheClassesDir(), path)))
               .filter(path -> classOutputOf(source, path))
               .toList();
       deletedClassFiles.forEach(path -> IOUtil.unchecked(() -> Files.deleteIfExists(path)));
@@ -3502,14 +3448,29 @@ final class WorkspaceSession {
     final var pass = new CompletableFuture<List<Path>>();
     runningPass = pass;
     pass.whenComplete((stale, error) -> endPass(stale == null ? List.of() : stale));
+    runLocked(eager, pass);
+    return pass;
+  }
+
+  // Two servers writing one module at once can read each other's half-written classes and record a
+  // sound file as failed. So a pass runs under .lathe/'s write lock, taken before it scans: after
+  // the other server's pass, its stamps show what it wrote as current, and this one skips it.
+  private void runLocked(final boolean eager, final CompletableFuture<List<Path>> pass) {
     try {
+      final Optional<Closeable> lock =
+          LatheLock.tryExclusive(
+              LatheLayout.writeLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
+      if (lock.isEmpty()) {
+        worker.schedule(WRITE_LOCK_KEY, WRITE_LOCK_RETRY_MS, () -> runLocked(eager, pass));
+        return;
+      }
+
+      writeLock = lock.get();
       runPass(eager, pass);
-    } catch (final RuntimeException e) {
+    } catch (final IOException | RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
       pass.completeExceptionally(e); // never leave a pass running, or every later request waits
     }
-
-    return pass;
   }
 
   // One pass: drop the classes of deleted sources, claim the stale sources that are ready, copy
@@ -3602,6 +3563,11 @@ final class WorkspaceSession {
   // wrote, so its answer covers both passes' stale sources.
   private void endPass(final List<Path> finished) {
     runningPass = null;
+    if (writeLock != null) {
+      IOUtil.unchecked(writeLock::close);
+      writeLock = null;
+    }
+
     final CompletableFuture<List<Path>> next = nextPass;
     if (next == null) {
       refreshAfterPasses();
@@ -4041,7 +4007,7 @@ final class WorkspaceSession {
         files.stream().filter(this::uncheckable).map(this::notCheckedReason).toList();
     return new LatheNotes(
         notCompiled,
-        Stream.concat(pendingBuildFiles, manifest.schemaMismatch().stream()).toList(),
+        Stream.concat(pendingBuildFiles, manifest.loadProblem().stream()).toList(),
         notChecked,
         reactorBuildInProgress());
   }
@@ -4623,13 +4589,6 @@ final class WorkspaceSession {
     return ClassSourceFile.of(classFile).filter(sourceName::equals).isPresent();
   }
 
-  private static String toBinaryName(final ModuleSourceConfig config, final Path classFile) {
-    final var relative = config.latheClassesDir().relativize(classFile).toString();
-    return relative
-        .substring(0, relative.length() - ".class".length())
-        .replace(classFile.getFileSystem().getSeparator(), ".");
-  }
-
   // Once a rename's first file is saved, this long without another of its files' events commits
   // the saved ones, so an editor that never saves the rest cannot hold the others back.
   private static final long RENAME_IDLE_MS = 10_000;
@@ -4637,6 +4596,9 @@ final class WorkspaceSession {
   // A rename none of whose files shows the edit this long after the response was never applied.
   private static final long RENAME_UNAPPLIED_MS = 30_000;
   private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
+  // How soon a pass tries again for the write lock another server holds.
+  private static final long WRITE_LOCK_RETRY_MS = 100;
+  private static final String WRITE_LOCK_KEY = "write-lock";
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
@@ -4755,11 +4717,12 @@ final class WorkspaceSession {
     showWorkspaceStatus("Lathe: workspace reloaded.");
   }
 
-  // A workspace.json from another schema loads as empty, so say why instead of "ready".
+  // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
+  // instead of "ready".
   private void showWorkspaceStatus(final String okText) {
     client.showMessage(
         manifest
-            .schemaMismatch()
+            .loadProblem()
             .map(text -> new MessageParams(MessageType.Warning, text))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }

@@ -49,6 +49,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String PACKAGES_COMMAND = "lathe.packages";
   static final String RESOLVE_CONTEXT_COMMAND = "lathe.resolveContext";
   static final String MISSING_IMPORTS_COMMAND = "lathe.missingImports";
+  static final String IMPORT_EDITS_COMMAND = "lathe.importEdits";
 
   private static final Gson GSON = new Gson();
 
@@ -101,6 +102,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case PACKAGES_COMMAND -> packages(params);
       case RESOLVE_CONTEXT_COMMAND -> resolveContext(params);
       case MISSING_IMPORTS_COMMAND -> missingImports(params);
+      case IMPORT_EDITS_COMMAND -> importEdits(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -291,6 +293,18 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService.missingImportsFuture(uriArgument(json)).thenApply(result -> result);
+  }
+
+  // The edits for the imports a client chose from lathe.missingImports, placed by the server so
+  // each
+  // goes to its sorted place in its group.
+  private CompletableFuture<Object> importEdits(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    final List<String> chosen =
+        json.getAsJsonArray("imports").asList().stream().map(JsonElement::getAsString).toList();
+    return textDocumentService
+        .missingImportsFuture(uriArgument(json))
+        .thenApply(result -> result.edits(chosen));
   }
 
   private static String parseCancelArgument(final Object argument) {

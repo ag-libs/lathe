@@ -19,7 +19,7 @@ Without a project that hurdle is the whole experience: the user opens a `Main.ja
 | Have a JDK | §4 here: detected and explained, never installed. |
 | Have Maven | Not needed: the generated project carries the Maven Wrapper (§5). |
 | Start a new project | This design. |
-| Open an existing project | [Personal setup](../potential/lathe-personal-setup.md), still undecided. |
+| Open an existing project | [`:LatheInit`](../potential/lathe-init.md) (personal mode), potential. |
 | First build | §6 here, and the client's first-run UX (§7 there) for existing projects. |
 | Lathe starts | Picked up without a reload (§7), shared with the client's first-run UX. |
 | Run `main`, run tests | [Run and Test in VS Code](lathe-vscode-run-test.md), phase 3. |
@@ -70,7 +70,7 @@ Downloading a JDK was considered and left out: it is a system-level install with
   The release profile stamps the release version into the `.vsix` through `vsce`, so the extension and the Lathe build always match.
   A dev build pins `0.1.0-SNAPSHOT`, which resolves from `~/.m2` after `mvn install`.
 - **Maven version:** the newest release Lathe's CI covers (3.10.0 today), so the wrapper downloads a Maven that is known to work.
-  Maven 3.10 also reads `~/.m2/extensions.xml`, which [personal setup](../potential/lathe-personal-setup.md) may build on.
+  Maven 3.10 also reads `~/.m2/extensions.xml`, which [`:LatheInit` personal mode](../potential/lathe-init.md) may build on.
 - **Maven Wrapper:** the novice needs no Maven installation, the build uses a known Maven version, and the scripts can be run by their full path, as the portability rules require.
   The "only-script" wrapper downloads Maven on first use (with `curl`/`wget` on Linux and macOS, PowerShell on Windows); no binary is committed.
   `mvnw` is written with mode `0755`, so the user can also run `./mvnw` in a terminal.
@@ -152,4 +152,4 @@ The wrapper scripts are the exception worth a check: they are long, and vendorin
 
 - **Template build test:** prove the generated project really builds with Lathe, e.g. an invoker fixture produced from the template, so it can't go stale unnoticed.
 - **Gradle:** a build-tool choice in the same command, likely wrapping `gradle init`.
-- **Existing projects:** [personal setup](../potential/lathe-personal-setup.md) decides how a novice gets Lathe into a project they didn't create.
+- **Existing projects:** [`:LatheInit` personal mode](../potential/lathe-init.md) decides how a novice gets Lathe into a project they didn't create.

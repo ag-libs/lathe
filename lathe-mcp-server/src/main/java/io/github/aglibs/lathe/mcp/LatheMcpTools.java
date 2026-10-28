@@ -687,6 +687,10 @@ final class LatheMcpTools {
       return error(notAJavaSource(file));
     }
 
+    if (line < 1 || column < 1) {
+      return error("Positions are 1-based: line and column start at 1.");
+    }
+
     return guarded(
         tool,
         file,

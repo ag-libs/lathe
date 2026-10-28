@@ -150,6 +150,16 @@ final class FileUtilTest {
     assertThat(FileUtil.slashed(tempDir.relativize(tempDir))).isEmpty();
   }
 
+  @Test
+  void classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage() {
+    final Path root = tempDir.resolve("classes");
+
+    assertThat(FileUtil.classBinaryName(root, root.resolve("com/example/Foo$Inner.class")))
+        .isEqualTo("com.example.Foo$Inner");
+    assertThat(FileUtil.classBinaryName(root, root.resolve("module-info.class")))
+        .isEqualTo("module-info");
+  }
+
   // MCP session logs are named for their start time, so the last in name order are the newest.
   @Test
   void deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone() throws IOException {

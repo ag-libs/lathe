@@ -209,6 +209,22 @@ final class ReferenceLocator extends SourceTreeLocator {
     }
 
     scanJavadocReferences();
+    // javac gives an enum constant an implicit type, `new` expression and, for a constant with a
+    // body, `extends` clause, all positioned at its name; none spells the enum, so only what the
+    // source writes (annotations, arguments, body members) counts.
+    final var element = trees.getElement(getCurrentPath());
+    if (node.getInitializer() instanceof final NewClassTree init
+        && element != null
+        && element.getKind() == ElementKind.ENUM_CONSTANT) {
+      scan(node.getModifiers(), null);
+      scan(init.getArguments(), null);
+      if (init.getClassBody() != null) {
+        scan(init.getClassBody().getMembers(), null);
+      }
+
+      return null;
+    }
+
     return super.visitVariable(node, ignored);
   }
 
@@ -369,8 +385,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   }
 
   private void addDeclarationMatch(final Tree node, final String name) {
-    final long namePos =
-        SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+    final long namePos = SourceLocator.declarationNameOffset(content, positions, cu, node, name);
     if (namePos >= 0) {
       addMatch(namePos, name.length(), ReferenceRole.DECLARATION);
     }

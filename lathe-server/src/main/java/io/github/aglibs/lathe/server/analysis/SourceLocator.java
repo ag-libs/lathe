@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
@@ -9,7 +10,9 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -169,9 +172,139 @@ public final class SourceLocator {
       return Optional.empty();
     }
     final CharSequence content = cu.getSourceFile().getCharContent(false);
-    final long idx = findIdentifierFrom(content.toString(), declStart, name);
+    final long idx =
+        declarationNameOffset(
+            content.toString(), trees.getSourcePositions(), cu, path.getLeaf(), name);
     final long nameOffset = idx >= 0 ? idx : declStart;
     return Optional.of(offsetToPosition(cu, nameOffset));
+  }
+
+  // A declaration's name offset, or -1. javac's public API gives where a declaration starts, not
+  // where its name is, so the name is found in the text, searched for after the declaration's
+  // modifiers and type: an annotation argument or a type argument there may spell the same word
+  // (@JsonProperty("name") String name). A comment between the type and the name still can; no
+  // public API reads comments, and none was found in Helidon, Dropwizard or EqualsVerifier.
+  public static long declarationNameOffset(
+      final String content,
+      final SourcePositions positions,
+      final CompilationUnitTree cu,
+      final Tree declaration,
+      final String name) {
+    final long start = positions.getStartPosition(cu, declaration);
+    if (start < 0) {
+      return -1;
+    }
+
+    final long afterPrefix =
+        findIdentifierFrom(content, Math.max(start, prefixEnd(positions, cu, declaration)), name);
+    return afterPrefix >= 0 ? afterPrefix : findIdentifierFrom(content, start, name);
+  }
+
+  // Whether a name sits exactly at offset: an identifier, the name ending a member select or method
+  // reference, a declaration's own name, or a Javadoc reference. A word in a comment or a literal
+  // is none of these, though it looks like a name: javac has no tree there, and answers for the
+  // enclosing one (the method, the class, the variable a string is assigned to).
+  public static boolean onName(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset)
+      throws IOException {
+    if (path != null && nameCovers(analysis, path, offset)) {
+      return true;
+    }
+
+    return JavadocReferenceResolver.referenceAt(analysis, offset) != null;
+  }
+
+  private static boolean nameCovers(
+      final AttributedFileAnalysis analysis, final TreePath path, final long offset)
+      throws IOException {
+    final Tree leaf = path.getLeaf();
+    if (leaf instanceof IdentifierTree) {
+      return true;
+    }
+
+    final SourcePositions positions = analysis.trees().getSourcePositions();
+    final CompilationUnitTree cu = analysis.tree();
+    final long end = positions.getEndPosition(cu, leaf);
+    if (leaf instanceof final MemberSelectTree select) {
+      return within(offset, end - select.getIdentifier().length(), select.getIdentifier().length());
+    }
+
+    if (leaf instanceof final MemberReferenceTree reference) {
+      return within(offset, end - reference.getName().length(), reference.getName().length());
+    }
+
+    final String name = declaredName(path);
+    if (name == null || name.isEmpty()) {
+      return false; // not a declaration, or an anonymous class
+    }
+
+    final String content = cu.getSourceFile().getCharContent(false).toString();
+    return within(offset, declarationNameOffset(content, positions, cu, leaf, name), name.length());
+  }
+
+  private static boolean within(final long offset, final long start, final int length) {
+    return start >= 0 && offset >= start && offset < start + length;
+  }
+
+  // The name a declaration declares, as written; a constructor's is its class's.
+  private static String declaredName(final TreePath path) {
+    final Tree leaf = path.getLeaf();
+    if (leaf instanceof final ClassTree type) {
+      return type.getSimpleName().toString();
+    }
+
+    if (leaf instanceof final VariableTree variable) {
+      return variable.getName().toString();
+    }
+
+    if (leaf instanceof final TypeParameterTree parameter) {
+      return parameter.getName().toString();
+    }
+
+    if (!(leaf instanceof final MethodTree method)) {
+      return null;
+    }
+
+    if (method.getName().contentEquals("<init>")
+        && path.getParentPath().getLeaf() instanceof final ClassTree owner) {
+      return owner.getSimpleName().toString();
+    }
+
+    return method.getName().toString();
+  }
+
+  // Where the part of a declaration before its name ends: its type (a variable's, a method's return
+  // type), else its modifiers; -1 where javac has no position for them (var, an implicit lambda
+  // parameter, a constructor without modifiers).
+  private static long prefixEnd(
+      final SourcePositions positions, final CompilationUnitTree cu, final Tree declaration) {
+    final long typeEnd = endOf(positions, cu, typeOf(declaration));
+    return typeEnd >= 0 ? typeEnd : endOf(positions, cu, modifiersOf(declaration));
+  }
+
+  private static Tree typeOf(final Tree declaration) {
+    if (declaration instanceof final VariableTree variable) {
+      return variable.getType();
+    }
+
+    return declaration instanceof final MethodTree method ? method.getReturnType() : null;
+  }
+
+  private static Tree modifiersOf(final Tree declaration) {
+    if (declaration instanceof final VariableTree variable) {
+      return variable.getModifiers();
+    }
+
+    if (declaration instanceof final MethodTree method) {
+      return method.getModifiers();
+    }
+
+    return declaration instanceof final ClassTree type ? type.getModifiers() : null;
+  }
+
+  private static long endOf(
+      final SourcePositions positions, final CompilationUnitTree cu, final Tree tree) {
+    return tree == null ? -1 : positions.getEndPosition(cu, tree);
   }
 
   public static Element elementAt(final Trees trees, final TreePath path) {
@@ -428,25 +561,6 @@ public final class SourceLocator {
       }
     }
     return -1;
-  }
-
-  public static long findLastIdentifierBetween(
-      final String content, final long fromOffset, final long toOffset, final String name) {
-    final int nameLen = name.length();
-    final int limit = Math.min(content.length(), (int) toOffset);
-    long result = -1L;
-    long cursor = Math.max(0L, fromOffset);
-    while (cursor < limit) {
-      final long candidate = findIdentifierFrom(content, cursor, name);
-      if (candidate < 0 || candidate + nameLen > limit) {
-        break;
-      }
-
-      result = candidate;
-      cursor = candidate + 1L;
-    }
-
-    return result;
   }
 
   private static int indexIn(final List<? extends Tree> list, final Tree target) {

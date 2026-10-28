@@ -395,15 +395,15 @@ reused):
 ## Potential Designs
 
 - [Potential Design Policy](potential/README.md)
-- [Personal Setup](potential/lathe-personal-setup.md) — **potential; one part agreed.** Records the
-  2026-10-18 and 2026-10-24 discussions on using Lathe without changing the project, in VS Code/Cursor,
-  Neovim, Zed, Emacs and the terminal. Covers personal vs team mode; activation via
-  `-Dmaven.ext.class.path` (Maven 3.0.2+) or `~/.m2/extensions.xml` (3.10+), replayed by the generated
-  sync script; option A (jars in the `.vsix`) vs option B (a coordinate-invoked setup goal, the OpenJDK
-  front-end's pattern); per-editor journeys; detect-and-explain; open questions and spikes. Agreed
-  (2026-10-24): the path from personal to team mode — an explicit command, one previewed
-  `.mvn/extensions.xml` change pinning the running version, a re-sync without the activation line,
-  and the project's registration winning over any other copy.
+- [`:LatheInit`: Set Up Any Folder](potential/lathe-init.md) — **potential; direction decided,
+  spikes partly run (2026-10-28).** Merges Personal Setup and Plain Java Without a Build Tool. One
+  `:LatheInit` dialog, its default detected from the opened folder: Plain Java (a generated,
+  user-owned `.lathe-pom.xml` run by a bundled Maven Wrapper), Maven personal (Lathe activated with
+  `-Dmaven.ext.class.path` and two jars, no project change), Maven team (the agreed previewed
+  `.mvn/extensions.xml` step), Sync, OpenJDK, later Gradle. Records the spikes (personal activation,
+  double registration, plain mode's first build, compile errors, runs, resources, stdin), the open
+  issues (compile errors in personal mode, runs without stdin, JDK lookup, flat layouts), the
+  alternatives set aside, and a survey of how other IDEs handle folders with no build.
 - [Lessons from Metals v2](potential/lathe-metals-v2-lessons.md) — **potential.** Review of the
   Metals v2 Java language server (2026-10-25), judged by Lathe's simplicity: most of Metals'
   complexity comes from not trusting the build. Recommends `TaskListener` cancellation, a saved

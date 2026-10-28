@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -10,6 +11,7 @@ import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -147,12 +149,16 @@ final class JavacRunner {
     }
   }
 
-  // Not derived from jfo.toUri(): javac canonicalizes output paths, so under a symlinked workspace
-  // (macOS /var -> /private/var) they no longer start with the configured class-output root.
-  private Set<String> writtenBinaryNames(final Iterable<? extends JavaFileObject> generated) {
+  // Not fm.inferBinaryName: javac's implementation calls a method Lombok's wrapper of the written
+  // file lacks (AbstractMethodError). javac reports outputs at their resolved path, so the root is
+  // resolved too, or a symlinked workspace (macOS /var -> /private/var) would not match.
+  private Set<String> writtenBinaryNames(final Iterable<? extends JavaFileObject> generated)
+      throws IOException {
+    final Path root =
+        fm.getLocationAsPaths(StandardLocation.CLASS_OUTPUT).iterator().next().toRealPath();
     final Set<String> names = new HashSet<>();
     for (final var jfo : generated) {
-      names.add(fm.inferBinaryName(StandardLocation.CLASS_OUTPUT, jfo));
+      names.add(FileUtil.classBinaryName(root, Path.of(jfo.toUri()).toRealPath()));
     }
 
     return Set.copyOf(names);

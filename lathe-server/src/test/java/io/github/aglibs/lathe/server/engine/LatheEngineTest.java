@@ -198,6 +198,35 @@ class LatheEngineTest {
     assertThat(engine.onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
   }
 
+  // A word in a comment or a string looks like a name, but javac would answer there for the
+  // enclosing class, method or variable.
+  @Test
+  void onName_wordsInCommentsAndStrings_falseButTrueOnANameAndAJavadocLink() throws Exception {
+    final String javadoc = "/** Greets, see {@link Object}. */";
+    final String method = "  String greet() { return \"greet the world\"; }";
+    final Path file =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Words.java",
+            String.join(
+                "\n",
+                "package com.example;",
+                "",
+                javadoc,
+                "class Words {",
+                "  // greet the world",
+                method,
+                "}",
+                ""));
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.onName(file, 2, javadoc.indexOf("Greets"))).as("Javadoc text").isFalse();
+    assertThat(engine.onName(file, 2, javadoc.indexOf("Object"))).as("a {@link}").isTrue();
+    assertThat(engine.onName(file, 4, 5)).as("a line comment").isFalse();
+    assertThat(engine.onName(file, 5, method.indexOf("greet"))).as("the method's name").isTrue();
+    assertThat(engine.onName(file, 5, method.indexOf("\"greet") + 1)).as("a string").isFalse();
+  }
+
   @Test
   void describe_methodInADependencySource_returnsSignatureAndJavadoc() throws Exception {
     final Path sourceDir = tmp.resolve("sources/lib");
@@ -381,6 +410,20 @@ class LatheEngineTest {
         .singleElement()
         .asString()
         .contains("another Lathe version")
+        .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
+  }
+
+  @Test
+  void notes_unreadableManifest_syncRequiredWithTheCommand() throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON), "not json");
+    engine = new LatheEngine(tmp);
+
+    assertThat(engine.notes(List.of()).syncRequired())
+        .singleElement()
+        .asString()
+        .contains("could not be read")
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
@@ -909,7 +952,7 @@ class LatheEngineTest {
             tuple("Widget", List.of("com.example.a.Widget", "com.example.b.Widget")),
             tuple("Fooo", List.of()));
     assertThat(Files.readString(source))
-        .startsWith("package com.example.app;\nimport com.example.util.Helper;\nclass App {");
+        .startsWith("package com.example.app;\n\nimport com.example.util.Helper;\nclass App {");
 
     final LatheImports again = engine.fixImports(source);
 
@@ -939,7 +982,7 @@ class LatheEngineTest {
     assertThat(imports.unresolved()).isEmpty();
     assertThat(Files.readString(source))
         .startsWith(
-            "package com.example;\nimport static java.util.Objects.requireNonNull;\n"
+            "package com.example;\n\nimport static java.util.Objects.requireNonNull;\n"
                 + "class Unchecked {");
   }
 

@@ -60,6 +60,9 @@ public final class LatheLayout {
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";
   public static final String MODULE_LOCK_FILE = "module.lock";
+  // Held by the Lathe server that is writing .lathe/, so two servers on one workspace (an editor's
+  // and an agent's) never write the same output at once.
+  public static final String WRITE_LOCK_FILE = "write.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
@@ -125,6 +128,11 @@ public final class LatheLayout {
   public static final String SCHEMA_REMEDIATION =
       "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."
           .formatted(SYNC_SCRIPT_COMMAND);
+
+  // The remaining %s is the error's root cause.
+  public static final String MANIFEST_UNREADABLE_REMEDIATION =
+      "Lathe: %s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
+          .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}
 
@@ -310,6 +318,10 @@ public final class LatheLayout {
   // .lathe/<module>/, relative to the workspace root ("" or "." for the root module).
   public static Path moduleDir(final String module) {
     return Path.of(LATHE_DIR, module);
+  }
+
+  public static Path writeLockFile(final Path latheDir) {
+    return latheDir.resolve(WRITE_LOCK_FILE);
   }
 
   public static Path moduleLockFile(final Path moduleDir) {

@@ -77,8 +77,11 @@ class ImportAnalyzerTest {
             tuple(new Position(6, 0), "import java.util.Set;\n"));
   }
 
+  // The first imports go a blank line below the package clause, as the build's formatter keeps
+  // them;
+  // a file without one gets them at the very start.
   @Test
-  void layout_noImports_placesAfterThePackageOrAtTheStart() throws IOException {
+  void layout_noImports_placesBelowThePackageAfterABlankLineOrAtTheStart() throws IOException {
     final var afterPackage =
         layoutOf(
             """
@@ -88,9 +91,15 @@ class ImportAnalyzerTest {
             """);
     final var atStart = layoutOf("class Foo {}\n");
 
-    assertThat(afterPackage.edit("java.util.List").getRange().getStart())
-        .isEqualTo(new Position(1, 0));
-    assertThat(atStart.edit("java.util.List").getRange().getStart()).isEqualTo(new Position(0, 0));
+    assertThat(afterPackage.edits(List.of("java.util.List", "static java.util.Objects.isNull")))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(
+            tuple(
+                new Position(1, 0),
+                "\nimport static java.util.Objects.isNull;\nimport java.util.List;\n"));
+    assertThat(atStart.edit("java.util.List"))
+        .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
+        .containsExactly(new Position(0, 0), "import java.util.List;\n");
   }
 
   private ImportLayout layoutOf(final String source) throws IOException {

@@ -4,6 +4,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -23,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.IntConsumer;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -394,6 +396,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
     return SignatureHelpResolver.resolve(
         cur.analysis(), cur.path(), offset, parser, allRoots(request), javadocLocator);
+  }
+
+  // Whether the request's position is on a name, not on a word of a comment or a literal; true
+  // when the file has no analysis to check against.
+  public boolean onName(final SourceFeatureRequest request) {
+    final CursorContext cur = resolve(request);
+    return cur == null
+        || IOUtil.unchecked(() -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset()));
   }
 
   public Hover hover(final SourceFeatureRequest request) {
@@ -1070,13 +1080,19 @@ public final class SourceAnalysisSession implements AutoCloseable {
                             .stream(),
                         declareProvider.provide(request, analysis, typeIndex).stream())
                     .toList();
+            case QUALIFIER_REF ->
+                Stream.concat(
+                        importProvider.provide(request, analysis, typeIndex).stream(),
+                        ImportQuickFixProvider.staticImportActions(request, analysis, staticImports)
+                            .stream())
+                    .toList();
             case MISSING_METHOD_IMPL -> missingImplProvider.provide(request, analysis, typeIndex);
           };
 
       addUnique(actions, seen, provided);
     }
 
-    if (requests.stream().anyMatch(r -> r.payload().kind() == DiagnosticPayload.Kind.TYPE_REF)) {
+    if (requests.stream().anyMatch(r -> r.payload().kind().offersTypeImport())) {
       actions.add(
           Either.forLeft(
               new Command(
@@ -1117,40 +1133,46 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final Set<String> alreadyImported = importAnalyzer.importedQualifiedNames();
-    final Stream<MissingImportsResult.MissingImport> types =
-        unresolvedNames(diags, DiagnosticPayload.Kind.TYPE_REF).entrySet().stream()
+    final Map<String, Position> typeNames =
+        unresolvedNames(diags, DiagnosticPayload.Kind::offersTypeImport);
+    final Map<String, Position> memberNames =
+        unresolvedNames(diags, DiagnosticPayload.Kind::offersStaticImport);
+    final Set<String> plainTypeNames =
+        unresolvedNames(diags, kind -> kind == DiagnosticPayload.Kind.TYPE_REF).keySet();
+    // A qualifier (Objects in Objects.requireNonNull) may be either, so it gets both kinds of
+    // candidate. A name with none is listed only as a plain type, to say nothing matched it; any
+    // other such name is a typo, not an import to add.
+    final List<MissingImportsResult.MissingImport> items =
+        Stream.concat(typeNames.keySet().stream(), memberNames.keySet().stream())
+            .distinct()
             .map(
-                unresolved ->
-                    new MissingImportsResult.MissingImport(
-                        unresolved.getKey(),
-                        ImportCandidates.resolve(
-                            unresolved.getKey(),
-                            unresolved.getValue(),
-                            analysis,
-                            typeIndex,
-                            alreadyImported)));
-    // Only members something can import are listed: any other unresolved name is a typo, not an
-    // import to add.
-    final Stream<MissingImportsResult.MissingImport> members =
-        unresolvedNames(diags, DiagnosticPayload.Kind.VARIABLE_REF).keySet().stream()
-            .map(
-                name ->
-                    new MissingImportsResult.MissingImport(
-                        name,
-                        StaticImportCandidates.importSpellings(staticImports, analysis, name)))
-            .filter(member -> !member.candidates().isEmpty());
-    final List<MissingImportsResult.MissingImport> items = Stream.concat(types, members).toList();
+                name -> {
+                  final List<String> types =
+                      typeNames.containsKey(name)
+                          ? ImportCandidates.resolve(
+                              name, typeNames.get(name), analysis, typeIndex, alreadyImported)
+                          : List.of();
+                  final List<String> statics =
+                      memberNames.containsKey(name)
+                          ? StaticImportCandidates.importSpellings(staticImports, analysis, name)
+                          : List.of();
+                  return new MissingImportsResult.MissingImport(
+                      name, Stream.concat(types.stream(), statics.stream()).toList());
+                })
+            .filter(item -> !item.candidates().isEmpty() || plainTypeNames.contains(item.name()))
+            .toList();
 
     LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
     return new MissingImportsResult(layout.get(), items);
   }
 
-  // Distinct unresolved type names in encounter order, each mapped to the first diagnostic position
-  // that reported it (used to compute the accessibility scope for candidate resolution).
+  // Distinct unresolved names of the matching kinds in encounter order, each mapped to the first
+  // diagnostic position that reported it (used to compute the accessibility scope for candidate
+  // resolution).
   private static Map<String, Position> unresolvedNames(
-      final List<Diagnostic> diags, final DiagnosticPayload.Kind kind) {
+      final List<Diagnostic> diags, final Predicate<DiagnosticPayload.Kind> kinds) {
     return diags.stream()
-        .filter(d -> d.getData() instanceof DiagnosticPayload p && p.kind() == kind)
+        .filter(d -> d.getData() instanceof DiagnosticPayload p && kinds.test(p.kind()))
         .collect(
             Collectors.toMap(
                 d -> ((DiagnosticPayload) d.getData()).name(),

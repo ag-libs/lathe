@@ -209,6 +209,8 @@ class LatheMcpToolsTest {
                   .contains("must be on a name. Line 2 reads: public void run() {}");
             });
     assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
+    assertThat(text(describe(file, 0, 1)))
+        .isEqualTo("Positions are 1-based: line and column start at 1.");
     assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
   }
 

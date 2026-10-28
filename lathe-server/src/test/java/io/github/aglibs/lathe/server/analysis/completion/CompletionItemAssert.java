@@ -17,10 +17,12 @@ final class CompletionItemAssert extends AbstractAssert<CompletionItemAssert, Co
     return hasImportTextEdit("import static %s;\n".formatted(qualifiedName));
   }
 
+  // The blank line a file's first import gets below its package is ImportAnalyzerTest's concern.
   private CompletionItemAssert hasImportTextEdit(final String importText) {
     isNotNull();
     final var edits = actual.getAdditionalTextEdits();
-    if (edits == null || edits.stream().noneMatch(e -> importText.equals(e.getNewText()))) {
+    if (edits == null
+        || edits.stream().noneMatch(e -> importText.equals(e.getNewText().stripLeading()))) {
       failWithMessage(
           "Expected item <%s> to have additional text edit <%s> but additional edits were <%s>",
           actual.getLabel(), importText, edits);
