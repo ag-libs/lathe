@@ -180,8 +180,7 @@ public final class RenameConflicts {
     return found != null && VARIABLES.contains(found.getKind()) && named(found, newName);
   }
 
-  // What Lombok generates follows its field, so renaming either alone breaks them apart: a
-  // generated
+  // What Lombok generates follows its field, so renaming one alone breaks them apart: a generated
   // member's name comes back, and a field's renamed accessors leave their calls behind.
   private static Optional<String> lombokRefusal(final Element element) {
     if (SourceLocator.isGenerated(element)) {

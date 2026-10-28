@@ -132,8 +132,7 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // Lombok changes the class it compiles in place, so an analysis runs it, alone, when the build
-  // has
+  // Lombok changes the class it compiles in place, so an analysis runs it, alone, when a build has
   // it; a build with <proc>none</proc> runs no processor, and neither does its analysis.
   @Test
   @EnabledForJreRange(maxVersion = LombokFixtures.MAX_JDK)

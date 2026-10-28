@@ -296,8 +296,7 @@ public final class SourceLocator {
   }
 
   // Lombok marks each member it generates with @lombok.Generated, unless lombok.config turns that
-  // off. Such a member takes the span of the code it comes from (a field's name, the annotation),
-  // so
+  // off. Such a member takes the span of the code it comes from (a field's name, an annotation), so
   // what maps source positions to trees skips it.
   public static boolean isGenerated(final Tree tree) {
     final ModifiersTree modifiers = modifiersOf(tree);
