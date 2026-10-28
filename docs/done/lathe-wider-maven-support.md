@@ -322,7 +322,7 @@ Rough effort: S1 half a day, S2 1.5–2 days, S3 half a day to a day, S4 about 1
 
 - **[Multi-OS Design](lathe-multi-os.md):** the CI matrix grows along three axes: OS, Maven version, and JDK.
   Its platform table's "Java 21+" becomes "Java 17+" once D7 lands. D5's pre-flight check lives in `SyncCommand` (multi-OS D3) and uses its tool resolver (D9) to find the wrapper.
-- **[Personal Setup](../potential/lathe-personal-setup.md) (potential):** with real users on older Maven, `-Dmaven.ext.class.path` (works since Maven 3.0.2) is the main personal-mode path, and `~/.m2/extensions.xml` (Maven 3.10+) the minority path. D1 matters for personal mode too: the extension must load on old Maven whichever way it is registered.
+- **[`:LatheInit` personal mode](../potential/lathe-init.md) (potential):** with real users on older Maven, `-Dmaven.ext.class.path` (works since Maven 3.0.2) is the main personal-mode path, and `~/.m2/extensions.xml` (Maven 3.10+) the minority path. D1 matters for personal mode too: the extension must load on old Maven whichever way it is registered.
 - **[Gradle support](../planned/lathe-gradle-support.md):** benefits from D7.
   The Gradle plugin targets Java 17, so the Gradle daemon may run on 17 (Gradle 9's own minimum),
   and test workers that Gradle toolchains run on 17 can load `lathe-junit`.

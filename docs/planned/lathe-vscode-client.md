@@ -15,7 +15,7 @@
 > This doc captures the scope, launch/distribution model, source-of-truth decision, naming, first-run
 > UX, and end-to-end testing. Feature designs that build on it:
 > [Run and Test in VS Code](lathe-vscode-run-test.md), [New Java Project](lathe-vscode-new-project.md),
-> and, for existing projects, [Personal Setup](../potential/lathe-personal-setup.md).
+> and, for existing projects, [`:LatheInit` personal mode](../potential/lathe-init.md).
 
 ## Goal
 
@@ -263,7 +263,7 @@ unremovable ratings). Silence is the enemy. Five layered defenses, strongest fir
      *"Run the build"* (`process-test-classes` as a VS Code **Task**, with the project's `mvnw` or the
      found `mvn` run by its full path, never a bare tool name), *"Setup guide"*, *"Don't show again"*.
    - *A Maven project that doesn't register Lathe*: running the build would load no Lathe, so the
-     offer is [Personal Setup](../potential/lathe-personal-setup.md) ("Set up Lathe for this project?
+     offer is [`:LatheInit` personal mode](../potential/lathe-init.md) ("Set up Lathe for this project?
      Your project files won't be changed."), once it is built.
    - *No project open*: the [New Java Project](lathe-vscode-new-project.md) command.
 

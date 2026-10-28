@@ -613,7 +613,7 @@ The design here is what those summaries implement; it doesn't replace them.
 ### Neovim release track
 
 Agreed 2026-10-24: the editor-neutral work and its Neovim adoption ship first, as a release of the server and the Neovim plugin only.
-VS Code (phase 3) and [personal setup](../potential/lathe-personal-setup.md) come later.
+VS Code (phase 3) and [`:LatheInit` personal mode](../potential/lathe-init.md) come later.
 The release happens when it works well, not on a date.
 Work happens on the `nvim-run-test` branch, one slice at a time, each with its own approved design summary.
 
