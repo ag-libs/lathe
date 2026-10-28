@@ -1,4 +1,4 @@
-package com.example.verify;
+package com.example.itsupport;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -9,6 +9,8 @@ import com.google.gson.JsonObject;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -17,14 +19,17 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
+import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.ExecuteCommandParams;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
 import org.eclipse.lsp4j.InitializedParams;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
+import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
 import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
@@ -34,18 +39,18 @@ import org.eclipse.lsp4j.services.LanguageServer;
 
 // The real server, started from the fixture's launcher as an editor starts it, and the client end
 // of its LSP connection.
-final class LspSession {
+public final class LspSession {
 
-  static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
+  public static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
   private static final Path LAUNCHER =
       Path.of(System.getProperty("lathe.cache"))
           .resolve("servers")
           .resolve(System.getProperty("lathe.version"))
           .resolve(Os.script("lathe-launcher"));
 
-  final LanguageServer server;
-  final CapturingClient client;
-  final InitializeResult initResult;
+  public final LanguageServer server;
+  public final CapturingClient client;
+  public final InitializeResult initResult;
   private final Process process;
 
   private LspSession(
@@ -59,7 +64,7 @@ final class LspSession {
     this.initResult = initResult;
   }
 
-  static LspSession start(final ClientCapabilities capabilities) throws Exception {
+  public static LspSession start(final ClientCapabilities capabilities) throws Exception {
     final var client = new CapturingClient();
     final var pb = new ProcessBuilder(LAUNCHER.toString());
     // Editors start the launcher from the workspace root, where it finds .lathe/jvm.args.
@@ -93,11 +98,11 @@ final class LspSession {
     return new LspSession(process, server, client, initResult);
   }
 
-  void stop() {
+  public void stop() {
     Os.stop(process);
   }
 
-  void openDoc(final String uri, final String content) {
+  public void openDoc(final String uri, final String content) {
     final var item = new TextDocumentItem();
     item.setUri(uri);
     item.setLanguageId("java");
@@ -108,9 +113,31 @@ final class LspSession {
     server.getTextDocumentService().didOpen(params);
   }
 
+  // As an editor saves: the file is written to disk, then the server is told.
+  public void saveDoc(final String uri, final String content) throws IOException {
+    Files.writeString(Path.of(URI.create(uri)), content);
+    final var params = new DidSaveTextDocumentParams();
+    params.setTextDocument(new TextDocumentIdentifier(uri));
+    params.setText(content);
+    server.getTextDocumentService().didSave(params);
+  }
+
+  // The position of token on the first line containing linePattern, at or after the pattern.
+  public static Position findToken(
+      final String content, final String linePattern, final String token) {
+    final String[] lines = content.split("\n", -1);
+    for (int i = 0; i < lines.length; i++) {
+      final int patternIdx = lines[i].indexOf(linePattern);
+      if (patternIdx >= 0) {
+        return new Position(i, lines[i].indexOf(token, patternIdx));
+      }
+    }
+    throw new AssertionError("pattern not found: " + linePattern);
+  }
+
   // lsp4j has no type to bind Lathe's own results to, so they arrive as plain maps and lists; one
   // JSON tree is easier to read in a test.
-  JsonElement execute(final String command, final Object argument) throws Exception {
+  public JsonElement execute(final String command, final Object argument) throws Exception {
     final var params = new ExecuteCommandParams(command, List.of(argument));
     return new Gson()
         .toJsonTree(server.getWorkspaceService().executeCommand(params).get(120, SECONDS));
@@ -134,12 +161,13 @@ final class LspSession {
     stderrThread.start();
   }
 
-  static class CapturingClient implements LanguageClient {
+  public static class CapturingClient implements LanguageClient {
 
-    final BlockingQueue<MessageParams> messages = new LinkedBlockingQueue<>();
-    final BlockingQueue<ShowMessageRequestParams> syncPrompts = new LinkedBlockingQueue<>();
-    final List<JsonObject> testEvents = new CopyOnWriteArrayList<>();
-    final List<JsonObject> testOutput = new CopyOnWriteArrayList<>();
+    public final BlockingQueue<MessageParams> messages = new LinkedBlockingQueue<>();
+    public final BlockingQueue<ShowMessageRequestParams> syncPrompts = new LinkedBlockingQueue<>();
+    public final BlockingQueue<PublishDiagnosticsParams> diagnostics = new LinkedBlockingQueue<>();
+    public final List<JsonObject> testEvents = new CopyOnWriteArrayList<>();
+    public final List<JsonObject> testOutput = new CopyOnWriteArrayList<>();
 
     @Override
     public void showMessage(final MessageParams params) {
@@ -160,10 +188,19 @@ final class LspSession {
     }
 
     @Override
-    public void publishDiagnostics(final PublishDiagnosticsParams params) {}
+    public void publishDiagnostics(final PublishDiagnosticsParams params) {
+      diagnostics.add(params);
+    }
 
     @Override
     public void telemetryEvent(final Object object) {}
+
+    // The server asks for this after a compile changes a file's highlighting; lsp4j's default
+    // throws, which logged a SEVERE error each time in the fixture builds.
+    @Override
+    public CompletableFuture<Void> refreshSemanticTokens() {
+      return CompletableFuture.completedFuture(null);
+    }
 
     @JsonNotification("lathe/testEvent")
     public void testEvent(final JsonObject params) {

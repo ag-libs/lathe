@@ -3,8 +3,7 @@ package com.example.verify;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.io.IOException;
-import java.net.URI;
+import com.example.itsupport.LspSession;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -34,7 +33,6 @@ import org.eclipse.lsp4j.DocumentRangeFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
-import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
@@ -149,7 +147,7 @@ class LspSmokeTest {
     session.openDoc(uri, mangled);
     final var document = new TextDocumentIdentifier(uri);
     final var options = new FormattingOptions(2, true);
-    final int line = findToken(mangled, "public   static String   upper", "upper").getLine();
+    final int line = LspSession.findToken(mangled, "public   static String   upper", "upper").getLine();
 
     try {
       final List<? extends TextEdit> whole =
@@ -204,7 +202,7 @@ class LspSmokeTest {
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
-    params.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+    params.setPosition(LspSession.findToken(stringUtilsContent, "public static String upper", "upper"));
     params.setContext(new ReferenceContext(false));
 
     final List<? extends Location> refs =
@@ -232,7 +230,7 @@ class LspSmokeTest {
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(stringUri));
-    params.setPosition(findToken(stringContent, "public final class String", "String"));
+    params.setPosition(LspSession.findToken(stringContent, "public final class String", "String"));
     params.setContext(new ReferenceContext(false));
 
     final List<? extends Location> refs =
@@ -250,7 +248,7 @@ class LspSmokeTest {
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(dbClientUri));
-    params.setPosition(findToken(dbClientContent, "String dbType()", "dbType"));
+    params.setPosition(LspSession.findToken(dbClientContent, "String dbType()", "dbType"));
     params.setContext(new ReferenceContext(true));
 
     final List<? extends Location> refs =
@@ -271,7 +269,7 @@ class LspSmokeTest {
 
     final var params = new ReferenceParams();
     params.setTextDocument(new TextDocumentIdentifier(mongoClientUri));
-    params.setPosition(findToken(mongoClientContent, "public String dbType()", "dbType"));
+    params.setPosition(LspSession.findToken(mongoClientContent, "public String dbType()", "dbType"));
     params.setContext(new ReferenceContext(true));
 
     final List<? extends Location> refs =
@@ -290,7 +288,7 @@ class LspSmokeTest {
 
     final var params = new ImplementationParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
-    params.setPosition(findToken(greeterContent, "public interface Greeter", "Greeter"));
+    params.setPosition(LspSession.findToken(greeterContent, "public interface Greeter", "Greeter"));
 
     final List<? extends Location> impls =
         server.getTextDocumentService().implementation(params).get(30, SECONDS).getLeft();
@@ -313,7 +311,7 @@ class LspSmokeTest {
 
     final var params = new ImplementationParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
-    params.setPosition(findToken(greeterContent, "String greet(String", "greet"));
+    params.setPosition(LspSession.findToken(greeterContent, "String greet(String", "greet"));
 
     final List<? extends Location> impls =
         server.getTextDocumentService().implementation(params).get(30, SECONDS).getLeft();
@@ -335,7 +333,7 @@ class LspSmokeTest {
 
     final var prepareParams = new TypeHierarchyPrepareParams();
     prepareParams.setTextDocument(new TextDocumentIdentifier(greeterUri));
-    prepareParams.setPosition(findToken(greeterContent, "public interface Greeter", "Greeter"));
+    prepareParams.setPosition(LspSession.findToken(greeterContent, "public interface Greeter", "Greeter"));
 
     final List<TypeHierarchyItem> items =
         server.getTextDocumentService().prepareTypeHierarchy(prepareParams).get(30, SECONDS);
@@ -363,7 +361,7 @@ class LspSmokeTest {
 
     final var params = new RenameParams();
     params.setTextDocument(new TextDocumentIdentifier(greeterUri));
-    params.setPosition(findToken(greeterContent, "interface Greeter", "Greeter"));
+    params.setPosition(LspSession.findToken(greeterContent, "interface Greeter", "Greeter"));
     params.setNewName("Salutation");
 
     final WorkspaceEdit edit =
@@ -400,7 +398,7 @@ class LspSmokeTest {
 
     final var prepParams = new CallHierarchyPrepareParams();
     prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
-    prepParams.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+    prepParams.setPosition(LspSession.findToken(stringUtilsContent, "public static String upper", "upper"));
 
     final List<CallHierarchyItem> items =
         server.getTextDocumentService().prepareCallHierarchy(prepParams).get(30, SECONDS);
@@ -428,7 +426,7 @@ class LspSmokeTest {
 
     final var prepParams = new CallHierarchyPrepareParams();
     prepParams.setTextDocument(new TextDocumentIdentifier(stringUtilsUri));
-    prepParams.setPosition(findToken(stringUtilsContent, "public static String upper", "upper"));
+    prepParams.setPosition(LspSession.findToken(stringUtilsContent, "public static String upper", "upper"));
 
     final List<CallHierarchyItem> items =
         server.getTextDocumentService().prepareCallHierarchy(prepParams).get(30, SECONDS);
@@ -500,7 +498,7 @@ class LspSmokeTest {
     final var mainUri = mainJava.toUri().toString();
     final String mainContent = Files.readString(mainJava);
     // Cursor immediately after "StringUtils." on the existing StringUtils.upper(...) call.
-    final Position dot = findToken(mainContent, "StringUtils.upper", "upper");
+    final Position dot = LspSession.findToken(mainContent, "StringUtils.upper", "upper");
 
     session.openDoc(mainUri, mainContent);
     session.openDoc(stringUtilsUri, original);
@@ -510,11 +508,11 @@ class LspSmokeTest {
     // Saving the upstream buffer is what refreshes the mirror. Main is never re-sent, so reaching the
     // awaited label proves the downstream reschedule, not a Main keystroke. The @Timeout bounds the
     // wait for the async reschedule; exceeding it fails the test.
-    saveDoc(stringUtilsUri, withLower);
+    session.saveDoc(stringUtilsUri, withLower);
     try {
       awaitCompletionLabel(mainUri, dot, "lower");
     } finally {
-      saveDoc(stringUtilsUri, original);
+      session.saveDoc(stringUtilsUri, original);
     }
   }
 
@@ -680,7 +678,7 @@ class LspSmokeTest {
         }
         """;
     session.openDoc(uri, content);
-    final Position pos = findToken(content, "assertTr", "assertTr");
+    final Position pos = LspSession.findToken(content, "assertTr", "assertTr");
     final var at = new Position(pos.getLine(), pos.getCharacter() + "assertTr".length());
 
     awaitCompletionLabel(uri, at, "assertTrue");
@@ -723,15 +721,6 @@ class LspSmokeTest {
     return (paren >= 0 ? label.substring(0, paren) : label).trim();
   }
 
-  // As an editor saves: the file is written to disk, then the server is told.
-  private static void saveDoc(final String uri, final String content) throws IOException {
-    Files.writeString(Path.of(URI.create(uri)), content);
-    final var params = new DidSaveTextDocumentParams();
-    params.setTextDocument(new TextDocumentIdentifier(uri));
-    params.setText(content);
-    server.getTextDocumentService().didSave(params);
-  }
-
   private static ClientCapabilities renameCapableClient() {
     final var workspaceEdit = new WorkspaceEditCapabilities();
     workspaceEdit.setDocumentChanges(true);
@@ -751,18 +740,6 @@ class LspSmokeTest {
       return result.getLeft().stream().map(SymbolInformation::getName).toList();
     }
     return result.getRight().stream().map(WorkspaceSymbol::getName).toList();
-  }
-
-  private static Position findToken(
-      final String content, final String linePattern, final String token) {
-    final String[] lines = content.split("\n", -1);
-    for (int i = 0; i < lines.length; i++) {
-      final int patternIdx = lines[i].indexOf(linePattern);
-      if (patternIdx >= 0) {
-        return new Position(i, lines[i].indexOf(token, patternIdx));
-      }
-    }
-    throw new AssertionError("pattern not found: " + linePattern);
   }
 
   private static JsonObject resultFor(final List<JsonObject> results, final String idSuffix) {

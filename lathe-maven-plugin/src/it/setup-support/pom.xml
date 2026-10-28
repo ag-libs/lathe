@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- What the fixtures' checks share: the real server started as an editor starts it, and the OS
+       helpers. The invoker builds setup* projects first and installs them into its repository. -->
+  <groupId>com.example</groupId>
+  <artifactId>lathe-it-support</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j</artifactId>
+      <version>@lsp4j.version@</version>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>@assertj.version@</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <!-- Pinned as a real project on Maven 3.6 must: its default compiler (3.1) cannot build a Java 17
+         project. -->
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>@compiler.version@</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>
