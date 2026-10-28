@@ -9550,6 +9550,39 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-9 — Running a file with two top-level test classes runs only the first — done
+
+**Status: done — Target: next.**
+**Affects: MCP `run_test` (class scope); the editor's run of a file was not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard.
+
+### Observed behaviour
+
+`DropwizardExtensionsSupportDeepNestingTest.java` declares a second top-level test class
+(`…ExtensionAtEachLevelTest`), which Surefire runs.
+`run_test` with the default class scope answers `PASS — 4 passed` for the first class only, and its output
+does not name the class it ran, so the skipped one goes unnoticed.
+A method of the second class runs when named.
+
+### Fix direction
+
+Class scope runs every top-level test class in the file, and the result names the classes it ran.
+
+### Resolution
+
+`run_test` at class scope runs every test class at the file's outermost level in one launch
+(`LatheEngine.selectTargets`); a `@Nested` class still runs inside its enclosing one, and method scope still
+runs the one outermost method of its name. The answer names what it ran (`Ran:`, and `ran` in the
+structured content). On the Dropwizard file it now answers `PASS — 5 passed` and names both classes.
+
+### Regression targets
+
+- `LatheEngineTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod`.
+- The `multi-module` fixture's `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses` checks the `Ran:`
+  line.
+
+---
+
 ## TE-1 — Capture-only dependencies leak into the recorded replay classpath
 
 **Status: done — Target: backlog.**

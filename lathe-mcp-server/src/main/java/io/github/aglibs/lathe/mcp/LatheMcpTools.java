@@ -1095,9 +1095,13 @@ final class LatheMcpTools {
     }
 
     final String header =
-        "%s — %d passed, %d failed, %d skipped"
+        "%s — %d passed, %d failed, %d skipped%nRan: %s"
             .formatted(
-                run.failed() == 0 ? "PASS" : "FAIL", run.passed(), run.failed(), run.skipped());
+                run.failed() == 0 ? "PASS" : "FAIL",
+                run.passed(),
+                run.failed(),
+                run.skipped(),
+                String.join(", ", run.ran()));
     final String text =
         run.failures().isEmpty()
             ? header
@@ -1111,6 +1115,7 @@ final class LatheMcpTools {
         text,
         Map.<String, Object>of(
             "launched", true,
+            "ran", run.ran(),
             "passed", run.passed(),
             "failed", run.failed(),
             "skipped", run.skipped(),

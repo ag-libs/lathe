@@ -782,30 +782,6 @@ None yet.
 
 ---
 
-## TE-9 — Running a file with two top-level test classes runs only the first
-
-**Status: documented**
-**Affects: MCP `run_test` (class scope); the editor's run of a file was not probed.**
-Found by the pre-release probes (2026-10-27) on Dropwizard.
-
-### Observed behaviour
-
-`DropwizardExtensionsSupportDeepNestingTest.java` declares a second top-level test class
-(`…ExtensionAtEachLevelTest`), which Surefire runs.
-`run_test` with the default class scope answers `PASS — 4 passed` for the first class only, and its output
-does not name the class it ran, so the skipped one goes unnoticed.
-A method of the second class runs when named.
-
-### Fix direction
-
-Class scope runs every top-level test class in the file, and the result names the classes it ran.
-
-### Regression targets
-
-None yet.
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
