@@ -20,6 +20,11 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   scans Lathe's generated `.lathe/` mirror and can treat it as duplicate projects. Add `**/.lathe/**` to
   its `java.import.exclusions`; see
   [installation.md](installation.md#coexisting-with-another-java-language-server-jdtls).
+- **Lombok: "cannot find symbol" on a generated member, or the server stops on opening a Lombok
+  file** — Lathe runs Lombok from the module's processor path (or class path), unless `<proc>none</proc>`;
+  re-sync after adding it. The server stopping on open means the JDK is newer than the project's Lombok
+  supports, which fails the build too: upgrade Lombok. See [Lombok](how-it-works.md#lombok) for what
+  works and its limits.
 - **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
   javac. Sync carries the build's own module grants (forked `-J--add-exports`/`--add-opens`,
   `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args` automatically;
