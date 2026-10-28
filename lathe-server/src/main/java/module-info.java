@@ -15,6 +15,9 @@ module io.github.aglibs.lathe.server {
   requires io.github.aglibs.lathe.core;
   requires io.github.aglibs.validcheck;
 
+  // Lombok's processors are found the way javac finds them, through the service file of its jar.
+  uses javax.annotation.processing.Processor;
+
   // Microsoft java-debug ships as a non-modular jar, so it resolves as the automatic module
   // `com.microsoft.java.debug.core`; it hosts the DAP ProtocolServer in-process. Its own deps
   // (commons-lang3, rxjava, commons-io) are read transitively as an automatic module and need no

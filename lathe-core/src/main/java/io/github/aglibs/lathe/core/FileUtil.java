@@ -25,6 +25,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
@@ -448,6 +449,21 @@ public final class FileUtil {
       }
 
       setReadOnly(dest);
+    }
+  }
+
+  // The UTF-8 text of one zip entry, without unpacking the rest; empty when there is no such file.
+  public static Optional<String> readEntry(final Path zipFile, final String entryName)
+      throws IOException {
+    try (final var zip = new ZipFile(zipFile.toFile())) {
+      final ZipEntry entry = zip.getEntry(entryName);
+      if (entry == null || entry.isDirectory()) {
+        return Optional.empty();
+      }
+
+      try (final var in = zip.getInputStream(entry)) {
+        return Optional.of(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+      }
     }
   }
 

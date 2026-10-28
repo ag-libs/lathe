@@ -8,6 +8,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.ServiceLoader;
 import javax.annotation.processing.Processor;
 
 // Lombok, for the compiles that only analyze, when a module has it on its processor path. Those
@@ -16,18 +17,25 @@ import javax.annotation.processing.Processor;
 // javac's own, built from the processor path per compile, loads Lombok again each time (~110 ms).
 final class LombokProcessors implements AutoCloseable {
 
-  private static final String MARKER = "lombok/launch/AnnotationProcessorHider.class";
-  // Both of Lombok's processors, as javac would discover them: without the claiming one, a build on
-  // -Xlint:all -Werror fails on Lombok's annotations being claimed by no processor.
-  private static final List<String> PROCESSORS =
-      List.of(
-          "lombok.launch.AnnotationProcessorHider$AnnotationProcessor",
-          "lombok.launch.AnnotationProcessorHider$ClaimingProcessor");
+  // The service file javac reads a jar's processors from. Lombok's jar lists its own there, all in
+  // its lombok package, so no class name of Lombok's is assumed.
+  private static final String PROCESSOR_SERVICES = "META-INF/services/" + Processor.class.getName();
+  private static final String LOMBOK_PACKAGE = "lombok.";
 
   private final URLClassLoader loader;
+  private final List<ServiceLoader.Provider<Processor>> providers;
 
   private LombokProcessors(final URLClassLoader loader) {
     this.loader = loader;
+    // Every processor Lombok lists, as javac runs them: without its claiming one, a build on
+    // -Xlint:all -Werror fails on Lombok's annotations being claimed by none. Only Lombok's: a
+    // processor the parent class loader sees must not run.
+    this.providers =
+        loader == null
+            ? List.of()
+            : ServiceLoader.load(Processor.class, loader).stream()
+                .filter(provider -> isLombok(provider.type().getName()))
+                .toList();
   }
 
   static LombokProcessors none() {
@@ -38,19 +46,19 @@ final class LombokProcessors implements AutoCloseable {
   // loads processors; none when the path has no Lombok.
   static LombokProcessors find(final List<Path> processorPath, final ClassLoader parent) {
     return processorPath.stream()
-        .filter(LombokProcessors::isLombokJar)
+        .filter(LombokProcessors::listsLombokProcessors)
         .findFirst()
         .map(jar -> new LombokProcessors(new URLClassLoader(new URL[] {url(jar)}, parent)))
         .orElseGet(LombokProcessors::none);
   }
 
   boolean present() {
-    return loader != null;
+    return !providers.isEmpty();
   }
 
   // Fresh processors for one compile; javac initializes each for its own task.
   List<Processor> create() {
-    return PROCESSORS.stream().map(this::instantiate).toList();
+    return providers.stream().map(ServiceLoader.Provider::get).toList();
   }
 
   @Override
@@ -60,18 +68,18 @@ final class LombokProcessors implements AutoCloseable {
     }
   }
 
-  private Processor instantiate(final String className) {
-    try {
-      return (Processor) loader.loadClass(className).getDeclaredConstructor().newInstance();
-    } catch (final ReflectiveOperationException e) {
-      throw new IllegalStateException("cannot load Lombok's %s".formatted(className), e);
-    }
-  }
-
-  private static boolean isLombokJar(final Path path) {
+  private static boolean listsLombokProcessors(final Path path) {
     return Files.isRegularFile(path)
         && path.getFileName().toString().endsWith(".jar")
-        && !IOUtil.unchecked(() -> FileUtil.listEntries(path, MARKER::equals)).isEmpty();
+        && IOUtil.unchecked(() -> FileUtil.readEntry(path, PROCESSOR_SERVICES))
+            .map(
+                services ->
+                    services.lines().map(String::strip).anyMatch(LombokProcessors::isLombok))
+            .orElse(false);
+  }
+
+  private static boolean isLombok(final String className) {
+    return className.startsWith(LOMBOK_PACKAGE);
   }
 
   private static URL url(final Path jar) {

@@ -88,6 +88,18 @@ final class FileUtilTest {
   }
 
   @Test
+  void readEntry_fileOrMissingOrDirectoryEntry_textOrEmpty() throws IOException {
+    final Path jar =
+        ZipFixture.create(
+            tempDir.resolve("lib.jar"),
+            Map.of("META-INF/services/javax.Spi", "com.x.Impl\n", "dir/", ""));
+
+    assertThat(FileUtil.readEntry(jar, "META-INF/services/javax.Spi")).contains("com.x.Impl\n");
+    assertThat(FileUtil.readEntry(jar, "nope.txt")).isEmpty();
+    assertThat(FileUtil.readEntry(jar, "dir/")).isEmpty();
+  }
+
+  @Test
   void unzip_absoluteAndEscapingEntries_neutralizesAbsoluteSkipsEscapingReturnsCount()
       throws IOException {
     final Path zip =
