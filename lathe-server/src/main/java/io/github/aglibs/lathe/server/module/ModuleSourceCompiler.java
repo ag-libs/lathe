@@ -62,7 +62,6 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       this.processorPath =
           config.processorPath().isEmpty() ? classpath : config.remappedProcessorPath();
       LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH (full)=%s".formatted(processorPath));
-      // Under javac's own class loader, as javac loads processors.
       this.lombok =
           LatheFlags.PROC_NONE.equals(config.proc())
               ? LombokProcessors.none()

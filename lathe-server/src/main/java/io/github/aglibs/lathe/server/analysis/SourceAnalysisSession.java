@@ -464,7 +464,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   public List<ReferenceTarget> generatedAccessorTargets(final SourceFeatureRequest request) {
     final var cur = resolve(request);
     final Element element = cur == null ? null : elementOrJavadocReference(cur);
-    if (element == null || element.getKind() != ElementKind.FIELD) {
+    if (element == null) {
       return List.of();
     }
 

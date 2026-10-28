@@ -191,10 +191,7 @@ public final class RenameConflicts {
                   element.getSimpleName(), SourceLocator.generatedSource(element).getSimpleName()));
     }
 
-    final List<Element> accessors =
-        element.getKind() == ElementKind.FIELD
-            ? SourceLocator.generatedAccessors(element)
-            : List.of();
+    final List<Element> accessors = SourceLocator.generatedAccessors(element);
     return accessors.isEmpty()
         ? Optional.empty()
         : Optional.of(

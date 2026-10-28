@@ -67,6 +67,13 @@ public final class McpSession {
     return request("tools/call", "{\"name\":\"%s\",\"arguments\":%s}".formatted(tool, arguments));
   }
 
+  // A position tool's file, line and column arguments, at token's first occurrence in file.
+  public static String at(final Path file, final String token) throws IOException {
+    final int[] position = tokenPosition(file, token);
+    return "\"file\":\"%s\",\"line\":%d,\"column\":%d"
+        .formatted(Os.json(file), position[0], position[1]);
+  }
+
   // The 1-based line and column of token's first occurrence in file, as the tools take them.
   public static int[] tokenPosition(final Path file, final String token) throws IOException {
     final List<String> lines = Files.readAllLines(file);

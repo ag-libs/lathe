@@ -28,9 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 // A Lombok project as its users build it: Lombok on annotationProcessorPaths, and the members it
-// generates used inside the annotated class (Person) and from another (User). Lathe compiles it on a
-// save without failing, but does not see the generated members yet. The checks of that pin today's
-// answers and say the right ones, so they fail once it is fixed and must then be turned around.
+// generates used inside the annotated class (Person) and from another (User). Lathe's analysis runs
+// Lombok, so the editor and an agent see the generated members, and they lead back to the field.
 @Timeout(120)
 class LombokTest {
 
@@ -65,29 +64,16 @@ class LombokTest {
         .contains("No errors")
         .doesNotContain("getName()");
 
-    final int[] call = McpSession.tokenPosition(USER, "getName");
-    assertThat(
-            mcp.callTool(
-                "get_definition",
-                "{\"file\":\"%s\",\"line\":%d,\"column\":%d}"
-                    .formatted(Os.json(USER), call[0], call[1])))
+    assertThat(mcp.callTool("get_definition", "{%s}".formatted(McpSession.at(USER, "getName"))))
         .contains("Person.java:%d".formatted(McpSession.tokenPosition(PERSON, "private String name")[0]));
 
-    final int[] field = McpSession.tokenPosition(PERSON, "name;");
-    assertThat(
-            mcp.callTool(
-                "find_references",
-                "{\"file\":\"%s\",\"line\":%d,\"column\":%d}"
-                    .formatted(Os.json(PERSON), field[0], field[1])))
+    final String field = McpSession.at(PERSON, "name;");
+    assertThat(mcp.callTool("find_references", "{%s}".formatted(field)))
         .contains("User.java")
         .contains("Person.java");
 
     final String person = Files.readString(PERSON);
-    assertThat(
-            mcp.callTool(
-                "rename_symbol",
-                "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"newName\":\"label\"}"
-                    .formatted(Os.json(PERSON), field[0], field[1])))
+    assertThat(mcp.callTool("rename_symbol", "{%s,\"newName\":\"label\"}".formatted(field)))
         .contains("\"isError\":true")
         .contains("Lombok generates getName(), setName() from it");
     assertThat(Files.readString(PERSON)).isEqualTo(person);
@@ -97,13 +83,11 @@ class LombokTest {
   // refused with the reason, and nothing is edited.
   @Test
   void rename_lombokField_refusedWithTheReason() throws Exception {
-    final String uri = PERSON.toUri().toString();
-    final String content = Files.readString(PERSON);
-    session.openDoc(uri, content);
+    final String content = open(PERSON);
 
     final var params =
         new RenameParams(
-            new TextDocumentIdentifier(uri),
+            new TextDocumentIdentifier(PERSON.toUri().toString()),
             LspSession.findToken(content, "private String name", "name"),
             "label");
 
@@ -138,13 +122,11 @@ class LombokTest {
   // A generated getter has no declaration of its own: definition lands on the field it reads.
   @Test
   void definition_lombokGetterCall_landsOnTheField() throws Exception {
-    final String uri = USER.toUri().toString();
-    final String content = Files.readString(USER);
-    session.openDoc(uri, content);
+    final String content = open(USER);
 
     final var params =
         new DefinitionParams(
-            new TextDocumentIdentifier(uri),
+            new TextDocumentIdentifier(USER.toUri().toString()),
             LspSession.findToken(content, "person.getName", "getName"));
     final Either<List<? extends Location>, List<? extends LocationLink>> definition =
         session.server.getTextDocumentService().definition(params).get(30, SECONDS);
@@ -165,13 +147,11 @@ class LombokTest {
   // itself and in User.
   @Test
   void references_lombokField_includeTheGetterCall() throws Exception {
-    final String uri = PERSON.toUri().toString();
-    final String content = Files.readString(PERSON);
-    session.openDoc(uri, content);
+    final String content = open(PERSON);
 
     final var params =
         new ReferenceParams(
-            new TextDocumentIdentifier(uri),
+            new TextDocumentIdentifier(PERSON.toUri().toString()),
             LspSession.findToken(content, "private String name", "name"),
             new ReferenceContext(true));
     final List<? extends Location> references =
@@ -188,6 +168,12 @@ class LombokTest {
             "Person.java " + LspSession.findToken(content, "private String name", "name"),
             "Person.java " + LspSession.findToken(content, "+ getName()", "getName"),
             "User.java " + LspSession.findToken(user, "person.getName", "getName"));
+  }
+
+  private static String open(final Path file) throws Exception {
+    final String content = Files.readString(file);
+    session.openDoc(file.toUri().toString(), content);
+    return content;
   }
 
   private static boolean isMissingGetName(final Diagnostic diagnostic) {

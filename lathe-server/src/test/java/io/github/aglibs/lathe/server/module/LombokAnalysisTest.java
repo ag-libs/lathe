@@ -4,14 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.Test;
@@ -161,6 +164,34 @@ class LombokAnalysisTest {
       assertThat(
               session.renameConflict(requestAt(position("String greeting", "greeting")), "hello"))
           .isEmpty();
+    }
+  }
+
+  // Completion offers what Lombok generates, also while the line being typed does not parse: the
+  // receiver resolves against the module's last clean analysis.
+  @Test
+  void complete_whileTypingOnALombokInstance_offersItsGeneratedAccessors() {
+    final String opened =
+        SOURCE.replace("void use() {", "void use(final Person p) {\n    p.age();");
+    final String typing = opened.replace("p.age();", "p.get");
+    try (var session = session()) {
+      session.compile(uri(), opened, 1, CompileMode.OPEN);
+
+      final var outcome =
+          session.complete(
+              uri(),
+              typing,
+              2,
+              SourceLocator.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
+              null,
+              WorkspaceTypeIndex.build(List.of(), List.of()),
+              List.of(),
+              LearnedStaticImports.empty());
+
+      assertThat(outcome.items())
+          .extracting(CompletionItem::getLabel)
+          .anyMatch(label -> label.startsWith("getName"))
+          .anyMatch(label -> label.startsWith("getAge"));
     }
   }
 

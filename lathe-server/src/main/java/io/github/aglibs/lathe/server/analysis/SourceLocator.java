@@ -332,8 +332,13 @@ public final class SourceLocator {
         .orElse(owner);
   }
 
-  // The members Lombok generated from a field: its getter, setter and wither.
+  // The members Lombok generated from a field: its getter, setter and wither. None for anything
+  // else.
   public static List<Element> generatedAccessors(final Element field) {
+    if (field.getKind() != ElementKind.FIELD) {
+      return List.of();
+    }
+
     return field.getEnclosingElement().getEnclosedElements().stream()
         .filter(member -> member.getKind() == ElementKind.METHOD && isGenerated(member))
         .filter(method -> generatedSource(method).equals(field))
