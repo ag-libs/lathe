@@ -212,8 +212,10 @@ Set `LATHE_DEBUG=1` for finer detail.
 
 ## Troubleshooting
 
-- **"No `.lathe/`" / server won't start** — run a build at the reactor root
-  (`mvn process-test-classes`); see the prerequisite above.
+- **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
+  build: start it at the reactor root, or run a build there first (`mvn process-test-classes`); see
+  the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
+  failed to connect; restart the agent's session after the build.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for

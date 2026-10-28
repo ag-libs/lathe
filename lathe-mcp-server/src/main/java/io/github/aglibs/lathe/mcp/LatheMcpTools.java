@@ -32,6 +32,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
+import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -95,7 +96,10 @@ final class LatheMcpTools {
         .formatted(extraProperties);
   }
 
-  static List<SyncToolSpecification> all(final LatheEngine engine, final McpJsonMapper mapper) {
+  // The engine is taken when a tool is called: started where no .lathe/ is, there is none, and each
+  // tool answers why (NoWorkspaceException).
+  static List<SyncToolSpecification> all(
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     return List.of(
         diagnostics(engine, mapper),
         definition(engine, mapper),
@@ -115,7 +119,7 @@ final class LatheMcpTools {
   }
 
   private static SyncToolSpecification diagnostics(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("get_diagnostics", mapper, FILE_SCHEMA)
             .description(
@@ -126,11 +130,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleDiagnostics(engine, request));
+    return spec(tool, request -> handleDiagnostics(engine.get(), request));
   }
 
   private static SyncToolSpecification definition(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("get_definition", mapper, positionSchema(""))
             .description(
@@ -141,11 +145,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleDefinition(engine, request));
+    return spec(tool, request -> handleDefinition(engine.get(), request));
   }
 
   private static SyncToolSpecification references(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "find_references",
@@ -169,11 +173,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleReferences(engine, request));
+    return spec(tool, request -> handleReferences(engine.get(), request));
   }
 
   private static SyncToolSpecification rename(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "rename_symbol",
@@ -202,11 +206,11 @@ final class LatheMcpTools {
                 """)
             .annotations(REWRITES_SOURCE)
             .build();
-    return spec(tool, request -> handleRename(engine, request));
+    return spec(tool, request -> handleRename(engine.get(), request));
   }
 
   private static SyncToolSpecification runTest(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "run_test",
@@ -231,11 +235,11 @@ final class LatheMcpTools {
                     .formatted(LatheLayout.captureTestsCommand("<module>")))
             .annotations(RUNS_CODE)
             .build();
-    return spec(tool, request -> handleRunTest(engine, request));
+    return spec(tool, request -> handleRunTest(engine.get(), request));
   }
 
   private static SyncToolSpecification callHierarchy(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "call_hierarchy",
@@ -255,11 +259,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleCallHierarchy(engine, request));
+    return spec(tool, request -> handleCallHierarchy(engine.get(), request));
   }
 
   private static SyncToolSpecification describeSymbol(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("describe_symbol", mapper, positionSchema(""))
             .description(
@@ -270,11 +274,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleDescribe(engine, request));
+    return spec(tool, request -> handleDescribe(engine.get(), request));
   }
 
   private static SyncToolSpecification searchSymbols(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "search_symbols",
@@ -293,11 +297,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleSearchSymbols(engine, request));
+    return spec(tool, request -> handleSearchSymbols(engine.get(), request));
   }
 
   private static SyncToolSpecification findImplementations(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "find_implementations",
@@ -317,11 +321,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleFindImplementations(engine, request));
+    return spec(tool, request -> handleFindImplementations(engine.get(), request));
   }
 
   private static SyncToolSpecification analyzeChange(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("analyze_change", mapper, positionSchema(""))
             .description(
@@ -332,11 +336,11 @@ final class LatheMcpTools {
                 or signature change before making it.""")
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleAnalyzeChange(engine, request));
+    return spec(tool, request -> handleAnalyzeChange(engine.get(), request));
   }
 
   private static SyncToolSpecification verifyChange(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "verify_change",
@@ -359,11 +363,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleVerifyChange(engine, request));
+    return spec(tool, request -> handleVerifyChange(engine.get(), request));
   }
 
   private static SyncToolSpecification formatFile(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("format_file", mapper, FILE_SCHEMA)
             .description(
@@ -375,11 +379,11 @@ final class LatheMcpTools {
                 """)
             .annotations(EDITS_IN_PLACE)
             .build();
-    return spec(tool, request -> handleFormatFile(engine, request));
+    return spec(tool, request -> handleFormatFile(engine.get(), request));
   }
 
   private static SyncToolSpecification fixImports(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("fix_imports", mapper, FILE_SCHEMA)
             .description(
@@ -393,11 +397,11 @@ final class LatheMcpTools {
                 """)
             .annotations(EDITS_IN_PLACE)
             .build();
-    return spec(tool, request -> handleFixImports(engine, request));
+    return spec(tool, request -> handleFixImports(engine.get(), request));
   }
 
   private static SyncToolSpecification outline(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder("outline", mapper, FILE_SCHEMA)
             .description(
@@ -409,11 +413,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(tool, request -> handleOutline(engine, request));
+    return spec(tool, request -> handleOutline(engine.get(), request));
   }
 
   private static SyncToolSpecification workspaceSummary(
-      final LatheEngine engine, final McpJsonMapper mapper) {
+      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     final var tool =
         Tool.builder(
                 "workspace_summary",
@@ -429,10 +433,11 @@ final class LatheMcpTools {
                 """)
             .annotations(READ_ONLY)
             .build();
-    return spec(
-        tool,
-        request ->
-            guarded("workspace_summary", "workspace", () -> modulesResult(engine.modules())));
+    return spec(tool, request -> handleWorkspaceSummary(engine.get()));
+  }
+
+  private static CallToolResult handleWorkspaceSummary(final LatheEngine engine) {
+    return guarded("workspace_summary", "workspace", () -> modulesResult(engine.modules()));
   }
 
   private static SyncToolSpecification spec(
@@ -440,8 +445,27 @@ final class LatheMcpTools {
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) -> logged(tool.name(), request, () -> handler.apply(request)))
+            (exchange, request) -> logged(tool.name(), request, () -> answer(handler, request)))
         .build();
+  }
+
+  private static CallToolResult answer(
+      final Function<CallToolRequest, CallToolResult> handler, final CallToolRequest request) {
+    try {
+      return handler.apply(request);
+    } catch (final NoWorkspaceException e) {
+      return error(e.getMessage());
+    }
+  }
+
+  // No engine to answer with: the server started where no .lathe/ is. The message says why, and
+  // how to set the project up.
+  static final class NoWorkspaceException extends RuntimeException {
+    @Serial private static final long serialVersionUID = 1L;
+
+    NoWorkspaceException(final String message) {
+      super(message, null, false, false);
+    }
   }
 
   // One INFO line per tool call — the adoption/usage/latency signal (visible without LATHE_DEBUG).

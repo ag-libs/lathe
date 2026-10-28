@@ -46,7 +46,7 @@ class LatheMcpToolsTest {
   @BeforeEach
   void setUp() {
     engine = new LatheEngine(tmp);
-    specs = LatheMcpTools.all(engine, McpJsonDefaults.getMapper());
+    specs = LatheMcpTools.all(() -> engine, McpJsonDefaults.getMapper());
   }
 
   @AfterEach
@@ -351,6 +351,29 @@ class LatheMcpToolsTest {
 
   private static String text(final CallToolResult result) {
     return ((TextContent) result.content().get(0)).text();
+  }
+
+  // Started where no .lathe/ is, the server still lists every tool, and each answers why and how
+  // to set the project up, instead of the server failing to connect.
+  @Test
+  void all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup() {
+    final String noWorkspace = LatheMcpServer.noWorkspace(tmp);
+    final List<SyncToolSpecification> unconfigured =
+        LatheMcpTools.all(LatheMcpServer.missing(noWorkspace), McpJsonDefaults.getMapper());
+
+    assertThat(noWorkspace).contains(".lathe/", tmp.toString(), "lathe-maven-extension");
+    assertThat(unconfigured)
+        .hasSameSizeAs(specs)
+        .allSatisfy(
+            spec -> {
+              final CallToolResult result =
+                  spec.callHandler()
+                      .apply(
+                          null,
+                          CallToolRequest.builder(spec.tool().name()).arguments(Map.of()).build());
+              assertThat(result.isError()).isTrue();
+              assertThat(text(result)).isEqualTo(noWorkspace);
+            });
   }
 
   private CallToolResult call(final String name, final Map<String, Object> arguments) {

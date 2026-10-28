@@ -1172,31 +1172,6 @@ None yet.
 
 ---
 
-## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why
-
-**Status: documented**
-Found by the pre-release probes (2026-10-27).
-
-### Observed behaviour
-
-Started where no `.lathe/` is above the working directory, `LatheMcpServer` logs one `SEVERE` line,
-`If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run …`, and exits
-with status 2.
-The line does not say what is missing or where it looked.
-An MCP client shows only that the server failed to connect; the agent gets no tool, no instructions and no hint.
-
-### Fix direction
-
-Start anyway and answer the handshake: the server instructions and every tool say that no `.lathe/` was
-found above the working directory, and give the setup remediation.
-The log line names the missing `.lathe/` and the directory searched.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
 
 **Status: documented**

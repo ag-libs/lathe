@@ -10298,6 +10298,42 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27).
+
+### Observed behaviour
+
+Started where no `.lathe/` is above the working directory, `LatheMcpServer` logs one `SEVERE` line,
+`If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run …`, and exits
+with status 2.
+The line does not say what is missing or where it looked.
+An MCP client shows only that the server failed to connect; the agent gets no tool, no instructions and no hint.
+
+### Fix direction
+
+Start anyway and answer the handshake: the server instructions and every tool say that no `.lathe/` was
+found above the working directory, and give the setup remediation.
+The log line names the missing `.lathe/` and the directory searched.
+
+### Resolution
+
+With no `.lathe/` above the working directory the server no longer exits: it answers the handshake with
+instructions that say where it looked and how to set the project up, lists every tool, and each tool
+answers that same message as an error (`LatheMcpTools.all` takes the engine through a supplier, which
+throws `NoWorkspaceException` when there is none). The startup log has the same line at `WARNING`.
+Checked end to end with the MCP launcher in an empty directory.
+The setup step it names is `LatheLayout.SETUP_REMEDIATION`, shared with the editor's warning: each
+build front-end's first command (Maven, OpenJDK). The Gradle front-end adds its own there, and in the
+Neovim client's `SETUP_HINT`, when it ships.
+
+### Regression targets
+
+`LatheMcpToolsTest.all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup`.
+
+---
+
 ## MC-40 — `verify_change` right after a rename recompiles for seconds — done
 
 **Status: done — Target: next.**
