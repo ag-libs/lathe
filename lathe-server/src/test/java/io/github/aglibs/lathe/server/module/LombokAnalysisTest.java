@@ -27,17 +27,27 @@ class LombokAnalysisTest {
       """
       package com.example;
 
+      import lombok.Builder;
       import lombok.Data;
       import lombok.extern.java.Log;
 
       @Data
+      @Builder
       @Log
       class Person {
         private String name;
         private int age;
+        private boolean active;
 
         String greeting() {
           return "Hello, " + name + getName();
+        }
+
+        void use() {
+          setName("x");
+          isActive();
+          builder();
+          toString();
         }
       }
       """;
@@ -88,10 +98,42 @@ class LombokAnalysisTest {
           .singleElement()
           .satisfies(token -> assertThat(token.type()).isEqualTo("property"));
       assertThat(tokens)
-          .as("no generated member's token on the @Data and @Log lines")
-          .filteredOn(token -> token.line() == 5 || token.line() == 6)
+          .as("no generated member's token on the class's annotation lines")
+          .filteredOn(
+              token ->
+                  token.line() >= position("@Data", "@").getLine()
+                      && token.line() <= position("@Log", "@").getLine())
           .noneMatch(token -> token.type().equals("method") || token.type().equals("property"));
     }
+  }
+
+  // A generated member has no declaration of its own: definition lands on the code it comes from,
+  // the field an accessor reads or writes, else the class.
+  @Test
+  void definition_onGeneratedMembers_landsOnTheirFieldOrClass() {
+    try (var session = session()) {
+      session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
+
+      assertThat(definitionAt(session, "+ getName()", "getName"))
+          .isEqualTo(position("private String name", "name"));
+      assertThat(definitionAt(session, "setName(", "setName"))
+          .isEqualTo(position("private String name", "name"));
+      assertThat(definitionAt(session, "isActive()", "isActive"))
+          .isEqualTo(position("private boolean active", "active"));
+      assertThat(definitionAt(session, "builder()", "builder"))
+          .isEqualTo(position("class Person", "Person"));
+      assertThat(definitionAt(session, "toString()", "toString"))
+          .isEqualTo(position("class Person", "Person"));
+    }
+  }
+
+  private Position definitionAt(
+      final SourceAnalysisSession session, final String context, final String token) {
+    return session
+        .definition(requestAt(position(context, token)))
+        .orElseThrow()
+        .getRange()
+        .getStart();
   }
 
   private SourceAnalysisSession session() {

@@ -73,10 +73,9 @@ class LombokTest {
     }
   }
 
-  // Right: the field name, which the getter is generated from. Today: nothing, since no source
-  // declares getName.
+  // A generated getter has no declaration of its own: definition lands on the field it reads.
   @Test
-  void definition_lombokGetterCall_findsNoDeclaration() throws Exception {
+  void definition_lombokGetterCall_landsOnTheField() throws Exception {
     final String uri = USER.toUri().toString();
     final String content = Files.readString(USER);
     session.openDoc(uri, content);
@@ -88,9 +87,16 @@ class LombokTest {
     final Either<List<? extends Location>, List<? extends LocationLink>> definition =
         session.server.getTextDocumentService().definition(params).get(30, SECONDS);
 
-    assertThat(definition == null || definition.isLeft() && definition.getLeft().isEmpty())
-        .as("no definition for %s", definition)
-        .isTrue();
+    assertThat(definition.getLeft())
+        .singleElement()
+        .satisfies(
+            location -> {
+              assertThat(location.getUri()).endsWith("Person.java");
+              assertThat(location.getRange().getStart())
+                  .isEqualTo(
+                      LspSession.findToken(
+                          Files.readString(PERSON), "private String name", "name"));
+            });
   }
 
   // Right: the field's declaration and its getter's call in User. Today: the declaration alone.
