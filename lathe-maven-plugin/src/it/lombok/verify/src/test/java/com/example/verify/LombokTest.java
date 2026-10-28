@@ -57,7 +57,8 @@ class LombokTest {
   }
 
   // An agent gets the same answers through MCP: no generated member reported missing, definition on
-  // a generated getter lands on its field, and the field's references include the getter's call.
+  // a generated getter lands on its field, and the field's references, and so its change impact,
+  // include the getter's calls.
   @Test
   void mcp_lombokProject_seesGeneratedMembers() throws Exception {
     assertThat(mcp.callTool("get_diagnostics", "{\"file\":\"%s\"}".formatted(Os.json(PERSON))))
@@ -71,6 +72,9 @@ class LombokTest {
     assertThat(mcp.callTool("find_references", "{%s}".formatted(field)))
         .contains("User.java")
         .contains("Person.java");
+    assertThat(mcp.callTool("analyze_change", "{%s}".formatted(field)))
+        .as("the declaration, and the getter's calls in Person and User")
+        .contains("references: 3 production");
 
     final String person = Files.readString(PERSON);
     assertThat(mcp.callTool("rename_symbol", "{%s,\"newName\":\"label\"}".formatted(field)))
