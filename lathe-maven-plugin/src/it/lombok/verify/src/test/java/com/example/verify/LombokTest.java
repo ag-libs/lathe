@@ -4,6 +4,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.itsupport.LspSession;
+import com.example.itsupport.McpSession;
+import com.example.itsupport.Os;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,15 +41,44 @@ class LombokTest {
       LspSession.ROOT.resolve(".lathe/model/classes/com/example/model/Person.class");
 
   private static LspSession session;
+  private static McpSession mcp;
 
   @BeforeAll
-  static void startServer() throws Exception {
+  static void startServers() throws Exception {
     session = LspSession.start(new ClientCapabilities());
+    mcp = McpSession.start();
   }
 
   @AfterAll
-  static void stopServer() {
+  static void stopServers() {
     session.stop();
+    mcp.stop();
+  }
+
+  // An agent gets the same answers through MCP: no generated member reported missing, definition on
+  // a generated getter lands on its field, and the field's references include the getter's call.
+  @Test
+  void mcp_lombokProject_seesGeneratedMembers() throws Exception {
+    assertThat(mcp.callTool("get_diagnostics", "{\"file\":\"%s\"}".formatted(Os.json(PERSON))))
+        .contains("No errors")
+        .doesNotContain("getName()");
+
+    final int[] call = McpSession.tokenPosition(USER, "getName");
+    assertThat(
+            mcp.callTool(
+                "get_definition",
+                "{\"file\":\"%s\",\"line\":%d,\"column\":%d}"
+                    .formatted(Os.json(USER), call[0], call[1])))
+        .contains("Person.java:%d".formatted(McpSession.tokenPosition(PERSON, "private String name")[0]));
+
+    final int[] field = McpSession.tokenPosition(PERSON, "name;");
+    assertThat(
+            mcp.callTool(
+                "find_references",
+                "{\"file\":\"%s\",\"line\":%d,\"column\":%d}"
+                    .formatted(Os.json(PERSON), field[0], field[1])))
+        .contains("User.java")
+        .contains("Person.java");
   }
 
   // A save compiles the module with Lombok, so the class Lathe keeps gains what Lombok generates

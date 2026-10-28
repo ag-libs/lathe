@@ -42,11 +42,7 @@ import org.eclipse.lsp4j.services.LanguageServer;
 public final class LspSession {
 
   public static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
-  private static final Path LAUNCHER =
-      Path.of(System.getProperty("lathe.cache"))
-          .resolve("servers")
-          .resolve(System.getProperty("lathe.version"))
-          .resolve(Os.script("lathe-launcher"));
+  private static final Path LAUNCHER = Os.launcher("lathe-launcher");
 
   public final LanguageServer server;
   public final CapturingClient client;

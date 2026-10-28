@@ -14,6 +14,15 @@ public final class Os {
     return base + (WINDOWS ? ".cmd" : ".sh");
   }
 
+  // A launcher the server under test installed (lathe-launcher, lathe-mcp-launcher), in the fixture's
+  // Lathe cache.
+  public static Path launcher(final String base) {
+    return Path.of(System.getProperty("lathe.cache"))
+        .resolve("servers")
+        .resolve(System.getProperty("lathe.version"))
+        .resolve(script(base));
+  }
+
   // A cmd launcher can't exec, so on Windows the JVM is its child and outlives it; left running, it
   // holds this fork's inherited output pipes open and the fixture build never ends.
   public static void stop(final Process launcher) {

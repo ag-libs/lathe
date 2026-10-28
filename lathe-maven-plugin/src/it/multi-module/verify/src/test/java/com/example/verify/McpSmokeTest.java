@@ -1,18 +1,12 @@
 package com.example.verify;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.itsupport.McpSession;
 import com.example.itsupport.Os;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -30,49 +24,29 @@ import org.junit.jupiter.api.Timeout.ThreadMode;
 class McpSmokeTest {
 
   private static final Path ROOT = Path.of(System.getProperty("user.dir")).getParent();
-  private static final Path LAUNCHER =
-      Path.of(System.getProperty("lathe.cache"))
-          .resolve("servers")
-          .resolve(System.getProperty("lathe.version"))
-          .resolve(Os.script("lathe-mcp-launcher"));
 
-  private static Process process;
-  private static OutputStream toServer;
-  private static BufferedReader fromServer;
-  private static int nextId = 1;
+  private static McpSession mcp;
 
   @BeforeAll
   @Timeout(value = 60, unit = SECONDS, threadMode = ThreadMode.SEPARATE_THREAD)
   static void start() throws Exception {
-    final var pb = new ProcessBuilder(LAUNCHER.toString());
-    pb.directory(ROOT.toFile());
-    process = pb.start();
-    drainStderr(process);
-    toServer = process.getOutputStream();
-    fromServer = new BufferedReader(new InputStreamReader(process.getInputStream(), UTF_8));
-
-    final String init =
-        request(
-            "initialize",
-            "{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},"
-                + "\"clientInfo\":{\"name\":\"smoke\",\"version\":\"0\"}}");
-    assertThat(init)
+    mcp = McpSession.start();
+    assertThat(mcp.initResponse)
         .contains("\"name\":\"lathe\"")
         .contains("protocolVersion")
         .contains("ALWAYS use rename_symbol"); // routing guidance served in instructions
-    notify("notifications/initialized");
   }
 
   @AfterAll
   static void stop() {
-    if (process != null) {
-      Os.stop(process);
+    if (mcp != null) {
+      mcp.stop();
     }
   }
 
   @Test
   void toolsList_exposesLatheTools() throws Exception {
-    final String response = request("tools/list", "{}");
+    final String response = mcp.request("tools/list", "{}");
 
     assertThat(response).contains("get_diagnostics").contains("get_definition");
   }
@@ -82,7 +56,7 @@ class McpSmokeTest {
     final Path greeter = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             "{\"name\":\"get_diagnostics\",\"arguments\":{\"file\":\"%s\"}}"
                 .formatted(Os.json(greeter)));
@@ -94,10 +68,10 @@ class McpSmokeTest {
   void findReferences_crossModule_findsUsageInAnotherModule() throws Exception {
     // upper() is declared in core and called from app/Main.java — a cross-module reference.
     final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
-    final int[] pos = tokenPosition(stringUtils, "upper");
+    final int[] pos = McpSession.tokenPosition(stringUtils, "upper");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             "{\"name\":\"find_references\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
                 .formatted(Os.json(stringUtils), pos[0], pos[1]));
@@ -116,9 +90,9 @@ class McpSmokeTest {
     final String mainOriginal = Files.readString(main);
 
     try {
-      final int[] pos = tokenPosition(stringUtils, "upper");
+      final int[] pos = McpSession.tokenPosition(stringUtils, "upper");
       final String response =
-          request(
+          mcp.request(
               "tools/call",
               ("{\"name\":\"rename_symbol\",\"arguments\":"
                       + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"newName\":\"upperCase\"}}")
@@ -143,10 +117,10 @@ class McpSmokeTest {
   void callHierarchy_incoming_findsCrossModuleCaller() throws Exception {
     // upper() is declared in core and called from app/Main.java — its caller is cross-module.
     final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
-    final int[] pos = tokenPosition(stringUtils, "upper");
+    final int[] pos = McpSession.tokenPosition(stringUtils, "upper");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             ("{\"name\":\"call_hierarchy\",\"arguments\":"
                     + "{\"file\":\"%s\",\"line\":%d,\"column\":%d,\"direction\":\"incoming\"}}")
@@ -159,10 +133,10 @@ class McpSmokeTest {
   void findImplementations_interface_findsCrossModuleImpls() throws Exception {
     // Greeter (core) is implemented by CasualGreeter/FormalGreeter in app — a cross-module lookup.
     final Path greeter = ROOT.resolve("core/src/main/java/com/example/core/Greeter.java");
-    final int[] pos = tokenPosition(greeter, "Greeter");
+    final int[] pos = McpSession.tokenPosition(greeter, "Greeter");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             "{\"name\":\"find_implementations\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
                 .formatted(Os.json(greeter), pos[0], pos[1]));
@@ -173,10 +147,10 @@ class McpSmokeTest {
   @Test
   void describeSymbol_reactorMethod_returnsSignature() throws Exception {
     final Path stringUtils = ROOT.resolve("core/src/main/java/com/example/core/StringUtils.java");
-    final int[] pos = tokenPosition(stringUtils, "upper");
+    final int[] pos = McpSession.tokenPosition(stringUtils, "upper");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             "{\"name\":\"describe_symbol\",\"arguments\":{\"file\":\"%s\",\"line\":%d,\"column\":%d}}"
                 .formatted(Os.json(stringUtils), pos[0], pos[1]));
@@ -187,7 +161,7 @@ class McpSmokeTest {
   @Test
   void searchSymbols_byName_findsReactorType() throws Exception {
     final String response =
-        request("tools/call", "{\"name\":\"search_symbols\",\"arguments\":{\"query\":\"StringUtils\"}}");
+        mcp.request("tools/call", "{\"name\":\"search_symbols\",\"arguments\":{\"query\":\"StringUtils\"}}");
 
     assertThat(response).contains("StringUtils").doesNotContain("\"isError\":true");
   }
@@ -198,63 +172,10 @@ class McpSmokeTest {
     final Path helloTest = ROOT.resolve("jpms/src/test/java/com/example/jpms/HelloTest.java");
 
     final String response =
-        request(
+        mcp.request(
             "tools/call",
             "{\"name\":\"run_test\",\"arguments\":{\"file\":\"%s\"}}".formatted(Os.json(helloTest)));
 
     assertThat(response).contains("PASS").doesNotContain("\"isError\":true");
-  }
-
-  private static int[] tokenPosition(final Path file, final String token) throws IOException {
-    final List<String> lines = Files.readAllLines(file);
-    return IntStream.range(0, lines.size())
-        .filter(i -> lines.get(i).contains(token))
-        .mapToObj(i -> new int[] {i + 1, lines.get(i).indexOf(token) + 1}) // 1-based line/column
-        .findFirst()
-        .orElseThrow(() -> new AssertionError("token not found: %s".formatted(token)));
-  }
-
-  // Requests are strictly sequential (send one, read its response before the next), so the next line
-  // carrying a result/error is this request's response — robust to id whitespace and skips any log
-  // notifications the server may emit.
-  private static String request(final String method, final String params) throws IOException {
-    send(
-        "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\",\"params\":%s}"
-            .formatted(nextId++, method, params));
-    String line;
-    while ((line = fromServer.readLine()) != null) {
-      if (line.contains("\"result\"") || line.contains("\"error\"")) {
-        return line;
-      }
-    }
-
-    throw new AssertionError("no response for %s".formatted(method));
-  }
-
-  private static void notify(final String method) throws IOException {
-    send("{\"jsonrpc\":\"2.0\",\"method\":\"%s\",\"params\":{}}".formatted(method));
-  }
-
-  private static void send(final String message) throws IOException {
-    toServer.write((message + "\n").getBytes(UTF_8));
-    toServer.flush();
-  }
-
-  private static void drainStderr(final Process process) {
-    final var thread =
-        new Thread(
-            () -> {
-              try (var reader =
-                  new BufferedReader(new InputStreamReader(process.getErrorStream(), UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                  System.out.println("[mcp] %s".formatted(line));
-                }
-              } catch (final IOException ignored) {
-              }
-            },
-            "mcp-stderr");
-    thread.setDaemon(true);
-    thread.start();
   }
 }
