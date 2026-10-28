@@ -60,6 +60,9 @@ public final class LatheLayout {
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";
   public static final String MODULE_LOCK_FILE = "module.lock";
+  // Held by the Lathe server that is writing .lathe/, so two servers on one workspace (an editor's
+  // and an agent's) never write the same output at once.
+  public static final String WRITE_LOCK_FILE = "write.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
@@ -263,6 +266,10 @@ public final class LatheLayout {
 
   public static Path reactorLockFile(final Path latheDir) {
     return latheDir.resolve(REACTOR_LOCK_FILE);
+  }
+
+  public static Path writeLockFile(final Path latheDir) {
+    return latheDir.resolve(WRITE_LOCK_FILE);
   }
 
   public static Path moduleLockFile(final Path moduleDir) {

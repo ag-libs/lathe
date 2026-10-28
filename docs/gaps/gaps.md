@@ -674,36 +674,6 @@ None yet.
 
 ---
 
-## WS-19 — An outside edit to a Helidon blueprint sometimes does not regenerate its builder
-
-**Status: documented**
-**Affects: the editor and MCP.** Intermittent: 1 of 3 full runs.
-Found by the pre-release probes (2026-10-27) on Helidon, with `dev/mcp_staleness.py` (scenarios N1, N1b).
-
-### Observed behaviour
-
-N1 adds an option to a blueprint outside the editor and then uses the generated accessor.
-In the failing run the use stayed `cannot find symbol latheProbeOpt` after 8 s, and the generated
-`AllowListConfig.java` in `.lathe/` never gained the option.
-That run's first in-process compiles in the scenario took 24 ms and 86 ms (`failed=1`); whenever the
-processors ran, it took 1.1–1.3 s, so the blueprint change was missed or compiled without its processors.
-The processors' `META-INF/services` files were in the mirror, so this is not the cause fixed in
-[WS-15](gaps-archive.md#ws-15--annotation-processors-built-in-the-reactor-never-run-in-process--done).
-It did not reproduce alone, after the `pom` or `two` scenarios, after a sync during the session, or in two
-more full runs (one right after a fresh sync).
-The failing run had no `LATHE_DEBUG`.
-
-### Fix direction
-
-Repeat the full Helidon staleness run with `LATHE_DEBUG=1` until it fails, then follow the blueprint
-through the write pass: was it detected, and which options and processor path did its compile get.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
 
 **Status: documented**

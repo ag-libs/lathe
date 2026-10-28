@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
@@ -19,6 +20,7 @@ import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,7 +28,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.MessageParams;
@@ -383,6 +387,33 @@ class WritePassTest extends ServiceTestBase {
     // The in-process recompile reports a self-clearing progress task (begin "recompiling" + end).
     verify(client, timeout(5_000).atLeastOnce())
         .notifyProgress(argThat(WritePassTest::isRecompileBegin));
+  }
+
+  // Another Lathe server on the workspace (an editor's beside an agent's) writes under .lathe/'s
+  // write lock: a pass waits for it instead of compiling the same files beside it, then writes.
+  @Test
+  void reconcileNow_anotherServerHoldsTheWriteLock_waitsForItThenWrites() throws Exception {
+    writeStaleModule(1_000L, 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+    writeFoo(CHANGED_FOO, 5_000L);
+    final Closeable otherServer =
+        LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
+            .orElseThrow();
+    final CompletableFuture<Void> pass;
+    try {
+      pass = service.reconcileNow(true);
+
+      assertThatThrownBy(() -> pass.get(300, TimeUnit.MILLISECONDS))
+          .as("waits while the other server writes")
+          .isInstanceOf(TimeoutException.class);
+      assertThat(moduleStamps()).containsEntry(FOO_KEY, 1_000L);
+    } finally {
+      otherServer.close();
+    }
+
+    pass.get(10, TimeUnit.SECONDS);
+    assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
   }
 
   @Test

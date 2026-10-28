@@ -89,6 +89,7 @@ Files you have open are analysed live as you edit and save them.
 When sources or resources change **outside** the editor — a branch switch, a `git pull`, or an AI agent editing files — Lathe detects it and recompiles the changed files itself, however many, with a progress indicator; changed resources are copied into `.lathe/` without a build.
 Saves, outside changes, and renames all go through the same write: changed files are compiled module by module in dependency order, and the open files they affect are re-checked once afterwards.
 A file that does not compile keeps its last good classes and is retried when it or a file it depends on changes.
+Several Lathe servers on one workspace (your editor's and an agent's) take turns writing `.lathe/`, so a change is compiled once, by whichever sees it first.
 
 Only a change to a **build file** (a `pom.xml`, or a dependency change) asks you to sync, as Lathe cannot reproduce dependency resolution itself.
 The sync runs `.lathe/lathe-sync.sh`, a script the build writes, so the editor never needs to know your build tool.

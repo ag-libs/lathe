@@ -83,6 +83,7 @@ import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -204,6 +205,9 @@ final class WorkspaceSession {
   private CompletableFuture<List<Path>> runningPass;
   private CompletableFuture<List<Path>> nextPass;
   private boolean nextPassEager;
+  // The running pass's hold on .lathe/'s write lock, which another Lathe server on this workspace
+  // (an editor's and an agent's) takes for its passes too.
+  private Closeable writeLock;
   private long passGeneration;
   // What the passes owe once none is left to run: the module dirs whose open files to re-analyze,
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
@@ -3444,14 +3448,29 @@ final class WorkspaceSession {
     final var pass = new CompletableFuture<List<Path>>();
     runningPass = pass;
     pass.whenComplete((stale, error) -> endPass(stale == null ? List.of() : stale));
+    runLocked(eager, pass);
+    return pass;
+  }
+
+  // Two servers writing one module at once can read each other's half-written classes and record a
+  // sound file as failed. So a pass runs under .lathe/'s write lock, taken before it scans: after
+  // the other server's pass, its stamps show what it wrote as current, and this one skips it.
+  private void runLocked(final boolean eager, final CompletableFuture<List<Path>> pass) {
     try {
+      final Optional<Closeable> lock =
+          LatheLock.tryExclusive(
+              LatheLayout.writeLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
+      if (lock.isEmpty()) {
+        worker.schedule(WRITE_LOCK_KEY, WRITE_LOCK_RETRY_MS, () -> runLocked(eager, pass));
+        return;
+      }
+
+      writeLock = lock.get();
       runPass(eager, pass);
-    } catch (final RuntimeException e) {
+    } catch (final IOException | RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
       pass.completeExceptionally(e); // never leave a pass running, or every later request waits
     }
-
-    return pass;
   }
 
   // One pass: drop the classes of deleted sources, claim the stale sources that are ready, copy
@@ -3544,6 +3563,11 @@ final class WorkspaceSession {
   // wrote, so its answer covers both passes' stale sources.
   private void endPass(final List<Path> finished) {
     runningPass = null;
+    if (writeLock != null) {
+      IOUtil.unchecked(writeLock::close);
+      writeLock = null;
+    }
+
     final CompletableFuture<List<Path>> next = nextPass;
     if (next == null) {
       refreshAfterPasses();
@@ -4572,6 +4596,9 @@ final class WorkspaceSession {
   // A rename none of whose files shows the edit this long after the response was never applied.
   private static final long RENAME_UNAPPLIED_MS = 30_000;
   private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
+  // How soon a pass tries again for the write lock another server holds.
+  private static final long WRITE_LOCK_RETRY_MS = 100;
+  private static final String WRITE_LOCK_KEY = "write-lock";
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";

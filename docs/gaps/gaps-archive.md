@@ -8413,6 +8413,50 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-19 — Two servers on one workspace compile the same change at once, and one records a sound file as failed — done
+
+**Status: done — Target: next.**
+**Affects: the editor and MCP**, whenever two Lathe servers share a workspace: an editor's and an agent's,
+or two agent sessions.
+Found by the pre-release probes (2026-10-27) on Helidon, with `dev/mcp_staleness.py` (scenarios N1, N1b),
+first recorded as "an outside edit to a Helidon blueprint sometimes does not regenerate its builder".
+
+### Observed behaviour
+
+N1 adds an option to a blueprint outside the editor and then uses the generated accessor.
+In the failing run the use stayed `cannot find symbol latheProbeOpt` after 8 s, and the generated
+`AllowListConfig.java` in `.lathe/` never gained the option; that run's first compiles took 24 ms and
+86 ms (`failed=1`).
+It did not reproduce alone, after the `pom` or `two` scenarios, or in two more full runs.
+
+### Cause (2026-10-28)
+
+With one server, 15 full Helidon runs with `LATHE_DEBUG=1` passed N1 and N1b every time.
+With two servers on the checkout, both reacting to the same blueprint edit, it failed in the first
+round: both compiled `common/configurable` at once into the same `.lathe/` output, one moved on to the
+downstream test while the other was still rewriting the generated builder, read it half-written, and
+failed. A failed file is recorded with its mtime and not retried until it changes again, so the
+server kept the stale error. Servers shared only the compile stamps on disk; nothing kept two of them
+from writing the same module together.
+
+### Resolution
+
+A server's write pass runs under `.lathe/write.lock`, an exclusive `FileLock` taken without waiting
+(`LatheLock.tryExclusive`) before the pass scans and released when it ends; the operating system releases
+it if the process dies. While another server holds it, the pass retries every 100 ms, so the server
+keeps answering. When the other pass ends, its stamps show what it wrote as current, and this pass does
+not compile it again.
+On the Helidon race (two MCP servers, the N1 edit, both queried at once),
+10 of 10 rounds pass, each change compiled once by one server, with no failed compile.
+
+### Regression targets
+
+- `WritePassTest.reconcileNow_anotherServerHoldsTheWriteLock_waitsForItThenWrites`: a pass does not
+  write while another holder has the lock, and writes once it is released.
+- `LatheLockTest.tryExclusive_heldOrReleased_emptyUntilTheHolderCloses`.
+
+---
+
 ## WS-18 — A source whose time changed but whose content did not is recompiled in-process — done
 
 **Status: done — Target: next.**

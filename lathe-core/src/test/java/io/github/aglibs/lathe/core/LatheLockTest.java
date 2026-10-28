@@ -2,17 +2,32 @@ package io.github.aglibs.lathe.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class LatheLockTest {
 
   @TempDir private Path moduleDir;
+
+  @Test
+  void tryExclusive_heldOrReleased_emptyUntilTheHolderCloses() throws IOException {
+    final Path lockFile = LatheLayout.writeLockFile(moduleDir.resolve("nested"));
+
+    final Closeable held = LatheLock.tryExclusive(lockFile).orElseThrow();
+    assertThat(LatheLock.tryExclusive(lockFile)).isEmpty();
+    held.close();
+
+    final Optional<Closeable> again = LatheLock.tryExclusive(lockFile);
+    assertThat(again).isPresent();
+    again.get().close();
+  }
 
   @Test
   void acquire_missingParentDir_createsDirAndLockFile() throws IOException {
