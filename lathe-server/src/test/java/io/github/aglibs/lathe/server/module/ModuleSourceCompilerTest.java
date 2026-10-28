@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
@@ -21,6 +22,7 @@ import java.util.List;
 import javax.tools.Diagnostic;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 import org.junit.jupiter.api.io.TempDir;
 
 class ModuleSourceCompilerTest {
@@ -127,6 +129,39 @@ class ModuleSourceCompilerTest {
 
       assertThat(write.writtenBinaryNames())
           .containsExactlyInAnyOrder("com.example.Foo", "com.example.Foo$Inner");
+    }
+  }
+
+  // Lombok changes the class it compiles in place, so an analysis runs it, alone, when the build
+  // has
+  // it; a build with <proc>none</proc> runs no processor, and neither does its analysis.
+  @Test
+  @EnabledForJreRange(maxVersion = LombokFixtures.MAX_JDK)
+  void compile_lombokOnTheProcessorPath_analysisSeesGeneratedMembersUnlessProcNone() {
+    assertThat(lombokAnalysisErrors(null)).isEmpty();
+    assertThat(lombokAnalysisErrors(LatheFlags.PROC_NONE))
+        .anyMatch(message -> message.contains("getName()"));
+  }
+
+  private List<String> lombokAnalysisErrors(final String proc) {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final String uri = sourceRoot.resolve("com/example/Person.java").toUri().toString();
+    final String source =
+        """
+        package com.example;
+        @lombok.Data
+        class Person {
+          private String name;
+          String greeting() { return "Hello, " + getName(); }
+        }
+        """;
+    try (var compiler =
+        new ModuleSourceCompiler(
+            LombokFixtures.moduleConfig(td, sourceRoot, proc), new CompilationAdmission(1))) {
+      return compiler.compile(uri, source, CompileMode.OPEN).diagnostics().stream()
+          .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+          .map(diagnostic -> diagnostic.getMessage(null))
+          .toList();
     }
   }
 

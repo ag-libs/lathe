@@ -38,7 +38,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
     this.manifest = manifest;
     try {
       this.fm = JavaSourceCompiler.createFileManager();
-      this.runner = new JavacRunner(fm, compilationAdmission);
+      this.runner = new JavacRunner(fm, compilationAdmission, LombokProcessors.none());
       this.td = Files.createTempDirectory("lathe-ext-");
     } catch (final IOException e) {
       throw new UncheckedIOException(e);

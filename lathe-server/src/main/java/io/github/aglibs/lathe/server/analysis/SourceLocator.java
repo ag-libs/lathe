@@ -8,6 +8,7 @@ import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
@@ -37,6 +38,8 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
 public final class SourceLocator {
+
+  private static final String LOMBOK_GENERATED = "lombok.Generated";
 
   private SourceLocator() {}
 
@@ -83,7 +86,7 @@ public final class SourceLocator {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void scan(final Tree tree, final Void unused) {
-        if (tree == null) {
+        if (tree == null || isGenerated(tree)) {
           return null;
         }
         final long start = positions.getStartPosition(cu, tree);
@@ -290,7 +293,19 @@ public final class SourceLocator {
     return declaration instanceof final MethodTree method ? method.getReturnType() : null;
   }
 
-  private static Tree modifiersOf(final Tree declaration) {
+  // Lombok marks each member it generates with @lombok.Generated, unless lombok.config turns that
+  // off. Such a member takes the span of the code it comes from (a field's name, the annotation),
+  // so
+  // what maps source positions to trees skips it.
+  public static boolean isGenerated(final Tree tree) {
+    final ModifiersTree modifiers = modifiersOf(tree);
+    return modifiers != null
+        && modifiers.getAnnotations().stream()
+            .anyMatch(
+                annotation -> annotation.getAnnotationType().toString().equals(LOMBOK_GENERATED));
+  }
+
+  private static ModifiersTree modifiersOf(final Tree declaration) {
     if (declaration instanceof final VariableTree variable) {
       return variable.getModifiers();
     }

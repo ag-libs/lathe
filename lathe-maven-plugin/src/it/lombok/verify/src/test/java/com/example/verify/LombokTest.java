@@ -51,11 +51,10 @@ class LombokTest {
   }
 
   // A save compiles the module with Lombok, so the class Lathe keeps gains what Lombok generates
-  // for a new field. The file's own diagnostics come from a check that runs no annotation
-  // processor, before the save and after it, so they report the generated getter as missing.
-  // Right: no diagnostic.
+  // for a new field; the file's own analysis runs Lombok too, so on open and after the save it
+  // reports none of the generated members missing.
   @Test
-  void save_lombokClass_compilesWithLombok_butReportsTheGeneratedGetterMissing() throws Exception {
+  void save_lombokClass_compilesWithLombok_andReportsNoGeneratedMemberMissing() throws Exception {
     final String uri = PERSON.toUri().toString();
     final String original = Files.readString(PERSON);
     final String withEmail =
@@ -63,12 +62,12 @@ class LombokTest {
     try {
       session.client.diagnostics.clear();
       session.openDoc(uri, original);
-      assertThat(nextDiagnostics(uri)).as("on open").anyMatch(LombokTest::isMissingGetName);
+      assertThat(nextDiagnostics(uri)).as("on open").noneMatch(LombokTest::isMissingGetName);
 
       session.client.diagnostics.clear();
       session.saveDoc(uri, withEmail);
       awaitInPersonClass("getEmail");
-      assertThat(nextDiagnostics(uri)).as("after the save").anyMatch(LombokTest::isMissingGetName);
+      assertThat(nextDiagnostics(uri)).as("after the save").noneMatch(LombokTest::isMissingGetName);
     } finally {
       session.saveDoc(uri, original);
     }
