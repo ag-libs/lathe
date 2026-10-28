@@ -431,11 +431,55 @@ The guides do not mention Lombok.
    reported to Lombok.
    Narrowing the process-fatal set to `VirtualMachineError` is deferred until GA (decision
    2026-10-27): until then a processor's `Error` should end the server visibly, and its cause be fixed.
-2. Run Lombok on the live pass when it is on the processor path (measure the cost first), or drop
-   diagnostics that name a member Lombok would generate.
-3. Map a generated member back to its field or annotation for definition, and make field references and
-   rename include the accessors (rename refuses or warns at the least).
-4. Document Lombok support and its limits in the guides.
+2. Parts 2 and 3: see the investigation below; the decision is pending.
+3. Document Lombok support and its limits in the guides.
+
+### Investigation (2026-10-28)
+
+**Cause of part 2.** Every analysis compile adds `-proc:none` (`ModuleSourceCompiler.buildOptions`); only a
+save's write (`FULL`) runs processors. Lombok changes the class it compiles in place, so the analysed tree has
+no generated members, and part 3 follows from that: no tree declares `getName`.
+
+**How other tools do it.**
+- jdtls starts with `-javaagent:lombok.jar` (`java.jdt.ls.lombokSupport.enabled`): Lombok's agent patches
+  the Eclipse compiler in jdtls's JVM. It works because jdtls runs ECJ; it does not carry to javac.
+- IntelliJ's Lombok plugin synthesizes the members in its own model, without running Lombok: a
+  reimplementation of Lombok's rules, which lags new features and `lombok.config`.
+- NetBeans, javac-based like Lathe, runs Lombok as an annotation processor.
+
+**Running Lombok on analysis compiles, measured** (`JavacTask.analyze`, Lombok 1.18.38, JDK 21 / 26):
+
+| Compile | `-proc:none` today | Lombok, one instance reused | Extra |
+|---|---|---|---|
+| one `@Data @Builder` file, warm | 11 / 14 ms, 3 false errors | 23 / 20 ms, none | about 10 ms |
+| 50 files, 25 with Lombok, warm | 13 / 12 ms, 100 false errors | 91–130 / 84–133 ms, none | about 2 ms a file |
+| the first compile, as Lombok loads | 22 / 23 ms | 908 / 985 ms | about 0.9 s, once a module |
+
+Lombok given through `-processorpath` instead costs about 110 ms a compile (javac loads it each time);
+the measured path keeps one Lombok processor per module and hands it to each task with the public
+`JavacTask.setProcessors`. The "today" column compiles with false errors, which may save javac some work.
+Not measured: Lathe's own pipeline, code mid-edit, Lombok-heavy hierarchies.
+
+**What Lombok leaves in the tree.** Each generated member carries a real source span: `getName()` the
+field's name, `setName()` the `@Data` annotation, `builder()` the `@Builder` annotation; an accessor's
+body is `return this.name;` or `this.name = name;`. So, with Lombok on analysis compiles:
+- 3a, definition on a generated getter: land on that span. The declaration-name search must stay inside
+  the declaration's span (today it would run on to a later `getName()` call); hours of work.
+- 3b, field references with the accessors' calls: find the class's accessors by their bodies, with no
+  naming rules (`lombok.config` prefixes and fluent accessors come for free), and merge their
+  references; about a day.
+- Every feature reading the tree (semantic tokens, document symbols, unused-code hints, references, the
+  MCP position check) needs checking against generated members; part of the 1–2 days part 2 takes.
+
+**Options.**
+- Part 2 as above, then 3a and 3b on top: about a week together. Cost: about 10 ms a keystroke, about
+  2 ms a file in batch work, about 1 s per module once. Risk: a JDK Lombok does not support (27 for
+  1.18.38) stops the server on open, not only on save; the project's own build fails there too.
+- Defer part 2. Then 3a and 3b could only guess accessors by name (`getName` → `name`), which breaks with
+  `lombok.config`; defer them with it.
+- 3c, rename of a field with generated accessors: refuse or warn, from the built classes (the mirror's
+  class has `getName()`); hours, independent of part 2. Renaming the accessors' calls too would need
+  Lombok re-run on the renamed field to learn the new names: days.
 
 ### Regression targets
 
