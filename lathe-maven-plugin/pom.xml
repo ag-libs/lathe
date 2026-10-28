@@ -24,6 +24,8 @@
     <lathe.it.cache>${project.build.directory}/it home/.cache/lathe</lathe.it.cache>
     <!-- The spotless-lib and spotless-lib-extra that spotless-maven-plugin ${spotless.version} ships. -->
     <spotless-lib.version>4.10.4</spotless-lib.version>
+    <!-- The Lombok the lombok fixture builds with; 1.18.38 runs on JDK 17 to 26. -->
+    <lombok.version>1.18.38</lombok.version>
   </properties>
 
   <dependencies>

@@ -442,7 +442,10 @@ The guides do not mention Lombok.
 - Part 1: `FileUtilTest.classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage` and
   `ModuleSourceCompilerTest.compileBatch_workspaceBehindSymlink_reportsBinaryNames`; the Lombok case itself
   was verified by hand on a Lombok 1.18.38 project (no Lombok test dependency).
-- Parts 2 and 3: none yet.
+- Parts 2 and 3: the `lombok` invoker fixture's `LombokTest` (JDK 17 to 26, as Lombok 1.18.38 runs) pins
+  today's answers: a save compiles with Lombok, yet the false "cannot find symbol: getName()" stays;
+  definition on a generated getter finds nothing; field references miss the getter's calls. Each test
+  says the right answer, so it fails once a part is fixed, and is then turned around.
 
 ---
 
