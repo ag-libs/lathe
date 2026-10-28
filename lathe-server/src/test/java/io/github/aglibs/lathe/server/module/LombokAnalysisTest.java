@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -124,6 +125,22 @@ class LombokAnalysisTest {
           .isEqualTo(position("class Person", "Person"));
       assertThat(definitionAt(session, "toString()", "toString"))
           .isEqualTo(position("class Person", "Person"));
+    }
+  }
+
+  // A field's generated accessors are searched with it, as their calls use the field.
+  @Test
+  void generatedAccessorTargets_onAField_areItsGetterAndSetter_onAMethodNone() {
+    try (var session = session()) {
+      session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
+
+      assertThat(
+              session.generatedAccessorTargets(requestAt(position("private String name", "name"))))
+          .extracting(ReferenceTarget::simpleName)
+          .containsExactlyInAnyOrder("getName", "setName");
+      assertThat(
+              session.generatedAccessorTargets(requestAt(position("String greeting", "greeting"))))
+          .isEmpty();
     }
   }
 

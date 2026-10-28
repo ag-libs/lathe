@@ -332,6 +332,15 @@ public final class SourceLocator {
         .orElse(owner);
   }
 
+  // The members Lombok generated from a field: its getter, setter and wither.
+  public static List<Element> generatedAccessors(final Element field) {
+    return field.getEnclosingElement().getEnclosedElements().stream()
+        .filter(member -> member.getKind() == ElementKind.METHOD && isGenerated(member))
+        .filter(method -> generatedSource(method).equals(field))
+        .map(Element.class::cast)
+        .toList();
+  }
+
   // Lombok's default accessor names for a field: get/is/set/with and the capitalized name, or the
   // field's own name (fluent); a boolean isActive gets isActive() and setActive().
   private static Set<String> accessorNames(final String field) {

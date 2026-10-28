@@ -99,9 +99,10 @@ class LombokTest {
             });
   }
 
-  // Right: the field's declaration and its getter's call in User. Today: the declaration alone.
+  // A field is used through its generated getter too: references find the getter's calls, in Person
+  // itself and in User.
   @Test
-  void references_lombokField_missTheGetterCall() throws Exception {
+  void references_lombokField_includeTheGetterCall() throws Exception {
     final String uri = PERSON.toUri().toString();
     final String content = Files.readString(PERSON);
     session.openDoc(uri, content);
@@ -114,9 +115,17 @@ class LombokTest {
     final List<? extends Location> references =
         session.server.getTextDocumentService().references(params).get(30, SECONDS);
 
+    final String user = Files.readString(USER);
     assertThat(references)
-        .singleElement()
-        .satisfies(location -> assertThat(location.getUri()).endsWith("Person.java"));
+        .extracting(
+            location ->
+                location.getUri().substring(location.getUri().lastIndexOf('/') + 1)
+                    + " "
+                    + location.getRange().getStart())
+        .containsExactlyInAnyOrder(
+            "Person.java " + LspSession.findToken(content, "private String name", "name"),
+            "Person.java " + LspSession.findToken(content, "+ getName()", "getName"),
+            "User.java " + LspSession.findToken(user, "person.getName", "getName"));
   }
 
   private static boolean isMissingGetName(final Diagnostic diagnostic) {
