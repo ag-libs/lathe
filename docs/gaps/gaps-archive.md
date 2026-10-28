@@ -10298,6 +10298,39 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-40 — `verify_change` right after a rename recompiles for seconds — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier and Dropwizard.
+
+### Observed behaviour
+
+`rename_symbol` already compiles the changed files into the mirror before it returns, yet the
+`verify_change` that follows took 6.8 s on EqualsVerifier (16 files) and 6.2 s on Dropwizard, and 18–23 s on
+Dropwizard while a Helidon build ran on the machine.
+The agent guide steers every rename into a `verify_change`, so each rename costs twice.
+
+### Cause (2026-10-28)
+
+Not a recompile of what the rename wrote: `verify_change` checks the changed files and their callers, and
+checked them one at a time. Renaming `Duration.toMilliseconds` on Dropwizard (15 files) gives 111 files in
+22 modules to check, at about 45 ms each: 5.0 s of the call's 5.6 s.
+On EqualsVerifier, renaming `usingGetClass` (14 files) now checks 19 files in 2 modules, and the call takes
+0.8 s.
+
+### Resolution
+
+`LatheEngine.verifyChange` starts every file's check before it awaits any, so the modules compile side by
+side, each on its own worker, within the compile admission's one-per-core limit.
+On the same Dropwizard rename the check takes 1.9 s instead of 5.0 s, and the call 2.5 s instead of 5.6 s,
+with the same result. One javac task per module for its files would cut more, if a larger reactor needs it.
+
+### Regression targets
+
+The engine's existing `verify_change` tests cover the result; the time was measured by hand on Dropwizard.
+
+---
+
 ## MC-34 — Position tools still answer for the enclosing tree inside comments and string literals — done
 
 **Status: done — Target: next.**

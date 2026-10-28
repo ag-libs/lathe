@@ -1272,29 +1272,6 @@ None yet.
 
 ---
 
-## MC-40 — `verify_change` right after a rename recompiles for seconds
-
-**Status: documented**
-Found by the pre-release probes (2026-10-27) on EqualsVerifier and Dropwizard.
-
-### Observed behaviour
-
-`rename_symbol` already compiles the changed files into the mirror before it returns, yet the
-`verify_change` that follows takes 6.8 s on EqualsVerifier (16 files) and 6.2 s on Dropwizard, and 18–23 s on
-Dropwizard while a Helidon build runs on the machine.
-The agent guide steers every rename into a `verify_change`, so each rename costs twice.
-
-### Fix direction
-
-Measure what `verify_change` recompiles after a rename; reuse the rename's compile results for the files it
-already compiled and check only their callers.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-41 — MCP edits written to a CRLF file add LF line endings
 
 **Status: deferred — Target: backlog.**
