@@ -216,6 +216,9 @@ Set `LATHE_DEBUG=1` for finer detail.
   build: start it at the reactor root, or run a build there first (`mvn process-test-classes`); see
   the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
   failed to connect; restart the agent's session after the build.
+- **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
+  or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the
+  build.
 - **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
   confirm the Lathe extension is registered (see [installation.md](installation.md)).
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for

@@ -70,3 +70,7 @@ run a normal build (`mvn process-test-classes`), which re-filters them through M
   file that is invisible to JVM introspection. Capturing them is a known future improvement.
 - A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
   runnable from the editor until a build actually forks them.
+- **Integration tests (Failsafe) are not captured.**
+  Capture rides Surefire's `test` fork, never Failsafe's (`integration-test` / `verify`), so `*IT` classes
+  can't be run from the editor or an agent; run them with the build.
+  A run of one says so, rather than naming a sync that would capture nothing.

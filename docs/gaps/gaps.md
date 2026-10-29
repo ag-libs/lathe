@@ -752,36 +752,6 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them
-
-**Status: documented**
-**Affects: MCP `run_test` and `workspace_summary`.**
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`equalsverifier-test-signedjar` has only `SignedJarIT`, run by Failsafe.
-`run_test` on it answers
-`Test run blocked: no captured test launch for equalsverifier-test-signedjar; run
-.lathe/lathe-sync.sh --tests equalsverifier-test-signedjar to capture it`,
-and `workspace_summary` lists the module as `tests: not captured` with the same command.
-That command succeeds (`No tests to run.`) and captures nothing, since capture rides the Surefire `test`
-fork, so an agent that follows the advice loops.
-The limit is stated only in the Neovim guide, not in the test-capture guide's limits or the agent guide.
-
-### Fix direction
-
-Tell a Failsafe test (a class matching the Failsafe includes, or a module whose only test plugin is Failsafe)
-apart from a missing capture, and say it cannot be run from Lathe yet instead of naming a sync.
-Add the limit to `test-capture.md` and `ai-agents.md`.
-Capturing the Failsafe fork is the larger, separate step.
-
-### Regression targets
-
-None yet.
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see

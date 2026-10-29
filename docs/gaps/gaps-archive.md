@@ -9550,6 +9550,48 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them — done
+
+**Status: done — Target: next.**
+**Affects: MCP `run_test` and `workspace_summary`.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-test-signedjar` has only `SignedJarIT`, run by Failsafe.
+`run_test` on it answers
+`Test run blocked: no captured test launch for equalsverifier-test-signedjar; run
+.lathe/lathe-sync.sh --tests equalsverifier-test-signedjar to capture it`,
+and `workspace_summary` lists the module as `tests: not captured` with the same command.
+That command succeeds (`No tests to run.`) and captures nothing, since capture rides the Surefire `test`
+fork, so an agent that follows the advice loops.
+The limit is stated only in the Neovim guide, not in the test-capture guide's limits or the agent guide.
+
+### Fix direction
+
+Tell a Failsafe test (a class matching the Failsafe includes, or a module whose only test plugin is Failsafe)
+apart from a missing capture, and say it cannot be run from Lathe yet instead of naming a sync.
+Add the limit to `test-capture.md` and `ai-agents.md`.
+Capturing the Failsafe fork is the larger, separate step.
+
+### Resolution
+
+The server tells such a class apart through the module's test filter, which the build front-end writes at
+sync (`.lathe/<module>/test-filter.json`: Surefire's includes and excludes for Maven): when a module has no
+captured launch and the filter leaves every selected class out, a test run or debug answers that the build's
+test filter leaves it out, so no capture includes it and Lathe cannot run it, with no sync named.
+The server stays build-neutral; a front-end that writes no filter (Gradle, which captures every test task)
+keeps the sync advice. `workspace_summary` is unchanged: it names no per-module command, so it sends no
+agent round in circles. The limit is in `test-capture.md` and `ai-agents.md`.
+On EqualsVerifier, `run_test` on `SignedJarIT` now answers with that reason.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.runTestFuture_classTheTestFilterLeavesOut_blockedWithoutASync`.
+- `TestFilterDataTest.includes_classNames_matchAnIncludeAndNoExclude_emptyIncludesTakeEverything`.
+
+---
+
 ## TE-9 — Running a file with two top-level test classes runs only the first — done
 
 **Status: done — Target: next.**
