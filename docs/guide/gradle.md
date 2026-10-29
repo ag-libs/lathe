@@ -49,14 +49,16 @@ settingsEvaluated {
 
 A build that commits the plugin keeps its own version; the init script then steps aside.
 
-Keep `.lathe/` out of version control (`echo '.lathe/' >> .gitignore`), then build once:
+Keep `.lathe/` out of version control (`echo '.lathe/' >> .gitignore`), then build once; this records your
+project's setup without running the tests:
 
 ```sh
-./gradlew build
+./gradlew latheSync -Plathe.capture.only=true
 ```
 
 Open any Java source in your editor's Lathe client.
-On a fresh clone, the client's sync does the same with no tests run (see [Syncing](#syncing)).
+After this, every normal build keeps Lathe up to date (see [What the build keeps current](#what-the-build-keeps-current)),
+and the editor's sync runs the same command on a fresh clone (see [Syncing](#syncing)).
 
 Lathe resolves its server from your build's repositories, and adds Maven Central to the root project only when
 the build declares no repository of its own.

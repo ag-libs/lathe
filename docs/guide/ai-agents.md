@@ -20,7 +20,7 @@ For Maven, register the Lathe extension and run a build once at the reactor root
 mvn process-test-classes
 ```
 
-For Gradle, apply the Lathe settings plugin and build once (`./gradlew build`); see the
+For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync -Plathe.capture.only=true`); see the
 [Gradle guide](gradle.md).
 That build does two things at once: it writes `.lathe/`, and its sync step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
@@ -217,7 +217,7 @@ Set `LATHE_DEBUG=1` for finer detail.
 
 - **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
   build: start it at the reactor root, or run a build there first (`mvn process-test-classes`, or
-  `./gradlew build` for Gradle); see the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
+  `./gradlew latheSync -Plathe.capture.only=true` for Gradle); see the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
   failed to connect; restart the agent's session after the build.
 - **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
   or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the
