@@ -1,8 +1,5 @@
 # Lathe for Gradle
 
-> **Coming in Lathe 0.3.0.** The Gradle plugin is not on the Gradle Plugin Portal yet; the snippets below
-> name the release it first ships in.
-
 Lathe reads a Gradle build the way it reads a Maven one: it watches the build compile and run its tests,
 and writes what it saw to `.lathe/` in the workspace root.
 The language server, the editor clients, and the MCP server read only `.lathe/`, so everything in the
@@ -30,7 +27,7 @@ the repository:
 
 ```kotlin
 plugins {
-    id("io.github.ag-libs.lathe") version "0.3.0"
+    id("io.github.ag-libs.lathe") version "0.1.24"
 }
 ```
 
@@ -40,7 +37,7 @@ Or as a **personal init script**, with no change to the build: save it as
 ```kotlin
 initscript {
     repositories { gradlePluginPortal() }
-    dependencies { classpath("io.github.ag-libs:lathe-gradle-plugin:0.3.0") }
+    dependencies { classpath("io.github.ag-libs:lathe-gradle-plugin:0.1.24") }
 }
 
 settingsEvaluated {
