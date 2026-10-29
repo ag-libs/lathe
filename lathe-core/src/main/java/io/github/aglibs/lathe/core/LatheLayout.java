@@ -227,11 +227,13 @@ public final class LatheLayout {
     // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
     // applies Lathe to each project without cross-project configuration (Isolated Projects).
     public static final String MIN_GRADLE_VERSION = "8.8";
-    // For the setup message: how a Gradle build gets Lathe, and the first run that writes .lathe/
-    // without running the tests.
     public static final String PLUGIN_ID = "io.github.ag-libs.lathe";
+    // The task the sync script runs, and its argument that captures the tests without running them.
+    public static final String SYNC_TASK = "latheSync";
+    public static final String CAPTURE_ONLY_ARG = "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY);
+    // A project's first run, for the setup message: it writes .lathe/ without running the tests.
     public static final String FIRST_BUILD_COMMAND =
-        "./gradlew latheSync -Plathe.capture.only=true";
+        "./gradlew %s %s".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);
 
     // The build files a sync fingerprints, so the server notices a changed build: the settings
     // file, gradle.properties and the version catalogs at the root, each project's build file, and

@@ -20,8 +20,8 @@ final class GradleSyncScript {
         LatheLayout.Gradle.runningTool(gradleHome, Platform.WINDOWS),
         javaHome,
         initScripts.stream().flatMap(script -> Stream.of("--init-script", script)).toList(),
-        List.of(LatheProjectPlugin.SYNC_TASK),
-        List.of(LatheProjectPlugin.SYNC_TASK, "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY)),
+        List.of(LatheLayout.Gradle.SYNC_TASK),
+        List.of(LatheLayout.Gradle.SYNC_TASK, LatheLayout.Gradle.CAPTURE_ONLY_ARG),
         List.of("--" + LatheSyncTask.MODULE_OPTION, LatheFlags.SYNC_MODULE_TOKEN),
         List.of());
   }

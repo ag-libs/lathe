@@ -57,7 +57,6 @@ import org.gradle.util.GradleVersion;
 // project's latheWorkspace merges.
 public class LatheProjectPlugin implements Plugin<Project> {
 
-  static final String SYNC_TASK = "latheSync";
   static final String WORKSPACE_TASK = "latheWorkspace";
   static final String FACTS_TASK = "latheFacts";
   private static final String FACTS_USAGE = "io.github.ag-libs.lathe-facts";
@@ -195,7 +194,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
     project
         .getTasks()
         .register(
-            SYNC_TASK,
+            LatheLayout.Gradle.SYNC_TASK,
             LatheSyncTask.class,
             task -> {
               task.setDescription("Syncs the workspace for the Lathe language server.");
