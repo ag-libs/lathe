@@ -40,6 +40,11 @@ public final class DefinitionLocator {
       return Optional.empty();
     }
 
+    // A member Lombok generated has no declaration of its own: go to the code it comes from.
+    if (SourceLocator.isGenerated(element)) {
+      return locateElement(SourceLocator.generatedSource(element), trees, sourceRoots, sourceUri);
+    }
+
     final var direct = locateElement(element, trees, sourceRoots, sourceUri);
     if (direct.isPresent()) {
       return direct;

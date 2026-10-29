@@ -6,7 +6,6 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModuleTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -15,7 +14,7 @@ import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolKind;
 
-final class DocumentSymbolScanner extends TreePathScanner<Void, Void> {
+final class DocumentSymbolScanner extends WrittenSourceScanner {
 
   private final Trees trees;
   private final CompilationUnitTree compilationUnit;

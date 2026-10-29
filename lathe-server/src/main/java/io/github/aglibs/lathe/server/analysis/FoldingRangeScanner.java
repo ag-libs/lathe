@@ -11,7 +11,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.DocSourcePositions;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -20,7 +19,7 @@ import java.util.List;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.FoldingRangeKind;
 
-final class FoldingRangeScanner extends TreePathScanner<Void, Void> {
+final class FoldingRangeScanner extends WrittenSourceScanner {
 
   private final DocTrees trees;
   private final CompilationUnitTree compilationUnit;

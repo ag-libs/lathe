@@ -15,7 +15,6 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -29,7 +28,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 
-public final class TokenScanner extends TreePathScanner<Void, Void> {
+public final class TokenScanner extends WrittenSourceScanner {
 
   public static final List<String> TOKEN_TYPES =
       List.of(

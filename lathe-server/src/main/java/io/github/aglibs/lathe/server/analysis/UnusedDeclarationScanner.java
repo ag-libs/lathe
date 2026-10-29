@@ -107,6 +107,13 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     return scanner.buildDiagnostics();
   }
 
+  // A member Lombok generates is never reported unused, but what it uses counts: a field read only
+  // by its generated getter is used.
+  @Override
+  public Void scan(final Tree tree, final Void v) {
+    return declarationPhase && SourceLocator.isGenerated(tree) ? null : super.scan(tree, v);
+  }
+
   @Override
   public Void visitMethod(final MethodTree node, final Void v) {
     if (declarationPhase) {

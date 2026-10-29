@@ -67,6 +67,9 @@
     <spotless.version>3.10.4</spotless.version>
     <google-java-format.version>1.35.0</google-java-format.version>
     <palantir-java-format.version>2.102.0</palantir-java-format.version>
+    <!-- Lombok for the tests and the lombok invoker fixture, never for Lathe itself; 1.18.38 runs on
+         JDK 17 to 26. -->
+    <lombok.version>1.18.38</lombok.version>
     <compiler.version>3.16.0</compiler.version>
     <git-commit-id.version>10.0.1</git-commit-id.version>
     <!-- 3.5.5 regresses the forked-VM exit handshake (ThreadedStreamConsumer.Pumper hang,
