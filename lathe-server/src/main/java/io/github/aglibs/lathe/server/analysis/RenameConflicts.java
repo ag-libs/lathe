@@ -10,6 +10,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -22,10 +23,11 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.util.Types;
 
-// Why a rename would collide with a declaration of the new name: a member of the same kind the
-// owner has or inherits, a sibling type, or a variable in scope. Not detected: the new name
-// shadowing the symbol at a use (a local of that name where the renamed field is read), a subclass
-// member the renamed one would override or hide, and a type name other files import.
+// Why a rename would break what Lombok generates, or collide with a declaration of the new name: a
+// member of the same kind the owner has or inherits, a sibling type, or a variable in scope. Not
+// detected: the new name shadowing the symbol at a use (a local of that name where the renamed
+// field is read), a subclass member the renamed one would override or hide, and a type name other
+// files import.
 public final class RenameConflicts {
 
   private static final Set<ElementKind> VARIABLES =
@@ -40,6 +42,11 @@ public final class RenameConflicts {
 
   public static Optional<String> find(
       final Element element, final String newName, final AttributedFileAnalysis analysis) {
+    final Optional<String> lombok = lombokRefusal(element);
+    if (lombok.isPresent()) {
+      return lombok;
+    }
+
     final String renaming =
         "`%s` cannot be renamed to `%s`".formatted(element.getSimpleName(), newName);
     if (named(element, newName)) {
@@ -171,6 +178,28 @@ public final class RenameConflicts {
 
   private static boolean isVariableNamed(final Element found, final String newName) {
     return found != null && VARIABLES.contains(found.getKind()) && named(found, newName);
+  }
+
+  // What Lombok generates follows its field, so renaming one alone breaks them apart: a generated
+  // member's name comes back, and a field's renamed accessors leave their calls behind.
+  private static Optional<String> lombokRefusal(final Element element) {
+    if (SourceLocator.isGenerated(element)) {
+      return Optional.of(
+          "`%s` cannot be renamed: Lombok generates it from `%s`"
+              .formatted(
+                  element.getSimpleName(), SourceLocator.generatedSource(element).getSimpleName()));
+    }
+
+    final List<Element> accessors = SourceLocator.generatedAccessors(element);
+    return accessors.isEmpty()
+        ? Optional.empty()
+        : Optional.of(
+            "`%s` cannot be renamed: Lombok generates %s from it, and renaming it would leave their calls behind"
+                .formatted(
+                    element.getSimpleName(),
+                    accessors.stream()
+                        .map(accessor -> "%s()".formatted(accessor.getSimpleName()))
+                        .collect(Collectors.joining(", "))));
   }
 
   private static boolean named(final Element element, final String name) {

@@ -2,13 +2,12 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.SourcePositions;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
-abstract class SourceTreeLocator extends TreePathScanner<Void, Void> {
+abstract class SourceTreeLocator extends WrittenSourceScanner {
 
   protected final Trees trees;
   protected final CompilationUnitTree cu;

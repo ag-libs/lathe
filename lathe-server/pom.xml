@@ -96,9 +96,9 @@
         </configuration>
       </plugin>
       <plugin>
-        <!-- Tests load pinned formatters (google-java-format, palantir-java-format, Eclipse JDT) from
-             target/ the way the server loads a project's (isolated classloader); none is on the
-             server's class path. -->
+        <!-- Tests load pinned formatters (google-java-format, palantir-java-format, Eclipse JDT) and
+             Lombok from target/ the way the server loads a project's (isolated classloader); none is
+             on the server's class path. -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
         <executions>
@@ -264,6 +264,13 @@
                   <artifactId>org.osgi.service.prefs</artifactId>
                   <version>1.1.2</version>
                   <outputDirectory>${project.build.directory}/test-formatters/eclipse-jdt</outputDirectory>
+                </artifactItem>
+                <!-- Lombok, on a test module's processor path the way a Lombok project puts it. -->
+                <artifactItem>
+                  <groupId>org.projectlombok</groupId>
+                  <artifactId>lombok</artifactId>
+                  <version>${lombok.version}</version>
+                  <outputDirectory>${project.build.directory}/test-processors</outputDirectory>
                 </artifactItem>
               </artifactItems>
             </configuration>

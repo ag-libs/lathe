@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extensions xmlns="http://maven.apache.org/EXTENSIONS/1.0.0">
+  <extension>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-maven-extension</artifactId>
+    <version>@project.version@</version>
+  </extension>
+</extensions>

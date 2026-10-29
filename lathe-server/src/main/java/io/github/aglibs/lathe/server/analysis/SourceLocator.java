@@ -8,6 +8,7 @@ import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
@@ -20,10 +21,12 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -37,6 +40,8 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
 public final class SourceLocator {
+
+  private static final String LOMBOK_GENERATED = "lombok.Generated";
 
   private SourceLocator() {}
 
@@ -83,7 +88,7 @@ public final class SourceLocator {
     new TreePathScanner<Void, Void>() {
       @Override
       public Void scan(final Tree tree, final Void unused) {
-        if (tree == null) {
+        if (tree == null || isGenerated(tree)) {
           return null;
         }
         final long start = positions.getStartPosition(cu, tree);
@@ -290,7 +295,68 @@ public final class SourceLocator {
     return declaration instanceof final MethodTree method ? method.getReturnType() : null;
   }
 
-  private static Tree modifiersOf(final Tree declaration) {
+  // Lombok marks each member it generates with @lombok.Generated, unless lombok.config turns that
+  // off. Such a member takes the span of the code it comes from (a field's name, an annotation), so
+  // what maps source positions to trees skips it.
+  public static boolean isGenerated(final Tree tree) {
+    final ModifiersTree modifiers = modifiersOf(tree);
+    return modifiers != null
+        && modifiers.getAnnotations().stream()
+            .anyMatch(
+                annotation -> annotation.getAnnotationType().toString().equals(LOMBOK_GENERATED));
+  }
+
+  // The same mark on an element, which a class file keeps too (lombok.Generated has class
+  // retention).
+  public static boolean isGenerated(final Element element) {
+    return element.getAnnotationMirrors().stream()
+        .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(LOMBOK_GENERATED));
+  }
+
+  // Where a member Lombok generates comes from, as written: the field an accessor reads or writes,
+  // else the first class around it that Lombok did not generate. Accessors are matched by Lombok's
+  // default names; other naming from lombok.config lands on the class.
+  public static Element generatedSource(final Element generated) {
+    Element owner = generated.getEnclosingElement();
+    while (isGenerated(owner)) {
+      owner = owner.getEnclosingElement();
+    }
+
+    final String name = generated.getSimpleName().toString();
+    return owner.getEnclosedElements().stream()
+        .filter(member -> member.getKind() == ElementKind.FIELD && !isGenerated(member))
+        .filter(field -> accessorNames(field.getSimpleName().toString()).contains(name))
+        .findFirst()
+        .map(Element.class::cast)
+        .orElse(owner);
+  }
+
+  // The members Lombok generated from a field: its getter, setter and wither. None for anything
+  // else.
+  public static List<Element> generatedAccessors(final Element field) {
+    if (field.getKind() != ElementKind.FIELD) {
+      return List.of();
+    }
+
+    return field.getEnclosingElement().getEnclosedElements().stream()
+        .filter(member -> member.getKind() == ElementKind.METHOD && isGenerated(member))
+        .filter(method -> generatedSource(method).equals(field))
+        .map(Element.class::cast)
+        .toList();
+  }
+
+  // Lombok's default accessor names for a field: get/is/set/with and the capitalized name, or the
+  // field's own name (fluent); a boolean isActive gets isActive() and setActive().
+  private static Set<String> accessorNames(final String field) {
+    final String property =
+        field.length() > 2 && field.startsWith("is") && Character.isUpperCase(field.charAt(2))
+            ? field.substring(2)
+            : Character.toUpperCase(field.charAt(0)) + field.substring(1);
+    return Stream.of(field, "get" + property, "is" + property, "set" + property, "with" + property)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private static ModifiersTree modifiersOf(final Tree declaration) {
     if (declaration instanceof final VariableTree variable) {
       return variable.getModifiers();
     }

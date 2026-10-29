@@ -29,10 +29,15 @@ import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 final class JavacRunner {
   private final CompilationAdmission admission;
   private final StandardJavaFileManager fm;
+  private final LombokProcessors lombok;
 
-  JavacRunner(final StandardJavaFileManager fm, final CompilationAdmission admission) {
+  JavacRunner(
+      final StandardJavaFileManager fm,
+      final CompilationAdmission admission,
+      final LombokProcessors lombok) {
     this.fm = fm;
     this.admission = admission;
+    this.lombok = lombok;
   }
 
   CompilerResult run(
@@ -79,7 +84,7 @@ final class JavacRunner {
       final List<String> options,
       final boolean withTokens) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
-    final var task = createTask(sourceFiles, options, collector);
+    final var task = analysisTask(sourceFiles, options, collector);
     try {
       final Iterable<? extends CompilationUnitTree> units = task.parse();
       final Set<URI> parseFailed =
@@ -172,9 +177,23 @@ final class JavacRunner {
         JavaSourceCompiler.COMPILER.getTask(null, fm, collector, options, null, sourceFiles);
   }
 
+  // An analysis runs no processor but Lombok, which changes the class it compiles in place; a write
+  // keeps javac's own discovery of every processor on the path.
+  private JavacTask analysisTask(
+      final Iterable<? extends JavaFileObject> sourceFiles,
+      final List<String> options,
+      final DiagnosticCollector<JavaFileObject> collector) {
+    final JavacTask task = createTask(sourceFiles, options, collector);
+    if (lombok.present()) {
+      task.setProcessors(lombok.create());
+    }
+
+    return task;
+  }
+
   private CompilerResult analyze(final JavaFileObject sourceFile, final List<String> options) {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     return JavaSourceCompiler.runAnalysis(
-        createTask(List.of(sourceFile), options, collector), collector);
+        analysisTask(List.of(sourceFile), options, collector), collector);
   }
 }

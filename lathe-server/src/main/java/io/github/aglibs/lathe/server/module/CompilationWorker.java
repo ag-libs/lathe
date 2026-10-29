@@ -211,6 +211,11 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveTarget(request), cancelChecker);
   }
 
+  public CompletableFuture<List<ReferenceTarget>> generatedAccessorTargets(
+      final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.generatedAccessorTargets(request));
+  }
+
   public CompletableFuture<ReferenceTarget> resolveTarget(final SourceFeatureRequest request) {
     return submit(ctx -> ctx.resolveTarget(request));
   }

@@ -27,6 +27,8 @@ See the [editor guides](../../README.md#editors) for each client.
 | Semantic tokens              | highlights static/deprecated members, enum constants, type parameters, annotations                | `textDocument/semanticTokens/full`                |
 | Folding                      | the imports (one range), module, classes, methods, and Javadoc comments                           | `textDocument/foldingRange`                       |
 
+In a Lombok project, what Lombok generates is part of the analysis and leads back to its field; see [Lombok](how-it-works.md#lombok).
+
 ## Diagnostics & formatting
 
 | Feature             | What it does                                                                                 | LSP method                        |
