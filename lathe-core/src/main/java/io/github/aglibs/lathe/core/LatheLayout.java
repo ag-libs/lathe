@@ -183,10 +183,12 @@ public final class LatheLayout {
     static final String MVN = "mvn";
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
-    // A project's first build: clean, so every module compiles through Lathe, and a test run that
-    // captures the tests without running them. SYNC_COMMAND refreshes after that.
+    // A test run that captures the tests without running them.
+    public static final String CAPTURE_ONLY_ARG = "-D%s=true".formatted(LatheFlags.CAPTURE_ONLY);
+    // A project's first build: clean, so every module compiles through Lathe, and a capture-only
+    // test run. SYNC_COMMAND refreshes after that.
     public static final String FIRST_BUILD_COMMAND =
-        "%s clean test -D%s=true".formatted(MVN, LatheFlags.CAPTURE_ONLY);
+        "%s clean test %s".formatted(MVN, CAPTURE_ONLY_ARG);
     static final String MVND = "mvnd";
     // Every sync script's Maven run: no download progress in the output the user reads.
     public static final String NO_TRANSFER_PROGRESS = "--no-transfer-progress";
