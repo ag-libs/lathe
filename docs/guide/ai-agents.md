@@ -222,8 +222,8 @@ Set `LATHE_DEBUG=1` for finer detail.
 - **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
   or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the
   build.
-- **Launcher not found** — the launcher is written by `lathe:sync`, so it appears only after a build;
-  confirm the Lathe extension is registered (see [installation.md](installation.md)).
+- **Launcher not found** — the build's sync writes the launcher, so it appears only after a build;
+  confirm Lathe is set up in the build (see [Maven](maven.md) or [Gradle](gradle.md)).
 - **Tools resolve nothing / results look stale** — check the result's notes: fix the code for
   `Not compiled:`, run the command a `Sync required:` or `Not checked:` note names; a cold index also needs a moment to
   warm on the first query.

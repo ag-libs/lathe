@@ -15,7 +15,7 @@ Which file answers which question:
 
 - **Behavior / how-to** (user-facing) → `README.md` (short landing page; keep it short) and
   `docs/guide/` (`features.md`, the editor-agnostic feature reference; `how-it-works.md`,
-  `installation.md`, `gradle.md`, `run-configuration.md`, `test-capture.md`, `troubleshooting.md`, `ai-agents.md`,
+  `installation.md`, `maven.md`, `gradle.md`, `run-configuration.md`, `test-capture.md`, `troubleshooting.md`, `ai-agents.md`,
   `openjdk.md`, and per-editor cheatsheets under `editors/`, e.g. `editors/neovim.md`).
 - **Design / why** → `docs/design-index.md`, then the specific design doc under `docs/planned/`
   or `docs/done/`.

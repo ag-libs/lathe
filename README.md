@@ -35,7 +35,7 @@ See the full [feature list](docs/guide/features.md), or the [Neovim keymap refer
 
 ## Quick start
 
-You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [requirements](docs/guide/installation.md#requirements)).
+You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [requirements](docs/guide/maven.md#requirements)).
 
 **1. Add Lathe to your build.** Put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
 
@@ -60,7 +60,7 @@ After this, every normal build keeps Lathe up to date.
 
 **3. Set up your editor** using its guide below.
 
-More options, including setup without the extension, are in the [installation guide](docs/guide/installation.md).
+More options, including setup without the extension, are in the [Maven guide](docs/guide/maven.md).
 
 ## Editors
 
@@ -93,7 +93,8 @@ What works today, in detail, is in [status](docs/status.md).
 
 - [How Lathe works](docs/guide/how-it-works.md)
 - [Features](docs/guide/features.md)
-- [Installation](docs/guide/installation.md), including how to turn Lathe off
+- [Installation](docs/guide/installation.md): the build, the editor clients, the server JVM and JDK
+- [Maven](docs/guide/maven.md), including how to turn Lathe off
 - [Gradle](docs/guide/gradle.md), from 0.2.0
 - [Run configuration](docs/guide/run-configuration.md) and [test capture](docs/guide/test-capture.md)
 - [Troubleshooting](docs/guide/troubleshooting.md)

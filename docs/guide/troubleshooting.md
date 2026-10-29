@@ -6,7 +6,7 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
 - **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run a
   Maven build at the reactor root — `mvn process-test-classes` is the quickest (it generates Lathe's
   metadata without running tests). If it still isn't working, confirm the Lathe extension is registered
-  (see [installation.md](installation.md)). A build log with no `[lathe]` lines means the
+  (see [Lathe for Maven](maven.md)). A build log with no `[lathe]` lines means the
   extension didn't load: check `mvn -v` (or the project's `.mvn/wrapper`) for Maven 3.6.3 or newer.
 - **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+
   and `maven-compiler-plugin` 3.6.2+. The message lists each problem with its fix: upgrade Maven (or the

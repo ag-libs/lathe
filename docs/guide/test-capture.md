@@ -5,8 +5,8 @@ recompilation.
 To know *how* to launch that replay JVM — the exact classpath, module path, and JVM arguments Maven's
 Surefire fork used — Lathe captures the real launch from inside the test fork.
 That capture is done by `lathe-junit`, a small `test`-scoped dependency added to every module
-(injected by the [Maven extension](installation.md), or declared by hand in a
-[manual setup](installation.md#method-2--manual-pom-configuration)) — nothing else to add.
+(injected by the [Maven extension](maven.md), or declared by hand in a
+[manual setup](maven.md#method-2--manual-pom-configuration)) — nothing else to add.
 
 No `maven-surefire-plugin` configuration is needed:
 `lathe-junit` registers a JUnit Platform `LauncherSessionListener` through the standard service-loader
@@ -38,7 +38,7 @@ On older JUnit, a post-discovery filter excludes every test instead.
 mvn test -Dlathe.capture.only=true
 ```
 
-For the [first run](installation.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
+For the [first run](maven.md#initialize), add `clean` (`mvn clean test -Dlathe.capture.only=true`)
 so every module compiles through Lathe rather than reusing up-to-date output.
 Note `-DskipTests` is **not** a substitute — it skips the fork entirely, so nothing is captured.
 On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add

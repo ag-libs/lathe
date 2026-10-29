@@ -130,4 +130,5 @@ starts each test task with every test skipped, which is all capture needs.
 - [How Lathe works](how-it-works.md)
 - [Test capture](test-capture.md)
 - [Run configuration](run-configuration.md)
-- [Installing Lathe into a Maven build](installation.md)
+- [Installing Lathe](installation.md): the editor clients, the server JVM and JDK, the formatter
+- [Lathe for Maven](maven.md)
