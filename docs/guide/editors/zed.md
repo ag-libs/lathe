@@ -44,7 +44,7 @@ No Lathe plugin, no extra config beyond one file.
    language servers until the project is trusted.
 
 The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
-project uses; a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) writes it.
+project uses; a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) writes it.
 Zed starts language servers with the worktree root as their working directory, so the relative path
 resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 Setting `binary.path` replaces the Java extension's own launch command, so Eclipse JDT LS is never

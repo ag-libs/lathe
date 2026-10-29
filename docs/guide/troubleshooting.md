@@ -3,9 +3,9 @@
 Common problems and their fixes.
 If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) with the Lathe version, your editor, and the server log from a run with `LATHE_DEBUG=1`.
 
-- **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run a
-  Maven build at the reactor root — `mvn process-test-classes` is the quickest (it generates Lathe's
-  metadata without running tests). If it still isn't working, confirm the Lathe extension is registered
+- **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run the
+  first build at the reactor root, `mvn clean test -Dlathe.capture.only=true` (or `./gradlew latheSync -Plathe.capture.only=true` on Gradle; it sets up Lathe without
+  running the tests). If it still isn't working, confirm the Lathe extension is registered
   (see [Lathe for Maven](maven.md)). A build log with no `[lathe]` lines means the
   extension didn't load: check `mvn -v` (or the project's `.mvn/wrapper`) for Maven 3.6.3 or newer.
 - **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+

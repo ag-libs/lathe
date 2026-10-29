@@ -14,10 +14,11 @@ a test without a build.
 
 The server reads from Lathe's build capture, exactly like the editor.
 Without it the server still starts, but every tool answers with where it looked and how to set the project up.
-For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
+For Maven, register the Lathe extension and run the first build once at the reactor root; it records the
+project's setup without running the tests:
 
 ```bash
-mvn process-test-classes
+mvn clean test -Dlathe.capture.only=true
 ```
 
 For Gradle, apply the Lathe settings plugin and build once (`./gradlew latheSync -Plathe.capture.only=true`); see the
@@ -216,8 +217,8 @@ Set `LATHE_DEBUG=1` for finer detail.
 ## Troubleshooting
 
 - **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
-  build: start it at the reactor root, or run a build there first (`mvn process-test-classes`, or
-  `./gradlew latheSync -Plathe.capture.only=true` for Gradle); see the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
+  build: start it at the reactor root, or run the first build there (`mvn clean test -Dlathe.capture.only=true`, or `./gradlew latheSync -Plathe.capture.only=true` for
+  Gradle); see the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
   failed to connect; restart the agent's session after the build.
 - **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
   or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the

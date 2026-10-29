@@ -11,9 +11,9 @@ REQUIREMENTS                                            *lathe-requirements*
 
   - Neovim 0.12+
   - The Java Treesitter parser: `:TSInstall java`
-  - A Maven project whose build enables the Lathe Maven extension, synced at
-    least once with `mvn process-test-classes` (this installs the server and
-    creates the `.lathe/` workspace).
+  - A Maven project whose build enables the Lathe Maven extension, built once
+    with `mvn clean test -Dlathe.capture.only=true` (this installs the
+    server and creates the `.lathe/` workspace).
 
 Installing this plugin alone is not enough — the Maven build must run too.
 
