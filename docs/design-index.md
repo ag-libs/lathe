@@ -114,7 +114,7 @@ reused):
 - [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
   front-end writes: path, schema record, writer, readers, required/recommended/optional, Maven vs
   OpenJDK coverage, and known issues.
-- [Gradle Support](planned/lathe-gradle-support.md) — **implemented (slices 0–4, 2026-10-25), ships in 0.2.0; Plugin Portal release wiring remains.** A
+- [Gradle Support](planned/lathe-gradle-support.md) — **implemented (slices 0–4, 2026-10-25), ships in 0.3.0; Plugin Portal release wiring remains.** A
   `lathe-gradle-plugin` (settings + project plugin) emitting the same `.lathe/` files, kept current by every build as on Maven:
   typed-API compiler capture finalizing `JavaCompile`, a workspace write after every test compile, in-fork test-launch capture
   through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,

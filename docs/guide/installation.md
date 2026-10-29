@@ -8,7 +8,7 @@ Lathe has two parts, set up independently and in either order.
    | Build | Guide |
    |---|---|
    | Maven 3.6.3+ | [Lathe for Maven](maven.md) |
-   | Gradle 8.8+, from 0.2.0 | [Lathe for Gradle](gradle.md) |
+   | Gradle 8.8+, from 0.3.0 | [Lathe for Gradle](gradle.md) |
    | The OpenJDK `make` build | [Lathe for OpenJDK](openjdk.md) |
 
 2. **The editor client**, for [Neovim](editors/neovim.md), [VS Code](editors/vscode.md),
