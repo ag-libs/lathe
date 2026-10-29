@@ -35,9 +35,11 @@ See the full [feature list](docs/guide/features.md), or the [Neovim keymap refer
 
 ## Quick start
 
-You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [requirements](docs/guide/maven.md#requirements)).
+You need Java 17+, and Maven 3.6.3+ or Gradle 8.8+ (see the requirements for
+[Maven](docs/guide/maven.md#requirements) and [Gradle](docs/guide/gradle.md#requirements)).
 
-**1. Add Lathe to your build.** Put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
+**1. Add Lathe to your build.**
+Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
 
 ```xml
 <extensions>
@@ -49,10 +51,19 @@ You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [require
 </extensions>
 ```
 
+Gradle: apply the settings plugin in `settings.gradle.kts`:
+
+```kotlin
+plugins {
+    id("io.github.ag-libs.lathe") version "0.1.24"
+}
+```
+
 **2. Build once.** This records your project's setup without running the tests:
 
 ```bash
-mvn clean test -Dlathe.capture.only=true
+mvn clean test -Dlathe.capture.only=true               # Maven
+./gradlew latheSync -Plathe.capture.only=true          # Gradle
 ```
 
 Add `.lathe/` to your `.gitignore`.
@@ -60,7 +71,8 @@ After this, every normal build keeps Lathe up to date.
 
 **3. Set up your editor** using its guide below.
 
-More options, including setup without the extension, are in the [Maven guide](docs/guide/maven.md).
+More options, including setup without the extension and Gradle's personal init script, are in the
+[Maven](docs/guide/maven.md) and [Gradle](docs/guide/gradle.md) guides.
 
 ## Editors
 
