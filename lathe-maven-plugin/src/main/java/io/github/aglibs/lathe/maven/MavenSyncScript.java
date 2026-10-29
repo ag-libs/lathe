@@ -27,7 +27,7 @@ final class MavenSyncScript {
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
         List.of(LatheLayout.Maven.NO_TRANSFER_PROGRESS, "-Dmaven.build.cache.enabled=false"),
         List.of(LatheLayout.Maven.SYNC_PHASE),
-        List.of("test", "-D%s=true".formatted(LatheFlags.CAPTURE_ONLY), "-DfailIfNoTests=false"),
+        List.of("test", LatheLayout.Maven.CAPTURE_ONLY_ARG, "-DfailIfNoTests=false"),
         List.of("-pl", LatheFlags.SYNC_MODULE_TOKEN),
         List.of("-am"));
   }
