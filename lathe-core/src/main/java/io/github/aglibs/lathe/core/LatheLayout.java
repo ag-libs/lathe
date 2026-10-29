@@ -116,7 +116,7 @@ public final class LatheLayout {
   public static final String SETUP_REMEDIATION =
       "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Either generates %s."
           .formatted(
-              Maven.SYNC_COMMAND,
+              Maven.FIRST_BUILD_COMMAND,
               Maven.MVN,
               Maven.LATHE_GROUP_ID,
               Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
@@ -183,6 +183,10 @@ public final class LatheLayout {
     static final String MVN = "mvn";
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+    // A project's first build: clean, so every module compiles through Lathe, and a test run that
+    // captures the tests without running them. SYNC_COMMAND refreshes after that.
+    public static final String FIRST_BUILD_COMMAND =
+        "%s clean test -D%s=true".formatted(MVN, LatheFlags.CAPTURE_ONLY);
     static final String MVND = "mvnd";
     // Every sync script's Maven run: no download progress in the output the user reads.
     public static final String NO_TRANSFER_PROGRESS = "--no-transfer-progress";

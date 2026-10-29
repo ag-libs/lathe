@@ -78,7 +78,7 @@ spec.check(
 )
 spec.check(
   "configured, no workspace: message names each front-end's first command",
-  notes[2] and notes[2]:find("mvn process-test-classes", 1, true) ~= nil
+  notes[2] and notes[2]:find("mvn clean test -Dlathe.capture.only=true", 1, true) ~= nil
     and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) ~= nil,
   true
 )

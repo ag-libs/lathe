@@ -578,7 +578,7 @@ If the server exits unexpectedly, Lathe notifies you (`language server exited un
 LSP log above and set `LATHE_DEBUG=1` for verbose compiler logging.
 A server that fails before it starts (a bad JDK, a module missing from the server's module path) also
 reports there: the JVM's startup errors appear as `stderr` lines in the LSP log. If it does not attach at all,
-confirm the launcher exists (`:LatheStart` reports when it is missing) and run `mvn process-test-classes`.
+confirm the launcher exists (`:LatheStart` reports when it is missing) and run the first build, `mvn clean test -Dlathe.capture.only=true`.
 For workspace-level issues (`.lathe/` not found, missing params file), see [Troubleshooting](../troubleshooting.md).
 
 **`Lathe: launcher not found at ~/.cache/lathe/current/lathe-launcher.sh; run mvn process-test-classes`**

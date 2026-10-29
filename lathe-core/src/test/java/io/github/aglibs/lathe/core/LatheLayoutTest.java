@@ -55,7 +55,7 @@ class LatheLayoutTest {
         .isEqualTo("%s --tests app".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
     // No script exists before the first sync, so setup names each front-end's first command.
     assertThat(LatheLayout.SETUP_REMEDIATION)
-        .contains("`mvn process-test-classes`")
+        .contains("`mvn clean test -Dlathe.capture.only=true`")
         .contains("`mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`")
         .doesNotContain("lathe-sync.sh");
   }

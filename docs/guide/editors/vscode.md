@@ -13,7 +13,7 @@ the other editors. The extension just finds and launches it.
 The extension needs VS Code 1.84 or later (or a Cursor release built on it).
 It activates when the workspace contains a `.lathe/` directory or a Java file opens.
 
-1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) populates
+1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) populates
    `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
    `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
 

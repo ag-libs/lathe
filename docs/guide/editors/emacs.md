@@ -20,7 +20,7 @@ The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to th
 project uses. Eglot starts the server with the project root as its working directory, so the relative
 path resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 
-Open a Java file in a project Lathe has synced (a Lathe-enabled build (for Maven, `mvn process-test-classes` or any later phase) populates `.lathe/`), then
+Open a Java file in a project Lathe has synced (a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) populates `.lathe/`), then
 `M-x eglot` — or add `eglot-ensure` to `java-mode-hook` to connect automatically. Eglot picks the
 project's version-control root, which must be the reactor root where `.lathe/` lives.
 
