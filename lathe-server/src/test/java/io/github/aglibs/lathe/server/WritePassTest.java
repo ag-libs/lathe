@@ -390,9 +390,11 @@ class WritePassTest extends ServiceTestBase {
   }
 
   // Another Lathe server on the workspace (an editor's beside an agent's) writes under .lathe/'s
-  // write lock: a pass waits for it instead of compiling the same files beside it, then writes.
+  // write lock: a pass waits for it instead of compiling the same files beside it, then writes. A
+  // query waits only a grace for it, as the other pass may run for minutes.
   @Test
-  void reconcileNow_anotherServerHoldsTheWriteLock_waitsForItThenWrites() throws Exception {
+  void reconcile_anotherServerHoldsTheWriteLock_passWaitsThenWrites_queryStopsWaiting()
+      throws Exception {
     writeStaleModule(1_000L, 1_000L);
     service.initialize(tmp);
     awaitStartup();
@@ -407,6 +409,10 @@ class WritePassTest extends ServiceTestBase {
       assertThatThrownBy(() -> pass.get(300, TimeUnit.MILLISECONDS))
           .as("waits while the other server writes")
           .isInstanceOf(TimeoutException.class);
+      assertThat(service.reconcileForVerify().get(5, TimeUnit.SECONDS).deferral())
+          .as("a query answers after the grace, not after the other server's pass")
+          .isEqualTo(ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING);
+      assertThat(pass).isNotDone();
       assertThat(moduleStamps()).containsEntry(FOO_KEY, 1_000L);
     } finally {
       otherServer.close();
@@ -414,6 +420,9 @@ class WritePassTest extends ServiceTestBase {
 
     pass.get(10, TimeUnit.SECONDS);
     assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
+    assertThat(service.reconcileForVerify().get(10, TimeUnit.SECONDS).deferral())
+        .as("with the lock free, a query waits for its pass as before")
+        .isEqualTo(ReconcileOutcome.DeferReason.NONE);
   }
 
   @Test

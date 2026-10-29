@@ -572,8 +572,12 @@ public final class LatheEngine {
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
-      return new LatheVerifyChange(
-          outcome.deferral().name(), List.of(), List.of(), LatheLayout.SYNC_SCRIPT_COMMAND);
+      // Another server's pass ends on its own; a sync would only add a build to wait for.
+      final String sync =
+          outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
+              ? null
+              : LatheLayout.SYNC_SCRIPT_COMMAND;
+      return new LatheVerifyChange(outcome.deferral().name(), List.of(), List.of(), sync);
     }
 
     // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
@@ -770,7 +774,11 @@ public final class LatheEngine {
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("the request was interrupted", e);
-    } catch (final ExecutionException | TimeoutException e) {
+    } catch (final TimeoutException e) {
+      throw new IllegalStateException(
+          "the request timed out after %ds; see the server log".formatted(REQUEST_TIMEOUT_SECONDS),
+          e);
+    } catch (final ExecutionException e) {
       // A request the server refused carries its reason, which the caller must see.
       final String message =
           ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused

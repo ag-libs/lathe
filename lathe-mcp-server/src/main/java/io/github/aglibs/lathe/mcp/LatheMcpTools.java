@@ -1173,8 +1173,15 @@ final class LatheMcpTools {
 
   static final LatheNotes NO_NOTES = LatheNotes.ofNotChecked(List.of());
 
-  private static CallToolResult verifyChangeResult(
-      final LatheVerifyChange verify, final LatheNotes notes) {
+  static CallToolResult verifyChangeResult(final LatheVerifyChange verify, final LatheNotes notes) {
+    if (verify.deferral() != null && verify.suggestedSync() == null) {
+      return result(
+          "Verification deferred: %s. Re-check in a moment."
+              .formatted(deferralText(verify.deferral())),
+          Map.<String, Object>of("deferred", verify.deferral()),
+          notes);
+    }
+
     if (verify.deferral() != null) {
       final String text =
           "Verification deferred: %s. Run `%s`, then re-check."
@@ -1296,6 +1303,7 @@ final class LatheMcpTools {
     return switch (reason) {
       case "BUILD_FILES_PENDING" -> "a pending build-file or dependency change needs a sync";
       case "BUILD_IN_PROGRESS" -> "a build is in progress";
+      case "OTHER_SERVER_WRITING" -> "another Lathe server on this workspace is updating .lathe/";
       default -> reason;
     };
   }
