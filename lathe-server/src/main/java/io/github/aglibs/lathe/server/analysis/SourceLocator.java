@@ -45,9 +45,11 @@ public final class SourceLocator {
 
   private SourceLocator() {}
 
+  // An LSP character is an offset within the line. javac's column numbers expand each tab to the
+  // next multiple of 8, so a position after a tab is measured from the line's start instead.
   public static long toOffset(final CompilationUnitTree cu, final int line, final int character) {
     try {
-      return cu.getLineMap().getPosition(line + 1, character + 1);
+      return cu.getLineMap().getStartPosition(line + 1) + character;
     } catch (final ArrayIndexOutOfBoundsException e) {
       return Diagnostic.NOPOS;
     }
@@ -56,8 +58,8 @@ public final class SourceLocator {
   public static Position offsetToPosition(final CompilationUnitTree cu, final long offset) {
     final var lineMap = cu.getLineMap();
     try {
-      return new Position(
-          (int) lineMap.getLineNumber(offset) - 1, (int) lineMap.getColumnNumber(offset) - 1);
+      final long line = lineMap.getLineNumber(offset);
+      return new Position((int) line - 1, (int) (offset - lineMap.getStartPosition(line)));
     } catch (final ArrayIndexOutOfBoundsException e) {
       // A synthesized node reports NOPOS (-1), which the line map rejects. Mirror toOffset's guard
       // and fall back to the origin so one positionless node can't fail a whole feature.
