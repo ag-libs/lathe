@@ -19,8 +19,9 @@ generated from.
 
 - Neovim 0.12+, on Linux or macOS (on Windows, Lathe supports VS Code, Cursor, and Zed instead)
 - The Java Treesitter parser: `:TSInstall java`
-- A Maven project whose build enables the Lathe Maven extension, synced at least once with
-  `mvn process-test-classes` — this installs the language server and creates the `.lathe/` workspace.
+- A Maven project whose build enables the Lathe Maven extension, built at least once with
+  `mvn clean test -Dlathe.capture.only=true` — this installs the language server and creates the
+  `.lathe/` workspace, test runs included, without running the tests.
   See the [installation guide](https://github.com/ag-libs/lathe/blob/main/docs/guide/installation.md).
 
 The client is editor-side only; the **server is resolved and installed by your Maven build**, so

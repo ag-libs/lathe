@@ -12,8 +12,9 @@ a test without a build.
 
 ## Prerequisite: a populated `.lathe/`
 
-The server reads from Lathe's build capture and **refuses to start without it**, exactly like the
-editor. For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
+The server reads from Lathe's build capture, exactly like the editor.
+Without it the server still starts, but every tool answers with where it looked and how to set the project up.
+For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
 
 ```bash
 mvn process-test-classes
