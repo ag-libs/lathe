@@ -407,7 +407,10 @@ final class WorkspaceSession {
       final TestLaunchData template =
           new LaunchReader(workspaceRoot)
               .test(moduleRel)
-              .orElseThrow(() -> new IllegalStateException(noCapturedLaunch(moduleRel)));
+              .orElseThrow(
+                  () ->
+                      new IllegalStateException(
+                          noCapturedLaunch(workspaceRoot, moduleRel, selections)));
       assertLaunchComplete(
           CompletenessGate.verify(template, workspaceRoot, manifest.reactorRewrite()));
 
@@ -516,7 +519,8 @@ final class WorkspaceSession {
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
       final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
       if (template.isEmpty()) {
-        return MainLaunchPlan.blocked(List.of(noCapturedLaunch(moduleRel)));
+        return MainLaunchPlan.blocked(
+            List.of(noCapturedLaunch(workspaceRoot, moduleRel, List.of())));
       }
 
       final CompletenessResult gate =
@@ -1324,8 +1328,27 @@ final class WorkspaceSession {
     return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
   }
 
-  // With the command that captures it, so a reader (an agent above all) knows the remedy.
-  private static String noCapturedLaunch(final String moduleRel) {
+  // With the command that captures it, so a reader (an agent above all) knows the remedy. A class
+  // the build's test filter leaves out (an integration test, say) is never captured, so naming a
+  // sync for it would send the reader round in circles.
+  private static String noCapturedLaunch(
+      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections) {
+    final boolean classesOnly =
+        !selections.isEmpty()
+            && selections.stream()
+                .allMatch(
+                    selection ->
+                        selection.kind() == TestSelectionKind.CLASS
+                            || selection.kind() == TestSelectionKind.METHOD);
+    final List<String> classes =
+        selections.stream().map(selection -> selection.value().split("#")[0]).distinct().toList();
+    final Optional<TestFilterData> filter =
+        IOUtil.unchecked(() -> new LaunchReader(workspaceRoot).testFilter(moduleRel));
+    if (classesOnly && filter.isPresent() && classes.stream().noneMatch(filter.get()::includes)) {
+      return "%s: the build's test filter for %s leaves it out (an integration test, for example), so no capture includes it and Lathe cannot run it; run it with the build"
+          .formatted(String.join(", ", classes), moduleRel);
+    }
+
     return "no captured test launch for %s; run `%s` to capture it"
         .formatted(moduleRel, LatheLayout.captureTestsCommand(moduleRel));
   }
@@ -1349,7 +1372,8 @@ final class WorkspaceSession {
             () ->
                 "[launch] %s %s blocked no captured test-launch.json"
                     .formatted(moduleRel, selectionLabel(selections)));
-        result.complete(LaunchOutcome.blocked(List.of(noCapturedLaunch(moduleRel))));
+        result.complete(
+            LaunchOutcome.blocked(List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
         return;
       }
 

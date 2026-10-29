@@ -201,7 +201,10 @@ class McpSmokeTest {
             "tools/call",
             "{\"name\":\"run_test\",\"arguments\":{\"file\":\"%s\"}}".formatted(Os.json(helloTest)));
 
-    assertThat(response).contains("PASS").doesNotContain("\"isError\":true");
+    assertThat(response)
+        .contains("PASS")
+        .contains("Ran: com.example.jpms.HelloTest")
+        .doesNotContain("\"isError\":true");
   }
 
   private static int[] tokenPosition(final Path file, final String token) throws IOException {

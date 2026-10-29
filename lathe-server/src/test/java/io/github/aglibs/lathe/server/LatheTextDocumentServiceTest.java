@@ -15,6 +15,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
@@ -540,6 +541,38 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   void runTestFuture_moduleWithoutACapturedLaunch_blockedWithTheCommandThatCapturesIt()
       throws Exception {
+    writeManifest();
+    service.initialize(tmp);
+
+    assertThat(blockedReasons("com.example.Foo"))
+        .containsExactly(
+            "no captured test launch for app; run `%s` to capture it"
+                .formatted(LatheLayout.captureTestsCommand("app")));
+  }
+
+  // A class the build's test filter leaves out (an integration test) is never captured, so no sync
+  // is named for it; a class the filter includes still gets the command that captures it.
+  @Test
+  void runTestFuture_classTheTestFilterLeavesOut_blockedWithoutASync() throws Exception {
+    writeManifest();
+    Json.write(
+        new TestFilterData(List.of("(.*\\.)?[^.]*Test"), List.of()),
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR).resolve("app"))
+            .resolve(LatheLayout.TEST_FILTER_FILE));
+    service.initialize(tmp);
+
+    assertThat(blockedReasons("com.example.SignedJarIT#signs()"))
+        .singleElement()
+        .asString()
+        .startsWith("com.example.SignedJarIT: the build's test filter for app leaves it out")
+        .doesNotContain("lathe-sync");
+    assertThat(blockedReasons("com.example.FooTest"))
+        .singleElement()
+        .asString()
+        .contains(LatheLayout.captureTestsCommand("app"));
+  }
+
+  private void writeManifest() throws Exception {
     Json.write(
         new WorkspaceManifestData(
             LatheLayout.SCHEMA_VERSION,
@@ -554,19 +587,17 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             null),
         Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
             .resolve(LatheLayout.WORKSPACE_JSON));
-    service.initialize(tmp);
+  }
 
+  private List<String> blockedReasons(final String selected) throws Exception {
+    final TestSelectionKind kind =
+        selected.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS;
     final var outcome =
         service
-            .runTestFuture(
-                "app", List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")), "")
+            .runTestFuture("app", List.of(new TestSelection(kind, selected)), "")
             .get(5, TimeUnit.SECONDS);
-
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons())
-        .containsExactly(
-            "no captured test launch for app; run `%s` to capture it"
-                .formatted(LatheLayout.captureTestsCommand("app")));
+    return outcome.blockedReasons();
   }
 
   private static DidChangeTextDocumentParams changeParams(final String text) {

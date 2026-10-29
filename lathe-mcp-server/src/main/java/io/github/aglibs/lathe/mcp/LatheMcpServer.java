@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -96,28 +97,33 @@ public final class LatheMcpServer {
                 .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile));
 
     final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
-    if (workspaceRoot.isEmpty()) {
-      LOG.severe(LatheLayout.SETUP_REMEDIATION);
-      System.exit(2);
-      return;
-    }
-
-    final Path root = workspaceRoot.get();
-    LOG.info(() -> "[startup] workspace=%s".formatted(root));
 
     // stdout is the MCP JSON-RPC channel: hand the transport the real stdout and redirect
-    // System.out
-    // to stderr so a stray print in the engine cannot corrupt the protocol.
+    // System.out to stderr so a stray print in the engine cannot corrupt the protocol.
     final var protocolOut = System.out;
     System.setOut(System.err);
     try {
-      final var engine = new LatheEngine(root);
+      // With no .lathe/ the server still answers, so the agent learns why from the instructions and
+      // from any tool, instead of a server that failed to connect.
+      final Supplier<LatheEngine> engine;
+      final String instructions;
+      if (workspaceRoot.isPresent()) {
+        LOG.info(() -> "[startup] workspace=%s".formatted(workspaceRoot.get()));
+        final var workspaceEngine = new LatheEngine(workspaceRoot.get());
+        engine = () -> workspaceEngine;
+        instructions = INSTRUCTIONS;
+      } else {
+        instructions = noWorkspace(cwd);
+        LOG.warning(() -> "[startup] %s".formatted(instructions));
+        engine = missing(instructions);
+      }
+
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
       final var transport = new StdioServerTransportProvider(mapper, System.in, protocolOut);
       McpServer.sync(transport)
           .serverInfo("lathe", version())
           .capabilities(ServerCapabilities.builder().tools(true).build())
-          .instructions(INSTRUCTIONS)
+          .instructions(instructions)
           .tools(LatheMcpTools.all(engine, mapper))
           .build();
     } catch (final RuntimeException e) {
@@ -167,6 +173,17 @@ public final class LatheMcpServer {
         .map(SESSION_TIMESTAMP::format)
         .map(timestamp -> "%s-%d".formatted(timestamp, pid))
         .orElseGet(() -> Long.toString(pid));
+  }
+
+  static Supplier<LatheEngine> missing(final String message) {
+    return () -> {
+      throw new LatheMcpTools.NoWorkspaceException(message);
+    };
+  }
+
+  static String noWorkspace(final Path cwd) {
+    return "Lathe found no %s/ in %s or any directory above it, so it has no build to analyze. %s"
+        .formatted(LatheLayout.LATHE_DIR, cwd, LatheLayout.SETUP_REMEDIATION);
   }
 
   private static Optional<Path> findWorkspaceRoot(final Path cwd) {

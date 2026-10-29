@@ -13,4 +13,10 @@ public record TestFilterData(List<String> classNameIncludes, List<String> classN
     classNameIncludes = classNameIncludes != null ? List.copyOf(classNameIncludes) : List.of();
     classNameExcludes = classNameExcludes != null ? List.copyOf(classNameExcludes) : List.of();
   }
+
+  // Whether the build's test run includes the class, a binary name.
+  public boolean includes(final String className) {
+    return (classNameIncludes.isEmpty() || classNameIncludes.stream().anyMatch(className::matches))
+        && classNameExcludes.stream().noneMatch(className::matches);
+  }
 }

@@ -752,60 +752,6 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them
-
-**Status: documented**
-**Affects: MCP `run_test` and `workspace_summary`.**
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`equalsverifier-test-signedjar` has only `SignedJarIT`, run by Failsafe.
-`run_test` on it answers
-`Test run blocked: no captured test launch for equalsverifier-test-signedjar; run
-.lathe/lathe-sync.sh --tests equalsverifier-test-signedjar to capture it`,
-and `workspace_summary` lists the module as `tests: not captured` with the same command.
-That command succeeds (`No tests to run.`) and captures nothing, since capture rides the Surefire `test`
-fork, so an agent that follows the advice loops.
-The limit is stated only in the Neovim guide, not in the test-capture guide's limits or the agent guide.
-
-### Fix direction
-
-Tell a Failsafe test (a class matching the Failsafe includes, or a module whose only test plugin is Failsafe)
-apart from a missing capture, and say it cannot be run from Lathe yet instead of naming a sync.
-Add the limit to `test-capture.md` and `ai-agents.md`.
-Capturing the Failsafe fork is the larger, separate step.
-
-### Regression targets
-
-None yet.
-
----
-
-## TE-9 — Running a file with two top-level test classes runs only the first
-
-**Status: documented**
-**Affects: MCP `run_test` (class scope); the editor's run of a file was not probed.**
-Found by the pre-release probes (2026-10-27) on Dropwizard.
-
-### Observed behaviour
-
-`DropwizardExtensionsSupportDeepNestingTest.java` declares a second top-level test class
-(`…ExtensionAtEachLevelTest`), which Surefire runs.
-`run_test` with the default class scope answers `PASS — 4 passed` for the first class only, and its output
-does not name the class it ran, so the skipped one goes unnoticed.
-A method of the second class runs when named.
-
-### Fix direction
-
-Class scope runs every top-level test class in the file, and the result names the classes it ran.
-
-### Regression targets
-
-None yet.
-
----
-
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
@@ -1165,31 +1111,6 @@ Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
 Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
 "this file is in no source root", and "this module is not in the last build (a profile may add it)".
 For a non-test file, name the test class that tests it when one exists.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why
-
-**Status: documented**
-Found by the pre-release probes (2026-10-27).
-
-### Observed behaviour
-
-Started where no `.lathe/` is above the working directory, `LatheMcpServer` logs one `SEVERE` line,
-`If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run …`, and exits
-with status 2.
-The line does not say what is missing or where it looked.
-An MCP client shows only that the server failed to connect; the agent gets no tool, no instructions and no hint.
-
-### Fix direction
-
-Start anyway and answer the handshake: the server instructions and every tool say that no `.lathe/` was
-found above the working directory, and give the setup remediation.
-The log line names the missing `.lathe/` and the directory searched.
 
 ### Regression targets
 

@@ -6,12 +6,13 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 
 /**
- * A replayed test run: whether it launched (else why not), the pass/fail/skip counts, and the
- * failures.
+ * A replayed test run: whether it launched (else why not), what it ran, the pass/fail/skip counts,
+ * and the failures.
  */
 public record LatheTestRun(
     boolean launched,
     List<String> blockedReasons,
+    List<String> ran,
     int total,
     int passed,
     int failed,
@@ -26,13 +27,16 @@ public record LatheTestRun(
   public LatheTestRun {
     ValidCheck.check()
         .notNull(blockedReasons, "blockedReasons")
+        .notNull(ran, "ran")
         .notNull(failures, "failures")
         .validate();
     blockedReasons = List.copyOf(blockedReasons);
+    ran = List.copyOf(ran);
     failures = List.copyOf(failures);
   }
 
-  static LatheTestRun from(final LaunchOutcome outcome) {
+  // ran: the selected classes, methods or package, so a result names what it covers.
+  static LatheTestRun from(final LaunchOutcome outcome, final List<String> ran) {
     final List<TestResult> results = outcome.testResults();
     final List<LatheTestFailure> failures =
         results.stream()
@@ -42,6 +46,7 @@ public record LatheTestRun(
     return new LatheTestRun(
         outcome.launched(),
         outcome.blockedReasons(),
+        ran,
         results.size(),
         (int) results.stream().filter(r -> PASSED.equals(r.status())).count(),
         failures.size(),

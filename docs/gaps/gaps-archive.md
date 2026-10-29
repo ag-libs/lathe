@@ -9550,6 +9550,81 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them — done
+
+**Status: done — Target: next.**
+**Affects: MCP `run_test` and `workspace_summary`.**
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-test-signedjar` has only `SignedJarIT`, run by Failsafe.
+`run_test` on it answers
+`Test run blocked: no captured test launch for equalsverifier-test-signedjar; run
+.lathe/lathe-sync.sh --tests equalsverifier-test-signedjar to capture it`,
+and `workspace_summary` lists the module as `tests: not captured` with the same command.
+That command succeeds (`No tests to run.`) and captures nothing, since capture rides the Surefire `test`
+fork, so an agent that follows the advice loops.
+The limit is stated only in the Neovim guide, not in the test-capture guide's limits or the agent guide.
+
+### Fix direction
+
+Tell a Failsafe test (a class matching the Failsafe includes, or a module whose only test plugin is Failsafe)
+apart from a missing capture, and say it cannot be run from Lathe yet instead of naming a sync.
+Add the limit to `test-capture.md` and `ai-agents.md`.
+Capturing the Failsafe fork is the larger, separate step.
+
+### Resolution
+
+The server tells such a class apart through the module's test filter, which the build front-end writes at
+sync (`.lathe/<module>/test-filter.json`: Surefire's includes and excludes for Maven): when a module has no
+captured launch and the filter leaves every selected class out, a test run or debug answers that the build's
+test filter leaves it out, so no capture includes it and Lathe cannot run it, with no sync named.
+The server stays build-neutral; a front-end that writes no filter (Gradle, which captures every test task)
+keeps the sync advice. `workspace_summary` is unchanged: it names no per-module command, so it sends no
+agent round in circles. The limit is in `test-capture.md` and `ai-agents.md`.
+On EqualsVerifier, `run_test` on `SignedJarIT` now answers with that reason.
+
+### Regression targets
+
+- `LatheTextDocumentServiceTest.runTestFuture_classTheTestFilterLeavesOut_blockedWithoutASync`.
+- `TestFilterDataTest.includes_classNames_matchAnIncludeAndNoExclude_emptyIncludesTakeEverything`.
+
+---
+
+## TE-9 — Running a file with two top-level test classes runs only the first — done
+
+**Status: done — Target: next.**
+**Affects: MCP `run_test` (class scope); the editor's run of a file was not probed.**
+Found by the pre-release probes (2026-10-27) on Dropwizard.
+
+### Observed behaviour
+
+`DropwizardExtensionsSupportDeepNestingTest.java` declares a second top-level test class
+(`…ExtensionAtEachLevelTest`), which Surefire runs.
+`run_test` with the default class scope answers `PASS — 4 passed` for the first class only, and its output
+does not name the class it ran, so the skipped one goes unnoticed.
+A method of the second class runs when named.
+
+### Fix direction
+
+Class scope runs every top-level test class in the file, and the result names the classes it ran.
+
+### Resolution
+
+`run_test` at class scope runs every test class at the file's outermost level in one launch
+(`LatheEngine.selectTargets`); a `@Nested` class still runs inside its enclosing one, and method scope still
+runs the one outermost method of its name. The answer names what it ran (`Ran:`, and `ran` in the
+structured content). On the Dropwizard file it now answers `PASS — 5 passed` and names both classes.
+
+### Regression targets
+
+- `LatheEngineTest.selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod`.
+- The `multi-module` fixture's `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses` checks the `Ran:`
+  line.
+
+---
+
 ## TE-1 — Capture-only dependencies leak into the recorded replay classpath
 
 **Status: done — Target: backlog.**
@@ -10297,6 +10372,42 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why — done
+
+**Status: done — Target: next.**
+Found by the pre-release probes (2026-10-27).
+
+### Observed behaviour
+
+Started where no `.lathe/` is above the working directory, `LatheMcpServer` logs one `SEVERE` line,
+`If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run …`, and exits
+with status 2.
+The line does not say what is missing or where it looked.
+An MCP client shows only that the server failed to connect; the agent gets no tool, no instructions and no hint.
+
+### Fix direction
+
+Start anyway and answer the handshake: the server instructions and every tool say that no `.lathe/` was
+found above the working directory, and give the setup remediation.
+The log line names the missing `.lathe/` and the directory searched.
+
+### Resolution
+
+With no `.lathe/` above the working directory the server no longer exits: it answers the handshake with
+instructions that say where it looked and how to set the project up, lists every tool, and each tool
+answers that same message as an error (`LatheMcpTools.all` takes the engine through a supplier, which
+throws `NoWorkspaceException` when there is none). The startup log has the same line at `WARNING`.
+Checked end to end with the MCP launcher in an empty directory.
+The setup step it names is `LatheLayout.SETUP_REMEDIATION`, shared with the editor's warning: each
+build front-end's first command (Maven, OpenJDK). The Gradle front-end adds its own there, and in the
+Neovim client's `SETUP_HINT`, when it ships.
+
+### Regression targets
+
+`LatheMcpToolsTest.all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup`.
+
+---
 
 ## MC-40 — `verify_change` right after a rename recompiles for seconds — done
 

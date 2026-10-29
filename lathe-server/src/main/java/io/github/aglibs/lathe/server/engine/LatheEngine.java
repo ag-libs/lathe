@@ -466,27 +466,39 @@ public final class LatheEngine {
     compileFromDisk(file);
     final var uri = file.toUri().toString();
     final List<RunTarget> targets = await(service.runnablesFuture(uri));
-    final RunTarget target = selectTarget(targets, scope, method, file);
-    final var selection = new TestSelection(scope.selectionKind(), target.id());
+    final List<RunTarget> selected = selectTargets(targets, scope, method, file);
+    final List<TestSelection> selections =
+        selected.stream()
+            .map(target -> new TestSelection(scope.selectionKind(), target.id()))
+            .toList();
     final String token = "mcp-run-%d".formatted(runToken.incrementAndGet());
     return LatheTestRun.from(
-        await(service.runTestFuture(target.moduleRel(), List.of(selection), token)));
+        await(service.runTestFuture(selected.get(0).moduleRel(), selections, token)),
+        selected.stream().map(RunTarget::id).toList());
   }
 
-  static RunTarget selectTarget(
+  // The outermost targets of the scope: a nested class runs with its enclosing one (the scan lists
+  // it first), and a file's every top-level test class runs, not only the first. A method is one,
+  // the outermost of its name.
+  static List<RunTarget> selectTargets(
       final List<RunTarget> targets, final TestScope scope, final String method, final Path file) {
-    // The scan lists a nested class before its enclosing one; the outermost runs them all.
-    return targets.stream()
-        .filter(target -> target.kind() == scope.runnableKind())
-        .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
-        .min(Comparator.comparingLong(LatheEngine::nestingDepth))
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    scope == TestScope.METHOD
-                        ? "no test method '%s' in %s".formatted(method, file.getFileName())
-                        : "no %s test target in %s"
-                            .formatted(scope.wireName(), file.getFileName())));
+    final List<RunTarget> matching =
+        targets.stream()
+            .filter(target -> target.kind() == scope.runnableKind())
+            .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
+            .toList();
+    if (matching.isEmpty()) {
+      throw new IllegalStateException(
+          scope == TestScope.METHOD
+              ? "no test method '%s' in %s".formatted(method, file.getFileName())
+              : "no %s test target in %s".formatted(scope.wireName(), file.getFileName()));
+    }
+
+    final long outermost =
+        matching.stream().mapToLong(LatheEngine::nestingDepth).min().orElseThrow();
+    final List<RunTarget> outer =
+        matching.stream().filter(target -> nestingDepth(target) == outermost).toList();
+    return scope == TestScope.METHOD ? outer.subList(0, 1) : outer;
   }
 
   private static long nestingDepth(final RunTarget target) {

@@ -588,22 +588,26 @@ class LatheEngineTest {
   }
 
   // The scan lists a nested class before its enclosing one; running the class runs the outermost,
-  // which JUnit runs with its @Nested classes, and a method in the outer class wins a name clash.
+  // which JUnit runs with its @Nested classes, and every top-level class of the file, not only the
+  // first. A method in the outer class wins a name clash.
   @Test
-  void selectTarget_nestedTargetsListedFirst_picksTheOutermost() {
+  void selectTargets_nestedAndSecondTopLevelClass_runsEveryOutermostClassAndOneMethod() {
     final List<RunTarget> targets =
         List.of(
             target("demo.Outer$Inner#run()", RunnableKind.TEST_METHOD, "run"),
             target("demo.Outer$Inner", RunnableKind.TEST_CLASS, "Inner"),
             target("demo.Outer#run()", RunnableKind.TEST_METHOD, "run"),
-            target("demo.Outer", RunnableKind.TEST_CLASS, "Outer"));
+            target("demo.Outer", RunnableKind.TEST_CLASS, "Outer"),
+            target("demo.Second", RunnableKind.TEST_CLASS, "Second"));
     final Path file = tmp.resolve("Outer.java");
 
-    assertThat(LatheEngine.selectTarget(targets, TestScope.CLASS, null, file).id())
-        .isEqualTo("demo.Outer");
-    assertThat(LatheEngine.selectTarget(targets, TestScope.METHOD, "run", file).id())
-        .isEqualTo("demo.Outer#run()");
-    assertThatThrownBy(() -> LatheEngine.selectTarget(targets, TestScope.METHOD, "missing", file))
+    assertThat(LatheEngine.selectTargets(targets, TestScope.CLASS, null, file))
+        .extracting(RunTarget::id)
+        .containsExactly("demo.Outer", "demo.Second");
+    assertThat(LatheEngine.selectTargets(targets, TestScope.METHOD, "run", file))
+        .extracting(RunTarget::id)
+        .containsExactly("demo.Outer#run()");
+    assertThatThrownBy(() -> LatheEngine.selectTargets(targets, TestScope.METHOD, "missing", file))
         .hasMessage("no test method 'missing' in Outer.java");
   }
 
@@ -1121,9 +1125,10 @@ class LatheEngineTest {
                     List.of(),
                     null)));
 
-    final LatheTestRun run = LatheTestRun.from(outcome);
+    final LatheTestRun run = LatheTestRun.from(outcome, List.of("com.example.FooTest"));
 
     assertThat(run.launched()).isTrue();
+    assertThat(run.ran()).containsExactly("com.example.FooTest");
     assertThat(run.total()).isEqualTo(4);
     assertThat(run.passed()).isEqualTo(1);
     assertThat(run.failed()).isEqualTo(2);
@@ -1140,7 +1145,8 @@ class LatheEngineTest {
 
   @Test
   void latheTestRun_blockedOutcome_carriesReasons() {
-    final LatheTestRun run = LatheTestRun.from(LaunchOutcome.blocked(List.of("no runner jar")));
+    final LatheTestRun run =
+        LatheTestRun.from(LaunchOutcome.blocked(List.of("no runner jar")), List.of());
 
     assertThat(run.launched()).isFalse();
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
