@@ -12,14 +12,16 @@ a test without a build.
 
 ## Prerequisite: a populated `.lathe/`
 
-The server reads from Lathe's build capture and **refuses to start without it**, exactly like the
-editor. For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
+The server reads from Lathe's build capture; without it, every tool answers with the setup steps
+instead. For Maven, register the Lathe extension and run a build once at the reactor root — the quickest is:
 
 ```bash
 mvn process-test-classes
 ```
 
-That build does two things at once: it writes `.lathe/`, and its `lathe:sync` step installs the MCP
+For Gradle, apply the Lathe settings plugin and build once (`./gradlew build`); see the
+[Gradle guide](gradle.md).
+That build does two things at once: it writes `.lathe/`, and its sync step installs the MCP
 launcher (below). If the server reports a missing `.lathe/`, this is the fix.
 For `run_test`, the module's test launch must also be captured once:
 `.lathe/lathe-sync.sh --tests <module>` does that without running the tests (see
@@ -213,8 +215,8 @@ Set `LATHE_DEBUG=1` for finer detail.
 ## Troubleshooting
 
 - **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
-  build: start it at the reactor root, or run a build there first (`mvn process-test-classes`); see
-  the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
+  build: start it at the reactor root, or run a build there first (`mvn process-test-classes`, or
+  `./gradlew build` for Gradle); see the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
   failed to connect; restart the agent's session after the build.
 - **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
   or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the

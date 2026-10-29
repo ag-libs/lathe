@@ -56,6 +56,7 @@ class LatheLayoutTest {
     // No script exists before the first sync, so setup names each front-end's first command.
     assertThat(LatheLayout.SETUP_REMEDIATION)
         .contains("`mvn process-test-classes`")
+        .contains("`io.github.ag-libs.lathe` settings plugin and run `./gradlew build`")
         .contains("`mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`")
         .doesNotContain("lathe-sync.sh");
   }

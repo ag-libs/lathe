@@ -115,9 +115,11 @@ public final class LatheLayout {
   // built — so this remediation covers both rather than assuming a build alone will fix it. No sync
   // script exists yet, so it names each front-end's first command instead.
   public static final String SETUP_REMEDIATION =
-      "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Either generates %s."
+      "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for Gradle, apply the `%s` settings plugin and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Each generates %s."
           .formatted(
               Maven.SYNC_COMMAND,
+              Gradle.PLUGIN_ID,
+              Gradle.FIRST_BUILD_COMMAND,
               Maven.MVN,
               Maven.LATHE_GROUP_ID,
               Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
@@ -219,6 +221,10 @@ public final class LatheLayout {
     // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
     // applies Lathe to each project without cross-project configuration (Isolated Projects).
     public static final String MIN_GRADLE_VERSION = "8.8";
+    // How a Gradle build gets Lathe, and the build that first writes .lathe/, for the setup
+    // message.
+    public static final String PLUGIN_ID = "io.github.ag-libs.lathe";
+    public static final String FIRST_BUILD_COMMAND = "./gradlew build";
 
     // The build files a sync fingerprints, so the server notices a changed build: the settings
     // file, gradle.properties and the version catalogs at the root, each project's build file, and
