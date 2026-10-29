@@ -24,6 +24,9 @@ updates:
       # Maven we compile (and therefore run) against. Bumping them would silently raise the floor.
       - dependency-name: org.apache.maven:maven-core
       - dependency-name: org.apache.maven:maven-plugin-api
+      # The same floor for the SLF4J API: build-side code compiles against 1.7, which Maven 3.6.3
+      # ships. 2.x would allow calls (the fluent atInfo() API) that fail on Maven 3.6-3.8 at runtime.
+      - dependency-name: org.slf4j:slf4j-api
       # Held at 1.35.0 — google-java-format 1.37 can't be invoked by spotless 3.10.3. Revisit when a
       # spotless release documents support for the newer formatter.
       - dependency-name: com.google.googlejavaformat:google-java-format

@@ -50,6 +50,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   // Full compiles' processor path (the only compiles that run processors): the build's, else the
   // classpath, where javac finds them by default. generate() closes the loader javac opens over it.
   private final List<Path> processorPath;
+  private final LombokProcessors lombok;
 
   ModuleSourceCompiler(
       final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
@@ -57,11 +58,15 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     try {
       this.tempDir = Files.createTempDirectory("lathe-");
       this.fm = JavaSourceCompiler.createFileManager();
-      this.runner = new JavacRunner(fm, compilationAdmission);
       final List<Path> classpath = initLocations();
       this.processorPath =
           config.processorPath().isEmpty() ? classpath : config.remappedProcessorPath();
       LOG.fine(() -> "[cache] ANNOTATION_PROCESSOR_PATH (full)=%s".formatted(processorPath));
+      this.lombok =
+          LatheFlags.PROC_NONE.equals(config.proc())
+              ? LombokProcessors.none()
+              : LombokProcessors.find(processorPath, fm.getClass().getClassLoader());
+      this.runner = new JavacRunner(fm, compilationAdmission, lombok);
       this.compilerArgs =
           processPatchModules(
               hoistFileManagerOptions(dropForkedLauncherArgs(config.compilerArgs()), fm), fm);
@@ -87,7 +92,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
       final CompileMode mode,
       final CancelChecker cancelChecker) {
     final var tempFile = writeTempFile(uri, content);
-    final var options = buildOptions(config, compilerArgs, mode);
+    final var options = buildOptions(mode);
     LOG.fine(() -> "[compile:%s] tempDir=%s opts=%s".formatted(mode.tag, tempDir, options));
     final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
     return runner.run(jfo, options, cancelChecker);
@@ -96,7 +101,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public BatchWrite compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var options = buildOptions(config, compilerArgs, CompileMode.FULL);
+    final var options = buildOptions(CompileMode.FULL);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     JavaSourceCompiler.setProcessorPath(fm, processorPath);
     try {
@@ -137,7 +142,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public List<TransientAnalysis> analyzeBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var options = buildOptions(config, compilerArgs, CompileMode.FAST);
+    final var options = buildOptions(CompileMode.FAST);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     final List<AttributedFileAnalysis> analyses =
         runner.analyzeBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
@@ -148,7 +153,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public List<CompilerResult> analyzeOpenBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var options = buildOptions(config, compilerArgs, CompileMode.OPEN);
+    final var options = buildOptions(CompileMode.OPEN);
     final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
     final JavacRunner.BatchAnalysis batch =
         runner.analyzeBatchDiagnosed(javaFilesOf(uriByTempFile), options, true, cancelChecker);
@@ -237,15 +242,16 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   @Override
   public void close() {
+    closeLogged(fm::close, "close file manager");
+    closeLogged(lombok::close, "close Lombok's class loader");
+    closeLogged(() -> FileUtil.deleteDir(tempDir), "delete temp dir %s".formatted(tempDir));
+  }
+
+  private static void closeLogged(final IOUtil.IORunnable action, final String what) {
     try {
-      fm.close();
+      action.run();
     } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[cache] failed to close file manager");
-    }
-    try {
-      FileUtil.deleteDir(tempDir);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[cache] failed to delete temp dir %s".formatted(tempDir));
+      LOG.log(Level.WARNING, e, () -> "[cache] failed to %s".formatted(what));
     }
   }
 
@@ -354,8 +360,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return List.copyOf(remaining);
   }
 
-  private static List<String> buildOptions(
-      final ModuleSourceConfig config, final List<String> compilerArgs, final CompileMode mode) {
+  private List<String> buildOptions(final CompileMode mode) {
     final var opts = new ArrayList<String>();
     if (config.release() != null && !config.release().isBlank()) {
       opts.add("--release");
@@ -382,8 +387,9 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
     opts.addAll(modeCompilerArgs(compilerArgs, mode));
     // A write runs processors only where the build does: with <proc>none</proc> a module's own
-    // processor, visible through its class mirror, must not run over its sources.
-    if (mode != CompileMode.FULL || LatheFlags.PROC_NONE.equals(config.proc())) {
+    // processor, visible through its class mirror, must not run over its sources. An analysis runs
+    // none but Lombok, which JavacRunner hands its tasks.
+    if (mode == CompileMode.FULL ? LatheFlags.PROC_NONE.equals(config.proc()) : !lombok.present()) {
       opts.add("-proc:none");
     }
     return opts;

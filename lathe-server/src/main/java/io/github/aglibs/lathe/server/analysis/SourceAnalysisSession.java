@@ -459,6 +459,24 @@ public final class SourceAnalysisSession implements AutoCloseable {
         .toList();
   }
 
+  // The accessors Lombok generated from the field at the cursor, as reference targets: their calls
+  // use the field. None for anything else.
+  public List<ReferenceTarget> generatedAccessorTargets(final SourceFeatureRequest request) {
+    final var cur = resolve(request);
+    final Element element = cur == null ? null : elementOrJavadocReference(cur);
+    if (element == null) {
+      return List.of();
+    }
+
+    final var analysis = cur.analysis();
+    return SourceLocator.generatedAccessors(element).stream()
+        .map(
+            accessor ->
+                ReferenceTarget.from(
+                    accessor, analysis.trees(), analysis.types(), analysis.elements()))
+        .toList();
+  }
+
   public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
     final var cur = resolve(request);
     if (cur == null) {

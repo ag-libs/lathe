@@ -1820,14 +1820,24 @@ final class WorkspaceSession {
                       searchTarget -> {
                         targetName.set(searchTarget.simpleName());
                         return searchReferencesForTarget(
-                            openFile,
-                            cursorWorker,
-                            cursorConfig.orElse(null),
-                            searchTarget,
-                            includeDeclaration,
-                            cancelChecker,
-                            progress,
-                            "Finding references to %s".formatted(searchTarget.simpleName()));
+                                openFile,
+                                cursorWorker,
+                                cursorConfig.orElse(null),
+                                searchTarget,
+                                includeDeclaration,
+                                cancelChecker,
+                                progress,
+                                "Finding references to %s".formatted(searchTarget.simpleName()))
+                            .thenCompose(
+                                matches ->
+                                    withGeneratedAccessors(
+                                        matches,
+                                        openFile,
+                                        cursorWorker,
+                                        cursorConfig.orElse(null),
+                                        request,
+                                        cancelChecker,
+                                        progress));
                       });
             })
         .thenApply(
@@ -2147,6 +2157,46 @@ final class WorkspaceSession {
     return cursorWorker
         .resolveContractTarget(request, cancelChecker)
         .thenApply(contract -> contract != null ? contract : target);
+  }
+
+  // A field Lombok generated accessors from is used through them too: their calls join its own
+  // matches. The progress already ended with the field's search; the accessors' run quietly.
+  private CompletableFuture<List<ReferenceMatch>> withGeneratedAccessors(
+      final List<ReferenceMatch> fieldMatches,
+      final OpenDocument openFile,
+      final CompilationWorker cursorWorker,
+      final ModuleSourceConfig cursorConfig,
+      final SourceFeatureRequest request,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress) {
+    return cursorWorker
+        .generatedAccessorTargets(request)
+        .thenCompose(
+            accessors -> {
+              CompletableFuture<List<ReferenceMatch>> all =
+                  CompletableFuture.completedFuture(fieldMatches);
+              for (final ReferenceTarget accessor : accessors) {
+                all =
+                    all.thenCompose(
+                        matches ->
+                            searchReferencesForTarget(
+                                    openFile,
+                                    cursorWorker,
+                                    cursorConfig,
+                                    accessor,
+                                    false,
+                                    cancelChecker,
+                                    progress,
+                                    accessor.simpleName())
+                                .thenApply(
+                                    more ->
+                                        Stream.concat(matches.stream(), more.stream())
+                                            .distinct()
+                                            .toList()));
+              }
+
+              return all;
+            });
   }
 
   private CompletableFuture<List<ReferenceMatch>> searchReferencesForTarget(

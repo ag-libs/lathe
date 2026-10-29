@@ -20,7 +20,7 @@ When you build, Lathe [records how the build compiles, tests and runs each modul
 
 - **The editor agrees with your build.**
   Errors come from the JDK's own compiler with your build's flags.
-  Modular projects, annotation processors and generated sources work without extra setup.
+  Modular projects, annotation processors, generated sources and [Lombok](docs/guide/how-it-works.md#lombok) work without extra setup.
 - **Run, test and debug without rebuilding.**
   Lathe runs your `main` methods and tests the way your build runs them (same classpath, module path and flags), from the classes it already compiled.
   This is in the Neovim client today.

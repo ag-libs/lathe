@@ -72,6 +72,7 @@ So a file can look clean when you open it and surface more diagnostics after the
 Error Prone findings and, where the build sets `-Werror`, warnings promoted to errors.
 This is intentional: processor runs are too expensive to repeat on every keystroke, so Lathe keeps live
 editing responsive and reserves the full, build-faithful pass for save.
+Lombok is the exception; see [Lombok](#lombok).
 The findings of that save stay on the file until you edit it again.
 
 The live pass also sees your **unsaved** edits in other open files of the same module.
@@ -82,6 +83,24 @@ Plugins such as Error Prone reach into `javac` internals, so the JVM running the
 `--add-exports`/`--add-opens` grants.
 Your build already declares these, as `-J` flags for a forked compiler, in `.mvn/jvm.config`, or in `MAVEN_OPTS`.
 `lathe:sync` copies them into `.lathe/jvm.args`, and the server starts with them; after you change them, re-sync and restart the server.
+
+## Lombok
+
+When a module has Lombok on its processor path (and `<proc>` is not `none`), the live pass runs Lombok too, and no other processor.
+So the getters, builders and loggers Lombok generates are there while you type, in the editor and for an agent.
+It costs about 10 ms a keystroke, and about a second the first time a module loads Lombok.
+
+A generated member leads back to the code it comes from:
+definition on `getName()` lands on the field `name` (on the class for `builder()` or `toString()`),
+and the field's references include its accessors' calls.
+Renaming such a field, or a generated member, is refused with the reason, as the accessors' calls would be left behind.
+
+Limits:
+- Lathe recognizes generated members by the `@lombok.Generated` mark Lombok adds; with
+  `lombok.addLombokGeneratedAnnotation = false` in `lombok.config`, navigation treats them as written code.
+- Accessors named through `lombok.config` (`lombok.accessors.prefix`) lead to the class, not the field.
+- A file that does not parse yet shows no generated members until it parses again.
+- On a JDK the project's Lombok does not support, opening a Lombok file stops the server, as the build itself would fail; upgrade Lombok.
 
 ## Workspace freshness
 
