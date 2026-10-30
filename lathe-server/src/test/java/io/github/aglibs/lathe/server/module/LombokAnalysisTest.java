@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.CompletionItem;
@@ -73,7 +74,7 @@ class LombokAnalysisTest {
   void hoverAndReferences_onAFieldsName_answerForTheFieldNotItsGeneratedGetter() {
     try (var session = session()) {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
-      final var request = requestAt(position("private String name", "name"));
+      final var request = requestAt(SOURCE, position(SOURCE, "private String name", "name"));
 
       assertThat(session.hover(request).getContents().getRight().getValue())
           .contains("String name");
@@ -83,7 +84,8 @@ class LombokAnalysisTest {
                   .stream()
                   .map(match -> match.range().getStart()))
           .containsExactlyInAnyOrder(
-              position("private String name", "name"), position("+ name +", "name"));
+              position(SOURCE, "private String name", "name"),
+              position(SOURCE, "+ name +", "name"));
     }
   }
 
@@ -91,7 +93,7 @@ class LombokAnalysisTest {
   void semanticTokens_lombokClass_tokensOnlyForTheCodeAsWritten() {
     try (var session = session()) {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
-      final Position field = position("private String name", "name");
+      final Position field = position(SOURCE, "private String name", "name");
 
       final List<SemanticToken> tokens = session.semanticTokens(uri(), SOURCE, 1);
 
@@ -105,8 +107,8 @@ class LombokAnalysisTest {
           .as("no generated member's token on the class's annotation lines")
           .filteredOn(
               token ->
-                  token.line() >= position("@Data", "@").getLine()
-                      && token.line() <= position("@Log", "@").getLine())
+                  token.line() >= position(SOURCE, "@Data", "@").getLine()
+                      && token.line() <= position(SOURCE, "@Log", "@").getLine())
           .noneMatch(token -> token.type().equals("method") || token.type().equals("property"));
     }
   }
@@ -119,15 +121,15 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(definitionAt(session, "+ getName()", "getName"))
-          .isEqualTo(position("private String name", "name"));
+          .isEqualTo(position(SOURCE, "private String name", "name"));
       assertThat(definitionAt(session, "setName(", "setName"))
-          .isEqualTo(position("private String name", "name"));
+          .isEqualTo(position(SOURCE, "private String name", "name"));
       assertThat(definitionAt(session, "isActive()", "isActive"))
-          .isEqualTo(position("private boolean active", "active"));
+          .isEqualTo(position(SOURCE, "private boolean active", "active"));
       assertThat(definitionAt(session, "builder()", "builder"))
-          .isEqualTo(position("class Person", "Person"));
+          .isEqualTo(position(SOURCE, "class Person", "Person"));
       assertThat(definitionAt(session, "toString()", "toString"))
-          .isEqualTo(position("class Person", "Person"));
+          .isEqualTo(position(SOURCE, "class Person", "Person"));
     }
   }
 
@@ -138,11 +140,13 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.generatedAccessorTargets(requestAt(position("private String name", "name"))))
+              session.generatedAccessorTargets(
+                  requestAt(SOURCE, position(SOURCE, "private String name", "name"))))
           .extracting(ReferenceTarget::simpleName)
           .containsExactlyInAnyOrder("getName", "setName");
       assertThat(
-              session.generatedAccessorTargets(requestAt(position("String greeting", "greeting"))))
+              session.generatedAccessorTargets(
+                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting"))))
           .isEmpty();
     }
   }
@@ -154,16 +158,63 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.renameConflict(requestAt(position("private String name", "name")), "label"))
+              session.renameConflict(
+                  requestAt(SOURCE, position(SOURCE, "private String name", "name")), "label"))
           .hasValueSatisfying(
               reason ->
                   assertThat(reason).contains("Lombok generates getName(), setName() from it"));
-      assertThat(session.renameConflict(requestAt(position("+ getName()", "getName")), "label"))
+      assertThat(
+              session.renameConflict(
+                  requestAt(SOURCE, position(SOURCE, "+ getName()", "getName")), "label"))
           .hasValueSatisfying(
               reason -> assertThat(reason).contains("Lombok generates it from `name`"));
       assertThat(
-              session.renameConflict(requestAt(position("String greeting", "greeting")), "hello"))
+              session.renameConflict(
+                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting")), "hello"))
           .isEmpty();
+    }
+  }
+
+  // With lombok.accessors.prefix, Lombok names a field's accessors after the field without its
+  // prefix: fCount gets getCount() and setCount(), which still belong to fCount.
+  @Test
+  void prefixedField_accessorsRefusalAndDefinition_followTheFieldWithoutItsPrefix()
+      throws Exception {
+    final String source =
+        """
+        package com.example;
+
+        @lombok.Getter
+        @lombok.Setter
+        class Person {
+          private int fCount;
+
+          int twice() {
+            return getCount() * 2;
+          }
+        }
+        """;
+    Files.createDirectories(sourceRoot().resolve("com/example"));
+    Files.writeString(
+        sourceRoot().resolve("com/example/lombok.config"), "lombok.accessors.prefix += f\n");
+    try (var session = session()) {
+      session.compile(uri(), source, 1, CompileMode.OPEN);
+      final var field = requestAt(source, position(source, "private int fCount", "fCount"));
+
+      assertThat(session.generatedAccessorTargets(field))
+          .extracting(ReferenceTarget::simpleName)
+          .containsExactlyInAnyOrder("getCount", "setCount");
+      assertThat(session.renameConflict(field, "fTotal"))
+          .hasValueSatisfying(
+              reason ->
+                  assertThat(reason).contains("Lombok generates getCount(), setCount() from it"));
+      assertThat(
+              session
+                  .definition(requestAt(source, position(source, "return getCount", "getCount")))
+                  .orElseThrow()
+                  .getRange()
+                  .getStart())
+          .isEqualTo(position(source, "private int fCount", "fCount"));
     }
   }
 
@@ -198,7 +249,7 @@ class LombokAnalysisTest {
   private Position definitionAt(
       final SourceAnalysisSession session, final String context, final String token) {
     return session
-        .definition(requestAt(position(context, token)))
+        .definition(requestAt(SOURCE, position(SOURCE, context, token)))
         .orElseThrow()
         .getRange()
         .getStart();
@@ -218,12 +269,12 @@ class LombokAnalysisTest {
     return sourceRoot().resolve("com/example/Person.java").toUri().toString();
   }
 
-  private SourceFeatureRequest requestAt(final Position position) {
+  private SourceFeatureRequest requestAt(final String source, final Position position) {
     return new SourceFeatureRequest(
-        uri(), SOURCE, 1, position, List.of(sourceRoot()), WorkspaceManifest.empty());
+        uri(), source, 1, position, List.of(sourceRoot()), WorkspaceManifest.empty());
   }
 
-  private static Position position(final String context, final String token) {
-    return SourceLocator.offsetToPosition(SOURCE, SOURCE.indexOf(token, SOURCE.indexOf(context)));
+  private static Position position(final String source, final String context, final String token) {
+    return SourceLocator.offsetToPosition(source, source.indexOf(token, source.indexOf(context)));
   }
 }

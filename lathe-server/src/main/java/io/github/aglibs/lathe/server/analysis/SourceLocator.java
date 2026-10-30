@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -317,7 +318,8 @@ public final class SourceLocator {
 
   // Where a member Lombok generates comes from, as written: the field an accessor reads or writes,
   // else the first class around it that Lombok did not generate. Accessors are matched by Lombok's
-  // default names; other naming from lombok.config lands on the class.
+  // default names, then by the names left once lombok.config strips a prefix from the field; other
+  // naming from lombok.config lands on the class.
   public static Element generatedSource(final Element generated) {
     Element owner = generated.getEnclosingElement();
     while (isGenerated(owner)) {
@@ -325,11 +327,18 @@ public final class SourceLocator {
     }
 
     final String name = generated.getSimpleName().toString();
-    return owner.getEnclosedElements().stream()
-        .filter(member -> member.getKind() == ElementKind.FIELD && !isGenerated(member))
-        .filter(field -> accessorNames(field.getSimpleName().toString()).contains(name))
+    final List<Element> fields =
+        owner.getEnclosedElements().stream()
+            .filter(member -> member.getKind() == ElementKind.FIELD && !isGenerated(member))
+            .map(Element.class::cast)
+            .toList();
+    return Stream.<Function<String, Set<String>>>of(
+            SourceLocator::accessorNames, SourceLocator::prefixedAccessorNames)
+        .flatMap(
+            names ->
+                fields.stream()
+                    .filter(field -> names.apply(field.getSimpleName().toString()).contains(name)))
         .findFirst()
-        .map(Element.class::cast)
         .orElse(owner);
   }
 
@@ -355,6 +364,21 @@ public final class SourceLocator {
             ? field.substring(2)
             : Character.toUpperCase(field.charAt(0)) + field.substring(1);
     return Stream.of(field, "get" + property, "is" + property, "set" + property, "with" + property)
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The accessor names Lombok gives a field once lombok.accessors.prefix strips a prefix from it: a
+  // lowercase prefix before an uppercase letter (fCount names Count), or one ending in an
+  // underscore (m_count names count).
+  private static Set<String> prefixedAccessorNames(final String field) {
+    return IntStream.range(1, field.length())
+        .filter(
+            at ->
+                field.charAt(at - 1) == '_'
+                    || Character.isUpperCase(field.charAt(at))
+                        && field.substring(0, at).chars().allMatch(Character::isLowerCase))
+        .mapToObj(at -> Character.toLowerCase(field.charAt(at)) + field.substring(at + 1))
+        .flatMap(property -> accessorNames(property).stream())
         .collect(Collectors.toUnmodifiableSet());
   }
 
