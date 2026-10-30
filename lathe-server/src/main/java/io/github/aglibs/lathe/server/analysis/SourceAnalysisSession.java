@@ -110,11 +110,25 @@ public final class SourceAnalysisSession implements AutoCloseable {
     cancelChecker.checkCanceled();
     cache.put(uri, new CachedFileAnalysis(content, version, run.fileAnalysis()));
     recordParse(uri, content, run);
+    return diagnosed(mode.tag, uri, content, run, t);
+  }
 
+  // A file's diagnostics, as an OPEN compile finds them, without keeping its analysis. A check of
+  // many files at once would otherwise hold one analysis a file until the cache evicts it.
+  public List<Diagnostic> diagnosticsTransient(final String uri, final String content) {
+    final var t = Stopwatch.start();
+    return diagnosed("check", uri, content, compiler.compile(uri, content, CompileMode.OPEN), t);
+  }
+
+  private List<Diagnostic> diagnosed(
+      final String tag,
+      final String uri,
+      final String content,
+      final CompilerResult run,
+      final Stopwatch t) {
     final List<Diagnostic> diags = mapDiagnostics(run, content);
     LOG.info(
-        () ->
-            "[compile:%s] %s %dms diags=%d".formatted(mode.tag, uri, t.elapsedMs(), diags.size()));
+        () -> "[compile:%s] %s %dms diags=%d".formatted(tag, uri, t.elapsedMs(), diags.size()));
     return diags;
   }
 

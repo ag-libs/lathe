@@ -637,6 +637,13 @@ public final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
+  public CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
+      final String uri, final String content) {
+    return worker
+        .submit(() -> session.diagnosticsTransientFuture(uri, content))
+        .thenCompose(f -> f);
+  }
+
   /** What an answer about {@code files} cannot vouch for, after the last write pass. */
   public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
     return worker.submit(() -> session.notes(files));

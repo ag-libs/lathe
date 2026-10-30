@@ -210,6 +210,10 @@ final class WorkspaceSession {
   private Closeable writeLock;
   // The pass is waiting for another server to release the write lock.
   private boolean waitingForWriteLock;
+  private MemoryPressure memoryPressure;
+  // A pressure round released the sessions of modules without open files; the next tick checks
+  // whether that was enough.
+  private boolean pressureFollowUp;
   private long passGeneration;
   // What the passes owe once none is left to run: the module dirs whose open files to re-analyze,
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
@@ -278,6 +282,7 @@ final class WorkspaceSession {
 
   void initialize(final Path root) {
     this.workspaceRoot = root;
+    memoryPressure = new MemoryPressure(worker::execute, this::releaseUnderPressure);
     final var progress = progressReporter.open(null, new CompletableFuture<>());
     progress.begin(WORKSPACE_PROGRESS_TITLE, 1);
     final var t = Stopwatch.start();
@@ -314,7 +319,48 @@ final class WorkspaceSession {
   }
 
   void close() {
+    if (memoryPressure != null) {
+      memoryPressure.close();
+    }
+
     workspace.close();
+  }
+
+  // The heap is still mostly full after a collection: the sessions of modules with no open document
+  // go first; the next tick lets the rest go too if that was not enough.
+  private void releaseUnderPressure() {
+    logRelease("pressure", workspace.releaseSessions(modulesWithOpenDocuments(), PRESSURE_IDLE_MS));
+    pressureFollowUp = true;
+  }
+
+  // On the change-scan tick, which runs anyway. If a pressure round did not bring memory back under
+  // the threshold, the sessions of modules with open files go too; and any session long unused.
+  private void releaseSessionsOnTick() {
+    if (pressureFollowUp && memoryPressure.exceeded()) {
+      logRelease("pressure, files open", workspace.releaseSessions(Set.of(), PRESSURE_IDLE_MS));
+    }
+
+    pressureFollowUp = false;
+    if (workspace.hasSessionIdleFor(IDLE_SESSION_MS)) {
+      logRelease("idle", workspace.releaseSessions(modulesWithOpenDocuments(), IDLE_SESSION_MS));
+    }
+  }
+
+  // INFO only when a round freed something: under pressure the JVM reports many times a second.
+  private void logRelease(final String trigger, final int released) {
+    final Level level = released > 0 ? Level.INFO : Level.FINE;
+    LOG.log(
+        level,
+        () ->
+            "[memory] %s heap=%s released %d module session(s)"
+                .formatted(trigger, memoryPressure.usage(), released));
+  }
+
+  private Set<ModuleSourceConfig> modulesWithOpenDocuments() {
+    return docs.uris().stream()
+        .map(uri -> workspace.moduleSourceFor(LatheUri.toPath(uri)))
+        .flatMap(Optional::stream)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   CompletableFuture<LaunchOutcome> runTestFuture(
@@ -1705,6 +1751,15 @@ final class WorkspaceSession {
         CompileMode.OPEN,
         (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()));
     return result;
+  }
+
+  // A reactor file checked without opening it: no open document, no analysis kept. verify_change
+  // checks a change's files and their callers this way, many at once.
+  CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
+      final String uri, final String content) {
+    return routeCompiler(uri) instanceof final CompilerRoute.Module module
+        ? module.worker().diagnosticsTransient(uri, content)
+        : CompletableFuture.completedFuture(List.of());
   }
 
   void onChange(final String uri, final String content, final int version) {
@@ -4694,6 +4749,10 @@ final class WorkspaceSession {
   private static final long RENAME_UNAPPLIED_MS = 30_000;
   private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
   private static final String WRITE_LOCK_KEY = "write-lock";
+  // A module session unused this long, in a module with no open file, is released.
+  private static final long IDLE_SESSION_MS = 5 * 60 * 1000;
+  // Under pressure, a session asked for within this long is left: it would only be rebuilt at once.
+  private static final long PRESSURE_IDLE_MS = 10_000;
   // Long enough for another server's pass after a save; a query waits no longer than this for it.
   private static final long OTHER_SERVER_GRACE_MS = 2_000;
   private static final String SYNC_ACTION = "Sync";
@@ -4705,6 +4764,7 @@ final class WorkspaceSession {
       return;
     }
 
+    releaseSessionsOnTick();
     // Defer every reactive branch (staleness prompt, build-file/workspace reload) while a build
     // runs, so a
     // mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after the lock

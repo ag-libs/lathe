@@ -2,6 +2,7 @@ module io.github.aglibs.lathe.server {
   requires java.compiler;
   requires jdk.compiler;
   requires java.logging;
+  requires java.management;
   requires org.eclipse.lsp4j;
   requires org.eclipse.lsp4j.jsonrpc;
   requires com.google.gson;

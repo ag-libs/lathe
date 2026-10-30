@@ -9,10 +9,13 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public final class WorkspaceModuleRegistry implements AutoCloseable {
@@ -108,12 +111,38 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {
     return workers.computeIfAbsent(
-        config.latheClassesDir().toString(),
-        key -> CompilationWorker.module(config, compilationAdmission));
+        key(config), key -> CompilationWorker.module(config, compilationAdmission));
   }
 
   public CompilationWorker externalWorker() {
     return externalWorker;
+  }
+
+  // Releases every session idle for at least idleMs but those of the modules in keep; returns how
+  // many it released.
+  public int releaseSessions(final Set<ModuleSourceConfig> keep, final long idleMs) {
+    final Set<CompilationWorker> kept =
+        keep.stream()
+            .map(config -> workers.get(key(config)))
+            .filter(Objects::nonNull)
+            .collect(Collectors.toUnmodifiableSet());
+    final List<CompilationWorker> idle =
+        allWorkers().filter(worker -> !kept.contains(worker) && worker.idleFor(idleMs)).toList();
+    idle.forEach(CompilationWorker::releaseSession);
+    return idle.size();
+  }
+
+  // A cheap check before working out which modules have open documents.
+  public boolean hasSessionIdleFor(final long idleMs) {
+    return allWorkers().anyMatch(worker -> worker.idleFor(idleMs));
+  }
+
+  private Stream<CompilationWorker> allWorkers() {
+    return Stream.concat(workers.values().stream(), Stream.of(externalWorker));
+  }
+
+  private static String key(final ModuleSourceConfig config) {
+    return config.latheClassesDir().toString();
   }
 
   public void dropFromAllCaches(final String uri) {
@@ -126,9 +155,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   @Override
   public void close() {
     final var closeFutures =
-        Stream.concat(workers.values().stream(), Stream.of(externalWorker))
-            .map(CompilationWorker::closeAsync)
-            .toArray(CompletableFuture[]::new);
+        allWorkers().map(CompilationWorker::closeAsync).toArray(CompletableFuture[]::new);
     CompletableFuture.allOf(closeFutures).join();
     workers.clear();
   }

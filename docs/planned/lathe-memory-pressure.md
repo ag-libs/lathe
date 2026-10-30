@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (2026-10-30), not implemented; measured on Helidon.
+Implemented (2026-10-30) and validated on Helidon and Dropwizard; see [Validation](#validation).
 Resolves [EG-058](../gaps/gaps.md) (module sessions never released),
 and the pre-release finding that a large `verify_change` ends the server with `OutOfMemoryError` on a 2–3 GB heap.
 Related: [Analysis Cache Bounding](../potential/lathe-analysis-cache-bounding.md), a deferred hard cap on per-open-file analyses.
@@ -44,7 +44,24 @@ taken again with `-XX:SoftRefLRUPolicyMSPerMB=0` so that soft references do not 
 So the sessions a large check leaves behind take most of a 2 GB heap, whether the files are checked one at a time or side by side.
 0.1.24 fits because its single compile in flight adds little on top; up to 16 compiles do not fit.
 Releasing idle sessions under pressure frees that part in the middle of the call.
-Whether that alone keeps the call alive at 2 GB is checked on the same call once it is built (see [Validation](#validation)).
+
+### Why releasing sessions alone was not enough
+
+Built as first designed, the release did not save the call: the same Helidon call still ran out of memory at 2, 3, 4 and 5 GB.
+Two measurements found why.
+
+- **The memory was the checks' analyses, not the sessions.**
+  `verify_change` checked each file as an open document: it registered the file and cached its attributed analysis (~6–7 MB).
+  Since 3c94561a started every check at once, each module's cache evictions waited behind that module's remaining checks,
+  so hundreds of analyses were held at once.
+  With one compile slot instead of 16 the call still ran out of memory; with the checks awaited one at a time, as in 0.1.24, it completed at 2 GB.
+- **The release never ran.**
+  Each check also did its routing, registration and indexing on the event loop, about 1,800 tasks for this call.
+  The JVM's notifications arrived (dozens of them), but the release round, posted to the event loop, waited behind those tasks until the server died.
+  And with every checked file an open document, every module the call touched counted as having an open file.
+
+So `verify_change` now checks its files without opening them (see [Checking without opening](#checking-without-opening)),
+which bounds the call's memory by the compiles in flight and leaves the event loop free for the release.
 
 ## Approach
 
@@ -70,6 +87,15 @@ a search or `verify_change` touches every module it may concern, so a cap below 
 
 ## Design
 
+### Checking without opening
+
+`verify_change` checks each file with a transient compile:
+the worker compiles the disk content and maps its diagnostics exactly as an open compile does,
+but the file is not registered as an open document, not indexed, and its analysis is not kept.
+On the event loop a check only routes to the module's worker.
+The checks still start side by side, so 3c94561a's speedup stays.
+The other tools keep opening the file, as their follow-up queries use its analysis.
+
 ### Releasing one session
 
 `CompilationWorker` gets `releaseSession()`.
@@ -82,21 +108,25 @@ A release requested while a request is queued runs after it; a request arriving 
 ### Choosing what to release
 
 The event loop owns the choice, as it owns which documents are open.
-`WorkspaceModuleRegistry` lists the workers with a live session, their last use, and whether they are busy;
+`WorkspaceModuleRegistry` lists the workers with a live session and their last request;
 the workspace session supplies the modules with an open document.
-A busy worker's session is never chosen.
+A busy worker's session is released once its queued requests are done,
+so a large `verify_change` frees each module's session as soon as that module has been checked.
 
 - **Pressure.**
   At startup the server sets a collection-usage threshold of 70% of the maximum on every heap pool that supports one and has a maximum,
   and listens for the JVM's threshold notification.
   Young pools are nearly empty right after a collection, so in practice the old generation fires;
   no pool is named, so it works on G1, Parallel, Serial and ZGC alike.
-  On the notification, every idle session of a module with no open document is released.
+  The JVM reports after every collection that ends above the threshold, many times a second under pressure,
+  so one round at a time is queued on the event loop and the reports meanwhile are part of it.
+  A round releases every session unused for 10 seconds in a module with no open document;
+  a session asked for more recently would only be rebuilt at once.
   If the pool is still above its threshold at the next change-scan tick (a field read, no extra wakeup),
   the idle sessions of modules with open documents are released too.
-  One `INFO` line per release round: the trigger, how many sessions, and the old generation's use and maximum.
+  An `INFO` line for each round that released something (`FINE` otherwise): the trigger, how many sessions, and the old generation's use and maximum.
 - **Idle.**
-  On the existing change-scan tick, each idle session older than 5 minutes, in a module with no open document, is released (`FINE`).
+  On the existing change-scan tick, each session unused for 5 minutes, in a module with no open document, is released.
   The tick only compares timestamps, so an idle editor wakes no more than today.
 
 ### Threading
@@ -113,17 +143,28 @@ The threshold notification arrives on a JMX thread and only posts to the event l
 
 - A worker whose session is released answers its next request from a new session, with the same result.
 - An idle session of a module with no open document is released after the idle time; one with an open document is not;
-  a busy one is released only after its request.
+  a busy one is released only after its queued requests.
 - On a pressure round, sessions of modules without open documents go first.
-- The threshold is set on a pool that supports it, and a notification posts a release round.
+- The threshold is set on a pool that supports it; a collection report queues a release round, and reports while one is queued join it.
+- A transient check finds the same diagnostics as an open compile and keeps no analysis.
 
 ### Validation
 
-The Helidon call above at `-Xmx2g` and `-Xmx3g`, where the server ran out of memory before:
-it must complete, with the release round in the log.
-If it does not, the number of compiles in flight follows the heap as well
-(one per core, at most the heap divided by a measured per-compile budget).
-Dropwizard's `verify_change` timing and the editor's idle CPU are measured before and after, to show neither gets worse.
+Helidon, the call above (299 changed files and their callers), MCP server on JDK 27:
+
+| | `-Xmx` | Result |
+|---|---|---|
+| 0.1.24, checks one at a time | 2 GB | completes in 65 s, 283 sessions left |
+| Before, side by side and opened | 2, 3, 4, 5 GB | out of memory; 6 GB completes |
+| Side by side, transient checks, sessions released | 2 GB | completes in 27.5 s with the same diagnostics (158 errors, 12 warnings); five release rounds free all 283 sessions; 166 MB live after |
+
+Dropwizard, `verify_change` of `Duration.java` and its callers (70 files in 17 modules): 1.2–1.5 s warm before and after, so the speedup stays.
+An editor server idle on Dropwizard uses 0.8–1.1 s of CPU a minute before and after.
+
+The JVM's collection-usage notification is a best-effort signal:
+its own documentation does not intend it for recovering from low memory, and on G1 it follows mixed and full collections, not young ones
+([JDK-8195115](https://bugs.openjdk.org/browse/JDK-8195115), [JDK-8224030](https://bugs.openjdk.org/browse/JDK-8224030)).
+So the bound on `verify_change` comes from the transient checks; releasing sessions under pressure is defence in depth, as Infinispan's `MemoryMonitor` uses it.
 
 ## Non-goals
 

@@ -102,6 +102,42 @@ class CompilationWorkerTest {
     verify(context).close();
   }
 
+  // A released session goes once the queued requests are done; the next request builds a new one
+  // and answers the same.
+  @Test
+  void releaseSession_closesItAfterQueuedRequests_nextRequestBuildsANewOne() {
+    final var sessions = new AtomicInteger();
+    final var first = mock(SourceAnalysisSession.class);
+    final var second = mock(SourceAnalysisSession.class);
+    final String uri = "file:///A.java";
+    final String content = "class A {}";
+    final var symbol = new DocumentSymbol();
+    when(first.documentSymbol(uri, content)).thenReturn(List.of(symbol));
+    when(second.documentSymbol(uri, content)).thenReturn(List.of(symbol));
+    final var releasing =
+        new CompilationWorker(
+            "lathe-module-release",
+            () -> sessions.incrementAndGet() == 1 ? first : second,
+            status -> {});
+    try {
+      assertThat(releasing.idleFor(0)).as("no session before a request").isFalse();
+
+      final var queued = releasing.documentSymbol(uri, content);
+      assertThat(releasing.idleFor(0)).isTrue();
+      assertThat(releasing.idleFor(60_000)).as("just asked").isFalse();
+      releasing.releaseSession();
+
+      assertThat(queued.join()).containsExactly(symbol);
+      assertThat(releasing.idleFor(0)).as("released").isFalse();
+      assertThat(releasing.documentSymbol(uri, content).join()).containsExactly(symbol);
+      verify(first).close();
+      verify(second, never()).close();
+      assertThat(sessions).hasValue(2);
+    } finally {
+      releasing.close();
+    }
+  }
+
   @Test
   void compile_directError_invokesFatalTermination() {
     assertTermination(new OutOfMemoryError("expected"), 1);

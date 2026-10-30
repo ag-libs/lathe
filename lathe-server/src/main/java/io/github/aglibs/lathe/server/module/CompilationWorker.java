@@ -69,6 +69,10 @@ public final class CompilationWorker {
   private SourceAnalysisSession context;
   private boolean closed;
   private CompletableFuture<Void> closeFuture;
+  // Event-loop side: whether a session exists, or will once the queued requests run, and when the
+  // latest request was submitted.
+  private boolean sessionLive;
+  private Stopwatch lastRequest = Stopwatch.start();
 
   static CompilationWorker module(
       final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
@@ -113,11 +117,7 @@ public final class CompilationWorker {
     executor.execute(
         () -> {
           try {
-            if (context != null) {
-              context.close();
-              context = null;
-            }
-
+            closeSession();
             closeFuture.complete(null);
           } catch (final Throwable t) {
             LOG.log(Level.SEVERE, t, () -> "[module] failed to close");
@@ -132,6 +132,32 @@ public final class CompilationWorker {
 
   void close() {
     closeAsync().join();
+  }
+
+  // A session holds only what its next request rebuilds: the open files' analyses and jar indexes
+  // that a large reactor-wide request leaves behind in every module it touched. It is closed after
+  // the requests already queued, so a busy module's session goes once its work is done.
+  void releaseSession() {
+    if (closed || !sessionLive) {
+      return;
+    }
+
+    sessionLive = false;
+    executor.execute(this::closeSession);
+  }
+
+  // On the worker thread. Forgotten first, so a session whose close fails is not used again.
+  private void closeSession() {
+    if (context != null) {
+      final SourceAnalysisSession closing = context;
+      context = null;
+      closing.close();
+    }
+  }
+
+  // Has a session, and no request for at least ms.
+  boolean idleFor(final long ms) {
+    return sessionLive && lastRequest.elapsedMs() >= ms;
   }
 
   public CompletableFuture<CompileResponse> compile(final CompileRequest request) {
@@ -188,6 +214,11 @@ public final class CompilationWorker {
         requests.stream()
             .collect(Collectors.toUnmodifiableMap(CompileRequest::uri, CompileRequest::version)),
         () -> {});
+  }
+
+  public CompletableFuture<List<Diagnostic>> diagnosticsTransient(
+      final String uri, final String content) {
+    return submit(ctx -> ctx.diagnosticsTransient(uri, content));
   }
 
   public CompletableFuture<BatchWrite> compileBatch(final List<TransientSource> sources) {
@@ -480,6 +511,8 @@ public final class CompilationWorker {
       return future;
     }
 
+    sessionLive = true;
+    lastRequest = Stopwatch.start();
     try {
       executor.execute(
           () -> {

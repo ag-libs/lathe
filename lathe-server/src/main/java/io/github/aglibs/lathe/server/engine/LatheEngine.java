@@ -597,12 +597,14 @@ public final class LatheEngine {
     final var checked = Stopwatch.start();
     final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
     // Every check starts before any is awaited, so the modules compile side by side, each on its
-    // own worker; one at a time, a change with callers across a large reactor took seconds.
+    // own worker; one at a time, a change with callers across a large reactor took seconds. A check
+    // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
+    // large reactor they outgrew the heap.
     final Map<Path, CompletableFuture<List<Diagnostic>>> analyses =
         targets.values().stream()
             .flatMap(List::stream)
             .distinct()
-            .collect(Collectors.toUnmodifiableMap(Function.identity(), this::analyze));
+            .collect(Collectors.toUnmodifiableMap(Function.identity(), this::check));
     final Set<Path> changedSet = Set.copyOf(changed);
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
@@ -722,9 +724,15 @@ public final class LatheEngine {
   }
 
   private CompletableFuture<List<Diagnostic>> analyze(final Path file) {
-    final var uri = LatheUri.fromPath(file);
-    final String content = IOUtil.unchecked(() -> Files.readString(file));
-    return service.diagnosticsFuture(uri, content, VERSION);
+    return service.diagnosticsFuture(LatheUri.fromPath(file), read(file), VERSION);
+  }
+
+  private CompletableFuture<List<Diagnostic>> check(final Path file) {
+    return service.diagnosticsTransientFuture(LatheUri.fromPath(file), read(file));
+  }
+
+  private static String read(final Path file) {
+    return IOUtil.unchecked(() -> Files.readString(file));
   }
 
   public void close() {

@@ -54,6 +54,26 @@ class SourceAnalysisSessionTest {
     assertThat(JavaSourceCompiler.analyzeSafely(task)).as("partial: nothing to generate").isFalse();
   }
 
+  // verify_change checks many files at once: a check finds what an OPEN compile finds, and keeps
+  // no analysis behind.
+  @Test
+  void diagnosticsTransient_sameDiagnosticsAsAnOpenCompile_keepsNoAnalysis() {
+    final String source = "class Test { int x = \"text\"; }";
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final List<Diagnostic> checked =
+          session.diagnosticsTransient(TempSourceCompiler.TEST_URI, source);
+      assertThat(session.cachedTypeEntries(Set.of("Test"))).as("nothing kept").isEmpty();
+
+      final List<Diagnostic> opened =
+          session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+      assertThat(session.cachedTypeEntries(Set.of("Test")))
+          .as("an OPEN compile keeps it")
+          .isNotEmpty();
+      assertThat(checked).isNotEmpty().isEqualTo(opened);
+    }
+  }
+
   // Deleting a `try {` line leaves a catch that javac's Attr rejects with an AssertionError while
   // attributing the broken tree; it once ended the server on the live compile of that keystroke.
   @Test
