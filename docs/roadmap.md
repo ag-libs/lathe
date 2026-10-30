@@ -205,9 +205,8 @@ when cut. Items are grouped, not ordered.
 
 ### Build-tool front-ends
 
-- Gradle, emitting the same `.lathe/` contract (see [lathe-gradle-support.md](planned/lathe-gradle-support.md)),
-  the next build front-end, after Multi-OS; its prerequisite, the
-  [build-tool-agnostic core](done/lathe-build-agnostic-core.md), has shipped.
+- Gradle follow-ups, now that the [Gradle front-end](guide/gradle.md) has shipped: capture of test tasks other
+  than `test` and of extra source sets (TE-10), included builds (WS-21), and formatter detection (EG-070).
 - OpenJDK jtreg run/test (the OpenJDK code-intelligence front-end has shipped).
 
 ### AI coding agents

@@ -505,6 +505,29 @@ None yet.
 
 ---
 
+## EG-070 — No formatter detection on a Gradle build
+
+**Status: documented**
+**Affects: formatting in the editor and `format_file` on Gradle builds.**
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+On Maven the sync reads the project's Spotless configuration and runs the exact formatter release it pins.
+The Gradle plugin reads no formatting plugin, so a Gradle project formats only through a committed
+`lathe-style.json` with a command engine.
+
+### Fix direction
+
+Detect the Spotless Gradle plugin's Java step (its name is readable; its version and options are not, per the
+design spike), or document the `lathe-style.json` recipe as the supported path.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -665,6 +688,28 @@ None yet.
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
 replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
+## WS-21 — On Gradle, included builds are not covered
+
+**Status: documented**
+**Affects: the editor and MCP on Gradle composite builds.**
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+The settings plugin acts on the root build only, so the projects of an included build (`includeBuild`) get no
+`.lathe/` configuration: their Java files have no code intelligence, and a project whose directory is outside the
+root build is left out with a `[lathe] … left out` line.
+
+### Fix direction
+
+Capture included builds that hold Java projects as more modules of the same workspace.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## TE-3 — `<systemPropertyVariables>` are not carried into the replay launch
 
 **Status: deferred — Target: backlog**
@@ -721,6 +766,30 @@ Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
 for the current milestone — breakpoints, stepping, inspection, conditional breakpoints, and
 read/invoke expression evaluation all work — so the entries below are the deliberately deferred
 remainder, re-triaged in a future round.
+
+## TE-10 — On Gradle, only each project's `test` task is captured
+
+**Status: documented**
+**Affects: run, debug and replay on Gradle builds with more than one test task or source set.**
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+The plugin loads `lathe-junit` into each project's `test` task only.
+Tests in other test tasks (an `integrationTest` task, say) are never captured, so they can't be run or debugged
+from the editor or an agent, and source sets other than `main` and `test` (`integrationTest`, `testFixtures`,
+`jmh`) get no module configuration, so their files have no code intelligence either.
+Maven has no counterpart: Failsafe tests are their own limit there.
+
+### Fix direction
+
+Capture every `Test` task, and model each extra source set as a source tree of its project.
+
+### Regression targets
+
+None yet.
+
+---
 
 ## DB-1 — Expression evaluation is read/invoke only; no assignment or `setVariable`
 
