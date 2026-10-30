@@ -143,7 +143,12 @@ final class JavacRunner {
     final var collector = new DiagnosticCollector<JavaFileObject>();
     final var task = createTask(sourceFiles, options, collector);
     try {
-      task.analyze();
+      // A javac crash fails the write as a compile error does: the last good classes stay.
+      if (!JavaSourceCompiler.analyzeSafely(task)) {
+        return new CompilerResult(
+            collector.getDiagnostics(), AttributedFileAnalysis.diagnosticsOnly(), Set.of());
+      }
+
       final Iterable<? extends JavaFileObject> generated = task.generate();
       return new CompilerResult(
           collector.getDiagnostics(),

@@ -106,6 +106,44 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  // Saving a file whose `try {` line was deleted: javac's Attr fails an assertion on the stray
+  // catch. The write fails like any compile error, and the server keeps running.
+  @Test
+  void compileBatch_javacAssertionOnBrokenSource_writesNothingAndReportsTheSyntaxError()
+      throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+    final String tryLineDeleted =
+        """
+        class Foo {
+          int run(boolean flag) {
+            if (flag) {
+                return 1;
+              }
+              catch (RuntimeException e) {
+                return 2;
+              }
+            }
+            return 0;
+          }
+        }
+        """;
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final BatchWrite write =
+          compiler.compileBatch(List.of(new TransientSource(fooUri, tryLineDeleted)), () -> {});
+
+      assertThat(write.writtenBinaryNames()).isEmpty();
+      assertThat(config.latheClassesDir().resolve("Foo.class")).doesNotExist();
+      assertThat(write.diagnosticsByUri().get(fooUri))
+          .extracting(diagnostic -> diagnostic.getMessage().getLeft())
+          .anyMatch(message -> message.contains("'catch' without 'try'"));
+    }
+  }
+
   // macOS temp dirs live under the /var -> /private/var symlink; javac reports outputs at the
   // resolved path, which must still map back to binary names.
   @Test

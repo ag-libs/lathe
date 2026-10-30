@@ -41,6 +41,48 @@ class SourceAnalysisSessionTest {
   }
 
   @Test
+  void analyzeSafely_javacsOwnAssertion_failsOnlyThisAnalysis() throws IOException {
+    final JavacTask task = mock(JavacTask.class);
+    final var javacAssertion = new AssertionError();
+    javacAssertion.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("com.sun.tools.javac.comp.Attr", "visitTree", "Attr.java", 5293)
+        });
+    when(task.analyze()).thenThrow(new IllegalStateException(javacAssertion));
+
+    assertThat(JavaSourceCompiler.analyzeSafely(task)).as("partial: nothing to generate").isFalse();
+  }
+
+  // Deleting a `try {` line leaves a catch that javac's Attr rejects with an AssertionError while
+  // attributing the broken tree; it once ended the server on the live compile of that keystroke.
+  @Test
+  void compile_tryLineDeleted_reportsTheSyntaxErrorInsteadOfCrashing() {
+    final var source =
+        """
+        class Test {
+          int run(boolean flag) {
+            if (flag) {
+                return 1;
+              }
+              catch (RuntimeException e) {
+                return 2;
+              }
+            }
+            return 0;
+          }
+        }
+        """;
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final List<Diagnostic> diagnostics =
+          session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+
+      assertThat(diagnostics)
+          .extracting(diagnostic -> diagnostic.getMessage().getLeft())
+          .anyMatch(message -> message.contains("'catch' without 'try'"));
+    }
+  }
+
+  @Test
   void searchReferences_cancelledAfterCompile_doesNotCacheAnalysis() {
     final String uri = TempSourceCompiler.TEST_URI;
     final String content = "class Test {}";

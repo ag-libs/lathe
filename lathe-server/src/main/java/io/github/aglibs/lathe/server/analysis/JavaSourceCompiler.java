@@ -139,12 +139,14 @@ public interface JavaSourceCompiler extends AutoCloseable {
     return diagnostic.getKind() == Diagnostic.Kind.ERROR;
   }
 
-  static void analyzeSafely(final JavacTask task) throws IOException {
+  // False when javac crashed and the analysis is partial: nothing may be generated from it.
+  static boolean analyzeSafely(final JavacTask task) throws IOException {
     try {
       task.analyze();
+      return true;
     } catch (final RuntimeException e) {
       final Error fatal = fatalErrorCause(e);
-      if (fatal != null) {
+      if (fatal != null && !isJavacAssertion(fatal)) {
         throw fatal;
       }
 
@@ -158,6 +160,7 @@ public interface JavaSourceCompiler extends AutoCloseable {
           () ->
               "[javacCrash] phase=analyze jdk=%s javac threw during analyze; returning partial analysis"
                   .formatted(javaVersion()));
+      return false;
     }
   }
 
@@ -170,6 +173,17 @@ public interface JavaSourceCompiler extends AutoCloseable {
     final String version = System.getProperty("java.version", "unknown");
     final String vendor = System.getProperty("java.vendor.version", "");
     return vendor.isBlank() ? version : "%s (%s)".formatted(version, vendor);
+  }
+
+  // javac reports its own bugs as an AssertionError, and attributing broken code, which plain javac
+  // never does, reaches some: deleting a `try {` line leaves a catch that javac's Attr rejects. It
+  // fails one analysis, not the server. javac wraps every Error it throws, so the Error's own top
+  // frame tells javac's from a processor's, a plugin's or Lathe's own, which stay fatal.
+  private static boolean isJavacAssertion(final Error error) {
+    final StackTraceElement[] stack = error.getStackTrace();
+    return error instanceof AssertionError
+        && stack.length > 0
+        && stack[0].getClassName().startsWith("com.sun.tools.javac.");
   }
 
   static Error fatalErrorCause(final Throwable failure) {
