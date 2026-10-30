@@ -36,6 +36,7 @@ import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.server.analysis.ReferenceRole;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -1993,22 +1994,37 @@ final class WorkspaceSession {
     }
   }
 
-  // An override the rename edits must not also override a method outside the renamed family:
-  // renamed, it would silently stop overriding that one.
-  private static void requireNoOverrideLeftBehind(
+  // What a rename's edits would leave behind: an override that also overrides a method outside the
+  // renamed family, or a static import that also names members outside it -- kept for them, it
+  // leaves the renamed member's calls in that file without one.
+  private static void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
     matches.stream()
-        .filter(match -> !match.alsoOverrides().isEmpty())
+        .map(match -> leftBehind(target, match))
+        .flatMap(Optional::stream)
         .findFirst()
         .ifPresent(
-            match -> {
-              throw renameRefused(
-                  "`%s` cannot be renamed: its override in %s also overrides %s, which the rename would leave behind"
-                      .formatted(
-                          target.simpleName(),
-                          LatheUri.toPath(match.uri()).getFileName(),
-                          String.join(", ", match.alsoOverrides())));
+            reason -> {
+              throw renameRefused(reason);
             });
+  }
+
+  private static Optional<String> leftBehind(
+      final ReferenceTarget target, final ReferenceMatch match) {
+    final Path file = LatheUri.toPath(match.uri()).getFileName();
+    if (!match.alsoOverrides().isEmpty()) {
+      return Optional.of(
+          "`%s` cannot be renamed: its override in %s also overrides %s, which the rename would leave behind"
+              .formatted(target.simpleName(), file, String.join(", ", match.alsoOverrides())));
+    }
+
+    if (match.role() == ReferenceRole.SHARED_STATIC_IMPORT) {
+      return Optional.of(
+          "`%s` cannot be renamed: %s imports it statically by a name other members share, so the import must stay and the renamed calls there would lose theirs; rename those members together, or qualify the calls first"
+              .formatted(target.simpleName(), file));
+    }
+
+    return Optional.empty();
   }
 
   private static ResponseErrorException renameRefused(final String message) {
@@ -2122,7 +2138,7 @@ final class WorkspaceSession {
                                                     t.elapsedMs(),
                                                     searchTarget.simpleName(),
                                                     matches.size()));
-                                    requireNoOverrideLeftBehind(searchTarget, matches);
+                                    requireNothingLeftBehind(searchTarget, matches);
                                     return renameEdit(
                                         searchTarget,
                                         toLocations(matches),

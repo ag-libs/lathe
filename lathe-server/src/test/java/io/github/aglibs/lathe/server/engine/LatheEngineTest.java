@@ -741,6 +741,45 @@ class LatheEngineTest {
     return engine.rename(file, pos.getLine(), pos.getCharacter(), newName);
   }
 
+  // A static import names every member of its name. Renaming one overload, the import must stay for
+  // the others, and the renamed calls in that file would be left without one; a member alone under
+  // its name renames its import.
+  @Test
+  void rename_overloadOfAStaticallyImportedName_refuses_soleMemberRenamesItsImport()
+      throws Exception {
+    final String util =
+        """
+        package com.example;
+        public class Util {
+          public static int go(int i) { return i; }
+          public static String go(String s) { return s; }
+          public static int solo() { return 1; }
+        }
+        """;
+    final String user =
+        """
+        package com.example.app;
+        import static com.example.Util.go;
+        import static com.example.Util.solo;
+        class User {
+          int u() { return go(1) + go("x").length() + solo(); }
+        }
+        """;
+    final Path utilFile = TestCompiler.writeModuleSource(tmp, "com/example/Util.java", util);
+    final Path userFile = TestCompiler.writeModuleSource(tmp, "com/example/app/User.java", user);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), utilFile, userFile);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(utilFile, util, "go(int", "goInt"))
+        .hasMessageContaining("`go` cannot be renamed: User.java imports it statically");
+    assertThat(Files.readString(userFile)).isEqualTo(user);
+
+    renameAt(utilFile, util, "solo", "single");
+    assertThat(Files.readString(userFile))
+        .contains("import static com.example.Util.single;")
+        .contains("+ single()");
+  }
+
   @Test
   void rename_symbolDeclaredInGeneratedSource_refusesWithTheReasonAndEditsNothing()
       throws Exception {

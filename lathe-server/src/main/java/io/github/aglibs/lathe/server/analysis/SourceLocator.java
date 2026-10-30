@@ -492,21 +492,25 @@ public final class SourceLocator {
 
   private static Element resolveStaticImportMember(
       final Trees trees, final TreePath impPath, final ImportTree imp) {
+    return staticImportMembers(trees, impPath, imp).stream().findFirst().orElse(null);
+  }
+
+  // Every member a single static import names: overloads, and a field of the same name, alike.
+  public static List<Element> staticImportMembers(
+      final Trees trees, final TreePath impPath, final ImportTree imp) {
     if (!(imp.getQualifiedIdentifier() instanceof final MemberSelectTree ms)) {
-      return null;
+      return List.of();
     }
     final var msPath = new TreePath(impPath, ms);
     final var exprPath = new TreePath(msPath, ms.getExpression());
-    final var typeMirror = trees.getTypeMirror(exprPath);
-    if (!(typeMirror instanceof final DeclaredType dt)) {
-      return null;
+    if (!(trees.getTypeMirror(exprPath) instanceof final DeclaredType dt)) {
+      return List.of();
     }
-    final var typeElem = (TypeElement) dt.asElement();
     final var memberName = ms.getIdentifier().toString();
-    return typeElem.getEnclosedElements().stream()
+    return dt.asElement().getEnclosedElements().stream()
         .filter(e -> e.getSimpleName().contentEquals(memberName))
-        .findFirst()
-        .orElse(null);
+        .map(Element.class::cast)
+        .toList();
   }
 
   public static VariableElement parameterElementAt(final Trees trees, final TreePath path) {

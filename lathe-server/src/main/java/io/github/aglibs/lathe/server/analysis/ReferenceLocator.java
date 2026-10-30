@@ -21,6 +21,7 @@ import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -135,14 +136,23 @@ final class ReferenceLocator extends SourceTreeLocator {
   public Void visitImport(final ImportTree node, final Void ignored) {
     final var qualId = node.getQualifiedIdentifier();
     final var qualIdPath = new TreePath(getCurrentPath(), qualId);
-    final var element =
-        node.isStatic() ? SourceLocator.elementAt(trees, qualIdPath) : trees.getElement(qualIdPath);
-    if (target.matchesFamily(element, types, elements, targetMethod)) {
+    // A static import names every member of its name, so it is a use of each; one that also names
+    // members outside the target's family must stay as it is.
+    final List<Element> imported =
+        node.isStatic()
+            ? SourceLocator.staticImportMembers(trees, getCurrentPath(), node)
+            : Stream.ofNullable(trees.getElement(qualIdPath)).toList();
+    final long inFamily =
+        imported.stream()
+            .filter(element -> target.matchesFamily(element, types, elements, targetMethod))
+            .count();
+    final ReferenceRole role =
+        inFamily < imported.size() ? ReferenceRole.SHARED_STATIC_IMPORT : ReferenceRole.IMPORT;
+    if (inFamily > 0) {
       if (qualId instanceof final MemberSelectTree mst) {
-        addMatchAtIdentifier(qualId, mst.getIdentifier().toString(), ReferenceRole.IMPORT);
+        addMatchAtIdentifier(qualId, mst.getIdentifier().toString(), role);
       } else if (qualId instanceof final IdentifierTree it) {
-        addMatch(
-            positions.getStartPosition(cu, qualId), it.getName().length(), ReferenceRole.IMPORT);
+        addMatch(positions.getStartPosition(cu, qualId), it.getName().length(), role);
       }
     }
 
