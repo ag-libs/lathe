@@ -20,8 +20,11 @@ enum SourceScope {
     return find(scope -> scope.wire.equals(wire), "unknown source scope: " + wire);
   }
 
+  // A module can compile more trees than main and test (a multi-release jar's versions/21, an extra
+  // execution's output), each named after its output dir; like the rest of Lathe, any tree but the
+  // test one is main code.
   static SourceScope ofSourceTree(final String sourceTree) {
-    return find(scope -> scope.sourceTree.equals(sourceTree), "unknown source tree: " + sourceTree);
+    return TEST.sourceTree.equals(sourceTree) ? TEST : MAIN;
   }
 
   private static SourceScope find(final Predicate<SourceScope> match, final String error) {
