@@ -463,6 +463,46 @@ None yet.
 
 ---
 
+## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow
+
+**Status: deferred — Target: backlog.**
+Decision (2026-10-30): not before the release; such code is rare outside generated sources, and 0.1.24 does the same.
+**Affects: the editor and MCP.**
+Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
+
+### Observed behaviour
+
+Valid code nested deeply enough overflows the stack of the thread analysing it.
+A `StackOverflowError` is a `VirtualMachineError`, which ends the server by design, so the server exits:
+
+- a call chain about 700 long (`new StringBuilder().append(1).append(1)…`), verified on main (2849e785);
+- by the fuzzing report, an `if`/`else if` chain about 1000 long, or about 3000 terms joined with `+`.
+
+It fires when such a file is opened or edited (the live analysis), and on MCP `outline` and `describe_symbol`;
+the MCP server exits with status 1.
+The write pass and `verify_change` compile such a file without overflowing.
+javac itself compiles it.
+
+The overflowing frames are Lathe's own tree walk, `TokenScanner.visitMemberSelect` under `WrittenSourceScanner.scan`, on top of javac's attribution.
+Lathe's compile workers are plain threads with the JVM's default stack (1 MB on 64-bit Linux),
+while command-line javac runs on the main thread, which gets about 8 MB.
+
+Hand-written code rarely nests this deep;
+generated sources can (long builder or `append` chains, large concatenated string constants, big dispatch `if` chains).
+
+### Fix direction
+
+Give the compile workers a larger stack:
+`CompilationWorker` creates its threads itself, and the `Thread` constructor takes a stack size (reserved address space, committed only as used).
+Size it from javac's main-thread headroom and measure the deepest case above.
+Keep `StackOverflowError` fatal, in line with the fail-fast policy until GA.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -1154,6 +1194,33 @@ Matching the separator of the line an edit lands next to, instead of a whole-fil
 handle files that are already mixed.
 Tests must build CRLF content explicitly (`"…\r\n"`): `fix_imports` and `format_file` on a CRLF file,
 asserting no bare `\n` and no `\r\r`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-42 — An unparseable line on stdin leaves the MCP server running but deaf
+
+**Status: deferred — Target: backlog.**
+Decision (2026-10-30): only a broken client sends one, and after it the session is over either way.
+**Affects: MCP.**
+Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
+
+### Observed behaviour
+
+The SDK's stdio transport (`StdioServerTransportProvider`) stops reading at the first line it cannot decode as JSON-RPC, a blank line included, and closes the session;
+the server answers nothing more.
+The process keeps running.
+End of input closes the session the same way, but there the server now exits, as a client closing stdin means it is done.
+A client that sent such a line waits on its requests until its own timeout.
+
+### Fix direction
+
+Exit when the session's transport closes, whatever closed it, rather than only at end of input:
+wrap the transport provider and its session transport, and end the process when the session closes them.
+That implements two SDK interfaces, so weigh it against SDK upgrades.
 
 ### Regression targets
 
