@@ -167,10 +167,11 @@ With either method, generate the Lathe metadata. What gets written depends on ho
 mvn clean test -Dlathe.capture.only=true
 ```
 
-`-Dlathe.capture.only=true` registers a filter that excludes every test from execution while the fork
-still writes its launch template; `clean` is required on the first run so Maven compiles through the
-Lathe shim rather than skipping up-to-date output. If your build sets
-`<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
+`-Dlathe.capture.only=true` keeps the tests from running while the fork still writes its launch template:
+on JUnit 5.10 or newer through JUnit's dry-run mode, on older JUnit through a filter that excludes every test
+(see [test-capture.md](test-capture.md#capture-without-running-tests)).
+`clean` is required on the first run so Maven compiles through the Lathe shim rather than skipping up-to-date output.
+On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
 
 After that, any normal build (`mvn test` / `verify` / `install`) refreshes the templates automatically.
 Add `.lathe/` to `.gitignore`.
@@ -221,6 +222,9 @@ Lathe writes to two locations: `.lathe/` inside the project, and `~/.cache/lathe
 - `lathe-junit` writes each module's `test-launch.json` from inside the Surefire fork during the `test`
   phase — so test run/debug needs a build that reaches `test` (see the table above and
   [test-capture.md](test-capture.md)).
+- The language server writes here too: it compiles saved and outside-changed sources into each module's mirrored `classes/`, `test-classes/` and `generated-sources/`,
+  saves each module's discovered tests in `test-discovery.json`,
+  and takes `write.lock` so that several Lathe servers on one workspace (an editor's and an agent's) take turns writing.
 
 **On the machine — `~/.cache/lathe/`** (machine-wide, regenerable):
 
@@ -277,11 +281,11 @@ export LATHE_JVM_OPTS="-Xmx4g"
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 
-**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's
-memory. On a large reactor its heap grows with use rather than collecting early: an MCP session on
-Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same
-work at the same speed capped at 2 GB. If memory matters, cap it, and let an idle server return what
-it no longer uses (the same variable reaches the editor's and the MCP launcher):
+**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's memory.
+On a large reactor its heap grows with use rather than collecting early: before Lathe released idle module sessions,
+an MCP session on Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same work at the same speed capped at 2 GB.
+Lathe now releases a module's session after 5 idle minutes, and earlier when the heap runs short, so a capped server completes such work.
+If memory matters, cap it, and let an idle server return what it no longer uses (the same variable reaches the editor's and the MCP launcher):
 
 ```bash
 export LATHE_JVM_OPTS="-Xmx4g -XX:G1PeriodicGCInterval=60000"

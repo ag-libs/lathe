@@ -68,6 +68,7 @@ claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
 - **Run it from the project root.** The server finds its reactor by walking up from its working
   directory to the nearest `.lathe/`, so the client must launch it with the project as its cwd — which
   is also what resolves the relative launcher path.
+  Started from a module's directory, the launcher misses the root's `.lathe/java-home` and `jvm.args` and runs on the `java` on your `PATH`.
 - **Scope.** The default scope is this project, for you only. Add `--scope project` to write a shared
   `.mcp.json` you can commit so teammates get the same setup — the relative path keeps it portable.
 - **One registration for every project** — register the user-global launcher once at user scope:
@@ -110,11 +111,11 @@ The structured result carries the same, with the full `uri` and `origin`.
 | `find_references` | `file, line, column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, column, direction` (optional) | callers (`incoming`, the default) or callees (`outgoing`) of a method, across modules |
-| `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`) |
+| `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); types only, and no wildcards (`*Checker` finds nothing) |
 | `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
-| `run_test` | `file, scope, method` | replay a test method / class / package from captured bytecode — no reactor build |
+| `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no reactor build |
 | `analyze_change` | `file, line, column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step), so edits pass the build's formatting check; answers with the lines it rewrote |
 | `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match, plus static imports the file's scope already uses elsewhere; the ambiguous ones are listed with their candidates for you to pick, and names with no match are listed too |
@@ -153,7 +154,8 @@ file after your edit, with no Maven:
   code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
 
 Every tool first compiles the files you changed, however many, so its answer reflects your edits.
-What it still cannot vouch for comes as a note at the end of the result:
+What it still cannot vouch for comes as a note at the end of the result
+(`workspace_summary` carries none yet: it does not mention a pending sync or a `.lathe/` from another Lathe version):
 
 - **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
   `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
@@ -165,12 +167,18 @@ What it still cannot vouch for comes as a note at the end of the result:
   `get_diagnostics` then answers "Foo.java was not checked." rather than reporting no errors.
 - **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
 
-`rename_symbol` is the one tool that writes: it applies javac-computed edits to disk and **refuses to
-touch a file outside the reactor**.
+An edited `lombok.config` is not seen as a change: `verify_change` keeps answering from the classes compiled before it.
+Run `get_diagnostics` on the affected files, or a sync.
+
+Three tools write to disk: `rename_symbol`, `format_file` and `fix_imports`.
+All three **refuse to touch a file outside the reactor**.
+`rename_symbol` applies javac-computed edits.
 It also refuses a symbol declared outside the project (JDK or a dependency) or in generated source,
 and a method overriding one, since renaming only its uses would break them; the error says which.
 It refuses a method one of whose overrides also overrides an unrelated method, which the rename would
 leave behind.
+It refuses a Lombok field or a member Lombok generates, whose accessors' calls the rename would leave behind,
+and one member of a statically imported name the import also brings in other members of.
 It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
@@ -192,6 +200,9 @@ structured `affectedModules`) and gives the sync command that builds them, e.g.
 With no errors their callers have already compiled, so it says that build is optional.
 If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),
 it says so and gives that command instead.
+A build that was killed leaves its locks behind, and `verify_change` keeps deferring until they go stale, about two minutes later.
+
+To make an agent run it before reporting done, add [this snippet](../../examples/agents/lathe-mcp.md) to the project's `AGENTS.md` or `CLAUDE.md`.
 
 ## Usage logging
 

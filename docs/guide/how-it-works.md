@@ -86,7 +86,7 @@ Your build already declares these, as `-J` flags for a forked compiler, in `.mvn
 
 ## Lombok
 
-When a module has Lombok on its processor path (and `<proc>` is not `none`), the live pass runs Lombok too, and no other processor.
+When a module has Lombok on its processor path, or on its class path when it has none (and `<proc>` is not `none`), the live pass runs Lombok too, and no other processor.
 So the getters, builders and loggers Lombok generates are there while you type, in the editor and for an agent.
 It costs about 10 ms a keystroke, and about a second the first time a module loads Lombok.
 
