@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -99,6 +100,25 @@ class WorkspaceModuleRegistryTest {
     final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
 
     assertThat(registry.allSourceRoots()).containsExactlyInAnyOrder(mainSrc, straySrc);
+  }
+
+  // A module with an open file keeps its session; the others go once idle long enough.
+  @Test
+  void releaseSessions_keepsTheGivenModules_releasesOnlyIdleSessions() throws Exception {
+    TestCompiler.writeModuleParams(tmp, "module-a", tmp.resolve("module-a/src/main/java"), null);
+    TestCompiler.writeModuleParams(tmp, "module-b", tmp.resolve("module-b/src/main/java"), null);
+    try (var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty())) {
+      final List<ModuleSourceConfig> configs = registry.allConfigs();
+      configs.forEach(
+          config ->
+              registry.workerFor(config).documentSymbol("file:///A.java", "class A {}").join());
+
+      assertThat(registry.releaseSessions(Set.of(), 60_000)).as("not idle long enough").isZero();
+      assertThat(registry.releaseSessions(Set.of(configs.get(0)), 0)).isEqualTo(1);
+      assertThat(registry.hasSessionIdleFor(0)).as("the kept module's session").isTrue();
+      assertThat(registry.releaseSessions(Set.of(), 0)).isEqualTo(1);
+      assertThat(registry.hasSessionIdleFor(0)).isFalse();
+    }
   }
 
   @Test

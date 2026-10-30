@@ -4,8 +4,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.itsupport.LspSession;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
@@ -109,7 +111,7 @@ class LspSmokeTest {
     if (!Files.readString(MANIFEST).equals(originalManifest)) {
       // Restoring the manifest content is itself a structural change → a reload notification. Drain
       // it here so it does not leak into the next test's message assertions.
-      Files.writeString(MANIFEST, originalManifest);
+      writeManifest(originalManifest);
       client.messages.poll(10, SECONDS);
     }
 
@@ -174,11 +176,19 @@ class LspSmokeTest {
     }
   }
 
+  // As the build writes it, through a temp file renamed over it: an in-place write empties the file
+  // first, and the server's watcher can read it in between and report it unreadable.
+  private static void writeManifest(final String content) throws IOException {
+    final Path temp = MANIFEST.resolveSibling(MANIFEST.getFileName() + ".tmp");
+    Files.writeString(temp, content);
+    Files.move(temp, MANIFEST, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+  }
+
   @Test
   void workspaceReload_manifestContentChanged_notifiesUser() throws Exception {
     // A manifest content change is structural → full reload + notification (a mtime-only touch is
     // the silent refresh). Appending a newline keeps the JSON valid but changes the compared bytes.
-    Files.writeString(MANIFEST, originalManifest + "\n");
+    writeManifest(originalManifest + "\n");
 
     final var msg = client.messages.poll(10, SECONDS);
     assertThat(msg).isNotNull();

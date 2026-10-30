@@ -53,6 +53,8 @@ public final class LatheLayout {
   public static final String NATIVE_ENCODING_PROPERTY = "native.encoding";
   public static final String BIN_DIR = "bin";
   public static final String JVM_ARGS_FILE = "jvm.args";
+  // Lombok's own configuration file, read from a source's directory and each one above it.
+  public static final String LOMBOK_CONFIG_FILE = "lombok.config";
   // A run/test launch too long for one command line passes its arguments in a temp argfile.
   public static final String LAUNCH_ARGFILE_PREFIX = "lathe-launch-";
   public static final String ARGFILE_SUFFIX = ".args";

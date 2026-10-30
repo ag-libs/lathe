@@ -194,6 +194,19 @@ public final class FileUtil {
     return tempFile;
   }
 
+  // The files called name in dir and in each of its ancestors, nearest first.
+  public static List<Path> ancestorFiles(final Path dir, final String name) {
+    final List<Path> found = new ArrayList<>();
+    for (Path current = dir; current != null; current = current.getParent()) {
+      final Path candidate = current.resolve(name);
+      if (Files.isRegularFile(candidate)) {
+        found.add(candidate);
+      }
+    }
+
+    return List.copyOf(found);
+  }
+
   // Bumps an existing file's mtime to now, signalling a watcher without changing its content.
   public static void touch(final Path file) throws IOException {
     Files.setLastModifiedTime(file, FileTime.from(Instant.now()));

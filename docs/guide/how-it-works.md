@@ -95,7 +95,12 @@ definition on `getName()` lands on the field `name` (on the class for `builder()
 and the field's references include its accessors' calls.
 Renaming such a field, or a generated member, is refused with the reason, as the accessors' calls would be left behind.
 
+Lombok reads `lombok.config` from the source's directory and each one above it, as in the build.
+Lathe compiles a copy of each file elsewhere, so it lays that chain out beside the copy.
+
 Limits:
+- An `import` line in a `lombok.config` is resolved from Lathe's copy, not from the file's own directory.
+- A changed `lombok.config` applies to an open file at its next edit, and Lombok rereads a config at most every 2 seconds.
 - Lathe recognizes generated members by the `@lombok.Generated` mark Lombok adds; with
   `lombok.addLombokGeneratedAnnotation = false` in `lombok.config`, navigation treats them as written code.
 - Accessors named through `lombok.config` (`lombok.accessors.prefix`) lead to the class, not the field.
