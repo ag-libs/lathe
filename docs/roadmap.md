@@ -23,12 +23,12 @@ publishes beta artifacts to Maven Central so public users install from released 
 building from source. Run/test execution and the debugger have shipped and are part of the M2 beta.
 
 **Beyond M2 the roadmap is demand-driven, not a pre-planned ladder** — no *new* `Mn` milestones are
-declared. Post-beta work lives in the [Backlog](#backlog), graduates to `Target: next` when public-beta
-feedback justifies it, and is cut and given a **version number** (`0.2.0`, …) only when a `next` batch is
+declared. Post-beta work lives in the [Backlog](#backlog), graduates to `Status: accepted` when public-beta
+feedback justifies it, and is cut and given a **version number** (`0.2.0`, …) only when the accepted work is
 worth shipping. See [Post-beta release model](#post-beta-release-model). General availability (a stable
 `1.0.0`) and VS Code are the two named intents in that backlog, both unscheduled.
 
-> Historical note: a handful of early post-beta correctness fixes carry a transitional `Target: M3` tag
+> Historical note: a handful of early post-beta correctness fixes carry a transitional `M3` target
 > in [gaps-archive.md](gaps/gaps-archive.md) (an `Mn` label that predates this model and was never a
 > roadmap milestone). They already shipped in the `0.1.x` beta line; the tag is retained as history and
 > is superseded by version numbering — no further `Mn` labels are introduced.
@@ -144,26 +144,25 @@ Once the M2 beta is public, releases are **cut on demand, named at cut time, and
 - **No pre-declared milestones.** No new `Mn` milestone with a promised scope is declared (the
   transitional `M3` tag in the archive is retired history, not a plan). The next release's contents are
   unknown until it is cut, by design.
-- **A rolling backlog feeds `next`.** Every post-beta gap starts in the [Backlog](#backlog). Public-beta
-  feedback — recorded as a `Signal:` line on the gap (see [gap-process.md](gaps/gap-process.md)) — is
-  what graduates it to `Status: accepted`, `Target: next`. Prioritisation is common-sense impact, not a
-  schedule.
-- **A cut is a version.** When the `next` batch is worth shipping, it is released under a version number
-  (`0.2.0`, `0.3.0`, …, and eventually a stable `1.0.0`) and those entries are retargeted from `next` to
-  that version. The version is the *record* of what shipped, produced at cut time — it is not a
-  container filled in advance.
-- **`grep -n 'Target: next' docs/gaps/gaps.md`** is the live view of what the next cut is trending
+- **A rolling backlog feeds the next cut.** Every post-beta gap starts in the [Backlog](#backlog).
+  Public-beta feedback — recorded as a `Signal:` line on the gap (see [gap-process.md](gaps/gap-process.md)) —
+  is what graduates it to `Status: accepted`.
+  Prioritisation is common-sense impact, not a schedule.
+- **A cut is a version.** When the accepted work is worth shipping, it is released under a version number
+  (`0.2.0`, `0.3.0`, …, and eventually a stable `1.0.0`).
+  The version is the *record* of what shipped, produced at cut time — it is not a container filled in advance.
+- **`grep -n 'Status: accepted' docs/gaps/gaps.md`** is the live view of what the next cut is trending
   toward.
 
 This keeps the honest answer to "what is in the next release, and when?" as *"whatever feedback pulls
-into `next`, cut when it is worth a version"* — rather than a ladder of promises that public users would
+into the accepted work, cut when it is worth a version"* — rather than a ladder of promises that public users would
 hold the project to.
 
 ---
 
 ## Backlog
 
-Unscheduled — the rolling pool that feeds `next` (see [Post-beta release model](#post-beta-release-model)).
+Unscheduled — the rolling pool that feeds the next cut (see [Post-beta release model](#post-beta-release-model)).
 No post-beta release is planned ahead of time; items graduate by feedback signal and are version-named
 when cut. Items are grouped, not ordered.
 

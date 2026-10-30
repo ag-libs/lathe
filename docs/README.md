@@ -17,8 +17,8 @@ One process for every kind of gap (exploration `EG`, references `FR`, code actio
 workspace `WS`, test execution `TE`, debug `DB`, Neovim `NV`, MCP `MC`; see the prefix table in
 [gap-process.md](gaps/gap-process.md)):
 
-- [gaps/gap-process.md](gaps/gap-process.md) — the lifecycle: the `Status` and `Target` fields, the
-  document → target → implement → done round, and the definition of done.
+- [gaps/gap-process.md](gaps/gap-process.md) — the lifecycle: the `Status` field,
+  the document → triage → implement → done round, and the definition of done.
 - [gaps/gap-workflow.md](gaps/gap-workflow.md) — how to discover and record a gap (the `explore.py`
   tooling and probe recipes; completion is the richest area).
 - [gaps/gaps.md](gaps/gaps.md) — the single active registry of open gaps.

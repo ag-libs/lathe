@@ -12,7 +12,7 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 **Status: done — Target: next.**
 Fixed by 48f701b8 (2026-10-30): an idle module session is released after 5 idle minutes,
 and under memory pressure, when the JVM reports the old generation still above 70% after a collection.
-Design: [Releasing Module Sessions Under Memory Pressure](../planned/lathe-memory-pressure.md).
+Design: [Releasing Module Sessions Under Memory Pressure](../done/lathe-memory-pressure.md).
 
 ### Observed behaviour
 
