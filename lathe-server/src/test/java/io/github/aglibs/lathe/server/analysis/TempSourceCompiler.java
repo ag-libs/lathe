@@ -15,6 +15,7 @@ import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
@@ -27,6 +28,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
 
   private final Path td;
   private final List<Path> classpath;
+  private final List<String> options;
   private final StandardJavaFileManager fm;
 
   public TempSourceCompiler() {
@@ -34,8 +36,15 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
   }
 
   public TempSourceCompiler(final List<Path> extraClasspath) {
+    this(extraClasspath, List.of());
+  }
+
+  // Build options that change how javac recovers from errors, such as Error Prone's
+  // -XDcompilePolicy=simple with --should-stop=ifError=FLOW.
+  public TempSourceCompiler(final List<Path> extraClasspath, final List<String> extraOptions) {
     this.classpath = List.copyOf(extraClasspath);
-    this.fm = TestJavac.fileManager(classpath, OPTIONS);
+    this.options = Stream.concat(OPTIONS.stream(), extraOptions.stream()).toList();
+    this.fm = TestJavac.fileManager(classpath, options);
     this.td = IOUtil.unchecked(() -> Files.createTempDirectory("lathe-test-"));
   }
 
@@ -54,7 +63,7 @@ public final class TempSourceCompiler implements JavaSourceCompiler {
       final var collector = new DiagnosticCollector<JavaFileObject>();
       final var task =
           (JavacTask)
-              COMPILER.getTask(null, fm, collector, OPTIONS, null, fm.getJavaFileObjects(tempFile));
+              COMPILER.getTask(null, fm, collector, options, null, fm.getJavaFileObjects(tempFile));
 
       return JavaSourceCompiler.runAnalysis(task, collector);
     } catch (final IOException e) {

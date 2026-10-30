@@ -234,7 +234,7 @@ public record ReferenceTarget(
       return false;
     }
 
-    if (!(element instanceof final ExecutableElement ee)) {
+    if (!(element instanceof final ExecutableElement ee) || !hasTypeOwner(ee)) {
       return false;
     }
 
@@ -291,6 +291,19 @@ public record ReferenceTarget(
         .toList();
   }
 
+  // A use javac could not resolve (`Missing::go`) names a member of no type: javac gives it a
+  // placeholder owner. It is no use of any declaration, so it matches nothing.
+  private static boolean hasTypeOwner(final Element element) {
+    return element.getEnclosingElement() instanceof TypeElement;
+  }
+
+  private static boolean isMember(final ElementKind kind) {
+    return kind == ElementKind.METHOD
+        || kind == ElementKind.CONSTRUCTOR
+        || kind == ElementKind.FIELD
+        || kind == ElementKind.ENUM_CONSTANT;
+  }
+
   private static boolean overridesEitherWay(
       final ExecutableElement method, final ExecutableElement target, final Elements elements) {
     final var methodOwner = (TypeElement) method.getEnclosingElement();
@@ -313,6 +326,10 @@ public record ReferenceTarget(
     }
 
     if (!simpleName.equals(element.getSimpleName().toString())) {
+      return false;
+    }
+
+    if (isMember(kind) && !hasTypeOwner(element)) {
       return false;
     }
 

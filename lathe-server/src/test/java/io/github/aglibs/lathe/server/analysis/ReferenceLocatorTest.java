@@ -590,6 +590,34 @@ class ReferenceLocatorTest {
     assertThat(result).hasSize(1);
   }
 
+  // Built as Error Prone builds (javac attributing past errors), a method reference javac cannot
+  // resolve gets a nameless placeholder method that belongs to no type. Asking whether it
+  // overrides an overridable target once failed the whole search, and so every rename.
+  @Test
+  void methodReference_unresolved_isNoUse_andTheSearchStillFindsTheRealOnes() throws IOException {
+    compiler.close();
+    compiler =
+        new TempSourceCompiler(
+            List.of(), List.of("-XDcompilePolicy=simple", "--should-stop=ifError=FLOW"));
+    final var source =
+        """
+        public class Test {
+            public void go() {}
+            void test() {
+                go();
+                Runnable unresolved = Missing::go;
+                Runnable resolved = this::go;
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var target = targetAt(analysis, "public void go()", "go");
+
+    final List<ReferenceMatch> result = refs(analysis, target, true);
+
+    assertThat(result).hasSize(3);
+  }
+
   // --- imports ---
 
   @Test
