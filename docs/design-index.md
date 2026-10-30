@@ -435,3 +435,6 @@ reused):
 - [Basic Refactorings (Rename, Move, Extract)](potential/lathe-basic-refactorings.md) — rename
   (`prepareRename`/`rename`, already M2), move and extract method/variable/field via
   `refactor.move`/`refactor.extract` code actions returning `WorkspaceEdit`s.
+- [Split `WorkspaceSession` by Responsibility](potential/lathe-workspace-session-split.md) — **potential.**
+  The class grew to 5,324 lines since M1 flagged it at 1,365; extract layout queries, the reactor type
+  index, run/test/debug and the write passes into package-private, event-loop-confined classes, in that order.
