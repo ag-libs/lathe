@@ -10,7 +10,9 @@ import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
+import java.io.FilterInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
@@ -102,6 +104,7 @@ public final class LatheMcpServer {
     // System.out to stderr so a stray print in the engine cannot corrupt the protocol.
     final var protocolOut = System.out;
     System.setOut(System.err);
+    final var clientGone = new CountDownLatch(1);
     try {
       // With no .lathe/ the server still answers, so the agent learns why from the instructions and
       // from any tool, instead of a server that failed to connect.
@@ -119,7 +122,9 @@ public final class LatheMcpServer {
       }
 
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
-      final var transport = new StdioServerTransportProvider(mapper, System.in, protocolOut);
+      final var transport =
+          new StdioServerTransportProvider(
+              mapper, new ClientInput(System.in, clientGone::countDown), protocolOut);
       McpServer.sync(transport)
           .serverInfo("lathe", version())
           .capabilities(ServerCapabilities.builder().tools(true).build())
@@ -133,7 +138,41 @@ public final class LatheMcpServer {
     }
 
     LOG.info(() -> "[startup] ready");
-    new CountDownLatch(1).await(); // serve until the agent terminates the process
+    clientGone.await();
+    LOG.info(() -> "[shutdown] stdin closed by the client exiting");
+    System.exit(0);
+  }
+
+  // An MCP client ends a stdio session by closing the server's stdin, and one that dies sends no
+  // signal at all. The SDK's transport stops reading at end of input but leaves the process, and
+  // the
+  // engine's threads, running: an orphan per session. So end of input ends the server.
+  private static final class ClientInput extends FilterInputStream {
+
+    private final Runnable onEnd;
+
+    ClientInput(final InputStream in, final Runnable onEnd) {
+      super(in);
+      this.onEnd = onEnd;
+    }
+
+    @Override
+    public int read() throws IOException {
+      return ended(super.read());
+    }
+
+    @Override
+    public int read(final byte[] buffer, final int offset, final int length) throws IOException {
+      return ended(super.read(buffer, offset, length));
+    }
+
+    private int ended(final int read) {
+      if (read == -1) {
+        onEnd.run();
+      }
+
+      return read;
+    }
   }
 
   // Process start time + pid, so each agent session maps to one log file; pid alone if the start

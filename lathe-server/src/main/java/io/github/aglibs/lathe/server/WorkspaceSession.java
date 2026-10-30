@@ -208,6 +208,8 @@ final class WorkspaceSession {
   // The running pass's hold on .lathe/'s write lock, which another Lathe server on this workspace
   // (an editor's and an agent's) takes for its passes too.
   private Closeable writeLock;
+  // The pass is waiting for another server to release the write lock.
+  private boolean waitingForWriteLock;
   private long passGeneration;
   // What the passes owe once none is left to run: the module dirs whose open files to re-analyze,
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
@@ -299,9 +301,7 @@ final class WorkspaceSession {
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
     watcher.updateBuildFiles(manifest.buildFiles(), manifest.buildFileFingerprints());
-    final long scanIntervalMs = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
-    worker.scheduleAtFixedRate(
-        scanIntervalMs > 0 ? scanIntervalMs : DEFAULT_SCAN_INTERVAL_MS, this::checkForChanges);
+    worker.scheduleAtFixedRate(scanIntervalMs(), this::checkForChanges);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
     } else {
@@ -3534,14 +3534,19 @@ final class WorkspaceSession {
       final Optional<Closeable> lock =
           LatheLock.tryExclusive(
               LatheLayout.writeLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
+      // The other server's pass can run for minutes (a branch switch); trying again only as often
+      // as the change scan keeps an editor's idle server from waking more while it waits.
       if (lock.isEmpty()) {
-        worker.schedule(WRITE_LOCK_KEY, WRITE_LOCK_RETRY_MS, () -> runLocked(eager, pass));
+        waitingForWriteLock = true;
+        worker.schedule(WRITE_LOCK_KEY, scanIntervalMs(), () -> runLocked(eager, pass));
         return;
       }
 
+      waitingForWriteLock = false;
       writeLock = lock.get();
       runPass(eager, pass);
     } catch (final IOException | RuntimeException e) {
+      waitingForWriteLock = false;
       LOG.log(Level.SEVERE, e, () -> "[reconcile] pass failed");
       pass.completeExceptionally(e); // never leave a pass running, or every later request waits
     }
@@ -3834,11 +3839,29 @@ final class WorkspaceSession {
             ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
             : ReconcileOutcome.DeferReason.NONE;
     // On the worker after the pass's own completion chain, which starts the index rebuild.
-    return requestPass(true)
-        .thenComposeAsync(
-            stale ->
-                reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
-            worker::execute);
+    final CompletableFuture<ReconcileOutcome> outcome =
+        requestPass(true)
+            .thenComposeAsync(
+                stale ->
+                    reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
+                worker::execute);
+    // Another server's pass holding the write lock may run for minutes: past a grace, the query
+    // answers from the mirror as it is, and this pass still runs once the lock is free.
+    CompletableFuture.delayedExecutor(OTHER_SERVER_GRACE_MS, TimeUnit.MILLISECONDS, worker::execute)
+        .execute(
+            () -> {
+              if (waitingForWriteLock) {
+                outcome.complete(
+                    new ReconcileOutcome(
+                        List.of(), ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING));
+              }
+            });
+    return outcome;
+  }
+
+  private static long scanIntervalMs() {
+    final long configured = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
+    return configured > 0 ? configured : DEFAULT_SCAN_INTERVAL_MS;
   }
 
   List<Path> takeWrittenSinceVerify() {
@@ -4670,9 +4693,9 @@ final class WorkspaceSession {
   // A rename none of whose files shows the edit this long after the response was never applied.
   private static final long RENAME_UNAPPLIED_MS = 30_000;
   private static final String RENAME_UNAPPLIED_KEY = "rename-unapplied";
-  // How soon a pass tries again for the write lock another server holds.
-  private static final long WRITE_LOCK_RETRY_MS = 100;
   private static final String WRITE_LOCK_KEY = "write-lock";
+  // Long enough for another server's pass after a save; a query waits no longer than this for it.
+  private static final long OTHER_SERVER_GRACE_MS = 2_000;
   private static final String SYNC_ACTION = "Sync";
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";

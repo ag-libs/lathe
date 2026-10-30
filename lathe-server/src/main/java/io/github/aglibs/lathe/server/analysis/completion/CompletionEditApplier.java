@@ -241,9 +241,7 @@ final class CompletionEditApplier {
         }
       }
     } else {
-      final long insertLine = cu.getLineMap().getLineNumber(exprEnd) - 1;
-      final long insertCol = cu.getLineMap().getColumnNumber(exprEnd) - 1;
-      final var pos = new Position((int) insertLine, (int) insertCol);
+      final var pos = SourceLocator.offsetToPosition(cu, exprEnd);
       final var range = new Range(pos, pos);
       final var semicolonEdit = new TextEdit(range, ";");
       final List<TextEdit> edits =

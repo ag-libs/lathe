@@ -502,6 +502,25 @@ class LatheMcpToolsTest {
   }
 
   @Test
+  void verifyChangeResult_deferred_namesTheSyncOnlyWhenOneHelps() {
+    assertThat(
+            text(
+                LatheMcpTools.verifyChangeResult(
+                    new LatheVerifyChange(
+                        "BUILD_IN_PROGRESS", List.of(), List.of(), ".lathe/lathe-sync.sh"),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            "Verification deferred: a build is in progress. Run `.lathe/lathe-sync.sh`, then re-check.");
+    assertThat(
+            text(
+                LatheMcpTools.verifyChangeResult(
+                    new LatheVerifyChange("OTHER_SERVER_WRITING", List.of(), List.of(), null),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            "Verification deferred: another Lathe server on this workspace is updating .lathe/. Re-check in a moment.");
+  }
+
+  @Test
   void noteLines_eachKindOfNote_rendersItsLine_noneWhenNothingToSay() {
     assertThat(LatheMcpTools.noteLines(LatheMcpTools.NO_NOTES)).isEmpty();
     assertThat(

@@ -121,6 +121,49 @@ class RenameProviderTest {
     }
   }
 
+  // javac's column numbers count a tab as up to 8 columns, an LSP character as one: a position
+  // taken from its columns would land 7 characters further per tab before it.
+  @Test
+  void rename_tabIndentedField_editsCoverTheNameAtEveryDepth() {
+    final var source =
+        """
+        class Test {
+        \tprivate final java.util.Map<String, Integer> cache = new java.util.HashMap<>();
+        \tboolean has(String type) {
+        \t\treturn cache.containsKey(type);
+        \t}
+        \tvoid put(String type) {
+        \t\tif (type != null) {
+        \t\t\tcache.put(type, type.length());
+        \t\t}
+        \t}
+        }
+        """;
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+      final var target =
+          session.resolveTarget(requestAt(source, posOf(source, "\tcache.put", "cache")));
+
+      final List<Range> ranges =
+          session.searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true).stream()
+              .map(match -> match.range())
+              .toList();
+
+      final List<String> lines = source.lines().toList();
+      assertThat(ranges)
+          .extracting(Range::getStart)
+          .extracting(Position::getLine)
+          .containsExactlyInAnyOrder(1, 3, 7);
+      assertThat(ranges)
+          .extracting(
+              range ->
+                  lines
+                      .get(range.getStart().getLine())
+                      .substring(range.getStart().getCharacter(), range.getEnd().getCharacter()))
+          .containsOnly("cache");
+    }
+  }
+
   @Test
   void resolveTarget_onMember_isNotLocalScope() {
     final var source = "class Test { int field; }";

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
@@ -103,6 +104,30 @@ class ModuleSourceCompilerTest {
       assertThat(config.latheClassesDir().resolve("Foo$Inner.class"))
           .as("deleting outputs a write no longer produces is the session's job")
           .exists();
+    }
+  }
+
+  // Saving a file whose `try {` line was deleted: javac's Attr fails an assertion on the stray
+  // catch. The write fails like any compile error, and the server keeps running.
+  @Test
+  void compileBatch_javacAssertionOnBrokenSource_writesNothingAndReportsTheSyntaxError()
+      throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final BatchWrite write =
+          compiler.compileBatch(
+              List.of(new TransientSource(fooUri, JavacCrashFixtures.TRY_LINE_DELETED)), () -> {});
+
+      assertThat(write.writtenBinaryNames()).isEmpty();
+      assertThat(config.latheClassesDir().resolve("Foo.class")).doesNotExist();
+      assertThat(write.diagnosticsByUri().get(fooUri))
+          .extracting(diagnostic -> diagnostic.getMessage().getLeft())
+          .anyMatch(message -> message.contains("'catch' without 'try'"));
     }
   }
 

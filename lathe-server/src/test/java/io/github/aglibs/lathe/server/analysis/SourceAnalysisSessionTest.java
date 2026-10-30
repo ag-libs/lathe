@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sun.source.util.JavacTask;
+import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -38,6 +39,37 @@ class SourceAnalysisSessionTest {
     when(task.analyze()).thenThrow(new IllegalStateException(expected));
 
     assertThatThrownBy(() -> JavaSourceCompiler.analyzeSafely(task)).isSameAs(expected);
+  }
+
+  @Test
+  void analyzeSafely_javacsOwnAssertion_failsOnlyThisAnalysis() throws IOException {
+    final JavacTask task = mock(JavacTask.class);
+    final var javacAssertion = new AssertionError();
+    javacAssertion.setStackTrace(
+        new StackTraceElement[] {
+          new StackTraceElement("com.sun.tools.javac.comp.Attr", "visitTree", "Attr.java", 5293)
+        });
+    when(task.analyze()).thenThrow(new IllegalStateException(javacAssertion));
+
+    assertThat(JavaSourceCompiler.analyzeSafely(task)).as("partial: nothing to generate").isFalse();
+  }
+
+  // Deleting a `try {` line leaves a catch that javac's Attr rejects with an AssertionError while
+  // attributing the broken tree; it once ended the server on the live compile of that keystroke.
+  @Test
+  void compile_tryLineDeleted_reportsTheSyntaxErrorInsteadOfCrashing() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final List<Diagnostic> diagnostics =
+          session.compile(
+              TempSourceCompiler.TEST_URI,
+              JavacCrashFixtures.TRY_LINE_DELETED,
+              1,
+              CompileMode.OPEN);
+
+      assertThat(diagnostics)
+          .extracting(diagnostic -> diagnostic.getMessage().getLeft())
+          .anyMatch(message -> message.contains("'catch' without 'try'"));
+    }
   }
 
   @Test

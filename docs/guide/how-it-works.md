@@ -109,6 +109,7 @@ When sources or resources change **outside** the editor — a branch switch, a `
 Saves, outside changes, and renames all go through the same write: changed files are compiled module by module in dependency order, and the open files they affect are re-checked once afterwards.
 A file that does not compile keeps its last good classes and is retried when it or a file it depends on changes.
 Several Lathe servers on one workspace (your editor's and an agent's) take turns writing `.lathe/`, so a change is compiled once, by whichever sees it first.
+While one of them writes, an agent's question waits at most 2 s for it, then is answered from `.lathe/` as it is; `verify_change` asks to re-check in a moment.
 
 Only a change to a **build file** (a `pom.xml`, or a dependency change) asks you to sync, as Lathe cannot reproduce dependency resolution itself.
 The sync runs `.lathe/lathe-sync.sh`, a script the build writes, so the editor never needs to know your build tool.

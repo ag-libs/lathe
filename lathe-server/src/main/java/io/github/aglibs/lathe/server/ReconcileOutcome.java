@@ -8,7 +8,8 @@ import java.util.List;
  * What an on-demand verify reconcile did: the sources it recompiled into the mirror, or the reason
  * it refused. A refusal ({@code deferral != NONE}) means the in-process recompile could not be
  * trusted (a pending build-file sync, or a reactor build in flight), so the caller must fall back
- * to Maven instead of reporting diagnostics against a stale classpath.
+ * to Maven instead of reporting diagnostics against a stale classpath. While another Lathe server
+ * on the workspace writes the mirror, the caller retries instead.
  */
 public record ReconcileOutcome(List<Path> reacted, DeferReason deferral) {
 
@@ -21,6 +22,7 @@ public record ReconcileOutcome(List<Path> reacted, DeferReason deferral) {
   public enum DeferReason {
     NONE,
     BUILD_FILES_PENDING,
-    BUILD_IN_PROGRESS
+    BUILD_IN_PROGRESS,
+    OTHER_SERVER_WRITING
   }
 }
