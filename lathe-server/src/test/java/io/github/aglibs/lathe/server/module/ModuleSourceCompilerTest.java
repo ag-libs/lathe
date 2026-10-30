@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.sun.source.tree.ClassTree;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
+import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
@@ -116,25 +117,11 @@ class ModuleSourceCompilerTest {
     Files.createDirectories(sourceRoot);
     final var config =
         TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-    final String tryLineDeleted =
-        """
-        class Foo {
-          int run(boolean flag) {
-            if (flag) {
-                return 1;
-              }
-              catch (RuntimeException e) {
-                return 2;
-              }
-            }
-            return 0;
-          }
-        }
-        """;
 
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final BatchWrite write =
-          compiler.compileBatch(List.of(new TransientSource(fooUri, tryLineDeleted)), () -> {});
+          compiler.compileBatch(
+              List.of(new TransientSource(fooUri, JavacCrashFixtures.TRY_LINE_DELETED)), () -> {});
 
       assertThat(write.writtenBinaryNames()).isEmpty();
       assertThat(config.latheClassesDir().resolve("Foo.class")).doesNotExist();

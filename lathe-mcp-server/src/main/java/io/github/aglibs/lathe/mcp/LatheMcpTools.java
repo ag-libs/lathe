@@ -1174,22 +1174,21 @@ final class LatheMcpTools {
   static final LatheNotes NO_NOTES = LatheNotes.ofNotChecked(List.of());
 
   static CallToolResult verifyChangeResult(final LatheVerifyChange verify, final LatheNotes notes) {
-    if (verify.deferral() != null && verify.suggestedSync() == null) {
-      return result(
-          "Verification deferred: %s. Re-check in a moment."
-              .formatted(deferralText(verify.deferral())),
-          Map.<String, Object>of("deferred", verify.deferral()),
-          notes);
-    }
-
     if (verify.deferral() != null) {
-      final String text =
-          "Verification deferred: %s. Run `%s`, then re-check."
-              .formatted(deferralText(verify.deferral()), verify.suggestedSync());
+      // Another server writing .lathe/ ends on its own, so no sync is named then.
+      final String next =
+          verify.suggestedSync() == null
+              ? "Re-check in a moment."
+              : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
+      final var structured = new LinkedHashMap<String, Object>();
+      structured.put("deferred", verify.deferral());
+      if (verify.suggestedSync() != null) {
+        structured.put("suggestedSync", verify.suggestedSync());
+      }
+
       return result(
-          text,
-          Map.<String, Object>of(
-              "deferred", verify.deferral(), "suggestedSync", verify.suggestedSync()),
+          "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next),
+          Collections.unmodifiableMap(structured),
           notes);
     }
 

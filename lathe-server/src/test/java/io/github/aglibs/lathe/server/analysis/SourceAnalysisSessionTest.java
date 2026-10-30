@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sun.source.util.JavacTask;
+import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -57,24 +58,13 @@ class SourceAnalysisSessionTest {
   // attributing the broken tree; it once ended the server on the live compile of that keystroke.
   @Test
   void compile_tryLineDeleted_reportsTheSyntaxErrorInsteadOfCrashing() {
-    final var source =
-        """
-        class Test {
-          int run(boolean flag) {
-            if (flag) {
-                return 1;
-              }
-              catch (RuntimeException e) {
-                return 2;
-              }
-            }
-            return 0;
-          }
-        }
-        """;
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<Diagnostic> diagnostics =
-          session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
+          session.compile(
+              TempSourceCompiler.TEST_URI,
+              JavacCrashFixtures.TRY_LINE_DELETED,
+              1,
+              CompileMode.OPEN);
 
       assertThat(diagnostics)
           .extracting(diagnostic -> diagnostic.getMessage().getLeft())
