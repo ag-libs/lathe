@@ -1,8 +1,7 @@
 # Lathe — Gaps
 
 This is the single active gap registry for Lathe.
-Every open gap, across all areas, lives here, follows the shared [gap lifecycle](gap-process.md)
-(a `Status` and a `Target`), and is discovered and triaged through the [gap workflow](gap-workflow.md).
+Every open gap, across all areas, lives here, follows the shared [gap lifecycle](gap-process.md) (a `Status`), and is discovered and triaged through the [gap workflow](gap-workflow.md).
 Resolved (`done` / `non-goal`) gaps move to [gaps-archive.md](gaps-archive.md).
 
 ## Areas
@@ -23,18 +22,16 @@ Each gap keeps its area prefix; the area is the discovery family, not a strict f
 
 ## Finding the work for a release
 
-The slice for a release is derived, not hand-maintained: every gap with `Status: accepted` and the
-matching `Target` (see [gap-process.md](gap-process.md)). Post-beta, releases are demand-driven — work
-accrues under `Target: next` and is version-named when cut, so `next` is the live slice.
+The slice for a release is derived, not hand-maintained: every gap with `Status: accepted` (see [gap-process.md](gap-process.md)).
+Releases are demand-driven: the accepted work is version-named when it is cut.
 
 ```bash
-grep -nE '^(Status|Target):|^\*\*Status' docs/gaps/gaps.md     # scan active entries
-grep -n 'Target: next' docs/gaps/gaps.md                       # what the next cut is trending toward
+grep -n '^\*\*Status' docs/gaps/gaps.md        # scan active entries
+grep -n 'Status: accepted' docs/gaps/gaps.md    # what the next cut is trending toward
 ```
 
-Entries follow, grouped by area: exploration (EG) below, then Find References (FR), Code Actions
-(CA), Completion (CQ), Workspace Lifecycle (WS), Test Execution (TE), Debug & Evaluation (DB),
-Neovim Client (NV), and MCP / Agent Facade (MC).
+Entries follow, grouped by area: exploration (EG) below,
+then Find References (FR), Code Actions (CA), Completion (CQ), Workspace Lifecycle (WS), Test Execution (TE), Debug & Evaluation (DB), Neovim Client (NV), and MCP / Agent Facade (MC).
 
 ---
 
@@ -55,11 +52,12 @@ These are reference data, not gap items.
 | `compile:full` (on save) | — | 79ms |
 | References (153 results, 15+ modules) | — | ~4s |
 
+
 ---
 
 ## EG-018 — `textDocument/selectionRange` not implemented
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
 
 ### Observed behaviour
 
@@ -118,28 +116,32 @@ capability and the absent handler in `LatheLanguageServer`.
 
 ---
 
-## EG-048 — Go-to-definition on an incomplete method call lands on the file, not the method
+## EG-048 — Go-to-definition on a call with the wrong arguments finds nothing, and offers one overload only
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
 
 ### Observed behaviour
 
-With a partially-typed call (`foo(`, missing arguments), `textDocument/definition` navigates to the
-file top instead of the method. When the name is overloaded it should return multiple candidate
-locations so the client shows a picker; when unambiguous it should resolve to the single method.
+Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-049, go-to-definition):
+
+| Call | Result |
+|---|---|
+| `c.solo(` (unclosed) | `solo` |
+| `c.greet(` (unclosed, `greet` overloaded) | the first overload only |
+| `c.solo()` / `c.greet()` (wrong argument count) | nothing |
+
+When the name is overloaded definition should return every candidate so the client shows a picker; when it is unambiguous it should resolve to the single method, whatever the arguments.
 
 ```bash
-python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # cursor in `foo(<incomplete>`
-# today: Foo.java 0:0 ; expected: the method declaration, or a location list for overloads
+python3 dev/explore.py <ws>/.../Foo.java def <line>:<col>   # cursor on `foo` in `foo()` with missing arguments
+# today: no result ; expected: the method declaration, or a location list for overloads
 ```
 
 ### Root cause
 
-The invocation is erroneous, so javac cannot attribute the method element; `SourceLocator.elementAt`
-yields null and definition takes the file-top fallback. The pipeline also returns at most one
-location — `WorkspaceSession.definitionFuture` maps `Optional<Location>` to a 0-or-1 list (`:1250`) —
-so overloads cannot be offered even though the LSP result type (`Either<List<Location>, …>`) allows
-many.
+A call whose arguments match no overload is erroneous, so javac attributes no method element and `SourceLocator.elementAt` finds nothing to resolve.
+The pipeline also returns at most one location: `SourceAnalysisSession.definition` returns an `Optional<Location>` and `WorkspaceSession.definitionFuture` maps it to a 0-or-1 list,
+so overloads cannot be offered even though the LSP result type (`Either<List<Location>, …>`) allows many.
 
 ### Proposed direction
 
@@ -163,9 +165,11 @@ None yet — re-triaged from backlog when scheduled.
 docs/done/lathe-jdtls-differential-testing.md) on a real multi-module reactor. Each is a behaviour
 where jdtls returns a result Lathe does not, or the two disagree substantively. -->
 
+---
+
 ## EG-050 — Javadoc `{@link}` / `{@code}` regions not resolved for references, highlight, completion
 
-**Status: deferred — Target: backlog (references/highlight shipped; completion deferred).**
+**Status: deferred (references/highlight shipped; completion deferred).**
 
 ### Delivered — references, highlight, and rename over Javadoc references
 
@@ -201,7 +205,7 @@ python3 dev/jdtls_diff.py --methods completion <ws>/.../Api.java
 
 ## EG-053 — Multi-line comment / Javadoc blocks are not folded
 
-**Status: deferred — Target: backlog (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
+**Status: deferred (multi-line Javadoc folding shipped; non-Javadoc comments deferred).**
 
 ### Delivered — multi-line Javadoc blocks fold
 
@@ -229,10 +233,9 @@ python3 dev/jdtls_diff.py --methods foldingRange <ws>/.../Api.java
 
 ---
 
-
 ## EG-057 — Symbol search matches CamelHumps only in reactor types, not in JDK and dependency types
 
-**Status: deferred — Target: backlog** (by design since EG-005; the docs that claimed more are corrected).
+**Status: deferred** (by design since EG-005; the docs that claimed more are corrected).
 
 ### Observed behaviour
 
@@ -269,11 +272,15 @@ IntelliJ's Search Everywhere matches humps everywhere, so the demand would come 
 ### Regression targets
 
 None: the behaviour is unchanged; only the docs and the tool description were corrected.
+
 ---
 
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
 **Status: documented**
+
+**Value: low — Size: L**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -297,6 +304,9 @@ None yet.
 ## EG-064 — No code lens: reference counts and run/debug actions above declarations
 
 **Status: documented**
+
+**Value: low — Size: L**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -318,9 +328,11 @@ None yet.
 
 ## EG-066 — Started from a module subdirectory, Lathe runs on the wrong JDK or does not start
 
-**Status: deferred — Target: backlog.**
+**Status: deferred.**
+
 Decision (2026-10-27): not before the release; the fix touches the generated launchers on every OS.
 **Affects: the editor and MCP.**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -355,6 +367,9 @@ None yet.
 ## EG-067 — The first build floods the log with warnings, and a disabled Lathe says nothing
 
 **Status: documented**
+
+**Value: medium — Size: S**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -392,7 +407,11 @@ None yet.
 ## EG-068 — Hover and `describe_symbol` render javadoc loosely and describe the class at a constructor call
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 **Affects: the editor and MCP.**
+
 Found by the pre-release probes (2026-10-27) on Dropwizard, Helidon and EqualsVerifier.
 
 ### Observed behaviour
@@ -415,9 +434,11 @@ None yet.
 
 ## EG-069 — Deeply nested code that javac compiles ends the server with a stack overflow
 
-**Status: deferred — Target: backlog.**
+**Status: deferred.**
+
 Decision (2026-10-30): not before the release; such code is rare outside generated sources, and 0.1.24 does the same.
 **Affects: the editor and MCP.**
+
 Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
 
 ### Observed behaviour
@@ -456,7 +477,11 @@ None yet.
 ## EG-070 — Requests Lathe does not support answer with an internal error, and `typeDefinition` is missing
 
 **Status: documented**
+
+**Value: medium — Size: S (typeDefinition: M)**
+
 **Affects: the editor.**
+
 Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
 
 ### Observed behaviour
@@ -481,7 +506,11 @@ None yet.
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: the editor.**
+
 Found by the pre-release test rounds (2026-10-29/30) on Helidon.
 
 ### Observed behaviour
@@ -503,7 +532,11 @@ None yet.
 ## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 **Affects: the editor.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
 
 ### Observed behaviour
@@ -523,6 +556,7 @@ None of these ends the server, but each answers wrongly or logs a SEVERE line:
 
 Validate params at the protocol edge and answer `InvalidParams`; clamp positions to the document;
 ignore stale versions; publish diagnostics under the URI the client used for the document.
+`LatheWorkspaceService.rethrowInvalidParams` already maps `IllegalArgumentException` to `InvalidParams` for some commands.
 
 ### Regression targets
 
@@ -533,7 +567,11 @@ None yet.
 ## EG-073 — Find references in a 20,000-line file takes more than 90 seconds
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 **Affects: the editor and MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
 
 ### Observed behaviour
@@ -555,7 +593,11 @@ None yet.
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: the editor and MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier and Dropwizard.
 
 ### Observed behaviour
@@ -578,7 +620,11 @@ None yet.
 ## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 **Affects: the build.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh multi-module project.
 
 ### Observed behaviour
@@ -587,9 +633,13 @@ The first build of a reactor whose root is a `pom` module resolves the newest `m
 ignoring the version the project pins, and prints five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings.
 0.1.24 behaves the same.
 
+### Root cause
+
+`LatheModelInjector.injectCompilerShim` calls `findOrCreatePlugin`; a `pom` root has no compiler plugin in its build, so it creates one with no version and no `<pluginManagement>` lookup, and Maven resolves the newest.
+
 ### Fix direction
 
-Use the pinned compiler-plugin version when the extension wires the compiler; resolve nothing online.
+Skip the compiler shim on `pom` packaging, or take the version from `<pluginManagement>`; resolve nothing online.
 
 ### Regression targets
 
@@ -600,7 +650,11 @@ None yet.
 ## EG-076 — No formatter detection on a Gradle build
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 **Affects: formatting in the editor and `format_file` on Gradle builds.**
+
 Found while documenting the Gradle plugin (2026-10-30), from its design notes.
 
 ### Observed behaviour
@@ -620,20 +674,86 @@ None yet.
 
 ---
 
-## Implementation notes
+# Find References Gaps (FR)
 
-The release slice is derived from the gap fields, not maintained as an ordered list here: the work
-for a release is every gap with `Status: accepted` and the matching `Target` (see
-[gap-process.md](gap-process.md)).
+Active references and rename gaps.
+Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
+
+## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+Since the fix that stopped this rename from breaking files, renaming one overload of a statically imported name
+(`Rethrow.rethrow(ThrowingSupplier)`) is refused: the import must stay for the other overloads, and the renamed calls in that file would have no import.
+The user has to rename the overloads together or qualify the calls first.
+
+### Fix direction
+
+Rename it, and add `import static T.newName;` beside the kept import in each file where the renamed member is called through it.
+
+### Regression targets
+
+None yet.
 
 ---
 
-# Find References Gaps (FR)
+## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
 
-Active `textDocument/references` gaps discovered by live probing against a large `@Builder`-heavy
-reactor workspace. Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
+**Status: documented**
 
-No active FR gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+**Value: medium — Size: M**
+
+**Affects: MCP and the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Helidon.
+
+### Observed behaviour
+
+`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
+The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP and the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
+`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -644,7 +764,7 @@ Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
 
 ## CA-7 — Pasting code with unresolved types requires per-symbol quick fixes; no whole-file "add missing imports"
 
-**Status: deferred — Target: backlog (add-missing slice shipped; automatic invocation deferred).**
+**Status: deferred (add-missing slice shipped; automatic invocation deferred).**
 
 Signal: user feedback — pasting a snippet with several unimported types was recurring friction: the
 only path was moving the cursor onto each unresolved name and invoking the single-name import quick fix
@@ -658,8 +778,10 @@ buffer in one pass. It works off the live buffer's debounce compile — no save 
 a syntactically-valid paste already yields `cant.resolve` diagnostics on change. The server enumerates
 those TYPE_REF names and resolves each against the type index via a shared `ImportCandidates` helper
 (extracted from `ImportQuickFixProvider`), returning each name with its candidate FQNs. The Neovim
-client auto-adds unambiguous names, prompts one at a time (`vim.ui.select`) for ambiguous ones, inserts
-all chosen imports in one edit, and summarises what was added and any name it could not resolve.
+client auto-adds unambiguous names, prompts one at a time (`vim.ui.select`) for ambiguous ones,
+asks the server to place the chosen imports (`lathe.importEdits`, each at its sorted place in its group), applies those edits,
+and summarises what was added and any name it could not resolve.
+The candidates include statically imported names, and the MCP `fix_imports` tool shares the same path.
 
 No `source.*` capability is claimed: `source.organizeImports` would over-promise (it implies unused
 removal + sorting) and `source.addMissingImports` is non-standard, so the feature is an
@@ -682,7 +804,11 @@ removes unused imports and reorders them as the project's Spotless does.
 ## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 **Affects: MCP `fix_imports`, and the editor's import quick fix.**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -704,23 +830,14 @@ None yet.
 
 ---
 
-# Completion Gaps (CQ)
-
-Active completion-quality gaps. Discovered and triaged via the completion appendix of the
-[gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
-contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
-
----
-
-# Workspace Lifecycle Gaps (WS)
-
-Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
-prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
-
 ## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package`
 
 **Status: documented**
+
+**Value: high — Size: S–M**
+
 **Affects: the editor and MCP `fix_imports`.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
@@ -742,75 +859,20 @@ None yet.
 
 ---
 
-## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
+# Completion Gaps (CQ)
+
+Active completion-quality gaps. Discovered and triaged via the completion appendix of the
+[gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
+contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
+
+## CQ-0061 — While typing, a `switch` case label offers no enum constants
 
 **Status: documented**
-**Affects: the editor and MCP.**
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
 
-### Observed behaviour
+**Value: high — Size: M**
 
-Since the fix that stopped this rename from breaking files, renaming one overload of a statically imported name
-(`Rethrow.rethrow(ThrowingSupplier)`) is refused: the import must stay for the other overloads, and the renamed calls in that file would have no import.
-The user has to rename the overloads together or qualify the calls first.
-
-### Fix direction
-
-Rename it, and add `import static T.newName;` beside the kept import in each file where the renamed member is called through it.
-
-### Regression targets
-
-None yet.
-
----
-
-## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
-
-**Status: documented**
-**Affects: MCP and the editor.**
-Found by the pre-release test rounds (2026-10-29/30) on Helidon.
-
-### Observed behaviour
-
-`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
-The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
-
-### Regression targets
-
-None yet.
-
----
-
-## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
-
-**Status: documented**
-**Affects: MCP and the editor.**
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` is accepted and renames nothing.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
-
-### Regression targets
-
-None yet.
-
----
-
-## CQ-0061 — No enum-constant completion in a `switch` case label
-
-**Status: documented**
 **Affects: the editor.**
+
 Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
 
 ### Observed behaviour
@@ -818,9 +880,16 @@ Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
 `switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
 0.1.24 behaves the same.
 
+Case-label completion itself works (archived [CQ-0006](gaps-archive.md#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
+on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
+What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
+a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
+The existing tests only exercise the fresh compile.
+
 ### Fix direction
 
-In a case label of a switch on an enum, offer the enum's constants, unqualified.
+Make the case-label path (`CompletionEngine.enumCaseLabelCandidates`) find the selector's enum type on the cached analysis too, as member access does for a receiver.
+Test it through `completeWithCache`, with and without a prefix.
 
 ### Regression targets
 
@@ -828,14 +897,21 @@ None yet.
 
 ---
 
+# Workspace Lifecycle Gaps (WS)
+
+Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
+prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
+
 ## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
 
-**Status: deferred — Target: backlog.**
+**Status: deferred.**
+
 Decision (2026-10-24): Lathe sets no default limit until users report how much memory they want it to
 use; machines with plenty of memory are expected to use it. The installation guide documents capping
 it with `LATHE_JVM_OPTS` (and `-XX:G1PeriodicGCInterval` to return memory when idle), and the agent
 guide's troubleshooting points there. Lathe's own dev tools cap their servers at 2 GB.
 **Affects: the editor and MCP.**
+
 Found by the MCP-quality probes (2026-10-24) on Helidon.
 
 ### Observed behaviour
@@ -847,14 +923,15 @@ heap grows rather than collects.
 The same workload under `LATHE_JVM_OPTS=-Xmx2g` ran at the same speed (5.5–11 s per call) and stayed
 at about 2.6 GB, so most of the growth is uncollected garbage, not memory Lathe holds.
 An editor server and an MCP server per agent, all day, add up.
+These numbers predate releasing idle module sessions (after 5 idle minutes, or earlier under memory pressure; [design](../done/lathe-memory-pressure.md)) and need re-measuring.
 
 ### Fix direction
 
 Give the launchers a default heap policy: a cap (absolute, or `-XX:MaxRAMPercentage`), and G1's
 periodic collection (`-XX:G1PeriodicGCInterval`) so an idle server returns memory; keep
 `LATHE_JVM_OPTS` as the override. Measure the cap against the largest probes first.
-Related: [EG-058](#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session)
-(sessions never released), which an uncapped `verify_change` exercises more than before.
+Related: archived [EG-058](gaps-archive.md#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session--done),
+done: module sessions are now released when idle or under memory pressure.
 
 ### Regression targets
 
@@ -865,7 +942,11 @@ None yet.
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 **Affects: the editor.**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
 
 ### Observed behaviour
@@ -886,15 +967,14 @@ None yet.
 
 ---
 
-# Test Execution Gaps (TE)
-
-Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
-replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
-
 ## WS-21 — A rename racing a build can leave the tree broken
 
 **Status: documented**
+
+**Value: medium — Size: M–L**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
 
 ### Observed behaviour
@@ -919,7 +999,11 @@ None yet.
 ## WS-22 — One external jar listed twice in the manifest switches off cross-module features
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 **Affects: the editor and MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
@@ -943,7 +1027,11 @@ None yet.
 ## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
 
 **Status: documented**
+
+**Value: high — Size: S–M**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
 
 ### Observed behaviour
@@ -965,13 +1053,22 @@ None yet.
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: the editor and MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
 
 A `workspace.json` that is not UTF-8 or not readable (chmod 000) is logged at SEVERE in `WorkspaceWatcher.readManifest`; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
 An empty file leaks `Cannot invoke "…schema…"`; a missing file or one with no modules is silent.
+
+### Root cause
+
+`WorkspaceManifest.load` already turns a read error into a load problem that `showWorkspaceStatus` would show,
+but `loadWorkspace` constructs the `WorkspaceWatcher` first, and its `readManifest` throws, so the warning is never sent.
 
 ### Fix direction
 
@@ -986,7 +1083,11 @@ None yet.
 ## WS-25 — On Gradle, included builds are not covered
 
 **Status: documented**
+
+**Value: low — Size: L**
+
 **Affects: the editor and MCP on Gradle composite builds.**
+
 Found while documenting the Gradle plugin (2026-10-30), from its design notes.
 
 ### Observed behaviour
@@ -1005,9 +1106,14 @@ None yet.
 
 ---
 
+# Test Execution Gaps (TE)
+
+Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
+replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
+
 ## TE-3 — `<systemPropertyVariables>` are not carried into the replay launch
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
 
 (Renumbered from TE-1, which is already used by the archived capture-dependency-leak gap in
 [gaps-archive.md](gaps-archive.md#te-1--capture-only-dependencies-leak-into-the-recorded-replay-classpath).)
@@ -1028,8 +1134,13 @@ None yet — to be defined when the fix is scheduled.
 ## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure
 
 **Status: documented**
+
+**Value: low — Size: blocked until Gradle support merges**
+
 **Affects: run, debug and replay on Gradle builds that run tests through the Develocity plugin.**
+
 Found by the Gradle plugin's end-to-end check (2026-10-25) on JUnit's own build.
+Gradle support is not on `main` yet (branch `feat/gradle-plugin`), so this gap applies once it lands.
 
 ### Observed behaviour
 
@@ -1054,23 +1165,20 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-# Debug & Evaluation Gaps (DB)
-
-Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
-[lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11). The debug surface is complete
-for the current milestone — breakpoints, stepping, inspection, conditional breakpoints, and
-read/invoke expression evaluation all work — so the entries below are the deliberately deferred
-remainder, re-triaged in a future round.
-
 ## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
 
-With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's, and says nothing about the second.
+With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's; its `Ran:` line names that class, and the second goes unmentioned.
+Class scope runs every top-level class (archived [TE-9](gaps-archive.md#te-9--running-a-file-with-two-top-level-test-classes-runs-only-the-first--done)).
 
 ### Fix direction
 
@@ -1085,7 +1193,11 @@ None yet.
 ## TE-11 — On Gradle, only each project's `test` task is captured
 
 **Status: documented**
+
+**Value: medium — Size: L**
+
 **Affects: run, debug and replay on Gradle builds with more than one test task or source set.**
+
 Found while documenting the Gradle plugin (2026-10-30), from its design notes.
 
 ### Observed behaviour
@@ -1106,9 +1218,15 @@ None yet.
 
 ---
 
+# Debug & Evaluation Gaps (DB)
+
+Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
+Breakpoints, stepping, inspection, conditional breakpoints, and read/invoke expression evaluation all work;
+the entries below are what remains.
+
 ## DB-1 — Expression evaluation is read/invoke only; no assignment or `setVariable`
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
 
 ### Observed behaviour
 
@@ -1139,7 +1257,7 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-2 — Array-creation expressions (`new T[]{…}` / `new T[n]`) are unsupported
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
 
 ### Observed behaviour
 
@@ -1166,61 +1284,34 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## DB-7 — Breakpoints in a class outside the launched module resolve to no source (and only arm when the file is open)
+## DB-7 — Breakpoints arm only in files whose analysis is loaded
 
-**Status: accepted — Target: next (primary fix shipped; arming breakpoints in unopened files remains).**
+**Status: accepted (cross-module source lookup shipped; arming breakpoints in unopened files remains).**
 
-Signal: user feedback — setting breakpoints across several project source files and debugging suspends
-at seemingly "random" places along the execution path rather than at the set breakpoints. Reproduced
-and diagnosed (below); it is **not** a staleness / line-table issue.
+**Value: high — Size: M**
+
+Signal: user feedback — with breakpoints across several source files, a debug run stopped at seemingly "random" places instead of the breakpoints.
+Reproduced on the `multi-module` invoker workspace with fresh bytecode, so it is not a staleness or line-table issue.
 
 ### Observed behaviour
 
-With breakpoints spread across more than one class, a debug run appears to stop at locations that
-follow the runtime flow but do not correspond to the breakpoints. In the editor a stop in another
-module's class lands on a wrong/blank location because the adapter returns a stack frame with **no
-source**, so nvim-dap cannot highlight where it actually stopped — it reads as a "random" halt.
+`dev/debug_probe.py` launching `com.example.app.Main` (module `app`) with breakpoints in `Main` and in `StringUtils.upper` (module `core`, called at `Main:10`):
 
-### Reproduced (multi-module invoker workspace, fresh bytecode)
+- Breakpoints in `Main` hit on their exact lines.
+- The `StringUtils` breakpoint never fires when that file is not open; the debuggee runs past it.
 
-`dev/debug_probe.py` (extended with `--bp path:line`, multi-file) against the `multi-module` invoker
-project, launching `com.example.app.Main` with breakpoints in `Main` (module `app`) and in
-`StringUtils.upper` (module `core`, called at `Main:10`):
+The other half of the original report, a stop in another module's class showing no source, is fixed:
+the debug provider context now receives `workspace.allSourceRoots()` plus the manifest's dependency and per-module JDK source dirs.
 
-- Breakpoints in `Main` (the launched class's own module) all hit on their exact lines.
-- The `StringUtils` breakpoint, when that file is **not open**, never fires — the debuggee runs past it.
-- When `StringUtils.java` **is** opened, the breakpoint fires, but the stop frame comes back as
-  `<NO-SOURCE>:8 (frame=StringUtils.upper(String))` — it stopped correctly, but with no source path.
+### Root cause
 
-Fresh `mvn process-test-classes` before the run (no edits) — so staleness is ruled out.
-
-### Root cause (confirmed)
-
-Two coupled defects in the debug source-lookup path, both from scoping the debug session to the
-launched module:
-
-1. **No cross-module source resolution.** `WorkspaceSession` builds the debug provider context with
-   only the launched module's source roots
-   (`configsFor(moduleRel).flatMap(c -> c.sourceRoots())`, WorkspaceSession.java ~474), where every
-   other feature uses `workspace.allSourceRoots()`. So `LatheSourceLookUpProvider.getSource(fqn)` →
-   `TypeSourceLocator.findSourceFile(fqn, sourceRoots)` returns `null` for any class in another reactor
-   module, and the DAP stack frame has no source. This is the "cross-module reverse lookup is Phase 2"
-   deferral noted in `LatheSourceLookUpProvider`'s javadoc, now biting in practice.
-2. **Arming needs the file open.** `LatheSourceLookUpProvider.classNameAt` → `enclosingBinaryName`
-   reads only the module worker's open-file analysis cache (`cache.get(uri)`), returning empty for a
-   file that is not currently attributed — so a breakpoint in an unopened file gets no class name and is
-   never armed.
+`LatheSourceLookUpProvider.classNameAt` → `SourceAnalysisSession.enclosingBinaryName` reads only the module worker's cached analysis of the file, returning empty for a file that is not attributed.
+So a breakpoint in an unopened file gets no class name and is never armed; `LatheSourceLookUpProvider` logs `[breakpoint] … not armed`.
+Releasing module sessions under memory pressure can also drop an open file's analysis, so "attributed", not "open", is the exact condition.
 
 ### Fix direction
 
-- **Primary — shipped:** the debug provider context now receives `workspace.allSourceRoots()` plus the
-  manifest's dependency and per-module JDK source dirs, so cross-module (and library) frames resolve to
-  their real source files.
-  Defect 1 is fixed: a stop in another module's class shows the right file:line when its file is open.
-- **Follow-up — remaining:** arm breakpoints in files that are not open — attribute/compile the
-  breakpoint file on demand in the owning module worker rather than requiring the open-file cache.
-  Today `LatheSourceLookUpProvider` logs a `[breakpoint] … not armed` warning and the breakpoint never
-  suspends.
+Arm breakpoints in files that are not attributed: compile the breakpoint file on demand in the owning module worker rather than requiring the cached analysis.
 
 ### Probe commands
 
@@ -1228,39 +1319,23 @@ launched module:
 # Multi-file breakpoints across modules; every requested file:line must appear in the actual stops:
 python3 dev/debug_probe.py --workspace <ws> <app/Main.java> --main com.example.app.Main \
   --bp <app/Main.java>:8 --bp <core/StringUtils.java>:8
-# Today: the core stop reports <NO-SOURCE>; with the primary fix it reports StringUtils.java:8.
 ```
 
 ### Regression targets
 
-To be added with the fix (positive: a breakpoint in a different reactor module than the launched class
-suspends and its frame resolves to that module's source file:line; negative: a same-simple-name class
-in another module is not confused for the launched one).
+- Cross-module source lookup: `LatheSourceLookUpProviderTest.getSourceFileURI_classInAnotherModule_resolvesWhenRootsSpanTheReactor`.
+- Arming in an unopened file: none yet.
 
 ---
-
-# Neovim Client Gaps (NV)
-
-Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as
-distinct from the server's LSP/DAP surface. Resolved NV entries move to
-[gaps-archive.md](gaps-archive.md).
-
----
-
-No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
-
----
-
-# MCP / Agent Facade Gaps (MC)
-
-Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
-Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
-Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
 
 ## DB-8 — A debugged test's JVM outlives the server
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 **Affects: the editor.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
 
 ### Observed behaviour
@@ -1278,9 +1353,26 @@ None yet.
 
 ---
 
+# Neovim Client Gaps (NV)
+
+Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
+
+No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+---
+
+# MCP / Agent Facade Gaps (MC)
+
+Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
+Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
+Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
+
 ## MC-26 — `search_symbols` finds types only, not methods or fields
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1303,6 +1395,9 @@ None yet.
 ## MC-27 — No view of a type's API by name: members, supertypes and the first javadoc line
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1326,6 +1421,9 @@ None yet.
 ## MC-28 — `rename_symbol` does not say what text it left unchanged
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1350,6 +1448,9 @@ None yet.
 ## MC-29 — No tool maps a stack trace to source
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1372,12 +1473,15 @@ None yet.
 ## MC-30 — Position tools need an exact column, which agents get wrong
 
 **Status: documented**
+
+**Value: medium — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
 
 Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
-now makes them retry, at the cost of a round trip.
+now makes them retry, at the cost of a round trip; the refusal quotes the line's text, which makes the retry cheaper.
 mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
 symbols by name path (`Class/method`).
 
@@ -1395,6 +1499,9 @@ None yet.
 ## MC-31 — `get_definition` cannot return the definition's body
 
 **Status: documented**
+
+**Value: low — Size: M**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1416,6 +1523,9 @@ None yet.
 ## MC-32 — Nothing makes an agent run `verify_change` before it reports done
 
 **Status: documented**
+
+**Value: medium — Size: S**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1426,7 +1536,8 @@ Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hoo
 
 ### Fix direction
 
-Document an `AGENTS.md` / `CLAUDE.md` snippet and a hook recipe in the agent guide.
+The `AGENTS.md` / `CLAUDE.md` snippet exists ([examples/agents/lathe-mcp.md](../../examples/agents/lathe-mcp.md), which says to run `verify_change` before finishing) but the agent guide does not link it.
+What remains: link it from the agent guide and add a hook recipe.
 A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
 a later, separate step.
 
@@ -1438,7 +1549,8 @@ None yet.
 
 ## MC-33 — Tools return structured content but declare no `outputSchema`
 
-**Status: deferred — Target: backlog**
+**Status: deferred**
+
 Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
@@ -1457,13 +1569,15 @@ None yet.
 ## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
 
 ### Observed behaviour
 
 - `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
-  `No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet
-  (run .lathe/lathe-sync.sh)`.
+  ``No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `.lathe/lathe-sync.sh`).``
   `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
   and an agent following the advice runs a 2–3 minute sync for nothing.
 - `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
@@ -1488,6 +1602,9 @@ None yet.
 ## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -1501,6 +1618,7 @@ edge and carries no note.
 ### Fix direction
 
 `workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
+[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
 
 ### Regression targets
 
@@ -1511,7 +1629,11 @@ None yet.
 ## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
 
 **Status: documented**
+
+**Value: medium — Size: S**
+
 **Affects: MCP `search_symbols` and the editor's workspace symbols.**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -1538,7 +1660,11 @@ None yet.
 ## MC-39 — `find_references` lists generated code before the user's call sites
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: MCP `find_references`.**
+
 Found by the pre-release probes (2026-10-27) on Helidon.
 
 ### Observed behaviour
@@ -1562,9 +1688,11 @@ None yet.
 
 ## MC-41 — MCP edits written to a CRLF file add LF line endings
 
-**Status: deferred — Target: backlog.**
+**Status: deferred.**
+
 Decision (2026-10-27): a real but narrow problem; a fix was written and reverted (see below).
 **Affects: MCP `fix_imports`.**
+
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
@@ -1610,9 +1738,11 @@ None yet.
 
 ## MC-42 — An unparseable line on stdin leaves the MCP server running but deaf
 
-**Status: deferred — Target: backlog.**
+**Status: deferred.**
+
 Decision (2026-10-30): only a broken client sends one, and after it the session is over either way.
 **Affects: MCP.**
+
 Found by the pre-release fuzzing (2026-10-29) on EqualsVerifier.
 
 ### Observed behaviour
@@ -1638,7 +1768,11 @@ None yet.
 ## MC-43 — Expected refusals are logged at SEVERE with a stack trace
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
 
 ### Observed behaviour
@@ -1660,7 +1794,11 @@ None yet.
 ## MC-44 — A `.lathe/` created after the MCP server started is never picked up
 
 **Status: documented**
+
+**Value: high — Size: S–M**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
@@ -1681,7 +1819,11 @@ None yet.
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
 
 **Status: documented**
+
+**Value: low — Size: S**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
 
 ### Observed behaviour
@@ -1702,7 +1844,11 @@ None yet.
 ## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
 
 **Status: documented**
+
+**Value: high — Size: M**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
 
 ### Observed behaviour
@@ -1723,7 +1869,11 @@ None yet.
 ## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
 
 **Status: documented**
+
+**Value: high — Size: S**
+
 **Affects: MCP.**
+
 Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Observed behaviour
@@ -1735,7 +1885,8 @@ Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 ### Fix direction
 
-Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note.
+Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
+as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
 
 ### Regression targets
 

@@ -86,7 +86,7 @@ The build copies them into `.lathe/jvm.args`, and the server starts with them; a
 
 ## Lombok
 
-When a module has Lombok on its processor path (and the build does not turn annotation processing off), the live pass runs Lombok too, and no other processor.
+When a module has Lombok on its processor path, or on its class path when it has none (and the build does not turn annotation processing off), the live pass runs Lombok too, and no other processor.
 So the getters, builders and loggers Lombok generates are there while you type, in the editor and for an agent.
 It costs about 10 ms a keystroke, and about a second the first time a module loads Lombok.
 

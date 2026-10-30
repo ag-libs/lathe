@@ -36,6 +36,10 @@ tests; each build's guide says when ([Maven](maven.md#what-the-build-writes-to-l
   `jvm.args`, module grants for the server JVM ([below](#tuning-the-server-jvm-lathe_jvm_opts));
 - from a Maven build also each module's `test-filter.json` (the classes its test run includes) and the
   detected formatter, `style.json` ([below](#choosing-overriding-or-opting-out-of-the-formatter)).
+- the language server's own writes: it compiles saved and outside-changed sources into each module's
+  mirrored `classes/`, `test-classes/` and `generated-sources/`, saves each module's discovered tests in
+  `test-discovery.json`, and takes `write.lock` so that several Lathe servers on one workspace (an editor's
+  and an agent's) take turns writing.
 
 **On the machine — `~/.cache/lathe/`** (machine-wide, regenerable):
 
@@ -93,11 +97,11 @@ export LATHE_JVM_OPTS="-Xmx4g"
 export LATHE_JVM_OPTS="--add-opens jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED"
 ```
 
-**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's
-memory. On a large reactor its heap grows with use rather than collecting early: an MCP session on
-Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same
-work at the same speed capped at 2 GB. If memory matters, cap it, and let an idle server return what
-it no longer uses (the same variable reaches the editor's and the MCP launcher):
+**Memory.** Lathe sets no heap limit, so the JVM takes its default maximum: a quarter of the machine's memory.
+On a large reactor its heap grows with use rather than collecting early: before Lathe released idle module sessions,
+an MCP session on Helidon reached 9.6 GB after three `verify_change` calls on a widely used type, and ran the same work at the same speed capped at 2 GB.
+Lathe now releases a module's session after 5 idle minutes, and earlier when the heap runs short, so a capped server completes such work.
+If memory matters, cap it, and let an idle server return what it no longer uses (the same variable reaches the editor's and the MCP launcher):
 
 ```bash
 export LATHE_JVM_OPTS="-Xmx4g -XX:G1PeriodicGCInterval=60000"

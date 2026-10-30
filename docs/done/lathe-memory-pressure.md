@@ -3,7 +3,7 @@
 ## Status
 
 Implemented (2026-10-30) and validated on Helidon and Dropwizard; see [Validation](#validation).
-Resolves [EG-058](../gaps/gaps.md) (module sessions never released),
+Resolves [EG-058](../gaps/gaps-archive.md#eg-058--module-analysis-sessions-are-never-released-a-reactor-wide-search-pins-every-touched-modules-jars-for-the-session--done) (module sessions never released),
 and the pre-release finding that a large `verify_change` ends the server with `OutOfMemoryError` on a 2–3 GB heap.
 Related: [Analysis Cache Bounding](../potential/lathe-analysis-cache-bounding.md), a deferred hard cap on per-open-file analyses.
 

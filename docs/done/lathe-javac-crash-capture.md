@@ -7,7 +7,9 @@ bundle described below.
 
 `JavaSourceCompiler.analyzeSafely` now logs a javac analyze-phase crash at `SEVERE` as
 `[javacCrash] phase=analyze jdk=<version> …` with the stack trace, then continues with partial
-analysis (a fatal `Error` cause is still rethrown, unchanged). That gives a beta user one actionable
+analysis.
+javac's own `AssertionError` (thrown from javac's code, how it reports its bugs) takes the same path, since attributing broken code can trip one;
+any other fatal `Error` is still rethrown, unchanged, and the write pass compiles through `analyzeSafely` too. That gives a beta user one actionable
 `:LspLog` line — phase, JDK identity, and the javac stack trace, which is what identifies the compiler
 bug — while honouring the no-raw-source logging policy.
 
@@ -15,7 +17,7 @@ The full crash-**bundle** design below (repro artifacts under `.lathe/javac-cras
 a potential backlog follow-up, not built.** The one thing it would add over the log line is the exact
 triggering source — which is precisely what the logging policy forbids emitting — so it is only worth
 building if field reports show the stack trace + JDK is insufficient to triage. The deferred resilience
-question (should a javac `AssertionError` become recoverable) is unchanged; see Follow-up Decisions.
+question (should a javac `AssertionError` become recoverable) is settled for javac's own assertions, above.
 
 ---
 
@@ -279,5 +281,5 @@ capture does not change fatal classification.
 
 ## Follow-up Decisions
 
-After crash bundles exist, decide separately whether javac-origin `AssertionError` should become recoverable.
-That later design should distinguish javac bugs from Lathe assertions and VM/resource failures.
+Decided (2026-10-29), without crash bundles: a javac-origin `AssertionError` (its top frame in `com.sun.tools.javac`) is recoverable;
+Lathe's own assertions and VM/resource failures stay fatal.

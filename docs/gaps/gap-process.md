@@ -1,12 +1,9 @@
 # Lathe — Gap Lifecycle
 
-This document defines the single lifecycle that every gap follows, regardless of which family it
-belongs to or which file records it.
-It is the authoritative answer to two questions a gap must always answer:
-*what state is it in* and *which release is it targeted to*.
+This document defines the single lifecycle that every gap follows, regardless of which family it belongs to or which file records it.
+It is the authoritative answer to one question a gap must always answer: *what state is it in*.
 
-The [roadmap](../roadmap.md) defines release scope; this document defines how an individual gap moves
-toward a release.
+The [roadmap](../roadmap.md) defines release scope; this document defines how an individual gap moves toward a release.
 
 ---
 
@@ -34,73 +31,52 @@ Completion keeps area-specific *reference* material — its behavioral contract,
 
 ---
 
-## Two mandatory fields
+## The `Status` field
 
-Every gap carries `Status` and `Target`.
-
-### `Status`
+Every gap carries a `Status`.
 
 | Status | Meaning |
 |---|---|
 | `documented` | Captured with a probe and expected behavior; not yet triaged. |
-| `accepted` | Real and in scope; **must** carry a `Target` of `next` or a named version. |
-| `deferred` | Valid behavior, but not in a current release slice (`Target: backlog`). |
+| `accepted` | Real and in scope for the next release. |
+| `deferred` | Valid behavior, but not planned for the next release (the backlog). |
 | `non-goal` | Deliberately outside Lathe's contract; will not be implemented. |
 | `in-progress` | Being implemented now. |
 | `done` | Implemented and verified; **must** carry a regression target. |
 
-### `Target`
-
-| Target | Meaning |
-|---|---|
-| `M1` / `M2` | The two pre-planned milestones; both shipped. Historical — no new gaps target them. |
-| a named version (`0.1.x`, `0.2.0`, …) | Committed to a specific release once that release is being cut. |
-| `next` | Accepted; goes in the next release cut, which is not yet named or dated. The staging bucket that a version cut is swept from. |
-| `backlog` | Real but uncommitted; re-triaged by feedback signal in a future round. |
-
-Post-beta, releases are **demand-driven**: no new `Mn` milestone is pre-declared (the `M3` tag on a few
-already-shipped archive entries is retired history, superseded by version numbering). Work accumulates
-in `next`; when a `next` batch is worth shipping it is cut and given a version number (`0.2.0`, …), and
-those entries are retargeted from `next` to that version. A named release is therefore the *result* of
-a cut, never a promise made ahead of one.
-
-`Target` is the single source of truth for release assignment.
-The roadmap references gaps by id and target rather than re-describing them, so a gap's release is
-never stated in two places that can drift.
+Releases are **demand-driven**: they are cut when the accepted work is worth shipping and named at cut time.
+A gap carries no release field; what a release shipped is recorded by its version and the archived entries, not promised ahead of the cut.
 
 ---
 
 ## Lifecycle
 
 ```
- documented ──triage──► accepted (Target: next | version) ──► in-progress ──► done (+ regression test)
-     │                      ▲                                                      │
-     ├──► deferred (Target: backlog) ───────────────── next round ◄───────────────┘
+ documented ──triage──► accepted ──► in-progress ──► done (+ regression test)
+     │                     ▲                            │
+     ├──► deferred ──── next round ◄────────────────────┘
      └──► non-goal (rejected)
 ```
 
 ### The round
 
-1. **Document** — record the gap with a probe command, the expected behavior, and the evidence
-   (one line is enough; full prose is only required once a gap is `accepted` for the current
-   release). New gaps start `documented`.
-2. **Target** — triage sets `Status` and `Target`: `accepted` + `next` (or a named version once a cut
-   is underway), `deferred` + `backlog`, or `non-goal`. A common-sense feedback signal (see the
-   optional `Signal:` field) is what graduates a gap from `backlog` to `next`.
-3. **Implement** — work the current slice, move entries `in-progress` → `done`, and attach a
-   regression target. A gap is not `done` without a test.
-4. **Repeat** — the next round re-triages `documented` and `deferred` gaps and bumps targets. When the
-   `next` batch is worth shipping, cut a version and retarget those entries from `next` to it.
+1. **Document** — record the gap with a probe command, the expected behavior, and the evidence.
+   One line is enough; full prose is only required once a gap is `accepted`.
+   New gaps start `documented`.
+2. **Triage** — set `Status`: `accepted`, `deferred`, or `non-goal`.
+   A common-sense feedback signal (see the optional `Signal:` field) is what moves a gap from `deferred` to `accepted`.
+3. **Implement** — move entries `in-progress` → `done` and attach a regression target.
+   A gap is not `done` without a test.
+4. **Repeat** — the next round re-triages `documented` and `deferred` gaps.
 
 ### The current slice is derived, not hand-maintained
 
-The work for the next release is whatever matches `Status: accepted` and `Target: next` (or the
-version currently being cut).
-Do not keep a separate ordered "implementation order" list; it duplicates `Target` and drifts.
+The work for the next release is whatever has `Status: accepted`.
+Do not keep a separate ordered "implementation order" list; it duplicates the status and drifts.
 To see the slice:
 
 ```bash
-grep -n 'Target: next' docs/gaps/gaps.md
+grep -n 'Status: accepted' docs/gaps/gaps.md
 ```
 
 ---
@@ -120,12 +96,22 @@ entry itself stays in its home file as the record.
 ## Optional metadata
 
 Families may carry extra fields without changing the lifecycle.
+
+A triaged gap that is not deferred carries `Value` and `Size` on one line under its `Status`, e.g. `**Value: high — Size: S**`:
+
+| Field | Values |
+|---|---|
+| `Value` | `high`: wrong answers, broken code, or something hit daily; `medium`: gets in the way regularly; `low`: rare or cosmetic. |
+| `Size` | `S`: under a day with its tests; `M`: one to three days; `L`: more. Ranges (`S–M`) are fine. An estimate, not a commitment. |
+
+Pick the next work by value first, then size: `grep -n 'Value: high' docs/gaps/gaps.md`.
+
 Completion entries keep `Tier` (`basic` / `typed` / `assistive` / `presentation`), `Failure mode`,
 and `Owner component` as defined by the completion [expectations](../done/lathe-completion-expectations.md)
 and the [gap workflow](gap-workflow.md).
-`Tier` is a feature category, not a priority or a release — release targeting is always `Target`.
+`Tier` is a feature category, not a priority or a release.
 
 Any gap may carry an optional one-line `Signal:` field recording the feedback evidence that argues for
 doing it — who hit it, how often, in what workflow (e.g. `Signal: 3 beta users hit this after a branch
-switch`). This is the common-sense demand signal that graduates a gap from `backlog` to `next`; it is
-evidence, not a priority number, and absence of a `Signal:` line just means none has been recorded yet.
+switch`). This is the common-sense demand signal that moves a gap from `deferred` to `accepted`;
+it is evidence, not a priority number, and absence of a `Signal:` line just means none has been recorded yet.

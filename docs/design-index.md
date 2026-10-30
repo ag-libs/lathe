@@ -8,7 +8,7 @@ Documents under `planned/` can contain implemented history or stale details.
 Read their current-status sections and compare them with the roadmap before starting work.
 
 The [gap lifecycle](gaps/gap-process.md) defines how every gap (EG/FR/CA and CQ) moves from
-`documented` through a release `Target` to `done` in the single registry [gaps.md](gaps/gaps.md), with
+`documented` through `accepted` to `done` in the single registry [gaps.md](gaps/gaps.md), with
 discovery via [gap-workflow.md](gaps/gap-workflow.md) and resolved entries in [gaps-archive.md](gaps/gaps-archive.md).
 
 ## M1 — Internal Preview
@@ -33,9 +33,9 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   References pipeline (occurrence ranges → `WorkspaceEdit`, no `ASTRewrite`), incl. enum constants,
   public top-level types with a file move, and Javadoc reference mentions; the cursor must name the
   target. Minimal conflict checks, with explicit non-goals.
-- [Releasing Module Sessions Under Memory Pressure](planned/lathe-memory-pressure.md) — release idle module
+- [Releasing Module Sessions Under Memory Pressure](done/lathe-memory-pressure.md) — **shipped.** Release idle module
   sessions (their jar indexes) when the JVM reports the old generation above 70% after a collection, and after 5
-  idle minutes; resolves EG-058 and the `verify_change` out-of-memory on Helidon at 2–3 GB (accepted).
+  idle minutes; resolves EG-058 and the `verify_change` out-of-memory on Helidon at 2–3 GB. ✓
 - [Interactive Request Priority & Reaction Coalescing](planned/lathe-interactive-request-priority.md) —
   server-wide: stop multi-second background recompiles (the in-process-sync reaction) from blocking
   millisecond interactive requests on the single serial worker; prioritize/cancel, coalesce the reaction,

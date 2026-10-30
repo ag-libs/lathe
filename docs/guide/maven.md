@@ -164,10 +164,11 @@ With either method, generate the Lathe metadata. What gets written depends on ho
 mvn clean test -Dlathe.capture.only=true
 ```
 
-`-Dlathe.capture.only=true` registers a filter that excludes every test from execution while the fork
-still writes its launch template; `clean` is required on the first run so Maven compiles through the
-Lathe shim rather than skipping up-to-date output. If your build sets
-`<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
+`-Dlathe.capture.only=true` keeps the tests from running while the fork still writes its launch template:
+on JUnit 5.10 or newer through JUnit's dry-run mode, on older JUnit through a filter that excludes every test
+(see [test-capture.md](test-capture.md#capture-without-running-tests)).
+`clean` is required on the first run so Maven compiles through the Lathe shim rather than skipping up-to-date output.
+On JUnit older than 5.10, if your build sets `<failIfNoTests>true</failIfNoTests>`, add `-DfailIfNoTests=false` so the test-free run stays green.
 
 After that, any normal build (`mvn test` / `verify` / `install`) refreshes the templates automatically.
 Add `.lathe/` to `.gitignore`.

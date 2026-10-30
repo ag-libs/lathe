@@ -5,12 +5,12 @@ This document describes how a gap moves from observation to regression coverage,
 
 The short version:
 use real-project probes to discover issues,
-record them in the active registry [gaps.md](gaps.md) with a `Status` and a `Target`,
+record them in the active registry [gaps.md](gaps.md) with a `Status`,
 reduce accepted issues to focused tests,
 and archive resolved entries to [gaps-archive.md](gaps-archive.md).
 
-Every gap follows the shared [gap lifecycle](gap-process.md); milestone targeting is always the
-`Target` field — never the `Tier` (a completion-only category).
+Every gap follows the shared [gap lifecycle](gap-process.md);
+`Tier` is a completion-only category, never a priority or a release.
 
 Completion is the most formalized area and has the richest probe tooling, so the recipes below are
 written from the completion workflow and double as the general guide.
@@ -199,7 +199,6 @@ Use one heading per entry:
 
 ID: CQ-0001
 Status: documented
-Target: backlog
 Tier: basic
 Failure mode: missing-candidate
 Owner component: TypeResolver
@@ -218,9 +217,8 @@ Notes:
 ```
 
 Use sequential `CQ-` IDs for completion-quality gaps.
-`Status` and `Target` follow the shared [gap lifecycle](gap-process.md); a new entry starts
-`documented` with `Target: backlog` (M2 is shipped; post-beta work graduates to `Target: next` by
-feedback signal, not by default).
+`Status` follows the shared [gap lifecycle](gap-process.md); a new entry starts `documented`,
+and graduates to `accepted` by feedback signal, not by default.
 Keep entries short enough that scanning the registry remains useful.
 
 When an entry reaches `done`,
