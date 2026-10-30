@@ -47,7 +47,8 @@ public record ReferenceMatch(
     return switch (role) {
       case READ -> DocumentHighlightKind.Read;
       case WRITE -> DocumentHighlightKind.Write;
-      case DECLARATION, IMPORT, INVOCATION, TYPE_USE -> DocumentHighlightKind.Text;
+      case DECLARATION, IMPORT, SHARED_STATIC_IMPORT, INVOCATION, TYPE_USE ->
+          DocumentHighlightKind.Text;
     };
   }
 }

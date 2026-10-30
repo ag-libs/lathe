@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -37,6 +38,7 @@ import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
+import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Isolated;
 
@@ -345,6 +347,36 @@ class WritePassTest extends ServiceTestBase {
         .containsEntry(Path.of("com/example/api/Api.java"), 5_000L);
     assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
         .containsEntry(Path.of("com/example/app/App.java"), 5_000L);
+  }
+
+  // An agent's server on the same workspace compiles an outside change first; this server then
+  // finds it compiled and writes nothing, yet its open dependent must show what the change broke.
+  @Test
+  void reconcileNow_anotherServerCompiledTheChange_republishesOpenDependent() throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    service.initialize(tmp);
+    awaitStartup();
+    final Path user = fx.users().get(0);
+    openDoc(user, Files.readString(user));
+    verify(client, timeout(5_000))
+        .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
+    final var otherServer = new LatheTextDocumentService(DEBOUNCE_MS);
+    try {
+      otherServer.connect(mock(LanguageClient.class));
+      otherServer.initialize(tmp);
+
+      TestCompiler.writeAt(
+          fx.dep(),
+          "package com.example;\npublic class Dep { public int w() { return 1; } }\n",
+          5_000L);
+      otherServer.reconcileNow(true).get(10, TimeUnit.SECONDS);
+      service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+
+      verify(client, timeout(5_000))
+          .publishDiagnostics(argThat(p -> isFor(p, user) && hasMessage(p, "cannot find symbol")));
+    } finally {
+      otherServer.close();
+    }
   }
 
   @Test

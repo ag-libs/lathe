@@ -188,14 +188,14 @@ class LatheEngineTest {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.onName(fx.callee(), 2, 7)).as("the first letter of greet").isTrue();
-    assertThat(engine.onName(fx.callee(), 2, 11)).as("its last letter").isTrue();
-    assertThat(engine.onName(fx.callee(), 1, 6)).as("Callee").isTrue();
-    assertThat(engine.onName(fx.callee(), 2, 2)).as("the keyword void").isFalse();
-    assertThat(engine.onName(fx.callee(), 2, 0)).as("indentation").isFalse();
-    assertThat(engine.onName(fx.callee(), 2, 12)).as("the parenthesis").isFalse();
-    assertThat(engine.onName(fx.callee(), 2, 40)).as("past the line's end").isFalse();
-    assertThat(engine.onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
+    assertThat(onName(fx.callee(), 2, 7)).as("the first letter of greet").isTrue();
+    assertThat(onName(fx.callee(), 2, 11)).as("its last letter").isTrue();
+    assertThat(onName(fx.callee(), 1, 6)).as("Callee").isTrue();
+    assertThat(onName(fx.callee(), 2, 2)).as("the keyword void").isFalse();
+    assertThat(onName(fx.callee(), 2, 0)).as("indentation").isFalse();
+    assertThat(onName(fx.callee(), 2, 12)).as("the parenthesis").isFalse();
+    assertThat(onName(fx.callee(), 2, 40)).as("past the line's end").isFalse();
+    assertThat(onName(fx.callee(), 9, 0)).as("past the file's end").isFalse();
   }
 
   // A word in a comment or a string looks like a name, but javac would answer there for the
@@ -220,11 +220,11 @@ class LatheEngineTest {
                 ""));
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.onName(file, 2, javadoc.indexOf("Greets"))).as("Javadoc text").isFalse();
-    assertThat(engine.onName(file, 2, javadoc.indexOf("Object"))).as("a {@link}").isTrue();
-    assertThat(engine.onName(file, 4, 5)).as("a line comment").isFalse();
-    assertThat(engine.onName(file, 5, method.indexOf("greet"))).as("the method's name").isTrue();
-    assertThat(engine.onName(file, 5, method.indexOf("\"greet") + 1)).as("a string").isFalse();
+    assertThat(onName(file, 2, javadoc.indexOf("Greets"))).as("Javadoc text").isFalse();
+    assertThat(onName(file, 2, javadoc.indexOf("Object"))).as("a {@link}").isTrue();
+    assertThat(onName(file, 4, 5)).as("a line comment").isFalse();
+    assertThat(onName(file, 5, method.indexOf("greet"))).as("the method's name").isTrue();
+    assertThat(onName(file, 5, method.indexOf("\"greet") + 1)).as("a string").isFalse();
   }
 
   @Test
@@ -734,11 +734,60 @@ class LatheEngineTest {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }
 
+  // Whether a position tool answers at a position, rather than refusing it as not on a name.
+  private boolean onName(final Path file, final int line, final int column) {
+    try {
+      engine.describe(file, line, column);
+      return true;
+    } catch (final LatheEngine.NotOnName e) {
+      return false;
+    }
+  }
+
   // Renames the symbol at the first occurrence of `at` in the file's source.
   private LatheRename renameAt(
       final Path file, final String source, final String at, final String newName) {
     final var pos = offsetToPosition(source, source.indexOf(at));
     return engine.rename(file, pos.getLine(), pos.getCharacter(), newName);
+  }
+
+  // A static import names every member of its name. Renaming one overload, the import must stay for
+  // the others, and the renamed calls in that file would be left without one; a member alone under
+  // its name renames its import.
+  @Test
+  void rename_overloadOfAStaticallyImportedName_refuses_soleMemberRenamesItsImport()
+      throws Exception {
+    final String util =
+        """
+        package com.example;
+        public class Util {
+          public static int go(int i) { return i; }
+          public static String go(String s) { return s; }
+          public static int solo() { return 1; }
+        }
+        """;
+    final String user =
+        """
+        package com.example.app;
+        import static com.example.Util.go;
+        import static com.example.Util.solo;
+        class User {
+          int u() { return go(1) + go("x").length() + solo(); }
+        }
+        """;
+    final Path utilFile = TestCompiler.writeModuleSource(tmp, "com/example/Util.java", util);
+    final Path userFile = TestCompiler.writeModuleSource(tmp, "com/example/app/User.java", user);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), utilFile, userFile);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> renameAt(utilFile, util, "go(int", "goInt"))
+        .hasMessageContaining("`go` cannot be renamed: User.java imports it statically");
+    assertThat(Files.readString(userFile)).isEqualTo(user);
+
+    renameAt(utilFile, util, "solo", "single");
+    assertThat(Files.readString(userFile))
+        .contains("import static com.example.Util.single;")
+        .contains("+ single()");
   }
 
   @Test

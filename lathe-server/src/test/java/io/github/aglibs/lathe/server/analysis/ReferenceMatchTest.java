@@ -21,6 +21,7 @@ class ReferenceMatchTest {
             ReferenceRole.WRITE, DocumentHighlightKind.Write,
             ReferenceRole.DECLARATION, DocumentHighlightKind.Text,
             ReferenceRole.IMPORT, DocumentHighlightKind.Text,
+            ReferenceRole.SHARED_STATIC_IMPORT, DocumentHighlightKind.Text,
             ReferenceRole.INVOCATION, DocumentHighlightKind.Text,
             ReferenceRole.TYPE_USE, DocumentHighlightKind.Text);
 

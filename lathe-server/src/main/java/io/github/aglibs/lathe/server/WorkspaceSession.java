@@ -36,6 +36,7 @@ import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.server.analysis.ReferenceRole;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
@@ -211,6 +212,9 @@ final class WorkspaceSession {
   // The pass is waiting for another server to release the write lock.
   private boolean waitingForWriteLock;
   private MemoryPressure memoryPressure;
+  // Each source tree's stamps as this server last knew them, its own writes included: stamps that
+  // differ at the next pass were written by another server on the workspace (or a build).
+  private final Map<ModuleSourceConfig, Map<Path, SourceStamp>> stampsSeen = new HashMap<>();
   // A pressure round released the sessions of modules without open files; the next tick checks
   // whether that was enough.
   private boolean pressureFollowUp;
@@ -1990,22 +1994,37 @@ final class WorkspaceSession {
     }
   }
 
-  // An override the rename edits must not also override a method outside the renamed family:
-  // renamed, it would silently stop overriding that one.
-  private static void requireNoOverrideLeftBehind(
+  // What a rename's edits would leave behind: an override that also overrides a method outside the
+  // renamed family, or a static import that also names members outside it -- kept for them, it
+  // leaves the renamed member's calls in that file without one.
+  private static void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
     matches.stream()
-        .filter(match -> !match.alsoOverrides().isEmpty())
+        .map(match -> leftBehind(target, match))
+        .flatMap(Optional::stream)
         .findFirst()
         .ifPresent(
-            match -> {
-              throw renameRefused(
-                  "`%s` cannot be renamed: its override in %s also overrides %s, which the rename would leave behind"
-                      .formatted(
-                          target.simpleName(),
-                          LatheUri.toPath(match.uri()).getFileName(),
-                          String.join(", ", match.alsoOverrides())));
+            reason -> {
+              throw renameRefused(reason);
             });
+  }
+
+  private static Optional<String> leftBehind(
+      final ReferenceTarget target, final ReferenceMatch match) {
+    final Path file = LatheUri.toPath(match.uri()).getFileName();
+    if (!match.alsoOverrides().isEmpty()) {
+      return Optional.of(
+          "`%s` cannot be renamed: its override in %s also overrides %s, which the rename would leave behind"
+              .formatted(target.simpleName(), file, String.join(", ", match.alsoOverrides())));
+    }
+
+    if (match.role() == ReferenceRole.SHARED_STATIC_IMPORT) {
+      return Optional.of(
+          "`%s` cannot be renamed: %s imports it statically by a name other members share, so the import must stay and the renamed calls there would lose theirs; rename those members together, or qualify the calls first"
+              .formatted(target.simpleName(), file));
+    }
+
+    return Optional.empty();
   }
 
   private static ResponseErrorException renameRefused(final String message) {
@@ -2119,7 +2138,7 @@ final class WorkspaceSession {
                                                     t.elapsedMs(),
                                                     searchTarget.simpleName(),
                                                     matches.size()));
-                                    requireNoOverrideLeftBehind(searchTarget, matches);
+                                    requireNothingLeftBehind(searchTarget, matches);
                                     return renameEdit(
                                         searchTarget,
                                         toLocations(matches),
@@ -3623,6 +3642,7 @@ final class WorkspaceSession {
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
+    trees.forEach(this::refreshIfWrittenElsewhere);
     trees.forEach(this::reconcileDeletedSourcesIn);
     // Not under a build: it rewrites the stamps itself, and a touched source is current meanwhile.
     if (!building) {
@@ -4592,6 +4612,24 @@ final class WorkspaceSession {
     }
   }
 
+  // Servers sharing a workspace take turns writing it, so a change another server compiled first is
+  // never compiled here, and only a write here refreshes the open files that depend on it. Stamps
+  // this server did not write show that write: the tree's open files and its dependents' are
+  // re-analyzed as after one of its own.
+  // The stamps of deleted sources are left out: this pass prunes them.
+  private void refreshIfWrittenElsewhere(final TreeState tree) {
+    final Set<Path> orphans = tree.orphans();
+    final Map<Path, SourceStamp> current =
+        tree.stamps().entrySet().stream()
+            .filter(stamp -> !orphans.contains(stamp.getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    final Map<Path, SourceStamp> seen = stampsSeen.put(tree.config(), current);
+    if (seen != null && !seen.equals(current)) {
+      refreshScope.add(tree.config().moduleDir());
+      refreshScope.addAll(moduleGraph.downstreamModuleDirs(tree.config().moduleDir()));
+    }
+  }
+
   static StaleScan staleModules(final List<TreeState> trees) {
     return new StaleScan(
         trees.stream()
@@ -5051,7 +5089,7 @@ final class WorkspaceSession {
     return operation.apply(worker.get());
   }
 
-  private static void recordCompileStamp(
+  private void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final SourceStamp stamp) {
     final var root = sourceRootFor(config, savedSource);
     if (root != null) {
@@ -5059,14 +5097,14 @@ final class WorkspaceSession {
     }
   }
 
-  private static void recordStamps(
-      final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {
+  private void recordStamps(final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {
     if (stamps.isEmpty()) {
       return;
     }
 
     try {
       CompiledStamps.record(config.moduleDir(), config.sourceTree(), stamps);
+      stampsSeen.computeIfAbsent(config, tree -> new HashMap<>()).putAll(stamps);
       LOG.fine(
           () ->
               "[stamp] %s recorded %d source(s)"

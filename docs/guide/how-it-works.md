@@ -103,7 +103,7 @@ Limits:
 - A changed `lombok.config` applies to an open file at its next edit, and Lombok rereads a config at most every 2 seconds.
 - Lathe recognizes generated members by the `@lombok.Generated` mark Lombok adds; with
   `lombok.addLombokGeneratedAnnotation = false` in `lombok.config`, navigation treats them as written code.
-- Accessors named through `lombok.config` (`lombok.accessors.prefix`) lead to the class, not the field.
+- Accessors named through `lombok.config` other than by `lombok.accessors.prefix` lead to the class, not the field.
 - A file that does not parse yet shows no generated members until it parses again.
 - On a JDK the project's Lombok does not support, opening a Lombok file stops the server, as the build itself would fail; upgrade Lombok.
 
