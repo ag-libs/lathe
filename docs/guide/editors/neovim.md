@@ -79,6 +79,18 @@ overrides `style` for that workspace — so `style` here is only the fallback fo
 
 See [Formatting & indentation](#formatting--indentation) below.
 
+### Updating
+
+The server and the client update separately:
+
+1. **Server**: bump the `lathe-maven-extension` version in your POM and build again.
+   Re-running the build without a new version reinstalls the same server.
+2. **Client**: update `lathe.nvim` through your plugin manager (`:Lazy update lathe.nvim` or `vim.pack.update({ "lathe.nvim" })`).
+
+Close versions work together.
+When the two can no longer talk, Lathe warns on start which half is behind: `server is older than this client` (do step 1) or `client is older than this server` (do step 2).
+To keep the client in step with your POM, pin it to the matching release tag: `version = "vX.Y.Z"` in the lazy.nvim spec, or `{ src = "https://github.com/ag-libs/lathe.nvim", version = "vX.Y.Z" }` in `vim.pack.add`.
+
 ### Upgrading from Lathe 0.1.15 or earlier
 
 Two things changed in 0.1.16, and both need a one-time step:
