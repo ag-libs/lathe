@@ -488,4 +488,3 @@ This design adds a writer for projects with no build, borrowing what works from 
 - JBang: https://www.jbang.dev/documentation/jbang/latest/editing.html,
   https://github.com/jbangdev/jbang-vscode
 - JEP 458: https://openjdk.org/jeps/458
-
