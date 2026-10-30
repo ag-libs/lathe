@@ -728,6 +728,31 @@ Refuse restricted identifiers where the symbol kind cannot take them, and any na
 
 None yet.
 
+## FR-022 — A constructor reference `XXX::new` is not found as an instantiation or a constructor reference
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim, VS Code, MCP.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+`:LatheInstances` on a class lists its `new XXX(...)` sites but not its `XXX::new` method references.
+Find references on the constructor most likely misses them too: both go through `ReferenceLocator`.
+
+### Fix direction
+
+`ReferenceLocator.visitMemberReference` resolves the constructor correctly but then looks for the member name after the qualifier,
+and javac names a constructor `<init>`, which never appears in the text, so the match is dropped.
+Anchor a constructor reference at its `new` keyword instead.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Code Action Gaps (CA)
@@ -825,6 +850,31 @@ An inserted import has no blank line before the class.
 
 Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
 Place imports from the end of the package declaration's tree, not by line.
+
+### Regression targets
+
+None yet.
+
+## CA-14 — Extract variable never adds `final` and offers no `var` form
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: Neovim, VS Code.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+Extract variable always declares `Type name = expr;`.
+It never adds `final`, and there is no `var name = expr;` choice, so a codebase that writes `final var` must edit every extraction by hand.
+
+### Fix direction
+
+`ExtractVariableProvider.insertDecl` renders the explicit type only.
+Offer a `var` form alongside the typed one (not for a `null` literal or a lambda, which `var` cannot take),
+and decide how `final` is chosen: always, a setting, or a second action.
 
 ### Regression targets
 
@@ -1053,6 +1103,54 @@ None yet.
 
 ---
 
+## WS-25 — A first sync downloads dependency sources one at a time
+
+**Status: accepted**
+
+**Value: low — Size: S**
+
+**Affects: the first Maven sync on a machine (`mvn` and `mvnd` alike).**
+
+Found by a code review of the sync path (2026-10-30).
+
+### Observed behaviour
+
+`DependencySourceResolver` calls `RepositorySystem.resolveArtifact` once per external artifact, so a cold `~/.m2` pays one sequential round trip per `-sources` jar (plus its checksum).
+The jars are small, so round trips, not bandwidth, set the time:
+
+| Project | Dependencies | With sources | Missing | Sources size | Median jar |
+|---|---|---|---|---|---|
+| Helidon | 209 | 206 | 3 | 50.6 MB | 62 KB |
+| Dropwizard | 210 | 208 | 2 | 63.8 MB | 70 KB |
+| Hibernate ORM | 254 | 252 | 2 | — | — |
+
+Estimated for Helidon at 30–100 ms per request: about 15–45 s sequentially, against about 3–12 s batched, so 15–30 s saved once.
+Not measured yet; a slower link (proxy, mirror, VPN) or extra repositories ahead of Central saves more.
+A warm sync, the common case, gains nothing: every lookup is local.
+
+### Root cause
+
+Maven Resolver already downloads a batch in parallel: `resolveArtifacts` groups requests by repository, and the basic connector fetches each group on `aether.connector.basic.threads` (default 5).
+Checked in Resolver 1.4.1 (`DefaultArtifactResolver`), the version Maven 3.6.3 ships, so it holds at the Maven floor.
+The per-artifact calls never hand it a batch.
+
+### Fix direction
+
+Resolve all `-sources` requests in one `resolveArtifacts` call, inside `DependencySourceResolver` only.
+A missing sources jar is normal, and the batch throws when any is missing, so read the per-request results from `ArtifactResolutionException.getResults()`;
+a `RuntimeException` still fails the sync.
+No Lathe threads, so nothing outlives a build in the `mvnd` daemon, and all logging stays on the Mojo thread.
+
+Not worth doing alongside it: parallel extraction.
+Unzipping all 206 Helidon sources jars (28,635 entries) takes about 1 s on Linux; Windows may differ.
+
+### Regression targets
+
+- The existing invoker fixtures with and without sources jars keep their `[sync] sources N dependency entries, M with sources` counts.
+- A cold Helidon sync with a fresh `-Dmaven.repo.local`, timed before and after the change.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1276,7 +1374,32 @@ None yet.
 
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
-No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+Resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: Neovim.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
+Accepting the top row is the natural move, yet a test belongs in the test root.
+
+### Fix direction
+
+`_order_destinations` in `lua/lathe/new.lua` ranks the buffer's package and module first but ignores scope there,
+so the alphabetical tie-break (`main` < `test`) decides.
+Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -1396,7 +1519,8 @@ None yet.
 
 **Value: high — Size: M**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1404,6 +1528,11 @@ Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-fo
 now makes them retry, at the cost of a round trip; the refusal quotes the line's text, which makes the retry cheaper.
 mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
 symbols by name path (`Class/method`).
+
+In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
+to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
+The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
+which would save a round trip on almost every query.
 
 ### Fix direction
 
@@ -1422,7 +1551,8 @@ None yet.
 
 **Value: high — Size: M**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1430,9 +1560,15 @@ Found by the agent-tooling landscape review (2026-10-24).
 cache path. mcp-language-server's `definition` returns the implementation, and Serena's
 `find_symbol` has `include_body`.
 
+In the 2026-10-30 session the agent's pattern was `outline`, then a whole-file read.
+That read was its largest single cost: about 11k tokens for a file when it needed four methods,
+although `outline` already knows each member's line range.
+
 ### Fix direction
 
 An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
+Also a tool returning one member's source by name (`source("OrderCommand#store")`),
+resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
 
 ### Regression targets
 
@@ -1446,8 +1582,7 @@ None yet.
 
 **Value: medium — Size: S**
 
-Found by the agent-tooling landscape review (2026-10-24);
-confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
+Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
 
@@ -1472,8 +1607,7 @@ None yet.
 
 **Status: deferred**
 
-Found by the agent-tooling landscape review (2026-10-24);
-confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
+Found by the agent-tooling landscape review (2026-10-24).
 
 ### Gap
 
@@ -1530,11 +1664,6 @@ None yet.
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
-In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
-to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
-The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
-which would save a round trip on almost every query.
-
 
 With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
 `get_diagnostics` then ends with the right note, but with a doubled prefix:
@@ -1560,15 +1689,9 @@ None yet.
 **Value: medium — Size: S**
 
 **Affects: MCP `search_symbols` and the editor's workspace symbols.**
-In the 2026-10-30 session the agent's pattern was `outline`, then a whole-file read.
-That read was its largest single cost: about 11k tokens for a file when it needed four methods,
-although `outline` already knows each member's line range.
-
 
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
-Also a tool returning one member's source by name (`source("OrderCommand#store")`),
-resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
 ### Observed behaviour
 
 `warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
