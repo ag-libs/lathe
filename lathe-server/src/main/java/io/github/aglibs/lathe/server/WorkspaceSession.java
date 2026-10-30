@@ -211,6 +211,9 @@ final class WorkspaceSession {
   // The pass is waiting for another server to release the write lock.
   private boolean waitingForWriteLock;
   private MemoryPressure memoryPressure;
+  // Each source tree's stamps as this server last knew them, its own writes included: stamps that
+  // differ at the next pass were written by another server on the workspace (or a build).
+  private final Map<ModuleSourceConfig, Map<Path, SourceStamp>> stampsSeen = new HashMap<>();
   // A pressure round released the sessions of modules without open files; the next tick checks
   // whether that was enough.
   private boolean pressureFollowUp;
@@ -3623,6 +3626,7 @@ final class WorkspaceSession {
             .collect(
                 Collectors.toUnmodifiableMap(
                     Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
+    trees.forEach(this::refreshIfWrittenElsewhere);
     trees.forEach(this::reconcileDeletedSourcesIn);
     // Not under a build: it rewrites the stamps itself, and a touched source is current meanwhile.
     if (!building) {
@@ -4592,6 +4596,24 @@ final class WorkspaceSession {
     }
   }
 
+  // Servers sharing a workspace take turns writing it, so a change another server compiled first is
+  // never compiled here, and only a write here refreshes the open files that depend on it. Stamps
+  // this server did not write show that write: the tree's open files and its dependents' are
+  // re-analyzed as after one of its own.
+  // The stamps of deleted sources are left out: this pass prunes them.
+  private void refreshIfWrittenElsewhere(final TreeState tree) {
+    final Set<Path> orphans = tree.orphans();
+    final Map<Path, SourceStamp> current =
+        tree.stamps().entrySet().stream()
+            .filter(stamp -> !orphans.contains(stamp.getKey()))
+            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    final Map<Path, SourceStamp> seen = stampsSeen.put(tree.config(), current);
+    if (seen != null && !seen.equals(current)) {
+      refreshScope.add(tree.config().moduleDir());
+      refreshScope.addAll(moduleGraph.downstreamModuleDirs(tree.config().moduleDir()));
+    }
+  }
+
   static StaleScan staleModules(final List<TreeState> trees) {
     return new StaleScan(
         trees.stream()
@@ -5051,7 +5073,7 @@ final class WorkspaceSession {
     return operation.apply(worker.get());
   }
 
-  private static void recordCompileStamp(
+  private void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final SourceStamp stamp) {
     final var root = sourceRootFor(config, savedSource);
     if (root != null) {
@@ -5059,14 +5081,14 @@ final class WorkspaceSession {
     }
   }
 
-  private static void recordStamps(
-      final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {
+  private void recordStamps(final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {
     if (stamps.isEmpty()) {
       return;
     }
 
     try {
       CompiledStamps.record(config.moduleDir(), config.sourceTree(), stamps);
+      stampsSeen.computeIfAbsent(config, tree -> new HashMap<>()).putAll(stamps);
       LOG.fine(
           () ->
               "[stamp] %s recorded %d source(s)"
