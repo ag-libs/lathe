@@ -84,8 +84,7 @@ final class MemberAccessCompleter {
         reattributedAnalysis != null
             ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), reattributedAnalysis)
             : null;
-    final var resolved =
-        hasDeclaredReceiver(reattributedResolved) ? reattributedResolved : initialResolved;
+    final var resolved = hasMembers(reattributedResolved) ? reattributedResolved : initialResolved;
     final var snapshot =
         (reattributedResolved != null && resolved == reattributedResolved)
                 || (resolved == null && cacheableAnalysis != null)
@@ -306,8 +305,12 @@ final class MemberAccessCompleter {
     return !req.content().regionMatches(0, req.cached().content(), 0, tokenStart);
   }
 
-  private static boolean hasDeclaredReceiver(final ResolvedReceiver resolved) {
-    return resolved != null && resolved.type().getKind() == TypeKind.DECLARED;
+  // A receiver completion can list members of: a class or interface type, or an array (length,
+  // clone() and Object's methods). Only otherwise does the stale snapshot's receiver stand in.
+  private static boolean hasMembers(final ResolvedReceiver resolved) {
+    return resolved != null
+        && (resolved.type().getKind() == TypeKind.DECLARED
+            || resolved.type().getKind() == TypeKind.ARRAY);
   }
 
   private CompletionOutcome fallback(

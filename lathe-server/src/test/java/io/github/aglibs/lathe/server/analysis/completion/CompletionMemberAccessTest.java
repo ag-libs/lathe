@@ -233,7 +233,11 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         Arguments.of("primitiveArrayReturn", "class Test { void m() { \"x\".toCharArray().§ } }"),
         Arguments.of(
             "genericArrayReturn",
-            "class Test { void m(Class<Thread.State> t) { t.getEnumConstants().§ } }"));
+            "class Test { void m(Class<Thread.State> t) { t.getEnumConstants().§ } }"),
+        Arguments.of(
+            "staticArrayReturnOnAType",
+            "class Test { void m() { java.util.concurrent.TimeUnit.values().§ } }"),
+        Arguments.of("localArray", "class Test { void m() { int[] arr = null; arr.§ } }"));
   }
 
   @ParameterizedTest(name = "memberAccess_{0}_offersArrayMembers")
@@ -244,6 +248,32 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     // Object methods — not as the chain's base type, so no element-type members leak in.
     assertThat(labels(fixture.complete(source)))
         .containsExactlyInAnyOrder("length", "clone", "equals", "getClass", "hashCode", "toString");
+  }
+
+  // While typing, the receiver is first resolved on the last clean analysis, which lacks the line
+  // being typed, then on the current text: an array found there must win, not the stale guess
+  // (the element type for an array-returning call, nothing for a new local array).
+  @ParameterizedTest(name = "memberAccess_whileTyping_{0}_offersArrayMembers")
+  @MethodSource("arrayReceiverWhileTypingCases")
+  void memberAccess_whileTypingOnAnArrayReceiver_offersArrayMembers(
+      final String scenario, final String typing) {
+    final String cached =
+        "import java.util.concurrent.TimeUnit; class Test { long m() { return 1; } }";
+
+    assertThat(labels(fixture.completeWithCache(cached, typing)))
+        .containsExactlyInAnyOrder("length", "clone", "equals", "getClass", "hashCode", "toString");
+  }
+
+  static Stream<Arguments> arrayReceiverWhileTypingCases() {
+    return Stream.of(
+        Arguments.of(
+            "staticArrayReturnOnAType",
+            "import java.util.concurrent.TimeUnit;"
+                + " class Test { long m() { TimeUnit.values().§\n return 1; } }"),
+        Arguments.of(
+            "localArray",
+            "import java.util.concurrent.TimeUnit;"
+                + " class Test { long m() { int[] arr = null; arr.§\n return 1; } }"));
   }
 
   @Test
