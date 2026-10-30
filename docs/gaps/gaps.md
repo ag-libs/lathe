@@ -1287,6 +1287,48 @@ None yet.
 
 ---
 
+## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `run_test`, editor test runs; any module whose Surefire `classesDirectory` is not the compile output.**
+
+Found while fixing a `lathe-server` bug through Lathe's own MCP server (2026-10-30).
+
+### Observed behaviour
+
+On JDK 21+, a profile in `lathe-server/pom.xml` copies `target/classes` into `target/classes-jdk21`,
+overlays the multi-release `META-INF/versions/21` classes on it, and points Surefire's `classesDirectory` there.
+The captured `test-launch.json` names `target/classes-jdk21`.
+After editing `SourceScope.java`, `run_test` on `WorkspaceSessionTest` compiled the edit into the mirror
+(`.lathe/lathe-server/classes`, fresh) and the edited test, yet ran the old `SourceScope` from `classes-jdk21`
+(left by the last Maven build): the new tests failed with the exception the edit had removed.
+`get_diagnostics` on the file and a second `run_test` gave the same result; nothing said the run used stale classes.
+A Maven run of the same tests passed.
+
+### Root cause
+
+The replay swaps only the module's compile output directories for Lathe's mirrors (`ReactorRewrite`, from the
+workspace manifest).
+`classes-jdk21` is a copy made by the resources plugin, not a compile output, so it passes through unchanged.
+The same holds for any build that tests a copied or merged classes directory.
+
+### Fix direction
+
+At sync, compare Surefire's `classesDirectory` with the module's output directory; when they differ, record it,
+and map it in the replay to the mirror trees it was built from (here the main mirror with the `21` tree's mirror in front).
+Where Lathe cannot tell what a copied directory holds, the completeness gate should at least say the run uses classes
+from the last build, as it does for other stale inputs.
+For this repo alone, the build could test against the compile output plus the `versions/21` overlay without a copy.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
