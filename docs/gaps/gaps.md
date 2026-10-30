@@ -273,8 +273,10 @@ None: the behaviour is unchanged; only the docs and the tool description were co
 
 ## EG-058 — Module analysis sessions are never released: a reactor-wide search pins every touched module's jars for the session
 
-**Status: deferred — Target: backlog.**
-Waiting for a user report of memory pressure before acting; normal heaps (2 GB and up) are unaffected.
+**Status: accepted — Target: next.**
+Decision (2026-10-30): a large `verify_change` on Helidon runs out of memory at 2–3 GB with the sessions it leaves behind.
+Idle sessions are released under memory pressure and after 5 idle minutes,
+as designed in [Releasing Module Sessions Under Memory Pressure](../planned/lathe-memory-pressure.md).
 
 ### Observed behaviour
 
