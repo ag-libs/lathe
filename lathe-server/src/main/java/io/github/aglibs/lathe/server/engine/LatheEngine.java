@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
+import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -154,7 +155,7 @@ public final class LatheEngine {
    * with a source snippet and where it resolved.
    */
   public List<LatheLocation> definition(final Path file, final int line, final int column) {
-    compileFromDisk(file); // register the file and warm its analysis before resolving
+    compileAtName(file, line, column);
     final var params =
         new DefinitionParams(
             new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
@@ -169,7 +170,7 @@ public final class LatheEngine {
    */
   public LatheReferences references(
       final Path file, final int line, final int column, final int maxResults) {
-    compileFromDisk(file); // register the file and warm its analysis before searching
+    compileAtName(file, line, column);
     return referencesAt(file, line, column, maxResults);
   }
 
@@ -191,7 +192,7 @@ public final class LatheEngine {
    */
   public LatheImplementations findImplementations(
       final Path file, final int line, final int column, final int maxResults) {
-    compileFromDisk(file); // register the file and warm its analysis before resolving
+    compileAtName(file, line, column);
     return implementationsAt(file, line, column, maxResults);
   }
 
@@ -211,13 +212,25 @@ public final class LatheEngine {
   // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
   // method for a word in a comment. So the position tools answer only on a name: first a word
   // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
-  public boolean onName(final Path file, final int line, final int column) {
+  // The tool goes on with the analysis this compiles, so the file is compiled once.
+  private void compileAtName(final Path file, final int line, final int column) {
     if (!onWord(file, line, column)) {
-      return false;
+      throw new NotOnName();
     }
 
-    compileFromDisk(file); // register the file and warm its analysis before resolving
-    return await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)));
+    compileFromDisk(file);
+    if (!await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)))) {
+      throw new NotOnName();
+    }
+  }
+
+  /** A position tool was asked at a position that is not on a name. */
+  public static final class NotOnName extends RuntimeException {
+    @Serial private static final long serialVersionUID = 1L;
+
+    NotOnName() {
+      super(null, null, false, false);
+    }
   }
 
   private boolean onWord(final Path file, final int line, final int column) {
@@ -244,7 +257,7 @@ public final class LatheEngine {
    * and javadoc — or empty when there is nothing to describe.
    */
   public String describe(final Path file, final int line, final int column) {
-    compileFromDisk(file); // register the file and warm its analysis before resolving
+    compileAtName(file, line, column);
     return hoverAt(file, line, column);
   }
 
@@ -312,7 +325,7 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
-    compileFromDisk(file); // register the file and warm its analysis before computing the rename
+    compileAtName(file, line, column);
     final var params =
         new RenameParams(
             new TextDocumentIdentifier(file.toUri().toString()),
@@ -516,7 +529,7 @@ public final class LatheEngine {
       final int column,
       final CallDirection direction,
       final int maxResults) {
-    compileFromDisk(file);
+    compileAtName(file, line, column);
     final var prepare =
         new CallHierarchyPrepareParams(
             new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
@@ -676,7 +689,7 @@ public final class LatheEngine {
    * test classes. Read-only — composes definition/reference analysis, no compile of the change.
    */
   public LatheChangeImpact analyzeChange(final Path file, final int line, final int column) {
-    compileFromDisk(file); // warm once; the queries below reuse the analysis
+    compileAtName(file, line, column);
     final String signature = hoverAt(file, line, column);
     final List<LatheLocation> overrideFamily =
         implementationsAt(file, line, column, IMPACT_MAX_RESULTS).implementations();

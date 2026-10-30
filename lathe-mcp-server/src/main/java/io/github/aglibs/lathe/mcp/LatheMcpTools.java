@@ -718,14 +718,17 @@ final class LatheMcpTools {
     return guarded(
         tool,
         file,
-        () ->
-            engine.onName(file, line - 1, column - 1)
-                ? handler.at(file, line - 1, column - 1)
-                : error(
-                    engine
-                        .sourceLine(file, line - 1)
-                        .map(text -> notOnName(line, column, text))
-                        .orElse("No symbol at line %d: the file is shorter.".formatted(line))));
+        () -> {
+          try {
+            return handler.at(file, line - 1, column - 1);
+          } catch (final LatheEngine.NotOnName e) {
+            return error(
+                engine
+                    .sourceLine(file, line - 1)
+                    .map(text -> notOnName(line, column, text))
+                    .orElse("No symbol at line %d: the file is shorter.".formatted(line)));
+          }
+        });
   }
 
   // The line itself, so the agent can correct its column without reading the file.
