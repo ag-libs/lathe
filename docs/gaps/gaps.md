@@ -1329,7 +1329,8 @@ Lathe's `describe_symbol` needs a position, and MCP has no type hierarchy.
 
 A `describe_type` tool taking a (qualified) type name: its supertypes, and each member's signature with
 its first javadoc line, from javac's `Elements` — so it works for a dependency without sources too.
-It also covers the type hierarchy MCP lacks.
+It also covers the type hierarchy MCP lacks, which an agent asked for again on 2026-10-30
+(see also [MC-55](#mc-55--no-tool-finds-the-instanceof-and-pattern-match-sites-for-a-type)).
 
 ### Regression targets
 
@@ -1393,7 +1394,7 @@ None yet.
 
 **Status: documented**
 
-**Value: medium — Size: M**
+**Value: high — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24).
 
@@ -1419,7 +1420,7 @@ None yet.
 
 **Status: documented**
 
-**Value: low — Size: M**
+**Value: high — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24).
 
@@ -1445,7 +1446,8 @@ None yet.
 
 **Value: medium — Size: S**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1470,7 +1472,8 @@ None yet.
 
 **Status: deferred**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1527,6 +1530,11 @@ None yet.
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
 ### Observed behaviour
+In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
+to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
+The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
+which would save a round trip on almost every query.
+
 
 With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
 `get_diagnostics` then ends with the right note, but with a doubled prefix:
@@ -1552,9 +1560,15 @@ None yet.
 **Value: medium — Size: S**
 
 **Affects: MCP `search_symbols` and the editor's workspace symbols.**
+In the 2026-10-30 session the agent's pattern was `outline`, then a whole-file read.
+That read was its largest single cost: about 11k tokens for a file when it needed four methods,
+although `outline` already knows each member's line range.
+
 
 Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 
+Also a tool returning one member's source by name (`source("OrderCommand#store")`),
+resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
 ### Observed behaviour
 
 `warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
@@ -1806,6 +1820,282 @@ Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
 as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Each outgoing entry is the callee's declaration.
+The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
+and had to read the method anyway.
+
+### Fix direction
+
+`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
+which already hold the call sites.
+Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `call_hierarchy`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
+which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
+
+### Fix direction
+
+A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
+[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
+one origin classification can serve both.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-50 — `call_hierarchy` returns one level per call
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `call_hierarchy`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Tracing a resource → service → adapter chain takes one `call_hierarchy` call per level, each needing a fresh position.
+
+### Fix direction
+
+A `depth` argument returning a tree, with cycles cut and a total cap.
+Most useful together with [MC-48](#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called)
+and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-51 — A record's accessor resolves to the top of its file
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
+`startLine: 1` with the `package` line as the snippet.
+
+### Fix direction
+
+An implicit accessor has no tree of its own.
+Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-52 — Every result repeats a full `file://` URI
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools that return locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Each line of `search_symbols` and `call_hierarchy` carries `file:///home/<user>/<workspace>/…`,
+the same long prefix repeated, about 30–40% of the tokens of those answers by the agent's estimate.
+
+### Fix direction
+
+Paths relative to the workspace root, and short prefixes for files outside it (`~deps/…`, `~jdk/…`),
+with the expansion stated once in the tool description or `workspace_summary`.
+The tools that take a `file` must accept the same short forms back.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-53 — `find_references` does not tell reads from writes
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Where does the order's status change" needs the writes of a field or enum constant
+(assignments, setter and builder calls) apart from its reads (comparisons, getters).
+`find_references` lists them all alike, so the agent reads every site.
+
+### Fix direction
+
+The editor's `documentHighlight` already maps each reference's role to read or write.
+Label each `find_references` line with it, and add an `access` filter (`read`, `write`).
+Builder and setter calls count as writes only by convention; decide whether to include them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-54 — A dependency result does not say which version it came from
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that return dependency locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+The source cache held three versions of one internal library, and the agent had to work out which one
+Lathe had resolved for the module it asked about.
+
+### Fix direction
+
+Name the artifact's `groupId:artifactId:version` on a dependency result,
+in whatever short form [MC-52](#mc-52--every-result-repeats-a-full-file-uri) gives dependency paths.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-55 — No tool finds the `instanceof` and pattern-match sites for a type
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP; the editor has no such search either.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+The service picks an adapter through a 180-line `instanceof` chain over its config types.
+`find_implementations` cannot navigate that, and `find_references` on a type mixes the tests
+with imports, declarations and every other use.
+
+### Fix direction
+
+A filter on `find_references` (or its own tool) keeping the uses that test a value's type:
+`instanceof`, type patterns in `switch` and record patterns, and casts.
+These are tree kinds javac already gives the reference search, not text matches.
+Related: [MC-27](#mc-27--no-view-of-a-types-api-by-name-members-supertypes-and-the-first-javadoc-line) for the type hierarchy.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-56 — No map of JAX-RS routes and their wiring
+
+**Status: documented**
+
+**Value: medium — Size: L**
+
+**Affects: MCP.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Which endpoint needs which role" and "in what order do the request filters run" were key questions.
+The agent grepped for `@Path` and the auth annotations and still could not establish the filter order.
+
+### Fix direction
+
+A `routes` tool listing each HTTP method and full path (class plus method `@Path`) with its resource method
+and the security annotations on it (`@RolesAllowed`, `@PermitAll` and custom ones),
+plus the `@Provider` filters and interceptors with their `@Priority` and name bindings.
+All of it is annotation data in the attributed trees, so it suits Lathe; registration in code
+(`register(...)` calls) is the part a static view can only list, not order.
+Framework-specific: JAX-RS first (Jersey, Dropwizard, Helidon MP); decide the scope before others.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-57 — No search for code that shares a string identifier
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Job names, queue names, topic names and config keys tie modules together through equal string literals
+(`"order-export"` in a batch application and in a service that schedules it).
+Lathe cannot connect them; grep did.
+
+### Fix direction
+
+Find the uses of a string constant's value: the literal and the constants holding it,
+resolved through `static final` constants (javac's constant values), across the reactor.
+Group a query's hits by value so one call links every module using the name.
+Java sources only; configuration files are out of scope.
 
 ### Regression targets
 
