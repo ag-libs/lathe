@@ -271,58 +271,6 @@ IntelliJ's Search Everywhere matches humps everywhere, so the demand would come 
 None: the behaviour is unchanged; only the docs and the tool description were corrected.
 ---
 
-## EG-058 — Module analysis sessions are never released: a reactor-wide search pins every touched module's jars for the session
-
-**Status: accepted — Target: next.**
-Decision (2026-10-30): a large `verify_change` on Helidon runs out of memory at 2–3 GB with the sessions it leaves behind.
-Idle sessions are released under memory pressure and after 5 idle minutes,
-as designed in [Releasing Module Sessions Under Memory Pressure](../planned/lathe-memory-pressure.md).
-
-### Observed behaviour
-
-Memory probe against Dropwizard and Helidon at `-Xmx` 1, 2 and 4 GB (read-only requests: cross-module
-references, hover, definition, implementation, call hierarchy, then 100 files opened across modules).
-Live heap after a full GC:
-
-| Measurement | Dropwizard | Helidon |
-|---|---|---|
-| After reference searches | ~550–650 MB | ~560–720 MB |
-| Per additional open file | ~6–7 MB | ~6–7 MB |
-| 100 files open | ~1.16 GB | ~1.0–1.1 GB |
-| Non-heap on top of `-Xmx` (NMT) | ~350 MB | ~900 MB |
-
-Closing every file does not return the heap to its pre-open level:
-Dropwizard drops only to ~920 MB, against ~465 MB before the 100 opens.
-Both projects work fully at 2 GB and 4 GB; at 1 GB both run reference search fine but die once ~80–100
-files are open on top of it.
-
-### Root cause
-
-`CompilationWorker` creates its `SourceAnalysisSession` lazily and keeps it until the workspace closes.
-Each session owns a `ModuleSourceCompiler` with its own `StandardJavaFileManager`, which opens a zip
-filesystem per classpath jar.
-A reference search touches every candidate module, so after one reactor-wide search every touched
-module's file manager, with all its jar indexes, stays for the rest of the session.
-Dropwizard has 233 unique jars but ~4,300 live `ZipFileSystem` instances (each jar opened ~18×),
-almost all still alive after every file is closed; Helidon has 209 unique jars and ~1,700 instances.
-
-### Fix direction
-
-Release a module's session after it has been idle for a while (for example 5 minutes), on the worker's
-own executor; the next request rebuilds it through the existing `contextFactory`.
-This is safe because a cache miss already recompiles (the `AnalysisLru` eviction path), and the
-single-threaded executor orders the release after any in-flight search.
-Cost: the first request into a module idle past the threshold pays a cold start (~0.2–1.6 s), and a
-warm reactor-wide search after a long pause runs at cold speed.
-A count-capped LRU of module sessions would bound memory during a burst as well, but would make every
-large reactor-wide search cold.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
 **Status: documented**
@@ -505,6 +453,150 @@ None yet.
 
 ---
 
+## EG-070 — Requests Lathe does not support answer with an internal error, and `typeDefinition` is missing
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`textDocument/typeDefinition` and `textDocument/inlayHint` are not advertised, so well-behaved clients never send them;
+Neovim's go-to-type-definition is unavailable.
+A client that sends one anyway gets an internal error, and the server logs a SEVERE line with a stack trace,
+instead of the protocol's "method not found".
+0.1.24 behaves the same.
+
+### Fix direction
+
+Answer an unsupported request with `MethodNotFound`, without a SEVERE line.
+Implement `typeDefinition` (the declared type of the symbol at the cursor); definition already resolves types.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on Helidon.
+
+### Observed behaviour
+
+Document highlight on a package name in an `exports` clause highlights each dotted segment on its own,
+also inside another package's `exports` (a `…type.spi` beside `…type`) and in the module's own name.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Highlight a qualified package name as one unit, and only where the same package is named.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+None of these ends the server, but each answers wrongly or logs a SEVERE line:
+
+- missing or null params (hover without params, references without a context, `workspace/symbol` with a null query, a command without arguments): `NullPointerException` or `ClassCastException`, internal error, SEVERE;
+- a position past a line's end or a huge line number: internal error (`bitIndex < 0`);
+- range formatting with its start after its end, or on code that does not parse: SEVERE, though the reply is normal;
+- a `didChange` with an older version than the document's is applied, not ignored;
+- a URI with lowercase `%xx` escapes gets its diagnostics under the canonical URI, not the one the client sent;
+  a raw unencoded non-ASCII URI fails with "Bad escape".
+
+0.1.24 behaves the same.
+
+### Fix direction
+
+Validate params at the protocol edge and answer `InvalidParams`; clamp positions to the document;
+ignore stale versions; publish diagnostics under the URI the client used for the document.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-073 — Find references in a 20,000-line file takes more than 90 seconds
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+On a synthetic 20,000-line buffer, find references did not answer within 90 s.
+Real files are rarely this large, but generated sources can be.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Profile the single-file search on a large unit; bound the work per file, or report progress and allow cancellation as reactor-wide searches do.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier and Dropwizard.
+
+### Observed behaviour
+
+- `[compile] dropped 10 forked-javac -J option(s) …` is logged at INFO for every module compiler created,
+  four times in one second on EqualsVerifier.
+- On JDK 25, Guava's `sun.misc.Unsafe` deprecation warning reaches the MCP server's stderr during in-process compiles.
+
+### Fix direction
+
+Log the dropped options once per workspace, or at FINE.
+Keep compile-time library warnings out of the server's stderr.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online
+
+**Status: documented**
+**Affects: the build.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh multi-module project.
+
+### Observed behaviour
+
+The first build of a reactor whose root is a `pom` module resolves the newest `maven-compiler-plugin` online,
+ignoring the version the project pins, and prints five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Use the pinned compiler-plugin version when the extension wires the compiler; resolve nothing online.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## Implementation notes
 
 The release slice is derived from the gap fields, not maintained as an ordered list here: the work
@@ -602,6 +694,117 @@ contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
 prompting, and reload. Resolved WS entries are in [gaps-archive.md](gaps-archive.md).
 
+## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package`
+
+**Status: documented**
+**Affects: the editor and MCP `fix_imports`.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+CA-11 made a type used as a method-call qualifier fixable, but not a chained one:
+`TimeUnit.SECONDS.toMillis(1)` and `Map.Entry.comparingByKey()` (javac: "package X does not exist") get no quick fix, and `fix_imports` neither adds nor lists them.
+With `package` and an `import` on one line, the import is inserted above `package`, which breaks the file
+(the editor and `fix_imports` alike).
+An inserted import has no blank line before the class.
+
+### Fix direction
+
+Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
+Place imports from the end of the package declaration's tree, not by line.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+Since the fix that stopped this rename from breaking files, renaming one overload of a statically imported name
+(`Rethrow.rethrow(ThrowingSupplier)`) is refused: the import must stay for the other overloads, and the renamed calls in that file would have no import.
+The user has to rename the overloads together or qualify the calls first.
+
+### Fix direction
+
+Rename it, and add `import static T.newName;` beside the kept import in each file where the renamed member is called through it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-020 — Renaming a Helidon blueprint option leaves the generated builder's callers broken
+
+**Status: documented**
+**Affects: MCP and the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on Helidon.
+
+### Observed behaviour
+
+`rename_symbol` on `AllowListConfigBlueprint.allowAll()` edits 4 places in 3 files, but not the callers of the generated `Builder.allowAll(boolean)`; the build then fails with 21 errors.
+The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_change` reports the errors.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
+
+**Status: documented**
+**Affects: MCP and the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` is accepted and renames nothing.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CQ-0061 — No enum-constant completion in a `switch` case label
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
+0.1.24 behaves the same.
+
+### Fix direction
+
+In a case label of a switch on an enum, offer the enum's constants, unqualified.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## WS-17 — The server JVM has no heap cap and grows toward a quarter of the machine's memory
 
 **Status: deferred — Target: backlog.**
@@ -665,6 +868,98 @@ None yet.
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
 replay JVM. Resolved TE entries are in [gaps-archive.md](gaps-archive.md).
 
+## WS-21 — A rename racing a build can leave the tree broken
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+With a Maven sync running, an agent's `rename_symbol` succeeded on disk (31 edits in 16 files), but the next `verify_change` reported 27 "cannot find symbol" errors for the new name: the server's compiled class was the pre-rename one.
+Renaming back then changed only the declaration, leaving 30 uses of the dropped name and 29 errors.
+2 of 16 rounds with a sync running, none without.
+Likely cause: the sync stamps a source from the file on disk when it mirrors, after javac compiled an older content, so a stale class looks current.
+0.1.24 shares the stamping code.
+
+### Fix direction
+
+Stamp what javac compiled (its read content or fingerprint), not the disk at mirror time.
+`rename_symbol` could also defer, or warn, while a build is running, as `verify_change` does.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-22 — One external jar listed twice in the manifest switches off cross-module features
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+When one module depends on an external artifact as `<type>test-jar</type>` and another as `<classifier>tests`,
+`workspace.json` lists the jar twice, and the manifest fails to load with "Duplicate key …":
+cross-module references miss other modules, and the advice to re-sync cannot help.
+`WorkspaceManifest.load` still has two jar-keyed `toUnmodifiableMap` collectors (`jarToGav`, `jarToSourceDir`),
+the bug class an earlier fix removed for classifier jars sharing a sources dir.
+
+### Fix direction
+
+Merge duplicate jar entries when loading the manifest, or list each jar once when writing it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+After `kill -9` of a Maven sync, the `lathe.lock`/`module.lock` it held stay, and `verify_change` answers
+"Verification deferred: a build is in progress" for 100–120 s, until the locks count as stale.
+The next good sync clears them.
+
+### Fix direction
+
+Record the owning process in the lock and treat a lock whose process is gone as free.
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
+
+**Status: documented**
+**Affects: the editor and MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+A `workspace.json` that is not UTF-8 or not readable (chmod 000) is logged at SEVERE in `WorkspaceWatcher.readManifest`; the editor gets no message, the watcher does not start, and a fixed file is never re-read, so outside changes go unnoticed until a restart.
+An empty file leaks `Cannot invoke "…schema…"`; a missing file or one with no modules is silent.
+
+### Fix direction
+
+Report a broken manifest to the client with the remedy (a sync), keep watching, and reload once it is readable.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## TE-3 — `<systemPropertyVariables>` are not carried into the replay launch
 
 **Status: deferred — Target: backlog**
@@ -721,6 +1016,26 @@ Gaps in the in-process DAP adapter and the two-stage expression evaluator (see
 for the current milestone — breakpoints, stepping, inspection, conditional breakpoints, and
 read/invoke expression evaluation all work — so the entries below are the deliberately deferred
 remainder, re-triaged in a future round.
+
+## TE-10 — `run_test` on a method name shared by two top-level classes runs only the first
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's, and says nothing about the second.
+
+### Fix direction
+
+Run every match, as the class scope does, or ask which class is meant.
+
+### Regression targets
+
+None yet.
+
+---
 
 ## DB-1 — Expression evaluation is read/invoke only; no assignment or `setVariable`
 
@@ -872,6 +1187,27 @@ No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive
 Gaps in the in-process `LatheEngine` facade and the `lathe-mcp-server` tool surface that exposes
 Lathe to AI agents, as distinct from the LSP/DAP server behaviour those tools sit on top of.
 Resolved MC entries move to [gaps-archive.md](gaps-archive.md).
+
+## DB-8 — A debugged test's JVM outlives the server
+
+**Status: documented**
+**Affects: the editor.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+A test launched by `lathe.debug.test` stays running, suspended, after the server exits: on a clean shutdown/exit, on stdin EOF and on SIGTERM.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Destroy the debuggee's process tree when the server shuts down, as test runs are.
+
+### Regression targets
+
+None yet.
+
+---
 
 ## MC-26 — `search_symbols` finds types only, not methods or fields
 
@@ -1223,6 +1559,114 @@ A client that sent such a line waits on its requests until its own timeout.
 Exit when the session's transport closes, whatever closed it, rather than only at end of input:
 wrap the transport provider and its session transport, and end the process when the session closes them.
 That implements two SDK interfaces, so weigh it against SDK upgrades.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-43 — Expected refusals are logged at SEVERE with a stack trace
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
+
+### Observed behaviour
+
+A refusal is the tool's normal answer, but each is logged as an unexpected error: a rename refused (JDK method,
+Lombok member, shared static import, existing name), `run_test` with no test target, `format_file` with no formatter.
+The editor's server does not log its refusals this way.
+
+### Fix direction
+
+Log refusals at FINE, or INFO without a stack trace; keep SEVERE for unexpected failures.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-44 — A `.lathe/` created after the MCP server started is never picked up
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+An MCP server started in a project with no `.lathe/` keeps answering "found no .lathe/" after a build creates it.
+The tools do not say to restart the server; only the agent guide does.
+
+### Fix direction
+
+Look for `.lathe/` again on each call while none was found, or say in the answer that a restart picks it up.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+The read tools accept a `.java`-named path outside the workspace, including a symlink to `/etc/passwd`, whose third line was echoed back.
+Writes outside the reactor are refused.
+
+### Fix direction
+
+Resolve the real path and answer only for files under the workspace, its dependency sources and the JDK's.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
+
+### Observed behaviour
+
+After an agent removes `lombok.accessors.prefix` from a `lombok.config`, `verify_change` on the affected files answers "No errors" in milliseconds, while `get_diagnostics` shows the `getCount()` error.
+Files whose `.java` content equals the last build count as unchanged, and a `lombok.config` change is not a change.
+
+### Fix direction
+
+Count a changed `lombok.config` as a change to the sources below it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
+
+**Status: documented**
+**Affects: MCP.**
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+- After renaming a type back (`State` to `Status`), the answer notes "Not checked: …/State.java does not exist",
+  about the file the rename itself moved.
+- After an agent edits a POM, `workspace_summary` does not mention the pending sync, while `get_diagnostics`
+  ("Sync required") and `verify_change` (deferred) do.
+
+### Fix direction
+
+Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note.
 
 ### Regression targets
 
