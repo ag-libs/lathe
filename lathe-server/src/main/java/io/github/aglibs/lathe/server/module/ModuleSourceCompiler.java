@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.server.LatheUri;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
@@ -16,10 +17,12 @@ import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +44,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   private static final String PATCH_MODULE = "--patch-module";
   private static final String MODULE_SOURCE_PATH = "--module-source-path";
   private static final String SYSTEM = "--system";
+  private static final String LOMBOK_STOP_BUBBLING = "config.stopBubbling = true";
 
   private final ModuleSourceConfig config;
   private final StandardJavaFileManager fm;
@@ -225,10 +229,60 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
             .max(Comparator.comparingInt(Path::getNameCount))
             .orElseGet(() -> generatedSourceRoot(filePath, uri));
     try {
+      if (lombok.present()) {
+        mirrorLombokConfigs(sourceRoot, filePath.getParent());
+      }
+
       return FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  // Lombok reads lombok.config from the compiled file's directory up, and javac compiles a copy
+  // under tempDir laid out by package (tempDir is also a patched module's source root). So a config
+  // inside the source root goes to the same package directory there, and the ones above it into
+  // tempDir's own, outermost first: Lombok applies a chain outermost first, later settings winning,
+  // which one file in that order repeats. Its stopBubbling then keeps Lombok out of tempDir's own
+  // ancestors, as the source's whole chain was read here.
+  private void mirrorLombokConfigs(final Path sourceRoot, final Path sourceDir) throws IOException {
+    final Set<Path> mirroredDirs = new HashSet<>();
+    final var merged = new StringBuilder();
+    for (final Path lombokConfig :
+        FileUtil.ancestorFiles(sourceDir, LatheLayout.LOMBOK_CONFIG_FILE)) {
+      final Path dir = lombokConfig.getParent();
+      final String settings = Files.readString(lombokConfig, StandardCharsets.UTF_8);
+      if (dir.startsWith(sourceRoot) && !dir.equals(sourceRoot)) {
+        final Path target = tempDir.resolve(sourceRoot.relativize(lombokConfig));
+        FileUtil.writeIfChanged(target.getParent(), target, settings, false);
+        mirroredDirs.add(dir);
+      } else {
+        merged.insert(0, "%s%n".formatted(settings));
+      }
+
+      if (stopsBubbling(settings)) {
+        break;
+      }
+    }
+
+    // A config the source no longer has, or one beyond a stopBubbling, must not stay in force.
+    for (Path dir = sourceDir; !dir.equals(sourceRoot); dir = dir.getParent()) {
+      if (!mirroredDirs.contains(dir)) {
+        Files.deleteIfExists(
+            tempDir.resolve(sourceRoot.relativize(dir)).resolve(LatheLayout.LOMBOK_CONFIG_FILE));
+      }
+    }
+
+    merged.append("%s%n".formatted(LOMBOK_STOP_BUBBLING));
+    FileUtil.writeIfChanged(
+        tempDir, tempDir.resolve(LatheLayout.LOMBOK_CONFIG_FILE), merged.toString(), false);
+  }
+
+  private static boolean stopsBubbling(final String settings) {
+    return settings
+        .lines()
+        .map(line -> line.replaceAll("\\s+", ""))
+        .anyMatch(line -> line.equalsIgnoreCase(LOMBOK_STOP_BUBBLING.replace(" ", "")));
   }
 
   private Path generatedSourceRoot(final Path filePath, final String uri) {

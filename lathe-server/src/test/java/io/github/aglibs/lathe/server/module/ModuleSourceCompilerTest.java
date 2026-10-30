@@ -182,10 +182,50 @@ class ModuleSourceCompilerTest {
     try (var compiler =
         new ModuleSourceCompiler(
             LombokFixtures.moduleConfig(td, sourceRoot, proc), new CompilationAdmission(1))) {
-      return compiler.compile(uri, source, CompileMode.OPEN).diagnostics().stream()
-          .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
-          .map(diagnostic -> diagnostic.getMessage(null))
-          .toList();
+      return errorMessages(compiler.compile(uri, source, CompileMode.OPEN));
+    }
+  }
+
+  private static List<String> errorMessages(final CompilerResult result) {
+    return result.diagnostics().stream()
+        .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+        .map(diagnostic -> diagnostic.getMessage(null))
+        .toList();
+  }
+
+  // Lombok reads lombok.config from the source's directory up, and Lathe compiles a copy of the
+  // source elsewhere: the copy must see the same chain, the package's own config and the reactor's.
+  @Test
+  @EnabledForJreRange(maxVersion = LombokFixtures.MAX_JDK)
+  void compile_lombokConfigInPackageAndReactor_appliesToAnalysisAndWrite() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path pkg = Files.createDirectories(sourceRoot.resolve("com/example"));
+    Files.writeString(td.resolve("lombok.config"), "lombok.log.fieldName = LOGGER\n");
+    Files.writeString(pkg.resolve("lombok.config"), "lombok.accessors.prefix += f\n");
+    final String uri = pkg.resolve("Counter.java").toUri().toString();
+    final String source =
+        """
+        package com.example;
+        @lombok.Getter
+        @lombok.extern.java.Log
+        class Counter {
+          private int fCount;
+          int twice() {
+            LOGGER.fine("twice");
+            return getCount() * 2;
+          }
+        }
+        """;
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            LombokFixtures.moduleConfig(td, sourceRoot, null), new CompilationAdmission(1))) {
+      assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN))).isEmpty();
+      assertThat(
+              compiler
+                  .compileBatch(List.of(new TransientSource(uri, source)), () -> {})
+                  .writtenBinaryNames())
+          .containsExactly("com.example.Counter");
     }
   }
 
