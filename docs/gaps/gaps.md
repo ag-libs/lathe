@@ -1534,10 +1534,16 @@ to find a position, and one of the agent's ten Lathe calls failed on a wrong pos
 The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
 which would save a round trip on almost every query.
 
+A refactoring review of Lathe itself (2026-10-30) missed twice in 21 calls,
+both times one column short on a method name taken from an `outline` line
+(`private static ExpectedValue expectedMethodArgumentValue(`: the agent sent 31, the name starts at 32).
+`outline` gives each member's line but not where its name starts, so the agent counts by hand.
+
 ### Fix direction
 
 Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
 the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
+Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
 
 ### Regression targets
 
@@ -1615,6 +1621,8 @@ The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
 ([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
 structured content without one. It helps programmatic clients, not models, so it waits for a client
 that needs it.
+Claude Code does show the model the structured content, not the text:
+see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes).
 
 ### Regression targets
 
@@ -1700,10 +1708,18 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 no code in the project can use them.
 `*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
 
+On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
+(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
+classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
+about 30 of the 40 from dependencies and the JDK.
+The agent wanted the reactor's types and had no way to ask for only those.
+
 ### Fix direction
 
 Leave out JDK packages a module does not export, at least for a classpath module.
 Strip a leading or trailing `*` (or treat the query as a glob).
+List reactor matches before any dependency or JDK match, and add a `scope` argument
+(`reactor`, `all`) so an agent can leave the rest out.
 Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
 [MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
 
@@ -2219,6 +2235,135 @@ Find the uses of a string constant's value: the literal and the constants holdin
 resolved through `static final` constants (javac's constant values), across the reactor.
 Group a query's hits by value so one call links every module using the name.
 Java sources only; configuration files are out of scope.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: every MCP tool; seen in Claude Code.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
+Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
+(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
+Two consequences:
+
+- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
+  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
+  looks complete. The server instructions tell the agent to act on these notes.
+- The JSON repeats each key on every item, so answers are larger than the text form
+  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
+
+This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
+that structured content serves programmatic clients and not models.
+
+### Fix direction
+
+Carry the notes in the structured map too (a `notes` object with the four kinds), so they reach the agent
+whichever part a client shows.
+Then decide whether to keep `structuredContent` at all: without an `outputSchema` no client relies on it,
+and dropping it would make Claude Code show the compact text.
+Check what other clients (Codex, Cursor) show before choosing.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-59 — `outline` overflows on a large file
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `outline`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+`outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
+Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
+The largest file is where an outline saves the most reading, and the one where the tool fails.
+Part of the size is the JSON form ([MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)),
+but 428 lines of text would still be about 25k characters.
+
+### Fix direction
+
+An optional `depth` (1 = the top-level types and their members, without nested types' members)
+and a `kinds` filter (types only, methods only).
+Above a size cap, answer with the types and their member counts and say how to ask for one type's members,
+instead of an answer the client cuts.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-60 — `run_test` does not return a failing test's output
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `run_test`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+A probe test printed the code action's edits with `System.out.println` before its assertion.
+`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
+so the agent had to move the value into the assertion's message and run again.
+Logs and printed state are often what explains a failure.
+
+### Fix direction
+
+For each failed test, the last lines of its standard output and error, capped (say 40 lines),
+from the transcript the launch already drains (`LaunchSession`).
+Nothing for passing tests.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-61 — No overview of how a type's members are used
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+Planning to split a large class needs to know which of its members are used from outside it, and by whom
+(production or tests, which classes).
+`find_references` answers for one member per call; `WorkspaceSession` has 306 methods.
+The agent grepped the test file for `WorkspaceSession.<name>(` instead, which finds static calls only.
+
+### Fix direction
+
+A per-member summary of a type: each member with its counts of uses from inside the type,
+from other production classes and from tests, and the classes involved, with the unused ones listed.
+`analyze_change` already counts production and test uses for one symbol; this is that over every member.
 
 ### Regression targets
 
