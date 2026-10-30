@@ -11,7 +11,7 @@ No Lathe plugin, no extra config beyond one file.
 
 1. Install the **Java** extension (`zed: extensions` → search "Java").
    It provides the Java grammar and the `jdtls` server slot Lathe runs in.
-2. Add `.zed/settings.json` at the reactor root (where `.lathe/` lives):
+2. Add `.zed/settings.json` at the root of the build (where `.lathe/` lives):
 
    ```json
    {
@@ -43,8 +43,8 @@ No Lathe plugin, no extra config beyond one file.
    Zed opens unrecognized projects in Restricted Mode, which ignores `.zed/settings.json` and starts no
    language servers until the project is trusted.
 
-The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
-project uses; a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) writes it.
+The launcher is the script the build's sync writes at `<root>/.lathe/`, pinned to the server version this
+project uses; a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) writes it.
 Zed starts language servers with the worktree root as their working directory, so the relative path
 resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 Setting `binary.path` replaces the Java extension's own launch command, so Eclipse JDT LS is never
@@ -61,7 +61,7 @@ All through Zed's built-in editor features, resolved from your real build:
 | Go to definition (cross-module)  | `editor: go to definition`                    |
 | Go to implementation             | `editor: go to implementation`                |
 | Find references                  | `editor: find all references`                 |
-| Workspace symbols (reactor-wide) | `project symbols: toggle`                     |
+| Workspace symbols (project-wide) | `project symbols: toggle`                     |
 | Completion                       | as you type                                   |
 | Rename                           | `editor: rename`                              |
 | Extract variable / refactors     | `editor: toggle code actions`                 |

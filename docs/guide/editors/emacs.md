@@ -16,13 +16,13 @@ One line in `init.el` points Eglot at Lathe's per-workspace launcher for Java fi
              '(java-mode ".lathe/lathe-launcher.sh"))
 ```
 
-The launcher is the script `lathe:sync` writes at `<root>/.lathe/`, pinned to the server version this
+The launcher is the script the build's sync writes at `<root>/.lathe/`, pinned to the server version this
 project uses. Eglot starts the server with the project root as its working directory, so the relative
 path resolves there (and the launcher finds `.lathe/java-home` and `.lathe/jvm.args` relative to it).
 
-Open a Java file in a project Lathe has synced (a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) populates `.lathe/`), then
+Open a Java file in a project Lathe has synced (a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) populates `.lathe/`), then
 `M-x eglot` — or add `eglot-ensure` to `java-mode-hook` to connect automatically. Eglot picks the
-project's version-control root, which must be the reactor root where `.lathe/` lives.
+project's version-control root, which must be the root of the build where `.lathe/` lives.
 
 ## What works
 
@@ -33,10 +33,10 @@ your real build:
 |----------------------------------|-----------------------------------------------------|
 | Go to definition (cross-module)  | `M-.`                                               |
 | Find references                  | `M-?`                                               |
-| Workspace symbols (reactor-wide) | `M-x xref-find-apropos`                             |
+| Workspace symbols (project-wide) | `M-x xref-find-apropos`                             |
 | Completion                       | `C-M-i`                                             |
 | Hover / javadoc                  | ElDoc (echo area) · `M-x eldoc-doc-buffer`          |
-| Rename (reactor-wide)            | `M-x eglot-rename`                                  |
+| Rename (project-wide)            | `M-x eglot-rename`                                  |
 | Extract variable / refactors     | `M-x eglot-code-action-extract` · `eglot-code-actions` |
 | Live diagnostics                 | Flymake · `M-x flymake-show-buffer-diagnostics`     |
 | Formatting                       | `M-x eglot-format-buffer`                           |
