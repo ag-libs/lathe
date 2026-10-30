@@ -104,6 +104,9 @@ starts each test task with every test skipped, which is all capture needs.
 
 ## Known limits
 
+- **Only each project's `test` task is captured.** Other test tasks (an `integrationTest` task, say) and source
+  sets other than `main` and `test` are not, so their tests can't be run from the editor; see
+  [Test capture](test-capture.md#requirements-and-current-limits).
 - **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
   captured, so they can't be run or debugged from the editor; the editor's sync names each such test task.
 - **A notice on every test run.**
