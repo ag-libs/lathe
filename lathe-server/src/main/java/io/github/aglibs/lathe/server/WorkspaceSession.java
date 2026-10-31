@@ -1237,7 +1237,7 @@ final class WorkspaceSession {
 
   private static CreateTypeResult renderType(
       final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
-    if (!SourceVersion.isIdentifier(name) || SourceVersion.isKeyword(name)) {
+    if (!RenameProvider.isValidTypeName(name)) {
       throw new IllegalArgumentException("'%s' is not a valid Java type name".formatted(name));
     }
 

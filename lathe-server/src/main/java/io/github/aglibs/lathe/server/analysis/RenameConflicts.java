@@ -38,8 +38,6 @@ public final class RenameConflicts {
           ElementKind.RESOURCE_VARIABLE,
           ElementKind.BINDING_VARIABLE);
 
-  private static final Set<String> NOT_TYPE_NAMES =
-      Set.of("permits", "record", "sealed", "var", "yield");
   private static final Set<String> NOT_METHOD_NAMES = Set.of("yield");
 
   private RenameConflicts() {}
@@ -64,7 +62,7 @@ public final class RenameConflicts {
     return switch (element.getKind()) {
       case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE, TYPE_PARAMETER ->
           Optional.of("`%s` cannot name a type".formatted(newName))
-              .filter(reason -> NOT_TYPE_NAMES.contains(newName));
+              .filter(reason -> !RenameProvider.isValidTypeName(newName));
       case METHOD ->
           Optional.of("a method named `yield` cannot be called without a qualifier")
               .filter(reason -> NOT_METHOD_NAMES.contains(newName));
