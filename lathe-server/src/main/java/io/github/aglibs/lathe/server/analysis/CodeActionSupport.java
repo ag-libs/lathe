@@ -6,6 +6,7 @@ import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
+import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
@@ -14,6 +15,7 @@ import java.util.Comparator;
 import java.util.Objects;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -21,6 +23,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
 import javax.lang.model.type.WildcardType;
+import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
 final class CodeActionSupport {
@@ -189,6 +192,85 @@ final class CodeActionSupport {
       current = current.getParentPath();
     }
     return null;
+  }
+
+  // The offset of the class body's `{`, or -1, past its header: annotations, type parameters,
+  // extends, implements, permits, a record's components.
+  static int classBodyBrace(
+      final ClassTree cls,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final String source) {
+    return indexAfter(
+        '{',
+        cls,
+        Stream.<Stream<? extends Tree>>of(
+                Stream.of(cls.getModifiers(), cls.getExtendsClause()),
+                cls.getTypeParameters().stream(),
+                cls.getImplementsClause().stream(),
+                cls.getPermitsClause().stream(),
+                recordComponents(cls))
+            .flatMap(trees -> trees),
+        cu,
+        positions,
+        source);
+  }
+
+  // The offset of the first `c` past the owner's header trees, or -1. For punctuation no tree
+  // carries (a class body's `{`, an empty parameter list's `(`): searched for from the owner's
+  // start, it could be one inside an annotation argument, as in @SuppressWarnings({"x"}).
+  static int indexAfter(
+      final char c,
+      final Tree owner,
+      final Stream<? extends Tree> header,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final String source) {
+    final long headerEnd =
+        header
+            .filter(Objects::nonNull)
+            .mapToLong(tree -> positions.getEndPosition(cu, tree))
+            .max()
+            .orElse(-1);
+    final long from = Math.max(headerEnd, positions.getStartPosition(cu, owner));
+    return from < 0 ? -1 : source.indexOf(c, (int) from);
+  }
+
+  // A record may declare no instance field, so its non-static fields are its header's components.
+  private static Stream<? extends Tree> recordComponents(final ClassTree cls) {
+    return cls.getKind() != Tree.Kind.RECORD
+        ? Stream.empty()
+        : cls.getMembers().stream()
+            .filter(
+                member ->
+                    member instanceof final VariableTree field
+                        && !field.getModifiers().getFlags().contains(Modifier.STATIC));
+  }
+
+  // Inserts a member declaration before the body's first real member (javac's default constructor
+  // sits before the `{` and is skipped), or just inside the `{` of an empty body.
+  static TextEdit insertBeforeFirstMember(
+      final ClassTree cls,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final String source,
+      final int brace,
+      final String declaration) {
+    final long anchor =
+        cls.getMembers().stream()
+            .mapToLong(member -> positions.getStartPosition(cu, member))
+            .filter(start -> start > brace)
+            .min()
+            .orElse(-1);
+    if (anchor >= 0) {
+      final var pos = SourceLocator.offsetToPosition(cu, anchor);
+      return new TextEdit(
+          new Range(pos, pos), "%s\n%s".formatted(declaration, lineIndent(source, (int) anchor)));
+    }
+
+    final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
+    final String classIndent = lineIndent(source, (int) positions.getStartPosition(cu, cls));
+    return new TextEdit(new Range(pos, pos), "\n%s  %s".formatted(classIndent, declaration));
   }
 
   // The last field of a class body (by source position), or null when it declares none — the anchor

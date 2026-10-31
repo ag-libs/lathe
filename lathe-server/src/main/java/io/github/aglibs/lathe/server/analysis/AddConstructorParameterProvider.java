@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
@@ -132,9 +133,8 @@ final class AddConstructorParameterProvider {
       final String typeText,
       final String name,
       final Element fieldElement) {
-    final long classStart = positions.getStartPosition(cu, cls);
-    final int brace = source.indexOf('{', (int) classStart);
-    if (classStart < 0 || brace < 0) {
+    final int brace = CodeActionSupport.classBodyBrace(cls, cu, positions, source);
+    if (brace < 0) {
       return List.of();
     }
 
@@ -266,9 +266,15 @@ final class AddConstructorParameterProvider {
       return new TextEdit(new Range(pos, pos), ", %s".formatted(param));
     }
 
-    final long methodStart = positions.getStartPosition(cu, ctor);
-    final int open = source.indexOf('(', (int) methodStart);
-    if (methodStart < 0 || open < 0) {
+    final int open =
+        CodeActionSupport.indexAfter(
+            '(',
+            ctor,
+            Stream.concat(Stream.of(ctor.getModifiers()), ctor.getTypeParameters().stream()),
+            cu,
+            positions,
+            source);
+    if (open < 0) {
       return null;
     }
 
@@ -300,7 +306,7 @@ final class AddConstructorParameterProvider {
     // Empty user body (only javac's synthetic super()): replace the inter-brace whitespace with the
     // single indented binding, so the result is `{\n  this.x = x;\n}` rather than a blank line.
     final long methodStart = positions.getStartPosition(cu, ctor);
-    final int brace = source.indexOf('{', (int) methodStart);
+    final long brace = positions.getStartPosition(cu, body);
     final long bodyEnd = positions.getEndPosition(cu, body);
     if (methodStart < 0 || brace < 0 || bodyEnd < 0) {
       return null;

@@ -1389,7 +1389,7 @@ class CodeActionTest {
 
     assertThat(rewritten)
         .contains("StringBuilder append = sb.append(\"x\");\n    append.append(\"y\");");
-    assertCompiles(rewritten);
+    assertCompilesClean(rewritten);
   }
 
   @Test
@@ -1514,13 +1514,58 @@ class CodeActionTest {
         .noneMatch(t -> t.startsWith(variable));
   }
 
+  @Test
+  void codeAction_annotatedDeclarations_insertInsideTheBody() {
+    // A `{` in an annotation argument is not the body's: the insert lands inside the body.
+    final var annotatedClass =
+        """
+        package com.example;
+        @SuppressWarnings({"unused"})
+        class Test {
+          void m() { use(«"hello world"»); }
+          void use(Object x) {}
+        }
+        """;
+    final var annotatedComponent =
+        """
+        package com.example;
+        record Test(@SuppressWarnings({"unused"}) int a) {
+          void m() { use(«"hello world"»); }
+          void use(Object x) {}
+        }
+        """;
+    for (final String source : List.of(annotatedClass, annotatedComponent)) {
+      final String rewritten = applyEdits(unmarked(source), constantEdits(markedActions(source)));
+      assertThat(rewritten)
+          .contains("{\n  private static final String HELLO_WORLD = \"hello world\";\n  void m()");
+      assertCompilesClean(rewritten);
+    }
+
+    final var annotatedConstructor =
+        """
+        package com.example;
+        @SuppressWarnings({"unused"})
+        class Widget {
+          private final String id;
+          @SuppressWarnings({"unused"})
+          Widget() {}
+        }
+        """;
+    final String rewritten =
+        applyEdits(
+            annotatedConstructor, addCtorEdits(replaceVarActionsAt(annotatedConstructor, 3, 23)));
+    assertThat(rewritten).contains("Widget(final String id) {\n    this.id = id;\n  }");
+    assertCompilesClean(rewritten);
+  }
+
   // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
   // applying it leaves code that compiles.
   private void assertExtracts(final String member, final String titlePrefix) {
     final String source = inTestClass(member);
     final var actions = markedActions(source);
     assertThat(rightTitles(actions)).as(member).anyMatch(t -> t.startsWith(titlePrefix));
-    assertCompiles(applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix)));
+    assertCompilesClean(
+        applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix)));
   }
 
   private static String inTestClass(final String member) {
@@ -1555,12 +1600,6 @@ class CodeActionTest {
     final int lineStart = source.lastIndexOf('\n', offset - 1) + 1;
     final int line = (int) source.substring(0, lineStart).chars().filter(c -> c == '\n').count();
     return new Position(line, offset - lineStart);
-  }
-
-  private void assertCompiles(final String source) {
-    assertThat(session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN))
-        .as(source)
-        .noneMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
   }
 
   private record ExtractCase(
