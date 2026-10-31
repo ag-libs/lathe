@@ -1556,15 +1556,23 @@ None yet — to be defined when the fix is scheduled.
 
 ## DB-7 — A breakpoint in a file that is not open, or was closed, never fires, and nothing says so
 
-**Status: accepted (cross-module source lookup shipped; arming breakpoints in files without an analysis remains).**
+**Status: deferred (cross-module source lookup shipped; arming breakpoints in files without an analysis remains, needed once a client keeps breakpoints in closed files).**
 
-**Value: high — Size: S–M**
+**Value: low — Size: S–M**
+
+**Affects: no shipped client today; VS Code once it debugs, and any editor after a memory-pressure release.**
 
 Signal: user feedback — with breakpoints across several source files, a debug run stopped at seemingly "random" places instead of the breakpoints.
 Re-evaluated with a spike (2026-10-31): the misses are deterministic, not random.
 Which breakpoints fire depends on which of their files the server has an analysis of when the debug session starts,
 and every breakpoint is reported unverified, so the editor cannot show which ones are dead.
 No stop at a line without a breakpoint was seen.
+
+Downgraded (2026-10-31): Neovim never sends a breakpoint for a file it has not loaded.
+nvim-dap keeps breakpoints as signs, and `:bd` deletes a buffer's signs, so closing a buffer removes its breakpoints;
+a hidden buffer stays loaded and attached, so its breakpoints arm.
+What remains is a client that keeps breakpoints independent of open files, as VS Code does (its client does not debug yet),
+and an open file whose analysis a memory-pressure release dropped (read from the code, not probed).
 
 ### Observed behaviour
 
@@ -1580,7 +1588,7 @@ breakpoints at `Main:21` and in `StringUtils.upper` (module `core`), varying onl
 
 - Opening and debugging at once is not a race: the open-time compile and the arming query run in order on the module's worker.
 - Closing a file drops its analysis, so a breakpoint left in a closed file is dead.
-  In Neovim, `:bd` on a buffer sends `didClose` while nvim-dap keeps that buffer's breakpoints.
+  Neovim cannot hit this: `:bd` removes the buffer's breakpoints along with its signs.
 - Every `setBreakpoints` answer has `verified: false`, armed or not.
   `LatheSourceLookUpProvider.supportsRealtimeBreakpointVerification` returns `false`,
   so java-debug only verifies a breakpoint once its class loads, and a dead one is indistinguishable until the run ends.
