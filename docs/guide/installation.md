@@ -269,7 +269,7 @@ and from `.mvn/jvm.config` into `.lathe/jvm.args`, which the launcher passes to 
 Sync also adds the grants the project's pinned google-java-format or palantir-java-format needs, even when the build
 declares none (see [formatting](#choosing-overriding-or-opting-out-of-the-formatter)).
 Other `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
-The server reads `.lathe/jvm.args` only at startup, so restart it (`:LspRestart` in Neovim) after a sync changes the file.
+The server reads `.lathe/jvm.args` only at startup, so restart it (`:lsp restart` in Neovim) after a sync changes the file.
 
 If an annotation processor or javac plugin needs JVM access your build does not declare — or you
 simply want to tune heap or GC — set `LATHE_JVM_OPTS` in the environment your editor launches from.
