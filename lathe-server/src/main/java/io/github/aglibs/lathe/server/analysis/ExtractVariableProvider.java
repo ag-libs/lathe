@@ -1,10 +1,13 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
@@ -56,26 +59,21 @@ final class ExtractVariableProvider {
     }
 
     final TreePath stmtPath = CodeActionSupport.nearestEnclosingStatement(exprPath);
-    if (stmtPath == null
-        || stmtPath.getParentPath() == null
-        || !(stmtPath.getParentPath().getLeaf() instanceof BlockTree)) {
+    final TreePath anchorPath = stmtPath != null ? declarationAnchor(stmtPath) : null;
+    if (anchorPath == null
+        || ExtractionSupport.pinnedInPlace(exprPath, anchorPath.getLeaf(), trees)) {
       return List.of();
     }
 
-    if (stmtPath.getLeaf() instanceof final ExpressionStatementTree exprStmt
-        && exprStmt.getExpression() == expr) {
-      return List.of();
-    }
-
-    if (ExtractionSupport.pinnedInPlace(exprPath, stmtPath.getLeaf(), trees)) {
-      return List.of();
-    }
-
+    // A whole expression statement (`a.trim();`) becomes the declaration itself.
+    final boolean wholeStatement =
+        stmtPath.getLeaf() instanceof final ExpressionStatementTree exprStmt
+            && exprStmt.getExpression() == expr;
     final var positions = trees.getSourcePositions();
     final long exprStart = positions.getStartPosition(cu, expr);
     final long exprEnd = positions.getEndPosition(cu, expr);
-    final long stmtStart = positions.getStartPosition(cu, stmtPath.getLeaf());
-    if (exprStart < 0 || exprEnd < 0 || stmtStart < 0) {
+    final long anchorStart = positions.getStartPosition(cu, anchorPath.getLeaf());
+    if (exprStart < 0 || exprEnd < 0 || anchorStart < 0) {
       return List.of();
     }
 
@@ -105,19 +103,55 @@ final class ExtractVariableProvider {
             uri,
             "Extract variable '%s'".formatted(name),
             ExtractionSupport.VARIABLE_KIND,
-            ExtractionSupport.editList(
-                insertDecl(cu, source, stmtStart, typeText, name, exprSource),
-                List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
-                importEdit)));
+            wholeStatement
+                ? ExtractionSupport.editList(
+                    ExtractionSupport.replaceEdit(
+                        cu, exprStart, exprStart, "%s %s = ".formatted(typeText, name)),
+                    List.of(),
+                    importEdit)
+                : ExtractionSupport.editList(
+                    insertDecl(cu, source, anchorStart, typeText, name, exprSource),
+                    List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
+                    importEdit)));
 
     final Either<Command, CodeAction> replaceAll =
-        replaceAllAction(uri, cu, trees, exprPath, source, typeText, name, exprSource, importEdit);
+        wholeStatement
+            ? null
+            : replaceAllAction(
+                uri, cu, trees, exprPath, source, typeText, name, exprSource, importEdit);
     if (replaceAll != null) {
       actions.add(replaceAll);
     }
 
     LOG.fine(() -> "[codeAction:extractVar] %s actions=%d".formatted(name, actions.size()));
     return actions;
+  }
+
+  // The statement the declaration goes before, or null when none fits: the expression's own
+  // statement in a block or a `case:` list; for a try resource or a for initializer, the try or for
+  // statement itself, wherever that fits.
+  private static TreePath declarationAnchor(final TreePath statement) {
+    final TreePath parent = statement.getParentPath();
+    if (parent == null) {
+      return null;
+    }
+
+    final Tree container = parent.getLeaf();
+    if (container instanceof BlockTree
+        || (container instanceof final CaseTree caseTree
+            && caseTree.getStatements() != null
+            && caseTree.getStatements().contains(statement.getLeaf()))) {
+      return statement;
+    }
+
+    if ((container instanceof final TryTree tryTree
+            && tryTree.getResources().contains(statement.getLeaf()))
+        || (container instanceof final ForLoopTree forLoop
+            && forLoop.getInitializer().contains(statement.getLeaf()))) {
+      return declarationAnchor(parent);
+    }
+
+    return null;
   }
 
   private static TextEdit insertDecl(
