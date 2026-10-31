@@ -7,6 +7,91 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package` — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor and MCP `fix_imports`.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+CA-11 made a type used as a method-call qualifier fixable, but not a chained one:
+`TimeUnit.SECONDS.toMillis(1)` and `Map.Entry.comparingByKey()` (javac: "package X does not exist") get no quick fix, and `fix_imports` neither adds nor lists them.
+With `package` and an `import` on one line, the import is inserted above `package`, which breaks the file
+(the editor and `fix_imports` alike).
+An inserted import has no blank line before the class.
+
+### Fix direction
+
+Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
+Place imports from the end of the package declaration's tree, not by line.
+
+### Resolution
+
+Chained qualifiers: `JavacDiagnosticMapper.enrich` gives a `compiler.err.doesnt.exist` diagnostic the qualifier payload,
+named after the identifier its chain starts with (`TimeUnit` in `TimeUnit.SECONDS.toMillis(1)`, `Map` in `Map.Entry.comparingByKey()`),
+so the quick fix, `:LatheMissingImports` and MCP `fix_imports` offer that type's import; a diagnostic inside an `import` is left alone.
+
+Placement: `ImportAnalyzer` records each import's exact start and end and where the package clause ends, and `ImportLayout`
+inserts in front of an import at its start, or behind the last import or the package clause at its end,
+so an import on the package's line, or a class on the last import's line, no longer sends a new import above `package` or into the class.
+Normally formatted files get the same text as before.
+
+Not done: a file written without a blank line between its package clause and its class keeps that style when its first import is added;
+adding the blank line would need a guess about what follows, and the formatter normalizes it.
+
+### Regression targets
+
+- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`: both chains get the payload, an import of a missing package does not.
+- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports` and `missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: both chains are offered their import.
+- `CodeActionTest.missingImports_chosenImports_insertInPlaceAndCompile`: the two chains' imports make their file compile,
+  and so does an import added before an import on the package's line, behind an import on the class's line, and behind a package on the class's line.
+- `ImportAnalyzerTest`: the exact anchors and text for each group and for a file without imports.
+
+---
+
+## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP and the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
+`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
+
+### Resolution
+
+A name that is not one Java identifier (`a.b`, a keyword) is refused with that reason, where rename answered a null edit
+that did nothing and said nothing; the MCP tool's own pre-check, which accepted a dotted name, is gone, so both paths share the server's.
+`RenameConflicts` refuses a restricted identifier the symbol's kind cannot take (JLS 3.9):
+a type or type parameter cannot be named `permits`, `record`, `sealed`, `var` or `yield`,
+and a method cannot be named `yield`, since an unqualified call to it does not compile.
+A variable or field can take any of them, so renaming one to `record` is still allowed.
+
+### Regression targets
+
+- `RenameProviderTest.renameConflict_eachKind_refusesAClashButNotANearMiss`: `var` and `record` refused for a type and a type parameter,
+  `yield` for a method; `record` allowed for a method, a field, and `var` for a local.
+- `LatheEngineTest.rename_toATakenOrInvalidName_refusesWithTheReasonAndEditsNothing`: `a.b` refused with the reason, nothing edited.
+- `LatheMcpToolsTest.renameSymbol_invalidIdentifier_returnsTheReasonAsAnError`: the agent gets the server's reason.
+
+---
+
 ## EG-058 — Module analysis sessions are never released: a reactor-wide search pins every touched module's jars for the session — done
 
 **Status: done — Target: next.**
@@ -8695,6 +8780,42 @@ Regression:
 ---
 
 # Workspace lifecycle (resolved)
+
+## WS-22 — One external jar listed twice in the manifest switches off cross-module features — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+When one module depends on an external artifact as `<type>test-jar</type>` and another as `<classifier>tests`,
+`workspace.json` lists the jar twice, and the manifest fails to load with "Duplicate key …":
+cross-module references miss other modules, and the advice to re-sync cannot help.
+`WorkspaceManifest.load` still has two jar-keyed `toUnmodifiableMap` collectors (`jarToGav`, `jarToSourceDir`),
+the bug class an earlier fix removed for classifier jars sharing a sources dir.
+
+### Fix direction
+
+Merge duplicate jar entries when loading the manifest, or list each jar once when writing it.
+
+### Resolution
+
+`WorkspaceManifest.load` keeps the first entry for a jar listed twice, in its jar-to-GAV and jar-to-sources maps,
+as its other dependency maps already did, and loads each type-index shard once.
+The fix is in the reader, which every build front-end's manifest goes through;
+the Maven writer still lists such a jar twice, keyed by type and classifier.
+
+### Regression targets
+
+- `WorkspaceManifestTest.load_jarListedTwice_loadsWithTheFirstEntry`: a test-jar and a tests-classifier entry for one jar
+  load without a problem, map the jar to the first entry's GAV and sources, and list its shard once.
+
+---
 
 ## WS-19 — Two servers on one workspace compile the same change at once, and one records a sound file as failed — done
 

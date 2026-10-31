@@ -2,13 +2,17 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import javax.tools.JavaFileObject;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -89,6 +93,12 @@ public final class JavacDiagnosticMapper {
       final String code = codeEither.getLeft();
       if (code.startsWith("compiler.err.cant.resolve") && diag.getData() instanceof String name) {
         diag.setData(new DiagnosticPayload(resolveKind(diag, name, analysis), name));
+      } else if (code.equals("compiler.err.doesnt.exist")) {
+        chainQualifier(diag, analysis)
+            .ifPresent(
+                name ->
+                    diag.setData(
+                        new DiagnosticPayload(DiagnosticPayload.Kind.QUALIFIER_REF, name)));
       } else if (code.startsWith("compiler.err.unreported.exception")) {
         final Either<String, ?> msgEither = diag.getMessage();
         final String name =
@@ -125,10 +135,30 @@ public final class JavacDiagnosticMapper {
     return seen.add("%s|%s|%s".formatted(d.getRange().getStart().getLine(), code, name));
   }
 
-  private static DiagnosticPayload.Kind resolveKind(
-      final Diagnostic diag, final String name, final AttributedFileAnalysis analysis) {
+  // The type a chained qualifier starts with: javac reads TimeUnit.SECONDS in
+  // TimeUnit.SECONDS.toMillis(1), with TimeUnit not imported, as a missing package. Empty in an
+  // import, where the package is genuinely missing.
+  private static Optional<String> chainQualifier(
+      final Diagnostic diag, final AttributedFileAnalysis analysis) {
+    final TreePath path = pathAtStart(diag, analysis);
+    if (path == null
+        || !(path.getLeaf() instanceof final IdentifierTree identifier)
+        || !(path.getParentPath().getLeaf() instanceof final MemberSelectTree select)
+        || select.getExpression() != identifier) {
+      return Optional.empty();
+    }
+
+    return Optional.of(identifier.getName().toString())
+        .filter(
+            name ->
+                Stream.iterate(path, Objects::nonNull, TreePath::getParentPath)
+                    .noneMatch(ancestor -> ancestor.getLeaf() instanceof ImportTree));
+  }
+
+  private static TreePath pathAtStart(
+      final Diagnostic diag, final AttributedFileAnalysis analysis) {
     if (analysis.tree() == null) {
-      return DiagnosticPayload.Kind.TYPE_REF;
+      return null;
     }
 
     final long offset =
@@ -136,7 +166,12 @@ public final class JavacDiagnosticMapper {
             analysis.tree(),
             diag.getRange().getStart().getLine(),
             diag.getRange().getStart().getCharacter());
-    final TreePath path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    return SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+  }
+
+  private static DiagnosticPayload.Kind resolveKind(
+      final Diagnostic diag, final String name, final AttributedFileAnalysis analysis) {
+    final TreePath path = pathAtStart(diag, analysis);
     if (path == null || path.getParentPath() == null) {
       return DiagnosticPayload.Kind.TYPE_REF;
     }

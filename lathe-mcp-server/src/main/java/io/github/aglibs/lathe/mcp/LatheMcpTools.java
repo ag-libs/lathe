@@ -47,7 +47,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 
@@ -541,10 +540,6 @@ final class LatheMcpTools {
   private static CallToolResult handleRename(
       final LatheEngine engine, final CallToolRequest request) {
     final String newName = stringArg(request, "newName");
-    if (newName == null || !SourceVersion.isName(newName)) {
-      return error("rename_symbol requires a valid Java identifier 'newName'");
-    }
-
     return atPosition(
         engine,
         "rename_symbol",

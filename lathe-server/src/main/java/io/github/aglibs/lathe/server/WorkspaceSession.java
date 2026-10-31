@@ -1237,7 +1237,7 @@ final class WorkspaceSession {
 
   private static CreateTypeResult renderType(
       final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
-    if (!SourceVersion.isIdentifier(name) || SourceVersion.isKeyword(name)) {
+    if (!RenameProvider.isValidTypeName(name)) {
       throw new IllegalArgumentException("'%s' is not a valid Java type name".formatted(name));
     }
 
@@ -2086,10 +2086,15 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
+    if (!RenameProvider.isValidName(newName)) {
+      return CompletableFuture.failedFuture(
+          renameRefused(
+              "`%s` is not a valid name: it must be one Java identifier, not a keyword"
+                  .formatted(newName)));
+    }
+
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null
-        || !RenameProvider.isValidName(newName)
-        || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
+    if (openFile == null || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
       return CompletableFuture.completedFuture(null);
     }
 

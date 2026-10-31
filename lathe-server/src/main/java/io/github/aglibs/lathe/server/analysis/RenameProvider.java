@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
@@ -22,10 +23,18 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // replaced with the new identifier, so no structural rewrite is needed.
 public final class RenameProvider {
 
+  private static final Set<String> NOT_TYPE_NAMES =
+      Set.of("permits", "record", "sealed", "var", "yield");
+
   private RenameProvider() {}
 
   public static boolean isValidName(final String name) {
     return name != null && SourceVersion.isIdentifier(name) && !SourceVersion.isKeyword(name);
+  }
+
+  // Also not a restricted identifier, which no type can take (JLS 3.9).
+  public static boolean isValidTypeName(final String name) {
+    return isValidName(name) && !NOT_TYPE_NAMES.contains(name);
   }
 
   // The identifier token under the cursor — the range prepareRename returns for the client to
