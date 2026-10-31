@@ -364,17 +364,16 @@
         </executions>
       </plugin>
       <!-- Declared here, not run here, so lathe:sync finds the formatter (it reads only the root's
-           plugins); the modules still run it. Drop once sync reads Spotless from the modules. -->
+           plugins); the modules still run it. Skipped rather than unbound: a declaration with
+           executions is inherited despite inherited=false, which put Spotless on every module.
+           Drop once sync reads Spotless from the modules. -->
       <plugin>
         <groupId>com.diffplug.spotless</groupId>
         <artifactId>spotless-maven-plugin</artifactId>
         <inherited>false</inherited>
-        <executions>
-          <execution>
-            <id>default</id>
-            <phase>none</phase>
-          </execution>
-        </executions>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
       </plugin>
     </plugins>
     <extensions>

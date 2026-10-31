@@ -1487,7 +1487,7 @@ class CodeActionTest {
             + ".collect(java.util.stream.Collectors.toList());\n  }",
         variable);
     assertExtracts(
-        "int m(Object o) { return switch (o) { case String s -> «s.length()» + 1; default -> 0; }; }",
+        "int m(String a) { return switch (a) { case \"x\" -> «a.length()» + 1; default -> 0; }; }",
         variable);
     assertExtracts(
         "void m(String a) { switch (a) { case \"x\" -> use(«a.trim()»); default -> use(a); } }",
