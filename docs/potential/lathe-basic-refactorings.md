@@ -1,5 +1,10 @@
 # Lathe — Basic Refactorings (Rename, Move, Extract)
 
+**Status (2026-10-31):** rename, extract variable, extract field and extract constant have shipped
+([Rename](../done/lathe-rename.md), [Extract Variable](../done/lathe-extract-variable.md));
+extract method is designed in [Extract Method](../planned/lathe-extract-method.md).
+Move remains a request.
+
 ## Problem / motivation
 
 Lathe offers navigation, completion, and quick-fix code actions, but no structural refactoring.

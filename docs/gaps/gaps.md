@@ -1006,7 +1006,7 @@ Design notes in [Extract Variable](../done/lathe-extract-variable.md#selections-
   whole expression statements.
 - fa655223 — placement with a new block (section 2): expression lambdas, switch rules, brace-less bodies.
 
-Remaining: section 4, extract method, which needs its own design.
+Remaining: section 4, extract method, designed in [Extract Method](../planned/lathe-extract-method.md).
 Not changed: a lambda or anonymous class as the extracted value (needs a target type or `var`), and extract
 field's own placement rules.
 

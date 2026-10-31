@@ -87,6 +87,10 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [New Type Creation](done/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
   the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
+- [Extract Method](planned/lathe-extract-method.md) — **proposed.** The last of the basic extractions (gap
+  CA-16): selected code becomes a private method, with a conservative public-API use/def scan
+  (inputs → parameters, one output → return value, checked exceptions → `throws`) that refuses what it
+  cannot prove; four slices, expression form first.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
