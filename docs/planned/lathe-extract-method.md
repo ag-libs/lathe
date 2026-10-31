@@ -225,8 +225,13 @@ class with calls; the plain action stays. Repeating the action at each copy woul
 - **Statements and copies with other locals (slice 5)**, after JDT's `SnippetFinder`: match consecutive statements
   sharing one parent (block or `case:` list); a local of the region may match a different local of the same type at
   the copy, through a one-to-one mapping (JDT's is one-directional); each candidate is re-analysed with
-  `RegionFlow` and kept only when it yields the same parameters, return value and throws; mapped locals become
-  different arguments at each call.
+  `RegionFlow` and kept only when it yields the same parameters, locals, return value and return; mapped locals
+  become different arguments at each call, and a declaration moved to a copy's call keeps the copy's name.
+  Throws need no check: the same calls on locals of the same types throw the same.
+  The statement match covers blocks, expression statements, local declarations, `if`, `return`, `throw`,
+  enhanced `for` and `while`, plus assignments and `++`/`--`; anything else (lambdas, method references, `try`,
+  `switch`) is not a copy, so it gains no replace-all, never a wrong one.
+  Copies in expression form stay exact, so extract variable's replace-all is unchanged.
 
 ### 4.7 Compile check (second line of defence)
 

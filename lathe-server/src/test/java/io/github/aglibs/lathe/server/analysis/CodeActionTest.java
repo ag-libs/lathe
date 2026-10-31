@@ -1923,6 +1923,59 @@ class CodeActionTest {
         .noneMatch(t -> t.contains("replace all"));
   }
 
+  @Test
+  void codeAction_extractMethod_statementCopies_calledWithTheirOwnLocals() {
+    // a copy in another method, its locals and its declaration named differently
+    final String source =
+        inTestClass(
+            "void m(String a) {\n«    final String t = a.trim();\n    use(t);»\n    use(t.length());\n  }\n"
+                + "  void n(String b) {\n    final String u = b.trim();\n    use(u);\n"
+                + "    use(u.isEmpty());\n  }");
+    final var actions = markedActions(source);
+    assertThat(rightTitles(actions))
+        .contains("Extract method 'extracted' (replace all 2 occurrences)");
+    final String all =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(actions, "Extract method 'extracted' (replace"));
+    assertThat(all)
+        .contains(
+            """
+              void m(String a) {
+                final String t = extracted(a);
+                use(t.length());
+              }
+            """,
+            """
+              void n(String b) {
+                final String u = extracted(b);
+                use(u.isEmpty());
+              }
+            """);
+    assertCompilesClean(all);
+  }
+
+  @Test
+  void codeAction_extractMethod_statementLookalikes_notReplaced() {
+    final Map<String, String> cases =
+        Map.of(
+            "a local of another type",
+            "void m(String a) { «use(a);\n    use(a + 1);» }\n  void n(int b) { use(b); use(b + 1); }",
+            "two locals standing for one",
+            "void m(String a, String b) { «use(a);\n    use(b);» }\n  void n(String c) { use(c); use(c); }",
+            "overlapping the selection",
+            "void m(String a) { «use(a);\n    use(a);» use(a); }",
+            "a value used after the copy",
+            "void m(String a) { «int x = a.length();\n    use(x);» }\n"
+                + "  void n(String b) { int y = b.length(); use(y); use(y); }");
+    cases.forEach(
+        (label, member) ->
+            assertThat(rightTitles(markedActions(inTestClass(member))))
+                .as(label)
+                .contains("Extract method 'extracted'")
+                .noneMatch(t -> t.contains("replace all")));
+  }
+
   // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
   // applying it leaves code that compiles; returns that code.
   private String assertExtracts(final String member, final String titlePrefix) {

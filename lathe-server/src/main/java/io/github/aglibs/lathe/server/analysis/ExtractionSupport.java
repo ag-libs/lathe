@@ -7,6 +7,7 @@ import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.CatchTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
@@ -26,6 +27,7 @@ import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
+import com.sun.source.tree.ThrowTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
@@ -36,6 +38,7 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -299,110 +302,291 @@ public final class ExtractionSupport {
     return result;
   }
 
-  // Structural equality (same kind, operator, literal value, child shape) plus semantic equality:
-  // every identifier / member-select must resolve to the same Element, which is what distinguishes
-  // `a.x` from `b.x`. Unsupported kinds are conservatively unequal, so exotic expressions simply do
-  // not gain a replace-all action.
-  private static boolean equivalent(final TreePath a, final TreePath b, final Trees trees) {
-    final Tree ta = a.getLeaf();
-    final Tree tb = b.getLeaf();
-    if (ta.getKind() != tb.getKind()) {
-      return false;
+  // A run of consecutive statements (or one expression) to replace with a call, and the local each
+  // of the region's locals stands for there; a local missing from the map stands for itself.
+  record Site(List<TreePath> run, Map<VariableElement, VariableElement> locals) {
+
+    Site {
+      ValidCheck.check().notNull(run, "run").notNull(locals, "locals").validate();
+      run = List.copyOf(run);
+      locals = Map.copyOf(locals);
     }
 
-    if (ta instanceof IdentifierTree) {
-      return sameElement(a, b, trees);
+    VariableElement local(final VariableElement regionLocal) {
+      return locals.getOrDefault(regionLocal, regionLocal);
     }
-
-    if (ta instanceof final LiteralTree la) {
-      return Objects.equals(la.getValue(), ((LiteralTree) tb).getValue());
-    }
-
-    if (ta instanceof final ParenthesizedTree pa) {
-      return equivalent(
-          child(a, pa.getExpression()), child(b, ((ParenthesizedTree) tb).getExpression()), trees);
-    }
-
-    if (ta instanceof final MemberSelectTree ma) {
-      final var mb = (MemberSelectTree) tb;
-      return ma.getIdentifier().contentEquals(mb.getIdentifier())
-          && sameElement(a, b, trees)
-          && equivalent(child(a, ma.getExpression()), child(b, mb.getExpression()), trees);
-    }
-
-    if (ta instanceof final MethodInvocationTree ia) {
-      final var ib = (MethodInvocationTree) tb;
-      return ia.getTypeArguments().isEmpty()
-          && ib.getTypeArguments().isEmpty()
-          && equivalent(child(a, ia.getMethodSelect()), child(b, ib.getMethodSelect()), trees)
-          && childrenEquivalent(a, ia.getArguments(), b, ib.getArguments(), trees);
-    }
-
-    if (ta instanceof final BinaryTree ba) {
-      final var bb = (BinaryTree) tb;
-      return equivalent(child(a, ba.getLeftOperand()), child(b, bb.getLeftOperand()), trees)
-          && equivalent(child(a, ba.getRightOperand()), child(b, bb.getRightOperand()), trees);
-    }
-
-    if (ta instanceof final UnaryTree ua && isPureUnary(ta.getKind())) {
-      return equivalent(
-          child(a, ua.getExpression()), child(b, ((UnaryTree) tb).getExpression()), trees);
-    }
-
-    if (ta instanceof final NewClassTree na) {
-      final var nb = (NewClassTree) tb;
-      return na.getClassBody() == null
-          && nb.getClassBody() == null
-          && na.getTypeArguments().isEmpty()
-          && nb.getTypeArguments().isEmpty()
-          && sameElement(a, b, trees)
-          && childrenEquivalent(a, na.getArguments(), b, nb.getArguments(), trees);
-    }
-
-    if (ta instanceof final ArrayAccessTree aa) {
-      final var ab = (ArrayAccessTree) tb;
-      return equivalent(child(a, aa.getExpression()), child(b, ab.getExpression()), trees)
-          && equivalent(child(a, aa.getIndex()), child(b, ab.getIndex()), trees);
-    }
-
-    if (ta instanceof final ConditionalExpressionTree ca) {
-      final var cb = (ConditionalExpressionTree) tb;
-      return equivalent(child(a, ca.getCondition()), child(b, cb.getCondition()), trees)
-          && equivalent(child(a, ca.getTrueExpression()), child(b, cb.getTrueExpression()), trees)
-          && equivalent(
-              child(a, ca.getFalseExpression()), child(b, cb.getFalseExpression()), trees);
-    }
-
-    if (ta instanceof final TypeCastTree ka) {
-      final var kb = (TypeCastTree) tb;
-      return ka.getType().toString().equals(kb.getType().toString())
-          && equivalent(child(a, ka.getExpression()), child(b, kb.getExpression()), trees);
-    }
-
-    return false;
   }
 
-  private static boolean childrenEquivalent(
-      final TreePath a,
-      final List<? extends ExpressionTree> as,
-      final TreePath b,
-      final List<? extends ExpressionTree> bs,
-      final Trees trees) {
-    if (as.size() != bs.size()) {
+  // Every run of statements in the class's own members (not nested class bodies) that matches the
+  // region's statements one for one, a local of the region standing for one local of the copy each,
+  // in text order and overlapping neither the region nor each other. The locals' types and the
+  // copy's data flow are the caller's to check.
+  static List<Site> statementCopies(
+      final TreePath classPath, final List<TreePath> region, final Trees trees) {
+    final List<List<TreePath>> runs = new ArrayList<>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree tree, final Void unused) {
+        return tree == classPath.getLeaf() ? super.visitClass(tree, unused) : null;
+      }
+
+      @Override
+      public Void visitBlock(final BlockTree tree, final Void unused) {
+        addRuns(tree.getStatements());
+        return super.visitBlock(tree, unused);
+      }
+
+      @Override
+      public Void visitCase(final CaseTree tree, final Void unused) {
+        if (tree.getStatements() != null) {
+          addRuns(tree.getStatements());
+        }
+
+        return super.visitCase(tree, unused);
+      }
+
+      private void addRuns(final List<? extends StatementTree> statements) {
+        IntStream.rangeClosed(0, statements.size() - region.size())
+            .mapToObj(
+                first ->
+                    statements.subList(first, first + region.size()).stream()
+                        .map(statement -> child(getCurrentPath(), statement))
+                        .toList())
+            .forEach(runs::add);
+      }
+    }.scan(classPath, null);
+
+    final Set<Tree> taken = new HashSet<>();
+    region.forEach(statement -> taken.add(statement.getLeaf()));
+    final List<Site> copies = new ArrayList<>();
+    for (final List<TreePath> run : runs) {
+      final var equivalence = new Equivalence(trees, true);
+      if (run.stream().noneMatch(statement -> taken.contains(statement.getLeaf()))
+          && IntStream.range(0, run.size())
+              .allMatch(k -> equivalence.equivalent(region.get(k), run.get(k)))) {
+        run.forEach(statement -> taken.add(statement.getLeaf()));
+        copies.add(new Site(run, equivalence.locals));
+      }
+    }
+
+    return copies;
+  }
+
+  private static boolean equivalent(final TreePath a, final TreePath b, final Trees trees) {
+    return new Equivalence(trees, false).equivalent(a, b);
+  }
+
+  // Structural equality (same kind, operator, literal value, child shape) plus semantic equality:
+  // every identifier / member-select must resolve to the same Element, which is what distinguishes
+  // `a.x` from `b.x`. Unsupported kinds are conservatively unequal, so exotic code simply gains no
+  // replace-all action. For statements it also matches statement kinds and side effects, and lets
+  // a local stand for another, one-to-one, recording the pairs.
+  private static final class Equivalence {
+
+    private static final Set<ElementKind> LOCAL_KINDS =
+        Set.of(
+            ElementKind.LOCAL_VARIABLE,
+            ElementKind.PARAMETER,
+            ElementKind.EXCEPTION_PARAMETER,
+            ElementKind.RESOURCE_VARIABLE,
+            ElementKind.BINDING_VARIABLE);
+
+    private final Trees trees;
+    private final boolean statements;
+    private final Map<VariableElement, VariableElement> locals = new HashMap<>();
+
+    Equivalence(final Trees trees, final boolean statements) {
+      this.trees = trees;
+      this.statements = statements;
+    }
+
+    boolean equivalent(final TreePath a, final TreePath b) {
+      final Tree ta = a.getLeaf();
+      final Tree tb = b.getLeaf();
+      if (ta.getKind() != tb.getKind()) {
+        return false;
+      }
+
+      if (ta instanceof IdentifierTree) {
+        return sameElement(a, b);
+      }
+
+      if (ta instanceof final LiteralTree la) {
+        return Objects.equals(la.getValue(), ((LiteralTree) tb).getValue());
+      }
+
+      if (ta instanceof final ParenthesizedTree pa) {
+        return equivalent(
+            child(a, pa.getExpression()), child(b, ((ParenthesizedTree) tb).getExpression()));
+      }
+
+      if (ta instanceof final MemberSelectTree ma) {
+        final var mb = (MemberSelectTree) tb;
+        return ma.getIdentifier().contentEquals(mb.getIdentifier())
+            && sameElement(a, b)
+            && equivalent(child(a, ma.getExpression()), child(b, mb.getExpression()));
+      }
+
+      if (ta instanceof final MethodInvocationTree ia) {
+        final var ib = (MethodInvocationTree) tb;
+        return ia.getTypeArguments().isEmpty()
+            && ib.getTypeArguments().isEmpty()
+            && equivalent(child(a, ia.getMethodSelect()), child(b, ib.getMethodSelect()))
+            && childrenEquivalent(a, ia.getArguments(), b, ib.getArguments());
+      }
+
+      if (ta instanceof final BinaryTree ba) {
+        final var bb = (BinaryTree) tb;
+        return equivalent(child(a, ba.getLeftOperand()), child(b, bb.getLeftOperand()))
+            && equivalent(child(a, ba.getRightOperand()), child(b, bb.getRightOperand()));
+      }
+
+      if (ta instanceof final UnaryTree ua && (statements || isPureUnary(ta.getKind()))) {
+        return equivalent(child(a, ua.getExpression()), child(b, ((UnaryTree) tb).getExpression()));
+      }
+
+      if (ta instanceof final NewClassTree na) {
+        final var nb = (NewClassTree) tb;
+        return na.getClassBody() == null
+            && nb.getClassBody() == null
+            && na.getTypeArguments().isEmpty()
+            && nb.getTypeArguments().isEmpty()
+            && sameElement(a, b)
+            && childrenEquivalent(a, na.getArguments(), b, nb.getArguments());
+      }
+
+      if (ta instanceof final ArrayAccessTree aa) {
+        final var ab = (ArrayAccessTree) tb;
+        return equivalent(child(a, aa.getExpression()), child(b, ab.getExpression()))
+            && equivalent(child(a, aa.getIndex()), child(b, ab.getIndex()));
+      }
+
+      if (ta instanceof final ConditionalExpressionTree ca) {
+        final var cb = (ConditionalExpressionTree) tb;
+        return equivalent(child(a, ca.getCondition()), child(b, cb.getCondition()))
+            && equivalent(child(a, ca.getTrueExpression()), child(b, cb.getTrueExpression()))
+            && equivalent(child(a, ca.getFalseExpression()), child(b, cb.getFalseExpression()));
+      }
+
+      if (ta instanceof final TypeCastTree ka) {
+        final var kb = (TypeCastTree) tb;
+        return ka.getType().toString().equals(kb.getType().toString())
+            && equivalent(child(a, ka.getExpression()), child(b, kb.getExpression()));
+      }
+
+      return statements && statementEquivalent(a, b);
+    }
+
+    private boolean statementEquivalent(final TreePath a, final TreePath b) {
+      final Tree ta = a.getLeaf();
+      final Tree tb = b.getLeaf();
+      if (ta instanceof final AssignmentTree sa) {
+        final var sb = (AssignmentTree) tb;
+        return equivalent(child(a, sa.getVariable()), child(b, sb.getVariable()))
+            && equivalent(child(a, sa.getExpression()), child(b, sb.getExpression()));
+      }
+
+      if (ta instanceof final CompoundAssignmentTree sa) {
+        final var sb = (CompoundAssignmentTree) tb;
+        return equivalent(child(a, sa.getVariable()), child(b, sb.getVariable()))
+            && equivalent(child(a, sa.getExpression()), child(b, sb.getExpression()));
+      }
+
+      if (ta instanceof final ExpressionStatementTree ea) {
+        return equivalent(
+            child(a, ea.getExpression()), child(b, ((ExpressionStatementTree) tb).getExpression()));
+      }
+
+      if (ta instanceof final BlockTree ba) {
+        return childrenEquivalent(a, ba.getStatements(), b, ((BlockTree) tb).getStatements());
+      }
+
+      if (ta instanceof final VariableTree va) {
+        final var vb = (VariableTree) tb;
+        return va.getModifiers().getFlags().equals(vb.getModifiers().getFlags())
+            && va.getModifiers().getAnnotations().isEmpty()
+            && vb.getModifiers().getAnnotations().isEmpty()
+            && sameElement(a, b)
+            && optionalEquivalent(a, va.getInitializer(), b, vb.getInitializer());
+      }
+
+      if (ta instanceof final IfTree ia) {
+        final var ib = (IfTree) tb;
+        return equivalent(child(a, ia.getCondition()), child(b, ib.getCondition()))
+            && equivalent(child(a, ia.getThenStatement()), child(b, ib.getThenStatement()))
+            && optionalEquivalent(a, ia.getElseStatement(), b, ib.getElseStatement());
+      }
+
+      if (ta instanceof final ReturnTree ra) {
+        return optionalEquivalent(a, ra.getExpression(), b, ((ReturnTree) tb).getExpression());
+      }
+
+      if (ta instanceof final ThrowTree ra) {
+        return equivalent(child(a, ra.getExpression()), child(b, ((ThrowTree) tb).getExpression()));
+      }
+
+      if (ta instanceof final EnhancedForLoopTree fa) {
+        final var fb = (EnhancedForLoopTree) tb;
+        return equivalent(child(a, fa.getVariable()), child(b, fb.getVariable()))
+            && equivalent(child(a, fa.getExpression()), child(b, fb.getExpression()))
+            && equivalent(child(a, fa.getStatement()), child(b, fb.getStatement()));
+      }
+
+      if (ta instanceof final WhileLoopTree wa) {
+        final var wb = (WhileLoopTree) tb;
+        return equivalent(child(a, wa.getCondition()), child(b, wb.getCondition()))
+            && equivalent(child(a, wa.getStatement()), child(b, wb.getStatement()));
+      }
+
       return false;
     }
 
-    return IntStream.range(0, as.size())
-        .allMatch(i -> equivalent(child(a, as.get(i)), child(b, bs.get(i)), trees));
+    private boolean optionalEquivalent(
+        final TreePath a, final Tree ta, final TreePath b, final Tree tb) {
+      return ta == null ? tb == null : tb != null && equivalent(child(a, ta), child(b, tb));
+    }
+
+    private boolean childrenEquivalent(
+        final TreePath a,
+        final List<? extends Tree> as,
+        final TreePath b,
+        final List<? extends Tree> bs) {
+      return as.size() == bs.size()
+          && IntStream.range(0, as.size())
+              .allMatch(i -> equivalent(child(a, as.get(i)), child(b, bs.get(i))));
+    }
+
+    private boolean sameElement(final TreePath a, final TreePath b) {
+      final Element ea = trees.getElement(a);
+      final Element eb = trees.getElement(b);
+      if (statements && isLocal(ea) && isLocal(eb)) {
+        return standsFor((VariableElement) ea, (VariableElement) eb);
+      }
+
+      return ea != null && ea.equals(eb);
+    }
+
+    private boolean standsFor(final VariableElement a, final VariableElement b) {
+      final VariableElement known = locals.get(a);
+      if (known != null) {
+        return known.equals(b);
+      }
+
+      if (locals.containsValue(b)) {
+        return false;
+      }
+
+      locals.put(a, b);
+      return true;
+    }
+
+    private static boolean isLocal(final Element element) {
+      return element instanceof VariableElement && LOCAL_KINDS.contains(element.getKind());
+    }
   }
 
   private static TreePath child(final TreePath parent, final Tree node) {
     return new TreePath(parent, node);
-  }
-
-  private static boolean sameElement(final TreePath a, final TreePath b, final Trees trees) {
-    final Element ea = trees.getElement(a);
-    return ea != null && ea.equals(trees.getElement(b));
   }
 
   // A compile-time constant (JLS 15.29), in the safe subset: literals, constant variables, and the

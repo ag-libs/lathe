@@ -14,12 +14,14 @@ import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.server.analysis.ExtractionSupport.Site;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -39,6 +41,7 @@ import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
 import javax.lang.model.type.WildcardType;
+import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Range;
@@ -46,11 +49,12 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Extract method: the selected expression, or run of statements, becomes a private method placed
-// after the member holding it, and the selection a call to it. An expression's method returns its
-// value, and a second action also replaces its exact copies in the class. Statements return the
-// one local they assign or declare that is used afterwards (`T x = extracted(…);` or
-// `x = extracted(…);`), or nothing. RegionFlow decides the parameters and refuses what would not
-// keep behaviour.
+// after the member holding it, and the selection a call to it; a second action also replaces its
+// copies in the class (statement copies may use other locals). An expression's method returns its
+// value. Statements return the one local they assign or declare that is used afterwards
+// (`T x = extracted(…);` or `x = extracted(…);`), the method's value when every path returns one
+// (`return extracted(…);`), or nothing. RegionFlow decides the parameters and refuses what would
+// not keep behaviour.
 final class ExtractMethodProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractMethodProvider.class.getName());
@@ -97,7 +101,7 @@ final class ExtractMethodProvider {
     if (expressionForm) {
       returnType = trees.getTypeMirror(region.get(0));
     } else if (flow.returnsValue()) {
-      returnType = ((ExecutableElement) trees.getElement(member)).getReturnType();
+      returnType = returnTypeOf(member, trees);
     } else {
       returnType =
           flow.outputs().stream()
@@ -157,26 +161,37 @@ final class ExtractMethodProvider {
         typeVariables.stream()
             .anyMatch(variable -> variable.getGenericElement() instanceof TypeElement);
     final var actions = new ArrayList<Either<Command, CodeAction>>();
+    final var regionSite = new Site(region, Map.of());
     final boolean regionStatic = isStaticContext(region.get(0), trees);
     if (!(regionStatic && classTypeVariables)) {
       actions.add(
           extraction.action(
               uri,
               "Extract method '%s'".formatted(extraction.name()),
-              List.of(region),
+              List.of(regionSite),
               regionStatic));
     }
 
-    final List<TreePath> copies =
-        expressionForm ? copies(member.getParentPath(), region.get(0), trees) : List.of();
-    final boolean copiesStatic = copies.stream().anyMatch(copy -> isStaticContext(copy, trees));
+    final List<Site> copies =
+        expressionForm
+            ? copies(member.getParentPath(), region.get(0), trees).stream()
+                .map(copy -> new Site(List.of(copy), Map.of()))
+                .toList()
+            : Stream.concat(
+                    Stream.of(regionSite),
+                    ExtractionSupport.statementCopies(member.getParentPath(), region, trees)
+                        .stream()
+                        .filter(copy -> sameFlow(copy, flow, member, analysis)))
+                .toList();
+    final boolean copiesStatic =
+        copies.stream().anyMatch(copy -> isStaticContext(copy.run().get(0), trees));
     if (copies.size() > 1 && !(copiesStatic && classTypeVariables)) {
       actions.add(
           extraction.action(
               uri,
               "Extract method '%s' (replace all %d occurrences)"
                   .formatted(extraction.name(), copies.size()),
-              copies.stream().map(List::of).toList(),
+              copies,
               copiesStatic));
     }
 
@@ -187,8 +202,7 @@ final class ExtractMethodProvider {
     return actions;
   }
 
-  // The new method, and the edits that call it from runs of trees: the region itself, or the
-  // copies of an expression.
+  // The new method, and the edits that call it from sites: the region itself, or its copies.
   private record Extraction(
       AttributedFileAnalysis analysis,
       String source,
@@ -226,10 +240,7 @@ final class ExtractMethodProvider {
     }
 
     Either<Command, CodeAction> action(
-        final String uri,
-        final String title,
-        final List<List<TreePath>> sites,
-        final boolean isStatic) {
+        final String uri, final String title, final List<Site> sites, final boolean isStatic) {
       return ExtractionSupport.action(
           uri, title, ExtractionSupport.METHOD_KIND, edits(sites, isStatic));
     }
@@ -238,20 +249,9 @@ final class ExtractMethodProvider {
       return region.get(0).getLeaf() instanceof ExpressionTree;
     }
 
-    private List<TextEdit> edits(final List<List<TreePath>> sites, final boolean isStatic) {
+    private List<TextEdit> edits(final List<Site> sites, final boolean isStatic) {
       final CompilationUnitTree cu = analysis.tree();
       final long memberEnd = end(member);
-      final String call =
-          "%s%s(%s)%s"
-              .formatted(
-                  returnsValue
-                      ? "return "
-                      : outputs.stream().map(this::receiving).findFirst().orElse(""),
-                  name,
-                  parameters.stream()
-                      .map(parameter -> parameter.getSimpleName().toString())
-                      .collect(Collectors.joining(", ")),
-                  expressionForm() ? "" : ";");
       return Stream.of(
               Stream.of(
                   ExtractionSupport.replaceEdit(cu, memberEnd, memberEnd, methodText(isStatic))),
@@ -259,7 +259,10 @@ final class ExtractMethodProvider {
                   .map(
                       site ->
                           ExtractionSupport.replaceEdit(
-                              cu, start(site.get(0)), end(site.get(site.size() - 1)), call)),
+                              cu,
+                              start(site.run().get(0)),
+                              end(site.run().get(site.run().size() - 1)),
+                              call(site))),
               CodeActionSupport.importEditsFor(
                   analysis,
                   Stream.of(
@@ -272,10 +275,27 @@ final class ExtractMethodProvider {
           .toList();
     }
 
-    // Where the call's value lands: the declaration the region made, keeping its `final`, or an
+    // The call at a site, passing the site's own locals.
+    private String call(final Site site) {
+      return "%s%s(%s)%s"
+          .formatted(
+              returnsValue
+                  ? "return "
+                  : outputs.stream()
+                      .map(output -> receiving(site, site.local(output)))
+                      .findFirst()
+                      .orElse(""),
+              name,
+              parameters.stream()
+                  .map(parameter -> site.local(parameter).getSimpleName().toString())
+                  .collect(Collectors.joining(", ")),
+              expressionForm() ? "" : ";");
+    }
+
+    // Where the call's value lands: the declaration the site made, keeping its `final`, or an
     // earlier local.
-    private String receiving(final VariableElement output) {
-      return region.stream()
+    private String receiving(final Site site, final VariableElement output) {
+      return site.run().stream()
           .map(TreePath::getLeaf)
           .filter(VariableTree.class::isInstance)
           .map(VariableTree.class::cast)
@@ -395,6 +415,42 @@ final class ExtractMethodProvider {
     }
 
     return null;
+  }
+
+  // Whether a statement copy computes what the region does, so one method serves both: its locals
+  // of the same types, the same parameters, value and return.
+  private static boolean sameFlow(
+      final Site copy,
+      final RegionFlow flow,
+      final TreePath member,
+      final AttributedFileAnalysis analysis) {
+    final Types types = analysis.types();
+    final TreePath copyMember = enclosingMember(copy.run().get(0));
+    if (copyMember == null
+        || !copy.locals().entrySet().stream()
+            .allMatch(pair -> types.isSameType(pair.getKey().asType(), pair.getValue().asType()))) {
+      return false;
+    }
+
+    final RegionFlow copyFlow = RegionFlow.of(copyMember, copy.run(), analysis.trees());
+    return copyFlow.refusals().isEmpty()
+        && copyFlow.parameters().equals(localsAt(copy, flow.parameters()))
+        && copyFlow.declaredHere().equals(localsAt(copy, flow.declaredHere()))
+        && copyFlow.outputs().equals(localsAt(copy, flow.outputs()))
+        && copyFlow.returnsValue() == flow.returnsValue()
+        && (!flow.returnsValue()
+            || types.isSameType(
+                returnTypeOf(member, analysis.trees()),
+                returnTypeOf(copyMember, analysis.trees())));
+  }
+
+  private static List<VariableElement> localsAt(
+      final Site site, final List<VariableElement> regionLocals) {
+    return regionLocals.stream().map(site::local).toList();
+  }
+
+  private static TypeMirror returnTypeOf(final TreePath method, final Trees trees) {
+    return ((ExecutableElement) trees.getElement(method)).getReturnType();
   }
 
   // The class member holding the path: a method, constructor, initializer block or field.
