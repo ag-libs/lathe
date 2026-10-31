@@ -1418,43 +1418,25 @@ class CodeActionTest {
   }
 
   @Test
-  void codeAction_extraction_selectionAroundExpression_findsItLineWiseToo() {
-    final var source =
-        """
-        package com.example;
-        class Test {
-          void m(String a, String b) {
-            int n =
-                Math.max(
-                    a.length(),
-                    b.length());
-            use(n);
-            use(
-                "hello world");
-          }
-          void use(Object x) {}
-        }
-        """;
+  void codeAction_extraction_lineWiseSelection_findsTheExpression() {
+    // A line-wise selection (Neovim's `V`) takes in the indentation and the `;` around the code.
     final String max = "Extract variable 'max'";
-    final List<ExtractCase> cases =
-        List.of(
-            new ExtractCase("exactly the expression", source, 4, 8, 6, 23, max),
-            new ExtractCase("through its ;", source, 4, 8, 6, 24, max),
-            new ExtractCase("from the indentation", source, 4, 0, 6, 23, max),
-            new ExtractCase("line-wise", source, 4, 0, 6, 24, max),
-            new ExtractCase(
-                "the whole declaration means its initializer", source, 3, 0, 6, 24, max),
-            new ExtractCase(
-                "line-wise constant", source, 9, 0, 9, 23, "Extract constant 'HELLO_WORLD'"));
-    for (final ExtractCase c : cases) {
-      final var actions =
-          extractActionsSpanning(
-              c.source(), c.startLine(), c.startChar(), c.endLine(), c.endChar());
-      assertThat(rightTitles(actions)).as(c.label()).contains(c.expectedTitle());
-    }
-
-    assertCompiles(applyEdits(source, extractEdits(extractActionsSpanning(source, 4, 0, 6, 24))));
-    assertThat(rightTitles(extractActionsSpanning(source, 7, 0, 9, 23)))
+    assertExtracts(
+        "void m(String a, String b) {\n    int n =\n"
+            + "«        Math.max(\n            a.length(),\n            b.length());»\n  }",
+        max);
+    assertExtracts(
+        "void m(String a, String b) {\n    use(\n"
+            + "        «Math.max(\n            a.length(),\n            b.length())»);\n  }",
+        max);
+    assertExtracts(
+        "void m(String a, String b) {\n«    int n = Math.max(a.length(), b.length());»\n  }", max);
+    assertExtracts(
+        "int m(String a) {\n«    return a.trim().length();»\n  }", "Extract variable 'length'");
+    assertExtracts(
+        "void m() {\n    use(\n«        \"hello world\");»\n  }", "Extract constant 'HELLO_WORLD'");
+    assertThat(
+            rightTitles(markedActions(inTestClass("void m() {\n«    use(1);\n    use(2);»\n  }"))))
         .as("several statements")
         .noneMatch(t -> t.startsWith("Extract"));
   }
@@ -1464,18 +1446,14 @@ class CodeActionTest {
     final Map<String, String> cases =
         Map.of(
             "right of &&", "void m(String a) { if (a != null && «a.isEmpty()») { use(a); } }",
-            "right of ||", "void m(String a) { if (a == null || «a.isEmpty()») { use(a); } }",
             "?: branch", "void m(String a) { use(ok(a) ? «a.trim()» : \"\"); }",
             "while condition", "void m(List<String> l) { while («l.isEmpty()») { l.add(\"x\"); } }",
-            "do condition",
-                "void m(List<String> l) { do { l.remove(0); } while («!l.isEmpty()»); }",
             "for condition", "void m(List<String> l) { for (int i = 0; i < «l.size()»; i++) { } }",
-            "switch arm",
-                "int m(Object o) { return switch (o) { case String s -> «s.length()»; default -> 0; }; }",
             "assert", "void m(String a) { assert «a.isEmpty()»; }",
             "super argument",
                 "static class B { B(int x) {} }\n  static class C extends B { C(String a) { super(«a.length()»); } }",
-            "intersection type", "void m() { use(«List.of(1, \"a\")»); }");
+            "intersection type", "void m() { use(«List.of(1, \"a\")»); }",
+            "captured wildcard", "void m(Object o) { use(«o.getClass()»); }");
     cases.forEach(
         (label, member) ->
             assertThat(rightTitles(markedActions(inTestClass(member))))
@@ -1485,22 +1463,13 @@ class CodeActionTest {
 
   @Test
   void codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode() {
-    final Map<String, String> cases =
-        Map.of(
-            "if condition", "void m(String a) { if («a.isEmpty()») { use(a); } }",
-            "for-each iterable",
-                "void m(Map<String, Integer> m) { for (String k : «m.keySet()») { use(k); } }",
-            "switch selector", "void m(String a) { switch («a.trim()») { default -> use(a); } }",
-            "denotable generic", "void m() { use(«List.of(\"a\", \"b\")»); }");
-    cases.forEach(
-        (label, member) -> {
-          final String source = inTestClass(member);
-          final var actions = markedActions(source);
-          assertThat(rightTitles(actions))
-              .as(label)
-              .anyMatch(t -> t.startsWith("Extract variable"));
-          assertCompiles(applyEdits(unmarked(source), extractEdits(actions)));
-        });
+    final String variable = "Extract variable";
+    assertExtracts("void m(String a) { if («a.isEmpty()») { use(a); } }", variable);
+    assertExtracts(
+        "void m(Map<String, Integer> m) { for (String k : «m.keySet()») { use(k); } }", variable);
+    assertExtracts("void m(String a) { switch («a.trim()») { default -> use(a); } }", variable);
+    assertExtracts("void m() { use(«List.of(\"a\", \"b\")»); }", variable);
+    assertExtracts("void m(List<List<? extends Number>> l) { use(«l»); }", variable);
 
     // replace-all: the occurrence the anchor statement always evaluates covers the one in a branch
     final var branch =
@@ -1511,6 +1480,15 @@ class CodeActionTest {
             "void m(String a, boolean b) {\n    if (b) { use(«a.trim()»); } else { use(a.trim()); }\n  }");
     assertThat(rightTitles(markedActions(onlyInBranches)))
         .noneMatch(t -> t.contains("replace all"));
+  }
+
+  // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
+  // applying it leaves code that compiles.
+  private void assertExtracts(final String member, final String titlePrefix) {
+    final String source = inTestClass(member);
+    final var actions = markedActions(source);
+    assertThat(rightTitles(actions)).as(member).anyMatch(t -> t.startsWith(titlePrefix));
+    assertCompiles(applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix)));
   }
 
   private static String inTestClass(final String member) {

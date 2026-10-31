@@ -52,16 +52,7 @@ final class ExtractConstantProvider {
     }
 
     final var trees = analysis.trees();
-    final long startOffset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final long endOffset =
-        SourceLocator.toOffset(cu, range.getEnd().getLine(), range.getEnd().getCharacter());
-    if (startOffset < 0 || endOffset < 0) {
-      return List.of();
-    }
-
-    final TreePath exprPath =
-        ExtractionSupport.selectedExpression(trees, cu, startOffset, endOffset);
+    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
     if (exprPath == null) {
       return List.of();
     }

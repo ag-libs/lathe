@@ -70,12 +70,21 @@ public final class ExtractionSupport {
 
   private ExtractionSupport() {}
 
-  // The expression a selection means. A non-empty selection takes the one outermost tree inside it,
-  // so the indentation, line breaks and `;` around an expression don't matter (a line-wise
-  // selection includes them); a selected statement means its value. Otherwise, as for a caret, the
-  // smallest expression covering the selection.
+  // The expression a selection means, or null. A non-empty selection takes the one outermost tree
+  // inside it, so the indentation, line breaks and `;` around an expression don't matter (a
+  // line-wise selection includes them); a selected statement means its value. Otherwise, as for a
+  // caret, the smallest expression covering the selection.
   static TreePath selectedExpression(
-      final Trees trees, final CompilationUnitTree cu, final long start, final long end) {
+      final Trees trees, final CompilationUnitTree cu, final Range selection) {
+    final long start =
+        SourceLocator.toOffset(
+            cu, selection.getStart().getLine(), selection.getStart().getCharacter());
+    final long end =
+        SourceLocator.toOffset(cu, selection.getEnd().getLine(), selection.getEnd().getCharacter());
+    if (start < 0 || end < 0) {
+      return null;
+    }
+
     final TreePath spanned = start < end ? soleTreeWithin(trees, cu, start, end) : null;
     if (spanned == null) {
       return coveringExpression(trees, cu, SourceLocator.pathAt(trees, cu, start), start, end);

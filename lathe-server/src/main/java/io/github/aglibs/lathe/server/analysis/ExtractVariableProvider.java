@@ -44,16 +44,7 @@ final class ExtractVariableProvider {
     }
 
     final var trees = analysis.trees();
-    final long startOffset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final long endOffset =
-        SourceLocator.toOffset(cu, range.getEnd().getLine(), range.getEnd().getCharacter());
-    if (startOffset < 0 || endOffset < 0) {
-      return List.of();
-    }
-
-    final TreePath exprPath =
-        ExtractionSupport.selectedExpression(trees, cu, startOffset, endOffset);
+    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
     if (exprPath == null) {
       return List.of();
     }
@@ -171,9 +162,9 @@ final class ExtractVariableProvider {
 
     final var positions = trees.getSourcePositions();
     final Tree anchorStmt = earliestAnchorStatement(block, occurrences, positions, cu);
-    // The value must already be computed at the anchor, by an occurrence the anchor statement
-    // always
-    // evaluates: hoisting one only in a branch or behind && would run it where it may not run.
+    // The value must already be computed at the anchor, by an occurrence the anchor
+    // statement always evaluates: hoisting one that sits only in a branch or behind &&
+    // would run it where it may not run.
     if (anchorStmt == null
         || occurrences.stream()
             .allMatch(o -> ExtractionSupport.pinnedInPlace(o, anchorStmt, trees))) {
