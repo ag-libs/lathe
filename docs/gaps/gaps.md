@@ -647,6 +647,48 @@ None yet.
 
 ---
 
+## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: the editor and MCP `format_file`, in a Maven reactor whose root only manages Spotless.**
+
+Found dogfooding Lathe on its own repository (2026-10-30).
+
+### Observed behaviour
+
+Lathe's root pom configures `spotless-maven-plugin` (google-java-format, pinned version) in `<pluginManagement>`,
+and each of its ten Java modules activates it in its own `<build><plugins>`.
+`lathe:sync` writes no `.lathe/style.json`, so the server starts with `[initialize] … formatting=false`,
+does not advertise formatting, and the editor never sends a request.
+The sync reports the skip only at debug level (`[sync] no spotless java formatter — skipping style.json`), so a normal build says nothing.
+The root pom never activated Spotless in any revision, so detection never worked for this repository.
+
+### Root cause
+
+`MavenStyle.spotlessPlugin` reads only the root project's effective `<build><plugins>`;
+a plugin declared only in `<pluginManagement>` is not there, and the modules that do run it are not looked at.
+Managing Spotless in a parent and activating it per module is a common Maven layout.
+
+### Fix direction
+
+Keep one workspace style.
+When the root does not run Spotless, take it from the reactor modules that do, but only when every module compiling Java
+runs the same Spotless Java configuration; otherwise skip `style.json` with a warning,
+since a workspace-wide formatter would reformat the modules whose build does not format them.
+Log the skip at warning level whenever reactor modules run Spotless but no style is written.
+Per-module gating or per-module formatters are a later step, for a project that needs them.
+
+Workaround: activate Spotless in the root's `<build><plugins>` (this repository does, as of the commit recording this gap).
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1490,6 +1532,53 @@ Accepting the top row is the natural move, yet a test belongs in the test root.
 `_order_destinations` in `lua/lathe/new.lua` ranks the buffer's package and module first but ignores scope there,
 so the alphabetical tie-break (`main` < `test`) decides.
 Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+
+### Regression targets
+
+None yet.
+
+---
+
+## NV-10 — Signature help highlights no parameter when the active overload is not the first
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim with blink.cmp's signature window, the setup in `examples/nvim/init.lua`.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+Typing the second argument of `list.add(0, |)`, the signature window lists both `ArrayList.add` overloads
+but highlights nothing.
+The server answers correctly: `[signatureHelp] sig=void add(int index, E element) param=1`,
+the second signature active and its second parameter (label offsets 20–29) active.
+A method with one overload, or an active overload listed first, highlights as expected.
+
+### Root cause
+
+blink.cmp (v1.10.2, `lua/blink/cmp/signature/window.lua`) writes every signature's label into its window,
+one per line, but takes the highlight from Neovim's `convert_signature_help_to_markdown_lines`,
+which renders only the active signature, inside a code fence.
+Its line (1, under the fence) minus one is 0, so blink paints the active parameter's columns on the first label:
+`boolean add(E e)` is 16 characters, so columns 20–29 show nothing.
+Introduced by blink's `b6f04e8` ("Update active parameter to use line and col range").
+Neovim's own `vim.lsp.buf.signature_help` (`<C-s>` in normal mode in the example config) renders only the active
+signature and highlights correctly.
+
+### Fix direction
+
+Report it to blink.cmp: the line must be the active signature's index in its own buffer, not Neovim's.
+Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
+which every client renders correctly, at the cost of the overload order changing as the arguments change.
+
+Related, on the server and not reproduced: when the call does not attribute yet, `SignatureHelpResolver` falls back
+to the first overload of that name whatever the argument count, so an active parameter beyond that overload's
+parameters is highlighted in no client.
+Prefer an overload whose arity fits the arguments typed;
+see also [EG-048](#eg-048--go-to-definition-on-a-call-with-the-wrong-arguments-finds-nothing-and-offers-one-overload-only).
 
 ### Regression targets
 
