@@ -50,6 +50,7 @@ selection (and for a caret inside an expression, like extract variable).
 | Statements assigning an earlier local used afterwards | `x = extracted(…);` |
 | Statements calling methods that throw checked exceptions they don't catch | the new method declares them (`throws IOException`) |
 | Inside a static method, a static initializer, or a static nested context | the new method is `static` |
+| The same code elsewhere in the class | a second action, `… (replace N duplicates)`, calls the new method there too |
 
 Refused, with no action offered (each one listed in the tests):
 
@@ -64,7 +65,7 @@ Refused, with no action offered (each one listed in the tests):
 - an earlier local assigned only in a branch or loop of the selection and read afterwards
   (its value may or may not change — the scan cannot prove which);
 - it uses a local class or record declared earlier in the method (invisible to the new method);
-- it assigns a `final` field (only a constructor or initializer may), or contains `this(…)`/`super(…)`;
+- it assigns a `final` field (anywhere), contains `this(…)`/`super(…)`, or is a try-with-resources resource;
 - a local that comes back out is captured by a lambda or inner class anywhere in the scope
   (a second assignment would make it no longer effectively final);
 - it rethrows a catch parameter (`catch (Exception e) { throw e; }`: Java's precise rethrow throws less
@@ -95,6 +96,27 @@ The use/def scan lives in its own small class, `RegionFlow`, because it is the o
 The region is a list of tree paths plus its source span.
 
 ### 4.2 Data flow (`RegionFlow`)
+
+The model follows Eclipse JDT's extract method (used by jdtls), which also runs its own flow analysis over its
+own syntax tree rather than the compiler's (`FlowAnalyzer`, `FlowInfo`, `InOutFlowAnalyzer`,
+`InputFlowAnalyzer` in `org.eclipse.jdt.core.manipulation`). Each local gets an access state per construct —
+unused, read, write, potential read, potential write, unknown — combined three ways:
+
+- **in sequence**, the first access wins: a local written before it is read inside the region is not a
+  parameter but a local of the new method;
+- **across branches** (`if`, `?:`, `switch` cases, `catch`), the same state on every side is kept, a state on one
+  side only becomes potential, a read against a write becomes unknown: `if (c) x = 1; else x = 2;` is a definite
+  write;
+- **in a loop body**, everything becomes potential (the body may not run); after a `break`/`continue` pending in
+  a sequence, the rest becomes potential too.
+
+Two passes: one over the region (what it reads first: parameters; what it writes), one over the enclosing body
+after the region (what is read afterwards), **with loop re-entry**: inside a loop that the region does not cover,
+the loop's condition, update and the body before the region run again after it, so they count as "after"; when
+the region sits in one branch, only that branch's continuation counts.
+The return value is a local the region writes and is read afterwards; a potential write that is the return
+value is also a parameter, so its old value flows through when the region does not write it.
+The rules below are what this model yields; where it says unknown, the region is refused.
 
 Scope: the innermost executable enclosing the region — a method, constructor, lambda body or initializer
 block. Fields are not locals: the new method reaches them as the old code did.
@@ -138,8 +160,9 @@ with its own `break` is fine.
 It also refuses a region that never completes normally (JLS 14.22, approximated: a final `throw`, an `if`/`else`
 or a `try` all of whose paths end so).
 
-- `return` (slice 4 accepts one case: the region is the method's tail and ends in `return expr;` → the call
-  site becomes `return extracted(…);`);
+- `return`, unless **every** path of the region returns (slice 4): the call site becomes
+  `return extracted(…);` (`yield` in a switch rule), and a trailing `return;` of a void method is dropped.
+  When only some paths return, the region is refused (JDT warns and proceeds; refusing keeps behaviour);
 - `break`, `continue` and `yield` whose target statement (labelled, or the innermost loop/switch) is outside the
   region.
 
@@ -147,13 +170,14 @@ or a `try` all of whose paths end so).
 
 ### 4.4 Signature
 
-- **Name**: `extracted`, made unique against every method the class declares **or inherits**: a new
-  `extracted(int)` beside an inherited `extracted(long)` could change which one existing calls pick.
+- **Name**: `extracted`, made unique against every method the class declares or inherits, and every method
+  name a subclass in the reactor calls: a new `extracted(int)` beside an `extracted(long)` could change which
+  one existing calls pick.
 - **Placement**: a member of the class declaring the enclosing executable (an anonymous or local class
   included, so `this` keeps its meaning), inserted right after the enclosing member, at that member's
   indentation.
 - **Modifiers**: `private`; `static` when the enclosing executable is static (a static method, a static
-  initializer, a field initializer of a static field). A non-static context keeps an instance method even if
+  initializer, a field initializer of a static field) or the region is an argument of `this(…)`/`super(…)`. A non-static context keeps an instance method even if
   the region touches no instance state — inferring `static` is a later option, not a correctness need.
   In an interface the enclosing default method makes it a `private` instance method (Java 9+).
 - **Parameters**: the inputs, in order of first use in the region; `final` when every parameter of the
@@ -182,7 +206,22 @@ or a `try` all of whose paths end so).
 All text comes from the region's own source span and javac-rendered types; nothing is re-parsed.
 The user's format-on-save normalizes layout.
 
-### 4.6 Compile check (second line of defence)
+### 4.6 Duplicates
+
+A second action, `Extract method 'extracted' (replace N duplicates)`, also replaces copies of the region in the
+class with calls; the plain action stays. Repeating the action at each copy would instead create
+`extracted1`, `extracted2`, … rather than reuse the method.
+
+- **Expressions, exact copies (slice 1):** `ExtractionSupport.occurrences` (structural equality plus the same
+  element for every name, as extract variable's replace-all) over the whole class. Safe by construction: the call
+  recomputes at each copy exactly as the copy did; each copy's inputs must be in scope there.
+- **Statements and copies with other locals (slice 5)**, after JDT's `SnippetFinder`: match consecutive statements
+  sharing one parent (block or `case:` list); a local of the region may match a different local of the same type at
+  the copy, through a one-to-one mapping (JDT's is one-directional); each candidate is re-analysed with
+  `RegionFlow` and kept only when it yields the same parameters, return value and throws; mapped locals become
+  different arguments at each call.
+
+### 4.7 Compile check (second line of defence)
 
 javac's own flow analysis (definite assignment, reachability, effectively-final) is internal, so the scan
 approximates; a mistake it makes would show up as code that no longer compiles.
@@ -196,7 +235,7 @@ The check catches everything that breaks compilation (a missed capture, an over-
 clash, a `final` field); it cannot catch a rewrite that compiles but behaves differently (a missed output),
 which rests on the scan's rules and the behaviour tests (section 7).
 
-### 4.7 Cost
+### 4.8 Cost
 
 One scan of the enclosing executable per request with a non-empty selection, on the already attributed tree:
 no compile, no `codeAction/resolve`, comparable to extract variable's replace-all scan.
@@ -207,21 +246,23 @@ no compile, no `codeAction/resolve`, comparable to extract variable's replace-al
 
 Each slice is offered only for what it fully handles, and refuses the rest.
 
-1. **Expression → method.** Inputs, static context, throws, imports. Smallest useful slice, no outputs or
-   jumps by construction.
+1. **Expression → method.** Inputs, static context, throws, imports, and exact duplicates of the expression in
+   the class. Smallest useful slice, no outputs or jumps by construction.
 2. **Statements, no output.** The statement-form selection, the control-flow refusals.
 3. **Statements with one output.** Declared inside (declaration moves out) or an earlier local assigned at the
    region's top level.
-4. **Generic methods and tail `return`.** Copy the enclosing method's type parameters when the region uses
-   them; a region ending the method with `return expr;` becomes `return extracted(…);`.
+4. **Generic methods and returns.** Copy the enclosing method's type parameters when the region uses them; a
+   region every path of which returns becomes `return extracted(…);`.
+5. **Statement duplicates**, including copies with other locals (section 4.6).
 
 Refinements to consider once the measurement (section 7) shows which refusals matter: leave a trailing
 `break;` of a `case:` body in place instead of refusing; accept an output assigned in every branch of a complete
 `if`/`else` or exhaustive `switch`; narrow the loop over-approximation when the region is not inside a loop
 relative to the variable's declaration.
 
-Later, separately designed if wanted: replacing duplicates of the extracted code elsewhere in the class,
-inferring `static`, choosing parameter order or the name before applying.
+Later, separately designed if wanted: an early `return`/`continue` inside the region through a result flag
+(`if (extracted(…)) return;`), several outputs through a local `record` (Java 16+), inferring `static`,
+choosing parameter order or the name before applying.
 
 ---
 
@@ -234,7 +275,7 @@ inferring `static`, choosing parameter order or the name before applying.
 - `ExtractionSupport`: `METHOD_KIND` in `KINDS`; the span scan also returns all outermost trees (statement form).
 - `SourceAnalysisSession.codeAction`: one more `addUnique` line.
 - Code-action resolve: `resolveProvider` in the capabilities and a `resolveCodeAction` handler that computes,
-  compile-checks and returns the edit (section 4.6).
+  compile-checks and returns the edit (section 4.7).
 - No change to the protocol, the clients, the capabilities beyond the new kind, or any module's dependencies.
 
 ---
@@ -275,7 +316,7 @@ every initializer and return value, and every run of 1–5 consecutive statement
 Every run of statements is counted, most of which nobody would select, so the statement share is a floor
 and the refusal ranking is the useful part: `return` dominates, which makes slice 4's tail `return` (and later
 a guard-clause pattern) the most valuable relaxation. Offered rewrites that failed to compile fell from 115 to
-5 (0.02%) as the rules above were added from what failed; the compile check (section 4.6) blocks the rest.
+5 (0.02%) as the rules above were added from what failed; the compile check (section 4.7) blocks the rest.
 The thrown-type model held on real code, including `orElseThrow(IOException::new)` and resource `close()`.
 A compile check costs about 32 ms per file.
 
