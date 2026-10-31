@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -1477,7 +1478,7 @@ class CodeActionTest {
     assertThat(
             rightTitles(markedActions(inTestClass("void m() {\n«    use(1);\n    use(2);»\n  }"))))
         .as("several statements")
-        .noneMatch(t -> t.startsWith("Extract"));
+        .noneMatch(t -> t.startsWith("Extract variable"));
   }
 
   @Test
@@ -1682,7 +1683,7 @@ class CodeActionTest {
     final Map<String, String> cases =
         Map.of(
             "void", "void m(String a) { «use(a)»; }",
-            "writes a local", "int m(int i) { return «i++»; }",
+            "writes a local used later", "int m(int i) { int j = «i++»; return i + j; }",
             "method type variable", "<T> int m(List<T> l) { return «l.size() + 1»; }",
             "non-denotable", "void m() { use(«List.of(1, \"a\")»); }",
             "constant", "int m() { return «1 + 2»; }",
@@ -1702,6 +1703,97 @@ class CodeActionTest {
     assertThat(rightTitles(markedActions(inTestClass("void m(int[] a) { «a[0]» = 1; }"))))
         .as("assignment target")
         .noneMatch(t -> t.startsWith("Extract method"));
+  }
+
+  @Test
+  void codeAction_extractMethod_statements_becomeVoidMethod() {
+    final var source =
+        inTestClass(
+            "void m(String a) {\n    String t = a.trim();\n«    use(t);\n    use(t.length());»\n  }");
+    final String rewritten =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(markedActions(source), "Extract method 'extracted'"));
+
+    assertThat(rewritten)
+        .contains(
+            """
+              void m(String a) {
+                String t = a.trim();
+                extracted(t);
+              }
+
+              private void extracted(String t) {
+                use(t);
+                use(t.length());
+              }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_extractMethod_statementContexts_rewriteToCompilingCode() {
+    final String method = "Extract method";
+    assertExtracts(
+        "void m(List<String> l) { for (String s : l) { «use(s);\n    use(s.trim());» } }", method);
+    // no value before the region: the new method declares the local itself
+    assertExtracts(
+        "void m(boolean b) {\n    String line;\n«    line = String.valueOf(b);\n    use(line);»\n  }",
+        method);
+    // a loop with its own break moves whole; case statements without their break
+    assertExtracts(
+        "void m(List<String> l) { «for (String s : l) { if (s.isEmpty()) break; use(s); }» }",
+        method);
+    assertExtracts(
+        "void m(int k) { switch (k) { case 1: «use(k);\n    use(k + 1);» break; default: break; } }",
+        method);
+    // checked exceptions: declared when thrown, not when caught inside
+    assertExtracts(
+        "void m(java.io.File f) throws java.io.IOException { «new java.io.FileInputStream(f).close();» }",
+        method);
+    assertExtracts(
+        "void m(java.io.File f) {\n    «try { new java.io.FileInputStream(f).close(); }"
+            + " catch (java.io.IOException e) { use(e); }»\n  }",
+        method);
+    assertExtracts(
+        "void m(List<String> l, String p) { l.forEach(x -> { «use(x + p);» }); }", method);
+    assertExtracts("static void s(String a) { «System.out.println(a);» }", method);
+
+    // a declaration used later is not a statement region yet; its value still is an expression
+    final var declaration =
+        inTestClass("void m(String a) {\n«    String t = a.trim();»\n    use(t);\n  }");
+    assertThat(
+            applyEdits(
+                unmarked(declaration),
+                editsOfActionStartingWith(markedActions(declaration), "Extract method")))
+        .contains("String t = extracted(a);");
+  }
+
+  @Test
+  void codeAction_extractMethod_statementsChangingControlOrState_offerNothing() {
+    final Map<String, String> cases = new LinkedHashMap<>();
+    cases.put("return", "int m(String a) { «if (a == null) return 0;» return 1; }");
+    cases.put(
+        "continue out",
+        "void m(List<String> l) { for (String s : l) { «if (s.isEmpty()) continue;» use(s); } }");
+    cases.put(
+        "case with its break",
+        "void m(int k) { switch (k) { case 1: «use(k); break;» default: break; } }");
+    cases.put("never completes", "int m() { «throw new IllegalStateException();» }");
+    cases.put("value flows out", "void m(String a) { int n = 0; «n = a.length();» use(n); }");
+    cases.put("final field", "final String name;\n  Test(String n) { «this.name = n.trim();» }");
+    cases.put("this(...)", "Test(int x) {}\n  Test() { «this(1);» }");
+    cases.put("local class", "void m() { class L {} «use(new L());» }");
+    cases.put(
+        "rethrow",
+        "void m(java.io.File f) throws java.io.IOException {\n"
+            + "    try { f.getCanonicalPath(); } catch (java.io.IOException e) { «throw e;» }\n  }");
+    cases.put("two blocks", "void m(boolean b) { «use(1); if (b) { use(2);» } }");
+    cases.forEach(
+        (label, member) ->
+            assertThat(rightTitles(markedActions(inTestClass(member))))
+                .as(label)
+                .noneMatch(t -> t.startsWith("Extract method")));
   }
 
   @Test

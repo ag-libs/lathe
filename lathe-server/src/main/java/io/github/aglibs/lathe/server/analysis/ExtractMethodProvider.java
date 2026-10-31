@@ -5,22 +5,18 @@ import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
-import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -28,12 +24,12 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
-import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
 import javax.lang.model.type.WildcardType;
@@ -59,28 +55,59 @@ final class ExtractMethodProvider {
       return List.of();
     }
 
+    // Whole statements first. A run the statement form refuses (a declaration used later) may
+    // still offer its value as an expression.
+    final List<TreePath> statements =
+        ExtractionSupport.selectedStatements(analysis.trees(), cu, range);
+    final List<Either<Command, CodeAction>> fromStatements =
+        statements.isEmpty() ? List.of() : extract(uri, analysis, statements);
+    if (!fromStatements.isEmpty()) {
+      return fromStatements;
+    }
+
+    final TreePath expression = ExtractionSupport.selectedExpression(analysis.trees(), cu, range);
+    return expression != null && replaceableByCall(expression, analysis.trees())
+        ? extract(uri, analysis, List.of(expression))
+        : List.of();
+  }
+
+  // The actions for a region: one expression, or consecutive statements of one block.
+  private static List<Either<Command, CodeAction>> extract(
+      final String uri, final AttributedFileAnalysis analysis, final List<TreePath> region) {
     final Trees trees = analysis.trees();
-    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
-    final TreePath member = exprPath != null ? enclosingMember(exprPath) : null;
-    if (member == null || inInterface(member) || !replaceableByCall(exprPath, trees)) {
+    final TreePath member = enclosingMember(region.get(0));
+    if (member == null || inInterface(member)) {
       return List.of();
     }
 
-    final TypeMirror returnType = trees.getTypeMirror(exprPath);
-    final Optional<Reads> reads = reads(exprPath, trees);
-    if (returnType == null || reads.isEmpty()) {
-      return List.of();
-    }
-
+    final boolean expressionForm = region.get(0).getLeaf() instanceof ExpressionTree;
+    final TypeMirror returnType =
+        expressionForm
+            ? trees.getTypeMirror(region.get(0))
+            : analysis.types().getNoType(TypeKind.VOID);
+    final RegionFlow flow = RegionFlow.of(member, region, trees);
     final List<TypeMirror> signatureTypes =
-        Stream.concat(Stream.of(returnType), reads.get().types()).toList();
-    if (!signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
-        || namesTypeVariableOf(reads.get(), signatureTypes, ExecutableElement.class)) {
-      return List.of();
-    }
-
-    final Optional<String> source = CodeActionSupport.source(cu);
-    if (source.isEmpty()) {
+        Stream.of(
+                expressionForm ? Stream.of(returnType) : Stream.<TypeMirror>empty(),
+                flow.parameters().stream().map(Element::asType),
+                flow.declaredHere().stream().map(Element::asType))
+            .flatMap(types -> types)
+            .toList();
+    final List<String> refusals =
+        Stream.of(
+                flow.refusals().stream(),
+                flow.outputs().isEmpty() ? Stream.<String>empty() : Stream.of("values flow out"),
+                signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
+                    ? Stream.<String>empty()
+                    : Stream.of("a type cannot be written"),
+                namesTypeVariableOf(flow, signatureTypes, ExecutableElement.class)
+                    ? Stream.of("uses a method's type variable")
+                    : Stream.<String>empty())
+            .flatMap(reasons -> reasons)
+            .toList();
+    final Optional<String> source = CodeActionSupport.source(analysis.tree());
+    if (!refusals.isEmpty() || source.isEmpty()) {
+      LOG.fine(() -> "[codeAction:extractMethod] refused: %s".formatted(refusals));
       return List.of();
     }
 
@@ -89,26 +116,27 @@ final class ExtractMethodProvider {
             analysis,
             source.get(),
             member,
-            exprPath,
+            region,
             methodName(member.getParentPath(), analysis),
             returnType,
-            reads.get().locals(),
-            UncaughtExceptions.of(List.of(exprPath), analysis));
+            flow.parameters(),
+            flow.declaredHere(),
+            UncaughtExceptions.of(region, analysis));
     // A static method cannot use the class's type variables.
-    final boolean classTypeVariables =
-        namesTypeVariableOf(reads.get(), signatureTypes, TypeElement.class);
-    final List<TreePath> copies = copies(member.getParentPath(), exprPath, trees);
+    final boolean classTypeVariables = namesTypeVariableOf(flow, signatureTypes, TypeElement.class);
     final var actions = new ArrayList<Either<Command, CodeAction>>();
-    final boolean selectionStatic = isStaticContext(exprPath, trees);
-    if (!(selectionStatic && classTypeVariables)) {
+    final boolean regionStatic = isStaticContext(region.get(0), trees);
+    if (!(regionStatic && classTypeVariables)) {
       actions.add(
           extraction.action(
               uri,
               "Extract method '%s'".formatted(extraction.name()),
-              List.of(exprPath),
-              selectionStatic));
+              List.of(region),
+              regionStatic));
     }
 
+    final List<TreePath> copies =
+        expressionForm ? copies(member.getParentPath(), region.get(0), trees) : List.of();
     final boolean copiesStatic = copies.stream().anyMatch(copy -> isStaticContext(copy, trees));
     if (copies.size() > 1 && !(copiesStatic && classTypeVariables)) {
       actions.add(
@@ -116,7 +144,7 @@ final class ExtractMethodProvider {
               uri,
               "Extract method '%s' (replace all %d occurrences)"
                   .formatted(extraction.name(), copies.size()),
-              copies,
+              copies.stream().map(List::of).toList(),
               copiesStatic));
     }
 
@@ -127,77 +155,17 @@ final class ExtractMethodProvider {
     return actions;
   }
 
-  // What the expression reads: the locals it does not declare itself, in order of first use (the
-  // new method's parameters), and the type variables it names.
-  private record Reads(List<VariableElement> locals, Set<TypeParameterElement> typeVariables) {
-
-    Reads {
-      ValidCheck.check()
-          .notNull(locals, "locals")
-          .notNull(typeVariables, "typeVariables")
-          .validate();
-      locals = List.copyOf(locals);
-      typeVariables = Set.copyOf(typeVariables);
-    }
-
-    Stream<TypeMirror> types() {
-      return locals.stream().map(Element::asType);
-    }
-  }
-
-  // Empty when the expression cannot move into a method: it writes a local declared outside it, or
-  // names a local class (invisible from a new member).
-  private static Optional<Reads> reads(final TreePath exprPath, final Trees trees) {
-    final var declaredInside = new HashSet<Element>();
-    final var locals = new LinkedHashSet<VariableElement>();
-    final var typeVariables = new HashSet<TypeParameterElement>();
-    final var movable = new AtomicBoolean(true);
-    new TreePathScanner<Void, Void>() {
-      @Override
-      public Void visitVariable(final VariableTree tree, final Void unused) {
-        declaredInside.add(trees.getElement(getCurrentPath()));
-        return super.visitVariable(tree, unused);
-      }
-
-      @Override
-      public Void visitIdentifier(final IdentifierTree tree, final Void unused) {
-        final Element element = trees.getElement(getCurrentPath());
-        if (element instanceof final VariableElement variable
-            && ExtractionSupport.isLocalVariable(variable)
-            && !declaredInside.contains(variable)) {
-          if (ExtractionSupport.isAssignmentTarget(getCurrentPath())) {
-            movable.set(false);
-          }
-
-          locals.add(variable);
-        }
-
-        if (element instanceof final TypeParameterElement typeVariable) {
-          typeVariables.add(typeVariable);
-        }
-
-        if (element instanceof final TypeElement type
-            && type.getNestingKind() == NestingKind.LOCAL) {
-          movable.set(false);
-        }
-
-        return super.visitIdentifier(tree, unused);
-      }
-    }.scan(exprPath, null);
-    return movable.get()
-        ? Optional.of(new Reads(List.copyOf(locals), typeVariables))
-        : Optional.empty();
-  }
-
-  // The new method and the edits that call it from a set of sites.
+  // The new method, and the edits that call it from runs of trees: the region itself, or the
+  // copies of an expression.
   private record Extraction(
       AttributedFileAnalysis analysis,
       String source,
       TreePath member,
-      TreePath expression,
+      List<TreePath> region,
       String name,
       TypeMirror returnType,
       List<VariableElement> parameters,
+      List<VariableElement> declaredHere,
       List<TypeMirror> thrown) {
 
     Extraction {
@@ -205,37 +173,51 @@ final class ExtractMethodProvider {
           .notNull(analysis, "analysis")
           .notNull(source, "source")
           .notNull(member, "member")
-          .notNull(expression, "expression")
+          .notNull(region, "region")
           .notNull(name, "name")
           .notNull(returnType, "returnType")
           .notNull(parameters, "parameters")
+          .notNull(declaredHere, "declaredHere")
           .notNull(thrown, "thrown")
           .validate();
+      region = List.copyOf(region);
       parameters = List.copyOf(parameters);
+      declaredHere = List.copyOf(declaredHere);
       thrown = List.copyOf(thrown);
     }
 
     Either<Command, CodeAction> action(
-        final String uri, final String title, final List<TreePath> sites, final boolean isStatic) {
+        final String uri,
+        final String title,
+        final List<List<TreePath>> sites,
+        final boolean isStatic) {
       return ExtractionSupport.action(
           uri, title, ExtractionSupport.METHOD_KIND, edits(sites, isStatic));
     }
 
-    private List<TextEdit> edits(final List<TreePath> sites, final boolean isStatic) {
+    private boolean expressionForm() {
+      return region.get(0).getLeaf() instanceof ExpressionTree;
+    }
+
+    private List<TextEdit> edits(final List<List<TreePath>> sites, final boolean isStatic) {
       final CompilationUnitTree cu = analysis.tree();
       final long memberEnd = end(member);
       final String call =
-          "%s(%s)"
+          "%s(%s)%s"
               .formatted(
                   name,
                   parameters.stream()
                       .map(parameter -> parameter.getSimpleName().toString())
-                      .collect(Collectors.joining(", ")));
+                      .collect(Collectors.joining(", ")),
+                  expressionForm() ? "" : ";");
       return Stream.of(
               Stream.of(
                   ExtractionSupport.replaceEdit(cu, memberEnd, memberEnd, methodText(isStatic))),
               sites.stream()
-                  .map(site -> ExtractionSupport.replaceEdit(cu, start(site), end(site), call)),
+                  .map(
+                      site ->
+                          ExtractionSupport.replaceEdit(
+                              cu, start(site.get(0)), end(site.get(site.size() - 1)), call)),
               CodeActionSupport.importEditsFor(
                   analysis,
                   Stream.of(
@@ -269,7 +251,28 @@ final class ExtractMethodProvider {
           thrown.isEmpty()
               ? ""
               : " throws " + thrown.stream().map(format::format).collect(Collectors.joining(", "));
-      return "\n\n%sprivate %s%s %s(%s)%s {\n%s%sreturn %s;\n%s}"
+      final String text =
+          source.substring((int) start(region.get(0)), (int) end(region.get(region.size() - 1)));
+      final String bodyIndent = indent + step;
+      final String body =
+          expressionForm()
+              ? "%sreturn %s;".formatted(bodyIndent, text)
+              : Stream.concat(
+                      declaredHere.stream()
+                          .map(
+                              local ->
+                                  "%s%s %s;"
+                                      .formatted(
+                                          bodyIndent,
+                                          format.format(local.asType()),
+                                          local.getSimpleName())),
+                      Stream.of(
+                          CodeActionSupport.rebased(
+                              text,
+                              CodeActionSupport.lineIndent(source, (int) start(region.get(0))),
+                              bodyIndent)))
+                  .collect(Collectors.joining("\n"));
+      return "\n\n%sprivate %s%s %s(%s)%s {\n%s\n%s}"
           .formatted(
               indent,
               isStatic ? "static " : "",
@@ -277,9 +280,7 @@ final class ExtractMethodProvider {
               name,
               parameterList,
               throwsClause,
-              indent,
-              step,
-              source.substring((int) start(expression), (int) end(expression)),
+              body,
               indent);
     }
 
@@ -360,10 +361,10 @@ final class ExtractMethodProvider {
   }
 
   private static boolean namesTypeVariableOf(
-      final Reads reads,
+      final RegionFlow flow,
       final List<TypeMirror> signatureTypes,
       final Class<? extends Element> owner) {
-    return reads.typeVariables().stream()
+    return flow.typeVariables().stream()
             .anyMatch(variable -> owner.isInstance(variable.getGenericElement()))
         || signatureTypes.stream().anyMatch(type -> mentionsTypeVariableOf(type, owner));
   }

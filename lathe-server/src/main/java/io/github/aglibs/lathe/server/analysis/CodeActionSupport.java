@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
@@ -389,6 +390,26 @@ final class CodeActionSupport {
     }
 
     return indentStep(lineIndent(source, (int) stmtStart), lineIndent(source, (int) ownerStart));
+  }
+
+  // A block moved to another indent: its first line starts at a tree (no leading indent), later
+  // lines carry `from`, the indent of the line it started on; every line gets `to` instead.
+  static String rebased(final String block, final String from, final String to) {
+    final String[] lines = block.split("\n", -1);
+    return IntStream.range(0, lines.length)
+        .mapToObj(
+            i -> {
+              if (i == 0) {
+                return to + lines[0];
+              }
+
+              if (lines[i].isBlank()) {
+                return "";
+              }
+
+              return lines[i].startsWith(from) ? to + lines[i].substring(from.length()) : lines[i];
+            })
+        .collect(Collectors.joining("\n"));
   }
 
   // One indent level: how much deeper `inner` is than `outer`, else two spaces.

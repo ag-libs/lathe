@@ -4,6 +4,8 @@ import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
@@ -21,6 +23,7 @@ import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
+import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchExpressionTree;
 import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
@@ -31,6 +34,7 @@ import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -79,16 +83,16 @@ public final class ExtractionSupport {
   // caret, the smallest expression covering the selection.
   static TreePath selectedExpression(
       final Trees trees, final CompilationUnitTree cu, final Range selection) {
-    final long start =
-        SourceLocator.toOffset(
-            cu, selection.getStart().getLine(), selection.getStart().getCharacter());
-    final long end =
-        SourceLocator.toOffset(cu, selection.getEnd().getLine(), selection.getEnd().getCharacter());
-    if (start < 0 || end < 0) {
+    final Span span = Span.of(cu, selection);
+    if (span == null) {
       return null;
     }
 
-    final TreePath spanned = start < end ? soleTreeWithin(trees, cu, start, end) : null;
+    final long start = span.start();
+    final long end = span.end();
+    final List<TreePath> within =
+        start < end ? outermostTreesWithin(trees, cu, start, end) : List.of();
+    final TreePath spanned = within.size() == 1 ? within.get(0) : null;
     if (spanned == null) {
       return coveringExpression(trees, cu, SourceLocator.pathAt(trees, cu, start), start, end);
     }
@@ -107,8 +111,62 @@ public final class ExtractionSupport {
         positions.getEndPosition(cu, value.getLeaf()));
   }
 
-  // The single outermost tree whose span lies inside [start, end], or null when none or several do.
-  private static TreePath soleTreeWithin(
+  // The run of whole statements a selection spans, or empty: the outermost trees inside it must be
+  // consecutive statements of one block or `case:` list. The indentation, line breaks and `;`
+  // around them don't matter, as for an expression.
+  static List<TreePath> selectedStatements(
+      final Trees trees, final CompilationUnitTree cu, final Range selection) {
+    final Span span = Span.of(cu, selection);
+    if (span == null || span.start() >= span.end()) {
+      return List.of();
+    }
+
+    final List<TreePath> within = outermostTreesWithin(trees, cu, span.start(), span.end());
+    if (within.isEmpty() || !within.stream().allMatch(p -> p.getLeaf() instanceof StatementTree)) {
+      return List.of();
+    }
+
+    final List<? extends StatementTree> siblings =
+        statementsOf(within.get(0).getParentPath().getLeaf());
+    final int first = siblings.indexOf(within.get(0).getLeaf());
+    final boolean consecutive =
+        first >= 0
+            && first + within.size() <= siblings.size()
+            && IntStream.range(0, within.size())
+                .allMatch(i -> siblings.get(first + i) == within.get(i).getLeaf());
+    return consecutive ? List.copyOf(within) : List.of();
+  }
+
+  private static List<? extends StatementTree> statementsOf(final Tree parent) {
+    if (parent instanceof final BlockTree block) {
+      return block.getStatements();
+    }
+
+    return parent instanceof final CaseTree caseTree && caseTree.getStatements() != null
+        ? caseTree.getStatements()
+        : List.of();
+  }
+
+  // A selection's source offsets, or null when a position lies outside the file.
+  private record Span(long start, long end) {
+
+    Span {
+      ValidCheck.check().assertTrue(start >= 0 && end >= 0, "offsets").validate();
+    }
+
+    static Span of(final CompilationUnitTree cu, final Range selection) {
+      final long start =
+          SourceLocator.toOffset(
+              cu, selection.getStart().getLine(), selection.getStart().getCharacter());
+      final long end =
+          SourceLocator.toOffset(
+              cu, selection.getEnd().getLine(), selection.getEnd().getCharacter());
+      return start >= 0 && end >= 0 ? new Span(start, end) : null;
+    }
+  }
+
+  // The outermost trees whose spans lie inside [start, end].
+  private static List<TreePath> outermostTreesWithin(
       final Trees trees, final CompilationUnitTree cu, final long start, final long end) {
     final var positions = trees.getSourcePositions();
     final var within = new ArrayList<TreePath>();
@@ -133,7 +191,7 @@ public final class ExtractionSupport {
         return super.scan(tree, unused);
       }
     }.scan(new TreePath(cu), null);
-    return within.size() == 1 ? within.get(0) : null;
+    return List.copyOf(within);
   }
 
   private static TreePath valueOf(final TreePath path) {
