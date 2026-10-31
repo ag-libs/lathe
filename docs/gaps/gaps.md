@@ -979,61 +979,9 @@ None yet.
 
 ---
 
-## CA-15 — Extract constant on an annotated class inserts the constant above the class
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: Neovim, VS Code.**
-
-Found by a refactoring review of Lathe itself (2026-10-30), confirmed with a probe test.
-
-### Observed behaviour
-
-```java
-@SuppressWarnings({"unused"})
-class Test {
-  void m() {
-    use("hello world");
-  }
-  void use(String s) {}
-}
-```
-
-Extract constant on `"hello world"` inserts `private static final String HELLO_WORLD = "hello world";`
-at line 2, column 0: between the annotation and `class Test {`, outside the class, so the file no longer compiles.
-Expected: before `void m()`.
-
-### Root cause
-
-The providers find the class body with `source.indexOf('{', classStart)`, but a `ClassTree`'s start position
-includes its modifiers, so a `{` in an annotation argument is taken for the body's.
-With the brace that early, the synthesized default constructor (positioned at the class header) passes the
-"member after the brace" filter and becomes the anchor.
-The same text scan is in `ExtractFieldProvider.insertFieldEdit` and in
-`AddConstructorParameterProvider` (class body, and a constructor body behind an annotated constructor);
-those are likely to fail the same way but were not probed.
-It is also the ad hoc Java parsing CLAUDE.md rules out.
-
-### Fix direction
-
-One helper for "the class body's opening brace" that starts after the modifiers
-(`getEndPosition` of `cls.getModifiers()`, or after the name and type parameters), used by all four sites.
-`insertFieldEdit` and `insertConstantEdit` share about 25 lines (brace, first-member anchor, empty-body fallback);
-the shared helper can own the anchor logic too, leaving each provider its own placement rule
-(after the last field, or before the first member).
-
-### Regression targets
-
-None yet. Add a `CodeActionTest` case per provider with a class (and a constructor) annotated with a
-brace-bearing argument such as `@SuppressWarnings({"unused"})`.
-
----
-
 ## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
 
-**Status: documented**
+**Status: accepted (selection, placement and safety delivered; extract method remains).**
 
 **Value: high — Size: L**
 
@@ -1045,6 +993,22 @@ each asked four ways: a caret at the target's start, the exact expression, the e
 and the whole lines (`V`: column 0 to the last line's end); then the offered edits were applied and recompiled.
 A read-only probe of a 387-line service class in the running editor (a caret code action at each of 800 identifiers)
 matched: extract variable at 201 of them, and every miss on a code line falls under the cases below.
+
+### Delivered (2026-10-31)
+
+Sections 1–3 are fixed; the matrix's misses on code lines and its broken or unsafe offers are gone.
+Design notes in [Extract Variable](../done/lathe-extract-variable.md#selections-and-placement-ca-16).
+
+- 5818ef69, 3ad4ed54 — selection (section 1): `ExtractionSupport.selectedExpression` takes the one outermost
+  tree inside a selection, a statement meaning its value; shared by extract variable, field and constant.
+- 19962f60 — safety (section 3): `ExtractionSupport.pinnedInPlace` and a deep `isDenotable`.
+- 195c9dc8 — placement without restructuring (section 2): `case:` lists, resources, `for` initializers,
+  whole expression statements.
+- fa655223 — placement with a new block (section 2): expression lambdas, switch rules, brace-less bodies.
+
+Remaining: section 4, extract method, which needs its own design.
+Not changed: a lambda or anonymous class as the extracted value (needs a target type or `var`), and extract
+field's own placement rules.
 
 ### 1. A selection must be character-exact
 
@@ -1114,14 +1078,18 @@ It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md
 4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
    its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
 
-The test helper `CodeActionTest.applyEdits` garbles two edits that start at the same offset
-(an extraction at a statement's first token yields `stringtring string = a;`); Neovim applies the same edits correctly.
-Fix it before relying on it for these regression tests.
+The test helper `CodeActionTest.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
 
 ### Regression targets
 
-None yet. The probe's contexts become `CodeActionTest` cases: each of the four selections for a plain expression,
-one case per context in sections 2 and 3, and an applied-edit compile check for every extraction offered.
+For sections 1–3, in `CodeActionTest`, each offered edit applied and compiled:
+`codeAction_extraction_lineWiseSelection_findsTheExpression`,
+`codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing`,
+`codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode`,
+`codeAction_extractVariable_outsideABlock_declaresWhereItFits`,
+`codeAction_extractVariable_bodyWithoutRoom_becomesABlock`,
+`codeAction_extractVariable_atStatementStart_rewritesToCompilingCode`.
+Extract method: none yet.
 
 ---
 
