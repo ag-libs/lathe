@@ -13,7 +13,7 @@ the other editors. The extension just finds and launches it.
 The extension needs VS Code 1.84 or later (or a Cursor release built on it).
 It activates when the workspace contains a `.lathe/` directory or a Java file opens.
 
-1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (for Maven, the first build `mvn clean test -Dlathe.capture.only=true`) populates
+1. **Build your project with Lathe at least once** so the launcher exists: a Lathe-enabled build (the first build: `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle) populates
    `.lathe/` (see the [installation guide](../installation.md)); the launcher lands at
    `.lathe/lathe-launcher.sh` (`.lathe\lathe-launcher.cmd` on Windows).
 
@@ -26,7 +26,7 @@ It activates when the workspace contains a `.lathe/` directory or a Java file op
    ```
    (or *Extensions → ⋯ → Install from VSIX…* in the UI).
 
-4. **Open the reactor root** (the folder containing `.lathe/`) as the VS Code workspace and open a Java
+4. **Open the root of the build** (the folder containing `.lathe/`) as the VS Code workspace and open a Java
    file. The extension launches the server automatically, resolving the project's JDK from
    `.lathe/java-home`.
 
@@ -41,13 +41,13 @@ Resolved from your real build, through VS Code's standard LSP UI:
 |----------------------------------|-------------------------------------------|
 | Go to definition (cross-module)  | `F12` · `Ctrl`-click                      |
 | Find references                  | `Shift`+`F12`                             |
-| Workspace symbols (reactor-wide) | `Ctrl`+`T`                                |
+| Workspace symbols (project-wide) | `Ctrl`+`T`                                |
 | Document symbols / outline       | `Ctrl`+`Shift`+`O` · Outline view         |
 | Completion (with auto-import)    | automatic · `Ctrl`+Space                  |
 | Hover / javadoc                  | hover · `Ctrl`+`K` `Ctrl`+`I`             |
 | Signature help                   | automatic · `Ctrl`+`Shift`+Space          |
 | Code actions (import, stubs, …)  | `Ctrl`+`.`                                |
-| Rename (reactor-wide)            | `F2`                                      |
+| Rename (project-wide)            | `F2`                                      |
 | Live diagnostics                 | Problems panel · squiggles                |
 | Formatting (the project's Spotless formatter) | `Shift`+`Alt`+`F` · `editor.formatOnSave` |
 
@@ -75,14 +75,14 @@ VS Code is launched from. To point at a working-tree server build, set `LATHE_SE
 ## Windows and Cursor
 
 The extension works the same on Windows, in VS Code and in Cursor (install the `.vsix` with *Extensions → ⋯ → Install from VSIX…*).
-Build the project once with `mvnw.cmd` or `mvn`; the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
+Build the project once (with `mvnw.cmd`, `mvn`, or `gradlew.bat`); the build writes `.lathe\lathe-launcher.cmd`, and the extension starts it through `cmd.exe`, so there is nothing to configure.
 Set `LATHE_JAVA_HOME` or `LATHE_SERVER_DIR` as Windows environment variables, or with `set` in the `cmd` window you start `code` or `cursor` from.
 
 ## Build-file changes
 
-After a `pom.xml` or module-structure change, the server shows a prompt to sync.
+After a build-file or module-structure change, the server shows a prompt to sync.
 The extension cannot run the sync for you yet: choosing *Sync* does nothing, so run
-`.lathe/lathe-sync.sh` (`.lathe\lathe-sync.cmd` on Windows) or your Maven build in a terminal.
+`.lathe/lathe-sync.sh` (`.lathe\lathe-sync.cmd` on Windows) or your build in a terminal.
 Source changes made outside the editor need no sync; the server compiles them in-process.
 
 ## Known issues

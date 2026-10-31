@@ -66,6 +66,7 @@ public final class LatheLayout {
   // and an agent's) never write the same output at once.
   public static final String WRITE_LOCK_FILE = "write.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
+  public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -116,9 +117,11 @@ public final class LatheLayout {
   // built — so this remediation covers both rather than assuming a build alone will fix it. No sync
   // script exists yet, so it names each front-end's first command instead.
   public static final String SETUP_REMEDIATION =
-      "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Either generates %s."
+      "If this project is not set up for Lathe yet: for Maven, add the lathe-maven-extension and run `%s`; for Gradle, apply the `%s` settings plugin and run `%s`; for an OpenJDK checkout, run `%s %s:%s:%s`. Each generates %s."
           .formatted(
               Maven.FIRST_BUILD_COMMAND,
+              Gradle.PLUGIN_ID,
+              Gradle.FIRST_BUILD_COMMAND,
               Maven.MVN,
               Maven.LATHE_GROUP_ID,
               Maven.OPENJDK_PLUGIN_ARTIFACT_ID,
@@ -221,6 +224,59 @@ public final class LatheLayout {
     private Maven() {}
   }
 
+  public static final class Gradle {
+
+    // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
+    // applies Lathe to each project without cross-project configuration (Isolated Projects).
+    public static final String MIN_GRADLE_VERSION = "8.8";
+    public static final String PLUGIN_ID = "io.github.ag-libs.lathe";
+    // The task the sync script runs, and its argument that captures the tests without running them.
+    public static final String SYNC_TASK = "latheSync";
+    public static final String CAPTURE_ONLY_ARG = "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY);
+    // A project's first run, for the setup message: it writes .lathe/ without running the tests.
+    public static final String FIRST_BUILD_COMMAND =
+        "./gradlew %s %s".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);
+
+    // The build files a sync fingerprints, so the server notices a changed build: the settings
+    // file, gradle.properties and the version catalogs at the root, each project's build file, and
+    // the build logic in buildSrc/ and included builds, where Gradle builds keep their compiler
+    // settings.
+    public static final List<String> ROOT_BUILD_FILES =
+        List.of("settings.gradle", "settings.gradle.kts", "gradle.properties");
+    public static final List<String> PROJECT_BUILD_FILES =
+        List.of("build.gradle", "build.gradle.kts");
+    public static final String CATALOG_DIR = "gradle";
+    public static final String CATALOG_SUFFIX = ".toml";
+    public static final String BUILD_SRC_DIR = "buildSrc";
+    public static final List<String> BUILD_LOGIC_SUFFIXES =
+        List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
+    // The daemon's JVM options; module-access flags there reach a compile that runs in the daemon.
+    public static final String DAEMON_JVM_ARGS_PROPERTY = "org.gradle.jvmargs";
+    // What Gradle's test worker adds to a test JVM's launch, not the build: its own jar (on the
+    // class or module path), its -D properties, and, on a modular run, itself as the main module.
+    public static final String TEST_WORKER_JAR = "gradle-worker.jar";
+    public static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
+    public static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
+    // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/.agent/, a
+    // path known as the plugin applies, before a build script can move the build directory. Hidden,
+    // since .lathe/<module>/<child> is also the module directory of a child project in <child>/,
+    // which the copy into this directory would empty.
+    public static final String AGENT_DIR = ".agent";
+    public static final String AGENT_JAR = "lathe-junit.jar";
+    // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
+    public static final String FACTS_FILE = "lathe-facts.json";
+    // Output and state directories inside a build-logic build, never part of it.
+    public static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");
+
+    // The launcher of the Gradle distribution that ran the build (gradle.gradleHomeDir), not the
+    // wrapper: the same version, with no download step.
+    public static Path runningTool(final Path gradleHome, final boolean windows) {
+      return gradleHome.resolve(BIN_DIR).resolve(windows ? "gradle.bat" : "gradle");
+    }
+
+    private Gradle() {}
+  }
+
   public static Path userCacheRoot() {
     final var override = System.getProperty(LatheFlags.CACHE_ROOT);
     if (override != null) {
@@ -274,6 +330,11 @@ public final class LatheLayout {
 
   public static Path reactorLockFile(final Path latheDir) {
     return latheDir.resolve(REACTOR_LOCK_FILE);
+  }
+
+  // .lathe/<module>/, relative to the workspace root ("" or "." for the root module).
+  public static Path moduleDir(final String module) {
+    return Path.of(LATHE_DIR, module);
   }
 
   public static Path writeLockFile(final Path latheDir) {

@@ -1,5 +1,6 @@
 target/
 .lathe/
+.gradle/
 .idea/
 __pycache__/
 .worktrees/
@@ -7,3 +8,5 @@ __pycache__/
 node_modules/
 
 /docs/videos/
+# Gradle writes its problems report under the plugin build's default build/ directory.
+lathe-gradle-plugin/build/

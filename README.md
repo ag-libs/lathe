@@ -35,9 +35,11 @@ See the full [feature list](docs/guide/features.md), or the [Neovim keymap refer
 
 ## Quick start
 
-You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [requirements](docs/guide/installation.md#requirements)).
+You need Java 17+, and Maven 3.6.3+ or Gradle 8.8+ (see the requirements for
+[Maven](docs/guide/maven.md#requirements) and [Gradle](docs/guide/gradle.md#requirements)).
 
-**1. Add Lathe to your build.** Put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
+**1. Add Lathe to your build.**
+Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `<build><extensions>` in the root `pom.xml`):
 
 ```xml
 <extensions>
@@ -49,10 +51,19 @@ You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [require
 </extensions>
 ```
 
+Gradle: apply the settings plugin in `settings.gradle.kts`:
+
+```kotlin
+plugins {
+    id("io.github.ag-libs.lathe") version "0.2.0"
+}
+```
+
 **2. Build once.** This records your project's setup without running the tests:
 
 ```bash
-mvn clean test -Dlathe.capture.only=true
+mvn clean test -Dlathe.capture.only=true               # Maven
+./gradlew latheSync -Plathe.capture.only=true          # Gradle
 ```
 
 Add `.lathe/` to your `.gitignore`.
@@ -60,7 +71,8 @@ After this, every normal build keeps Lathe up to date.
 
 **3. Set up your editor** using its guide below.
 
-More options, including setup without the extension, are in the [installation guide](docs/guide/installation.md).
+More options, including setup without the extension and Gradle's personal init script, are in the
+[Maven](docs/guide/maven.md) and [Gradle](docs/guide/gradle.md) guides.
 
 ## Editors
 
@@ -83,7 +95,7 @@ See the [AI agents guide](docs/guide/ai-agents.md).
 
 Lathe is in active development and published to [Maven Central](https://central.sonatype.com/namespace/io.github.ag-libs).
 
-- **Builds:** Maven, and the [OpenJDK `make` build](docs/guide/openjdk.md). Gradle support is in progress.
+- **Builds:** [Maven](docs/guide/maven.md), [Gradle](docs/guide/gradle.md), and the [OpenJDK `make` build](docs/guide/openjdk.md).
 - **Platforms:** Linux, macOS and Windows 10/11. On Windows, use VS Code, Cursor or Zed.
 - **Editors:** Neovim has the full feature set. The other editors get the standard LSP features; run, test and debug are Neovim-only for now.
 
@@ -93,7 +105,9 @@ What works today, in detail, is in [status](docs/status.md).
 
 - [How Lathe works](docs/guide/how-it-works.md)
 - [Features](docs/guide/features.md)
-- [Installation](docs/guide/installation.md), including how to turn Lathe off
+- [Installation](docs/guide/installation.md): the build, the editor clients, the server JVM and JDK
+- [Maven](docs/guide/maven.md), including how to turn Lathe off
+- [Gradle](docs/guide/gradle.md)
 - [Run configuration](docs/guide/run-configuration.md) and [test capture](docs/guide/test-capture.md)
 - [Troubleshooting](docs/guide/troubleshooting.md)
 - Project: [roadmap](docs/roadmap.md) · [design index](docs/design-index.md)

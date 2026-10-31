@@ -8,6 +8,8 @@ public final class LatheFlags {
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
+  // Set by CI services; Lathe stays out of a CI build unless lathe.disabled=false says otherwise.
+  public static final String CI_ENV = "CI";
   // JUnit Platform's own switch (1.10+) for discovering tests and reporting them skipped, unrun:
   // how lathe-junit's capture-only mode skips them.
   public static final String JUNIT_DRY_RUN = "junit.platform.execution.dryRun.enabled";
@@ -91,7 +93,12 @@ public final class LatheFlags {
   private LatheFlags() {}
 
   public static boolean isDisabled() {
-    final var disabled = System.getProperty(DISABLED);
+    return isDisabled(System.getProperty(DISABLED), System.getenv(CI_ENV) != null);
+  }
+
+  // An explicit lathe.disabled wins either way; otherwise a CI environment disables Lathe. Gradle
+  // passes its -P value and its CI variable, which it reads through its own providers.
+  public static boolean isDisabled(final String disabled, final boolean ci) {
     if ("true".equals(disabled)) {
       return true;
     }
@@ -100,7 +107,14 @@ public final class LatheFlags {
       return false;
     }
 
-    return System.getenv("CI") != null;
+    return ci;
+  }
+
+  // One message for every unmet requirement, worded the same by each build tool; option is how
+  // that tool sets a property on its command line (-D, -P).
+  public static String unsupportedBuild(final List<String> unmet, final String option) {
+    return "[lathe] This build is older than Lathe supports:%n  - %s%n  To build without Lathe, add %s%s=true"
+        .formatted(String.join("%n  - ".formatted(), unmet), option, DISABLED);
   }
 
   public static boolean isForcedSync() {

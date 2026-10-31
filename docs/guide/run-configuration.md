@@ -20,7 +20,7 @@ configuration:
 
 | File | Scope | Committed? |
 |---|---|---|
-| `lathe-run.json` (reactor root) | shared, travels with the repo | yes, at your discretion |
+| `lathe-run.json` (root of the build) | shared, travels with the repo | yes, at your discretion |
 | `.lathe/run.json` | machine-local, per developer | no — it lives inside the gitignored `.lathe/` |
 
 Put team-wide settings in the committable `lathe-run.json`; keep machine-specific paths and
@@ -104,7 +104,7 @@ Every overlay field is optional; an omitted field keeps the generated default.
 Configuration is deliberately limited to these user-owned inputs.
 It **cannot** change launch-correctness fields — the module path, class path, `--patch-module`, the
 captured `--add-opens` / `--add-reads` / `--add-exports` / `--add-modules` directives, or dependency
-placement — so a run can never diverge from how Maven would have launched it.
+placement — so a run can never diverge from how the build would have launched it.
 `classpathAppend` / `modulePathAppend` only *add* entries after the derived ones; they cannot remove
 or reorder them.
 

@@ -79,8 +79,10 @@ if git ls-remote --exit-code --tags origin "${tag}" >/dev/null 2>&1; then
 fi
 
 # (#4) Bump ONLY Lathe's version in the install docs:
-#   - the <version> on the line immediately after a lathe-* <artifactId>, and
-#   - the <lathe.version> property.
+#   - the <version> on the line immediately after a lathe-* <artifactId>,
+#   - the <lathe.version> property,
+#   - the Gradle plugin's id("io.github.ag-libs.lathe") version "x.y.z", and
+#   - Gradle-style io.github.ag-libs:lathe-*:x.y.z coordinates (the init script's classpath).
 # The [0-9] anchor leaves ${lathe.version} references alone; the artifactId
 # address leaves unrelated dependencies' <version> tags untouched.
 # Every tracked text doc is a candidate, so a new guide or client README with a snippet is bumped
@@ -97,6 +99,8 @@ for f in "${docs[@]}"; do
   sed -i \
     -e "\#<artifactId>lathe-[a-z-]*</artifactId>#{n;s#<version>[0-9][^<]*</version>#<version>${version}</version>#;}" \
     -e "s#<lathe.version>[0-9][^<]*</lathe.version>#<lathe.version>${version}</lathe.version>#" \
+    -e "s#\(id(\"io\.github\.ag-libs\.lathe\") version \"\)[0-9][^\"]*\"#\1${version}\"#" \
+    -e "s#\(io\.github\.ag-libs:lathe-[a-z-]*:\)[0-9][^\"]*\"#\1${version}\"#" \
     "$f"
 done
 
@@ -112,8 +116,8 @@ files=("${docs[@]}")
 git diff --quiet -- "${files[@]}" \
   && die "no version snippets matched in the docs — did the install snippets change shape?"
 
-# The patterns only know the XML snippets. Any other mention of the previous release left in the
-# docs (a Gradle snippet, a version in prose) would ship stale, so stop and name it.
+# The patterns know the XML and Gradle snippets. Any other mention of the previous release left in the
+# docs (a version in prose) would ship stale, so stop and name it.
 git fetch --tags --quiet 2>/dev/null || true
 previous="$(latest_release_version)"
 if [ -n "$previous" ] && git --no-pager grep -n -w -F "$previous" "${public_docs[@]}"; then

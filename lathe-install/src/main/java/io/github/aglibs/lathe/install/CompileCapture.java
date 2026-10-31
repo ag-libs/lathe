@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.SourceStamp;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -25,9 +26,20 @@ public final class CompileCapture {
     Json.write(config, moduleDir.resolve(LatheLayout.paramsFileName(config.sourceTree())));
   }
 
-  public static void mirror(final Path moduleDir, final ModuleConfigData config)
+  // resourceDirs join the classes in the bytecode mirror: Gradle processes resources into their
+  // own directory, where Maven puts them beside the classes, and a replay that stands the mirror
+  // in for a project's jar needs both.
+  public static void mirror(
+      final Path moduleDir, final ModuleConfigData config, final List<Path> resourceDirs)
       throws IOException {
-    FileUtil.replaceDir(Path.of(config.outputDir()), moduleDir.resolve(config.sourceTree()));
+    final Path classesMirror = moduleDir.resolve(config.sourceTree());
+    FileUtil.replaceDir(Path.of(config.outputDir()), classesMirror);
+    for (final Path resources : resourceDirs) {
+      if (Files.isDirectory(resources)) {
+        FileUtil.copyDir(resources, classesMirror);
+      }
+    }
+
     mirrorGeneratedSources(moduleDir, config);
     writeStamps(moduleDir, config);
   }

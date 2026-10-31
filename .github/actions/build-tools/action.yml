@@ -1,6 +1,7 @@
 name: Build tools
 description: >-
-  The JDK a CI row tests on, JDK 21 to build when that is 17, and the Maven that builds Lathe.
+  The JDK a CI row tests on, JDK 21 to build when that is 17, and the Maven and Gradle that build
+  Lathe.
 inputs:
   java:
     description: The JDK the row runs its tests on.
@@ -13,7 +14,17 @@ runs:
       with:
         java-version: ${{ inputs.java }}
         distribution: 'temurin'
-        cache: maven
+
+    - name: Restore the Maven repository
+      # Keyed by every POM, falling back to the OS's newest entry, so a POM change downloads only
+      # what is new. Only the build rows that build the whole reactor save it (see ci.yml).
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ~/.m2/repository
+          !~/.m2/repository/io/github/ag-libs
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: maven-${{ runner.os }}-
 
     - name: Set up JDK 21 to build (JDK 17 row)
       # lathe-server's src/main/java21 needs a JDK 21+ compiler; this JDK becomes JAVA_HOME and
@@ -28,3 +39,12 @@ runs:
       uses: stCarolas/setup-maven@v5
       with:
         maven-version: 3.9.16
+
+    - name: Set up Gradle 9.8.2
+      # Builds lathe-gradle-plugin and runs its fixtures, unless a job points them at an older Gradle.
+      uses: gradle/actions/setup-gradle@v6
+      with:
+        gradle-version: 9.8.2
+        # Off the default branch the action only reads caches by default, and main runs no Gradle
+        # build to fill one; writing them too lets a branch's next run start with a warm Gradle home.
+        cache-read-only: false
