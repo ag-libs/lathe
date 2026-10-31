@@ -91,7 +91,9 @@ The use/def scan lives in its own small class, `RegionFlow`, because it is the o
 - **Statement form**: the outermost trees inside the selection (the span scan of `soleTreeWithin`, returning the
   list instead of requiring one) must all be statements, consecutive children of the same block or `case:`
   statement list.
-  One whole expression statement selected is the statement form, not the expression form.
+  One whole expression statement selected is the statement form, not the expression form,
+  except a lone declaration with an initializer or a lone assignment: it extracts the value it stores
+  (`t = extracted(a);` with `return a.trim();`, not `t = a.trim(); return t;`).
 
 The region is a list of tree paths plus its source span.
 

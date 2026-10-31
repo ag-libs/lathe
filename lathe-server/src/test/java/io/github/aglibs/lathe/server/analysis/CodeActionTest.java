@@ -1734,6 +1734,33 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_extractMethod_declarationUsedLater_movesToTheCall() {
+    final var source =
+        inTestClass(
+            "void m(String a) {\n«    final String t = a.trim();\n    use(t);»\n    use(t.length());\n  }");
+    final String rewritten =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(markedActions(source), "Extract method 'extracted'"));
+
+    assertThat(rewritten)
+        .contains(
+            """
+              void m(String a) {
+                final String t = extracted(a);
+                use(t.length());
+              }
+
+              private String extracted(String a) {
+                final String t = a.trim();
+                use(t);
+                return t;
+              }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_extractMethod_statementContexts_rewriteToCompilingCode() {
     final String method = "Extract method";
     assertExtracts(
@@ -1760,6 +1787,24 @@ class CodeActionTest {
     assertExtracts(
         "void m(List<String> l, String p) { l.forEach(x -> { «use(x + p);» }); }", method);
     assertExtracts("static void s(String a) { «System.out.println(a);» }", method);
+    // an earlier local assigned at the top level comes back out, its old value going in only when
+    // read before; read earlier in the loop, the next iteration needs it
+    assertThat(
+            assertExtracts(
+                "void m(String a) {\n    int n = 0;\n«    n = a.length();\n    use(n);»\n    use(n);\n  }",
+                method))
+        .contains(
+            "n = extracted(a);", "    int n;\n    n = a.length();\n    use(n);\n    return n;");
+    // a lone assignment extracts the value it stores
+    assertThat(assertExtracts("void m(String a) { int n = 0; «n = a.length();» use(n); }", method))
+        .contains("n = extracted(a);", "return a.length();");
+    assertThat(assertExtracts("void m(int n) { «n = n * 2;\n    use(n);» use(n + 1); }", method))
+        .contains("n = extracted(n);");
+    assertThat(
+            assertExtracts(
+                "void m(List<String> l) { int n = 0; for (String s : l) { use(n); «n = s.length();» } }",
+                method))
+        .contains("n = extracted(s);");
 
     // a declaration used later is not a statement region yet; its value still is an expression
     final var declaration =
@@ -1782,8 +1827,13 @@ class CodeActionTest {
         "case with its break",
         "void m(int k) { switch (k) { case 1: «use(k); break;» default: break; } }");
     cases.put("never completes", "int m() { «throw new IllegalStateException();» }");
-    cases.put("value flows out", "void m(String a) { int n = 0; «n = a.length();» use(n); }");
-    cases.put("final field", "final String name;\n  Test(String n) { «this.name = n.trim();» }");
+    cases.put(
+        "assigned conditionally",
+        "void m(String a) { int n = 0; «if (a.isEmpty()) n = 1;» use(n); }");
+    cases.put("two values", "void m() { «int x = 1;\n    int y = 2;» use(x + y); }");
+    cases.put(
+        "final field",
+        "final String name;\n  Test(String n) { «this.name = n.trim();\n    use(n);» }");
     cases.put("this(...)", "Test(int x) {}\n  Test() { «this(1);» }");
     cases.put("local class", "void m() { class L {} «use(new L());» }");
     cases.put(
@@ -1832,13 +1882,15 @@ class CodeActionTest {
   }
 
   // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
-  // applying it leaves code that compiles.
-  private void assertExtracts(final String member, final String titlePrefix) {
+  // applying it leaves code that compiles; returns that code.
+  private String assertExtracts(final String member, final String titlePrefix) {
     final String source = inTestClass(member);
     final var actions = markedActions(source);
     assertThat(rightTitles(actions)).as(member).anyMatch(t -> t.startsWith(titlePrefix));
-    assertCompilesClean(
-        applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix)));
+    final String rewritten =
+        applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix));
+    assertCompilesClean(rewritten);
+    return rewritten;
   }
 
   private static String inTestClass(final String member) {

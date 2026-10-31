@@ -1,10 +1,12 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.AnnotationTree;
+import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
@@ -39,10 +41,12 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-// Extract method, expression form: the selected expression becomes a private method returning it,
-// placed after the member holding it, and the expression a call to it; a second action also
-// replaces the expression's exact copies in the class. A call recomputes the value where the
-// expression stood, so the rewrite keeps behaviour whatever the expression does.
+// Extract method: the selected expression, or run of statements, becomes a private method placed
+// after the member holding it, and the selection a call to it. An expression's method returns its
+// value, and a second action also replaces its exact copies in the class. Statements return the
+// one local they assign or declare that is used afterwards (`T x = extracted(…);` or
+// `x = extracted(…);`), or nothing. RegionFlow decides the parameters and refuses what would not
+// keep behaviour.
 final class ExtractMethodProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractMethodProvider.class.getName());
@@ -55,17 +59,20 @@ final class ExtractMethodProvider {
       return List.of();
     }
 
-    // Whole statements first. A run the statement form refuses (a declaration used later) may
-    // still offer its value as an expression.
+    // Whole statements first; a run the statement form refuses may still offer its value as an
+    // expression. A lone declaration or assignment extracts the value it stores, which makes the
+    // plainer method: `return a.trim();` rather than `t = a.trim(); return t;`.
     final List<TreePath> statements =
         ExtractionSupport.selectedStatements(analysis.trees(), cu, range);
+    final TreePath stored = statements.size() == 1 ? storedValue(statements.get(0)) : null;
     final List<Either<Command, CodeAction>> fromStatements =
-        statements.isEmpty() ? List.of() : extract(uri, analysis, statements);
+        statements.isEmpty() || stored != null ? List.of() : extract(uri, analysis, statements);
     if (!fromStatements.isEmpty()) {
       return fromStatements;
     }
 
-    final TreePath expression = ExtractionSupport.selectedExpression(analysis.trees(), cu, range);
+    final TreePath expression =
+        stored != null ? stored : ExtractionSupport.selectedExpression(analysis.trees(), cu, range);
     return expression != null && replaceableByCall(expression, analysis.trees())
         ? extract(uri, analysis, List.of(expression))
         : List.of();
@@ -81,14 +88,18 @@ final class ExtractMethodProvider {
     }
 
     final boolean expressionForm = region.get(0).getLeaf() instanceof ExpressionTree;
+    final RegionFlow flow = RegionFlow.of(member, region, trees);
     final TypeMirror returnType =
         expressionForm
             ? trees.getTypeMirror(region.get(0))
-            : analysis.types().getNoType(TypeKind.VOID);
-    final RegionFlow flow = RegionFlow.of(member, region, trees);
+            : flow.outputs().stream()
+                .findFirst()
+                .map(Element::asType)
+                .orElse(analysis.types().getNoType(TypeKind.VOID));
     final List<TypeMirror> signatureTypes =
         Stream.of(
                 expressionForm ? Stream.of(returnType) : Stream.<TypeMirror>empty(),
+                flow.outputs().stream().map(Element::asType),
                 flow.parameters().stream().map(Element::asType),
                 flow.declaredHere().stream().map(Element::asType))
             .flatMap(types -> types)
@@ -96,7 +107,9 @@ final class ExtractMethodProvider {
     final List<String> refusals =
         Stream.of(
                 flow.refusals().stream(),
-                flow.outputs().isEmpty() ? Stream.<String>empty() : Stream.of("values flow out"),
+                flow.outputs().size() > (expressionForm ? 0 : 1)
+                    ? Stream.of("values flow out")
+                    : Stream.<String>empty(),
                 signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
                     ? Stream.<String>empty()
                     : Stream.of("a type cannot be written"),
@@ -121,6 +134,7 @@ final class ExtractMethodProvider {
             returnType,
             flow.parameters(),
             flow.declaredHere(),
+            flow.outputs(),
             UncaughtExceptions.of(region, analysis));
     // A static method cannot use the class's type variables.
     final boolean classTypeVariables = namesTypeVariableOf(flow, signatureTypes, TypeElement.class);
@@ -166,6 +180,7 @@ final class ExtractMethodProvider {
       TypeMirror returnType,
       List<VariableElement> parameters,
       List<VariableElement> declaredHere,
+      List<VariableElement> outputs,
       List<TypeMirror> thrown) {
 
     Extraction {
@@ -178,11 +193,13 @@ final class ExtractMethodProvider {
           .notNull(returnType, "returnType")
           .notNull(parameters, "parameters")
           .notNull(declaredHere, "declaredHere")
+          .notNull(outputs, "outputs")
           .notNull(thrown, "thrown")
           .validate();
       region = List.copyOf(region);
       parameters = List.copyOf(parameters);
       declaredHere = List.copyOf(declaredHere);
+      outputs = List.copyOf(outputs);
       thrown = List.copyOf(thrown);
     }
 
@@ -203,8 +220,9 @@ final class ExtractMethodProvider {
       final CompilationUnitTree cu = analysis.tree();
       final long memberEnd = end(member);
       final String call =
-          "%s(%s)%s"
+          "%s%s(%s)%s"
               .formatted(
+                  outputs.stream().map(this::receiving).findFirst().orElse(""),
                   name,
                   parameters.stream()
                       .map(parameter -> parameter.getSimpleName().toString())
@@ -228,6 +246,27 @@ final class ExtractMethodProvider {
                   .stream())
           .flatMap(edits -> edits)
           .toList();
+    }
+
+    // Where the call's value lands: the declaration the region made, keeping its `final`, or an
+    // earlier local.
+    private String receiving(final VariableElement output) {
+      return region.stream()
+          .map(TreePath::getLeaf)
+          .filter(VariableTree.class::isInstance)
+          .map(VariableTree.class::cast)
+          .filter(declaration -> declaration.getName().equals(output.getSimpleName()))
+          .findFirst()
+          .map(
+              declaration ->
+                  "%s%s %s = "
+                      .formatted(
+                          declaration.getModifiers().getFlags().contains(Modifier.FINAL)
+                              ? "final "
+                              : "",
+                          new TypeDisplayFormatter(analysis.types()).format(output.asType()),
+                          output.getSimpleName()))
+          .orElse("%s = ".formatted(output.getSimpleName()));
     }
 
     private String methodText(final boolean isStatic) {
@@ -257,7 +296,7 @@ final class ExtractMethodProvider {
       final String body =
           expressionForm()
               ? "%sreturn %s;".formatted(bodyIndent, text)
-              : Stream.concat(
+              : Stream.of(
                       declaredHere.stream()
                           .map(
                               local ->
@@ -270,7 +309,12 @@ final class ExtractMethodProvider {
                           CodeActionSupport.rebased(
                               text,
                               CodeActionSupport.lineIndent(source, (int) start(region.get(0))),
-                              bodyIndent)))
+                              bodyIndent)),
+                      outputs.stream()
+                          .map(
+                              output ->
+                                  "%sreturn %s;".formatted(bodyIndent, output.getSimpleName())))
+                  .flatMap(lines -> lines)
                   .collect(Collectors.joining("\n"));
       return "\n\n%sprivate %s%s %s(%s)%s {\n%s\n%s}"
           .formatted(
@@ -302,6 +346,20 @@ final class ExtractMethodProvider {
     private long end(final TreePath path) {
       return analysis.trees().getSourcePositions().getEndPosition(analysis.tree(), path.getLeaf());
     }
+  }
+
+  private static TreePath storedValue(final TreePath statement) {
+    if (statement.getLeaf() instanceof final VariableTree declaration
+        && declaration.getInitializer() != null) {
+      return new TreePath(statement, declaration.getInitializer());
+    }
+
+    if (statement.getLeaf() instanceof final ExpressionStatementTree expression
+        && expression.getExpression() instanceof final AssignmentTree assignment) {
+      return new TreePath(new TreePath(statement, assignment), assignment.getExpression());
+    }
+
+    return null;
   }
 
   // The class member holding the path: a method, constructor, initializer block or field.

@@ -96,6 +96,11 @@ record RegionFlow(
     final long end = positions.getEndPosition(cu, region.get(region.size() - 1).getLeaf());
     final Map<VariableElement, Long> declared = new HashMap<>();
     final Set<VariableElement> valueAtDeclaration = new HashSet<>();
+    final Set<Tree> topLevel =
+        region.stream().map(TreePath::getLeaf).collect(Collectors.toUnmodifiableSet());
+    // For each local a statement of the region itself assigns (so on every path through it), where
+    // the first such statement ends.
+    final Map<VariableElement, Long> assignedAtTopLevel = new HashMap<>();
     final List<Use> uses = new ArrayList<>();
     final Set<TypeParameterElement> typeVariables = new HashSet<>();
     final List<String> refusals = new ArrayList<>();
@@ -109,6 +114,10 @@ record RegionFlow(
               || getCurrentPath().getParentPath().getLeaf() instanceof EnhancedForLoopTree) {
             valueAtDeclaration.add(variable);
           }
+
+          if (tree.getInitializer() != null && topLevel.contains(tree)) {
+            assignedAtTopLevel.merge(variable, positions.getEndPosition(cu, tree), Math::min);
+          }
         }
 
         return super.visitVariable(tree, unused);
@@ -119,7 +128,12 @@ record RegionFlow(
         final Element element = trees.getElement(getCurrentPath());
         final long at = positions.getStartPosition(cu, tree);
         if (element instanceof final VariableElement variable && declared.containsKey(variable)) {
-          uses.add(new Use(variable, at, access(getCurrentPath())));
+          final Access access = access(getCurrentPath());
+          uses.add(new Use(variable, at, access));
+          final Tree statement = getCurrentPath().getParentPath().getParentPath().getLeaf();
+          if (access != Access.READ && topLevel.contains(statement)) {
+            assignedAtTopLevel.merge(variable, positions.getEndPosition(cu, statement), Math::min);
+          }
         }
 
         if (at >= start && at < end) {
@@ -168,7 +182,8 @@ record RegionFlow(
             .collect(Collectors.toUnmodifiableSet());
 
     // Every outer local the region uses, in order of first use: a parameter when the region reads
-    // it and it has a value before the region, else a local the new method declares.
+    // it before assigning it and it has a value before the region, else a local the new method
+    // declares.
     final Set<VariableElement> used =
         inRegion.stream()
             .sorted(Comparator.comparingLong(Use::position))
@@ -177,7 +192,15 @@ record RegionFlow(
             .collect(Collectors.toCollection(LinkedHashSet::new));
     final List<VariableElement> parameters =
         used.stream()
-            .filter(variable -> anyUse(inRegion, variable, use -> use.access() != Access.WRITE))
+            .filter(
+                variable ->
+                    anyUse(
+                        inRegion,
+                        variable,
+                        use ->
+                            use.access() != Access.WRITE
+                                && use.position()
+                                    < assignedAtTopLevel.getOrDefault(variable, Long.MAX_VALUE)))
             .filter(
                 variable ->
                     valueAtDeclaration.contains(variable)
@@ -204,6 +227,11 @@ record RegionFlow(
                         variable,
                         use -> declaredInRegion.contains(variable) || use.access() != Access.WRITE))
             .toList();
+
+    // Assigned only in a branch or a loop, the old value may still be needed after the region.
+    if (!assignedAtTopLevel.keySet().containsAll(outputs)) {
+      refusals.add("a value flowing out is assigned conditionally");
+    }
 
     if (region.get(0).getLeaf() instanceof StatementTree) {
       refusals.addAll(controlRefusals(region, trees));
