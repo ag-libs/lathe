@@ -57,6 +57,10 @@ Refused, with no action offered (each one listed in the tests):
 - more than one local would have to come back out (Java has one return value);
 - a `return`, or a `break`/`continue`/`yield` whose target lies outside the selection, inside it
   (outside nested lambdas and classes);
+- it never completes normally (it ends in a `throw`, or every path of its last `if`/`try` throws): moved
+  into a method, the call looks like it completes, and the original method or value lambda would lack its
+  `return`;
+- a local it declares without an initializer flows out but is not assigned at its top level;
 - an earlier local assigned only in a branch or loop of the selection and read afterwards
   (its value may or may not change — the scan cannot prove which);
 - it uses a local class or record declared earlier in the method (invisible to the new method);
@@ -113,6 +117,11 @@ An earlier local that is an output must be assigned by a top-level statement of 
 every path); assigned only inside a branch or loop, the region is refused — without javac's
 definite-assignment analysis the old value may still be needed.
 An output that is also read in the region before its assignment is a parameter as well.
+A local read in the region is a parameter only if it already has a value before the region: an initializer,
+a parameter, loop or catch variable, or a write before the region. Otherwise (`String line; while ((line =
+…) != null)`, `final T x; if (…) x = …; else x = …;` inside the region) it belongs to the new method and is
+declared there (`T x;`), as is an output that the region writes but does not read.
+An output the region itself declares must have an initializer or a top-level assignment in the region.
 Parameter types are each variable's **declared** type (`VariableElement.asType()`), not the type at a use,
 so a `List<?>` stays `List<?>` rather than an unwritable captured type.
 More than one output: refused.
@@ -122,7 +131,12 @@ their own parameters and locals are internal to the region.
 
 ### 4.3 Control flow
 
-A scan of the region (not descending into lambdas or class bodies) refuses:
+A scan of the region (not descending into lambdas or class bodies) refuses the jumps below.
+Public API carries no `break`/`continue` target, so it is found by walking up (the labelled statement, else the
+innermost loop, or switch for `break`); the region's own statements count as inside it, so a selected loop
+with its own `break` is fine.
+It also refuses a region that never completes normally (JLS 14.22, approximated: a final `throw`, an `if`/`else`
+or a `try` all of whose paths end so).
 
 - `return` (slice 4 accepts one case: the region is the method's tail and ends in `return expr;` → the call
   site becomes `return extracted(…);`);
@@ -150,7 +164,8 @@ A scan of the region (not descending into lambdas or class bodies) refuses:
   (`Trees.getTypeMirror` on the invocation's method select, so `orElseThrow(X::new)` yields `X`),
   each `throw` expression's type, and the `close()` exceptions of resources the region's own
   try-with-resources declares; minus those caught by a `try` inside the region whose body holds the throwing
-  site (multi-catch unions included); checked only (not `RuntimeException`/`Error` subtypes); subtypes of
+  site or is one of its resources (a `try`'s catches cover its resource initializers; multi-catch unions
+  included); checked only (not `RuntimeException`/`Error` subtypes); subtypes of
   another listed type dropped. Nested lambdas and classes are not scanned — their exceptions are theirs.
 - **Imports**: for the parameter, return and thrown types, as the extract variable import edit does.
 
@@ -248,10 +263,21 @@ In `CodeActionTest`, with the `«…»` selection markers and the applied-edit c
 
 ## 8. Edge cases and non-goals
 
-Expected coverage (an estimate until measured): the expression form nearly always applies; for runs of
-statements in typical service code roughly 60–75%, the misses dominated by several values flowing out,
-`continue`/`return` in loop bodies, and variables assigned in branches — where IntelliJ also refuses or
-produces a holder object.
+Measured by a spike (2026-10-31, branch `spike/extract-method`, a throwaway prototype of sections 4.1–4.6) over
+every initializer and return value, and every run of 1–5 consecutive statements, in `lathe-server` and
+`lathe-core` (299 files):
+
+| Form | Candidates | Offered and compiles | Main refusals |
+|---|---|---|---|
+| Expression | 5,385 | 97.9% | non-denotable type 1.5%, method type variable 0.6% |
+| Statement runs | 26,165 | 33.4% | `return` inside 44%, several outputs 16%, `final` field write 2.5%, the rest ≤1% each |
+
+Every run of statements is counted, most of which nobody would select, so the statement share is a floor
+and the refusal ranking is the useful part: `return` dominates, which makes slice 4's tail `return` (and later
+a guard-clause pattern) the most valuable relaxation. Offered rewrites that failed to compile fell from 115 to
+5 (0.02%) as the rules above were added from what failed; the compile check (section 4.6) blocks the rest.
+The thrown-type model held on real code, including `orElseThrow(IOException::new)` and resource `close()`.
+A compile check costs about 32 ms per file.
 
 - **Several return values** (IntelliJ's holder object or array): non-goal; refused.
 - **Moving the method to another class**, changing visibility of what it uses: non-goal.
