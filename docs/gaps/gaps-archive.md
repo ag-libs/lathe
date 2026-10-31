@@ -7,6 +7,49 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the build.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh multi-module project.
+
+### Observed behaviour
+
+The first build of a reactor whose root is a `pom` module resolves the newest `maven-compiler-plugin` online,
+ignoring the version the project pins, and prints five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings.
+0.1.24 behaves the same.
+
+### Root cause
+
+`LatheModelInjector.injectCompilerShim` calls `findOrCreatePlugin`; a `pom` root has no compiler plugin in its build, so it creates one with no version and no `<pluginManagement>` lookup, and Maven resolves the newest.
+
+### Fix direction
+
+Skip the compiler shim on `pom` packaging, or take the version from `<pluginManagement>`; resolve nothing online.
+
+### Resolution
+
+Re-measured before the fix (Lathe 0.2.0, a `pom` root pinning `maven-compiler-plugin` 3.14.0 in `<pluginManagement>`):
+the five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings and two INFO lines appear on every build, not only the first, offline too.
+Nothing else goes wrong: the `pom` root never runs the plugin it gets (3.16.0, the newest compatible), the modules compile with the pinned 3.14.0,
+and an offline build succeeds once the plugin metadata is cached. So the cost was noise on every build of the common multi-module layout, and its value is medium, not high.
+
+`LatheModelInjector.injectProject` now wires a module only when its build already has the compiler plugin,
+which Maven puts there, at the project's version, in every module whose packaging compiles;
+a `pom` module has none and gets nothing: no compiler plugin, no compiler id, no tree scopes, and no capture dependency.
+Nothing creates a versionless compiler plugin any more. `LatheRequirements` reuses the same compiler-plugin lookup.
+
+### Regression targets
+
+- `LatheModelInjectorTest.injectProject_moduleWithoutCompiler_addsNothing`: a module without a compiler plugin gets no plugin, property or dependency.
+- `LatheModelInjectorTest.injectProject_compilingModule_shimsTheCompilerAtItsVersionAndAddsCapture`: the shim attaches to the pinned plugin and keeps its version.
+
+---
+
 ## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package` — done
 
 **Status: done.**

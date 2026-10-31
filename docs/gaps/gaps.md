@@ -630,36 +630,6 @@ None yet.
 
 ---
 
-## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the build.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh multi-module project.
-
-### Observed behaviour
-
-The first build of a reactor whose root is a `pom` module resolves the newest `maven-compiler-plugin` online,
-ignoring the version the project pins, and prints five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings.
-0.1.24 behaves the same.
-
-### Root cause
-
-`LatheModelInjector.injectCompilerShim` calls `findOrCreatePlugin`; a `pom` root has no compiler plugin in its build, so it creates one with no version and no `<pluginManagement>` lookup, and Maven resolves the newest.
-
-### Fix direction
-
-Skip the compiler shim on `pom` packaging, or take the version from `<pluginManagement>`; resolve nothing online.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
 
 **Status: documented**

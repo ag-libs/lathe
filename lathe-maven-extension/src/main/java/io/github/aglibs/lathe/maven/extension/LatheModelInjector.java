@@ -21,19 +21,28 @@ final class LatheModelInjector {
     this.version = version;
   }
 
-  /** Per-project injection: the compiler shim, its tree scopes, and the capture dependency. */
+  // Per-project injection: the compiler shim, its tree scopes, and the capture dependency. Only
+  // where Maven compiles: it has already put the compiler plugin, at the project's version, in
+  // every module whose packaging compiles. A pom module has none, and one created without a
+  // version would make Maven look up the newest plugin online on every build.
   void injectProject(final MavenProject project) {
-    injectCompilerShim(project);
-    injectTreeScopes(project);
-    injectCaptureDependency(project);
+    compilerPlugin(project)
+        .ifPresent(
+            compiler -> {
+              injectCompilerShim(project, compiler);
+              injectTreeScopes(project);
+              injectCaptureDependency(project);
+            });
   }
 
-  void injectCompilerShim(final MavenProject project) {
-    final Plugin compiler =
-        findOrCreatePlugin(
-            project,
-            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
-            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
+  static Optional<Plugin> compilerPlugin(final MavenProject project) {
+    return findPlugin(
+        project,
+        LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
+        LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID);
+  }
+
+  void injectCompilerShim(final MavenProject project, final Plugin compiler) {
     putLatheDependency(compiler.getDependencies(), LatheLayout.Maven.COMPILER_ARTIFACT_ID, null);
     // The compiler is selected via the property, not a <compilerId> config node: a node added in
     // afterProjectsRead does not reach the default compile executions (lathe-maven-extension.md
@@ -74,7 +83,7 @@ final class LatheModelInjector {
     bindGoal(plugin, LatheLayout.Maven.SYNC_EXECUTION_ID, LatheLayout.Maven.SYNC_GOAL);
   }
 
-  static Optional<Plugin> findPlugin(
+  private static Optional<Plugin> findPlugin(
       final MavenProject project, final String groupId, final String artifactId) {
     return project.getBuild().getPlugins().stream()
         .filter(
