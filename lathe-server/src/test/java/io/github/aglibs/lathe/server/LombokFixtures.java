@@ -10,8 +10,9 @@ import java.util.List;
 // module puts it on its class path and processor path, as a Lombok project does.
 public final class LombokFixtures {
 
-  // The Lombok the build pins (lombok.version) stops with ExceptionInInitializerError on JDK 27.
-  public static final int MAX_JDK = 26;
+  // The newest JDK the Lombok the build pins (lombok.version) supports; one past its range stopped
+  // 1.18.38 with ExceptionInInitializerError.
+  public static final int MAX_JDK = 27;
 
   private static final Path PROCESSORS = Path.of("target", "test-processors");
 
