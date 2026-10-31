@@ -1670,6 +1670,8 @@ class CodeActionTest {
     assertExtracts(
         "int m(Map<String, java.util.concurrent.atomic.AtomicInteger> c) { return «c.size() + 1»; }",
         method);
+    // a private type of the file itself is used by its name, never imported
+    assertExtracts("private record P(int v) {}\n  int m(P p) { return «p.v() + 1»; }", method);
     // a class's type variable in an instance method; a name an inherited method already has
     assertExtracts("static class Box<E> { E e; E m(E x) { return «x != null ? x : e»; } }", method);
     assertExtracts(

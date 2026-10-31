@@ -117,35 +117,41 @@ final class CodeActionSupport {
       final AttributedFileAnalysis analysis, final Stream<? extends TypeMirror> types) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
     return types
-        .flatMap(type -> typeFqns(type).stream())
+        .flatMap(type -> typeElements(type).stream())
         .distinct()
+        .filter(type -> !declaredIn(analysis, type))
+        .map(type -> type.getQualifiedName().toString())
         .map(importAnalyzer::importEdit)
         .filter(Objects::nonNull)
         .toList();
   }
 
-  // The qualified names of a type and every type in it: generic arguments, array components,
-  // wildcard bounds.
-  private static Set<String> typeFqns(final TypeMirror type) {
+  // A type of the file itself is in scope by its simple name, and importing a private one would
+  // not even compile.
+  private static boolean declaredIn(final AttributedFileAnalysis analysis, final TypeElement type) {
+    final TreePath path = analysis.trees().getPath(type);
+    return path != null && path.getCompilationUnit() == analysis.tree();
+  }
+
+  // A type and every type in it: generic arguments, array components, wildcard bounds.
+  private static Set<TypeElement> typeElements(final TypeMirror type) {
     if (type instanceof final DeclaredType dt) {
-      final Stream<String> self =
-          dt.asElement() instanceof TypeElement te
-              ? Stream.of(te.getQualifiedName().toString())
-              : Stream.of();
-      final Stream<String> args =
-          dt.getTypeArguments().stream().flatMap(arg -> typeFqns(arg).stream());
+      final Stream<TypeElement> self =
+          dt.asElement() instanceof final TypeElement te ? Stream.of(te) : Stream.of();
+      final Stream<TypeElement> args =
+          dt.getTypeArguments().stream().flatMap(arg -> typeElements(arg).stream());
       return Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
     }
 
     if (type instanceof final ArrayType at) {
-      return typeFqns(at.getComponentType());
+      return typeElements(at.getComponentType());
     }
 
     if (type instanceof final WildcardType wt) {
-      final Stream<String> ext =
-          wt.getExtendsBound() != null ? typeFqns(wt.getExtendsBound()).stream() : Stream.of();
-      final Stream<String> sup =
-          wt.getSuperBound() != null ? typeFqns(wt.getSuperBound()).stream() : Stream.of();
+      final Stream<TypeElement> ext =
+          wt.getExtendsBound() != null ? typeElements(wt.getExtendsBound()).stream() : Stream.of();
+      final Stream<TypeElement> sup =
+          wt.getSuperBound() != null ? typeElements(wt.getSuperBound()).stream() : Stream.of();
       return Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
     }
 
