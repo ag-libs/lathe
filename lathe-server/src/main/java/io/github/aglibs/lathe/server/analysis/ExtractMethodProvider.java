@@ -10,11 +10,15 @@ import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -89,17 +93,25 @@ final class ExtractMethodProvider {
 
     final boolean expressionForm = region.get(0).getLeaf() instanceof ExpressionTree;
     final RegionFlow flow = RegionFlow.of(member, region, trees);
-    final TypeMirror returnType =
-        expressionForm
-            ? trees.getTypeMirror(region.get(0))
-            : flow.outputs().stream()
-                .findFirst()
-                .map(Element::asType)
-                .orElse(analysis.types().getNoType(TypeKind.VOID));
+    final TypeMirror returnType;
+    if (expressionForm) {
+      returnType = trees.getTypeMirror(region.get(0));
+    } else if (flow.returnsValue()) {
+      returnType = ((ExecutableElement) trees.getElement(member)).getReturnType();
+    } else {
+      returnType =
+          flow.outputs().stream()
+              .findFirst()
+              .map(Element::asType)
+              .orElse(analysis.types().getNoType(TypeKind.VOID));
+    }
+
+    // A void expression is refused below as a type that cannot be written.
     final List<TypeMirror> signatureTypes =
         Stream.of(
-                expressionForm ? Stream.of(returnType) : Stream.<TypeMirror>empty(),
-                flow.outputs().stream().map(Element::asType),
+                expressionForm || returnType.getKind() != TypeKind.VOID
+                    ? Stream.of(returnType)
+                    : Stream.<TypeMirror>empty(),
                 flow.parameters().stream().map(Element::asType),
                 flow.declaredHere().stream().map(Element::asType))
             .flatMap(types -> types)
@@ -107,15 +119,12 @@ final class ExtractMethodProvider {
     final List<String> refusals =
         Stream.of(
                 flow.refusals().stream(),
-                flow.outputs().size() > (expressionForm ? 0 : 1)
+                flow.outputs().size() > (expressionForm || flow.returnsValue() ? 0 : 1)
                     ? Stream.of("values flow out")
                     : Stream.<String>empty(),
                 signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
                     ? Stream.<String>empty()
-                    : Stream.of("a type cannot be written"),
-                namesTypeVariableOf(flow, signatureTypes, ExecutableElement.class)
-                    ? Stream.of("uses a method's type variable")
-                    : Stream.<String>empty())
+                    : Stream.of("a type cannot be written"))
             .flatMap(reasons -> reasons)
             .toList();
     final Optional<String> source = CodeActionSupport.source(analysis.tree());
@@ -124,6 +133,11 @@ final class ExtractMethodProvider {
       return List.of();
     }
 
+    final Set<TypeParameterElement> typeVariables =
+        Stream.concat(
+                flow.typeVariables().stream(),
+                signatureTypes.stream().flatMap(ExtractMethodProvider::typeVariablesIn))
+            .collect(Collectors.toUnmodifiableSet());
     final var extraction =
         new Extraction(
             analysis,
@@ -131,13 +145,17 @@ final class ExtractMethodProvider {
             member,
             region,
             methodName(member.getParentPath(), analysis),
+            methodTypeParameters(member, typeVariables, trees),
             returnType,
             flow.parameters(),
             flow.declaredHere(),
             flow.outputs(),
+            flow.returnsValue(),
             UncaughtExceptions.of(region, analysis));
     // A static method cannot use the class's type variables.
-    final boolean classTypeVariables = namesTypeVariableOf(flow, signatureTypes, TypeElement.class);
+    final boolean classTypeVariables =
+        typeVariables.stream()
+            .anyMatch(variable -> variable.getGenericElement() instanceof TypeElement);
     final var actions = new ArrayList<Either<Command, CodeAction>>();
     final boolean regionStatic = isStaticContext(region.get(0), trees);
     if (!(regionStatic && classTypeVariables)) {
@@ -177,10 +195,12 @@ final class ExtractMethodProvider {
       TreePath member,
       List<TreePath> region,
       String name,
+      List<TypeParameterTree> typeParameters,
       TypeMirror returnType,
       List<VariableElement> parameters,
       List<VariableElement> declaredHere,
       List<VariableElement> outputs,
+      boolean returnsValue,
       List<TypeMirror> thrown) {
 
     Extraction {
@@ -190,6 +210,7 @@ final class ExtractMethodProvider {
           .notNull(member, "member")
           .notNull(region, "region")
           .notNull(name, "name")
+          .notNull(typeParameters, "typeParameters")
           .notNull(returnType, "returnType")
           .notNull(parameters, "parameters")
           .notNull(declaredHere, "declaredHere")
@@ -197,6 +218,7 @@ final class ExtractMethodProvider {
           .notNull(thrown, "thrown")
           .validate();
       region = List.copyOf(region);
+      typeParameters = List.copyOf(typeParameters);
       parameters = List.copyOf(parameters);
       declaredHere = List.copyOf(declaredHere);
       outputs = List.copyOf(outputs);
@@ -222,7 +244,9 @@ final class ExtractMethodProvider {
       final String call =
           "%s%s(%s)%s"
               .formatted(
-                  outputs.stream().map(this::receiving).findFirst().orElse(""),
+                  returnsValue
+                      ? "return "
+                      : outputs.stream().map(this::receiving).findFirst().orElse(""),
                   name,
                   parameters.stream()
                       .map(parameter -> parameter.getSimpleName().toString())
@@ -316,10 +340,21 @@ final class ExtractMethodProvider {
                                   "%sreturn %s;".formatted(bodyIndent, output.getSimpleName())))
                   .flatMap(lines -> lines)
                   .collect(Collectors.joining("\n"));
-      return "\n\n%sprivate %s%s %s(%s)%s {\n%s\n%s}"
+      return "\n\n%sprivate %s%s%s %s(%s)%s {\n%s\n%s}"
           .formatted(
               indent,
               isStatic ? "static " : "",
+              typeParameters.isEmpty()
+                  ? ""
+                  : "<%s> "
+                      .formatted(
+                          typeParameters.stream()
+                              .map(
+                                  parameter ->
+                                      source.substring(
+                                          (int) start(new TreePath(member, parameter)),
+                                          (int) end(new TreePath(member, parameter))))
+                              .collect(Collectors.joining(", "))),
               format.format(returnType),
               name,
               parameterList,
@@ -418,34 +453,50 @@ final class ExtractMethodProvider {
             .anyMatch(p -> ExtractionSupport.isConstructorCall(p, trees));
   }
 
-  private static boolean namesTypeVariableOf(
-      final RegionFlow flow,
-      final List<TypeMirror> signatureTypes,
-      final Class<? extends Element> owner) {
-    return flow.typeVariables().stream()
-            .anyMatch(variable -> owner.isInstance(variable.getGenericElement()))
-        || signatureTypes.stream().anyMatch(type -> mentionsTypeVariableOf(type, owner));
+  // The enclosing method's type parameters the new method needs: those named in the region or its
+  // signature, and those their bounds name.
+  private static List<TypeParameterTree> methodTypeParameters(
+      final TreePath member, final Set<TypeParameterElement> named, final Trees trees) {
+    if (!(member.getLeaf() instanceof final MethodTree method)) {
+      return List.of();
+    }
+
+    final Set<TypeParameterElement> needed = new HashSet<>();
+    final Deque<TypeParameterElement> pending = new ArrayDeque<>(named);
+    while (!pending.isEmpty()) {
+      final TypeParameterElement variable = pending.pop();
+      if (needed.add(variable)) {
+        variable.getBounds().stream()
+            .flatMap(ExtractMethodProvider::typeVariablesIn)
+            .forEach(pending::push);
+      }
+    }
+
+    return method.getTypeParameters().stream()
+        .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
+        .collect(Collectors.toUnmodifiableList());
   }
 
-  private static boolean mentionsTypeVariableOf(
-      final TypeMirror type, final Class<? extends Element> owner) {
+  // The type variables a type names: itself, or in its generic arguments, array component or
+  // wildcard bounds.
+  private static Stream<TypeParameterElement> typeVariablesIn(final TypeMirror type) {
     if (type instanceof final TypeVariable variable) {
-      return owner.isInstance(((TypeParameterElement) variable.asElement()).getGenericElement());
+      return Stream.of((TypeParameterElement) variable.asElement());
     }
 
     if (type instanceof final DeclaredType declared) {
-      return declared.getTypeArguments().stream()
-          .anyMatch(argument -> mentionsTypeVariableOf(argument, owner));
+      return declared.getTypeArguments().stream().flatMap(ExtractMethodProvider::typeVariablesIn);
     }
 
     if (type instanceof final ArrayType array) {
-      return mentionsTypeVariableOf(array.getComponentType(), owner);
+      return typeVariablesIn(array.getComponentType());
     }
 
     return type instanceof final WildcardType wildcard
-        && Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound())
+        ? Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound())
             .filter(Objects::nonNull)
-            .anyMatch(bound -> mentionsTypeVariableOf(bound, owner));
+            .flatMap(ExtractMethodProvider::typeVariablesIn)
+        : Stream.empty();
   }
 
   // `extracted`, or the first `extractedN` no method of the class declares or inherits: a new

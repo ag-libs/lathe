@@ -13,6 +13,7 @@ import com.sun.source.tree.IfTree;
 import com.sun.source.tree.LabeledStatementTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.PrimitiveTypeTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SwitchExpressionTree;
@@ -35,6 +36,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -47,18 +49,22 @@ import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeKind;
 
 // How a region of a member (one expression, or consecutive statements of one block) uses the
 // member's locals, judged for moving the region into a new method: the locals it reads with a
 // value from before it (parameters), the ones it uses without one (the new method declares them),
 // and the ones written or declared in it and used outside it (outputs). Conservative where javac's
 // own flow analysis (internal API) would be exact: any use outside the region counts as later, so
-// a read earlier in a loop's text is not missed. `refusals` says why the region cannot move.
+// a read earlier in a loop's text is not missed. `returnsValue` says every path through the
+// statements leaves the enclosing method with a value (or a throw), so the call is returned.
+// `refusals` says why the region cannot move.
 record RegionFlow(
     List<VariableElement> parameters,
     List<VariableElement> declaredHere,
     List<VariableElement> outputs,
     Set<TypeParameterElement> typeVariables,
+    boolean returnsValue,
     List<String> refusals) {
 
   RegionFlow {
@@ -233,11 +239,13 @@ record RegionFlow(
       refusals.add("a value flowing out is assigned conditionally");
     }
 
-    if (region.get(0).getLeaf() instanceof StatementTree) {
-      refusals.addAll(controlRefusals(region, trees));
+    final boolean statementForm = region.get(0).getLeaf() instanceof StatementTree;
+    final boolean returnsValue = statementForm && returnsValue(region);
+    if (statementForm) {
+      refusals.addAll(controlRefusals(region, trees, returnsValue));
     }
 
-    return new RegionFlow(parameters, declaredHere, outputs, typeVariables, refusals);
+    return new RegionFlow(parameters, declaredHere, outputs, typeVariables, returnsValue, refusals);
   }
 
   private static boolean anyUse(
@@ -268,11 +276,32 @@ record RegionFlow(
 
   // ── control flow of a statement region ───────────────────────────────────────────────────
 
-  // Why moving the statements would change where control goes: a return, a break/continue/yield
-  // whose target lies outside them, a this(...)/super(...) call (it must stay first), a rethrown
-  // catch parameter (Java's precise rethrow throws less than its type says), or statements that
-  // never complete normally (the call would look like it completes).
-  private static List<String> controlRefusals(final List<TreePath> region, final Trees trees) {
+  // Whether the statements cannot complete normally, directly in a method returning a value: then
+  // every path ends in `return value;` or a throw, and `return extracted(…);` keeps both.
+  private static boolean returnsValue(final List<TreePath> region) {
+    return !completesNormally(region.get(region.size() - 1).getLeaf())
+        && Stream.iterate(region.get(0), Objects::nonNull, TreePath::getParentPath)
+            .map(TreePath::getLeaf)
+            .filter(RegionFlow::isBodyBoundary)
+            .findFirst()
+            .filter(MethodTree.class::isInstance)
+            .map(MethodTree.class::cast)
+            .map(MethodTree::getReturnType)
+            .filter(
+                type ->
+                    type != null
+                        && !(type instanceof final PrimitiveTypeTree primitive
+                            && primitive.getPrimitiveTypeKind() == TypeKind.VOID))
+            .isPresent();
+  }
+
+  // Why moving the statements would change where control goes: a return (unless every path
+  // returns a value), a break/continue/yield whose target lies outside them, a this(...)/super(...)
+  // call (it must stay first), a rethrown catch parameter (Java's precise rethrow throws less than
+  // its type says), or statements that never complete normally (the call would look like it
+  // completes).
+  private static List<String> controlRefusals(
+      final List<TreePath> region, final Trees trees, final boolean returnsValue) {
     final Set<Tree> inside = new HashSet<>();
     region.forEach(
         root ->
@@ -305,7 +334,10 @@ record RegionFlow(
 
               @Override
               public Void visitReturn(final ReturnTree tree, final Void unused) {
-                refusals.add("returns");
+                if (!returnsValue) {
+                  refusals.add("returns");
+                }
+
                 return null;
               }
 
@@ -353,7 +385,7 @@ record RegionFlow(
       refusals.add("calls this(...) or super(...)");
     }
 
-    if (!completesNormally(region.get(region.size() - 1).getLeaf())) {
+    if (!returnsValue && !completesNormally(region.get(region.size() - 1).getLeaf())) {
       refusals.add("never completes normally");
     }
 
@@ -369,9 +401,7 @@ record RegionFlow(
   private static Tree target(final TreePath from, final String label, final boolean loopsOnly) {
     for (TreePath path = from.getParentPath(); path != null; path = path.getParentPath()) {
       final Tree leaf = path.getLeaf();
-      if (leaf instanceof LambdaExpressionTree
-          || leaf instanceof ClassTree
-          || leaf instanceof MethodTree) {
+      if (isBodyBoundary(leaf)) {
         return null;
       }
 
@@ -391,6 +421,13 @@ record RegionFlow(
     return null;
   }
 
+  // Where a return, break or continue stops looking for its target.
+  private static boolean isBodyBoundary(final Tree tree) {
+    return tree instanceof LambdaExpressionTree
+        || tree instanceof MethodTree
+        || tree instanceof ClassTree;
+  }
+
   private static boolean isLoop(final Tree tree) {
     return tree instanceof WhileLoopTree
         || tree instanceof DoWhileLoopTree
@@ -407,9 +444,9 @@ record RegionFlow(
   }
 
   // Whether the statement can complete normally (JLS 14.22), approximated for the shapes that end
-  // in a throw: a throw, a block ending in one, an if/else or a try all of whose paths do.
+  // in a throw or a return: one, a block ending in one, an if/else or a try all of whose paths do.
   private static boolean completesNormally(final Tree statement) {
-    if (statement instanceof ThrowTree) {
+    if (statement instanceof ThrowTree || statement instanceof ReturnTree) {
       return false;
     }
 

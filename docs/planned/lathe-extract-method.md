@@ -48,6 +48,8 @@ selection (and for a caret inside an expression, like extract variable).
 | Statements, nothing used afterwards | `private void extracted(…) { … }`; the statements become `extracted(…);` |
 | Statements declaring a local used afterwards | `T x = extracted(…);` and the method ends `return x;` |
 | Statements assigning an earlier local used afterwards | `x = extracted(…);` |
+| Statements leaving a method that returns a value on every path (`return` or `throw`) | `return extracted(…);` |
+| Code naming the enclosing generic method's type variables | the new method declares those type parameters, and the ones their bounds name |
 | Statements calling methods that throw checked exceptions they don't catch | the new method declares them (`throws IOException`) |
 | Inside a static method, a static initializer, or a static nested context | the new method is `static` |
 | The same code elsewhere in the class | a second action, `… (replace all N occurrences)`, calls the new method there too |
@@ -56,22 +58,19 @@ Refused, with no action offered (each one listed in the tests):
 
 - the selection is not one expression nor a run of whole sibling statements of one block (or `case:` list);
 - more than one local would have to come back out (Java has one return value);
-- a `return`, or a `break`/`continue`/`yield` whose target lies outside the selection, inside it
-  (outside nested lambdas and classes);
-- it never completes normally (it ends in a `throw`, or every path of its last `if`/`try` throws): moved
-  into a method, the call looks like it completes, and the original method or value lambda would lack its
-  `return`;
+- a `return` on only some paths, or from a lambda or a `void` method, or a `break`/`continue`/`yield`
+  whose target lies outside the selection, inside it (outside nested lambdas and classes);
+- it never completes normally (it ends in a `throw`, or every path of its last `if`/`try` throws) outside
+  a method returning a value: moved into a method, the call looks like it completes, and a value lambda
+  would lack its `return`;
 - a local it declares without an initializer flows out but is not assigned at its top level;
 - an earlier local assigned only in a branch or loop of the selection and read afterwards
   (its value may or may not change — the scan cannot prove which);
 - it uses a local class or record declared earlier in the method (invisible to the new method);
 - it assigns a `final` field (anywhere), contains `this(…)`/`super(…)`, or is a try-with-resources resource;
-- a local that comes back out is captured by a lambda or inner class anywhere in the scope
-  (a second assignment would make it no longer effectively final);
 - it rethrows a catch parameter (`catch (Exception e) { throw e; }`: Java's precise rethrow throws less
   than the parameter's type says, and an over-broad `throws` would not compile at the call site);
-- a parameter, return or thrown type cannot be written (`isDenotable`);
-- the enclosing method's type variables are used (until slice 4 adds type parameters).
+- a parameter, return or thrown type cannot be written (`isDenotable`).
 
 The generated name is `extracted` (uniquified against the class's methods); the user renames it with rename,
 as for extract variable — Neovim code actions carry no snippet placeholders.
@@ -162,9 +161,11 @@ with its own `break` is fine.
 It also refuses a region that never completes normally (JLS 14.22, approximated: a final `throw`, an `if`/`else`
 or a `try` all of whose paths end so).
 
-- `return`, unless **every** path of the region returns (slice 4): the call site becomes
-  `return extracted(…);` (`yield` in a switch rule), and a trailing `return;` of a void method is dropped.
-  When only some paths return, the region is refused (JDT warns and proceeds; refusing keeps behaviour);
+- `return`, unless the region cannot complete normally and sits directly in a method returning a value
+  (slice 4): every path then ends in `return value;` or a throw, and the call site becomes
+  `return extracted(…);`. Returns from a lambda (`yield` in a switch rule) and from a `void` method are
+  still refused, as is a region where only some paths return (JDT warns and proceeds; refusing keeps
+  behaviour);
 - `break`, `continue` and `yield` whose target statement (labelled, or the innermost loop/switch) is outside the
   region.
 

@@ -1672,6 +1672,12 @@ class CodeActionTest {
         method);
     // a private type of the file itself is used by its name, never imported
     assertExtracts("private record P(int v) {}\n  int m(P p) { return «p.v() + 1»; }", method);
+    // the method's type variables the signature needs, with those their bounds name
+    assertThat(
+            assertExtracts(
+                "<A, K, V extends Comparable<K>> V m(List<V> l, A a) { use(a); return «l.get(0)»; }",
+                method))
+        .contains("private <K, V extends Comparable<K>> V extracted(List<V> l)");
     // a class's type variable in an instance method; a name an inherited method already has
     assertExtracts("static class Box<E> { E e; E m(E x) { return «x != null ? x : e»; } }", method);
     assertExtracts(
@@ -1686,7 +1692,6 @@ class CodeActionTest {
         Map.of(
             "void", "void m(String a) { «use(a)»; }",
             "writes a local used later", "int m(int i) { int j = «i++»; return i + j; }",
-            "method type variable", "<T> int m(List<T> l) { return «l.size() + 1»; }",
             "non-denotable", "void m() { use(«List.of(1, \"a\")»); }",
             "constant", "int m() { return «1 + 2»; }",
             "enum case label",
@@ -1761,6 +1766,42 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_extractMethod_statementsReturningOnEveryPath_returnTheCall() {
+    final var source =
+        inTestClass(
+            "int m(String a) {\n    use(a);\n«    if (a.isEmpty()) {\n      return 0;\n    }\n"
+                + "    return a.length();»\n  }");
+    final String rewritten =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(markedActions(source), "Extract method 'extracted'"));
+
+    assertThat(rewritten)
+        .contains(
+            """
+              int m(String a) {
+                use(a);
+                return extracted(a);
+              }
+
+              private int extracted(String a) {
+                if (a.isEmpty()) {
+                  return 0;
+                }
+                return a.length();
+              }
+            """);
+    assertCompilesClean(rewritten);
+
+    // a lambda's return is its own: the statements stay, though the lambda around them may move
+    assertThat(
+            assertExtracts(
+                "java.util.function.Function<String, Integer> f = s -> { «use(s);\n    return 1;» };",
+                "Extract method"))
+        .doesNotContain("return extracted(");
+  }
+
+  @Test
   void codeAction_extractMethod_statementContexts_rewriteToCompilingCode() {
     final String method = "Extract method";
     assertExtracts(
@@ -1819,14 +1860,15 @@ class CodeActionTest {
   @Test
   void codeAction_extractMethod_statementsChangingControlOrState_offerNothing() {
     final Map<String, String> cases = new LinkedHashMap<>();
-    cases.put("return", "int m(String a) { «if (a == null) return 0;» return 1; }");
+    cases.put("return on some paths", "int m(String a) { «if (a == null) return 0;» return 1; }");
+    cases.put("return from a void method", "void m(String a) { «use(a);\n    return;» }");
     cases.put(
         "continue out",
         "void m(List<String> l) { for (String s : l) { «if (s.isEmpty()) continue;» use(s); } }");
     cases.put(
         "case with its break",
         "void m(int k) { switch (k) { case 1: «use(k); break;» default: break; } }");
-    cases.put("never completes", "int m() { «throw new IllegalStateException();» }");
+    cases.put("never completes", "void m() { «throw new IllegalStateException();» }");
     cases.put(
         "assigned conditionally",
         "void m(String a) { int n = 0; «if (a.isEmpty()) n = 1;» use(n); }");
