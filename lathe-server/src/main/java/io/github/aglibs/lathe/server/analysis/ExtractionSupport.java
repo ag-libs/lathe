@@ -44,6 +44,7 @@ import java.util.stream.IntStream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Range;
@@ -66,7 +67,9 @@ public final class ExtractionSupport {
   public static final String VARIABLE_KIND = "refactor.extract.variable";
   public static final String CONSTANT_KIND = "refactor.extract.constant";
   public static final String FIELD_KIND = "refactor.extract.field";
-  public static final List<String> KINDS = List.of(VARIABLE_KIND, CONSTANT_KIND, FIELD_KIND);
+  public static final String METHOD_KIND = "refactor.extract.method";
+  public static final List<String> KINDS =
+      List.of(VARIABLE_KIND, CONSTANT_KIND, FIELD_KIND, METHOD_KIND);
 
   private ExtractionSupport() {}
 
@@ -215,7 +218,8 @@ public final class ExtractionSupport {
         }
 
         final var candidate = new TreePath(getCurrentPath(), node);
-        if (!equivalent(selectedPath, candidate, trees)) {
+        // An assignment's target is a place to store into, not a value: never an occurrence.
+        if (!equivalent(selectedPath, candidate, trees) || isAssignmentTarget(candidate)) {
           return;
         }
 
@@ -343,6 +347,46 @@ public final class ExtractionSupport {
     return ea != null && ea.equals(trees.getElement(b));
   }
 
+  // A compile-time constant (JLS 15.29), in the safe subset: literals, constant variables, and the
+  // operators, parentheses and casts over them.
+  static boolean isCompileTimeConstant(final TreePath path, final Trees trees) {
+    final Tree node = path.getLeaf();
+
+    if (node instanceof final LiteralTree literal) {
+      return literal.getValue() != null; // the `null` literal is not a constant expression
+    }
+
+    if (node instanceof final ParenthesizedTree p) {
+      return isCompileTimeConstant(child(path, p.getExpression()), trees);
+    }
+
+    if (node instanceof final UnaryTree u && isPureUnary(u.getKind())) {
+      return isCompileTimeConstant(child(path, u.getExpression()), trees);
+    }
+
+    if (node instanceof final BinaryTree b) {
+      return isCompileTimeConstant(child(path, b.getLeftOperand()), trees)
+          && isCompileTimeConstant(child(path, b.getRightOperand()), trees);
+    }
+
+    if (node instanceof final ConditionalExpressionTree c) {
+      return isCompileTimeConstant(child(path, c.getCondition()), trees)
+          && isCompileTimeConstant(child(path, c.getTrueExpression()), trees)
+          && isCompileTimeConstant(child(path, c.getFalseExpression()), trees);
+    }
+
+    if (node instanceof final TypeCastTree cast) {
+      return isCompileTimeConstant(child(path, cast.getExpression()), trees);
+    }
+
+    if (node instanceof IdentifierTree || node instanceof MemberSelectTree) {
+      return trees.getElement(path) instanceof final VariableElement variable
+          && variable.getConstantValue() != null;
+    }
+
+    return false;
+  }
+
   private static boolean isPureUnary(final Tree.Kind kind) {
     return kind == Tree.Kind.UNARY_PLUS
         || kind == Tree.Kind.UNARY_MINUS
@@ -384,7 +428,6 @@ public final class ExtractionSupport {
 
   // ── read-set / value-stability (shared by the value + field replace-all safety gates) ────────
 
-  // The local variables, parameters, and fields the selected expression reads.
   // True when the expression cannot be computed before `statement`, an ancestor: it would run where
   // today it may not (the right of && or ||, a ?: branch, an if/case/catch branch, a loop body, an
   // assert), once instead of on every iteration (a loop condition), ahead of this(...)/super(...),
@@ -442,7 +485,7 @@ public final class ExtractionSupport {
 
   // this(...) or super(...): nothing may precede it (before Java 25), and only these invocations
   // resolve to a constructor.
-  private static boolean isConstructorCall(final TreePath statement, final Trees trees) {
+  static boolean isConstructorCall(final TreePath statement, final Trees trees) {
     if (!(statement.getLeaf() instanceof final ExpressionStatementTree call)
         || !(call.getExpression() instanceof MethodInvocationTree)) {
       return false;
@@ -468,6 +511,7 @@ public final class ExtractionSupport {
     return found.get();
   }
 
+  // The local variables, parameters, and fields the selected expression reads.
   static Set<Element> readVariables(final TreePath selectedPath, final Trees trees) {
     final var reads = new HashSet<Element>();
     addIfVariable(reads, selectedPath, trees);
@@ -554,7 +598,19 @@ public final class ExtractionSupport {
     return violated.get();
   }
 
-  private static boolean isIncDec(final Tree.Kind kind) {
+  // The variable an assignment, a compound assignment or ++/-- stores into.
+  static boolean isAssignmentTarget(final TreePath path) {
+    final Tree parent = path.getParentPath().getLeaf();
+    final Tree leaf = path.getLeaf();
+    return (parent instanceof final AssignmentTree assignment && assignment.getVariable() == leaf)
+        || (parent instanceof final CompoundAssignmentTree compound
+            && compound.getVariable() == leaf)
+        || (parent instanceof final UnaryTree unary
+            && unary.getExpression() == leaf
+            && isIncDec(unary.getKind()));
+  }
+
+  static boolean isIncDec(final Tree.Kind kind) {
     return kind == Tree.Kind.PREFIX_INCREMENT
         || kind == Tree.Kind.POSTFIX_INCREMENT
         || kind == Tree.Kind.PREFIX_DECREMENT

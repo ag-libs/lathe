@@ -12,7 +12,10 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Modifier;
@@ -88,6 +91,46 @@ final class CodeActionSupport {
       current = current.getParentPath();
     }
     return null;
+  }
+
+  // Import edits for every type the given types mention, each needed import once.
+  static List<TextEdit> importEditsFor(
+      final AttributedFileAnalysis analysis, final Stream<? extends TypeMirror> types) {
+    final var importAnalyzer = new ImportAnalyzer(analysis);
+    return types
+        .flatMap(type -> typeFqns(type).stream())
+        .distinct()
+        .map(importAnalyzer::importEdit)
+        .filter(Objects::nonNull)
+        .toList();
+  }
+
+  // The qualified names of a type and every type in it: generic arguments, array components,
+  // wildcard bounds.
+  private static Set<String> typeFqns(final TypeMirror type) {
+    if (type instanceof final DeclaredType dt) {
+      final Stream<String> self =
+          dt.asElement() instanceof TypeElement te
+              ? Stream.of(te.getQualifiedName().toString())
+              : Stream.of();
+      final Stream<String> args =
+          dt.getTypeArguments().stream().flatMap(arg -> typeFqns(arg).stream());
+      return Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
+    }
+
+    if (type instanceof final ArrayType at) {
+      return typeFqns(at.getComponentType());
+    }
+
+    if (type instanceof final WildcardType wt) {
+      final Stream<String> ext =
+          wt.getExtendsBound() != null ? typeFqns(wt.getExtendsBound()).stream() : Stream.of();
+      final Stream<String> sup =
+          wt.getSuperBound() != null ? typeFqns(wt.getSuperBound()).stream() : Stream.of();
+      return Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
+    }
+
+    return Set.of();
   }
 
   // The variable declaration enclosing the cursor, bounded at the method/class boundary so a caret
@@ -329,10 +372,13 @@ final class CodeActionSupport {
       return "  ";
     }
 
-    final String stmtIndent = lineIndent(source, (int) stmtStart);
-    final String ownerIndent = lineIndent(source, (int) ownerStart);
-    return stmtIndent.startsWith(ownerIndent) && stmtIndent.length() > ownerIndent.length()
-        ? stmtIndent.substring(ownerIndent.length())
+    return indentStep(lineIndent(source, (int) stmtStart), lineIndent(source, (int) ownerStart));
+  }
+
+  // One indent level: how much deeper `inner` is than `outer`, else two spaces.
+  static String indentStep(final String inner, final String outer) {
+    return inner.startsWith(outer) && inner.length() > outer.length()
+        ? inner.substring(outer.length())
         : "  ";
   }
 
@@ -359,6 +405,7 @@ final class CodeActionSupport {
                   .getTypeArguments().stream().allMatch(CodeActionSupport::isDenotableArgument);
       case ARRAY -> isDenotable(((ArrayType) type).getComponentType());
       case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> true;
+      case TYPEVAR -> SourceVersion.isIdentifier(((TypeVariable) type).asElement().getSimpleName());
       default -> false;
     };
   }
@@ -370,9 +417,7 @@ final class CodeActionSupport {
           .allMatch(CodeActionSupport::isDenotableArgument);
     }
 
-    return argument instanceof final TypeVariable variable
-        ? SourceVersion.isIdentifier(variable.asElement().getSimpleName())
-        : isDenotable(argument);
+    return isDenotable(argument);
   }
 
   private static boolean isAnonymous(final DeclaredType type) {

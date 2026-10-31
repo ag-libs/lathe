@@ -50,7 +50,7 @@ selection (and for a caret inside an expression, like extract variable).
 | Statements assigning an earlier local used afterwards | `x = extracted(…);` |
 | Statements calling methods that throw checked exceptions they don't catch | the new method declares them (`throws IOException`) |
 | Inside a static method, a static initializer, or a static nested context | the new method is `static` |
-| The same code elsewhere in the class | a second action, `… (replace N duplicates)`, calls the new method there too |
+| The same code elsewhere in the class | a second action, `… (replace all N occurrences)`, calls the new method there too |
 
 Refused, with no action offered (each one listed in the tests):
 
@@ -212,7 +212,7 @@ The user's format-on-save normalizes layout.
 
 ### 4.6 Duplicates
 
-A second action, `Extract method 'extracted' (replace N duplicates)`, also replaces copies of the region in the
+A second action, `Extract method 'extracted' (replace all N occurrences)`, also replaces copies of the region in the
 class with calls; the plain action stays. Repeating the action at each copy would instead create
 `extracted1`, `extracted2`, … rather than reuse the method.
 

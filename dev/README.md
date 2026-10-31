@@ -360,6 +360,26 @@ printf 'refs "upper" min 1 expect Main.java\nrefs "StringUtils()" max 0\n' \
     | python3 dev/explore.py StringUtils.java
 ```
 
+### Probing code actions and refactorings end to end
+
+`actions` lists the code actions for a selection, given the way an editor sends it: a caret
+(`12:8`), a range (`12:8-14:23`), whole lines as Neovim's `V` sends them (`lines 13-15`, 1-based),
+or the span of a text (`"a.trim()"`). `apply` then applies one of them to the live buffer, prints
+the diff, and fails the probe if the server reports any error in the rewritten code, so a refactoring
+that breaks the file is caught end to end. `absent` asserts a refusal.
+
+```bash
+# extract method on an expression offers both actions, and the rewrite compiles
+printf 'actions "a.trim().length() * 2" expect "Extract method"\napply "Extract method"\n' \
+    | python3 dev/explore.py Service.java
+
+# a line-wise selection finds the expression; a constant is not extracted into a method
+python3 dev/explore.py Service.java actions lines 41-43 expect "Extract variable"
+python3 dev/explore.py Service.java actions "1 + 2" absent "Extract method"
+```
+
+The probe runs the installed `0.1.0-SNAPSHOT` server (see `lsp.py`), so install the checkout first.
+
 ### Probing accepted completion edits
 
 `accept` inspects what selecting one completion item would do.

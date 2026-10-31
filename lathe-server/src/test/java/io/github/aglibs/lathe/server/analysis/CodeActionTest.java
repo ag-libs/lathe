@@ -1522,7 +1522,7 @@ class CodeActionTest {
         inTestClass(
             "void m(String a, boolean b) {\n    if (b) { use(«a.trim()»); } else { use(a.trim()); }\n  }");
     assertThat(rightTitles(markedActions(onlyInBranches)))
-        .noneMatch(t -> t.contains("replace all"));
+        .noneMatch(t -> t.startsWith("Extract variable") && t.contains("replace all"));
   }
 
   @Test
@@ -1620,6 +1620,121 @@ class CodeActionTest {
             annotatedConstructor, addCtorEdits(replaceVarActionsAt(annotatedConstructor, 3, 23)));
     assertThat(rewritten).contains("Widget(final String id) {\n    this.id = id;\n  }");
     assertCompilesClean(rewritten);
+  }
+
+  // --- Extract-method provider ---
+
+  @Test
+  void codeAction_extractMethod_expression_becomesPrivateMethodAfterItsMember() {
+    final var source =
+        inTestClass("int m(final String a) {\n    return «a.trim().length() * 2»;\n  }");
+    final String rewritten =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(markedActions(source), "Extract method 'extracted'"));
+
+    assertThat(rewritten)
+        .contains(
+            """
+              int m(final String a) {
+                return extracted(a);
+              }
+
+              private int extracted(final String a) {
+                return a.trim().length() * 2;
+              }
+            """);
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_extractMethod_contexts_rewriteToCompilingCode() {
+    final String method = "Extract method";
+    // static contexts: a static method, a static field, a this(...) argument
+    assertExtracts("static int s(String a) { return «a.length() + 1»; }", method);
+    assertExtracts("static int g = «Integer.parseInt(\"4\") + 1»;", method);
+    assertExtracts("Test(int x) {}\n  Test(String s) { this(«s.length() + 1»); }", method);
+    // a lambda's parameter and a captured local become parameters; a field initializer works too
+    assertExtracts("void m(List<String> l, String p) { l.forEach(x -> use(«x + p»)); }", method);
+    assertExtracts("int base = 2;\n  int f = «base * 3»;", method);
+    // inside an anonymous class the method joins that class, where its field is visible
+    assertExtracts(
+        "Runnable m() { return new Runnable() { int n = 1; public void run() { use(«n + 1»); } }; }",
+        method);
+    // checked exceptions as instantiated at the call, and every signature type imported
+    assertExtracts(
+        "String m(Optional<String> o) throws java.io.IOException {\n"
+            + "    return «o.orElseThrow(java.io.IOException::new)»;\n  }",
+        method);
+    assertExtracts(
+        "int m(Map<String, java.util.concurrent.atomic.AtomicInteger> c) { return «c.size() + 1»; }",
+        method);
+    // a class's type variable in an instance method; a name an inherited method already has
+    assertExtracts("static class Box<E> { E e; E m(E x) { return «x != null ? x : e»; } }", method);
+    assertExtracts(
+        "static class Base { void extracted() {} }\n"
+            + "  static class Sub extends Base { int m(String a) { return «a.length() + 1»; } }",
+        "Extract method 'extracted1'");
+  }
+
+  @Test
+  void codeAction_extractMethod_notMovableOrPointless_offersNothing() {
+    final Map<String, String> cases =
+        Map.of(
+            "void", "void m(String a) { «use(a)»; }",
+            "writes a local", "int m(int i) { return «i++»; }",
+            "method type variable", "<T> int m(List<T> l) { return «l.size() + 1»; }",
+            "non-denotable", "void m() { use(«List.of(1, \"a\")»); }",
+            "constant", "int m() { return «1 + 2»; }",
+            "enum case label",
+                "enum E { A, B }\n  void m(E e) { switch (e) { case «A»: break; default: break; } }",
+            "annotation value",
+                "@interface Ann { Class<?> value(); }\n  @Ann(«String.class») void m() {}",
+            "interface", "interface I { default int m(String a) { return «a.length() + 1»; } }",
+            "static with class type variable",
+                "static class Box<E> {\n    Box(E e) { this(«List.of(e)»); }\n    Box(List<E> l) {}\n  }",
+            "local class", "int m() { class L { int v() { return 1; } } return «new L().v()»; }");
+    cases.forEach(
+        (label, member) ->
+            assertThat(rightTitles(markedActions(inTestClass(member))))
+                .as(label)
+                .noneMatch(t -> t.startsWith("Extract method")));
+    assertThat(rightTitles(markedActions(inTestClass("void m(int[] a) { «a[0]» = 1; }"))))
+        .as("assignment target")
+        .noneMatch(t -> t.startsWith("Extract method"));
+  }
+
+  @Test
+  void codeAction_extractMethod_copies_replacedInTheClassOwnMembers() {
+    // copies in another member count, in a nested class do not; one in a static member makes the
+    // replace-all method static while the single one stays an instance method
+    final String source =
+        inTestClass(
+            "static String NAME = \"x\";\n"
+                + "  void m() { use(«NAME.trim()»); }\n"
+                + "  static void s() { System.out.println(NAME.trim()); }\n"
+                + "  static class N { void n() { System.out.println(NAME.trim()); } }");
+    final var actions = markedActions(source);
+    assertThat(rightTitles(actions))
+        .contains(
+            "Extract method 'extracted'", "Extract method 'extracted' (replace all 2 occurrences)");
+    final String all =
+        applyEdits(
+            unmarked(source),
+            editsOfActionStartingWith(actions, "Extract method 'extracted' (replace"));
+    assertThat(all)
+        .contains("private static String extracted()")
+        .contains("System.out.println(extracted());");
+    assertCompilesClean(all);
+    assertCompilesClean(
+        applyEdits(
+            unmarked(source), editsOfActionStartingWith(actions, "Extract method 'extracted'")));
+
+    // a copy that is an assignment's target is not a copy
+    assertThat(
+            rightTitles(markedActions(inTestClass("void m(int[] a) { use(«a[0]»); a[0] = 1; }"))))
+        .contains("Extract method 'extracted'")
+        .noneMatch(t -> t.contains("replace all"));
   }
 
   // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
@@ -1962,7 +2077,8 @@ class CodeActionTest {
     final var actions = extractActionsSpanning(source, 3, 8, 3, 16);
 
     assertThat(rightTitles(actions)).contains("Extract variable 'name'");
-    assertThat(rightTitles(actions)).noneMatch(t -> t.contains("replace all"));
+    assertThat(rightTitles(actions))
+        .noneMatch(t -> t.startsWith("Extract variable") && t.contains("replace all"));
   }
 
   @Test
@@ -1984,7 +2100,8 @@ class CodeActionTest {
     final var actions = extractActionsSpanning(source, 3, 12, 3, 17);
 
     assertThat(rightTitles(actions)).contains("Extract variable 'value'");
-    assertThat(rightTitles(actions)).noneMatch(t -> t.contains("replace all"));
+    assertThat(rightTitles(actions))
+        .noneMatch(t -> t.startsWith("Extract variable") && t.contains("replace all"));
   }
 
   @Test
