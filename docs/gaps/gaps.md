@@ -120,7 +120,13 @@ capability and the absent handler in `LatheLanguageServer`.
 
 **Status: deferred**
 
+**Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
+not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump finds nothing.
+
 ### Observed behaviour
+
+Re-probed 2026-10-31 through MCP `get_definition`, wrong argument **types** to a method with a single declaration
+(`ofSourceTree(42)` where `ofSourceTree(String)`): `{"targets":[]}`.
 
 Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-049, go-to-definition):
 
@@ -129,6 +135,7 @@ Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback thi
 | `c.solo(` (unclosed) | `solo` |
 | `c.greet(` (unclosed, `greet` overloaded) | the first overload only |
 | `c.solo()` / `c.greet()` (wrong argument count) | nothing |
+| `solo(42)` where `solo(String)` (wrong argument type, as after a refactoring) | nothing |
 
 When the name is overloaded definition should return every candidate so the client shows a picker; when it is unambiguous it should resolve to the single method, whatever the arguments.
 
@@ -154,6 +161,12 @@ parsing — sentinel pipeline + javac elements only (AGENTS.md).
 
 Deferred: the recovery integration, overload enumeration, and multi-location plumbing are the largest
 of the three and are not in the current release slice.
+
+A cheaper first slice covers the refactoring case without the sentinel pipeline: a complete call with mismatched
+arguments still parses, so the receiver's type (`getTypeMirror` on the method select's expression, or the enclosing
+class for a bare name) and the method name are known, and the candidates are the methods of that name on it.
+`SignatureHelpResolver` already resolves erroneous calls this way (`memberSelectCandidates`, `methodsNamed`);
+share that lookup, jump when there is one candidate, and list them when there are several.
 
 ### Regression targets
 
@@ -689,6 +702,48 @@ None yet.
 
 ---
 
+## EG-077 — No "go to test": jump from a class to its test, or create one, and back
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor (Neovim first, then VS Code).**
+
+Requested in daily use (2026-10-31), as IntelliJ's Navigate → Test (`Ctrl+Shift+T`).
+
+### Gap
+
+From a main class there is no quick way to open its test.
+`:LatheNew` → Test creates one through the full new-type dialog (and lists the main location first, see [NV-9](#nv-9--lathenew--test-from-a-main-source-file-lists-the-main-location-first)),
+but nothing finds an existing test, and nothing goes from a test back to the class it tests.
+
+### Wanted behaviour
+
+One key on a main class (or anywhere in its file):
+
+- one test found: open it;
+- several (`FooTest`, `FooIT`, `FooTests`): pick from a list;
+- none: offer "Create test `FooTest`", prefilled with the class's package in the module's test root, then open it
+  with the caret in the new test (what `lathe.createType` already renders for a Test);
+- on a test class, the same key goes to the class it tests.
+
+### Fix direction
+
+Editor-neutral first: a server command (beside `lathe.testSources` and `lathe.createType`) that, for a file,
+returns its counterparts and the create arguments when there are none.
+Candidates come from the module's real source roots, not path strings: test classes in the same package named
+by the build's own conventions (Surefire's and Failsafe's default includes, or the captured `test-filter.json`
+when the module has one), then, as a fallback, test classes that reference the type (the reference index).
+The reverse direction strips the same suffixes and looks in the main roots.
+Then a Neovim mapping and command over it, and the same in VS Code.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -973,6 +1028,100 @@ the shared helper can own the anchor logic too, leaving each provider its own pl
 
 None yet. Add a `CodeActionTest` case per provider with a class (and a constructor) annotated with a
 brace-bearing argument such as `@SuppressWarnings({"unused"})`.
+
+---
+
+## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
+
+**Status: documented**
+
+**Value: high — Size: L**
+
+**Affects: Neovim, VS Code, any client.**
+
+Found in daily use (2026-10-30/31): extraction "does not work in many places", on multi-line statements above all.
+Investigated with a probe matrix of 59 Java contexts in `CodeActionTest` (each compiled clean),
+each asked four ways: a caret at the target's start, the exact expression, the expression through its `;`,
+and the whole lines (`V`: column 0 to the last line's end); then the offered edits were applied and recompiled.
+A read-only probe of a 387-line service class in the running editor (a caret code action at each of 800 identifiers)
+matched: extract variable at 201 of them, and every miss on a code line falls under the cases below.
+
+### 1. A selection must be character-exact
+
+| Selection | Offered |
+|---|---|
+| caret at the expression, or exactly the expression (multi-line too) | yes |
+| through the `;` | no, in every context |
+| line-wise (`V`), or starting in the indentation | no, in every context |
+
+Selecting several lines is usually line-wise, so on multi-line code the extractions look absent;
+`V` on a single line fails the same way.
+`ExtractionSupport.coveringExpression` starts at the tree under the selection's start and walks up to an expression
+covering the whole selection: a start in the indentation is above every expression, and an end past the expression
+is covered by none.
+
+### 2. Extract variable is refused where the expression's statement is not directly in a block
+
+| Context | Example | Offered |
+|---|---|---|
+| expression lambda | `l.forEach(x -> use(x.trim()))`, `orElseThrow(() -> new X(a.trim()))`, `.map(x -> x.length() * 2)` | nothing |
+| switch, colon case | `case "x": use(a.trim()); break;` | nothing |
+| switch, arrow case / expression arm | `case "x" -> use(a.trim());`, `case "x" -> a.length() + 1;` | nothing |
+| brace-less body | `if (ok) use(a.trim());`, `else use(…)`, `for (…) use(…)` | nothing |
+| try-with-resources | `try (var in = open(f.getPath()))` | nothing |
+| `for` initializer | `for (int i = seed(); …)` | field only |
+| a whole expression statement | `a.trim();` (non-void) | nothing |
+
+`ExtractVariableProvider` declares before the expression's statement and requires that statement's parent to be a block;
+`CodeActionSupport.nearestEnclosingStatement` stops at a lambda, and these statements' parents are a `case`, an `if`, a `for` or a `try`.
+Extract field and constant are still offered in some of these places, which makes the gap look arbitrary.
+Block lambdas, `yield`, `try`/`catch`/`synchronized` bodies, initializer blocks, constructors, anonymous and local classes,
+and record compact constructors all work.
+
+Also not offered: a lambda or anonymous class as a value (`l.forEach(x -> use(x))`, `use(new Object() { })`):
+the first needs its target type, the second a `var`.
+
+### 3. Extract variable is offered where it breaks the code or changes what it does
+
+It always declares before the statement, so an expression that is evaluated conditionally, repeatedly, or in a
+narrower scope is hoisted:
+
+| Context | Result |
+|---|---|
+| `if (o instanceof String s && s.isEmpty())` | `s.isEmpty()` hoisted above the pattern that declares `s`: does not compile |
+| `use(List.of(1, "a"))` (intersection element type) | `List<> of = List.of(1, "a");`: does not compile |
+| `if (a != null && a.isEmpty())` | `a.isEmpty()` evaluated before the null check: throws |
+| `use(ok(a) ? a.trim() : "")` | the branch evaluated unconditionally |
+| `while (l.isEmpty())`, `do … while (!l.isEmpty())`, `i < l.size()` | the condition evaluated once, before the loop |
+| `super(a.length())` | a statement before `super(…)`, legal only from Java 25, offered whatever the project's release |
+
+### 4. No extract method
+
+The only extractions are variable, field and constant (`ExtractionSupport.KINDS`); selecting statements offers nothing.
+It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md) but never planned.
+
+### Fix direction
+
+1. Match the selection by the tree: ignore whitespace around it, and when it covers a whole statement take that statement's
+   expression (an expression statement's expression, a declaration's initializer, a `return`'s value).
+2. Make room where there is no block, as IntelliJ does: an expression lambda's body becomes a block
+   (`x -> { var v = …; return …; }`), a case arm or brace-less body is wrapped in braces, a resource or `for` initializer
+   declares before the `try`/`for`; a non-void expression statement becomes a declaration.
+   Never hoist out of a lambda.
+3. Refuse (or declare in place) what cannot move: the right side of `&&`/`||`, a `?:` branch, a loop condition or update,
+   and anything reading a pattern binding; insert before `super(…)` only from Java 25.
+   Use `var` for a non-denotable type (intersection, anonymous class) instead of writing a broken one.
+4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
+   its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
+
+The test helper `CodeActionTest.applyEdits` garbles two edits that start at the same offset
+(an extraction at a statement's first token yields `stringtring string = a;`); Neovim applies the same edits correctly.
+Fix it before relying on it for these regression tests.
+
+### Regression targets
+
+None yet. The probe's contexts become `CodeActionTest` cases: each of the four selections for a plain expression,
+one case per context in sections 2 and 3, and an applied-edit compile check for every extraction offered.
 
 ---
 
@@ -2447,6 +2596,10 @@ Two consequences:
   looks complete. The server instructions tell the agent to act on these notes.
 - The JSON repeats each key on every item, so answers are larger than the text form
   (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
+
+Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
+`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
+only a separate `get_diagnostics` showed the two errors.
 
 This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
 that structured content serves programmatic clients and not models.
