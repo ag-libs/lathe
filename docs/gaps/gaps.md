@@ -1554,47 +1554,79 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## DB-7 — Breakpoints arm only in files whose analysis is loaded
+## DB-7 — A breakpoint in a file that is not open, or was closed, never fires, and nothing says so
 
-**Status: accepted (cross-module source lookup shipped; arming breakpoints in unopened files remains).**
+**Status: accepted (cross-module source lookup shipped; arming breakpoints in files without an analysis remains).**
 
-**Value: high — Size: M**
+**Value: high — Size: S–M**
 
 Signal: user feedback — with breakpoints across several source files, a debug run stopped at seemingly "random" places instead of the breakpoints.
-Reproduced on the `multi-module` invoker workspace with fresh bytecode, so it is not a staleness or line-table issue.
+Re-evaluated with a spike (2026-10-31): the misses are deterministic, not random.
+Which breakpoints fire depends on which of their files the server has an analysis of when the debug session starts,
+and every breakpoint is reported unverified, so the editor cannot show which ones are dead.
+No stop at a line without a breakpoint was seen.
 
 ### Observed behaviour
 
-`dev/debug_probe.py` launching `com.example.app.Main` (module `app`) with breakpoints in `Main` and in `StringUtils.upper` (module `core`, called at `Main:10`):
+Debugging `com.example.app.Main` on the `multi-module` invoker workspace (fresh bytecode),
+breakpoints at `Main:21` and in `StringUtils.upper` (module `core`), varying only what the editor did with `StringUtils.java` first:
 
-- Breakpoints in `Main` hit on their exact lines.
-- The `StringUtils` breakpoint never fires when that file is not open; the debuggee runs past it.
+| `StringUtils.java` | `Main:21` | `StringUtils` |
+|---|---|---|
+| opened, diagnostics received | stops | stops |
+| opened, debug started without waiting for diagnostics | stops | stops |
+| never opened | stops | runs past |
+| opened, then closed | stops | runs past |
+
+- Opening and debugging at once is not a race: the open-time compile and the arming query run in order on the module's worker.
+- Closing a file drops its analysis, so a breakpoint left in a closed file is dead.
+  In Neovim, `:bd` on a buffer sends `didClose` while nvim-dap keeps that buffer's breakpoints.
+- Every `setBreakpoints` answer has `verified: false`, armed or not.
+  `LatheSourceLookUpProvider.supportsRealtimeBreakpointVerification` returns `false`,
+  so java-debug only verifies a breakpoint once its class loads, and a dead one is indistinguishable until the run ends.
+  The server logs `[breakpoint] … not armed`, which the user does not see.
 
 The other half of the original report, a stop in another module's class showing no source, is fixed:
 the debug provider context now receives `workspace.allSourceRoots()` plus the manifest's dependency and per-module JDK source dirs.
 
 ### Root cause
 
-`LatheSourceLookUpProvider.classNameAt` → `SourceAnalysisSession.enclosingBinaryName` reads only the module worker's cached analysis of the file, returning empty for a file that is not attributed.
-So a breakpoint in an unopened file gets no class name and is never armed; `LatheSourceLookUpProvider` logs `[breakpoint] … not armed`.
-Releasing module sessions under memory pressure can also drop an open file's analysis, so "attributed", not "open", is the exact condition.
+`LatheSourceLookUpProvider.breakpointLocation` → `SourceAnalysisSession.enclosingBinaryName` takes the class name only from the module session's cache of attributed open documents.
+That cache holds a file only between its open-time compile and its `didClose`, and loses everything when the module's session is released
+(a second memory-pressure round releases sessions of modules with open files too; read from the code, not probed).
+With no class name, java-debug installs nothing for the breakpoint (`SetBreakpointsRequestHandler` skips a location whose `className()` is `null`).
 
 ### Fix direction
 
-Arm breakpoints in files that are not attributed: compile the breakpoint file on demand in the owning module worker rather than requiring the cached analysis.
+Spiked and confirmed (uncommitted): when the cache has no analysis of the file, parse it from disk (parse only, no attribution, through the session's `SourceParser`)
+and return the binary name of the top-level type whose span holds the line.
+The top-level name is enough: java-debug also arms the line in the type's nested classes,
+already-loaded ones through `classesByName(name)` with nested types, later ones through a `name$*` class-prepare filter.
+With the spike, breakpoints in a never-opened and in a closed file stop on the top-level class, a static nested class, an anonymous class and a lambda body.
+
+For the real change:
+
+- Decide whether to keep the cached path at all. The disk file is what the build compiled;
+  an edited, unsaved buffer's analysis can name a type the running bytecode does not have yet.
+  Parsing always is simpler and has no cache dependency.
+- Parse once per file per `setBreakpoints`, not once per breakpoint line.
+- Report armed breakpoints as verified (`supportsRealtimeBreakpointVerification` → `true` once every armed location has a class name),
+  so the editor marks a breakpoint that cannot be armed (no executable code, file outside every module) differently from one waiting for its class.
 
 ### Probe commands
 
+`dev/debug_probe.py --bp` opens every breakpoint file before debugging, so it only covers the attributed case.
+The spike's driver varies the file's state (`open`, `nowait`, `none`, `closed`):
+
 ```bash
-# Multi-file breakpoints across modules; every requested file:line must appear in the actual stops:
-python3 dev/debug_probe.py --workspace <ws> <app/Main.java> --main com.example.app.Main \
-  --bp <app/Main.java>:8 --bp <core/StringUtils.java>:8
+# /tmp/lt/db7_probe.py (spike driver, outside the repo); LATHE_LAUNCHER points at a server built from the checkout
+python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.java>:21
 ```
 
 ### Regression targets
 
 - Cross-module source lookup: `LatheSourceLookUpProviderTest.getSourceFileURI_classInAnotherModule_resolvesWhenRootsSpanTheReactor`.
-- Arming in an unopened file: none yet.
+- Arming without an analysis: none yet — a file never opened, a file opened then closed, and lines in a nested, an anonymous and a local class.
 
 ---
 
