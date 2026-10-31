@@ -202,10 +202,11 @@ actions <selection> [<assertions>]
 
 apply <index | title-prefix>
     Apply an action from the last 'actions' list to the live buffer (never the
-    file on disk): print the changed lines as a diff, then wait for the server's
-    diagnostics of the rewritten buffer and fail the probe on any error, so an
-    action that breaks the code is caught end to end. 'reset' restores the
-    original content.
+    file on disk): resolve it first when it arrives without its edit (extract
+    method is compile-checked on resolve; a disabled answer fails the probe),
+    print the changed lines as a diff, then wait for the server's diagnostics of
+    the rewritten buffer and fail the probe on any error, so an action that breaks
+    the code is caught end to end. 'reset' restores the original content.
 
 reset
     Discard any injected content and restore the server's view to the
@@ -1898,6 +1899,14 @@ class ExploreShell:
             return
 
         action = matches[0]
+        if not action.get("edit"):
+            # A compile-checked action (extract method) carries its edit only once resolved.
+            action = self._client.resolve_code_action(action)
+            if action.get("disabled"):
+                print(f"  [DISABLED] {action['disabled'].get('reason')}")
+                self.any_failure = True
+                return
+
         uri = self._file.resolve().as_uri()
         edits = (action.get("edit") or {}).get("changes", {}).get(uri, [])
         if not edits:

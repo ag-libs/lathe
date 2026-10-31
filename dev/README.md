@@ -366,7 +366,9 @@ printf 'refs "upper" min 1 expect Main.java\nrefs "StringUtils()" max 0\n' \
 (`12:8`), a range (`12:8-14:23`), whole lines as Neovim's `V` sends them (`lines 13-15`, 1-based),
 or the span of a text (`"a.trim()"`). `apply` then applies one of them to the live buffer, prints
 the diff, and fails the probe if the server reports any error in the rewritten code, so a refactoring
-that breaks the file is caught end to end. `absent` asserts a refusal.
+that breaks the file is caught end to end. Like Neovim, the probe client supports `codeAction/resolve`:
+an action listed without its edit (extract method, compile-checked by the server when resolved) is
+resolved first, and a disabled answer fails the probe with its reason. `absent` asserts a refusal.
 
 ```bash
 # extract method on an expression offers both actions, and the rewrite compiles
