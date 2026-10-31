@@ -7,6 +7,44 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP and the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
+`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
+
+### Resolution
+
+A name that is not one Java identifier (`a.b`, a keyword) is refused with that reason, where rename answered a null edit
+that did nothing and said nothing; the MCP tool's own pre-check, which accepted a dotted name, is gone, so both paths share the server's.
+`RenameConflicts` refuses a restricted identifier the symbol's kind cannot take (JLS 3.9):
+a type or type parameter cannot be named `permits`, `record`, `sealed`, `var` or `yield`,
+and a method cannot be named `yield`, since an unqualified call to it does not compile.
+A variable or field can take any of them, so renaming one to `record` is still allowed.
+
+### Regression targets
+
+- `RenameProviderTest.renameConflict_eachKind_refusesAClashButNotANearMiss`: `var` and `record` refused for a type and a type parameter,
+  `yield` for a method; `record` allowed for a method, a field, and `var` for a local.
+- `LatheEngineTest.rename_toATakenOrInvalidName_refusesWithTheReasonAndEditsNothing`: `a.b` refused with the reason, nothing edited.
+- `LatheMcpToolsTest.renameSymbol_invalidIdentifier_returnsTheReasonAsAnError`: the agent gets the server's reason.
+
+---
+
 ## EG-058 — Module analysis sessions are never released: a reactor-wide search pins every touched module's jars for the session — done
 
 **Status: done — Target: next.**

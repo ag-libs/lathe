@@ -801,57 +801,6 @@ None yet.
 
 ---
 
-## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP and the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
-`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
-
-### Regression targets
-
-None yet.
-
-## FR-022 — A constructor reference `XXX::new` is not found as an instantiation or a constructor reference
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: Neovim, VS Code, MCP.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-`:LatheInstances` on a class lists its `new XXX(...)` sites but not its `XXX::new` method references.
-Find references on the constructor most likely misses them too: both go through `ReferenceLocator`.
-
-### Fix direction
-
-`ReferenceLocator.visitMemberReference` resolves the constructor correctly but then looks for the member name after the qualifier,
-and javac names a constructor `<init>`, which never appears in the text, so the match is dropped.
-Anchor a constructor reference at its `new` keyword instead.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
