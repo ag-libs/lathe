@@ -36,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
@@ -176,16 +177,14 @@ record RegionFlow(
             .collect(Collectors.toCollection(LinkedHashSet::new));
     final List<VariableElement> parameters =
         used.stream()
-            .filter(variable -> reads(inRegion, variable))
+            .filter(variable -> anyUse(inRegion, variable, use -> use.access() != Access.WRITE))
             .filter(
                 variable ->
                     valueAtDeclaration.contains(variable)
-                        || uses.stream()
-                            .anyMatch(
-                                use ->
-                                    use.variable() == variable
-                                        && use.access() != Access.READ
-                                        && use.position() < start))
+                        || anyUse(
+                            uses,
+                            variable,
+                            use -> use.access() != Access.READ && use.position() < start))
             .toList();
     final List<VariableElement> declaredHere =
         used.stream().filter(variable -> !parameters.contains(variable)).toList();
@@ -196,20 +195,14 @@ record RegionFlow(
                 declaredInRegion.stream(),
                 used.stream()
                     .filter(
-                        variable ->
-                            inRegion.stream()
-                                .anyMatch(
-                                    use ->
-                                        use.variable() == variable && use.access() != Access.READ)))
+                        variable -> anyUse(inRegion, variable, use -> use.access() != Access.READ)))
             .distinct()
             .filter(
                 variable ->
-                    outside.stream()
-                        .anyMatch(
-                            use ->
-                                use.variable() == variable
-                                    && (declaredInRegion.contains(variable)
-                                        || use.access() != Access.WRITE)))
+                    anyUse(
+                        outside,
+                        variable,
+                        use -> declaredInRegion.contains(variable) || use.access() != Access.WRITE))
             .toList();
 
     if (region.get(0).getLeaf() instanceof StatementTree) {
@@ -219,9 +212,9 @@ record RegionFlow(
     return new RegionFlow(parameters, declaredHere, outputs, typeVariables, refusals);
   }
 
-  private static boolean reads(final List<Use> uses, final VariableElement variable) {
-    return uses.stream()
-        .anyMatch(use -> use.variable() == variable && use.access() != Access.WRITE);
+  private static boolean anyUse(
+      final List<Use> uses, final VariableElement variable, final Predicate<Use> condition) {
+    return uses.stream().anyMatch(use -> use.variable() == variable && condition.test(use));
   }
 
   private static Access access(final TreePath identifier) {
