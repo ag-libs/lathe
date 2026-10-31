@@ -87,10 +87,6 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [New Type Creation](done/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
   the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
-- [Extract Method](planned/lathe-extract-method.md) — **proposed.** The last of the basic extractions (gap
-  CA-16): selected code becomes a private method, with a conservative public-API use/def scan
-  (inputs → parameters, one output → return value, checked exceptions → `throws`) that refuses what it
-  cannot prove; four slices, expression form first.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
@@ -374,6 +370,11 @@ reused):
   (edit-only, no command) that introduces a local for the selected expression, with a replace-all-
   occurrences variant and inferred-name heuristics; mirrors `ReplaceVarProvider` and lays the shared
   scaffolding a later Extract Method slice reuses. `var`-typed variant tracked as CA-6.
+- [Extract Method](done/lathe-extract-method.md) — the last of the basic extractions (gap CA-16): an
+  expression or a run of statements becomes a private method, through a conservative public-API use/def
+  scan (inputs → parameters, one output or every-path `return` → the call's value, checked exceptions →
+  `throws`) that refuses what it cannot prove; replace-all covers copies with other locals, and the edit
+  is compile-checked in `codeAction/resolve` before it reaches the buffer.
 - [Stale-POM Detection](done/lathe-stale-pom-detection.md)
 - [Structural Navigation](done/lathe-structural-navigation.md)
 - [Structured Per-Test Results](done/lathe-structured-test-results.md) — real per-method pass/fail/skip from a

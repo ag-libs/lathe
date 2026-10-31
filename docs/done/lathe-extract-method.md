@@ -1,5 +1,19 @@
 # Lathe — Extract Method (`refactor.extract.method`)
 
+## Status
+
+Implemented (2026-10-31), all five slices of section 5, closing gap CA-16.
+As built, beyond what the sections below say:
+the provider is `ExtractMethodProvider`, the flow analysis `RegionFlow`, the `throws` scan `UncaughtExceptions`,
+and the compile check `CompileCheckedActions`;
+every call site, the selection and its copies, is an `ExtractionSupport.Site` (a run plus its local mapping),
+and statement copies are found by `ExtractionSupport.statementCopies` through the shared `Equivalence` matcher.
+The check's compile goes through `JavaSourceCompiler.compileDetached`, which leaves the document's own compile,
+and so the trees cached from it, undisturbed.
+A declaration moved to the call keeps `final` but not annotations.
+The refinements and later options at the end of section 5 remain open, as do two parts of section 7's plan:
+the coverage measurement, and behaviour tests that run the original and the rewritten code.
+
 ## 1. Goal
 
 Select code, invoke code actions, and get **Extract method**: the selection becomes a new private method,

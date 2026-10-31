@@ -378,7 +378,13 @@ printf 'actions "a.trim().length() * 2" expect "Extract method"\napply "Extract 
 # a line-wise selection finds the expression; a constant is not extracted into a method
 python3 dev/explore.py Service.java actions lines 41-43 expect "Extract variable"
 python3 dev/explore.py Service.java actions "1 + 2" absent "Extract method"
+
+# statements, with copies elsewhere in the class replaced too (apply by index: titles hold quotes)
+printf 'actions lines 196-197 expect "Extract method"\napply 1\n' \
+    | python3 dev/explore.py Service.java
 ```
+
+`expect` and `absent` match a title's start, so `expect "Extract method"` matches the replace-all title too.
 
 The probe runs the installed `0.1.0-SNAPSHOT` server (see `lsp.py`), so install the checkout first.
 
