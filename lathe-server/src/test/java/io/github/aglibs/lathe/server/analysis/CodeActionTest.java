@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -1395,6 +1396,33 @@ class CodeActionTest {
     }
   }
 
+  @Test
+  void codeAction_extractVariable_atStatementStart_rewritesToCompilingCode() {
+    // The declaration is inserted where the extracted expression begins, so the insert and the
+    // replacement share an offset; they must apply in order.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(StringBuilder sb) {
+            sb.append("x").append("y");
+          }
+        }
+        """;
+    final String rewritten =
+        applyEdits(source, extractEdits(extractActionsSpanning(source, 3, 4, 3, 18)));
+
+    assertThat(rewritten)
+        .contains("StringBuilder append = sb.append(\"x\");\n    append.append(\"y\");");
+    assertCompiles(rewritten);
+  }
+
+  private void assertCompiles(final String source) {
+    assertThat(session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN))
+        .as(source)
+        .noneMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
+  }
+
   private record ExtractCase(
       String label,
       String source,
@@ -2089,12 +2117,13 @@ class CodeActionTest {
   }
 
   // Applies non-overlapping TextEdits to the original source, from the latest offset backwards so
-  // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file.
+  // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file. Edits
+  // at one offset land in list order, as LSP specifies: the stable ascending sort keeps that order,
+  // and walking it backwards applies the later edit first.
   private static String applyEdits(final String source, final List<TextEdit> edits) {
     final List<TextEdit> ordered = new ArrayList<>(edits);
-    ordered.sort(
-        Comparator.comparingInt((TextEdit e) -> offsetOf(source, e.getRange().getStart()))
-            .reversed());
+    ordered.sort(Comparator.comparingInt(e -> offsetOf(source, e.getRange().getStart())));
+    Collections.reverse(ordered);
     String result = source;
     for (final TextEdit edit : ordered) {
       final int start = offsetOf(source, edit.getRange().getStart());
