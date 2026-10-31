@@ -1904,6 +1904,7 @@ class ExploreShell:
             action = self._client.resolve_code_action(action)
             if action.get("disabled"):
                 print(f"  [DISABLED] {action['disabled'].get('reason')}")
+                self._print_refused_edit(action)
                 self.any_failure = True
                 return
 
@@ -1941,6 +1942,19 @@ class ExploreShell:
             print(f"  [ERROR] {d['range']['start']['line'] + 1}: {d['message'].splitlines()[0]}")
         self.any_failure |= not _print_assertion_result(
             [f"{len(errors)} error(s) after applying"] if errors else [])
+
+    def _print_refused_edit(self, action: dict) -> None:
+        """The edit a disabled action carried in its data (extract method's), as the diff it would
+        have made: what to look at when the server's compile check refuses it."""
+        edits = (action.get("data") or {}).get("edits") or []
+        if not edits:
+            return
+        print("  would have applied:")
+        for line in difflib.unified_diff(
+                self._current.splitlines(), _apply_text_edits(self._current, edits).splitlines(),
+                lineterm="", n=1):
+            if not line.startswith(("---", "+++")):
+                print(f"    {line}")
 
     def _cmd_reset(self, args: list[str]) -> None:
         if not self._injected:

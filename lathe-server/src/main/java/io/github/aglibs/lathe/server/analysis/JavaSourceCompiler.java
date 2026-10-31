@@ -46,6 +46,12 @@ public interface JavaSourceCompiler extends AutoCloseable {
 
   CompilerResult compile(String uri, String content, CompileMode mode);
 
+  // A compile whose result nobody keeps (a check of edited text): it must leave the document's own
+  // compile undisturbed, so trees cached from that compile keep reading their own text.
+  default CompilerResult compileDetached(final String uri, final String content) {
+    return compile(uri, content, CompileMode.OPEN);
+  }
+
   default CompilerResult compile(
       final String uri,
       final String content,

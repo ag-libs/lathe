@@ -117,7 +117,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // many files at once would otherwise hold one analysis a file until the cache evicts it.
   public List<Diagnostic> diagnosticsTransient(final String uri, final String content) {
     final var t = Stopwatch.start();
-    return diagnosed("check", uri, content, compiler.compile(uri, content, CompileMode.OPEN), t);
+    return diagnosed("check", uri, content, compiler.compileDetached(uri, content), t);
   }
 
   private List<Diagnostic> diagnosed(

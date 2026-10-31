@@ -107,6 +107,28 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  // A detached compile (a check of edited text, as codeAction/resolve and verify_change run) leaves
+  // the document's own compile undisturbed: javac reads text lazily from the per-document temp
+  // file,
+  // so a tree cached from that compile, which code actions cut text by, keeps reading its own text.
+  @Test
+  void compileDetached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
+    Files.createDirectories(sourceRoot);
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final var document = compiler.compile(fooUri, "class Foo { int a; }", CompileMode.OPEN);
+      final var check = compiler.compileDetached(fooUri, "class Foo { int renamed; }");
+
+      assertThat(check.diagnostics()).isEmpty();
+      assertThat(document.fileAnalysis().tree().getSourceFile().getCharContent(false).toString())
+          .isEqualTo("class Foo { int a; }");
+    }
+  }
+
   // Saving a file whose `try {` line was deleted: javac's Attr fails an assertion on the stray
   // catch. The write fails like any compile error, and the server keeps running.
   @Test
