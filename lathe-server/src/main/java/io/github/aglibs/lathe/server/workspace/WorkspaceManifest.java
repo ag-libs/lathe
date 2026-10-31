@@ -131,13 +131,19 @@ public final class WorkspaceManifest {
 
       final List<DependencyData> entries =
           data.dependencySources().stream().filter(e -> e.jar() != null).toList();
+      // One jar can be listed twice (a test-jar dependency and a tests-classifier one); the first
+      // entry stands for it.
       final var jarToGav =
           entries.stream()
-              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), DependencyData::gav));
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      e -> Path.of(e.jar()), DependencyData::gav, (first, ignored) -> first));
       final var jarToSourceDir =
           entries.stream()
               .filter(e -> e.dir() != null)
-              .collect(Collectors.toUnmodifiableMap(e -> Path.of(e.jar()), e -> Path.of(e.dir())));
+              .collect(
+                  Collectors.toUnmodifiableMap(
+                      e -> Path.of(e.jar()), e -> Path.of(e.dir()), (first, ignored) -> first));
       // Classifier jars of one artifact (netty's per-platform natives) share its sources dir; the
       // first entry stands for them all.
       final var sourceDirToJar =
@@ -164,6 +170,7 @@ public final class WorkspaceManifest {
                   jdk != null && jdk.typeIndex() != null
                       ? Stream.of(jdk.typeIndex())
                       : Stream.empty())
+              .distinct()
               .toList();
       final List<Path> resolvedBuildFiles =
           data.buildFiles().stream()

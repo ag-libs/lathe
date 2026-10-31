@@ -1230,34 +1230,6 @@ None yet.
 
 ---
 
-## WS-22 — One external jar listed twice in the manifest switches off cross-module features
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-When one module depends on an external artifact as `<type>test-jar</type>` and another as `<classifier>tests`,
-`workspace.json` lists the jar twice, and the manifest fails to load with "Duplicate key …":
-cross-module references miss other modules, and the advice to re-sync cannot help.
-`WorkspaceManifest.load` still has two jar-keyed `toUnmodifiableMap` collectors (`jarToGav`, `jarToSourceDir`),
-the bug class an earlier fix removed for classifier jars sharing a sources dir.
-
-### Fix direction
-
-Merge duplicate jar entries when loading the manifest, or list each jar once when writing it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
 
 **Status: documented**
