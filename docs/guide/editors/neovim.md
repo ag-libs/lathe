@@ -115,18 +115,18 @@ freely.
 | Go to declaration (overridden contract) | `vim.lsp.buf.declaration()` | — | `gD` |
 | Go to implementation / subtypes | `vim.lsp.buf.implementation()` | `gri` | `gri` |
 | Find references | `vim.lsp.buf.references()` | `grr` | `grr` |
-| Highlight uses of the symbol in the buffer | `vim.lsp.buf.document_highlight()` / `clear_references()` | — | `<leader>lh` |
+| Highlight uses of the symbol in the buffer | `vim.lsp.buf.document_highlight()` / `clear_references()` | — | `<leader>lh`, or automatic (below) |
 | Instantiation sites of a type (`new XXX(...)`) | `:LatheInstances` | — | `grN` |
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
-| Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-k>` |
+| Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-s>` (normal too) |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
-| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `<leader>ca` |
+| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
 | Document symbols (outline) | `vim.lsp.buf.document_symbol()` | `gO` | `gO` |
 | Workspace symbols (CamelCase-hump aware) | `vim.lsp.buf.workspace_symbol()` | — | `<leader>ws` |
-| Type hierarchy (super / sub, one level) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | `<leader>hs` / `<leader>hi` |
+| Type hierarchy (super / sub, one level) | `vim.lsp.buf.typehierarchy("supertypes"/"subtypes")` | — | — (`grh` covers both) |
 | Full type hierarchy (all transitive super + sub, one picker) | `:LatheTypeHierarchy` | — | `grh` |
 | Call hierarchy (incoming / outgoing) | `vim.lsp.buf.incoming_calls()` / `outgoing_calls()` | — | `<leader>ci` / `<leader>co` |
 | Next / previous diagnostic | `vim.diagnostic.jump({count=1/-1})` | `]d` / `[d` | `]d` / `[d` |
@@ -181,16 +181,47 @@ colorscheme that styles those tells them apart. Bind it, and clear the highlight
 move:
 
 ```lua
-vim.keymap.set('n', '<leader>lh', vim.lsp.buf.document_highlight, { desc = 'Lathe: highlight uses of the symbol' })
-vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, { callback = vim.lsp.buf.clear_references })
+vim.keymap.set('n', '<leader>lh', function()
+  vim.lsp.buf.document_highlight()
+  vim.api.nvim_create_autocmd({ 'CursorMoved', 'InsertEnter' }, {
+    buffer = 0, once = true, callback = vim.lsp.buf.clear_references,
+  })
+end, { desc = 'Lathe: highlight uses of the symbol' })
 ```
 
-To highlight automatically whenever the cursor rests, drive it from `CursorHold` instead (lower
-`updatetime` for a snappier feel):
+For automatic highlighting, the simplest route is
+[vim-illuminate](https://github.com/RRethy/vim-illuminate): it asks Lathe for the uses whenever the
+cursor rests, and `<M-n>` / `<M-p>` jump between them.
 
 ```lua
-vim.api.nvim_create_autocmd({ 'CursorHold', 'CursorHoldI' }, { callback = vim.lsp.buf.document_highlight })
-vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, { callback = vim.lsp.buf.clear_references })
+{
+  'RRethy/vim-illuminate',
+  event = { 'BufReadPost', 'BufNewFile' },
+  config = function()
+    require('illuminate').configure({ providers = { 'lsp', 'regex' }, delay = 200 })
+  end,
+}
+```
+
+Without a plugin, drive it from `CursorHold` (lower `updatetime` for a snappier feel).
+Register the autocmds per buffer when Lathe attaches, so buffers without a language server never ask:
+
+```lua
+vim.api.nvim_create_autocmd('LspAttach', {
+  callback = function(ev)
+    local client = vim.lsp.get_client_by_id(ev.data.client_id)
+    if not (client and client.name == 'lathe') then
+      return
+    end
+    local group = vim.api.nvim_create_augroup('LatheHighlight' .. ev.buf, { clear = true })
+    vim.api.nvim_create_autocmd({ 'CursorHold', 'CursorHoldI' }, {
+      group = group, buffer = ev.buf, callback = vim.lsp.buf.document_highlight,
+    })
+    vim.api.nvim_create_autocmd({ 'CursorMoved', 'CursorMovedI' }, {
+      group = group, buffer = ev.buf, callback = vim.lsp.buf.clear_references,
+    })
+  end,
+})
 ```
 
 The server auto-starts when you open a `.java` file. To use workspace navigation (e.g. workspace

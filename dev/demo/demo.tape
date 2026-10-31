@@ -11,8 +11,8 @@
 #   Beat 2  hover on an annotation-processor-generated type (Lathe resolves generated sources)
 #   Beat 3  run a whole test file, replayed from .lathe/ bytecode (no Maven, no recompile)
 #
-# NOTE: leader is '\' in this config (init.lua: mapleader = "\\"), so the test
-# keymaps are \tf and \to. Sleeps are tuned against the recorded GIF — re-tune if
+# NOTE: leader is Space in this config (init.lua: mapleader = " "), so the test
+# keymaps are ' tf' and ' to'. Sleeps are tuned against the recorded GIF — re-tune if
 # the fixture or server timing changes.
 
 Output docs/demo.gif
@@ -65,9 +65,9 @@ Escape                      # dismiss the hover float
 # --- Beat 3: run the whole test file, replayed from .lathe/ (no Maven, no recompile) ---
 Type ':e jpms/src/test/java/com/example/jpms/HelloTest.java' Enter
 Sleep 3s                    # neotest discovery: runnable glyphs appear in the gutter
-Type '\tf'                  # <leader>tf = Run File Tests (leader = '\')
+Type ' tf'                  # <leader>tf = Run File Tests (leader = Space)
 Sleep 4500ms                # replay + streamed events; gutters flip green, toast fires
-Type '\to'                  # <leader>to = Lathe's docked, navigable output split
+Type ' to'                  # <leader>to = Lathe's docked, navigable output split
 Sleep 3500ms                # streamed stdout/stderr + the real java launch command
 
 Sleep 500ms

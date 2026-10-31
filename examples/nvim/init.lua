@@ -8,7 +8,8 @@
 -- standalone `ag-libs/lathe.nvim` plugin (installed below like any other); the server still comes from
 -- your Maven build (`lathe:sync` writes it as each project's `.lathe/lathe-launcher.sh`).
 
-vim.g.mapleader = "\\"
+-- Space as leader: either thumb reaches it, and it does nothing useful in normal mode on its own.
+vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
 -- Rounded border for every floating window that doesn't set its own (hover, signature help, the
@@ -117,6 +118,10 @@ require("lazy").setup({
       -- Run the `main` under the cursor from .lathe/ bytecode; output streams into Lathe's docked
       -- split (reopen with <leader>to). Its own <leader>r group keeps it clear of tests (<leader>t).
       vim.keymap.set("n", "<leader>rr", "<cmd>LatheRun<cr>", { desc = "Run main under cursor" })
+      -- Lathe commands with no built-in key: grN/grh sit in the references family (grr).
+      vim.keymap.set("n", "grN", "<cmd>LatheInstances<cr>", { desc = "Lathe: instantiation sites of the type" })
+      vim.keymap.set("n", "grh", "<cmd>LatheTypeHierarchy<cr>", { desc = "Lathe: full type hierarchy" })
+      vim.keymap.set("n", "<leader>li", "<cmd>LatheMissingImports<cr>", { desc = "Lathe: add missing imports" })
     end,
   }),
 
@@ -136,6 +141,8 @@ require("lazy").setup({
         neotest.run.run(vim.fn.expand("%"))
       end, { desc = "Run File Tests" })
       vim.keymap.set("n", "<leader>to", lathe_adapter.open_output, { desc = "Test Output (docked)" })
+      vim.keymap.set("n", "<leader>td", lathe_adapter.open_diff, { desc = "Test Failure Diff" })
+      vim.keymap.set("n", "<leader>tq", lathe_adapter.open_results, { desc = "Test Results (quickfix)" })
       vim.keymap.set("n", "<leader>ts", neotest.summary.toggle, { desc = "Test Summary" })
     end,
   },
@@ -162,8 +169,8 @@ vim.diagnostic.config({
 -- ---------------------------------------------------------
 -- LSP keymaps (buffer-local, set when Lathe attaches)
 -- ---------------------------------------------------------
--- gd/grr/gri route through Telescope for a fuzzy, previewable list; K (hover) and grn (rename) stay
--- on Neovim's built-in defaults.
+-- gd/grr/gri route through Telescope for a fuzzy, previewable list; K (hover), grn (rename) and gra
+-- (code action) stay on Neovim's built-in defaults.
 vim.api.nvim_create_autocmd("LspAttach", {
   callback = function(ev)
     local tel = require("telescope.builtin")
@@ -177,7 +184,7 @@ vim.api.nvim_create_autocmd("LspAttach", {
     vim.keymap.set("n", "<leader>ws", function()
       tel.lsp_dynamic_workspace_symbols({ sorter = require("telescope.sorters").highlighter_only({}) })
     end, { buffer = ev.buf, desc = "Workspace Symbols" })
-    vim.keymap.set("n", "<C-k>", vim.lsp.buf.signature_help, { buffer = ev.buf, desc = "Signature Help" })
-    vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, { buffer = ev.buf, desc = "Code Action" })
+    -- Normal-mode twin of the built-in insert-mode <C-s>; <C-k> is often taken by window navigation.
+    vim.keymap.set("n", "<C-s>", vim.lsp.buf.signature_help, { buffer = ev.buf, desc = "Signature Help" })
   end,
 })

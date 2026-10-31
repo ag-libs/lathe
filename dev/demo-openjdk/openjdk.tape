@@ -12,7 +12,7 @@
 # client+server linked at $LATHE_OPENJDK_DIR/.lathe (installed by lathe-openjdk-maven-plugin:sync), and an
 # already-built + synced OpenJDK checkout at $LATHE_OPENJDK_DIR (see docs/guide/openjdk.md).
 #
-# Leader is '\' (examples/nvim), so workspace-symbol search is '\ws'. A blank `nvim` has no `java`
+# Leader is Space (examples/nvim), so workspace-symbol search is ' ws'. A blank `nvim` has no `java`
 # filetype to auto-start Lathe, so the hidden setup runs `:LatheStart` to initialize it on the JDK
 # workspace (root = cwd's .lathe) and warm the index before recording. blink.cmp: Enter accepts the
 # completion menu (preset none). Sleeps are tuned against the recorded clip — re-tune if the JDK,
@@ -49,7 +49,7 @@ Show
 Sleep 1800ms                  # dwell on the clean, empty, Lathe-initialized editor
 
 # --- Beat 1: find a class across the whole JDK, then open it ---
-Type '\ws'                    # <leader>ws = dynamic workspace symbols (leader = '\')
+Type ' ws'                    # <leader>ws = dynamic workspace symbols (leader = Space)
 Sleep 1200ms
 Type 'HttpHeaders'
 Sleep 2200ms                  # server-ranked results across the JDK; the public type ranks first
