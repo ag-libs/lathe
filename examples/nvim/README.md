@@ -26,16 +26,19 @@ server still comes from your Maven build; until a project is built, Lathe nudges
 
 ## Keymaps
 
-Leader is `\`. The Lathe-relevant bindings:
+Leader is Space. The Lathe-relevant bindings:
 
 | Key | Action |
 |---|---|
 | `gd` / `grr` / `gri` | Go to definition / references / implementations (via Telescope) |
+| `grN` / `grh` | Instantiation sites of the type / full type hierarchy |
 | `gO` | Document symbols |
 | `<leader>ws` | Workspace symbols (reactor-wide, server-ranked) |
-| `K` / `<C-k>` | Hover / signature help |
-| `<leader>ca` | Code action |
+| `K` / `<C-s>` | Hover / signature help (`<C-k>` in insert mode) |
+| `gra` / `grn` | Code action / rename (Neovim's built-in keys) |
+| `<leader>li` | Add missing imports |
 | `<leader>rr` | Run the `main` under the cursor |
 | `<leader>tt` / `<leader>tf` | Run nearest test / file tests |
 | `<leader>to` / `<leader>ts` | Test output (docked) / test summary |
+| `<leader>td` / `<leader>tq` | Failed test's expected vs actual / results with times |
 | `<leader>ff` / `<leader>fg` | Find files / live grep |

@@ -44,17 +44,7 @@ final class ExtractFieldProvider {
     }
 
     final var trees = analysis.trees();
-    final long startOffset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final long endOffset =
-        SourceLocator.toOffset(cu, range.getEnd().getLine(), range.getEnd().getCharacter());
-    if (startOffset < 0 || endOffset < 0) {
-      return List.of();
-    }
-
-    final TreePath exprPath =
-        ExtractionSupport.coveringExpression(
-            trees, cu, SourceLocator.pathAt(trees, cu, startOffset), startOffset, endOffset);
+    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
     if (exprPath == null) {
       return List.of();
     }
@@ -203,10 +193,8 @@ final class ExtractFieldProvider {
     };
   }
 
-  // Places the field after the last existing field (so it joins the field block), or before the
-  // first member of an otherwise field-less body, or just after the `{` for an empty body. Null
-  // when
-  // the body cannot be located.
+  // Places the field after the last existing field, so it joins the field block, else before the
+  // first member. Null when the body cannot be located.
   private static TextEdit insertFieldEdit(
       final ClassTree cls,
       final CompilationUnitTree cu,
@@ -215,42 +203,21 @@ final class ExtractFieldProvider {
       final String typeText,
       final String name,
       final String exprSource) {
-    final long classStart = positions.getStartPosition(cu, cls);
-    if (classStart < 0) {
-      return null;
-    }
-
-    final int brace = source.indexOf('{', (int) classStart);
+    final int brace = CodeActionSupport.classBodyBrace(cls, cu, positions, source);
     if (brace < 0) {
       return null;
     }
 
     final String decl = "private final %s %s = %s;".formatted(typeText, name, exprSource);
     final VariableTree lastField = CodeActionSupport.lastField(cls, cu, positions, brace);
-    if (lastField != null) {
-      final long fieldEnd = positions.getEndPosition(cu, lastField);
-      final long fieldStart = positions.getStartPosition(cu, lastField);
-      final var pos = SourceLocator.offsetToPosition(cu, fieldEnd);
-      final String indent = CodeActionSupport.lineIndent(source, (int) fieldStart);
-      return new TextEdit(new Range(pos, pos), "\n%s%s".formatted(indent, decl));
+    if (lastField == null) {
+      return CodeActionSupport.insertBeforeFirstMember(cls, cu, positions, source, brace, decl);
     }
 
-    final long firstMember =
-        cls.getMembers().stream()
-            .mapToLong(member -> positions.getStartPosition(cu, member))
-            .filter(start -> start > brace)
-            .min()
-            .orElse(-1);
-
-    if (firstMember >= 0) {
-      final var pos = SourceLocator.offsetToPosition(cu, firstMember);
-      final String indent = CodeActionSupport.lineIndent(source, (int) firstMember);
-      return new TextEdit(new Range(pos, pos), "%s\n%s".formatted(decl, indent));
-    }
-
-    final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
-    final String classIndent = CodeActionSupport.lineIndent(source, (int) classStart);
-    return new TextEdit(new Range(pos, pos), "\n%s  %s".formatted(classIndent, decl));
+    final var pos = SourceLocator.offsetToPosition(cu, positions.getEndPosition(cu, lastField));
+    final String indent =
+        CodeActionSupport.lineIndent(source, (int) positions.getStartPosition(cu, lastField));
+    return new TextEdit(new Range(pos, pos), "\n%s%s".formatted(indent, decl));
   }
 
   // ── name derivation (camelCase) ──────────────────────────────────────────────────────────────

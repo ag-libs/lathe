@@ -52,17 +52,7 @@ final class ExtractConstantProvider {
     }
 
     final var trees = analysis.trees();
-    final long startOffset =
-        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final long endOffset =
-        SourceLocator.toOffset(cu, range.getEnd().getLine(), range.getEnd().getCharacter());
-    if (startOffset < 0 || endOffset < 0) {
-      return List.of();
-    }
-
-    final TreePath exprPath =
-        ExtractionSupport.coveringExpression(
-            trees, cu, SourceLocator.pathAt(trees, cu, startOffset), startOffset, endOffset);
+    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
     if (exprPath == null) {
       return List.of();
     }
@@ -152,9 +142,8 @@ final class ExtractConstantProvider {
     };
   }
 
-  // Inserts the constant ahead of the first real member (so any initializer can reference it),
-  // skipping the synthesized default constructor — whose source position precedes the body's `{`.
-  // Falls back to just after the `{` for an empty class body. Null when the body cannot be located.
+  // Inserts the constant ahead of the first member, so any initializer can reference it. Null when
+  // the body cannot be located.
   private static TextEdit insertConstantEdit(
       final ClassTree cls,
       final CompilationUnitTree cu,
@@ -163,34 +152,18 @@ final class ExtractConstantProvider {
       final String typeText,
       final String name,
       final String exprSource) {
-    final long classStart = positions.getStartPosition(cu, cls);
-    if (classStart < 0) {
-      return null;
-    }
-
-    final int brace = source.indexOf('{', (int) classStart);
+    final int brace = CodeActionSupport.classBodyBrace(cls, cu, positions, source);
     if (brace < 0) {
       return null;
     }
 
-    final String decl = "private static final %s %s = %s;".formatted(typeText, name, exprSource);
-
-    final long anchor =
-        cls.getMembers().stream()
-            .mapToLong(member -> positions.getStartPosition(cu, member))
-            .filter(start -> start > brace)
-            .min()
-            .orElse(-1);
-
-    if (anchor >= 0) {
-      final var pos = SourceLocator.offsetToPosition(cu, anchor);
-      final String indent = CodeActionSupport.lineIndent(source, (int) anchor);
-      return new TextEdit(new Range(pos, pos), "%s\n%s".formatted(decl, indent));
-    }
-
-    final var pos = SourceLocator.offsetToPosition(cu, brace + 1);
-    final String classIndent = CodeActionSupport.lineIndent(source, (int) classStart);
-    return new TextEdit(new Range(pos, pos), "\n%s  %s".formatted(classIndent, decl));
+    return CodeActionSupport.insertBeforeFirstMember(
+        cls,
+        cu,
+        positions,
+        source,
+        brace,
+        "private static final %s %s = %s;".formatted(typeText, name, exprSource));
   }
 
   // ── compile-time constant gate (JLS 15.29, the safe subset) ──────────────────────────────────

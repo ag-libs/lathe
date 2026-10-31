@@ -87,6 +87,10 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [New Type Creation](done/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
   the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
+- [Extract Method](planned/lathe-extract-method.md) — **proposed.** The last of the basic extractions (gap
+  CA-16): selected code becomes a private method, with a conservative public-API use/def scan
+  (inputs → parameters, one output → return value, checked exceptions → `throws`) that refuses what it
+  cannot prove; four slices, expression form first.
 - [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
@@ -435,3 +439,6 @@ reused):
 - [Basic Refactorings (Rename, Move, Extract)](potential/lathe-basic-refactorings.md) — rename
   (`prepareRename`/`rename`, already M2), move and extract method/variable/field via
   `refactor.move`/`refactor.extract` code actions returning `WorkspaceEdit`s.
+- [Split `WorkspaceSession` by Responsibility](potential/lathe-workspace-session-split.md) — **potential.**
+  The class grew to 5,324 lines since M1 flagged it at 1,365; extract layout queries, the reactor type
+  index, run/test/debug and the write passes into package-private, event-loop-confined classes, in that order.

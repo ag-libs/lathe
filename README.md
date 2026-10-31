@@ -46,7 +46,7 @@ Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `
   <extension>
     <groupId>io.github.ag-libs</groupId>
     <artifactId>lathe-maven-extension</artifactId>
-    <version>0.1.24</version>
+    <version>0.2.0</version>
   </extension>
 </extensions>
 ```
@@ -55,7 +55,7 @@ Gradle: apply the settings plugin in `settings.gradle.kts`:
 
 ```kotlin
 plugins {
-    id("io.github.ag-libs.lathe") version "0.1.24"
+    id("io.github.ag-libs.lathe") version "0.2.0"
 }
 ```
 

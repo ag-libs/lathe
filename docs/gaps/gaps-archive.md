@@ -224,6 +224,72 @@ Known limits:
 
 ---
 
+## CA-15 — Extract constant on an annotated class inserts the constant above the class — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: Neovim, VS Code.**
+
+Found by a refactoring review of Lathe itself (2026-10-30), confirmed with a probe test.
+
+### Observed behaviour
+
+```java
+@SuppressWarnings({"unused"})
+class Test {
+  void m() {
+    use("hello world");
+  }
+  void use(String s) {}
+}
+```
+
+Extract constant on `"hello world"` inserts `private static final String HELLO_WORLD = "hello world";`
+at line 2, column 0: between the annotation and `class Test {`, outside the class, so the file no longer compiles.
+Expected: before `void m()`.
+
+### Root cause
+
+The providers find the class body with `source.indexOf('{', classStart)`, but a `ClassTree`'s start position
+includes its modifiers, so a `{` in an annotation argument is taken for the body's.
+With the brace that early, the synthesized default constructor (positioned at the class header) passes the
+"member after the brace" filter and becomes the anchor.
+The same text scan is in `ExtractFieldProvider.insertFieldEdit` and in
+`AddConstructorParameterProvider` (class body, and a constructor body behind an annotated constructor);
+those are likely to fail the same way but were not probed.
+It is also the ad hoc Java parsing CLAUDE.md rules out.
+
+### Fix direction
+
+One helper for "the class body's opening brace" that starts after the modifiers
+(`getEndPosition` of `cls.getModifiers()`, or after the name and type parameters), used by all four sites.
+`insertFieldEdit` and `insertConstantEdit` share about 25 lines (brace, first-member anchor, empty-body fallback);
+the shared helper can own the anchor logic too, leaving each provider its own placement rule
+(after the last field, or before the first member).
+
+### Resolution
+
+Fixed in 9dabdfd0. `CodeActionSupport.indexAfter` finds punctuation no tree carries past the owner's header
+trees: `classBodyBrace` searches for the body's `{` after the modifiers, type parameters, `extends`, `implements`,
+`permits` and a record's components, and an empty constructor parameter list's `(` is searched for after the
+constructor's modifiers and type parameters.
+An empty constructor body's `{` comes from its `BlockTree`.
+Fixing it also found the same bug in add-constructor-parameter, which put the new parameter inside a
+constructor annotation's parentheses.
+`CodeActionSupport.insertBeforeFirstMember` replaced the placement code extract field and extract constant
+each had a copy of.
+
+### Regression targets
+
+- `CodeActionTest.codeAction_annotatedDeclarations_insertInsideTheBody`: an annotated class and a record with
+  an annotated component (extract constant), and an annotated class with an annotated empty constructor
+  (add-constructor-parameter), each rewritten and compiled.
+
+
+---
+
 ## CA-11 — Missing-import fixes skip a type used as a method-call qualifier — done
 
 **Status: done — Target: next.**

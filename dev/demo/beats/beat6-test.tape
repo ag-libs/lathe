@@ -9,7 +9,7 @@
 # Lathe's adapter) runs GreetTest red — the assertion failure and stack trace stream into the docked
 # console; delete the extra `!`, \tf again -> green. No Maven, no recompile. The failing test lives in
 # beat6-fixture/ (the committed fixture stays green so `mvn verify` passes); the tape copies it in.
-# leader = '\'. Line/motion navigation only.
+# leader = Space. Line/motion navigation only.
 Output "docs/videos/beat6-test.mp4"
 Require nvim
 
@@ -38,9 +38,9 @@ Sleep 9s          # server start + index + neotest discovery (gutter glyph on th
 Show
 
 # --- 1) run the file's tests -> red, then show the docked output (exception + stack trace) ---
-Type '\tf'                # <leader>tf = Run File Tests (neotest + Lathe adapter, replayed from .lathe)
+Type ' tf'                # <leader>tf = Run File Tests (neotest + Lathe adapter, replayed from .lathe)
 Sleep 2800ms             # replay; the test fails -> red gutter + "1 failed"
-Type '\to'                # <leader>to = Test Output (docked, navigable): the AssertionFailedError + trace
+Type ' to'                # <leader>to = Test Output (docked, navigable): the AssertionFailedError + trace
 Sleep 3400ms             # dwell on the failure and its stack trace
 
 # --- 2) focus the editor, fix the assertion (delete the extra `!`), save so Lathe recompiles .lathe ---
@@ -55,6 +55,6 @@ Enter
 Sleep 1200ms
 
 # --- 3) run again -> green ---
-Type '\tf'
+Type ' tf'
 Sleep 3600ms             # passes -> green gutter; the docked output updates to the passing run
 

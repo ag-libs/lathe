@@ -15,6 +15,12 @@
 local indent = require("lathe.indent")
 local spec = require("spec_helper").new()
 
+-- A workspace with no style file, so the profiles under test come from setup() alone; run from the
+-- repo root, a buffer would otherwise pick up the repo's own synced .lathe/style.json.
+local plain = vim.fn.tempname()
+vim.fn.mkdir(plain .. "/.lathe", "p")
+vim.cmd.edit(plain .. "/Foo.java")
+
 local function compute(lines, target)
   vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
   return indent.compute(target, vim.api.nvim_get_current_buf())
@@ -80,5 +86,6 @@ spec.check("editorconfig overrides baseline: shiftwidth", vim.bo[ec_buf].shiftwi
 spec.check("editorconfig applied props recorded", vim.b[ec_buf].editorconfig.indent_size, "2")
 spec.check("editorconfig block indent", compute({ "void m() {", "body();" }, 2), 2)
 vim.fn.delete(dir, "rf")
+vim.fn.delete(plain, "rf")
 
 spec.finish()

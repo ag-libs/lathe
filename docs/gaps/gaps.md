@@ -120,7 +120,13 @@ capability and the absent handler in `LatheLanguageServer`.
 
 **Status: deferred**
 
+**Signal:** requested in daily use (2026-10-31): after a refactoring changes a method's parameter types, its
+not-yet-updated call sites are exactly where one wants to jump to the new declaration, and the jump finds nothing.
+
 ### Observed behaviour
+
+Re-probed 2026-10-31 through MCP `get_definition`, wrong argument **types** to a method with a single declaration
+(`ofSourceTree(42)` where `ofSourceTree(String)`): `{"targets":[]}`.
 
 Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback this gap first described was removed with archived EG-049, go-to-definition):
 
@@ -129,6 +135,7 @@ Re-probed 2026-10-30 through `LatheEngine.definition` (the file-top fallback thi
 | `c.solo(` (unclosed) | `solo` |
 | `c.greet(` (unclosed, `greet` overloaded) | the first overload only |
 | `c.solo()` / `c.greet()` (wrong argument count) | nothing |
+| `solo(42)` where `solo(String)` (wrong argument type, as after a refactoring) | nothing |
 
 When the name is overloaded definition should return every candidate so the client shows a picker; when it is unambiguous it should resolve to the single method, whatever the arguments.
 
@@ -154,6 +161,12 @@ parsing — sentinel pipeline + javac elements only (AGENTS.md).
 
 Deferred: the recovery integration, overload enumeration, and multi-location plumbing are the largest
 of the three and are not in the current release slice.
+
+A cheaper first slice covers the refactoring case without the sentinel pipeline: a complete call with mismatched
+arguments still parses, so the receiver's type (`getTypeMirror` on the method select's expression, or the enclosing
+class for a bare name) and the method name are known, and the candidates are the methods of that name on it.
+`SignatureHelpResolver` already resolves erroneous calls this way (`memberSelectCandidates`, `methodsNamed`);
+share that lookup, jump when there is one candidate, and list them when there are several.
 
 ### Regression targets
 
@@ -647,7 +660,91 @@ None yet.
 
 ---
 
-## EG-076 — No formatter detection on a Gradle build
+## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: the editor and MCP `format_file`, in a Maven reactor whose root only manages Spotless.**
+
+Found dogfooding Lathe on its own repository (2026-10-30).
+
+### Observed behaviour
+
+Lathe's root pom configures `spotless-maven-plugin` (google-java-format, pinned version) in `<pluginManagement>`,
+and each of its ten Java modules activates it in its own `<build><plugins>`.
+`lathe:sync` writes no `.lathe/style.json`, so the server starts with `[initialize] … formatting=false`,
+does not advertise formatting, and the editor never sends a request.
+The sync reports the skip only at debug level (`[sync] no spotless java formatter — skipping style.json`), so a normal build says nothing.
+The root pom never activated Spotless in any revision, so detection never worked for this repository.
+
+### Root cause
+
+`MavenStyle.spotlessPlugin` reads only the root project's effective `<build><plugins>`;
+a plugin declared only in `<pluginManagement>` is not there, and the modules that do run it are not looked at.
+Managing Spotless in a parent and activating it per module is a common Maven layout.
+
+### Fix direction
+
+Keep one workspace style.
+When the root does not run Spotless, take it from the reactor modules that do, but only when every module compiling Java
+runs the same Spotless Java configuration; otherwise skip `style.json` with a warning,
+since a workspace-wide formatter would reformat the modules whose build does not format them.
+Log the skip at warning level whenever reactor modules run Spotless but no style is written.
+Per-module gating or per-module formatters are a later step, for a project that needs them.
+
+Workaround: activate Spotless in the root's `<build><plugins>` (this repository does, as of the commit recording this gap).
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-077 — No "go to test": jump from a class to its test, or create one, and back
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor (Neovim first, then VS Code).**
+
+Requested in daily use (2026-10-31), as IntelliJ's Navigate → Test (`Ctrl+Shift+T`).
+
+### Gap
+
+From a main class there is no quick way to open its test.
+`:LatheNew` → Test creates one through the full new-type dialog (and lists the main location first, see [NV-9](#nv-9--lathenew--test-from-a-main-source-file-lists-the-main-location-first)),
+but nothing finds an existing test, and nothing goes from a test back to the class it tests.
+
+### Wanted behaviour
+
+One key on a main class (or anywhere in its file):
+
+- one test found: open it;
+- several (`FooTest`, `FooIT`, `FooTests`): pick from a list;
+- none: offer "Create test `FooTest`", prefilled with the class's package in the module's test root, then open it
+  with the caret in the new test (what `lathe.createType` already renders for a Test);
+- on a test class, the same key goes to the class it tests.
+
+### Fix direction
+
+Editor-neutral first: a server command (beside `lathe.testSources` and `lathe.createType`) that, for a file,
+returns its counterparts and the create arguments when there are none.
+Candidates come from the module's real source roots, not path strings: test classes in the same package named
+by the build's own conventions (Surefire's and Failsafe's default includes, or the captured `test-filter.json`
+when the module has one), then, as a fallback, test classes that reference the type (the reference index).
+The reverse direction strips the same suffixes and looks in the main roots.
+Then a Neovim mapping and command over it, and the same in VS Code.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-078 — No formatter detection on a Gradle build
 
 **Status: documented**
 
@@ -755,6 +852,31 @@ Refuse restricted identifiers where the symbol kind cannot take them, and any na
 
 None yet.
 
+## FR-022 — A constructor reference `XXX::new` is not found as an instantiation or a constructor reference
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim, VS Code, MCP.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+`:LatheInstances` on a class lists its `new XXX(...)` sites but not its `XXX::new` method references.
+Find references on the constructor most likely misses them too: both go through `ReferenceLocator`.
+
+### Fix direction
+
+`ReferenceLocator.visitMemberReference` resolves the constructor correctly but then looks for the member name after the qualifier,
+and javac names a constructor `<init>`, which never appears in the text, so the match is dropped.
+Anchor a constructor reference at its `new` keyword instead.
+
+### Regression targets
+
+None yet.
+
 ---
 
 # Code Action Gaps (CA)
@@ -856,6 +978,145 @@ Place imports from the end of the package declaration's tree, not by line.
 ### Regression targets
 
 None yet.
+
+## CA-14 — Extract variable never adds `final` and offers no `var` form
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: Neovim, VS Code.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+Extract variable always declares `Type name = expr;`.
+It never adds `final`, and there is no `var name = expr;` choice, so a codebase that writes `final var` must edit every extraction by hand.
+
+### Fix direction
+
+`ExtractVariableProvider.insertDecl` renders the explicit type only.
+Offer a `var` form alongside the typed one (not for a `null` literal or a lambda, which `var` cannot take),
+and decide how `final` is chosen: always, a setting, or a second action.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
+
+**Status: accepted (selection, placement and safety delivered; extract method remains).**
+
+**Value: high — Size: L**
+
+**Affects: Neovim, VS Code, any client.**
+
+Found in daily use (2026-10-30/31): extraction "does not work in many places", on multi-line statements above all.
+Investigated with a probe matrix of 59 Java contexts in `CodeActionTest` (each compiled clean),
+each asked four ways: a caret at the target's start, the exact expression, the expression through its `;`,
+and the whole lines (`V`: column 0 to the last line's end); then the offered edits were applied and recompiled.
+A read-only probe of a 387-line service class in the running editor (a caret code action at each of 800 identifiers)
+matched: extract variable at 201 of them, and every miss on a code line falls under the cases below.
+
+### Delivered (2026-10-31)
+
+Sections 1–3 are fixed; the matrix's misses on code lines and its broken or unsafe offers are gone.
+Design notes in [Extract Variable](../done/lathe-extract-variable.md#selections-and-placement-ca-16).
+
+- 5818ef69, 3ad4ed54 — selection (section 1): `ExtractionSupport.selectedExpression` takes the one outermost
+  tree inside a selection, a statement meaning its value; shared by extract variable, field and constant.
+- 19962f60 — safety (section 3): `ExtractionSupport.pinnedInPlace` and a deep `isDenotable`.
+- 195c9dc8 — placement without restructuring (section 2): `case:` lists, resources, `for` initializers,
+  whole expression statements.
+- fa655223 — placement with a new block (section 2): expression lambdas, switch rules, brace-less bodies.
+
+Remaining: section 4, extract method, designed in [Extract Method](../planned/lathe-extract-method.md).
+Not changed: a lambda or anonymous class as the extracted value (needs a target type or `var`), and extract
+field's own placement rules.
+
+### 1. A selection must be character-exact
+
+| Selection | Offered |
+|---|---|
+| caret at the expression, or exactly the expression (multi-line too) | yes |
+| through the `;` | no, in every context |
+| line-wise (`V`), or starting in the indentation | no, in every context |
+
+Selecting several lines is usually line-wise, so on multi-line code the extractions look absent;
+`V` on a single line fails the same way.
+`ExtractionSupport.coveringExpression` starts at the tree under the selection's start and walks up to an expression
+covering the whole selection: a start in the indentation is above every expression, and an end past the expression
+is covered by none.
+
+### 2. Extract variable is refused where the expression's statement is not directly in a block
+
+| Context | Example | Offered |
+|---|---|---|
+| expression lambda | `l.forEach(x -> use(x.trim()))`, `orElseThrow(() -> new X(a.trim()))`, `.map(x -> x.length() * 2)` | nothing |
+| switch, colon case | `case "x": use(a.trim()); break;` | nothing |
+| switch, arrow case / expression arm | `case "x" -> use(a.trim());`, `case "x" -> a.length() + 1;` | nothing |
+| brace-less body | `if (ok) use(a.trim());`, `else use(…)`, `for (…) use(…)` | nothing |
+| try-with-resources | `try (var in = open(f.getPath()))` | nothing |
+| `for` initializer | `for (int i = seed(); …)` | field only |
+| a whole expression statement | `a.trim();` (non-void) | nothing |
+
+`ExtractVariableProvider` declares before the expression's statement and requires that statement's parent to be a block;
+`CodeActionSupport.nearestEnclosingStatement` stops at a lambda, and these statements' parents are a `case`, an `if`, a `for` or a `try`.
+Extract field and constant are still offered in some of these places, which makes the gap look arbitrary.
+Block lambdas, `yield`, `try`/`catch`/`synchronized` bodies, initializer blocks, constructors, anonymous and local classes,
+and record compact constructors all work.
+
+Also not offered: a lambda or anonymous class as a value (`l.forEach(x -> use(x))`, `use(new Object() { })`):
+the first needs its target type, the second a `var`.
+
+### 3. Extract variable is offered where it breaks the code or changes what it does
+
+It always declares before the statement, so an expression that is evaluated conditionally, repeatedly, or in a
+narrower scope is hoisted:
+
+| Context | Result |
+|---|---|
+| `if (o instanceof String s && s.isEmpty())` | `s.isEmpty()` hoisted above the pattern that declares `s`: does not compile |
+| `use(List.of(1, "a"))` (intersection element type) | `List<> of = List.of(1, "a");`: does not compile |
+| `if (a != null && a.isEmpty())` | `a.isEmpty()` evaluated before the null check: throws |
+| `use(ok(a) ? a.trim() : "")` | the branch evaluated unconditionally |
+| `while (l.isEmpty())`, `do … while (!l.isEmpty())`, `i < l.size()` | the condition evaluated once, before the loop |
+| `super(a.length())` | a statement before `super(…)`, legal only from Java 25, offered whatever the project's release |
+
+### 4. No extract method
+
+The only extractions are variable, field and constant (`ExtractionSupport.KINDS`); selecting statements offers nothing.
+It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md) but never planned.
+
+### Fix direction
+
+1. Match the selection by the tree: ignore whitespace around it, and when it covers a whole statement take that statement's
+   expression (an expression statement's expression, a declaration's initializer, a `return`'s value).
+2. Make room where there is no block, as IntelliJ does: an expression lambda's body becomes a block
+   (`x -> { var v = …; return …; }`), a case arm or brace-less body is wrapped in braces, a resource or `for` initializer
+   declares before the `try`/`for`; a non-void expression statement becomes a declaration.
+   Never hoist out of a lambda.
+3. Refuse (or declare in place) what cannot move: the right side of `&&`/`||`, a `?:` branch, a loop condition or update,
+   and anything reading a pattern binding; insert before `super(…)` only from Java 25.
+   Use `var` for a non-denotable type (intersection, anonymous class) instead of writing a broken one.
+4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
+   its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
+
+The test helper `CodeActionTest.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
+
+### Regression targets
+
+For sections 1–3, in `CodeActionTest`, each offered edit applied and compiled:
+`codeAction_extraction_lineWiseSelection_findsTheExpression`,
+`codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing`,
+`codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode`,
+`codeAction_extractVariable_outsideABlock_declaresWhereItFits`,
+`codeAction_extractVariable_bodyWithoutRoom_becomesABlock`,
+`codeAction_extractVariable_atStatementStart_rewritesToCompilingCode`.
+Extract method: none yet.
 
 ---
 
@@ -1080,7 +1341,55 @@ None yet.
 
 ---
 
-## WS-25 — On Gradle, included builds are not covered
+## WS-25 — A first sync downloads dependency sources one at a time
+
+**Status: accepted**
+
+**Value: low — Size: S**
+
+**Affects: the first Maven sync on a machine (`mvn` and `mvnd` alike).**
+
+Found by a code review of the sync path (2026-10-30).
+
+### Observed behaviour
+
+`DependencySourceResolver` calls `RepositorySystem.resolveArtifact` once per external artifact, so a cold `~/.m2` pays one sequential round trip per `-sources` jar (plus its checksum).
+The jars are small, so round trips, not bandwidth, set the time:
+
+| Project | Dependencies | With sources | Missing | Sources size | Median jar |
+|---|---|---|---|---|---|
+| Helidon | 209 | 206 | 3 | 50.6 MB | 62 KB |
+| Dropwizard | 210 | 208 | 2 | 63.8 MB | 70 KB |
+| Hibernate ORM | 254 | 252 | 2 | — | — |
+
+Estimated for Helidon at 30–100 ms per request: about 15–45 s sequentially, against about 3–12 s batched, so 15–30 s saved once.
+Not measured yet; a slower link (proxy, mirror, VPN) or extra repositories ahead of Central saves more.
+A warm sync, the common case, gains nothing: every lookup is local.
+
+### Root cause
+
+Maven Resolver already downloads a batch in parallel: `resolveArtifacts` groups requests by repository, and the basic connector fetches each group on `aether.connector.basic.threads` (default 5).
+Checked in Resolver 1.4.1 (`DefaultArtifactResolver`), the version Maven 3.6.3 ships, so it holds at the Maven floor.
+The per-artifact calls never hand it a batch.
+
+### Fix direction
+
+Resolve all `-sources` requests in one `resolveArtifacts` call, inside `DependencySourceResolver` only.
+A missing sources jar is normal, and the batch throws when any is missing, so read the per-request results from `ArtifactResolutionException.getResults()`;
+a `RuntimeException` still fails the sync.
+No Lathe threads, so nothing outlives a build in the `mvnd` daemon, and all logging stays on the Mojo thread.
+
+Not worth doing alongside it: parallel extraction.
+Unzipping all 206 Helidon sources jars (28,635 entries) takes about 1 s on Linux; Windows may differ.
+
+### Regression targets
+
+- The existing invoker fixtures with and without sources jars keep their `[sync] sources N dependency entries, M with sources` counts.
+- A cold Helidon sync with a fresh `-Dmaven.repo.local`, timed before and after the change.
+
+---
+
+## WS-26 — On Gradle, included builds are not covered
 
 **Status: documented**
 
@@ -1190,7 +1499,49 @@ None yet.
 
 ---
 
-## TE-11 — On Gradle, only each project's `test` task is captured
+## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `run_test`, editor test runs; any module whose Surefire `classesDirectory` is not the compile output.**
+
+Found while fixing a `lathe-server` bug through Lathe's own MCP server (2026-10-30).
+
+### Observed behaviour
+
+On JDK 21+, a profile in `lathe-server/pom.xml` copies `target/classes` into `target/classes-jdk21`,
+overlays the multi-release `META-INF/versions/21` classes on it, and points Surefire's `classesDirectory` there.
+The captured `test-launch.json` names `target/classes-jdk21`.
+After editing `SourceScope.java`, `run_test` on `WorkspaceSessionTest` compiled the edit into the mirror
+(`.lathe/lathe-server/classes`, fresh) and the edited test, yet ran the old `SourceScope` from `classes-jdk21`
+(left by the last Maven build): the new tests failed with the exception the edit had removed.
+`get_diagnostics` on the file and a second `run_test` gave the same result; nothing said the run used stale classes.
+A Maven run of the same tests passed.
+
+### Root cause
+
+The replay swaps only the module's compile output directories for Lathe's mirrors (`ReactorRewrite`, from the
+workspace manifest).
+`classes-jdk21` is a copy made by the resources plugin, not a compile output, so it passes through unchanged.
+The same holds for any build that tests a copied or merged classes directory.
+
+### Fix direction
+
+At sync, compare Surefire's `classesDirectory` with the module's output directory; when they differ, record it,
+and map it in the replay to the mirror trees it was built from (here the main mirror with the `21` tree's mirror in front).
+Where Lathe cannot tell what a copied directory holds, the completeness gate should at least say the run uses classes
+from the last build, as it does for other stale inputs.
+For this repo alone, the build could test against the compile output plus the `versions/21` overlay without a copy.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-12 — On Gradle, only each project's `test` task is captured
 
 **Status: documented**
 
@@ -1284,47 +1635,87 @@ None yet — to be defined when the fix is scheduled.
 
 ---
 
-## DB-7 — Breakpoints arm only in files whose analysis is loaded
+## DB-7 — A breakpoint in a file that is not open, or was closed, never fires, and nothing says so
 
-**Status: accepted (cross-module source lookup shipped; arming breakpoints in unopened files remains).**
+**Status: deferred (cross-module source lookup shipped; arming breakpoints in files without an analysis remains, needed once a client keeps breakpoints in closed files).**
 
-**Value: high — Size: M**
+**Value: low — Size: S–M**
+
+**Affects: no shipped client today; VS Code once it debugs, and any editor after a memory-pressure release.**
 
 Signal: user feedback — with breakpoints across several source files, a debug run stopped at seemingly "random" places instead of the breakpoints.
-Reproduced on the `multi-module` invoker workspace with fresh bytecode, so it is not a staleness or line-table issue.
+Re-evaluated with a spike (2026-10-31): the misses are deterministic, not random.
+Which breakpoints fire depends on which of their files the server has an analysis of when the debug session starts,
+and every breakpoint is reported unverified, so the editor cannot show which ones are dead.
+No stop at a line without a breakpoint was seen.
+
+Downgraded (2026-10-31): Neovim never sends a breakpoint for a file it has not loaded.
+nvim-dap keeps breakpoints as signs, and `:bd` deletes a buffer's signs, so closing a buffer removes its breakpoints;
+a hidden buffer stays loaded and attached, so its breakpoints arm.
+What remains is a client that keeps breakpoints independent of open files, as VS Code does (its client does not debug yet),
+and an open file whose analysis a memory-pressure release dropped (read from the code, not probed).
 
 ### Observed behaviour
 
-`dev/debug_probe.py` launching `com.example.app.Main` (module `app`) with breakpoints in `Main` and in `StringUtils.upper` (module `core`, called at `Main:10`):
+Debugging `com.example.app.Main` on the `multi-module` invoker workspace (fresh bytecode),
+breakpoints at `Main:21` and in `StringUtils.upper` (module `core`), varying only what the editor did with `StringUtils.java` first:
 
-- Breakpoints in `Main` hit on their exact lines.
-- The `StringUtils` breakpoint never fires when that file is not open; the debuggee runs past it.
+| `StringUtils.java` | `Main:21` | `StringUtils` |
+|---|---|---|
+| opened, diagnostics received | stops | stops |
+| opened, debug started without waiting for diagnostics | stops | stops |
+| never opened | stops | runs past |
+| opened, then closed | stops | runs past |
+
+- Opening and debugging at once is not a race: the open-time compile and the arming query run in order on the module's worker.
+- Closing a file drops its analysis, so a breakpoint left in a closed file is dead.
+  Neovim cannot hit this: `:bd` removes the buffer's breakpoints along with its signs.
+- Every `setBreakpoints` answer has `verified: false`, armed or not.
+  `LatheSourceLookUpProvider.supportsRealtimeBreakpointVerification` returns `false`,
+  so java-debug only verifies a breakpoint once its class loads, and a dead one is indistinguishable until the run ends.
+  The server logs `[breakpoint] … not armed`, which the user does not see.
 
 The other half of the original report, a stop in another module's class showing no source, is fixed:
 the debug provider context now receives `workspace.allSourceRoots()` plus the manifest's dependency and per-module JDK source dirs.
 
 ### Root cause
 
-`LatheSourceLookUpProvider.classNameAt` → `SourceAnalysisSession.enclosingBinaryName` reads only the module worker's cached analysis of the file, returning empty for a file that is not attributed.
-So a breakpoint in an unopened file gets no class name and is never armed; `LatheSourceLookUpProvider` logs `[breakpoint] … not armed`.
-Releasing module sessions under memory pressure can also drop an open file's analysis, so "attributed", not "open", is the exact condition.
+`LatheSourceLookUpProvider.breakpointLocation` → `SourceAnalysisSession.enclosingBinaryName` takes the class name only from the module session's cache of attributed open documents.
+That cache holds a file only between its open-time compile and its `didClose`, and loses everything when the module's session is released
+(a second memory-pressure round releases sessions of modules with open files too; read from the code, not probed).
+With no class name, java-debug installs nothing for the breakpoint (`SetBreakpointsRequestHandler` skips a location whose `className()` is `null`).
 
 ### Fix direction
 
-Arm breakpoints in files that are not attributed: compile the breakpoint file on demand in the owning module worker rather than requiring the cached analysis.
+Spiked and confirmed (uncommitted): when the cache has no analysis of the file, parse it from disk (parse only, no attribution, through the session's `SourceParser`)
+and return the binary name of the top-level type whose span holds the line.
+The top-level name is enough: java-debug also arms the line in the type's nested classes,
+already-loaded ones through `classesByName(name)` with nested types, later ones through a `name$*` class-prepare filter.
+With the spike, breakpoints in a never-opened and in a closed file stop on the top-level class, a static nested class, an anonymous class and a lambda body.
+
+For the real change:
+
+- Decide whether to keep the cached path at all. The disk file is what the build compiled;
+  an edited, unsaved buffer's analysis can name a type the running bytecode does not have yet.
+  Parsing always is simpler and has no cache dependency.
+- Parse once per file per `setBreakpoints`, not once per breakpoint line.
+- Report armed breakpoints as verified (`supportsRealtimeBreakpointVerification` → `true` once every armed location has a class name),
+  so the editor marks a breakpoint that cannot be armed (no executable code, file outside every module) differently from one waiting for its class.
 
 ### Probe commands
 
+`dev/debug_probe.py --bp` opens every breakpoint file before debugging, so it only covers the attributed case.
+The spike's driver varies the file's state (`open`, `nowait`, `none`, `closed`):
+
 ```bash
-# Multi-file breakpoints across modules; every requested file:line must appear in the actual stops:
-python3 dev/debug_probe.py --workspace <ws> <app/Main.java> --main com.example.app.Main \
-  --bp <app/Main.java>:8 --bp <core/StringUtils.java>:8
+# /tmp/lt/db7_probe.py (spike driver, outside the repo); LATHE_LAUNCHER points at a server built from the checkout
+python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.java>:21
 ```
 
 ### Regression targets
 
 - Cross-module source lookup: `LatheSourceLookUpProviderTest.getSourceFileURI_classInAnotherModule_resolvesWhenRootsSpanTheReactor`.
-- Arming in an unopened file: none yet.
+- Arming without an analysis: none yet — a file never opened, a file opened then closed, and lines in a nested, an anonymous and a local class.
 
 ---
 
@@ -1357,7 +1748,79 @@ None yet.
 
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
 
-No active NV gaps remain; resolved entries are in [gaps-archive.md](gaps-archive.md).
+Resolved entries are in [gaps-archive.md](gaps-archive.md).
+
+## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: Neovim.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+From a file under `src/main/java`, `:LatheNew` → Test offers the buffer's package twice, and the main-source row comes first.
+Accepting the top row is the natural move, yet a test belongs in the test root.
+
+### Fix direction
+
+`_order_destinations` in `lua/lathe/new.lua` ranks the buffer's package and module first but ignores scope there,
+so the alphabetical tie-break (`main` < `test`) decides.
+Within a rank, prefer the kind's natural scope (`test` for Test) before the module/package tie-break.
+
+### Regression targets
+
+None yet.
+
+---
+
+## NV-10 — Signature help highlights no parameter when the active overload is not the first
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim with blink.cmp's signature window, the setup in `examples/nvim/init.lua`.**
+
+Found in daily use (2026-10-30).
+
+### Observed behaviour
+
+Typing the second argument of `list.add(0, |)`, the signature window lists both `ArrayList.add` overloads
+but highlights nothing.
+The server answers correctly: `[signatureHelp] sig=void add(int index, E element) param=1`,
+the second signature active and its second parameter (label offsets 20–29) active.
+A method with one overload, or an active overload listed first, highlights as expected.
+
+### Root cause
+
+blink.cmp (v1.10.2, `lua/blink/cmp/signature/window.lua`) writes every signature's label into its window,
+one per line, but takes the highlight from Neovim's `convert_signature_help_to_markdown_lines`,
+which renders only the active signature, inside a code fence.
+Its line (1, under the fence) minus one is 0, so blink paints the active parameter's columns on the first label:
+`boolean add(E e)` is 16 characters, so columns 20–29 show nothing.
+Introduced by blink's `b6f04e8` ("Update active parameter to use line and col range").
+Neovim's own `vim.lsp.buf.signature_help` (`<C-s>` in normal mode in the example config) renders only the active
+signature and highlights correctly.
+
+### Fix direction
+
+Report it to blink.cmp: the line must be the active signature's index in its own buffer, not Neovim's.
+Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
+which every client renders correctly, at the cost of the overload order changing as the arguments change.
+
+Related, on the server and not reproduced: when the call does not attribute yet, `SignatureHelpResolver` falls back
+to the first overload of that name whatever the argument count, so an active parameter beyond that overload's
+parameters is highlighted in no client.
+Prefer an overload whose arity fits the arguments typed;
+see also [EG-048](#eg-048--go-to-definition-on-a-call-with-the-wrong-arguments-finds-nothing-and-offers-one-overload-only).
+
+### Regression targets
+
+None yet.
 
 ---
 
@@ -1410,7 +1873,8 @@ Lathe's `describe_symbol` needs a position, and MCP has no type hierarchy.
 
 A `describe_type` tool taking a (qualified) type name: its supertypes, and each member's signature with
 its first javadoc line, from javac's `Elements` — so it works for a dependency without sources too.
-It also covers the type hierarchy MCP lacks.
+It also covers the type hierarchy MCP lacks, which an agent asked for again on 2026-10-30
+(see also [MC-55](#mc-55--no-tool-finds-the-instanceof-and-pattern-match-sites-for-a-type)).
 
 ### Regression targets
 
@@ -1474,9 +1938,10 @@ None yet.
 
 **Status: documented**
 
-**Value: medium — Size: M**
+**Value: high — Size: M**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1485,10 +1950,21 @@ now makes them retry, at the cost of a round trip; the refusal quotes the line's
 mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
 symbols by name path (`Class/method`).
 
+In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
+to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
+The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
+which would save a round trip on almost every query.
+
+A refactoring review of Lathe itself (2026-10-30) missed twice in 21 calls,
+both times one column short on a method name taken from an `outline` line
+(`private static ExpectedValue expectedMethodArgumentValue(`: the agent sent 31, the name starts at 32).
+`outline` gives each member's line but not where its name starts, so the agent counts by hand.
+
 ### Fix direction
 
 Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
 the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
+Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
 
 ### Regression targets
 
@@ -1500,9 +1976,10 @@ None yet.
 
 **Status: documented**
 
-**Value: low — Size: M**
+**Value: high — Size: M**
 
-Found by the agent-tooling landscape review (2026-10-24).
+Found by the agent-tooling landscape review (2026-10-24);
+confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
 
 ### Gap
 
@@ -1510,9 +1987,15 @@ Found by the agent-tooling landscape review (2026-10-24).
 cache path. mcp-language-server's `definition` returns the implementation, and Serena's
 `find_symbol` has `include_body`.
 
+In the 2026-10-30 session the agent's pattern was `outline`, then a whole-file read.
+That read was its largest single cost: about 11k tokens for a file when it needed four methods,
+although `outline` already knows each member's line range.
+
 ### Fix direction
 
 An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
+Also a tool returning one member's source by name (`source("OrderCommand#store")`),
+resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
 
 ### Regression targets
 
@@ -1559,6 +2042,8 @@ The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
 ([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
 structured content without one. It helps programmatic clients, not models, so it waits for a client
 that needs it.
+Claude Code does show the model the structured content, not the text:
+see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes).
 
 ### Regression targets
 
@@ -1644,10 +2129,18 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
 no code in the project can use them.
 `*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
 
+On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
+(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
+classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
+about 30 of the 40 from dependencies and the JDK.
+The agent wanted the reactor's types and had no way to ask for only those.
+
 ### Fix direction
 
 Leave out JDK packages a module does not export, at least for a classpath module.
 Strip a leading or trailing `*` (or treat the query as a glob).
+List reactor matches before any dependency or JDK match, and add a `scope` argument
+(`reactor`, `all`) so an agent can leave the rest out.
 Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
 [MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
 
@@ -1887,6 +2380,454 @@ Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
 as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Each outgoing entry is the callee's declaration.
+The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
+and had to read the method anyway.
+
+### Fix direction
+
+`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
+which already hold the call sites.
+Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `call_hierarchy`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
+which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
+
+### Fix direction
+
+A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
+[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
+one origin classification can serve both.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-50 — `call_hierarchy` returns one level per call
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `call_hierarchy`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Tracing a resource → service → adapter chain takes one `call_hierarchy` call per level, each needing a fresh position.
+
+### Fix direction
+
+A `depth` argument returning a tree, with cycles cut and a total cap.
+Most useful together with [MC-48](#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called)
+and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-51 — A record's accessor resolves to the top of its file
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
+`startLine: 1` with the `package` line as the snippet.
+
+### Fix direction
+
+An implicit accessor has no tree of its own.
+Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-52 — Every result repeats a full `file://` URI
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools that return locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Each line of `search_symbols` and `call_hierarchy` carries `file:///home/<user>/<workspace>/…`,
+the same long prefix repeated, about 30–40% of the tokens of those answers by the agent's estimate.
+
+### Fix direction
+
+Paths relative to the workspace root, and short prefixes for files outside it (`~deps/…`, `~jdk/…`),
+with the expansion stated once in the tool description or `workspace_summary`.
+The tools that take a `file` must accept the same short forms back.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-53 — `find_references` does not tell reads from writes
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Where does the order's status change" needs the writes of a field or enum constant
+(assignments, setter and builder calls) apart from its reads (comparisons, getters).
+`find_references` lists them all alike, so the agent reads every site.
+
+### Fix direction
+
+The editor's `documentHighlight` already maps each reference's role to read or write.
+Label each `find_references` line with it, and add an `access` filter (`read`, `write`).
+Builder and setter calls count as writes only by convention; decide whether to include them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-54 — A dependency result does not say which version it came from
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that return dependency locations.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+The source cache held three versions of one internal library, and the agent had to work out which one
+Lathe had resolved for the module it asked about.
+
+### Fix direction
+
+Name the artifact's `groupId:artifactId:version` on a dependency result,
+in whatever short form [MC-52](#mc-52--every-result-repeats-a-full-file-uri) gives dependency paths.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-55 — No tool finds the `instanceof` and pattern-match sites for a type
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP; the editor has no such search either.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+The service picks an adapter through a 180-line `instanceof` chain over its config types.
+`find_implementations` cannot navigate that, and `find_references` on a type mixes the tests
+with imports, declarations and every other use.
+
+### Fix direction
+
+A filter on `find_references` (or its own tool) keeping the uses that test a value's type:
+`instanceof`, type patterns in `switch` and record patterns, and casts.
+These are tree kinds javac already gives the reference search, not text matches.
+Related: [MC-27](#mc-27--no-view-of-a-types-api-by-name-members-supertypes-and-the-first-javadoc-line) for the type hierarchy.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-56 — No map of JAX-RS routes and their wiring
+
+**Status: documented**
+
+**Value: medium — Size: L**
+
+**Affects: MCP.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+"Which endpoint needs which role" and "in what order do the request filters run" were key questions.
+The agent grepped for `@Path` and the auth annotations and still could not establish the filter order.
+
+### Fix direction
+
+A `routes` tool listing each HTTP method and full path (class plus method `@Path`) with its resource method
+and the security annotations on it (`@RolesAllowed`, `@PermitAll` and custom ones),
+plus the `@Provider` filters and interceptors with their `@Priority` and name bindings.
+All of it is annotation data in the attributed trees, so it suits Lathe; registration in code
+(`register(...)` calls) is the part a static view can only list, not order.
+Framework-specific: JAX-RS first (Jersey, Dropwizard, Helidon MP); decide the scope before others.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-57 — No search for code that shares a string identifier
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Job names, queue names, topic names and config keys tie modules together through equal string literals
+(`"order-export"` in a batch application and in a service that schedules it).
+Lathe cannot connect them; grep did.
+
+### Fix direction
+
+Find the uses of a string constant's value: the literal and the constants holding it,
+resolved through `static final` constants (javac's constant values), across the reactor.
+Group a query's hits by value so one call links every module using the name.
+Java sources only; configuration files are out of scope.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: every MCP tool; seen in Claude Code.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
+Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
+(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
+Two consequences:
+
+- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
+  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
+  looks complete. The server instructions tell the agent to act on these notes.
+- The JSON repeats each key on every item, so answers are larger than the text form
+  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
+
+Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
+`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
+only a separate `get_diagnostics` showed the two errors.
+
+This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
+that structured content serves programmatic clients and not models.
+
+### Fix direction
+
+Carry the notes in the structured map too (a `notes` object with the four kinds), so they reach the agent
+whichever part a client shows.
+Then decide whether to keep `structuredContent` at all: without an `outputSchema` no client relies on it,
+and dropping it would make Claude Code show the compact text.
+Check what other clients (Codex, Cursor) show before choosing.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-59 — `outline` overflows on a large file
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `outline`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+`outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
+Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
+The largest file is where an outline saves the most reading, and the one where the tool fails.
+Part of the size is the JSON form ([MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)),
+but 428 lines of text would still be about 25k characters.
+
+### Fix direction
+
+An optional `depth` (1 = the top-level types and their members, without nested types' members)
+and a `kinds` filter (types only, methods only).
+Above a size cap, answer with the types and their member counts and say how to ask for one type's members,
+instead of an answer the client cuts.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-60 — `run_test` does not return a failing test's output
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `run_test`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+A probe test printed the code action's edits with `System.out.println` before its assertion.
+`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
+so the agent had to move the value into the assertion's message and run again.
+Logs and printed state are often what explains a failure.
+
+### Fix direction
+
+For each failed test, the last lines of its standard output and error, capped (say 40 lines),
+from the transcript the launch already drains (`LaunchSession`).
+Nothing for passing tests.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-61 — No overview of how a type's members are used
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+Planning to split a large class needs to know which of its members are used from outside it, and by whom
+(production or tests, which classes).
+`find_references` answers for one member per call; `WorkspaceSession` has 306 methods.
+The agent grepped the test file for `WorkspaceSession.<name>(` instead, which finds static calls only.
+
+### Fix direction
+
+A per-member summary of a type: each member with its counts of uses from inside the type,
+from other production classes and from tests, and the classes involved, with the unused ones listed.
+`analyze_change` already counts production and test uses for one symbol; this is that over every member.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found implementing gap CA-16 through Lathe's own MCP server (2026-10-31).
+
+### Observed behaviour
+
+Every `verify_change` in the session, about ten, answered
+`"affectedModules":["lathe-maven-plugin","lathe-mcp-server"]` with
+`"suggestedSync":".lathe/lathe-sync.sh lathe-maven-plugin lathe-mcp-server"`, whatever had changed:
+
+- a test-only edit (a deliberate error in `lathe-server`'s `CodeActionTest`, no arguments): the error was
+  reported, and so were both dependent modules and the sync, though test sources are on no other module's
+  classpath;
+- package-private classes (`ExtractVariableProvider`, `CodeActionSupport`) of `lathe-server`, a JPMS module whose
+  dependents cannot reference them.
+
+A suggestion that is always there gets ignored, or obeyed: an agent following it runs a reactor build for
+nothing (minutes on a large reactor). [MC-8](gaps-archive.md#mc-8--the-sync-command-verify_change-suggests-does-not-build-the-dependent-modules-it-names--done)
+made the command build what it names; this is about what it names.
+
+### Fix direction
+
+Name a dependent module only when the change can reach it: never for a test source tree; for main sources, only
+when a changed file declares a type the dependent can see (public or protected, in an exported package for a
+JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
+With none left, answer no `affectedModules` and no `suggestedSync`.
 
 ### Regression targets
 

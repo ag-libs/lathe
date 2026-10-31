@@ -533,7 +533,7 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void enums_fromWireAndSourceTree_mapKnownTokensAndRejectUnknown() {
+  void enums_fromWireAndSourceTree_mapKnownTokensRejectUnknownWireAndTakeExtraTreesAsMain() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
     assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
     assertThat(TypeKind.fromWire("package-info")).isEqualTo(TypeKind.PACKAGE_INFO);
@@ -545,8 +545,37 @@ class WorkspaceSessionTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> SourceScope.fromWire("prod"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> SourceScope.ofSourceTree("bogus"))
-        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(SourceScope.ofSourceTree("21")).isEqualTo(SourceScope.MAIN);
+  }
+
+  @Test
+  void packagesAndDirRun_moduleWithExtraSourceTree_listsItAsMainAndRunsOnlyTests()
+      throws Exception {
+    // A multi-release module's second compile (src/main/java21 into versions/21) is its own tree.
+    final var java21Cfg =
+        TestCompiler.moduleConfig(
+            tmp.resolve(".lathe/module"),
+            tmp.resolve("module/target/classes/META-INF/versions/21"),
+            tmp.resolve("module/src/main/java21"),
+            null,
+            "21");
+    Files.createDirectories(tmp.resolve("module/src/main/java21/com/example/jdk21"));
+    Files.writeString(
+        tmp.resolve("module/src/main/java21/com/example/jdk21/Trees.java"),
+        "package com.example.jdk21; class Trees {}");
+    final var testCfg = testConfig("module", "src/test/java");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/verify/VerifyTest.java"),
+        "package com.verify; class VerifyTest {}");
+    final List<ModuleSourceConfig> configs = List.of(config, java21Cfg, testCfg);
+
+    assertThat(WorkspaceSession.packages(configs, tmp, "module"))
+        .contains(
+            new PackageEntry("com.example.jdk21", "main"), new PackageEntry("com.verify", "test"));
+    assertThat(WorkspaceSession.dirRun(configs, tmp, tmp.resolve("module")).selections())
+        .extracting(DirRun.Selector::selectorValue)
+        .containsExactly("com.verify");
   }
 
   @Test

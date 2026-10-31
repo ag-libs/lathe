@@ -1087,7 +1087,7 @@ The restart policy belongs to the editor integration:
 
 - **M3 Neovim release** — show a normal LSP message:
   `Lathe server updated. Restart the language server.`
-  Users can run `:LspRestart`.
+  Users can run `:lsp restart` (Neovim 0.12+).
 - **Post-M3 VS Code extension** — listen for a Lathe-specific server-update notification,
   stop the current `LanguageClient`,
   and start a new one from the workspace's `.lathe/lathe-launcher.sh`.

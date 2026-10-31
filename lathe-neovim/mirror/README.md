@@ -53,6 +53,12 @@ require('lathe').setup()
 `require('lathe').setup()` is required. Without it, only indentation loads and the language server is
 never registered.
 
+## Updating
+
+Update this plugin through your plugin manager; the server updates when you bump the
+`lathe-maven-extension` version in your POM and build again. See
+[Updating](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating).
+
 ## Configuration & keymaps
 
 Lathe adds no key mappings of its own — it provides LSP endpoints, `:Lathe*` commands, and a few Lua

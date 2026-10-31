@@ -13,7 +13,7 @@
 #  - Watch expressions are added via a `:Watch <expr>` command (defined hidden) that calls
 #    dap-view's add_expr — robust vs. focusing the panel/REPL by hand under VHS. It shows the value
 #    inline in the Watches section (records expand to their fields).
-# leader = '\'. Line/motion navigation only.
+# leader = Space. Line/motion navigation only.
 Output "docs/videos/beat5-debug.mp4"
 Require nvim
 
@@ -42,13 +42,13 @@ Type ':command! -nargs=1 Watch lua require("dap-view").add_expr(<q-args>, false)
 Sleep 200ms
 # warm the debug attach so the visible one is fast, then terminate and clear
 Type '9G'
-Type '\db'
+Type ' db'
 Sleep 400ms
-Type '\dd'
+Type ' dd'
 Sleep 22s
-Type '\dt'
+Type ' dt'
 Sleep 2000ms
-Type '\db'
+Type ' db'
 Sleep 500ms
 # close the leftover docked output split so the clip opens on a clean editor, not a finished run
 Ctrl+W
@@ -63,9 +63,9 @@ Show
 # --- 1) set a breakpoint on the println and start debugging ---
 Type '9G'                 # the println line — `user` is assigned on the line above
 Sleep 700ms
-Type '\db'                # toggle breakpoint (gutter sign)
+Type ' db'                # toggle breakpoint (gutter sign)
 Sleep 1200ms
-Type '\dd'                # :LatheDebug — replay under the debugger, suspends and hits the breakpoint
+Type ' dd'                # :LatheDebug — replay under the debugger, suspends and hits the breakpoint
 Sleep 1000ms             # warmed attach stops by ~3s (fast) — add the first watch promptly so the
                          # empty "No expressions" panel is barely shown
 
@@ -80,6 +80,6 @@ Enter
 Sleep 3600ms             # -> "alice"
 
 # --- 4) continue to completion ---
-Type '\dc'
+Type ' dc'
 Sleep 2800ms             # resumes; the docked output prints ALICE and the session ends
 

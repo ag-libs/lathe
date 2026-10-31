@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -1357,33 +1358,8 @@ class CodeActionTest {
           void run() {}
         }
         """;
-    final var wholeStatement =
-        """
-        package com.example;
-        class Test {
-          void m() {
-            compute(2);
-          }
-          int compute(int n) { return n; }
-        }
-        """;
-    final var bracelessIf =
-        """
-        package com.example;
-        class Test {
-          void m(boolean b) {
-            if (b) use(compute(2));
-          }
-          int compute(int n) { return n; }
-          void use(int n) {}
-        }
-        """;
     final List<ExtractCase> cases =
-        List.of(
-            new ExtractCase("void has nothing to declare", voidCall, 3, 4, 3, 9, null),
-            new ExtractCase(
-                "whole ExpressionStatement expression", wholeStatement, 3, 4, 3, 14, null),
-            new ExtractCase("braceless if body is not a block", bracelessIf, 3, 15, 3, 25, null));
+        List.of(new ExtractCase("void has nothing to declare", voidCall, 3, 4, 3, 9, null));
 
     for (final ExtractCase c : cases) {
       final var actions =
@@ -1393,6 +1369,237 @@ class CodeActionTest {
           .as(c.label())
           .noneMatch(t -> t.startsWith("Extract variable"));
     }
+  }
+
+  @Test
+  void codeAction_extractVariable_atStatementStart_rewritesToCompilingCode() {
+    // The declaration is inserted where the extracted expression begins, so the insert and the
+    // replacement share an offset; they must apply in order.
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(StringBuilder sb) {
+            sb.append("x").append("y");
+          }
+        }
+        """;
+    final String rewritten =
+        applyEdits(source, extractEdits(extractActionsSpanning(source, 3, 4, 3, 18)));
+
+    assertThat(rewritten)
+        .contains("StringBuilder append = sb.append(\"x\");\n    append.append(\"y\");");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
+  void codeAction_extraction_lineWiseSelection_findsTheExpression() {
+    // A line-wise selection (Neovim's `V`) takes in the indentation and the `;` around the code.
+    final String max = "Extract variable 'max'";
+    assertExtracts(
+        "void m(String a, String b) {\n    int n =\n"
+            + "«        Math.max(\n            a.length(),\n            b.length());»\n  }",
+        max);
+    assertExtracts(
+        "void m(String a, String b) {\n    use(\n"
+            + "        «Math.max(\n            a.length(),\n            b.length())»);\n  }",
+        max);
+    assertExtracts(
+        "void m(String a, String b) {\n«    int n = Math.max(a.length(), b.length());»\n  }", max);
+    assertExtracts(
+        "int m(String a) {\n«    return a.trim().length();»\n  }", "Extract variable 'length'");
+    assertExtracts(
+        "void m() {\n    use(\n«        \"hello world\");»\n  }", "Extract constant 'HELLO_WORLD'");
+    assertThat(
+            rightTitles(markedActions(inTestClass("void m() {\n«    use(1);\n    use(2);»\n  }"))))
+        .as("several statements")
+        .noneMatch(t -> t.startsWith("Extract"));
+  }
+
+  @Test
+  void codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing() {
+    final Map<String, String> cases =
+        Map.of(
+            "right of &&", "void m(String a) { if (a != null && «a.isEmpty()») { use(a); } }",
+            "?: branch", "void m(String a) { use(ok(a) ? «a.trim()» : \"\"); }",
+            "while condition", "void m(List<String> l) { while («l.isEmpty()») { l.add(\"x\"); } }",
+            "for condition", "void m(List<String> l) { for (int i = 0; i < «l.size()»; i++) { } }",
+            "assert", "void m(String a) { assert «a.isEmpty()»; }",
+            "super argument",
+                "static class B { B(int x) {} }\n  static class C extends B { C(String a) { super(«a.length()»); } }",
+            "intersection type", "void m() { use(«List.of(1, \"a\")»); }",
+            "captured wildcard", "void m(Object o) { use(«o.getClass()»); }",
+            "earlier resource",
+                "void m() throws java.io.IOException {\n    try (var in = new java.io.StringReader(\"x\");"
+                    + " var r = new java.io.BufferedReader(«in»)) { }\n  }",
+            "earlier loop variable", "void m() { for (int i = 0, j = «i + 1»; i < j; i++) { } }");
+    cases.forEach(
+        (label, member) ->
+            assertThat(rightTitles(markedActions(inTestClass(member))))
+                .as(label)
+                .noneMatch(t -> t.startsWith("Extract variable")));
+  }
+
+  @Test
+  void codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode() {
+    final String variable = "Extract variable";
+    assertExtracts("void m(String a) { if («a.isEmpty()») { use(a); } }", variable);
+    assertExtracts(
+        "void m(Map<String, Integer> m) { for (String k : «m.keySet()») { use(k); } }", variable);
+    assertExtracts("void m(String a) { switch («a.trim()») { default -> use(a); } }", variable);
+    assertExtracts("void m() { use(«List.of(\"a\", \"b\")»); }", variable);
+    assertExtracts("void m(List<List<? extends Number>> l) { use(«l»); }", variable);
+
+    // replace-all: the occurrence the anchor statement always evaluates covers the one in a branch
+    final var branch =
+        inTestClass("void m(String a, boolean b) { use(«a.trim()»); if (b) { use(a.trim()); } }");
+    assertThat(rightTitles(markedActions(branch))).anyMatch(t -> t.contains("replace all 2"));
+    final var onlyInBranches =
+        inTestClass(
+            "void m(String a, boolean b) {\n    if (b) { use(«a.trim()»); } else { use(a.trim()); }\n  }");
+    assertThat(rightTitles(markedActions(onlyInBranches)))
+        .noneMatch(t -> t.contains("replace all"));
+  }
+
+  @Test
+  void codeAction_extractVariable_outsideABlock_declaresWhereItFits() {
+    final String variable = "Extract variable";
+    assertExtracts(
+        "void m(String a) { switch (a) { case \"x\": use(«a.trim()»); break; default: break; } }",
+        variable);
+    assertExtracts(
+        "void m(java.io.File f) throws java.io.IOException {\n"
+            + "    try (var in = new java.io.FileInputStream(«f.getPath()»)) { use(in); }\n  }",
+        variable);
+    assertExtracts(
+        "void m() { for (int i = «Integer.parseInt(\"1\")»; i < 3; i++) { use(i); } }", variable);
+    assertExtracts("void m(String a) { «a.trim()»; }", "Extract variable 'trim'");
+  }
+
+  @Test
+  void codeAction_extractVariable_bodyWithoutRoom_becomesABlock() {
+    // A lambda returns the value only when its interface method does, a switch expression's rule
+    // yields it: either mistake would not compile.
+    final String variable = "Extract variable";
+    assertExtracts("void m(List<String> l) { l.forEach(x -> use(«x.trim()»)); }", variable);
+    assertExtracts(
+        "List<Integer> m(List<String> l) {\n    return l.stream().map(x -> «x.length()» * 2)"
+            + ".collect(java.util.stream.Collectors.toList());\n  }",
+        variable);
+    assertExtracts(
+        "int m(String a) { return switch (a) { case \"x\" -> «a.length()» + 1; default -> 0; }; }",
+        variable);
+    assertExtracts(
+        "void m(String a) { switch (a) { case \"x\" -> use(«a.trim()»); default -> use(a); } }",
+        variable);
+    assertExtracts("void m(String a, boolean b) { if (b) use(«a.trim()»); }", variable);
+    assertExtracts("void m(List<String> l) { for (String x : l) use(«x.trim()»); }", variable);
+
+    final String lambda =
+        inTestClass("void m(List<String> l) { l.forEach(x -> use(«x.trim()»)); }");
+    assertThat(applyEdits(unmarked(lambda), extractEdits(markedActions(lambda))))
+        .contains("x -> {\n    String trim = x.trim();\n    use(trim);\n  });");
+
+    assertThat(
+            rightTitles(
+                markedActions(
+                    inTestClass(
+                        "boolean m(String a) { return java.util.Optional.of(a).filter(x -> x != null && «x.isEmpty()»).isPresent(); }"))))
+        .as("pinned inside the body")
+        .noneMatch(t -> t.startsWith(variable));
+    assertThat(
+            rightTitles(
+                markedActions(inTestClass("void m(String a, boolean b) { if (b) «a.trim()»; }"))))
+        .as("a whole statement alone in a body")
+        .noneMatch(t -> t.startsWith(variable));
+  }
+
+  @Test
+  void codeAction_annotatedDeclarations_insertInsideTheBody() {
+    // A `{` in an annotation argument is not the body's: the insert lands inside the body.
+    final var annotatedClass =
+        """
+        package com.example;
+        @SuppressWarnings({"unused"})
+        class Test {
+          void m() { use(«"hello world"»); }
+          void use(Object x) {}
+        }
+        """;
+    final var annotatedComponent =
+        """
+        package com.example;
+        record Test(@SuppressWarnings({"unused"}) int a) {
+          void m() { use(«"hello world"»); }
+          void use(Object x) {}
+        }
+        """;
+    for (final String source : List.of(annotatedClass, annotatedComponent)) {
+      final String rewritten = applyEdits(unmarked(source), constantEdits(markedActions(source)));
+      assertThat(rewritten)
+          .contains("{\n  private static final String HELLO_WORLD = \"hello world\";\n  void m()");
+      assertCompilesClean(rewritten);
+    }
+
+    final var annotatedConstructor =
+        """
+        package com.example;
+        @SuppressWarnings({"unused"})
+        class Widget {
+          private final String id;
+          @SuppressWarnings({"unused"})
+          Widget() {}
+        }
+        """;
+    final String rewritten =
+        applyEdits(
+            annotatedConstructor, addCtorEdits(replaceVarActionsAt(annotatedConstructor, 3, 23)));
+    assertThat(rewritten).contains("Widget(final String id) {\n    this.id = id;\n  }");
+    assertCompilesClean(rewritten);
+  }
+
+  // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that
+  // applying it leaves code that compiles.
+  private void assertExtracts(final String member, final String titlePrefix) {
+    final String source = inTestClass(member);
+    final var actions = markedActions(source);
+    assertThat(rightTitles(actions)).as(member).anyMatch(t -> t.startsWith(titlePrefix));
+    assertCompilesClean(
+        applyEdits(unmarked(source), editsOfActionStartingWith(actions, titlePrefix)));
+  }
+
+  private static String inTestClass(final String member) {
+    return """
+        package com.example;
+        import java.util.*;
+        class Test {
+          %s
+          void use(Object x) {}
+          boolean ok(Object x) { return x != null; }
+        }
+        """
+        .formatted(member);
+  }
+
+  // Code actions for the selection `«…»` marks in the source (the marks removed).
+  private List<Either<Command, CodeAction>> markedActions(final String marked) {
+    final int start = marked.indexOf('«');
+    final int end = marked.indexOf('»') - 1;
+    final String source = unmarked(marked);
+    final Position from = positionOf(source, start);
+    final Position to = positionOf(source, end);
+    return extractActionsSpanning(
+        source, from.getLine(), from.getCharacter(), to.getLine(), to.getCharacter());
+  }
+
+  private static String unmarked(final String marked) {
+    return marked.replace("«", "").replace("»", "");
+  }
+
+  private static Position positionOf(final String source, final int offset) {
+    final int lineStart = source.lastIndexOf('\n', offset - 1) + 1;
+    final int line = (int) source.substring(0, lineStart).chars().filter(c -> c == '\n').count();
+    return new Position(line, offset - lineStart);
   }
 
   private record ExtractCase(
@@ -1407,9 +1614,8 @@ class CodeActionTest {
   @Test
   void codeAction_staticCallReceiver_extractsCallNotTypeReference() {
     // A caret on the type name of a static call must not extract the type reference, which produced
-    // uncompilable `Factory factory = Factory;`. It climbs to the enclosing value expression: a
-    // whole-statement call offers nothing, a call used as a sub-expression extracts the call
-    // itself.
+    // uncompilable `Factory factory = Factory;`. It climbs to the enclosing value expression, the
+    // call: a whole-statement call becomes its declaration, a sub-expression call is extracted.
     final var wholeStatement =
         """
         package com.example;
@@ -1420,9 +1626,9 @@ class CodeActionTest {
           static class Factory { static String create() { return ""; } }
         }
         """;
-    // caret on the `F` of `Factory`
-    assertThat(rightTitles(replaceVarActionsAt(wholeStatement, 3, 4)))
-        .noneMatch(t -> t.startsWith("Extract variable"));
+    // caret on the `F` of `Factory`: the whole statement becomes the declaration
+    assertThat(applyEdits(wholeStatement, extractEdits(replaceVarActionsAt(wholeStatement, 3, 4))))
+        .contains("String create = Factory.create();");
 
     final var subExpression =
         """
@@ -2089,12 +2295,13 @@ class CodeActionTest {
   }
 
   // Applies non-overlapping TextEdits to the original source, from the latest offset backwards so
-  // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file.
+  // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file. Edits
+  // at one offset land in list order, as LSP specifies: the stable ascending sort keeps that order,
+  // and walking it backwards applies the later edit first.
   private static String applyEdits(final String source, final List<TextEdit> edits) {
     final List<TextEdit> ordered = new ArrayList<>(edits);
-    ordered.sort(
-        Comparator.comparingInt((TextEdit e) -> offsetOf(source, e.getRange().getStart()))
-            .reversed());
+    ordered.sort(Comparator.comparingInt(e -> offsetOf(source, e.getRange().getStart())));
+    Collections.reverse(ordered);
     String result = source;
     for (final TextEdit edit : ordered) {
       final int start = offsetOf(source, edit.getRange().getStart());

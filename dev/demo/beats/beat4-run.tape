@@ -9,7 +9,7 @@
 # (:LatheRun) replays it from captured .lathe bytecode — no Maven, no recompile — and the two JUL
 # INFO lines stream into Lathe's docked output split, a second apart (Thread.sleep) so it reads live.
 # The final-state sources are copied from dev/demo/beats/beat4-fixture/ (beat 3 produces this state;
-# each clip is independent, so beat 4 establishes it directly). leader = '\'.
+# each clip is independent, so beat 4 establishes it directly). leader = Space.
 Output "docs/videos/beat4-run.mp4"
 Require nvim
 
@@ -39,7 +39,7 @@ Show
 # --- run the modular main; the JUL lines stream into the docked output split ---
 Type '11G'                # onto the `public static void main(...)` line
 Sleep 800ms
-Type '\rr'                # <leader>rr = :LatheRun — replay from .lathe, output docks and streams
+Type ' rr'                # <leader>rr = :LatheRun — replay from .lathe, output docks and streams
 Sleep 2200ms             # launch command + "INFO: starting"
 Sleep 2200ms             # ~1s later (Thread.sleep) "INFO: done" appears — visibly live
 Sleep 800ms              # brief dwell on the completed run
