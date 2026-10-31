@@ -251,10 +251,10 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     }
   }
 
-  // Where a document's text is written for javac: its path below its source root, under tempDir.
+  // Where a document's text is written for javac.
   private Path tempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
-    return tempDir.resolve(sourceRootOf(filePath, uri).relativize(filePath));
+    return FileUtil.tempSourceFile(tempDir, sourceRootOf(filePath, uri), filePath);
   }
 
   private Path sourceRootOf(final Path filePath, final String uri) {

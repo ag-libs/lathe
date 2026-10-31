@@ -28,6 +28,7 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -38,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.LongPredicate;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -99,7 +101,8 @@ record RegionFlow(
     final SourcePositions positions = trees.getSourcePositions();
     final var cu = member.getCompilationUnit();
     final long start = positions.getStartPosition(cu, region.get(0).getLeaf());
-    final long end = positions.getEndPosition(cu, region.get(region.size() - 1).getLeaf());
+    final long end = positions.getEndPosition(cu, CollectionUtil.last(region).getLeaf());
+    final LongPredicate inRegion = at -> at >= start && at < end;
     final Map<VariableElement, Long> declared = new HashMap<>();
     final Set<VariableElement> valueAtDeclaration = new HashSet<>();
     final Set<Tree> topLevel =
@@ -142,7 +145,7 @@ record RegionFlow(
           }
         }
 
-        if (at >= start && at < end) {
+        if (inRegion.test(at)) {
           noteInRegion(element);
         }
 
@@ -152,9 +155,7 @@ record RegionFlow(
       @Override
       public Void visitAssignment(final AssignmentTree tree, final Void unused) {
         final Element target = trees.getElement(new TreePath(getCurrentPath(), tree.getVariable()));
-        final long at = positions.getStartPosition(cu, tree);
-        if (at >= start
-            && at < end
+        if (inRegion.test(positions.getStartPosition(cu, tree))
             && target != null
             && target.getKind() == ElementKind.FIELD
             && target.getModifiers().contains(Modifier.FINAL)) {
@@ -171,19 +172,18 @@ record RegionFlow(
 
         if (element instanceof final TypeElement type
             && type.getNestingKind() == NestingKind.LOCAL
-            && !declaredWithin(type, trees, start, end)) {
+            && !declaredWithin(type, trees, inRegion)) {
           refusals.add("uses a local class");
         }
       }
     }.scan(member, null);
 
-    final List<Use> inRegion =
-        uses.stream().filter(use -> use.position() >= start && use.position() < end).toList();
-    final List<Use> outside =
-        uses.stream().filter(use -> use.position() < start || use.position() >= end).toList();
+    final List<Use> usesInRegion =
+        uses.stream().filter(use -> inRegion.test(use.position())).toList();
+    final List<Use> outside = uses.stream().filter(use -> !inRegion.test(use.position())).toList();
     final Set<VariableElement> declaredInRegion =
         declared.entrySet().stream()
-            .filter(entry -> entry.getValue() >= start && entry.getValue() < end)
+            .filter(entry -> inRegion.test(entry.getValue()))
             .map(Map.Entry::getKey)
             .collect(Collectors.toUnmodifiableSet());
 
@@ -191,7 +191,7 @@ record RegionFlow(
     // it before assigning it and it has a value before the region, else a local the new method
     // declares.
     final Set<VariableElement> used =
-        inRegion.stream()
+        usesInRegion.stream()
             .sorted(Comparator.comparingLong(Use::position))
             .map(Use::variable)
             .filter(variable -> !declaredInRegion.contains(variable))
@@ -201,7 +201,7 @@ record RegionFlow(
             .filter(
                 variable ->
                     anyUse(
-                        inRegion,
+                        usesInRegion,
                         variable,
                         use ->
                             use.access() != Access.WRITE
@@ -224,7 +224,8 @@ record RegionFlow(
                 declaredInRegion.stream(),
                 used.stream()
                     .filter(
-                        variable -> anyUse(inRegion, variable, use -> use.access() != Access.READ)))
+                        variable ->
+                            anyUse(usesInRegion, variable, use -> use.access() != Access.READ)))
             .distinct()
             .filter(
                 variable ->
@@ -263,15 +264,14 @@ record RegionFlow(
   }
 
   private static boolean declaredWithin(
-      final TypeElement type, final Trees trees, final long start, final long end) {
+      final TypeElement type, final Trees trees, final LongPredicate inRegion) {
     final TreePath path = trees.getPath(type);
     if (path == null) {
       return false;
     }
 
-    final long at =
-        trees.getSourcePositions().getStartPosition(path.getCompilationUnit(), path.getLeaf());
-    return at >= start && at < end;
+    return inRegion.test(
+        trees.getSourcePositions().getStartPosition(path.getCompilationUnit(), path.getLeaf()));
   }
 
   // ── control flow of a statement region ───────────────────────────────────────────────────
@@ -279,7 +279,7 @@ record RegionFlow(
   // Whether the statements cannot complete normally, directly in a method returning a value: then
   // every path ends in `return value;` or a throw, and `return extracted(…);` keeps both.
   private static boolean returnsValue(final List<TreePath> region) {
-    return !completesNormally(region.get(region.size() - 1).getLeaf())
+    return !completesNormally(CollectionUtil.last(region).getLeaf())
         && Stream.iterate(region.get(0), Objects::nonNull, TreePath::getParentPath)
             .map(TreePath::getLeaf)
             .filter(RegionFlow::isBodyBoundary)
@@ -385,7 +385,7 @@ record RegionFlow(
       refusals.add("calls this(...) or super(...)");
     }
 
-    if (!returnsValue && !completesNormally(region.get(region.size() - 1).getLeaf())) {
+    if (!returnsValue && !completesNormally(CollectionUtil.last(region).getLeaf())) {
       refusals.add("never completes normally");
     }
 
@@ -452,7 +452,7 @@ record RegionFlow(
 
     if (statement instanceof final BlockTree block) {
       return block.getStatements().isEmpty()
-          || completesNormally(block.getStatements().get(block.getStatements().size() - 1));
+          || completesNormally(CollectionUtil.last(block.getStatements()));
     }
 
     if (statement instanceof final IfTree ifTree) {

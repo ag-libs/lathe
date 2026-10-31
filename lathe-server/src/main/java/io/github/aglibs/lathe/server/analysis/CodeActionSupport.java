@@ -15,7 +15,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -117,7 +116,11 @@ final class CodeActionSupport {
       final AttributedFileAnalysis analysis, final Stream<? extends TypeMirror> types) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
     return types
-        .flatMap(type -> typeElements(type).stream())
+        .flatMap(CodeActionSupport::typesIn)
+        .filter(DeclaredType.class::isInstance)
+        .map(type -> ((DeclaredType) type).asElement())
+        .filter(TypeElement.class::isInstance)
+        .map(TypeElement.class::cast)
         .distinct()
         .filter(type -> !declaredIn(analysis, type))
         .map(type -> type.getQualifiedName().toString())
@@ -134,28 +137,20 @@ final class CodeActionSupport {
   }
 
   // A type and every type in it: generic arguments, array components, wildcard bounds.
-  private static Set<TypeElement> typeElements(final TypeMirror type) {
-    if (type instanceof final DeclaredType dt) {
-      final Stream<TypeElement> self =
-          dt.asElement() instanceof final TypeElement te ? Stream.of(te) : Stream.of();
-      final Stream<TypeElement> args =
-          dt.getTypeArguments().stream().flatMap(arg -> typeElements(arg).stream());
-      return Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
+  static Stream<TypeMirror> typesIn(final TypeMirror type) {
+    final Stream<? extends TypeMirror> nested;
+    if (type instanceof final DeclaredType declared) {
+      nested = declared.getTypeArguments().stream();
+    } else if (type instanceof final ArrayType array) {
+      nested = Stream.of(array.getComponentType());
+    } else if (type instanceof final WildcardType wildcard) {
+      nested =
+          Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound()).filter(Objects::nonNull);
+    } else {
+      nested = Stream.empty();
     }
 
-    if (type instanceof final ArrayType at) {
-      return typeElements(at.getComponentType());
-    }
-
-    if (type instanceof final WildcardType wt) {
-      final Stream<TypeElement> ext =
-          wt.getExtendsBound() != null ? typeElements(wt.getExtendsBound()).stream() : Stream.of();
-      final Stream<TypeElement> sup =
-          wt.getSuperBound() != null ? typeElements(wt.getSuperBound()).stream() : Stream.of();
-      return Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
-    }
-
-    return Set.of();
+    return Stream.concat(Stream.of(type), nested.flatMap(CodeActionSupport::typesIn));
   }
 
   // The variable declaration enclosing the cursor, bounded at the method/class boundary so a caret

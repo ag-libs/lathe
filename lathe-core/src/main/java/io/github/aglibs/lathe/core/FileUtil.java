@@ -180,10 +180,16 @@ public final class FileUtil {
     return packageDir.toString().replace(packageDir.getFileSystem().getSeparator(), ".");
   }
 
+  // Where writeTempSourceFile puts a source file's copy: its path below its root, under tempDir.
+  public static Path tempSourceFile(
+      final Path tempDir, final Path sourceRoot, final Path filePath) {
+    return tempDir.resolve(sourceRoot.relativize(filePath));
+  }
+
   public static Path writeTempSourceFile(
       final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
       throws IOException {
-    final Path tempFile = tempDir.resolve(sourceRoot.relativize(filePath));
+    final Path tempFile = tempSourceFile(tempDir, sourceRoot, filePath);
     Files.createDirectories(tempFile.getParent());
     Files.writeString(tempFile, content);
     return tempFile;

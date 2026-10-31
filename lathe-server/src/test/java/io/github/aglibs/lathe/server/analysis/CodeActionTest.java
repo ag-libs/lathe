@@ -1810,6 +1810,13 @@ class CodeActionTest {
     assertExtracts(
         "void m(boolean b) {\n    String line;\n«    line = String.valueOf(b);\n    use(line);»\n  }",
         method);
+    // a local the new method declares has its type imported, however the source spelled it
+    assertThat(
+            assertExtracts(
+                "void m() {\n    java.util.concurrent.atomic.AtomicLong n;\n"
+                    + "«    n = new java.util.concurrent.atomic.AtomicLong();\n    use(n);»\n  }",
+                method))
+        .contains("import java.util.concurrent.atomic.AtomicLong;", "    AtomicLong n;");
     // a loop with its own break moves whole; case statements without their break
     assertExtracts(
         "void m(List<String> l) { «for (String s : l) { if (s.isEmpty()) break; use(s); }» }",

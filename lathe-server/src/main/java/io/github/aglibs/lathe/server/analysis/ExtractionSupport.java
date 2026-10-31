@@ -332,16 +332,13 @@ public final class ExtractionSupport {
 
       @Override
       public Void visitBlock(final BlockTree tree, final Void unused) {
-        addRuns(tree.getStatements());
+        addRuns(statementsOf(tree));
         return super.visitBlock(tree, unused);
       }
 
       @Override
       public Void visitCase(final CaseTree tree, final Void unused) {
-        if (tree.getStatements() != null) {
-          addRuns(tree.getStatements());
-        }
-
+        addRuns(statementsOf(tree));
         return super.visitCase(tree, unused);
       }
 

@@ -488,6 +488,13 @@ def _edit_range(edit: dict) -> dict:
     raise ValueError(f"unsupported text edit shape: {edit}")
 
 
+def _print_diff(before: str, after: str, indent: str) -> None:
+    """The changed lines as a unified diff with one line of context, without file headers."""
+    for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=1):
+        if not line.startswith(("---", "+++")):
+            print(f"{indent}{line}")
+
+
 def _apply_text_edits(content: str, edits: list[dict]) -> str:
     """Apply LSP TextEdits to content. Edits at one offset land in list order, as LSP specifies:
     a stable ascending sort keeps that order, and walking it backwards applies the later one first."""
@@ -1917,10 +1924,7 @@ class ExploreShell:
 
         rewritten = _apply_text_edits(self._current, edits)
         print(f"  applied {action.get('title')!r}")
-        for line in difflib.unified_diff(
-                self._current.splitlines(), rewritten.splitlines(), lineterm="", n=1):
-            if not line.startswith(("---", "+++")):
-                print(f"  {line}")
+        _print_diff(self._current, rewritten, "  ")
 
         queue_ = self._client._notification_queue("textDocument/publishDiagnostics")
         while not queue_.empty():
@@ -1950,11 +1954,7 @@ class ExploreShell:
         if not edits:
             return
         print("  would have applied:")
-        for line in difflib.unified_diff(
-                self._current.splitlines(), _apply_text_edits(self._current, edits).splitlines(),
-                lineterm="", n=1):
-            if not line.startswith(("---", "+++")):
-                print(f"    {line}")
+        _print_diff(self._current, _apply_text_edits(self._current, edits), "    ")
 
     def _cmd_reset(self, args: list[str]) -> None:
         if not self._injected:

@@ -14,6 +14,7 @@ import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport.Site;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
@@ -35,12 +36,9 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
-import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
@@ -110,14 +108,16 @@ final class ExtractMethodProvider {
               .orElse(analysis.types().getNoType(TypeKind.VOID));
     }
 
-    // A void expression is refused below as a type that cannot be written.
+    // Every type the new method writes; a void expression is refused below as one that cannot be.
+    final List<TypeMirror> thrown = UncaughtExceptions.of(region, analysis);
     final List<TypeMirror> signatureTypes =
         Stream.of(
                 expressionForm || returnType.getKind() != TypeKind.VOID
                     ? Stream.of(returnType)
                     : Stream.<TypeMirror>empty(),
                 flow.parameters().stream().map(Element::asType),
-                flow.declaredHere().stream().map(Element::asType))
+                flow.declaredHere().stream().map(Element::asType),
+                thrown.stream())
             .flatMap(types -> types)
             .toList();
     final List<String> refusals =
@@ -155,7 +155,8 @@ final class ExtractMethodProvider {
             flow.declaredHere(),
             flow.outputs(),
             flow.returnsValue(),
-            UncaughtExceptions.of(region, analysis));
+            thrown,
+            signatureTypes);
     // A static method cannot use the class's type variables.
     final boolean classTypeVariables =
         typeVariables.stream()
@@ -215,7 +216,8 @@ final class ExtractMethodProvider {
       List<VariableElement> declaredHere,
       List<VariableElement> outputs,
       boolean returnsValue,
-      List<TypeMirror> thrown) {
+      List<TypeMirror> thrown,
+      List<TypeMirror> signatureTypes) {
 
     Extraction {
       ValidCheck.check()
@@ -230,6 +232,7 @@ final class ExtractMethodProvider {
           .notNull(declaredHere, "declaredHere")
           .notNull(outputs, "outputs")
           .notNull(thrown, "thrown")
+          .notNull(signatureTypes, "signatureTypes")
           .validate();
       region = List.copyOf(region);
       typeParameters = List.copyOf(typeParameters);
@@ -237,6 +240,7 @@ final class ExtractMethodProvider {
       declaredHere = List.copyOf(declaredHere);
       outputs = List.copyOf(outputs);
       thrown = List.copyOf(thrown);
+      signatureTypes = List.copyOf(signatureTypes);
     }
 
     Either<Command, CodeAction> action(
@@ -261,16 +265,9 @@ final class ExtractMethodProvider {
                           ExtractionSupport.replaceEdit(
                               cu,
                               start(site.run().get(0)),
-                              end(site.run().get(site.run().size() - 1)),
+                              end(CollectionUtil.last(site.run())),
                               call(site))),
-              CodeActionSupport.importEditsFor(
-                  analysis,
-                  Stream.of(
-                          Stream.of(returnType),
-                          parameters.stream().map(Element::asType),
-                          thrown.stream())
-                      .flatMap(types -> types))
-                  .stream())
+              CodeActionSupport.importEditsFor(analysis, signatureTypes.stream()).stream())
           .flatMap(edits -> edits)
           .toList();
     }
@@ -308,13 +305,12 @@ final class ExtractMethodProvider {
                           declaration.getModifiers().getFlags().contains(Modifier.FINAL)
                               ? "final "
                               : "",
-                          new TypeDisplayFormatter(analysis.types()).format(output.asType()),
+                          typeText(output.asType()),
                           output.getSimpleName()))
           .orElse("%s = ".formatted(output.getSimpleName()));
     }
 
     private String methodText(final boolean isStatic) {
-      final var format = new TypeDisplayFormatter(analysis.types());
       final String indent = CodeActionSupport.lineIndent(source, (int) start(member));
       final String step =
           CodeActionSupport.indentStep(
@@ -326,16 +322,13 @@ final class ExtractMethodProvider {
                   parameter ->
                       "%s%s %s"
                           .formatted(
-                              modifier,
-                              format.format(parameter.asType()),
-                              parameter.getSimpleName()))
+                              modifier, typeText(parameter.asType()), parameter.getSimpleName()))
               .collect(Collectors.joining(", "));
       final String throwsClause =
           thrown.isEmpty()
               ? ""
-              : " throws " + thrown.stream().map(format::format).collect(Collectors.joining(", "));
-      final String text =
-          source.substring((int) start(region.get(0)), (int) end(region.get(region.size() - 1)));
+              : " throws " + thrown.stream().map(this::typeText).collect(Collectors.joining(", "));
+      final String text = sourceOf(region.get(0), CollectionUtil.last(region));
       final String bodyIndent = indent + step;
       final String body =
           expressionForm()
@@ -347,7 +340,7 @@ final class ExtractMethodProvider {
                                   "%s%s %s;"
                                       .formatted(
                                           bodyIndent,
-                                          format.format(local.asType()),
+                                          typeText(local.asType()),
                                           local.getSimpleName())),
                       Stream.of(
                           CodeActionSupport.rebased(
@@ -369,13 +362,10 @@ final class ExtractMethodProvider {
                   : "<%s> "
                       .formatted(
                           typeParameters.stream()
-                              .map(
-                                  parameter ->
-                                      source.substring(
-                                          (int) start(new TreePath(member, parameter)),
-                                          (int) end(new TreePath(member, parameter))))
+                              .map(parameter -> new TreePath(member, parameter))
+                              .map(path -> sourceOf(path, path))
                               .collect(Collectors.joining(", "))),
-              format.format(returnType),
+              typeText(returnType),
               name,
               parameterList,
               throwsClause,
@@ -389,6 +379,14 @@ final class ExtractMethodProvider {
           && !method.getParameters().isEmpty()
           && method.getParameters().stream()
               .allMatch(parameter -> parameter.getModifiers().getFlags().contains(Modifier.FINAL));
+    }
+
+    private String typeText(final TypeMirror type) {
+      return new TypeDisplayFormatter(analysis.types()).format(type);
+    }
+
+    private String sourceOf(final TreePath first, final TreePath last) {
+      return source.substring((int) start(first), (int) end(last));
     }
 
     private long start(final TreePath path) {
@@ -533,26 +531,10 @@ final class ExtractMethodProvider {
         .collect(Collectors.toUnmodifiableList());
   }
 
-  // The type variables a type names: itself, or in its generic arguments, array component or
-  // wildcard bounds.
   private static Stream<TypeParameterElement> typeVariablesIn(final TypeMirror type) {
-    if (type instanceof final TypeVariable variable) {
-      return Stream.of((TypeParameterElement) variable.asElement());
-    }
-
-    if (type instanceof final DeclaredType declared) {
-      return declared.getTypeArguments().stream().flatMap(ExtractMethodProvider::typeVariablesIn);
-    }
-
-    if (type instanceof final ArrayType array) {
-      return typeVariablesIn(array.getComponentType());
-    }
-
-    return type instanceof final WildcardType wildcard
-        ? Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound())
-            .filter(Objects::nonNull)
-            .flatMap(ExtractMethodProvider::typeVariablesIn)
-        : Stream.empty();
+    return CodeActionSupport.typesIn(type)
+        .filter(TypeVariable.class::isInstance)
+        .map(variable -> (TypeParameterElement) ((TypeVariable) variable).asElement());
   }
 
   // `extracted`, or the first `extractedN` no method of the class declares or inherits: a new
