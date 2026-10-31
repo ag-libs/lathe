@@ -187,6 +187,8 @@ class CodeActionTest {
           separator.length();
           typo.run();
           java.util.Lisst.of();
+          TimeUnit.SECONDS.toMillis(1);
+          Map.Entry.comparingByKey();
         }
       }
       """;
@@ -207,11 +209,21 @@ class CodeActionTest {
             "javax.xml.datatype",
             TypeKind.CLASS,
             true,
-            List.of()));
+            List.of()),
+        new TypeIndexEntry(
+            "TimeUnit",
+            "java.util.concurrent.TimeUnit",
+            "java.util.concurrent",
+            TypeKind.ENUM,
+            true,
+            List.of()),
+        new TypeIndexEntry(
+            "Map", "java.util.Map", "java.util", TypeKind.INTERFACE, true, List.of()));
   }
 
-  // The qualifier itself is classified as one; a qualified name that misses its last part
-  // (java.util.Lisst) starts at a qualifier too, but names something else.
+  // The qualifier itself is classified as one, and so is the type a chain starts with, which javac
+  // reports as a missing package; a qualified name that misses its last part (java.util.Lisst)
+  // starts at a qualifier too, but names something else, and an import's package is just missing.
   @Test
   void compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself() {
     final List<Diagnostic> diags =
@@ -228,7 +240,14 @@ class CodeActionTest {
         .containsEntry("Duration", DiagnosticPayload.Kind.QUALIFIER_REF)
         .containsEntry("separator", DiagnosticPayload.Kind.QUALIFIER_REF)
         .containsEntry("typo", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .containsEntry("TimeUnit", DiagnosticPayload.Kind.QUALIFIER_REF)
+        .containsEntry("Map", DiagnosticPayload.Kind.QUALIFIER_REF)
         .doesNotContainEntry("Lisst", DiagnosticPayload.Kind.QUALIFIER_REF);
+
+    final String missingPackage = "import com.missing.Thing;\nclass Test {}\n";
+    assertThat(session.compile(TempSourceCompiler.TEST_URI, missingPackage, 2, CompileMode.OPEN))
+        .extracting(Diagnostic::getData)
+        .noneMatch(DiagnosticPayload.class::isInstance);
   }
 
   // A qualifier gets the type import and the learned static import, a blank line below the package.
@@ -253,7 +272,9 @@ class CodeActionTest {
             "Import 'java.util.Objects'",
             "Import 'java.time.Duration'",
             "Import 'javax.xml.datatype.Duration'",
-            "Import 'static java.io.File.separator'");
+            "Import 'static java.io.File.separator'",
+            "Import 'java.util.concurrent.TimeUnit'",
+            "Import 'java.util.Map'");
     assertThat(codeActions(actions))
         .filteredOn(action -> action.getTitle().equals("Import 'java.util.Objects'"))
         .singleElement()
@@ -280,9 +301,34 @@ class CodeActionTest {
     assertThat(candidatesOf(result, "Duration"))
         .containsExactlyInAnyOrder("java.time.Duration", "javax.xml.datatype.Duration");
     assertThat(candidatesOf(result, "separator")).containsExactly("static java.io.File.separator");
+    assertThat(candidatesOf(result, "TimeUnit")).containsExactly("java.util.concurrent.TimeUnit");
+    assertThat(candidatesOf(result, "Map")).containsExactly("java.util.Map");
     assertThat(result.items())
         .extracting(MissingImportsResult.MissingImport::name)
         .doesNotContain("typo");
+  }
+
+  // Importing the type a chain starts with is the whole fix.
+  @Test
+  void missingImports_chainedQualifiers_importTheirFirstTypeAndCompile() throws IOException {
+    final String source =
+        """
+        package com.example;
+
+        class Test {
+          long m() {
+            Map.Entry.comparingByKey();
+            return TimeUnit.SECONDS.toMillis(1);
+          }
+        }
+        """;
+    final var result =
+        session.missingImports(
+            TempSourceCompiler.TEST_URI, source, 1, qualifierIndex(), LEARNED_FIELD);
+
+    assertCompilesClean(
+        applyEdits(
+            source, result.edits(List.of("java.util.Map", "java.util.concurrent.TimeUnit"))));
   }
 
   @Test
