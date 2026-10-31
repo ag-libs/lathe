@@ -76,6 +76,10 @@ final class ExtractVariableProvider {
       return List.of();
     }
 
+    if (ExtractionSupport.pinnedInPlace(exprPath, stmtPath.getLeaf(), trees)) {
+      return List.of();
+    }
+
     final var positions = trees.getSourcePositions();
     final long exprStart = positions.getStartPosition(cu, expr);
     final long exprEnd = positions.getEndPosition(cu, expr);
@@ -167,7 +171,12 @@ final class ExtractVariableProvider {
 
     final var positions = trees.getSourcePositions();
     final Tree anchorStmt = earliestAnchorStatement(block, occurrences, positions, cu);
-    if (anchorStmt == null) {
+    // The value must already be computed at the anchor, by an occurrence the anchor statement
+    // always
+    // evaluates: hoisting one only in a branch or behind && would run it where it may not run.
+    if (anchorStmt == null
+        || occurrences.stream()
+            .allMatch(o -> ExtractionSupport.pinnedInPlace(o, anchorStmt, trees))) {
       return null;
     }
 

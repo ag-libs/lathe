@@ -11,11 +11,16 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
+import javax.lang.model.type.WildcardType;
 import org.eclipse.lsp4j.TextEdit;
 
 final class CodeActionSupport {
@@ -261,14 +266,31 @@ final class CodeActionSupport {
     return String.join("\n", lines);
   }
 
-  // Only kinds that can be written explicitly qualify: `var`/inferred types can be anonymous,
-  // intersection, or captured type variables that have no source spelling.
+  // Only types that can be written explicitly qualify, at any depth: `var`/inferred types can be
+  // anonymous, intersection (List.of(1, "a") is a List<Serializable & Comparable<…>>), or captured
+  // type variables, none of which has a source spelling.
   static boolean isDenotable(final TypeMirror type) {
     return switch (type.getKind()) {
-      case DECLARED -> !isAnonymous((DeclaredType) type);
-      case ARRAY, BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> true;
+      case DECLARED ->
+          !isAnonymous((DeclaredType) type)
+              && ((DeclaredType) type)
+                  .getTypeArguments().stream().allMatch(CodeActionSupport::isDenotableArgument);
+      case ARRAY -> isDenotable(((ArrayType) type).getComponentType());
+      case BOOLEAN, BYTE, SHORT, INT, LONG, CHAR, FLOAT, DOUBLE -> true;
       default -> false;
     };
+  }
+
+  private static boolean isDenotableArgument(final TypeMirror argument) {
+    if (argument instanceof final WildcardType wildcard) {
+      return Stream.of(wildcard.getExtendsBound(), wildcard.getSuperBound())
+          .filter(Objects::nonNull)
+          .allMatch(CodeActionSupport::isDenotableArgument);
+    }
+
+    return argument instanceof final TypeVariable variable
+        ? SourceVersion.isIdentifier(variable.asElement().getSimpleName())
+        : isDenotable(argument);
   }
 
   private static boolean isAnonymous(final DeclaredType type) {

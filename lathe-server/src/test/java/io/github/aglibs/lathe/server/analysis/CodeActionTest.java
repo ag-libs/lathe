@@ -1459,6 +1459,94 @@ class CodeActionTest {
         .noneMatch(t -> t.startsWith("Extract"));
   }
 
+  @Test
+  void codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing() {
+    final Map<String, String> cases =
+        Map.of(
+            "right of &&", "void m(String a) { if (a != null && «a.isEmpty()») { use(a); } }",
+            "right of ||", "void m(String a) { if (a == null || «a.isEmpty()») { use(a); } }",
+            "?: branch", "void m(String a) { use(ok(a) ? «a.trim()» : \"\"); }",
+            "while condition", "void m(List<String> l) { while («l.isEmpty()») { l.add(\"x\"); } }",
+            "do condition",
+                "void m(List<String> l) { do { l.remove(0); } while («!l.isEmpty()»); }",
+            "for condition", "void m(List<String> l) { for (int i = 0; i < «l.size()»; i++) { } }",
+            "switch arm",
+                "int m(Object o) { return switch (o) { case String s -> «s.length()»; default -> 0; }; }",
+            "assert", "void m(String a) { assert «a.isEmpty()»; }",
+            "super argument",
+                "static class B { B(int x) {} }\n  static class C extends B { C(String a) { super(«a.length()»); } }",
+            "intersection type", "void m() { use(«List.of(1, \"a\")»); }");
+    cases.forEach(
+        (label, member) ->
+            assertThat(rightTitles(markedActions(inTestClass(member))))
+                .as(label)
+                .noneMatch(t -> t.startsWith("Extract variable")));
+  }
+
+  @Test
+  void codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode() {
+    final Map<String, String> cases =
+        Map.of(
+            "if condition", "void m(String a) { if («a.isEmpty()») { use(a); } }",
+            "for-each iterable",
+                "void m(Map<String, Integer> m) { for (String k : «m.keySet()») { use(k); } }",
+            "switch selector", "void m(String a) { switch («a.trim()») { default -> use(a); } }",
+            "denotable generic", "void m() { use(«List.of(\"a\", \"b\")»); }");
+    cases.forEach(
+        (label, member) -> {
+          final String source = inTestClass(member);
+          final var actions = markedActions(source);
+          assertThat(rightTitles(actions))
+              .as(label)
+              .anyMatch(t -> t.startsWith("Extract variable"));
+          assertCompiles(applyEdits(unmarked(source), extractEdits(actions)));
+        });
+
+    // replace-all: the occurrence the anchor statement always evaluates covers the one in a branch
+    final var branch =
+        inTestClass("void m(String a, boolean b) { use(«a.trim()»); if (b) { use(a.trim()); } }");
+    assertThat(rightTitles(markedActions(branch))).anyMatch(t -> t.contains("replace all 2"));
+    final var onlyInBranches =
+        inTestClass(
+            "void m(String a, boolean b) {\n    if (b) { use(«a.trim()»); } else { use(a.trim()); }\n  }");
+    assertThat(rightTitles(markedActions(onlyInBranches)))
+        .noneMatch(t -> t.contains("replace all"));
+  }
+
+  private static String inTestClass(final String member) {
+    return """
+        package com.example;
+        import java.util.*;
+        class Test {
+          %s
+          void use(Object x) {}
+          boolean ok(Object x) { return x != null; }
+        }
+        """
+        .formatted(member);
+  }
+
+  // Code actions for the selection `«…»` marks in the source (the marks removed).
+  private List<Either<Command, CodeAction>> markedActions(final String marked) {
+    final int start = marked.indexOf('«');
+    final int end = marked.indexOf('»') - 1;
+    final String source = unmarked(marked);
+    final Position from = positionOf(source, start);
+    final Position to = positionOf(source, end);
+    return extractActionsSpanning(
+        source, from.getLine(), from.getCharacter(), to.getLine(), to.getCharacter());
+  }
+
+  private static String unmarked(final String marked) {
+    return marked.replace("«", "").replace("»", "");
+  }
+
+  private static Position positionOf(final String source, final int offset) {
+    final int lineStart = source.lastIndexOf('\n', offset - 1) + 1;
+    final int line = (int) source.substring(0, lineStart).chars().filter(c -> c == '\n').count();
+    return new Position(line, offset - lineStart);
+  }
+
   private void assertCompiles(final String source) {
     assertThat(session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN))
         .as(source)

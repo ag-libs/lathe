@@ -1,24 +1,33 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ArrayAccessTree;
+import com.sun.source.tree.AssertTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
+import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
+import com.sun.source.tree.DoWhileLoopTree;
+import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.IfTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
+import com.sun.source.tree.SwitchExpressionTree;
+import com.sun.source.tree.SwitchTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -367,6 +376,89 @@ public final class ExtractionSupport {
   // ── read-set / value-stability (shared by the value + field replace-all safety gates) ────────
 
   // The local variables, parameters, and fields the selected expression reads.
+  // True when the expression cannot be computed before `statement`, an ancestor: it would run where
+  // today it may not (the right of && or ||, a ?: branch, an if/case/catch branch, a loop body, an
+  // assert), once instead of on every iteration (a loop condition), ahead of this(...)/super(...),
+  // or before a variable the statement declares (a pattern binding, a for or try variable).
+  static boolean pinnedInPlace(final TreePath expr, final Tree statement, final Trees trees) {
+    TreePath path = expr;
+    while (path.getLeaf() != statement) {
+      final TreePath parent = path.getParentPath();
+      if (parent == null || evaluatedOnlyInPlace(parent.getLeaf(), path.getLeaf())) {
+        return true;
+      }
+
+      path = parent;
+    }
+
+    return isConstructorCall(path, trees) || declaresAny(path, readVariables(expr, trees), trees);
+  }
+
+  private static boolean evaluatedOnlyInPlace(final Tree parent, final Tree child) {
+    if (parent instanceof final BinaryTree binary) {
+      return child == binary.getRightOperand()
+          && (binary.getKind() == Tree.Kind.CONDITIONAL_AND
+              || binary.getKind() == Tree.Kind.CONDITIONAL_OR);
+    }
+
+    if (parent instanceof final ConditionalExpressionTree conditional) {
+      return child != conditional.getCondition();
+    }
+
+    if (parent instanceof final IfTree ifTree) {
+      return child != ifTree.getCondition();
+    }
+
+    if (parent instanceof final SwitchTree switchTree) {
+      return child != switchTree.getExpression();
+    }
+
+    if (parent instanceof final SwitchExpressionTree switchExpression) {
+      return child != switchExpression.getExpression();
+    }
+
+    if (parent instanceof final EnhancedForLoopTree forEach) {
+      return child != forEach.getExpression();
+    }
+
+    if (parent instanceof final ForLoopTree forLoop) {
+      return !forLoop.getInitializer().contains(child);
+    }
+
+    return parent instanceof WhileLoopTree
+        || parent instanceof DoWhileLoopTree
+        || parent instanceof CatchTree
+        || parent instanceof AssertTree;
+  }
+
+  // this(...) or super(...): nothing may precede it (before Java 25), and only these invocations
+  // resolve to a constructor.
+  private static boolean isConstructorCall(final TreePath statement, final Trees trees) {
+    if (!(statement.getLeaf() instanceof final ExpressionStatementTree call)
+        || !(call.getExpression() instanceof MethodInvocationTree)) {
+      return false;
+    }
+
+    final Element element = trees.getElement(child(statement, call.getExpression()));
+    return element != null && element.getKind() == ElementKind.CONSTRUCTOR;
+  }
+
+  private static boolean declaresAny(
+      final TreePath statement, final Set<Element> variables, final Trees trees) {
+    final var found = new AtomicBoolean();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(final VariableTree tree, final Void unused) {
+        if (variables.contains(trees.getElement(getCurrentPath()))) {
+          found.set(true);
+        }
+
+        return super.visitVariable(tree, unused);
+      }
+    }.scan(statement, null);
+    return found.get();
+  }
+
   static Set<Element> readVariables(final TreePath selectedPath, final Trees trees) {
     final var reads = new HashSet<Element>();
     addIfVariable(reads, selectedPath, trees);
