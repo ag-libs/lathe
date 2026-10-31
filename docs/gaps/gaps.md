@@ -2672,3 +2672,42 @@ from other production classes and from tests, and the classes involved, with the
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found implementing gap CA-16 through Lathe's own MCP server (2026-10-31).
+
+### Observed behaviour
+
+Every `verify_change` in the session, about ten, answered
+`"affectedModules":["lathe-maven-plugin","lathe-mcp-server"]` with
+`"suggestedSync":".lathe/lathe-sync.sh lathe-maven-plugin lathe-mcp-server"`, whatever had changed:
+
+- a test-only edit (a deliberate error in `lathe-server`'s `CodeActionTest`, no arguments): the error was
+  reported, and so were both dependent modules and the sync, though test sources are on no other module's
+  classpath;
+- package-private classes (`ExtractVariableProvider`, `CodeActionSupport`) of `lathe-server`, a JPMS module whose
+  dependents cannot reference them.
+
+A suggestion that is always there gets ignored, or obeyed: an agent following it runs a reactor build for
+nothing (minutes on a large reactor). [MC-8](gaps-archive.md#mc-8--the-sync-command-verify_change-suggests-does-not-build-the-dependent-modules-it-names--done)
+made the command build what it names; this is about what it names.
+
+### Fix direction
+
+Name a dependent module only when the change can reach it: never for a test source tree; for main sources, only
+when a changed file declares a type the dependent can see (public or protected, in an exported package for a
+JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
+With none left, answer no `affectedModules` and no `suggestedSync`.
+
+### Regression targets
+
+None yet.
