@@ -8,12 +8,10 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import javax.lang.model.type.TypeMirror;
@@ -67,11 +65,8 @@ final class ExtractConstantProvider {
       return List.of();
     }
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:extractConst] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 

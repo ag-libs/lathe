@@ -201,7 +201,7 @@ public final class VariableNameSuggester {
     return List.copyOf(result);
   }
 
-  private static String uniquify(final String base, final Set<String> used) {
+  static String uniquify(final String base, final Set<String> used) {
     if (!used.contains(base)) {
       return base;
     }

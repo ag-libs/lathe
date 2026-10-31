@@ -14,7 +14,10 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
@@ -31,7 +34,22 @@ import org.eclipse.lsp4j.TextEdit;
 
 final class CodeActionSupport {
 
+  private static final Logger LOG = Logger.getLogger(CodeActionSupport.class.getName());
+
   private CodeActionSupport() {}
+
+  // The text of the compilation unit's source file, or empty when it cannot be read (logged).
+  static Optional<String> source(final CompilationUnitTree cu) {
+    try {
+      return Optional.of(cu.getSourceFile().getCharContent(false).toString());
+    } catch (final IOException e) {
+      LOG.log(
+          Level.WARNING,
+          e,
+          () -> "[codeAction] %s read failed".formatted(cu.getSourceFile().toUri()));
+      return Optional.empty();
+    }
+  }
 
   static String typeSimpleName(final TypeMirror type) {
     if (type instanceof DeclaredType dt) {
@@ -170,10 +188,8 @@ final class CodeActionSupport {
         varTree.getInitializer() != null
             ? positions.getStartPosition(cu, varTree.getInitializer())
             : positions.getEndPosition(cu, varTree);
-    final String content;
-    try {
-      content = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
+    final String content = source(cu).orElse(null);
+    if (content == null) {
       return -1;
     }
 

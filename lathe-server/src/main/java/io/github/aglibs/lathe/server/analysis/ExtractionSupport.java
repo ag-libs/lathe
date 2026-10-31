@@ -534,16 +534,19 @@ public final class ExtractionSupport {
       return;
     }
 
-    switch (element.getKind()) {
-      case LOCAL_VARIABLE,
-          PARAMETER,
-          FIELD,
-          EXCEPTION_PARAMETER,
-          RESOURCE_VARIABLE,
-          BINDING_VARIABLE ->
-          reads.add(element);
-      default -> {}
+    if (isLocalVariable(element) || element.getKind() == ElementKind.FIELD) {
+      reads.add(element);
     }
+  }
+
+  // A variable that lives in a method's frame: a local, a parameter, a catch or try-resource
+  // variable, a pattern binding.
+  static boolean isLocalVariable(final Element element) {
+    return switch (element.getKind()) {
+      case LOCAL_VARIABLE, PARAMETER, EXCEPTION_PARAMETER, RESOURCE_VARIABLE, BINDING_VARIABLE ->
+          true;
+      default -> false;
+    };
   }
 
   // True when any element in `targets` is reassigned, compound-assigned, or ++/--'d within `scope`

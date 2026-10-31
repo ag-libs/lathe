@@ -13,7 +13,6 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -22,7 +21,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -81,7 +79,7 @@ final class ExtractMethodProvider {
       return List.of();
     }
 
-    final Optional<String> source = source(cu);
+    final Optional<String> source = CodeActionSupport.source(cu);
     if (source.isEmpty()) {
       return List.of();
     }
@@ -165,7 +163,7 @@ final class ExtractMethodProvider {
       public Void visitIdentifier(final IdentifierTree tree, final Void unused) {
         final Element element = trees.getElement(getCurrentPath());
         if (element instanceof final VariableElement variable
-            && isLocal(variable)
+            && ExtractionSupport.isLocalVariable(variable)
             && !declaredInside.contains(variable)) {
           if (ExtractionSupport.isAssignmentTarget(getCurrentPath())) {
             movable.set(false);
@@ -340,15 +338,6 @@ final class ExtractMethodProvider {
         && caseTree.getExpressions().contains(path.getLeaf());
   }
 
-  private static boolean isLocal(final VariableElement variable) {
-    final ElementKind kind = variable.getKind();
-    return kind == ElementKind.LOCAL_VARIABLE
-        || kind == ElementKind.PARAMETER
-        || kind == ElementKind.EXCEPTION_PARAMETER
-        || kind == ElementKind.RESOURCE_VARIABLE
-        || kind == ElementKind.BINDING_VARIABLE;
-  }
-
   // The selection and its exact copies among the class's own members: the same shape reading the
   // same variables, so each copy's inputs are in scope there.
   private static List<TreePath> copies(
@@ -412,19 +401,6 @@ final class ExtractMethodProvider {
             .filter(element -> element.getKind() == ElementKind.METHOD)
             .map(element -> element.getSimpleName().toString())
             .collect(Collectors.toUnmodifiableSet());
-    return Stream.iterate(0, i -> i + 1)
-        .map(i -> i == 0 ? BASE_NAME : BASE_NAME + i)
-        .filter(name -> !taken.contains(name))
-        .findFirst()
-        .orElseThrow();
-  }
-
-  private static Optional<String> source(final CompilationUnitTree cu) {
-    try {
-      return Optional.of(cu.getSourceFile().getCharContent(false).toString());
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:extractMethod] failed to read source");
-      return Optional.empty();
-    }
+    return VariableNameSuggester.uniquify(BASE_NAME, taken);
   }
 }

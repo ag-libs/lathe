@@ -19,14 +19,12 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -96,11 +94,8 @@ final class ExtractVariableProvider {
       return List.of();
     }
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:extractVar] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 
