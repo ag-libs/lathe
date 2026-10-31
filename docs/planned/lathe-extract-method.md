@@ -170,9 +170,10 @@ or a `try` all of whose paths end so).
 
 ### 4.4 Signature
 
-- **Name**: `extracted`, made unique against every method the class declares or inherits, and every method
-  name a subclass in the reactor calls: a new `extracted(int)` beside an `extracted(long)` could change which
-  one existing calls pick.
+- **Name**: `extracted`, made unique against every method the class declares or inherits: a new
+  `extracted(int)` beside an inherited `extracted(long)` could change which one the class's own calls pick.
+  Subclasses need no check (JDT's needs one because its method may be non-private): a private method is not
+  visible there, so no call outside the class can bind to it. Nothing reactor-wide is consulted.
 - **Placement**: a member of the class declaring the enclosing executable (an anonymous or local class
   included, so `this` keeps its meaning), inserted right after the enclosing member, at that member's
   indentation.
@@ -181,7 +182,10 @@ or a `try` all of whose paths end so).
   the region touches no instance state — inferring `static` is a later option, not a correctness need.
   In an interface the enclosing default method makes it a `private` instance method (Java 9+).
 - **Parameters**: the inputs, in order of first use in the region; `final` when every parameter of the
-  enclosing method is `final` (the file's style), else plain.
+  enclosing method is `final`, else plain.
+- **Style**: generated code mirrors the code around it rather than imposing one, the policy extract variable
+  should share (gap CA-14): parameters as above, and a call-site declaration (`T x = extracted(…)`) keeps the
+  modifiers the region's own declaration had (`final` stays `final`). Layout is left to the user's formatter.
 - **Return type**: the expression's type, the output's type, or `void`.
 - **Throws**: the checked exceptions the region can throw and does not catch:
   each method or constructor invocation's thrown types from its instantiated `ExecutableType`
@@ -247,7 +251,14 @@ no compile, no `codeAction/resolve`, comparable to extract variable's replace-al
 Each slice is offered only for what it fully handles, and refuses the rest.
 
 1. **Expression → method.** Inputs, static context, throws, imports, and exact duplicates of the expression in
-   the class. Smallest useful slice, no outputs or jumps by construction.
+   the class. Smallest useful slice, no outputs or jumps by construction. Until slice 2's compile check exists it
+   stays on safe ground:
+   - imports cover every type in the signature, generic arguments included (one collector, shared with
+     implement-missing-methods);
+   - duplicates are searched in the class's own members, not nested class bodies, and a duplicate in a static
+     context makes the method `static`;
+   - refused inside an interface (a `private` interface method needs Java 9+, and the project's release is not
+     known) and when a `static` method would need the class's type variables.
 2. **Statements, no output.** The statement-form selection, the control-flow refusals.
 3. **Statements with one output.** Declared inside (declaration moves out) or an earlier local assigned at the
    region's top level.
