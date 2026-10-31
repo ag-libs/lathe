@@ -1358,21 +1358,8 @@ class CodeActionTest {
           void run() {}
         }
         """;
-    final var bracelessIf =
-        """
-        package com.example;
-        class Test {
-          void m(boolean b) {
-            if (b) use(compute(2));
-          }
-          int compute(int n) { return n; }
-          void use(int n) {}
-        }
-        """;
     final List<ExtractCase> cases =
-        List.of(
-            new ExtractCase("void has nothing to declare", voidCall, 3, 4, 3, 9, null),
-            new ExtractCase("braceless if body is not a block", bracelessIf, 3, 15, 3, 25, null));
+        List.of(new ExtractCase("void has nothing to declare", voidCall, 3, 4, 3, 9, null));
 
     for (final ExtractCase c : cases) {
       final var actions =
@@ -1487,6 +1474,44 @@ class CodeActionTest {
     assertExtracts(
         "void m() { for (int i = «Integer.parseInt(\"1\")»; i < 3; i++) { use(i); } }", variable);
     assertExtracts("void m(String a) { «a.trim()»; }", "Extract variable 'trim'");
+  }
+
+  @Test
+  void codeAction_extractVariable_bodyWithoutRoom_becomesABlock() {
+    // A lambda returns the value only when its interface method does, a switch expression's rule
+    // yields it: either mistake would not compile.
+    final String variable = "Extract variable";
+    assertExtracts("void m(List<String> l) { l.forEach(x -> use(«x.trim()»)); }", variable);
+    assertExtracts(
+        "List<Integer> m(List<String> l) {\n    return l.stream().map(x -> «x.length()» * 2)"
+            + ".collect(java.util.stream.Collectors.toList());\n  }",
+        variable);
+    assertExtracts(
+        "int m(Object o) { return switch (o) { case String s -> «s.length()» + 1; default -> 0; }; }",
+        variable);
+    assertExtracts(
+        "void m(String a) { switch (a) { case \"x\" -> use(«a.trim()»); default -> use(a); } }",
+        variable);
+    assertExtracts("void m(String a, boolean b) { if (b) use(«a.trim()»); }", variable);
+    assertExtracts("void m(List<String> l) { for (String x : l) use(«x.trim()»); }", variable);
+
+    final String lambda =
+        inTestClass("void m(List<String> l) { l.forEach(x -> use(«x.trim()»)); }");
+    assertThat(applyEdits(unmarked(lambda), extractEdits(markedActions(lambda))))
+        .contains("x -> {\n    String trim = x.trim();\n    use(trim);\n  });");
+
+    assertThat(
+            rightTitles(
+                markedActions(
+                    inTestClass(
+                        "boolean m(String a) { return java.util.Optional.of(a).filter(x -> x != null && «x.isEmpty()»).isPresent(); }"))))
+        .as("pinned inside the body")
+        .noneMatch(t -> t.startsWith(variable));
+    assertThat(
+            rightTitles(
+                markedActions(inTestClass("void m(String a, boolean b) { if (b) «a.trim()»; }"))))
+        .as("a whole statement alone in a body")
+        .noneMatch(t -> t.startsWith(variable));
   }
 
   // Asserts the `«…»` selection in the member offers an action titled with the prefix, and that

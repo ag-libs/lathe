@@ -3,7 +3,10 @@
 ## Status
 
 Base slice and the replace-all-occurrences follow-up are implemented; only the `var` variant remains
-(see Follow-up slice and gap CA-6). Implemented as `ExtractVariableProvider`, dispatched from
+(see Follow-up slice and gap CA-6).
+Gap CA-16 (2026-10-31) widened where it applies and made it refuse unsafe hoists; see
+[Selections and placement (CA-16)](#selections-and-placement-ca-16), which supersedes the matching guards
+and non-goals below. Implemented as `ExtractVariableProvider`, dispatched from
 `SourceAnalysisSession.codeAction` alongside `ReplaceVarProvider`; shared helpers (`lineIndent`,
 `nearestEnclosingStatement`, `isDenotable`) live in `CodeActionSupport`. Replace-all discovers
 occurrences by structural + element-identity equivalence over the enclosing method, anchors the
@@ -91,9 +94,10 @@ forbids single-implementation interfaces).
    - the expression's type (`trees.getTypeMirror(exprPath)`) is not denotable, or is `void`/`null`
      (nothing meaningful to declare) — reusing the denotability policy from `ReplaceVarProvider`;
    - there is no nearest enclosing `StatementTree`, or its parent is not a `BlockTree`
-     (a braceless `if`/`for`/`while` body cannot receive a second statement);
+     (a braceless `if`/`for`/`while` body cannot receive a second statement) — superseded by CA-16;
    - the expression is the entire expression of its enclosing `ExpressionStatement`
-     (extracting it is pointless and would collide the insert and replace edits at one offset).
+     (extracting it is pointless and would collide the insert and replace edits at one offset) —
+     superseded by CA-16, which turns the statement into the declaration.
 
 3. **Type and import.**
    `typeText = new TypeDisplayFormatter(analysis.types()).format(type)`;
@@ -234,7 +238,7 @@ In — covered and tested:
   code; extracting one would require inferring the target type from context (a possible enhancement).
   A method reference that javac has target-typed (e.g. `String::length` as a `map` argument) resolves
   to a `Function<…>` type and does extract.
-- **Braceless single-statement bodies** — guarded out (no action), rather than synthesising a block.
+- **Braceless single-statement bodies** — superseded by CA-16: the body becomes a block.
 - **Multi-statement or partial-expression selections** — only a single covering `ExpressionTree` is
   handled.
 - **Cross-scope shadowing / full conflict analysis** — only enclosing-method locals and parameters are
@@ -317,3 +321,29 @@ resulting `WorkspaceEdit` text.
 - **Work tracking.** Add a `gaps.md` code-action entry when implementation starts.
 - **Neovim wiring.** Neovim already surfaces code actions; confirm `refactor.extract` appears in the
   menu with no client change, and add a one-line note to the editor guide if a dedicated keymap is wanted.
+
+## Selections and placement (CA-16)
+
+Gap CA-16 found the extraction absent in common code and, in other places, rewriting code wrongly.
+The fixes, in `ExtractionSupport` and `ExtractVariableProvider`:
+
+- **Selection.** `ExtractionSupport.selectedExpression` takes the one outermost tree lying inside a
+  non-empty selection, so the indentation, line breaks and `;` a line-wise selection includes don't
+  matter; a selected statement means its value (an expression statement's expression, a declaration's
+  initializer, a `return`'s value). A caret keeps the covering-expression rule. Shared by extract
+  variable, field and constant.
+- **Placement.** The declaration goes before the expression's statement when that sits in a block or
+  a `case:` list; before the `try` or `for` for a resource or a `for` initializer; and a whole non-void
+  expression statement becomes the declaration. Where nothing can precede it (an expression lambda's
+  body, a switch rule's body, a brace-less `if`/`else`/loop body) the body becomes a block that declares
+  the value first; a lambda keeps `return` only when its interface method returns a value, a switch
+  expression's rule yields it.
+- **Safety.** `ExtractionSupport.pinnedInPlace` refuses an expression evaluated only in place relative
+  to where the declaration would go: the right of `&&`/`||`, a `?:` branch, an `if`/`switch`/`catch`
+  branch, a loop condition or body, an `assert`, an argument of `this(…)`/`super(…)`, or one reading a
+  variable the anchor statement declares (a pattern binding, an earlier resource or loop variable).
+  Replace-all requires one occurrence the anchor statement always evaluates.
+  `CodeActionSupport.isDenotable` checks type arguments too, so intersection and captured types are
+  refused instead of written as `List<>`.
+
+Still open in CA-16: extract method.
