@@ -245,8 +245,8 @@ class CompletionPresentationTest extends CompletionTestSupport {
     assertThat(labels(items)).contains("Entry");
     final var item = itemLabeled(items, "Entry").orElseThrow();
     final var edit = item.getAdditionalTextEdits().get(0);
-    assertThat(edit.getNewText()).isEqualTo("import java.util.Map;\n");
-    assertThat(edit.getRange()).isEqualTo(new Range(new Position(3, 0), new Position(3, 0)));
+    assertThat(edit.getNewText()).isEqualTo("\nimport java.util.Map;");
+    assertThat(edit.getRange()).isEqualTo(new Range(new Position(2, 22), new Position(2, 22)));
   }
 
   // ── type index ────────────────────────────────────────────────────────────────

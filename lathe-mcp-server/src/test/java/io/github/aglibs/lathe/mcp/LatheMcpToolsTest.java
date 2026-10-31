@@ -177,21 +177,17 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void renameSymbol_invalidIdentifier_returnsErrorNotException() {
+  void renameSymbol_invalidIdentifier_returnsTheReasonAsAnError() throws Exception {
+    final Path file = tmp.resolve("A.java");
+    Files.writeString(file, "class A {\n  int count;\n}\n");
+
     final CallToolResult result =
         call(
             "rename_symbol",
-            Map.of(
-                "file",
-                tmp.resolve("Any.java").toString(),
-                "line",
-                1,
-                "column",
-                1,
-                "newName",
-                "not a name"));
+            Map.of("file", file.toString(), "line", 2, "column", 7, "newName", "a.b"));
 
     assertThat(result.isError()).isTrue();
+    assertThat(text(result)).contains("`a.b` is not a valid name");
   }
 
   // An off-by-one column would otherwise answer for the enclosing method or class.

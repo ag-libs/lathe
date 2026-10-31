@@ -801,57 +801,6 @@ None yet.
 
 ---
 
-## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP and the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
-`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
-
-### Regression targets
-
-None yet.
-
-## FR-022 — A constructor reference `XXX::new` is not found as an instantiation or a constructor reference
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: Neovim, VS Code, MCP.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-`:LatheInstances` on a class lists its `new XXX(...)` sites but not its `XXX::new` method references.
-Find references on the constructor most likely misses them too: both go through `ReferenceLocator`.
-
-### Fix direction
-
-`ReferenceLocator.visitMemberReference` resolves the constructor correctly but then looks for the member name after the qualifier,
-and javac names a constructor `<init>`, which never appears in the text, so the match is dropped.
-Anchor a constructor reference at its `new` keyword instead.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -918,60 +867,6 @@ An agent has to pick, and in a Java module the answer is almost always the `java
 Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
 then the module's own dependencies, then the rest.
 `fix_imports` could add the top candidate when the ranking is decisive, and list the others.
-
-### Regression targets
-
-None yet.
-
----
-
-## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package`
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: the editor and MCP `fix_imports`.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-CA-11 made a type used as a method-call qualifier fixable, but not a chained one:
-`TimeUnit.SECONDS.toMillis(1)` and `Map.Entry.comparingByKey()` (javac: "package X does not exist") get no quick fix, and `fix_imports` neither adds nor lists them.
-With `package` and an `import` on one line, the import is inserted above `package`, which breaks the file
-(the editor and `fix_imports` alike).
-An inserted import has no blank line before the class.
-
-### Fix direction
-
-Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
-Place imports from the end of the package declaration's tree, not by line.
-
-### Regression targets
-
-None yet.
-
-## CA-14 — Extract variable never adds `final` and offers no `var` form
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: Neovim, VS Code.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-Extract variable always declares `Type name = expr;`.
-It never adds `final`, and there is no `var name = expr;` choice, so a codebase that writes `final var` must edit every extraction by hand.
-
-### Fix direction
-
-`ExtractVariableProvider.insertDecl` renders the explicit type only.
-Offer a `var` form alongside the typed one (not for a `null` literal or a lambda, which `var` cannot take),
-and decide how `final` is chosen: always, a setting, or a second action.
 
 ### Regression targets
 
@@ -1223,34 +1118,6 @@ Likely cause: the sync stamps a source from the file on disk when it mirrors, af
 
 Stamp what javac compiled (its read content or fingerprint), not the disk at mirror time.
 `rename_symbol` could also defer, or warn, while a build is running, as `verify_change` does.
-
-### Regression targets
-
-None yet.
-
----
-
-## WS-22 — One external jar listed twice in the manifest switches off cross-module features
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-When one module depends on an external artifact as `<type>test-jar</type>` and another as `<classifier>tests`,
-`workspace.json` lists the jar twice, and the manifest fails to load with "Duplicate key …":
-cross-module references miss other modules, and the advice to re-sync cannot help.
-`WorkspaceManifest.load` still has two jar-keyed `toUnmodifiableMap` collectors (`jarToGav`, `jarToSourceDir`),
-the bug class an earlier fix removed for classifier jars sharing a sources dir.
-
-### Fix direction
-
-Merge duplicate jar entries when loading the manifest, or list each jar once when writing it.
 
 ### Regression targets
 

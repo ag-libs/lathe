@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 class MissingImportsResultTest {
 
-  // A file with no imports yet, a blank line below its package clause.
+  // A file with no imports yet, its package clause ending line 0 (package com.example;).
   private static final MissingImportsResult RESULT =
       new MissingImportsResult(
-          new ImportLayout(List.of(), new Position(1, 0)),
+          new ImportLayout(List.of(), new Position(0, 20)),
           List.of(
               new MissingImportsResult.MissingImport("Objects", List.of("java.util.Objects")),
               new MissingImportsResult.MissingImport(
@@ -32,12 +32,11 @@ class MissingImportsResultTest {
                     "java.util.List")))
         .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
         .containsExactly(
-            tuple(new Position(1, 0), "\nimport java.util.List;\nimport java.util.Objects;\n"));
+            tuple(new Position(0, 20), "\n\nimport java.util.List;\nimport java.util.Objects;"));
   }
 
   // A document Lathe cannot analyse answers the empty result, whose layout would put an import at
-  // the
-  // very top: nothing is added instead.
+  // the very top: nothing is added instead.
   @Test
   void edits_emptyResult_addsNothing() {
     assertThat(MissingImportsResult.empty().edits(List.of("java.util.List"))).isEmpty();

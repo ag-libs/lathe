@@ -4,7 +4,6 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextEdit;
 
 /**
@@ -20,7 +19,8 @@ public record MissingImportsResult(ImportLayout layout, List<MissingImport> item
   }
 
   public static MissingImportsResult empty() {
-    return new MissingImportsResult(new ImportLayout(List.of(), new Position(0, 0)), List.of());
+    return new MissingImportsResult(
+        new ImportLayout(List.of(), ImportLayout.NO_PACKAGE), List.of());
   }
 
   // The edits adding the chosen imports, keeping only those this result offers: an empty result (a

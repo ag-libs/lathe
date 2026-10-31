@@ -617,8 +617,7 @@ class LatheEngineTest {
   }
 
   @Test
-  void rename_toANameTheOwnerAlreadyDeclares_refusesWithTheReasonAndEditsNothing()
-      throws Exception {
+  void rename_toATakenOrInvalidName_refusesWithTheReasonAndEditsNothing() throws Exception {
     final String source =
         """
         package com.example;
@@ -635,6 +634,8 @@ class LatheEngineTest {
     assertThatThrownBy(() -> renameAt(file, source, "count", "total"))
         .hasMessageContaining(
             "`count` cannot be renamed to `total`: Sample already declares field `total`");
+    assertThatThrownBy(() -> renameAt(file, source, "count", "a.b"))
+        .hasMessageContaining("`a.b` is not a valid name");
     assertThat(Files.readString(file)).isEqualTo(source);
   }
 
