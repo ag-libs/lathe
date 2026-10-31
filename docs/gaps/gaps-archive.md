@@ -7,6 +7,53 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package` — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor and MCP `fix_imports`.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+CA-11 made a type used as a method-call qualifier fixable, but not a chained one:
+`TimeUnit.SECONDS.toMillis(1)` and `Map.Entry.comparingByKey()` (javac: "package X does not exist") get no quick fix, and `fix_imports` neither adds nor lists them.
+With `package` and an `import` on one line, the import is inserted above `package`, which breaks the file
+(the editor and `fix_imports` alike).
+An inserted import has no blank line before the class.
+
+### Fix direction
+
+Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
+Place imports from the end of the package declaration's tree, not by line.
+
+### Resolution
+
+Chained qualifiers: `JavacDiagnosticMapper.enrich` gives a `compiler.err.doesnt.exist` diagnostic the qualifier payload,
+named after the identifier its chain starts with (`TimeUnit` in `TimeUnit.SECONDS.toMillis(1)`, `Map` in `Map.Entry.comparingByKey()`),
+so the quick fix, `:LatheMissingImports` and MCP `fix_imports` offer that type's import; a diagnostic inside an `import` is left alone.
+
+Placement: `ImportAnalyzer` records each import's exact start and end and where the package clause ends, and `ImportLayout`
+inserts in front of an import at its start, or behind the last import or the package clause at its end,
+so an import on the package's line, or a class on the last import's line, no longer sends a new import above `package` or into the class.
+Normally formatted files get the same text as before.
+
+Not done: a file written without a blank line between its package clause and its class keeps that style when its first import is added;
+adding the blank line would need a guess about what follows, and the formatter normalizes it.
+
+### Regression targets
+
+- `CodeActionTest.compile_unresolvedQualifier_setsQualifierRefPayloadOnlyForTheQualifierItself`: both chains get the payload, an import of a missing package does not.
+- `CodeActionTest.codeAction_unresolvedQualifier_offersTypeAndStaticImports` and `missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: both chains are offered their import.
+- `CodeActionTest.missingImports_chosenImports_insertInPlaceAndCompile`: the two chains' imports make their file compile,
+  and so does an import added before an import on the package's line, behind an import on the class's line, and behind a package on the class's line.
+- `ImportAnalyzerTest`: the exact anchors and text for each group and for a file without imports.
+
+---
+
 ## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name — done
 
 **Status: done.**

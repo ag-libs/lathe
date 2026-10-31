@@ -2,13 +2,11 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ImportTree;
-import com.sun.source.tree.LineMap;
 import com.sun.source.util.SourcePositions;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.TextEdit;
 
 public final class ImportAnalyzer {
@@ -27,7 +25,6 @@ public final class ImportAnalyzer {
 
     final CompilationUnitTree cu = analysis.tree();
     final SourcePositions positions = analysis.trees().getSourcePositions();
-    final LineMap lineMap = cu.getLineMap();
     final List<ImportLayout.ImportLine> lines =
         cu.getImports().stream()
             // An import still being typed may have no end position yet.
@@ -36,18 +33,17 @@ public final class ImportAnalyzer {
                 imp ->
                     new ImportLayout.ImportLine(
                         spelling(imp),
-                        lineOf(lineMap, positions.getStartPosition(cu, imp)),
-                        lineOf(lineMap, positions.getEndPosition(cu, imp))))
+                        SourceLocator.offsetToPosition(cu, positions.getStartPosition(cu, imp)),
+                        SourceLocator.offsetToPosition(cu, positions.getEndPosition(cu, imp))))
             .toList();
     final long packageEnd =
         cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
-    final int afterPackage = packageEnd < 0 ? 0 : lineOf(lineMap, packageEnd) + 1;
-    return Optional.of(new ImportLayout(lines, new Position(afterPackage, 0)));
-  }
-
-  // 0-based, as LSP counts lines.
-  private static int lineOf(final LineMap lineMap, final long offset) {
-    return (int) lineMap.getLineNumber(offset) - 1;
+    return Optional.of(
+        new ImportLayout(
+            lines,
+            packageEnd < 0
+                ? ImportLayout.NO_PACKAGE
+                : SourceLocator.offsetToPosition(cu, packageEnd)));
   }
 
   private static String spelling(final ImportTree imp) {

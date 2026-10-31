@@ -152,7 +152,7 @@ class CodeActionTest {
             action ->
                 assertThat(action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI))
                     .extracting(TextEdit::getNewText)
-                    .containsExactly("\nimport static java.util.Objects.requireNonNull;\n"));
+                    .containsExactly("\n\nimport static java.util.Objects.requireNonNull;"));
     assertThat(codeActions(diagnosticActions(UNRESOLVED_MEMBERS, diags)))
         .extracting(CodeAction::getTitle)
         .noneMatch(title -> title.startsWith("Import 'static"));
@@ -282,7 +282,7 @@ class CodeActionTest {
             action ->
                 assertThat(action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI))
                     .extracting(TextEdit::getNewText)
-                    .containsExactly("\nimport java.util.Objects;\n"));
+                    .containsExactly("\n\nimport java.util.Objects;"));
     assertThat(actions)
         .filteredOn(Either::isLeft)
         .extracting(action -> action.getLeft().getCommand())
@@ -308,27 +308,45 @@ class CodeActionTest {
         .doesNotContain("typo");
   }
 
-  // Importing the type a chain starts with is the whole fix.
+  // The chosen imports make the file compile: the type a chain starts with is the whole fix for
+  // it, and an import lands next to the import or package clause it sorts by, never above the
+  // package or inside the class, whatever shares their line.
   @Test
-  void missingImports_chainedQualifiers_importTheirFirstTypeAndCompile() throws IOException {
-    final String source =
-        """
-        package com.example;
+  void missingImports_chosenImports_insertInPlaceAndCompile() throws IOException {
+    final WorkspaceTypeIndex index = qualifierIndex();
+    Map.of(
+            """
+            package com.example;
 
-        class Test {
-          long m() {
-            Map.Entry.comparingByKey();
-            return TimeUnit.SECONDS.toMillis(1);
-          }
-        }
-        """;
-    final var result =
-        session.missingImports(
-            TempSourceCompiler.TEST_URI, source, 1, qualifierIndex(), LEARNED_FIELD);
-
-    assertCompilesClean(
-        applyEdits(
-            source, result.edits(List.of("java.util.Map", "java.util.concurrent.TimeUnit"))));
+            class Test {
+              long m() {
+                Map.Entry.comparingByKey();
+                return TimeUnit.SECONDS.toMillis(1);
+              }
+            }
+            """,
+            List.of("java.util.Map", "java.util.concurrent.TimeUnit"),
+            "package com.example; import java.util.Set;\n"
+                + "class Test { Set<String> s; Map<String, String> m; }\n",
+            List.of("java.util.Map"),
+            "package com.example;\n"
+                + "import java.util.Set; class Test { Set<String> s; TimeUnit u; }\n",
+            List.of("java.util.concurrent.TimeUnit"),
+            "package com.example; class Test { Map<String, String> m; }\n",
+            List.of("java.util.Map"))
+        .forEach(
+            (source, chosen) ->
+                assertCompilesClean(
+                    applyEdits(
+                        source,
+                        session
+                            .missingImports(
+                                TempSourceCompiler.TEST_URI,
+                                source,
+                                1,
+                                index,
+                                LearnedStaticImports.empty())
+                            .edits(chosen))));
   }
 
   @Test
@@ -399,8 +417,8 @@ class CodeActionTest {
 
     final var edits = action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
     assertThat(edits).hasSize(1);
-    assertThat(edits.get(0).getNewText()).isEqualTo("\nimport java.util.ArrayList;\n");
-    assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(1);
+    assertThat(edits.get(0).getNewText()).isEqualTo("\n\nimport java.util.ArrayList;");
+    assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(0);
   }
 
   @Test
@@ -646,9 +664,9 @@ class CodeActionTest {
         session.missingImports(
             TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
 
-    // Insertion goes right after the package line (no imports yet).
+    // Insertion goes right after the package clause (no imports yet).
     assertThat(result.layout().edit("java.util.ArrayList").getRange().getStart().getLine())
-        .isEqualTo(1);
+        .isEqualTo(0);
     assertThat(result.items())
         .extracting(MissingImportsResult.MissingImport::name)
         .containsExactlyInAnyOrder("ArrayList", "List", "Widget");
@@ -717,7 +735,7 @@ class CodeActionTest {
 
     final var importEdit =
         edits.stream().filter(e -> e.getNewText().contains("import")).findFirst().orElseThrow();
-    assertThat(importEdit.getNewText()).isEqualTo("\nimport java.io.IOException;\n");
+    assertThat(importEdit.getNewText()).isEqualTo("\n\nimport java.io.IOException;");
   }
 
   @Test
