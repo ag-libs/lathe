@@ -6,6 +6,7 @@ import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ConditionalExpressionTree;
+import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
@@ -13,9 +14,11 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
+import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
@@ -58,9 +61,83 @@ public final class ExtractionSupport {
 
   private ExtractionSupport() {}
 
-  // The smallest ExpressionTree on the path from the selection start whose source span covers the
-  // whole selection — the expression the user means to extract.
-  static TreePath coveringExpression(
+  // The expression a selection means. A non-empty selection takes the one outermost tree inside it,
+  // so the indentation, line breaks and `;` around an expression don't matter (a line-wise
+  // selection includes them); a selected statement means its value. Otherwise, as for a caret, the
+  // smallest expression covering the selection.
+  static TreePath selectedExpression(
+      final Trees trees, final CompilationUnitTree cu, final long start, final long end) {
+    final TreePath spanned = start < end ? soleTreeWithin(trees, cu, start, end) : null;
+    if (spanned == null) {
+      return coveringExpression(trees, cu, SourceLocator.pathAt(trees, cu, start), start, end);
+    }
+
+    final TreePath value = valueOf(spanned);
+    if (value == null) {
+      return null;
+    }
+
+    final var positions = trees.getSourcePositions();
+    return coveringExpression(
+        trees,
+        cu,
+        value,
+        positions.getStartPosition(cu, value.getLeaf()),
+        positions.getEndPosition(cu, value.getLeaf()));
+  }
+
+  // The single outermost tree whose span lies inside [start, end], or null when none or several do.
+  private static TreePath soleTreeWithin(
+      final Trees trees, final CompilationUnitTree cu, final long start, final long end) {
+    final var positions = trees.getSourcePositions();
+    final var within = new ArrayList<TreePath>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void scan(final Tree tree, final Void unused) {
+        if (tree == null) {
+          return null;
+        }
+
+        final long s = positions.getStartPosition(cu, tree);
+        final long e = positions.getEndPosition(cu, tree);
+        if (s >= start && e <= end) {
+          within.add(new TreePath(getCurrentPath(), tree));
+          return null;
+        }
+
+        if (s >= 0 && (e <= start || s >= end)) {
+          return null;
+        }
+
+        return super.scan(tree, unused);
+      }
+    }.scan(new TreePath(cu), null);
+    return within.size() == 1 ? within.get(0) : null;
+  }
+
+  private static TreePath valueOf(final TreePath path) {
+    final Tree leaf = path.getLeaf();
+    if (leaf instanceof ExpressionTree) {
+      return path;
+    }
+
+    if (leaf instanceof final ExpressionStatementTree statement) {
+      return child(path, statement.getExpression());
+    }
+
+    if (leaf instanceof final VariableTree variable && variable.getInitializer() != null) {
+      return child(path, variable.getInitializer());
+    }
+
+    if (leaf instanceof final ReturnTree ret && ret.getExpression() != null) {
+      return child(path, ret.getExpression());
+    }
+
+    return null;
+  }
+
+  // The smallest ExpressionTree on the path from `from` whose source span covers [start, end].
+  private static TreePath coveringExpression(
       final Trees trees,
       final CompilationUnitTree cu,
       final TreePath from,

@@ -61,8 +61,7 @@ final class ExtractConstantProvider {
     }
 
     final TreePath exprPath =
-        ExtractionSupport.coveringExpression(
-            trees, cu, SourceLocator.pathAt(trees, cu, startOffset), startOffset, endOffset);
+        ExtractionSupport.selectedExpression(trees, cu, startOffset, endOffset);
     if (exprPath == null) {
       return List.of();
     }

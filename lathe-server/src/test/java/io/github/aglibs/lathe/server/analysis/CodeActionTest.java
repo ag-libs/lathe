@@ -1417,6 +1417,48 @@ class CodeActionTest {
     assertCompiles(rewritten);
   }
 
+  @Test
+  void codeAction_extraction_selectionAroundExpression_findsItLineWiseToo() {
+    final var source =
+        """
+        package com.example;
+        class Test {
+          void m(String a, String b) {
+            int n =
+                Math.max(
+                    a.length(),
+                    b.length());
+            use(n);
+            use(
+                "hello world");
+          }
+          void use(Object x) {}
+        }
+        """;
+    final String max = "Extract variable 'max'";
+    final List<ExtractCase> cases =
+        List.of(
+            new ExtractCase("exactly the expression", source, 4, 8, 6, 23, max),
+            new ExtractCase("through its ;", source, 4, 8, 6, 24, max),
+            new ExtractCase("from the indentation", source, 4, 0, 6, 23, max),
+            new ExtractCase("line-wise", source, 4, 0, 6, 24, max),
+            new ExtractCase(
+                "the whole declaration means its initializer", source, 3, 0, 6, 24, max),
+            new ExtractCase(
+                "line-wise constant", source, 9, 0, 9, 23, "Extract constant 'HELLO_WORLD'"));
+    for (final ExtractCase c : cases) {
+      final var actions =
+          extractActionsSpanning(
+              c.source(), c.startLine(), c.startChar(), c.endLine(), c.endChar());
+      assertThat(rightTitles(actions)).as(c.label()).contains(c.expectedTitle());
+    }
+
+    assertCompiles(applyEdits(source, extractEdits(extractActionsSpanning(source, 4, 0, 6, 24))));
+    assertThat(rightTitles(extractActionsSpanning(source, 7, 0, 9, 23)))
+        .as("several statements")
+        .noneMatch(t -> t.startsWith("Extract"));
+  }
+
   private void assertCompiles(final String source) {
     assertThat(session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN))
         .as(source)
