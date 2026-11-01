@@ -7,6 +7,36 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-079 — Outgoing calls include calls from the class's field and enum initializers — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Outgoing calls of `HttpRoutingImpl.doRoute` (both, lines 196 and 319) included `builder()` and `build()`
+from a static field initializer (line 48), `System.getLogger` from another (line 47, with `scope: all`),
+and three `RoutingResult` entries on a line of `call()` (164).
+
+### Resolution
+
+The locator scanned only the target method's body among methods but still walked the class's field
+initializers, so their calls counted as the method's; enum constants are implicit constructor calls, and their
+position, found by searching forward for the type's name, landed on its next mention.
+Call sites are now recorded only inside the target method's body, a lambda's included (ddd6b13a).
+Not a regression: 0.2.1 only made it visible, by printing each call's line.
+
+### Regression targets
+
+`CallHierarchyOutgoingLocatorTest.outgoingCalls_classWithFieldInitializerAndEnum_returnsOnlyTheMethodsCalls`.
+
+---
+
 ## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word — done
 
 **Status: done.**

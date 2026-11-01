@@ -638,6 +638,115 @@ None yet.
 
 ---
 
+## EG-080 — Incoming calls of an override include callers that can never reach it
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Incoming calls of `HttpRouteImpl.beforeStart`, which overrides `ServerLifecycle.beforeStart`, list every caller
+of the interface method, including `Filter::beforeStart` and `OidcFeatureTest:741`.
+`Filter` is unrelated to `HttpRoute`, so those calls never reach `HttpRouteImpl`.
+Since EG-044 an override's incoming calls aggregate the parent method's callers by design;
+nothing prunes the callers whose receiver type cannot hold the override's class.
+
+### Fix direction
+
+Keep a parent-method caller only when its receiver's static type is a supertype of the override's class
+(or the override's class or a subtype), as find references already reasons about receivers;
+a method reference's qualifier type counts as the receiver.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: the editor's go to implementation and MCP `find_implementations`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On Helidon's `Handler` interface, `find_implementations` answers 23 classes and no lambdas;
+on `Handler.handle` it answers 225, lambdas and method references such as `this::handle` included.
+The tool's description says it includes lambdas, but asked on the type it misses the most common kind of
+implementation of a functional interface.
+
+### Fix direction
+
+For a functional interface, include the lambdas and method references that implement it,
+as the method-level answer already finds them, or say in the answer that they are listed under its method.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-082 — Workspace symbol search finds only types
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `search_symbols` and the editor's `workspace/symbol`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+`search_symbols doRoute` answers nothing: the index holds types only, so a method or field cannot be found
+by name; an agent falls back to grep.
+
+### Fix direction
+
+Index the reactor's methods and fields alongside its types (name, kind, container, location),
+rank them after types of the same name, and keep dependencies and the JDK to types unless asked.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-083 — The outline of `module-info.java` shows only the module line
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `outline` and the editor's document symbols.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+`outline` on a `module-info.java` lists the `module` declaration only, not its `requires`, `exports`,
+`opens`, `uses` and `provides` directives.
+
+### Fix direction
+
+Emit each directive as a child of the module symbol, from the module declaration's tree.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1928,6 +2037,139 @@ An agent unsure of a rename's reach has `analyze_change`, which counts reference
 
 An optional `preview` returning the same per-file list without applying it.
 Low value while renames are undone by git as easily as they are made.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-67 — `analyze_change` reports no override family for a method that overrides one
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+For `HttpRouteImpl.beforeStart`, marked `@Override` and overriding `ServerLifecycle.beforeStart`,
+`analyze_change` answers "override family: none" while counting 109 references (49 production, 60 test),
+a count that only adds up because it also searched the parent method's callers.
+The family lists only the methods that override this one, never the ones it overrides,
+so the two halves of the answer contradict each other.
+
+### Fix direction
+
+List the whole family: the methods this one overrides or implements, then those overriding it,
+marking which is which.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-68 — `analyze_change` output has no limit
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On `Handler.handle` it printed all 225 implementations in its override family,
+while the other tools take `maxResults`.
+
+### Fix direction
+
+Take `maxResults` like the other tools, cap the listed locations, and keep the counts exact with a
+"(N more)" line.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-69 — `analyze_change` names too few affected modules
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `analyze_change`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On `Handler.handle` it names 5 affected modules, while the 225 implementations it found span about 15
+(openapi and webclient/http2 among them); changing the method's signature would break all of them.
+
+### Fix direction
+
+Count a module as affected when it holds a reference or a member of the override family,
+not only a reference.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-70 — Tool results come back unsorted, with modules mixed together
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that list locations (`find_implementations`, `analyze_change`, and the like).**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Locations come in discovery order, so one module's results are scattered among another's,
+and a long answer is hard to scan.
+
+### Fix direction
+
+Sort listed locations by module, then file, then line, in one shared place the tools format through.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-71 — `outline` gives nothing for a file outside the reactor
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP `outline` (and the editor's document symbols) on files no module compiles.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+Helidon's `tests/`, `examples/` and `webserver/tests/*` are not reactor modules, so they are not indexed.
+For such a file, `outline` answers "No declarations in BookService.java", then adds the "Not checked" note,
+although a file's structure needs no compile.
+
+### Fix direction
+
+Outline a file no module compiles from a parse alone (no attribution), and keep the note saying it is
+not checked.
 
 ### Regression targets
 
