@@ -141,10 +141,9 @@ final class ExtractMethodProvider {
                         .anyMatch(type -> declaredInside(type, member, trees))
                     ? Stream.of("a type is local to the member")
                     : Stream.<String>empty(),
-                signatureTypes.stream()
-                        .flatMap(CodeActionSupport::typesIn)
-                        .anyMatch(ExtractMethodProvider::isRaw)
-                    ? Stream.of("a raw type")
+                isConstructorCallArgument(region.get(0), member, trees)
+                        && hasEnclosingInstance(member.getParentPath(), trees)
+                    ? Stream.of("an inner class's this(...) or super(...) argument")
                     : Stream.<String>empty())
             .flatMap(reasons -> reasons)
             .toList();
@@ -586,9 +585,22 @@ final class ExtractMethodProvider {
         member.getLeaf() instanceof final BlockTree block
             ? block.isStatic()
             : trees.getElement(member).getModifiers().contains(Modifier.STATIC);
-    return staticMember
-        || Stream.iterate(path, p -> p != member, TreePath::getParentPath)
-            .anyMatch(p -> ExtractionSupport.isConstructorCall(p, trees));
+    return staticMember || isConstructorCallArgument(path, member, trees);
+  }
+
+  private static boolean isConstructorCallArgument(
+      final TreePath path, final TreePath member, final Trees trees) {
+    return Stream.iterate(path, p -> p != member, TreePath::getParentPath)
+        .anyMatch(p -> ExtractionSupport.isConstructorCall(p, trees));
+  }
+
+  // An inner class's this(...)/super(...) arguments may read the enclosing instance, which a
+  // static method has not, and an instance method cannot run before the call.
+  private static boolean hasEnclosingInstance(final TreePath classPath, final Trees trees) {
+    final Element type = trees.getElement(classPath);
+    return type.getEnclosingElement() instanceof TypeElement
+        && type.getKind() == ElementKind.CLASS
+        && !type.getModifiers().contains(Modifier.STATIC);
   }
 
   // The enclosing method's type parameters the new method needs: those named in the region or its
@@ -613,15 +625,6 @@ final class ExtractMethodProvider {
     return method.getTypeParameters().stream()
         .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
         .collect(Collectors.toUnmodifiableList());
-  }
-
-  // A generic type written without its arguments: the code may name none (`var`, `T[]::new`), but a
-  // signature would, and add a rawtypes warning the code did not have.
-  private static boolean isRaw(final TypeMirror type) {
-    return type instanceof final DeclaredType declared
-        && declared.getTypeArguments().isEmpty()
-        && declared.asElement() instanceof final TypeElement element
-        && !element.getTypeParameters().isEmpty();
   }
 
   // A local class declared in the member the code leaves: the new method, beside the member, cannot

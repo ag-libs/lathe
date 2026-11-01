@@ -1719,8 +1719,9 @@ class CodeActionTest {
     cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
     cases.put("this", "Object m() { return «this»; }");
     cases.put(
-        "raw type the code never names",
-        "void m(List<String> l) { final var a = «l.toArray(new List[0])»; use(a); }");
+        "inner class's super(...) argument",
+        "int f = 1;\n  static class Base { Base(int x) {} }\n"
+            + "  class Inner extends Base { Inner() { super(«f + 1»); } }");
     cases.put(
         "a local type in the signature",
         "void m() { record P(int v) {} final P p = new P(1); use(«p.v() + 1»); }");
