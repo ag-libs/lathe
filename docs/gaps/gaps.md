@@ -1545,48 +1545,6 @@ None yet.
 
 ---
 
-## MC-30 — Position tools need an exact column, which agents get wrong
-
-**Status: accepted**
-
-**Value: high — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24);
-confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Gap
-
-Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
-now makes them retry, at the cost of a round trip; the refusal quotes the line's text, which makes the retry cheaper.
-mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
-symbols by name path (`Class/method`).
-
-In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
-to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
-The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
-which would save a round trip on almost every query.
-
-A refactoring review of Lathe itself (2026-10-30) missed twice in 21 calls,
-both times one column short on a method name taken from an `outline` line
-(`private static ExpectedValue expectedMethodArgumentValue(`: the agent sent 31, the name starts at 32).
-`outline` gives each member's line but not where its name starts, so the agent counts by hand.
-
-### Fix direction
-
-Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
-the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
-Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
-Prior art (2026-11-01): numsu/java-lsp-mcp makes the column optional (the innermost declaration on the
-line) and clamps one past the end; IntelliJ's rename takes the symbol's name plus an optional exact
-snippet; NetBeans' Dukehoff MCP takes `com.acme.Foo#bar(String,int)`.
-This slice takes the cheap form: `column` optional, `symbol` picks the occurrence on the line.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-31 — `get_definition` cannot return the definition's body
 
 **Status: documented**
@@ -1610,7 +1568,7 @@ although `outline` already knows each member's line range.
 
 An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
 Also a tool returning one member's source by name (`source("OrderCommand#store")`),
-resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
+resolved the way [MC-30](gaps-archive.md#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong--done) resolves a name path.
 
 ### Regression targets
 

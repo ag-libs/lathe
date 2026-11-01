@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -260,6 +261,19 @@ public final class LatheEngine {
   public Optional<String> sourceLine(final Path file, final int line) {
     final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
     return line >= 0 && line < lines.size() ? Optional.of(lines.get(line)) : Optional.empty();
+  }
+
+  // Where name stands as a whole word on the line (0-based columns, left to right), for an agent
+  // that names the symbol instead of counting its column. The text only finds the candidates: javac
+  // resolves each, and refuses one inside a comment or a string (NotOnName).
+  public List<Integer> nameColumns(final Path file, final int line, final String name) {
+    final String text = sourceLine(file, line).orElse("");
+    return IntStream.rangeClosed(0, text.length() - name.length())
+        .filter(column -> text.startsWith(name, column))
+        .filter(column -> SourceLocator.identifierStart(text, column) == column)
+        .filter(column -> SourceLocator.identifierEnd(text, column) == column + name.length())
+        .boxed()
+        .toList();
   }
 
   /**

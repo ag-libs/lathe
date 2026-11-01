@@ -20,6 +20,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -189,11 +190,14 @@ class LatheMcpToolsTest {
     assertThat(text(result)).contains("`a.b` is not a valid name");
   }
 
-  // An off-by-one column would otherwise answer for the enclosing method or class.
+  // An off-by-one column would otherwise answer for the enclosing method or class; the symbol's
+  // name finds its column, past an occurrence in a string.
   @Test
-  void describeSymbol_positionNotOnAName_returnsErrorShowingTheLine() throws Exception {
+  void describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound()
+      throws Exception {
     final Path file = tmp.resolve("A.java");
-    Files.writeString(file, "class A {\n  public void run() {}\n}\n");
+    Files.writeString(
+        file, "class A {\n  public void run() {}\n  void go() { String s = \"run\"; run(); }\n}\n");
 
     assertThat(List.of(describe(file, 2, 3), describe(file, 2, 1), describe(file, 2, 30)))
         .as("a keyword, indentation, past the line's end")
@@ -204,6 +208,17 @@ class LatheMcpToolsTest {
                   .contains("must be on a name. Line 2 reads: public void run() {}");
             });
     assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
+    assertThat(
+            List.of(
+                named(file, 2, "run", null), named(file, 2, "run", 3), named(file, 3, "run", null)))
+        .as("no column, a column off the name, a line naming it twice")
+        .allSatisfy(
+            result -> {
+              assertThat(result.isError()).isNotEqualTo(true);
+              assertThat(text(result)).doesNotContain("has no symbol");
+            });
+    assertThat(text(named(file, 2, "walk", null)))
+        .isEqualTo("Line 2 has no symbol named 'walk'. Line 2 reads: public void run() {}");
     assertThat(text(describe(file, 0, 1)))
         .isEqualTo("Positions are 1-based: line and column start at 1.");
     assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
@@ -348,6 +363,18 @@ class LatheMcpToolsTest {
     return call("describe_symbol", Map.of("file", file.toString(), "line", line, "column", column));
   }
 
+  private CallToolResult named(
+      final Path file, final int line, final String symbol, final Integer column) {
+    final var arguments =
+        new HashMap<String, Object>(
+            Map.of("file", file.toString(), "line", line, "symbol", symbol));
+    if (column != null) {
+      arguments.put("column", column);
+    }
+
+    return call("describe_symbol", arguments);
+  }
+
   private static String text(final CallToolResult result) {
     return ((TextContent) result.content().get(0)).text();
   }
@@ -483,8 +510,8 @@ class LatheMcpToolsTest {
             String.join(
                 System.lineSeparator(),
                 "2 declaration(s) in app/Shop.java:",
-                "class Shop  3: public class Shop {",
-                "  method sell  8: int sell(int count) {"));
+                "class Shop  3:1: public class Shop {",
+                "  method sell  8:1: int sell(int count) {"));
     assertThat(
             text(
                 LatheMcpTools.outlineResult(

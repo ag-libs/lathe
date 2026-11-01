@@ -80,16 +80,22 @@ final class LatheMcpTools {
 
   private LatheMcpTools() {}
 
-  // The symbol-at-a-position input every position tool takes, plus its own properties (each
-  // starting with a comma).
+  // The symbol-at-a-position input every position tool takes: a column, or the symbol's name on
+  // the line, which agents give more reliably than a counted column.
+  private static final String POSITION_PROPERTIES =
+      """
+      "file":{"type":"string","description":"Absolute path to a .java file."},
+      "line":{"type":"integer","description":"1-based line of the symbol."},
+      "column":{"type":"integer","description":"1-based column of the symbol; optional with 'symbol'."},
+      "symbol":{"type":"string","description":"The symbol's name as written on that line (a method, field, type or variable name); finds its column, so 'column' may be left out."}\
+      """;
+
+  // The position input plus a tool's own properties (each starting with a comma).
   private static String positionSchema(final String extraProperties) {
     return """
-        {"type":"object","required":["file","line","column"],
-         "properties":{
-           "file":{"type":"string","description":"Absolute path to a .java file."},
-           "line":{"type":"integer","description":"1-based line of the symbol."},
-           "column":{"type":"integer","description":"1-based column of the symbol."}%s}}"""
-        .formatted(extraProperties);
+        {"type":"object","required":["file","line"],
+         "properties":{%s%s}}"""
+        .formatted(POSITION_PROPERTIES, extraProperties);
   }
 
   // The engine is taken when a tool is called: started where no .lathe/ is, there is none, and each
@@ -179,13 +185,10 @@ final class LatheMcpTools {
                 "rename_symbol",
                 mapper,
                 """
-                {"type":"object","required":["file","line","column","newName"],
-                 "properties":{
-                   "file":{"type":"string","description":"Absolute path to a .java file."},
-                   "line":{"type":"integer","description":"1-based line of the symbol."},
-                   "column":{"type":"integer","description":"1-based column of the symbol."},
-                   "newName":{"type":"string","description":"The new identifier."}}}\
-                """)
+                {"type":"object","required":["file","line","newName"],
+                 "properties":{%s,
+                   "newName":{"type":"string","description":"The new identifier."}}}"""
+                    .formatted(POSITION_PROPERTIES))
             .description(
                 """
                 Rename the symbol at a position across the whole reactor and apply the edits to \
@@ -404,9 +407,10 @@ final class LatheMcpTools {
             .description(
                 """
                 A Java file's structure without reading it: every type, field, constructor and \
-                method in source order, indented by nesting, each with its line and declaration \
-                (`method sell  8: int sell(int count) {`). Use it to find a member's line before \
-                reading or editing that part of a large file.\
+                method in source order, indented by nesting, each with the line and column of its \
+                name and its declaration (`method sell  8:7: int sell(int count) {`), the position \
+                the other tools take. Use it to find a member before reading or editing that part \
+                of a large file.\
                 """)
             .annotations(READ_ONLY)
             .build();
@@ -702,38 +706,76 @@ final class LatheMcpTools {
     final Path file = filePath(request);
     final Integer line = intArg(request, "line");
     final Integer column = intArg(request, "column");
-    if (file == null || line == null || column == null) {
-      return error("%s requires 'file', 'line', and 'column' arguments".formatted(tool));
+    final String symbol = stringArg(request, "symbol");
+    if (file == null || line == null || (column == null && symbol == null)) {
+      return error(
+          "%s requires 'file', 'line', and the 'symbol' on that line or its 'column'"
+              .formatted(tool));
     }
 
     if (!isJavaSource(file)) {
       return error(notAJavaSource(file));
     }
 
-    if (line < 1 || column < 1) {
+    if (line < 1 || (column != null && column < 1)) {
       return error("Positions are 1-based: line and column start at 1.");
     }
 
     return guarded(
         tool,
         file,
-        () -> {
-          try {
-            return handler.at(file, line - 1, column - 1);
-          } catch (final LatheEngine.NotOnName e) {
-            return error(
-                engine
-                    .sourceLine(file, line - 1)
-                    .map(text -> notOnName(line, column, text))
-                    .orElse("No symbol at line %d: the file is shorter.".formatted(line)));
-          }
-        });
+        () ->
+            candidateColumns(engine, file, line - 1, column, symbol).stream()
+                .map(candidate -> answerAt(handler, file, line - 1, candidate))
+                .flatMap(Optional::stream)
+                .findFirst()
+                .orElseGet(
+                    () ->
+                        error(
+                            engine
+                                .sourceLine(file, line - 1)
+                                .map(text -> notOnName(line, column, symbol, text))
+                                .orElse(
+                                    "No symbol at line %d: the file is shorter."
+                                        .formatted(line)))));
   }
 
-  // The line itself, so the agent can correct its column without reading the file.
-  private static String notOnName(final int line, final int column, final String text) {
-    return "No symbol at line %d, column %d: the position must be on a name. Line %d reads: %s"
-        .formatted(line, column, line, text.strip());
+  // The column given, or each place the symbol's name stands on the line, the one nearest the
+  // given column first.
+  private static List<Integer> candidateColumns(
+      final LatheEngine engine,
+      final Path file,
+      final int line,
+      final Integer column,
+      final String symbol) {
+    if (symbol == null) {
+      return List.of(column - 1);
+    }
+
+    final List<Integer> named = engine.nameColumns(file, line, symbol);
+    return column == null
+        ? named
+        : named.stream().sorted(Comparator.comparingInt(c -> Math.abs(c - (column - 1)))).toList();
+  }
+
+  // Empty when the position is not on a name, so the next candidate is tried.
+  private static Optional<CallToolResult> answerAt(
+      final PositionHandler handler, final Path file, final int line, final int column) {
+    try {
+      return Optional.of(handler.at(file, line, column));
+    } catch (final LatheEngine.NotOnName e) {
+      return Optional.empty();
+    }
+  }
+
+  // The line itself, so the agent can correct its input without reading the file.
+  private static String notOnName(
+      final int line, final Integer column, final String symbol, final String text) {
+    final String where =
+        symbol != null
+            ? "no symbol named '%s'".formatted(symbol)
+            : "no symbol at column %d: the position must be on a name".formatted(column);
+    return "Line %d has %s. Line %d reads: %s".formatted(line, where, line, text.strip());
   }
 
   // Run an engine call, turning a refusal or an unexpected failure into an isError result; only
@@ -863,13 +905,15 @@ final class LatheMcpTools {
     return result(text, notes);
   }
 
+  // line:column of the name, the position the other tools take.
   private static String outlineLine(final LatheOutlineItem item) {
-    return "%s%s %s  %d: %s"
+    return "%s%s %s  %d:%d: %s"
         .formatted(
             "  ".repeat(item.depth()),
             item.kind(),
             item.name(),
             line(item.location()),
+            item.location().range().getStart().getCharacter() + 1,
             item.location().snippet());
   }
 
