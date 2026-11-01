@@ -85,6 +85,42 @@ class CallHierarchyOutgoingLocatorTest {
     }
   }
 
+  // An implicit accessor has no tree of its own; it points at its component, not the file's top.
+  @Test
+  void outgoingCalls_recordAccessor_pointsAtItsComponent() throws IOException {
+    Files.writeString(
+        sourceRoot.resolve("Point.java"),
+        """
+        class Unused {}
+        record Point(int x, int y) {}
+        """);
+    final String content =
+        """
+        class Reader {
+            int read(Point p) {
+                return p.y();
+            }
+        }
+        record Point(int x, int y) {}
+        """;
+    final var request = request(content, new Position(1, 9));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+
+      final List<CallHierarchyOutgoingCall> calls =
+          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+
+      assertThat(calls)
+          .singleElement()
+          .satisfies(
+              call ->
+                  assertThat(call.getTo().getSelectionRange().getStart())
+                      .isEqualTo(new Position(1, 24)));
+    }
+  }
+
   @Test
   void outgoingCalls_anonymousClassInstantiation_excludedFromResults() throws IOException {
     final String content =

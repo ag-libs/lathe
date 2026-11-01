@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
@@ -45,14 +46,19 @@ class CallHierarchyIncomingLocatorTest {
   }
 
   @Test
-  void searchIncomingCalls_constructorCall_returnsCallerAndRange() {
+  void searchIncomingCalls_constructorCallAndReference_returnsCallersOfThatOverloadOnly() {
     final String content =
         """
-        class Caller { void build() { new Box(); } }
-        class Box { Box() {} }
+        import java.util.function.Function;
+        import java.util.function.Supplier;
+        class Caller {
+            void build() { new Box(); }
+            Supplier<Box> supply() { return Box::new; }
+            Function<String, Box> convert() { return Box::new; }
+        }
+        class Box { Box() {} Box(String s) {} }
         """;
-    // cursor on "Box" constructor at (1, 12)
-    final var targetRequest = request(content, new Position(1, 12));
+    final var targetRequest = request(content, SampleFixture.posOf(content, "Box() {}", "Box"));
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
@@ -69,9 +75,11 @@ class CallHierarchyIncomingLocatorTest {
           session.searchIncomingCalls(
               TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
 
-      assertThat(calls).hasSize(1);
-      assertThat(calls.get(0).getFrom().getName()).isEqualTo("build");
-      assertThat(calls.get(0).getFromRanges()).hasSize(1);
+      assertThat(calls)
+          .extracting(c -> c.getFrom().getName(), c -> c.getFromRanges().get(0).getStart())
+          .containsExactlyInAnyOrder(
+              tuple("build", SampleFixture.posOf(content, "new Box()", "Box")),
+              tuple("supply", SampleFixture.posOf(content, "return Box::new", "new")));
     }
   }
 

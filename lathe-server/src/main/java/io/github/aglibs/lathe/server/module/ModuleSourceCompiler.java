@@ -102,6 +102,22 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return runner.run(jfo, options, cancelChecker);
   }
 
+  // javac reads a compiled file's text lazily, from the per-document temp file, which is what trees
+  // cached from the document's last compile read their text from too: put its text back after.
+  @Override
+  public CompilerResult compileDetached(final String uri, final String content) {
+    final Path tempFile = tempFileOf(uri);
+    final String kept =
+        Files.isRegularFile(tempFile) ? IOUtil.unchecked(() -> Files.readString(tempFile)) : null;
+    try {
+      return compile(uri, content, CompileMode.OPEN);
+    } finally {
+      if (kept != null) {
+        IOUtil.unchecked(() -> Files.writeString(tempFile, kept));
+      }
+    }
+  }
+
   @Override
   public BatchWrite compileBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
@@ -223,11 +239,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   private Path writeTempFile(final String uri, final String content) {
     final var filePath = LatheUri.toPath(uri);
-    final Path sourceRoot =
-        config.sourceRoots().stream()
-            .filter(filePath::startsWith)
-            .max(Comparator.comparingInt(Path::getNameCount))
-            .orElseGet(() -> generatedSourceRoot(filePath, uri));
+    final Path sourceRoot = sourceRootOf(filePath, uri);
     try {
       if (lombok.present()) {
         mirrorLombokConfigs(sourceRoot, filePath.getParent());
@@ -237,6 +249,19 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  // Where a document's text is written for javac.
+  private Path tempFileOf(final String uri) {
+    final var filePath = LatheUri.toPath(uri);
+    return FileUtil.tempSourceFile(tempDir, sourceRootOf(filePath, uri), filePath);
+  }
+
+  private Path sourceRootOf(final Path filePath, final String uri) {
+    return config.sourceRoots().stream()
+        .filter(filePath::startsWith)
+        .max(Comparator.comparingInt(Path::getNameCount))
+        .orElseGet(() -> generatedSourceRoot(filePath, uri));
   }
 
   // Lombok reads lombok.config from the compiled file's directory up, and javac compiles a copy

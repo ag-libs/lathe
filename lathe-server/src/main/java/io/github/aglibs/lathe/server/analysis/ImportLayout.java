@@ -11,11 +11,14 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
 // Where new import lines go: each at its sorted place in its group (static or not), so an ordered
-// import block stays ordered and a build's import-order check still passes. A spelling is a
-// qualified name, "static " first for a static import. fallback is the line after the package
-// clause, for a file without imports.
-public record ImportLayout(List<ImportLine> imports, Position fallback) {
+// import block stays ordered and a build's import-order check still passes. They are anchored at
+// the exact starts and ends of the existing imports and the package clause, not at line starts, so
+// a file that puts those on one line with other code stays valid. A spelling is a qualified name,
+// prefixed with "static " for a static import. packageEnd is where the package clause ends, or
+// NO_PACKAGE (where no clause can end) in a file without one.
+public record ImportLayout(List<ImportLine> imports, Position packageEnd) {
 
+  public static final Position NO_PACKAGE = new Position(0, 0);
   private static final String STATIC_PREFIX = "static ";
   // Statics first, as google-java-format orders them, then by name.
   private static final Comparator<String> ORDER =
@@ -23,7 +26,7 @@ public record ImportLayout(List<ImportLine> imports, Position fallback) {
           .thenComparing(Comparator.naturalOrder());
 
   public ImportLayout {
-    ValidCheck.check().notNull(imports, "imports").notNull(fallback, "fallback").validate();
+    ValidCheck.check().notNull(imports, "imports").notNull(packageEnd, "packageEnd").validate();
     imports = List.copyOf(imports);
   }
 
@@ -40,26 +43,14 @@ public record ImportLayout(List<ImportLine> imports, Position fallback) {
   public List<TextEdit> edits(final List<String> spellings) {
     return spellings.stream()
         .sorted(ORDER)
-        .collect(Collectors.groupingBy(this::positionFor, LinkedHashMap::new, Collectors.toList()))
+        .collect(Collectors.groupingBy(this::insertionFor, LinkedHashMap::new, Collectors.toList()))
         .entrySet()
         .stream()
-        .map(
-            entry ->
-                new TextEdit(
-                    new Range(entry.getKey(), entry.getKey()),
-                    entry.getValue().stream()
-                        .map("import %s;\n"::formatted)
-                        .collect(Collectors.joining("", separator(), ""))))
+        .map(entry -> entry.getKey().edit(entry.getValue()))
         .toList();
   }
 
-  // The first import of a file goes after the package clause, a blank line below it; the fallback
-  // is past line 0 exactly when a package clause is there.
-  private String separator() {
-    return imports.isEmpty() && fallback.getLine() > 0 ? "\n" : "";
-  }
-
-  private Position positionFor(final String spelling) {
+  private Insertion insertionFor(final String spelling) {
     final List<ImportLine> group =
         imports.stream().filter(line -> line.isStatic() == isStatic(spelling)).toList();
     if (group.isEmpty()) {
@@ -69,33 +60,67 @@ public record ImportLayout(List<ImportLine> imports, Position fallback) {
     return group.stream()
         .filter(line -> line.spelling().compareTo(spelling) > 0)
         .findFirst()
-        .map(line -> new Position(line.startLine(), 0))
-        .orElseGet(() -> new Position(CollectionUtil.last(group).endLine() + 1, 0));
+        .map(line -> Insertion.before(line.start()))
+        .orElseGet(() -> Insertion.after(CollectionUtil.last(group).end()));
   }
 
-  // The first of its group: statics before the other imports, the others after the statics.
-  private Position otherGroupEdge(final boolean isStatic) {
+  // The first of its group: statics before the other imports, the others after the statics; the
+  // first import of a file goes a blank line below the package clause, or at the very start.
+  private Insertion otherGroupEdge(final boolean isStatic) {
     if (imports.isEmpty()) {
-      return fallback;
+      return packageEnd.equals(NO_PACKAGE)
+          ? Insertion.before(NO_PACKAGE)
+          : Insertion.belowPackage(packageEnd);
     }
 
     return isStatic
-        ? new Position(imports.get(0).startLine(), 0)
-        : new Position(CollectionUtil.last(imports).endLine() + 1, 0);
+        ? Insertion.before(imports.get(0).start())
+        : Insertion.after(CollectionUtil.last(imports).end());
   }
 
   private static boolean isStatic(final String spelling) {
     return spelling.startsWith(STATIC_PREFIX);
   }
 
-  // An existing import, its 0-based first and last line.
-  public record ImportLine(String spelling, int startLine, int endLine) {
+  // An existing import, where it starts and ends.
+  public record ImportLine(String spelling, Position start, Position end) {
     public ImportLine {
-      ValidCheck.check().notNull(spelling, "spelling").validate();
+      ValidCheck.check()
+          .notNull(spelling, "spelling")
+          .notNull(start, "start")
+          .notNull(end, "end")
+          .validate();
     }
 
     boolean isStatic() {
       return ImportLayout.isStatic(spelling);
+    }
+  }
+
+  // New import lines at one position: in front of an import (or the file's start), each ending its
+  // line; or behind the last import or the package clause, each starting a line, a blank line first
+  // below the package clause.
+  private record Insertion(Position at, String lead, String line) {
+    private Insertion {
+      ValidCheck.check().notNull(at, "at").notNull(lead, "lead").notNull(line, "line").validate();
+    }
+
+    static Insertion before(final Position at) {
+      return new Insertion(at, "", "import %s;\n");
+    }
+
+    static Insertion after(final Position at) {
+      return new Insertion(at, "", "\nimport %s;");
+    }
+
+    static Insertion belowPackage(final Position at) {
+      return new Insertion(at, "\n", "\nimport %s;");
+    }
+
+    TextEdit edit(final List<String> spellings) {
+      return new TextEdit(
+          new Range(at, at),
+          spellings.stream().map(line::formatted).collect(Collectors.joining("", lead, "")));
     }
   }
 }

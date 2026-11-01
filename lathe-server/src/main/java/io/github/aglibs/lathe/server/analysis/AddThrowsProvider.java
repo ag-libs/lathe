@@ -6,11 +6,9 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.core.CollectionUtil;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -59,11 +57,8 @@ final class AddThrowsProvider implements CodeActionProvider {
     final int lastDot = fqn.lastIndexOf('.');
     final String simpleName = lastDot >= 0 ? fqn.substring(lastDot + 1) : fqn;
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:throws] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 

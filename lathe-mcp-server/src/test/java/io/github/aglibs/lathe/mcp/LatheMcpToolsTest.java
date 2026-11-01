@@ -20,6 +20,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -134,13 +135,12 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void verifyChange_emptyWorkspace_reportsCleanNotError() {
+  void verifyChange_emptyWorkspace_reportsCleanInTextOnly() {
     final CallToolResult result = call("verify_change", Map.of());
 
     assertThat(result.isError()).isNotEqualTo(true);
-    @SuppressWarnings("unchecked")
-    final Map<String, Object> structured = (Map<String, Object>) result.structuredContent();
-    assertThat(structured).containsEntry("diagnosticCount", 0);
+    assertThat(text(result)).startsWith("No errors");
+    assertThat(result.structuredContent()).isNull();
   }
 
   @Test
@@ -149,21 +149,21 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void callHierarchy_invalidDirection_returnsError() {
-    final CallToolResult result =
-        call(
-            "call_hierarchy",
-            Map.of(
-                "file",
-                tmp.resolve("Any.java").toString(),
-                "line",
-                1,
-                "column",
-                1,
-                "direction",
-                "sideways"));
+  void callHierarchy_invalidDirectionOrScope_returnsError() {
+    final String file = tmp.resolve("Any.java").toString();
 
-    assertThat(result.isError()).isTrue();
+    assertThat(
+            call(
+                "call_hierarchy",
+                Map.of("file", file, "line", 1, "column", 1, "direction", "sideways")))
+        .extracting(CallToolResult::isError)
+        .isEqualTo(true);
+    assertThat(
+            text(
+                call(
+                    "call_hierarchy",
+                    Map.of("file", file, "line", 1, "column", 1, "scope", "jdk"))))
+        .isEqualTo("call_hierarchy 'scope' must be one of reactor, all");
   }
 
   @Test
@@ -177,28 +177,27 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void renameSymbol_invalidIdentifier_returnsErrorNotException() {
+  void renameSymbol_invalidIdentifier_returnsTheReasonAsAnError() throws Exception {
+    final Path file = tmp.resolve("A.java");
+    Files.writeString(file, "class A {\n  int count;\n}\n");
+
     final CallToolResult result =
         call(
             "rename_symbol",
-            Map.of(
-                "file",
-                tmp.resolve("Any.java").toString(),
-                "line",
-                1,
-                "column",
-                1,
-                "newName",
-                "not a name"));
+            Map.of("file", file.toString(), "line", 2, "column", 7, "newName", "a.b"));
 
     assertThat(result.isError()).isTrue();
+    assertThat(text(result)).contains("`a.b` is not a valid name");
   }
 
-  // An off-by-one column would otherwise answer for the enclosing method or class.
+  // An off-by-one column would otherwise answer for the enclosing method or class; the symbol's
+  // name finds its column, past an occurrence in a string.
   @Test
-  void describeSymbol_positionNotOnAName_returnsErrorShowingTheLine() throws Exception {
+  void describeSymbol_positionNotOnAName_returnsErrorShowingTheLine_aNamedSymbolIsFound()
+      throws Exception {
     final Path file = tmp.resolve("A.java");
-    Files.writeString(file, "class A {\n  public void run() {}\n}\n");
+    Files.writeString(
+        file, "class A {\n  public void run() {}\n  void go() { String s = \"run\"; run(); }\n}\n");
 
     assertThat(List.of(describe(file, 2, 3), describe(file, 2, 1), describe(file, 2, 30)))
         .as("a keyword, indentation, past the line's end")
@@ -209,6 +208,17 @@ class LatheMcpToolsTest {
                   .contains("must be on a name. Line 2 reads: public void run() {}");
             });
     assertThat(text(describe(file, 9, 1))).isEqualTo("No symbol at line 9: the file is shorter.");
+    assertThat(
+            List.of(
+                named(file, 2, "run", null), named(file, 2, "run", 3), named(file, 3, "run", null)))
+        .as("no column, a column off the name, a line naming it twice")
+        .allSatisfy(
+            result -> {
+              assertThat(result.isError()).isNotEqualTo(true);
+              assertThat(text(result)).doesNotContain("has no symbol");
+            });
+    assertThat(text(named(file, 2, "walk", null)))
+        .isEqualTo("Line 2 has no symbol named 'walk'. Line 2 reads: public void run() {}");
     assertThat(text(describe(file, 0, 1)))
         .isEqualTo("Positions are 1-based: line and column start at 1.");
     assertThat(text(describe(file, 2, 15))).doesNotContain("must be on a name");
@@ -239,14 +249,14 @@ class LatheMcpToolsTest {
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
   // remedy.
   @Test
-  void formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy() throws Exception {
+  void formatFile_noFormatterPinned_returnsErrorWithTheRemedy() throws Exception {
     final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
 
     final CallToolResult result = call("format_file", Map.of("file", file.toString()));
 
     assertThat(result.isError()).isTrue();
     assertThat(text(result))
-        .contains("No formatter for this workspace", LatheLayout.SYNC_SCRIPT_COMMAND);
+        .contains("No formatter for this workspace", LatheLayout.STYLE_SHARED_FILE);
   }
 
   // No module compiles it, so nothing was checked; the note says whether a sync would help.
@@ -310,8 +320,9 @@ class LatheMcpToolsTest {
     assertThat(result.isError()).isTrue();
   }
 
+  // A refusal is the tool's normal answer: logged as a call, never as an unexpected failure.
   @Test
-  void logged_recordsToolNameAndArguments() {
+  void logged_recordsToolNameAndArguments_aRefusalWithoutAnError() throws Exception {
     final var records = new ArrayList<LogRecord>();
     final Logger logger = Logger.getLogger(LatheMcpTools.class.getName());
     final Handler handler =
@@ -329,10 +340,12 @@ class LatheMcpToolsTest {
         };
     final Level previous = logger.getLevel();
     final String file = tmp.resolve("Missing.java").toString();
+    final Path loose = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
     logger.setLevel(Level.INFO);
     logger.addHandler(handler);
     try {
       call("get_diagnostics", Map.of("file", file));
+      assertThat(call("format_file", Map.of("file", loose.toString())).isError()).isTrue();
     } finally {
       logger.removeHandler(handler);
       logger.setLevel(previous);
@@ -343,10 +356,23 @@ class LatheMcpToolsTest {
         .anySatisfy(
             message ->
                 assertThat(message).contains("[tool] get_diagnostics", "file=%s".formatted(file)));
+    assertThat(records).extracting(LogRecord::getLevel).doesNotContain(Level.SEVERE);
   }
 
   private CallToolResult describe(final Path file, final int line, final int column) {
     return call("describe_symbol", Map.of("file", file.toString(), "line", line, "column", column));
+  }
+
+  private CallToolResult named(
+      final Path file, final int line, final String symbol, final Integer column) {
+    final var arguments =
+        new HashMap<String, Object>(
+            Map.of("file", file.toString(), "line", line, "symbol", symbol));
+    if (column != null) {
+      arguments.put("column", column);
+    }
+
+    return call("describe_symbol", arguments);
   }
 
   private static String text(final CallToolResult result) {
@@ -354,14 +380,17 @@ class LatheMcpToolsTest {
   }
 
   // Started where no .lathe/ is, the server still lists every tool, and each answers why and how
-  // to set the project up, instead of the server failing to connect.
+  // to set the project up, instead of the server failing to connect; once a build creates .lathe/,
+  // the tools use it.
   @Test
-  void all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup() {
-    final String noWorkspace = LatheMcpServer.noWorkspace(tmp);
+  void all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup_untilABuildCreatesIt(
+      @TempDir final Path bare) throws Exception {
+    final String noWorkspace = LatheMcpServer.noWorkspace(bare);
+    final var awaited = new LatheMcpServer.AwaitedEngine(bare);
     final List<SyncToolSpecification> unconfigured =
-        LatheMcpTools.all(LatheMcpServer.missing(noWorkspace), McpJsonDefaults.getMapper());
+        LatheMcpTools.all(awaited, McpJsonDefaults.getMapper());
 
-    assertThat(noWorkspace).contains(".lathe/", tmp.toString(), "lathe-maven-extension");
+    assertThat(noWorkspace).contains(".lathe/", bare.toString(), "lathe-maven-extension");
     assertThat(unconfigured)
         .hasSameSizeAs(specs)
         .allSatisfy(
@@ -374,6 +403,14 @@ class LatheMcpToolsTest {
               assertThat(result.isError()).isTrue();
               assertThat(text(result)).isEqualTo(noWorkspace);
             });
+
+    Files.createDirectories(bare.resolve(LatheLayout.LATHE_DIR));
+    final LatheEngine found = awaited.get();
+    try {
+      assertThat(awaited.get()).isSameAs(found);
+    } finally {
+      found.close();
+    }
   }
 
   private CallToolResult call(final String name, final Map<String, Object> arguments) {
@@ -413,6 +450,26 @@ class LatheMcpToolsTest {
     assertThat(text(result)).startsWith("0 module(s)");
   }
 
+  // The first call an agent makes says why it lists no modules, as every other tool does.
+  @Test
+  void workspaceSummary_latheFromAnotherVersion_notesTheSyncWithoutAPrefix() throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+        "{\"schemaVersion\": \"0\", \"workspaceRoot\": \".\"}");
+    engine.close();
+    engine = new LatheEngine(tmp);
+
+    final String text = text(call("workspace_summary", Map.of()));
+
+    assertThat(text)
+        .startsWith("0 module(s)")
+        .contains(
+            "Sync required: .lathe/ was written by another Lathe version (schema 0, expected %s)"
+                .formatted(LatheLayout.SCHEMA_VERSION))
+        .doesNotContain("Lathe: .lathe/");
+  }
+
   @Test
   void modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut() {
     final List<String> upstream =
@@ -424,7 +481,8 @@ class LatheMcpToolsTest {
                 List.of(
                     new LatheModuleSummary("app", upstream, true, true),
                     new LatheModuleSummary("lib01", List.of(), true, false),
-                    new LatheModuleSummary("docs", List.of(), false, false))));
+                    new LatheModuleSummary("docs", List.of(), false, false)),
+                LatheMcpTools.NO_NOTES));
 
     assertThat(text.lines())
         .contains(
@@ -452,8 +510,8 @@ class LatheMcpToolsTest {
             String.join(
                 System.lineSeparator(),
                 "2 declaration(s) in app/Shop.java:",
-                "class Shop  3: public class Shop {",
-                "  method sell  8: int sell(int count) {"));
+                "class Shop  3:1: public class Shop {",
+                "  method sell  8:1: int sell(int count) {"));
     assertThat(
             text(
                 LatheMcpTools.outlineResult(

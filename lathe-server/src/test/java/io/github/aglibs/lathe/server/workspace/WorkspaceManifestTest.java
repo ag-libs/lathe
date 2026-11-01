@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -174,6 +175,38 @@ class WorkspaceManifestTest extends SampleFixture {
     assertThat(manifest.depClasspathForFile(sourceFile))
         .startsWith(linuxJar, otherJar)
         .contains(osxJar);
+  }
+
+  // A test-jar dependency and a tests-classifier one name the same jar.
+  @Test
+  void load_jarListedTwice_loadsWithTheFirstEntry() throws Exception {
+    final Path jar = tmp.resolve("repo/lib-1-tests.jar");
+    final Path sourceDir = tmp.resolve("sources/lib");
+    final Path typeIndex = tmp.resolve("cache/type-index/lib.json");
+    final var first =
+        new DependencyData(
+            "com.example:lib:test-jar:tests:1",
+            jar.toString(),
+            SourceStatus.PRESENT,
+            sourceDir.toString(),
+            List.of(),
+            typeIndex.toString());
+    final var second =
+        new DependencyData(
+            "com.example:lib:jar:tests:1",
+            jar.toString(),
+            SourceStatus.PRESENT,
+            sourceDir.toString(),
+            List.of(),
+            typeIndex.toString());
+    writeWorkspaceManifest(List.of(first, second));
+
+    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
+
+    assertThat(manifest.loadProblem()).isEmpty();
+    assertThat(manifest.dependencyJarsToGav()).containsExactly(entry(jar, first.gav()));
+    assertThat(manifest.dependencySourceDir(jar)).hasValue(sourceDir);
+    assertThat(manifest.typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
   @Test

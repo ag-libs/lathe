@@ -500,6 +500,13 @@ class WorkspaceSessionTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> render(TypeKind.CLASS, "class", "com.example"))
         .isInstanceOf(IllegalArgumentException.class);
+    // A restricted identifier cannot name a type, though a name containing one can.
+    assertThatThrownBy(() -> render(TypeKind.CLASS, "var", "com.example"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessage("'var' is not a valid Java type name");
+    assertThatThrownBy(() -> render(TypeKind.RECORD, "record", "com.example"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(render(TypeKind.RECORD, "Record", "com.example").path()).endsWith("Record.java");
     // module-info: a qualified module name — malformed or a keyword segment is rejected.
     assertThatThrownBy(() -> render(TypeKind.MODULE_INFO, "com.9bad", ""))
         .isInstanceOf(IllegalArgumentException.class);

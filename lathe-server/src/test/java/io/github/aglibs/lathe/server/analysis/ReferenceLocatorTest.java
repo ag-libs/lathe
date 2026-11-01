@@ -552,6 +552,33 @@ class ReferenceLocatorTest {
     assertThat(result.get(0).range().getStart()).isEqualTo(posOf(source, "new Box();", "Box"));
   }
 
+  @Test
+  void constructor_constructorReference_matchesOnlyTheResolvedOverload() throws IOException {
+    final var source =
+        """
+        import java.util.function.Function;
+        import java.util.function.Supplier;
+        class Box {
+            Box() {}
+            Box(String s) {}
+            static void make() {
+                new Box();
+                Supplier<Box> noArg = Box::new;
+                Function<String, Box> withArg = Box::new;
+            }
+        }
+        """;
+    final var analysis = compile(source);
+    final var noArgTarget = targetAt(analysis, "Box() {}", "Box");
+
+    final List<ReferenceMatch> result = refs(analysis, noArgTarget, false);
+
+    assertThat(result)
+        .extracting(m -> m.range().getStart())
+        .containsExactlyInAnyOrder(
+            posOf(source, "new Box();", "Box"), posOf(source, "noArg = Box::new", "new"));
+  }
+
   // --- method references ---
 
   @Test

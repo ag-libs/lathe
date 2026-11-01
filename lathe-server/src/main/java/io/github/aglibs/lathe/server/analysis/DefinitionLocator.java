@@ -204,7 +204,17 @@ public final class DefinitionLocator {
    * empty as "no result" rather than jumping to the file top; call-hierarchy callers default it to
    * {@code 0,0}.
    */
+  // A record's implicit accessor has no declaration: its position is its component's, as for a
+  // definition.
   public Optional<Position> parsePosition(final Path sourceFile, final Element element) {
+    return parseDeclaration(sourceFile, element)
+        .or(
+            () ->
+                Optional.ofNullable(recordComponentField(element))
+                    .flatMap(component -> parseDeclaration(sourceFile, component)));
+  }
+
+  private Optional<Position> parseDeclaration(final Path sourceFile, final Element element) {
     return parser.parseFile(
         sourceFile, (trees, cu) -> parseDeclarationPosition(trees, cu, element));
   }

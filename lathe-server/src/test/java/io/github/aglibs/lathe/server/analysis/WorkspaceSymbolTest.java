@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.SymbolKind;
 import org.junit.jupiter.api.Test;
@@ -39,8 +41,9 @@ class WorkspaceSymbolTest {
     createSourceFile("com.example", "MyClass");
     final var index = indexOf(entry("MyClass", "com.example"));
 
-    assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src))).isEmpty();
-    assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src))).isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("", index, List.of(src), entry -> true)).isEmpty();
+    assertThat(WorkspaceSymbolResolver.resolve("   ", index, List.of(src), entry -> true))
+        .isEmpty();
   }
 
   // --- resolve: basic matching ---
@@ -50,7 +53,7 @@ class WorkspaceSymbolTest {
     createSourceFile("com.example", "UserService");
     final var index = indexOf(entry("UserService", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("User", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("User", index, List.of(src), entry -> true);
     assertThat(result).hasSize(1);
     assertThat(result.get(0).getName()).isEqualTo("UserService");
     assertThat(result.get(0).getKind()).isEqualTo(SymbolKind.Class);
@@ -65,9 +68,27 @@ class WorkspaceSymbolTest {
         indexOf(entry("FooService", "com.example"), entry("BarService", "com.example"));
 
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src), entry -> true);
 
     assertThat(result).extracting(SymbolInformation::getName).containsExactly("FooService");
+  }
+
+  // A narrowed search filters before the cap: 150 dependency matches must not hide the one kept.
+  @Test
+  void resolve_keepNarrowsBeforeTheCap_findsTheOneKeptTypePastManyOthers() throws IOException {
+    createSourceFile("com.example", "Shop");
+    final var index =
+        indexOf(
+            Stream.concat(
+                    IntStream.range(0, 150).mapToObj(i -> entry("S%03d".formatted(i), "org.dep")),
+                    Stream.of(entry("Shop", "com.example")))
+                .toArray(TypeIndexEntry[]::new));
+
+    final List<SymbolInformation> result =
+        WorkspaceSymbolResolver.resolve(
+            "S", index, List.of(src), entry -> entry.packageName().equals("com.example"));
+
+    assertThat(result).extracting(SymbolInformation::getName).containsExactly("Shop");
   }
 
   @Test
@@ -76,7 +97,7 @@ class WorkspaceSymbolTest {
     final var index = indexOf(entry("AbstractServerFactory", "com.example"));
 
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("ASF", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("ASF", index, List.of(src), entry -> true);
 
     assertThat(result)
         .extracting(SymbolInformation::getName)
@@ -89,7 +110,7 @@ class WorkspaceSymbolTest {
     final var index = indexOf(entry("TaskManager", "com.example"));
 
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Task", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Task", index, List.of(src), entry -> true);
 
     assertThat(result).extracting(SymbolInformation::getName).containsExactly("TaskManager");
   }
@@ -98,7 +119,7 @@ class WorkspaceSymbolTest {
   void resolve_noMatchingFile_excludesResult() {
     final var index = indexOf(entry("Missing", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Miss", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Miss", index, List.of(src), entry -> true);
     assertThat(result).isEmpty();
   }
 
@@ -107,7 +128,7 @@ class WorkspaceSymbolTest {
     createSourceFile("", "Standalone");
     final var index = indexOf(entry("Standalone", ""));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Stand", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Stand", index, List.of(src), entry -> true);
     assertThat(result).hasSize(1);
     assertThat(result.get(0).getName()).isEqualTo("Standalone");
   }
@@ -118,7 +139,7 @@ class WorkspaceSymbolTest {
     createSourceFile("com.example", "FooBaz");
     final var index = indexOf(entry("FooBar", "com.example"), entry("FooBaz", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src), entry -> true);
     assertThat(result).hasSize(2);
     assertThat(result)
         .extracting(SymbolInformation::getName)
@@ -140,18 +161,22 @@ class WorkspaceSymbolTest {
                 "Entry", "java.util.Map$Entry", "java.util", TypeKind.INTERFACE, true, List.of()),
             entry("Entry", "com.example"));
 
-    assertThat(WorkspaceSymbolResolver.resolve("io.dropwizard.util.Duration", index, List.of(src)))
+    assertThat(
+            WorkspaceSymbolResolver.resolve(
+                "io.dropwizard.util.Duration", index, List.of(src), entry -> true))
         .extracting(SymbolInformation::getContainerName)
         .containsExactly("io.dropwizard.util");
-    assertThat(WorkspaceSymbolResolver.resolve("util.Dur", index, List.of(src)))
+    assertThat(WorkspaceSymbolResolver.resolve("util.Dur", index, List.of(src), entry -> true))
         .extracting(SymbolInformation::getContainerName)
         .containsExactly("io.dropwizard.util");
-    assertThat(WorkspaceSymbolResolver.resolve("Map.Entry", index, List.of(src)))
+    assertThat(WorkspaceSymbolResolver.resolve("Map.Entry", index, List.of(src), entry -> true))
         .extracting(SymbolInformation::getContainerName)
         .containsExactly("java.util.Map");
-    assertThat(WorkspaceSymbolResolver.resolve("org.other.Duration", index, List.of(src)))
+    assertThat(
+            WorkspaceSymbolResolver.resolve(
+                "org.other.Duration", index, List.of(src), entry -> true))
         .isEmpty();
-    assertThat(WorkspaceSymbolResolver.resolve("Duration", index, List.of(src)))
+    assertThat(WorkspaceSymbolResolver.resolve("Duration", index, List.of(src), entry -> true))
         .as("an unqualified query is unchanged")
         .hasSize(2);
   }
@@ -163,7 +188,7 @@ class WorkspaceSymbolTest {
     createSourceFile("com.example", "Foo");
     final var index = indexOf(entry("Foo", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src), entry -> true);
     final var loc = result.get(0).getLocation();
     assertThat(loc.getUri()).startsWith("file://");
     assertThat(loc.getUri()).endsWith("com/example/Foo.java");
@@ -182,7 +207,7 @@ class WorkspaceSymbolTest {
     Files.writeString(dir.resolve("Remote.java"), "");
     final var index = indexOf(entry("Remote", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Rem", index, List.of(src, src2));
+        WorkspaceSymbolResolver.resolve("Rem", index, List.of(src, src2), entry -> true);
     assertThat(result).hasSize(1);
     assertThat(result.get(0).getName()).isEqualTo("Remote");
   }
@@ -237,7 +262,7 @@ class WorkspaceSymbolTest {
                 "FooTest", "com.example.FooTest", "com.example", TypeKind.CLASS, false, List.of()));
 
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Foo", index, List.of(src), entry -> true);
 
     assertThat(result)
         .extracting(SymbolInformation::getName)
@@ -270,7 +295,7 @@ class WorkspaceSymbolTest {
         dir.resolve("Service.java"), "package com.example;\n\npublic class Service {}\n");
     final var index = indexOf(entry("Service", "com.example"));
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Service", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Service", index, List.of(src), entry -> true);
     assertThat(result).hasSize(1);
     final var range = result.get(0).getLocation().getRange();
     // "public class Service" — "Service" starts at character 13, line 2 (0-indexed)
@@ -283,7 +308,7 @@ class WorkspaceSymbolTest {
     final var index = indexOf(entry("Ghost", "com.example"));
     // no source file → resolveSourcePath returns null → result is empty (not FILE_START fallback)
     final List<SymbolInformation> result =
-        WorkspaceSymbolResolver.resolve("Ghost", index, List.of(src));
+        WorkspaceSymbolResolver.resolve("Ghost", index, List.of(src), entry -> true);
     assertThat(result).isEmpty();
   }
 }

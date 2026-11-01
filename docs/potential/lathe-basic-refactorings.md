@@ -1,8 +1,8 @@
 # Lathe — Basic Refactorings (Rename, Move, Extract)
 
-**Status (2026-10-31):** rename, extract variable, extract field and extract constant have shipped
-([Rename](../done/lathe-rename.md), [Extract Variable](../done/lathe-extract-variable.md));
-extract method is designed in [Extract Method](../planned/lathe-extract-method.md).
+**Status (2026-10-31):** rename and every extraction (variable, field, constant, method) have shipped
+([Rename](../done/lathe-rename.md), [Extract Variable](../done/lathe-extract-variable.md),
+[Extract Method](../done/lathe-extract-method.md)).
 Move remains a request.
 
 ## Problem / motivation

@@ -451,6 +451,20 @@ class RenameProviderTest {
           assertThat(conflict(session, source, "int seen", "seen", "j"))
               .as("a variable of a sibling loop")
               .isEmpty();
+
+          assertThat(conflict(session, source, "class Inner", "Inner", "var"))
+              .hasValue("`Inner` cannot be renamed to `var`: `var` cannot name a type");
+          assertThat(conflict(session, source, "<A", "A", "record")).isPresent();
+          assertThat(conflict(session, source, "void put", "put", "yield"))
+              .hasValueSatisfying(
+                  reason -> assertThat(reason).endsWith("cannot be called without a qualifier"));
+          assertThat(conflict(session, source, "void put", "put", "record"))
+              .as("a method can take any other restricted identifier")
+              .isEmpty();
+          assertThat(conflict(session, source, "int field", "field", "record"))
+              .as("a variable can take a restricted identifier")
+              .isEmpty();
+          assertThat(conflict(session, source, "int local", "local", "var")).isEmpty();
         });
   }
 

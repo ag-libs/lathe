@@ -23,11 +23,11 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.util.Types;
 
-// Why a rename would break what Lombok generates, or collide with a declaration of the new name: a
-// member of the same kind the owner has or inherits, a sibling type, or a variable in scope. Not
-// detected: the new name shadowing the symbol at a use (a local of that name where the renamed
-// field is read), a subclass member the renamed one would override or hide, and a type name other
-// files import.
+// Why a rename would break what Lombok generates, give a type or method a restricted identifier, or
+// collide with a declaration of the new name: a member of the same kind the owner has or inherits,
+// a sibling type, or a variable in scope. Not detected: the new name shadowing the symbol at a use
+// (a local of that name where the renamed field is read), a subclass member the renamed one would
+// override or hide, and a type name other files import.
 public final class RenameConflicts {
 
   private static final Set<ElementKind> VARIABLES =
@@ -37,6 +37,8 @@ public final class RenameConflicts {
           ElementKind.EXCEPTION_PARAMETER,
           ElementKind.RESOURCE_VARIABLE,
           ElementKind.BINDING_VARIABLE);
+
+  private static final Set<String> NOT_METHOD_NAMES = Set.of("yield");
 
   private RenameConflicts() {}
 
@@ -49,11 +51,23 @@ public final class RenameConflicts {
 
     final String renaming =
         "`%s` cannot be renamed to `%s`".formatted(element.getSimpleName(), newName);
-    if (named(element, newName)) {
-      return Optional.of("%s: it already has that name".formatted(renaming));
-    }
+    return restricted(element, newName)
+        .or(() -> Optional.of("it already has that name").filter(reason -> named(element, newName)))
+        .or(() -> clash(element, newName, analysis))
+        .map(reason -> "%s: %s".formatted(renaming, reason));
+  }
 
-    return clash(element, newName, analysis).map(reason -> "%s: %s".formatted(renaming, reason));
+  // A restricted identifier the symbol's kind cannot take (JLS 3.9); a variable can take any.
+  private static Optional<String> restricted(final Element element, final String newName) {
+    return switch (element.getKind()) {
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE, TYPE_PARAMETER ->
+          Optional.of("`%s` cannot name a type".formatted(newName))
+              .filter(reason -> !RenameProvider.isValidTypeName(newName));
+      case METHOD ->
+          Optional.of("a method named `yield` cannot be called without a qualifier")
+              .filter(reason -> NOT_METHOD_NAMES.contains(newName));
+      default -> Optional.empty();
+    };
   }
 
   private static Optional<String> clash(

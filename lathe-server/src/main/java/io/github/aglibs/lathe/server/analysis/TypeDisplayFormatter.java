@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -12,9 +13,16 @@ import javax.lang.model.util.Types;
 public final class TypeDisplayFormatter {
 
   private final Types types;
+  private final Function<TypeElement, String> naming;
 
   public TypeDisplayFormatter(final Types types) {
+    this(types, type -> type.getSimpleName().toString());
+  }
+
+  // Writes each declared type by the name `naming` gives it.
+  public TypeDisplayFormatter(final Types types, final Function<TypeElement, String> naming) {
     this.types = types;
+    this.naming = naming;
   }
 
   public String format(final TypeMirror type) {
@@ -40,9 +48,7 @@ public final class TypeDisplayFormatter {
   private String formatDeclaredType(final DeclaredType type) {
     final var typeElement = types.asElement(type);
     final String name =
-        typeElement instanceof final TypeElement el
-            ? el.getSimpleName().toString()
-            : type.toString();
+        typeElement instanceof final TypeElement el ? naming.apply(el) : type.toString();
     if (type.getTypeArguments().isEmpty()) {
       return name;
     }

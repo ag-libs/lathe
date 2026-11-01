@@ -44,7 +44,7 @@ class ImportAnalyzerTest {
         .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
         .containsExactly(
             tuple(new Position(2, 0), "import static java.util.Collections.max;\n"),
-            tuple(new Position(4, 0), "import java.util.Stack;\n"));
+            tuple(new Position(3, 21), "\nimport java.util.Stack;"));
   }
 
   @Test
@@ -72,14 +72,13 @@ class ImportAnalyzerTest {
         .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
         .containsExactly(
             tuple(new Position(3, 0), "import static java.util.Collections.nCopies;\n"),
-            tuple(new Position(4, 0), "import static java.util.Objects.toString;\n"),
+            tuple(new Position(3, 47), "\nimport static java.util.Objects.toString;"),
             tuple(new Position(5, 0), "import java.util.ArrayList;\n"),
-            tuple(new Position(6, 0), "import java.util.Set;\n"));
+            tuple(new Position(5, 22), "\nimport java.util.Set;"));
   }
 
   // The first imports go a blank line below the package clause, as the build's formatter keeps
-  // them;
-  // a file without one gets them at the very start.
+  // them; a file without one gets them at the very start.
   @Test
   void layout_noImports_placesBelowThePackageAfterABlankLineOrAtTheStart() throws IOException {
     final var afterPackage =
@@ -95,8 +94,8 @@ class ImportAnalyzerTest {
         .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
         .containsExactly(
             tuple(
-                new Position(1, 0),
-                "\nimport static java.util.Objects.isNull;\nimport java.util.List;\n"));
+                new Position(0, 20),
+                "\n\nimport static java.util.Objects.isNull;\nimport java.util.List;"));
     assertThat(atStart.edit("java.util.List"))
         .extracting(edit -> edit.getRange().getStart(), TextEdit::getNewText)
         .containsExactly(new Position(0, 0), "import java.util.List;\n");

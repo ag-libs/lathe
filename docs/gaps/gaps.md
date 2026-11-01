@@ -360,6 +360,10 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
   `IllegalArgumentException: error: release version 26 not supported`.
   The module-access flags of `jvm.args` are dropped too.
   The `[startup]` line does not name the JVM, so the mismatch is invisible.
+- **The 30 s wait.** A compile that throws (here javac refusing the release) only publishes the error to the
+  editor (`WorkspaceSession.submitTo` → `publishError`); the engine's `diagnosticsFuture` waiting on it is never
+  completed, so the request runs into its timeout instead of failing at once with javac's reason.
+  The extract method sweep (2026-11-01) hung the same way on Helidon's release-27 modules from a JDK 26 JVM.
 - **VS Code.** The extension looks only for `<opened folder>/.lathe/lathe-launcher.sh`.
   Opening a module folder answers "no launcher … run a Lathe-enabled build to generate it", although the
   build already ran at the root.
@@ -370,6 +374,8 @@ Launchers resolve `.lathe/` the way the server does (walk up from the working di
 `java-home` and `jvm.args` from there.
 The VS Code extension walks up from the opened folder.
 `[startup]` logs `java.home` and the Java version.
+A failed compile completes the engine's waiting future exceptionally, so the request fails at once with the
+compiler's message.
 
 ### Regression targets
 
@@ -630,36 +636,6 @@ None yet.
 
 ---
 
-## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the build.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh multi-module project.
-
-### Observed behaviour
-
-The first build of a reactor whose root is a `pom` module resolves the newest `maven-compiler-plugin` online,
-ignoring the version the project pins, and prints five "Ignoring incompatible plugin version 4.0.0-beta-*" warnings.
-0.1.24 behaves the same.
-
-### Root cause
-
-`LatheModelInjector.injectCompilerShim` calls `findOrCreatePlugin`; a `pom` root has no compiler plugin in its build, so it creates one with no version and no `<pluginManagement>` lookup, and Maven resolves the newest.
-
-### Fix direction
-
-Skip the compiler shim on `pom` packaging, or take the version from `<pluginManagement>`; resolve nothing online.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
 
 **Status: documented**
@@ -828,57 +804,6 @@ None yet.
 
 ---
 
-## FR-021 — Rename accepts a contextual keyword or a dotted name as the new name
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP and the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-`rename_symbol` accepts `var`, `record` and `yield` as a new name, which break the code where they are not identifiers; `a.b` renames nothing and says nothing.
-`RenameProvider.isValidName` rejects `a.b`, but the rename then answers a null edit instead of a refusal with a reason; the three words pass because `SourceVersion.isKeyword` does not count them.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Refuse restricted identifiers where the symbol kind cannot take them, and any name that is not one identifier.
-
-### Regression targets
-
-None yet.
-
-## FR-022 — A constructor reference `XXX::new` is not found as an instantiation or a constructor reference
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: Neovim, VS Code, MCP.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-`:LatheInstances` on a class lists its `new XXX(...)` sites but not its `XXX::new` method references.
-Find references on the constructor most likely misses them too: both go through `ReferenceLocator`.
-
-### Fix direction
-
-`ReferenceLocator.visitMemberReference` resolves the constructor correctly but then looks for the member name after the qualifier,
-and javac names a constructor `<init>`, which never appears in the text, so the match is dropped.
-Anchor a constructor reference at its `new` keyword instead.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -923,200 +848,41 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ---
 
-## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice
+## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently
 
 **Status: documented**
 
-**Value: medium — Size: M**
-
-**Affects: MCP `fix_imports`, and the editor's import quick fix.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`fix_imports` reports `List: java.awt.List, java.util.List` and
-`Function: kotlin.Function, java.util.function.Function` as ambiguous, and the editor quick fix offers
-`Import 'kotlin.Function'` first.
-An agent has to pick, and in a Java module the answer is almost always the `java.util` one.
-
-### Fix direction
-
-Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
-then the module's own dependencies, then the rest.
-`fix_imports` could add the top candidate when the ranking is decisive, and list the others.
-
-### Regression targets
-
-None yet.
-
----
-
-## CA-13 — Missing-import fixes skip chained qualifiers, and can land above `package`
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: the editor and MCP `fix_imports`.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-CA-11 made a type used as a method-call qualifier fixable, but not a chained one:
-`TimeUnit.SECONDS.toMillis(1)` and `Map.Entry.comparingByKey()` (javac: "package X does not exist") get no quick fix, and `fix_imports` neither adds nor lists them.
-With `package` and an `import` on one line, the import is inserted above `package`, which breaks the file
-(the editor and `fix_imports` alike).
-An inserted import has no blank line before the class.
-
-### Fix direction
-
-Treat the leftmost resolvable segment of a "package does not exist" qualifier as the type to import.
-Place imports from the end of the package declaration's tree, not by line.
-
-### Regression targets
-
-None yet.
-
-## CA-14 — Extract variable never adds `final` and offers no `var` form
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: Neovim, VS Code.**
-
-Found in daily use (2026-10-30).
-
-### Observed behaviour
-
-Extract variable always declares `Type name = expr;`.
-It never adds `final`, and there is no `var name = expr;` choice, so a codebase that writes `final var` must edit every extraction by hand.
-
-### Fix direction
-
-`ExtractVariableProvider.insertDecl` renders the explicit type only.
-Offer a `var` form alongside the typed one (not for a `null` literal or a lambda, which `var` cannot take),
-and decide how `final` is chosen: always, a setting, or a second action.
-
-### Regression targets
-
-None yet.
-
----
-
-## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
-
-**Status: accepted (selection, placement and safety delivered; extract method remains).**
-
-**Value: high — Size: L**
+**Value: medium — Size: S**
 
 **Affects: Neovim, VS Code, any client.**
 
-Found in daily use (2026-10-30/31): extraction "does not work in many places", on multi-line statements above all.
-Investigated with a probe matrix of 59 Java contexts in `CodeActionTest` (each compiled clean),
-each asked four ways: a caret at the target's start, the exact expression, the expression through its `;`,
-and the whole lines (`V`: column 0 to the last line's end); then the offered edits were applied and recompiled.
-A read-only probe of a 387-line service class in the running editor (a caret code action at each of 800 identifiers)
-matched: extract variable at 201 of them, and every miss on a code line falls under the cases below.
+Found by the extract method sweep of the Lathe repo (2026-11-01), confirmed with a probe test.
 
-### Delivered (2026-10-31)
+### Observed behaviour
 
-Sections 1–3 are fixed; the matrix's misses on code lines and its broken or unsafe offers are gone.
-Design notes in [Extract Variable](../done/lathe-extract-variable.md#selections-and-placement-ca-16).
+These refactors write a type by its simple name and import it through `CodeActionSupport.importEditFor`,
+which looks only at the type's own qualified name.
+When the file already gives that simple name to another type, the result does not compile:
 
-- 5818ef69, 3ad4ed54 — selection (section 1): `ExtractionSupport.selectedExpression` takes the one outermost
-  tree inside a selection, a statement meaning its value; shared by extract variable, field and constant.
-- 19962f60 — safety (section 3): `ExtractionSupport.pinnedInPlace` and a deep `isDenotable`.
-- 195c9dc8 — placement without restructuring (section 2): `case:` lists, resources, `for` initializers,
-  whole expression statements.
-- fa655223 — placement with a new block (section 2): expression lambdas, switch rules, brace-less bodies.
-
-Remaining: section 4, extract method, designed in [Extract Method](../planned/lathe-extract-method.md).
-Not changed: a lambda or anonymous class as the extracted value (needs a target type or `var`), and extract
-field's own placement rules.
-
-### 1. A selection must be character-exact
-
-| Selection | Offered |
-|---|---|
-| caret at the expression, or exactly the expression (multi-line too) | yes |
-| through the `;` | no, in every context |
-| line-wise (`V`), or starting in the indentation | no, in every context |
-
-Selecting several lines is usually line-wise, so on multi-line code the extractions look absent;
-`V` on a single line fails the same way.
-`ExtractionSupport.coveringExpression` starts at the tree under the selection's start and walks up to an expression
-covering the whole selection: a start in the indentation is above every expression, and an end past the expression
-is covered by none.
-
-### 2. Extract variable is refused where the expression's statement is not directly in a block
-
-| Context | Example | Offered |
+| Source | Action | Result |
 |---|---|---|
-| expression lambda | `l.forEach(x -> use(x.trim()))`, `orElseThrow(() -> new X(a.trim()))`, `.map(x -> x.length() * 2)` | nothing |
-| switch, colon case | `case "x": use(a.trim()); break;` | nothing |
-| switch, arrow case / expression arm | `case "x" -> use(a.trim());`, `case "x" -> a.length() + 1;` | nothing |
-| brace-less body | `if (ok) use(a.trim());`, `else use(…)`, `for (…) use(…)` | nothing |
-| try-with-resources | `try (var in = open(f.getPath()))` | nothing |
-| `for` initializer | `for (int i = seed(); …)` | field only |
-| a whole expression statement | `a.trim();` (non-void) | nothing |
+| `import java.sql.Date;` … `var d = new java.util.Date();` | Replace `var` | `Date d = …` plus `import java.util.Date;`: `Date` is ambiguous |
+| `import java.sql.Date;` … `new java.util.Date().getTime()` | Extract field | `private final Date date = …` plus the same second import |
+| a type the source only names fully qualified | Extract variable, extract constant | the simple name, with no import at all |
 
-`ExtractVariableProvider` declares before the expression's statement and requires that statement's parent to be a block;
-`CodeActionSupport.nearestEnclosingStatement` stops at a lambda, and these statements' parents are a `case`, an `if`, a `for` or a `try`.
-Extract field and constant are still offered in some of these places, which makes the gap look arbitrary.
-Block lambdas, `yield`, `try`/`catch`/`synchronized` bodies, initializer blocks, constructors, anonymous and local classes,
-and record compact constructors all work.
-
-Also not offered: a lambda or anonymous class as a value (`l.forEach(x -> use(x))`, `use(new Object() { })`):
-the first needs its target type, the second a `var`.
-
-### 3. Extract variable is offered where it breaks the code or changes what it does
-
-It always declares before the statement, so an expression that is evaluated conditionally, repeatedly, or in a
-narrower scope is hoisted:
-
-| Context | Result |
-|---|---|
-| `if (o instanceof String s && s.isEmpty())` | `s.isEmpty()` hoisted above the pattern that declares `s`: does not compile |
-| `use(List.of(1, "a"))` (intersection element type) | `List<> of = List.of(1, "a");`: does not compile |
-| `if (a != null && a.isEmpty())` | `a.isEmpty()` evaluated before the null check: throws |
-| `use(ok(a) ? a.trim() : "")` | the branch evaluated unconditionally |
-| `while (l.isEmpty())`, `do … while (!l.isEmpty())`, `i < l.size()` | the condition evaluated once, before the loop |
-| `super(a.length())` | a statement before `super(…)`, legal only from Java 25, offered whatever the project's release |
-
-### 4. No extract method
-
-The only extractions are variable, field and constant (`ExtractionSupport.KINDS`); selecting statements offers nothing.
-It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md) but never planned.
+Only the top-level type is imported, never a generic argument (`Map<String, AtomicLong>`).
 
 ### Fix direction
 
-1. Match the selection by the tree: ignore whitespace around it, and when it covers a whole statement take that statement's
-   expression (an expression statement's expression, a declaration's initializer, a `return`'s value).
-2. Make room where there is no block, as IntelliJ does: an expression lambda's body becomes a block
-   (`x -> { var v = …; return …; }`), a case arm or brace-less body is wrapped in braces, a resource or `for` initializer
-   declares before the `try`/`for`; a non-void expression statement becomes a declaration.
-   Never hoist out of a lambda.
-3. Refuse (or declare in place) what cannot move: the right side of `&&`/`||`, a `?:` branch, a loop condition or update,
-   and anything reading a pattern binding; insert before `super(…)` only from Java 25.
-   Use `var` for a non-denotable type (intersection, anonymous class) instead of writing a broken one.
-4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
-   its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
-
-The test helper `CodeActionTest.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
+Use what extract method and implement-abstract-methods already share:
+`CodeActionSupport.sourceTypeFormatter` writes a type whose simple name the file gives another type (by an import or
+a declaration) fully qualified, and `CodeActionSupport.importEditsFor` imports every other type the text names,
+generic arguments included, skipping those.
+Then `importEditFor` and `typeFqn` can go.
 
 ### Regression targets
 
-For sections 1–3, in `CodeActionTest`, each offered edit applied and compiled:
-`codeAction_extraction_lineWiseSelection_findsTheExpression`,
-`codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing`,
-`codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode`,
-`codeAction_extractVariable_outsideABlock_declaresWhereItFits`,
-`codeAction_extractVariable_bodyWithoutRoom_becomesABlock`,
-`codeAction_extractVariable_atStatementStart_rewritesToCompilingCode`.
-Extract method: none yet.
+None yet. Model: `CodeActionTest.codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified`.
 
 ---
 
@@ -1257,34 +1023,6 @@ None yet.
 
 ---
 
-## WS-22 — One external jar listed twice in the manifest switches off cross-module features
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-When one module depends on an external artifact as `<type>test-jar</type>` and another as `<classifier>tests`,
-`workspace.json` lists the jar twice, and the manifest fails to load with "Duplicate key …":
-cross-module references miss other modules, and the advice to re-sync cannot help.
-`WorkspaceManifest.load` still has two jar-keyed `toUnmodifiableMap` collectors (`jarToGav`, `jarToSourceDir`),
-the bug class an earlier fix removed for classifier jars sharing a sources dir.
-
-### Fix direction
-
-Merge duplicate jar entries when loading the manifest, or list each jar once when writing it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-23 — A killed build's locks make `verify_change` defer for about two minutes
 
 **Status: documented**
@@ -1338,54 +1076,6 @@ Report a broken manifest to the client with the remedy (a sync), keep watching, 
 ### Regression targets
 
 None yet.
-
----
-
-## WS-25 — A first sync downloads dependency sources one at a time
-
-**Status: accepted**
-
-**Value: low — Size: S**
-
-**Affects: the first Maven sync on a machine (`mvn` and `mvnd` alike).**
-
-Found by a code review of the sync path (2026-10-30).
-
-### Observed behaviour
-
-`DependencySourceResolver` calls `RepositorySystem.resolveArtifact` once per external artifact, so a cold `~/.m2` pays one sequential round trip per `-sources` jar (plus its checksum).
-The jars are small, so round trips, not bandwidth, set the time:
-
-| Project | Dependencies | With sources | Missing | Sources size | Median jar |
-|---|---|---|---|---|---|
-| Helidon | 209 | 206 | 3 | 50.6 MB | 62 KB |
-| Dropwizard | 210 | 208 | 2 | 63.8 MB | 70 KB |
-| Hibernate ORM | 254 | 252 | 2 | — | — |
-
-Estimated for Helidon at 30–100 ms per request: about 15–45 s sequentially, against about 3–12 s batched, so 15–30 s saved once.
-Not measured yet; a slower link (proxy, mirror, VPN) or extra repositories ahead of Central saves more.
-A warm sync, the common case, gains nothing: every lookup is local.
-
-### Root cause
-
-Maven Resolver already downloads a batch in parallel: `resolveArtifacts` groups requests by repository, and the basic connector fetches each group on `aether.connector.basic.threads` (default 5).
-Checked in Resolver 1.4.1 (`DefaultArtifactResolver`), the version Maven 3.6.3 ships, so it holds at the Maven floor.
-The per-artifact calls never hand it a batch.
-
-### Fix direction
-
-Resolve all `-sources` requests in one `resolveArtifacts` call, inside `DependencySourceResolver` only.
-A missing sources jar is normal, and the batch throws when any is missing, so read the per-request results from `ArtifactResolutionException.getResults()`;
-a `RuntimeException` still fails the sync.
-No Lathe threads, so nothing outlives a build in the `mvnd` daemon, and all logging stays on the Mojo thread.
-
-Not worth doing alongside it: parallel extraction.
-Unzipping all 206 Helidon sources jars (28,635 entries) takes about 1 s on Linux; Windows may differ.
-
-### Regression targets
-
-- The existing invoker fixtures with and without sources jars keep their `[sync] sources N dependency entries, M with sources` counts.
-- A cold Helidon sync with a fresh `-Dmaven.repo.local`, timed before and after the change.
 
 ---
 
@@ -1882,33 +1572,6 @@ None yet.
 
 ---
 
-## MC-28 — `rename_symbol` does not say what text it left unchanged
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-A rename changes the code that resolves to the symbol, and the javadoc references, but not the name in
-string literals, comments, `META-INF/services` files or framework XML.
-An agent believes the rename is complete.
-A study of agent renames found location-only LSP renames missed such text in most multi-file renames
-([arXiv 2608.13568](https://arxiv.org/abs/2608.13568); figures not checked).
-
-### Fix direction
-
-After the rename, list the remaining occurrences of the old name (qualified name for resources) in
-reactor files as "not renamed — review", without editing them.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-29 — No tool maps a stack trace to source
 
 **Status: documented**
@@ -1934,49 +1597,11 @@ None yet.
 
 ---
 
-## MC-30 — Position tools need an exact column, which agents get wrong
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24);
-confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Gap
-
-Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
-now makes them retry, at the cost of a round trip; the refusal quotes the line's text, which makes the retry cheaper.
-mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
-symbols by name path (`Class/method`).
-
-In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
-to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
-The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
-which would save a round trip on almost every query.
-
-A refactoring review of Lathe itself (2026-10-30) missed twice in 21 calls,
-both times one column short on a method name taken from an `outline` line
-(`private static ExpectedValue expectedMethodArgumentValue(`: the agent sent 31, the name starts at 32).
-`outline` gives each member's line but not where its name starts, so the agent counts by hand.
-
-### Fix direction
-
-Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
-the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
-Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-31 — `get_definition` cannot return the definition's body
 
 **Status: documented**
 
-**Value: high — Size: M**
+**Value: medium — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24);
 confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
@@ -1995,154 +1620,7 @@ although `outline` already knows each member's line range.
 
 An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
 Also a tool returning one member's source by name (`source("OrderCommand#store")`),
-resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-32 — Nothing makes an agent run `verify_change` before it reports done
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-An agent that skips `verify_change` finishes with code that does not compile.
-Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hook for exactly this
-([Pyrefly blog](https://pyrefly.org/blog/pyrefly-agentic-loop/)).
-
-### Fix direction
-
-The `AGENTS.md` / `CLAUDE.md` snippet exists ([examples/agents/lathe-mcp.md](../../examples/agents/lathe-mcp.md), which says to run `verify_change` before finishing) but the agent guide does not link it.
-What remains: link it from the agent guide and add a hook recipe.
-A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
-a later, separate step.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-33 — Tools return structured content but declare no `outputSchema`
-
-**Status: deferred**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
-([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
-structured content without one. It helps programmatic clients, not models, so it waits for a client
-that needs it.
-Claude Code does show the model the structured content, not the text:
-see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes).
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
-
-### Observed behaviour
-
-- `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
-  ``No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `.lathe/lathe-sync.sh`).``
-  `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
-  and an agent following the advice runs a 2–3 minute sync for nothing.
-- `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
-  `is in no synced module — run .lathe/lathe-sync.sh`.
-- `run_test` on a test in a module the build leaves out (Helidon `webserver/tests/static-content`, behind the
-  `tests` profile) answers `no class test target in StaticContentTest.java`, as if the file held no test;
-  `get_diagnostics` on the same file correctly says the module is outside the build.
-  On a non-test file the same terse line gives no hint toward the matching test class.
-
-### Fix direction
-
-Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
-"this file is in no source root", and "this module is not in the last build (a profile may add it)".
-For a non-test file, name the test class that tests it when one exists.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
-`get_diagnostics` then ends with the right note, but with a doubled prefix:
-`Sync required: Lathe: .lathe/ was written by another Lathe version (schema 5, expected 6)`.
-`workspace_summary`, the tool the instructions tell an agent to call first, drops every `depends on`
-edge and carries no note.
-
-### Fix direction
-
-`workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
-[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `search_symbols` and the editor's workspace symbols.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
-`com.sun.tools.javac.comp.WarningAnalyzer`, `com.sun.tools.javac.util.JCDiagnostic.Warning` and
-`javax.swing.plaf.metal.MetalBorders.WarningDialogBorder`: types in packages the JDK does not export, and
-no code in the project can use them.
-`*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
-
-On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
-(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
-classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
-about 30 of the 40 from dependencies and the JDK.
-The agent wanted the reactor's types and had no way to ask for only those.
-
-### Fix direction
-
-Leave out JDK packages a module does not export, at least for a classpath module.
-Strip a leading or trailing `*` (or treat the query as a glob).
-List reactor matches before any dependency or JDK match, and add a `scope` argument
-(`reactor`, `all`) so an agent can leave the rest out.
-Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
-[MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
+resolved the way [MC-30](gaps-archive.md#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong--done) resolves a name path.
 
 ### Regression targets
 
@@ -2258,57 +1736,6 @@ None yet.
 
 ---
 
-## MC-43 — Expected refusals are logged at SEVERE with a stack trace
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
-
-### Observed behaviour
-
-A refusal is the tool's normal answer, but each is logged as an unexpected error: a rename refused (JDK method,
-Lombok member, shared static import, existing name), `run_test` with no test target, `format_file` with no formatter.
-The editor's server does not log its refusals this way.
-
-### Fix direction
-
-Log refusals at FINE, or INFO without a stack trace; keep SEVERE for unexpected failures.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-44 — A `.lathe/` created after the MCP server started is never picked up
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-An MCP server started in a project with no `.lathe/` keeps answering "found no .lathe/" after a build creates it.
-The tools do not say to restart the server; only the agent guide does.
-
-### Fix direction
-
-Look for `.lathe/` again on each call while none was found, or say in the answer that a restart picks it up.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
 
 **Status: documented**
@@ -2334,114 +1761,6 @@ None yet.
 
 ---
 
-## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
-
-### Observed behaviour
-
-After an agent removes `lombok.accessors.prefix` from a `lombok.config`, `verify_change` on the affected files answers "No errors" in milliseconds, while `get_diagnostics` shows the `getCount()` error.
-Files whose `.java` content equals the last build count as unchanged, and a `lombok.config` change is not a change.
-
-### Fix direction
-
-Count a changed `lombok.config` as a change to the sources below it.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-- After renaming a type back (`State` to `Status`), the answer notes "Not checked: …/State.java does not exist",
-  about the file the rename itself moved.
-- After an agent edits a POM, `workspace_summary` does not mention the pending sync, while `get_diagnostics`
-  ("Sync required") and `verify_change` (deferred) do.
-
-### Fix direction
-
-Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
-as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Each outgoing entry is the callee's declaration.
-The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
-and had to read the method anyway.
-
-### Fix direction
-
-`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
-which already hold the call sites.
-Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `call_hierarchy`.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
-which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
-
-### Fix direction
-
-A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
-[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
-one origin classification can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-50 — `call_hierarchy` returns one level per call
 
 **Status: documented**
@@ -2459,34 +1778,8 @@ Tracing a resource → service → adapter chain takes one `call_hierarchy` call
 ### Fix direction
 
 A `depth` argument returning a tree, with cycles cut and a total cap.
-Most useful together with [MC-48](#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called)
-and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-51 — A record's accessor resolves to the top of its file
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
-`startLine: 1` with the `package` line as the snippet.
-
-### Fix direction
-
-An implicit accessor has no tree of its own.
-Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
+Most useful together with [MC-48](gaps-archive.md#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called--done)
+and [MC-49](gaps-archive.md#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls--done), or the tree fills with JDK calls.
 
 ### Regression targets
 
@@ -2638,7 +1931,7 @@ None yet.
 
 **Status: documented**
 
-**Value: medium — Size: M**
+**Value: low — Size: M**
 
 **Affects: MCP.**
 
@@ -2663,50 +1956,6 @@ None yet.
 
 ---
 
-## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: every MCP tool; seen in Claude Code.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
-Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
-(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
-Two consequences:
-
-- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
-  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
-  looks complete. The server instructions tell the agent to act on these notes.
-- The JSON repeats each key on every item, so answers are larger than the text form
-  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
-
-Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
-`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
-only a separate `get_diagnostics` showed the two errors.
-
-This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
-that structured content serves programmatic clients and not models.
-
-### Fix direction
-
-Carry the notes in the structured map too (a `notes` object with the four kinds), so they reach the agent
-whichever part a client shows.
-Then decide whether to keep `structuredContent` at all: without an `outputSchema` no client relies on it,
-and dropping it would make Claude Code show the compact text.
-Check what other clients (Codex, Cursor) show before choosing.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-59 — `outline` overflows on a large file
 
 **Status: documented**
@@ -2722,7 +1971,7 @@ Found by a refactoring review of Lathe itself through its own MCP server (2026-1
 `outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
 Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
 The largest file is where an outline saves the most reading, and the one where the tool fails.
-Part of the size is the JSON form ([MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)),
+Part of the size was the JSON form, gone since answers are text only ([MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)),
 but 428 lines of text would still be about 25k characters.
 
 ### Fix direction
@@ -2731,35 +1980,6 @@ An optional `depth` (1 = the top-level types and their members, without nested t
 and a `kinds` filter (types only, methods only).
 Above a size cap, answer with the types and their member counts and say how to ask for one type's members,
 instead of an answer the client cuts.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-60 — `run_test` does not return a failing test's output
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP `run_test`.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-A probe test printed the code action's edits with `System.out.println` before its assertion.
-`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
-so the agent had to move the value into the assertion's message and run again.
-Logs and printed state are often what explains a failure.
-
-### Fix direction
-
-For each failed test, the last lines of its standard output and error, capped (say 40 lines),
-from the transcript the launch already drains (`LaunchSession`).
-Nothing for passing tests.
 
 ### Regression targets
 
@@ -2796,38 +2016,111 @@ None yet.
 
 ---
 
-## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see
+## MC-63 — `find_references` cannot group its answer by the calling method
 
 **Status: documented**
 
 **Value: medium — Size: S**
 
-**Affects: MCP `verify_change`.**
+**Affects: MCP `find_references`.**
 
-Found implementing gap CA-16 through Lathe's own MCP server (2026-10-31).
+Found by the survey of other Java MCP servers (2026-11-01).
 
-### Observed behaviour
+### Gap
 
-Every `verify_change` in the session, about ten, answered
-`"affectedModules":["lathe-maven-plugin","lathe-mcp-server"]` with
-`"suggestedSync":".lathe/lathe-sync.sh lathe-maven-plugin lathe-mcp-server"`, whatever had changed:
-
-- a test-only edit (a deliberate error in `lathe-server`'s `CodeActionTest`, no arguments): the error was
-  reported, and so were both dependent modules and the sync, though test sources are on no other module's
-  classpath;
-- package-private classes (`ExtractVariableProvider`, `CodeActionSupport`) of `lathe-server`, a JPMS module whose
-  dependents cannot reference them.
-
-A suggestion that is always there gets ignored, or obeyed: an agent following it runs a reactor build for
-nothing (minutes on a large reactor). [MC-8](gaps-archive.md#mc-8--the-sync-command-verify_change-suggests-does-not-build-the-dependent-modules-it-names--done)
-made the command build what it names; this is about what it names.
+A method with forty call sites in ten methods answers forty lines; the agent's question is usually
+"which methods call it", and it reads the list to work that out.
+NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
 
 ### Fix direction
 
-Name a dependent module only when the change can reach it: never for a test source tree; for main sources, only
-when a changed file declares a type the dependent can see (public or protected, in an exported package for a
-JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
-With none left, answer no `affectedModules` and no `suggestedSync`.
+An optional `groupBy` (`file`, `caller`): one heading per containing method (or file), its call lines
+below it. The enclosing method is already known to the reference search's tree path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-64 — No safe delete: removing a symbol is find-then-edit by hand
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+To remove a method an agent runs `find_references`, then edits, then `verify_change`.
+NetBeans' Dukehoff MCP and Serena have `safe_delete`: delete only when nothing uses the symbol,
+else list the uses that block it.
+
+### Fix direction
+
+A `safe_delete` tool on the rename pipeline: refuse with the blocking uses (production before tests),
+else remove the declaration and report the file.
+Overrides and implementations count as uses.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-65 — No structural search and replace
+
+**Status: documented**
+
+**Value: low — Size: L**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+Migrations (JUnit 4 to 5, `javax` to `jakarta`, a deprecated API to its replacement) are many similar
+edits an agent makes one file at a time.
+NetBeans' Dukehoff MCP exposes NetBeans' Jackpot rules through `apply_rule`, with a dry run and rule packs,
+and reports that agents used it unprompted once `CLAUDE.md` mentioned it.
+
+### Fix direction
+
+Design first: a pattern language over javac trees with typed placeholders (`$x.foo($y)` where `$x` is a
+`java.util.List`), a dry run listing the matches, then apply.
+Weigh against what a rename plus `fix_imports` already covers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-66 — `rename_symbol` has no preview
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `rename_symbol`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A rename writes to disk at once.
+IntelliJ's rename takes `preview: true` and answers the files and usages it would change, and its
+conflicts, writing nothing; numsu/java-lsp-mcp never writes and returns the edits instead.
+An agent unsure of a rename's reach has `analyze_change`, which counts references but does not list the edits.
+
+### Fix direction
+
+An optional `preview` returning the same per-file list without applying it.
+Low value while renames are undone by git as easily as they are made.
 
 ### Regression targets
 

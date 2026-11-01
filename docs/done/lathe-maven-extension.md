@@ -91,12 +91,15 @@ Constants (plugin/dependency coordinates, `compilerId` value `lathe`, phase name
 are defined once in `lathe-core` — extend `LatheLayout` / add a small `LatheCoordinates` holder
 rather than hardcoding strings in the extension.
 
-**(a) Compiler shim — every project.**
+**(a) Compiler shim — every project that compiles.**
 For each project in `session.getProjects()`:
 
-- Locate `org.apache.maven.plugins:maven-compiler-plugin` via `build.getPluginsAsMap()`.
-  The spike (§9) confirmed this returns the **default lifecycle-bound** compiler plugin even when the
-  POM does not declare it, so the fallback "create it if absent" branch is rarely taken.
+- Locate `org.apache.maven.plugins:maven-compiler-plugin` in the project's build plugins.
+  The spike (§9) confirmed Maven puts the **default lifecycle-bound** compiler plugin there, at the
+  project's version, even when the POM does not declare it, in every module whose packaging compiles.
+- A project without one (a `pom` module) is skipped entirely: no shim, no tree scopes, and no
+  `lathe-junit` dependency (c). The plugin is never created: one without a version made Maven look up
+  the newest release online, with "Ignoring incompatible plugin version" warnings, on every build.
 - Add `io.github.ag-libs:lathe-compiler:${latheVersion}` to its `<dependencies>` if not already
   present. This dependency **does** reach the plugin's classrealm at execution (§9), so
   `compilerId=lathe` resolves.
@@ -127,8 +130,8 @@ only on the top-level model reproduces today's `<inherited>false</inherited>` se
 once from the reactor root, not per module. If the user already declares one of these executions,
 extension-wins replaces its configuration but does not create a duplicate execution id.
 
-**(c) `lathe-junit` test dependency — every project.**
-Add `io.github.ag-libs:lathe-junit:${latheVersion}` at `test` scope to every project's
+**(c) `lathe-junit` test dependency — every project that compiles.**
+Add `io.github.ag-libs:lathe-junit:${latheVersion}` at `test` scope to every compiling project's
 `<dependencies>` if absent (extension-wins on version). This puts the capture
 `LauncherSessionListener` on both the Surefire (unit) and Failsafe (integration) test-runtime
 classpaths through the normal test scope, so capture activates on any `mvn test` / `mvn verify`

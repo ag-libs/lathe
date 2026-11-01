@@ -35,11 +35,6 @@ final class TypeReferenceCompleter {
   private static final Set<String> OTHER_MODIFIER_KEYWORDS =
       Set.of("static", "final", "abstract", "synchronized", "transient", "volatile");
 
-  // Cold-start tier for equal-usage ties (typically both zero): these ubiquitous JDK packages lead
-  // so common java.* types surface before any reactor usage accrues.
-  private static final Set<String> COMMON_PLATFORM_PACKAGES =
-      Set.of("java.lang", "java.util", "java.io", "java.time", "java.nio", "java.math");
-
   private final JavaSourceCompiler compiler;
 
   TypeReferenceCompleter(final JavaSourceCompiler compiler) {
@@ -579,46 +574,11 @@ final class TypeReferenceCompleter {
     return throwable != null && analysis.types().isAssignable(typeEl.asType(), throwable.asType());
   }
 
+  // A name the prefix starts (case-sensitively) leads; the index ranks the rest.
   private static Comparator<TypeIndexEntry> typeCandidateComparator(
       final String prefix, final WorkspaceTypeIndex typeIndex) {
     return Comparator.comparing((TypeIndexEntry e) -> !e.simpleName().startsWith(prefix))
-        .thenComparingInt(e -> -usageCount(e, typeIndex))
-        .thenComparingInt(e -> originRank(e, typeIndex))
-        .thenComparingInt(e -> e.qualifiedName().length())
-        .thenComparing(TypeIndexEntry::qualifiedName);
-  }
-
-  // Document frequency of the type across the reactor: the primary ranking signal, so the type the
-  // project actually uses wins. Negated by the comparator so higher counts sort first.
-  private static int usageCount(final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
-    return typeIndex != null ? typeIndex.usageCount(entry.binaryName()) : 0;
-  }
-
-  // Tiebreaker beneath match quality and usage: core java.lang, then other ubiquitous platform
-  // packages, then reactor-local types, then everything else. It only decides equal-usage entries —
-  // notably a cold-start workspace with no counts yet — so common java.* types still lead there.
-  private static int originRank(final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
-    final String packageName = entry.packageName();
-    if ("java.lang".equals(packageName)) {
-      return 0;
-    }
-
-    // Exact match only: subpackages like java.lang.management or java.util.spi are specialized, not
-    // the auto-imported / everyday types, so they rank as ordinary JDK entries (below reactor).
-    if (COMMON_PLATFORM_PACKAGES.contains(packageName)) {
-      return 1;
-    }
-
-    if (isReactorEntry(entry, typeIndex)) {
-      return 2;
-    }
-
-    return 3;
-  }
-
-  private static boolean isReactorEntry(
-      final TypeIndexEntry entry, final WorkspaceTypeIndex typeIndex) {
-    return typeIndex != null && typeIndex.isReactorType(entry.binaryName());
+        .thenComparing(typeIndex.ranking());
   }
 
   private static CompletionOutcome mergeOutcomes(

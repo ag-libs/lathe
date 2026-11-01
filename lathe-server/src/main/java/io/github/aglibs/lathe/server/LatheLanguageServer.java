@@ -65,6 +65,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
     textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
+    textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
     textDocumentService.setFormatEngine(formatEngine);
     workspaceRoot = rootPath;
     if (rootPath == null) {
@@ -122,7 +123,9 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     codeActionKinds.add(CodeActionKind.RefactorExtract);
     codeActionKinds.add(CodeActionKind.RefactorRewrite);
     codeActionKinds.addAll(ExtractionSupport.KINDS);
-    capabilities.setCodeActionProvider(new CodeActionOptions(codeActionKinds));
+    final var codeActionOptions = new CodeActionOptions(codeActionKinds);
+    codeActionOptions.setResolveProvider(true);
+    capabilities.setCodeActionProvider(codeActionOptions);
     capabilities.setWorkspaceSymbolProvider(true);
     capabilities.setExecuteCommandProvider(
         new ExecuteCommandOptions(
@@ -269,6 +272,22 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     return params.getCapabilities() != null
         && params.getCapabilities().getWindow() != null
         && Boolean.TRUE.equals(params.getCapabilities().getWindow().getWorkDoneProgress());
+  }
+
+  // The client resolves a code action's edit later, keeping the data it was listed with: what lets
+  // an action be compile-checked only when picked (CompileCheckedActions).
+  private static boolean codeActionResolveSupported(final InitializeParams params) {
+    final var capabilities = params.getCapabilities();
+    if (capabilities == null
+        || capabilities.getTextDocument() == null
+        || capabilities.getTextDocument().getCodeAction() == null) {
+      return false;
+    }
+
+    final var codeAction = capabilities.getTextDocument().getCodeAction();
+    return Boolean.TRUE.equals(codeAction.getDataSupport())
+        && codeAction.getResolveSupport() != null
+        && codeAction.getResolveSupport().getProperties().contains("edit");
   }
 
   // The client can apply a RenameFile resource operation — required to rename a public top-level
