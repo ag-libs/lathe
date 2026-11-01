@@ -29,6 +29,19 @@ final class LatheWorkspaceTest {
     assertThat(LatheWorkspace.findRoot(source.getParent())).contains(workspace);
   }
 
+  // A build disabled by lathe.disabled (or CI) finds no workspace; a server still reads the one a
+  // build wrote.
+  @Test
+  void findRoot_disabled_returnsEmptyButNearestRootFindsIt() throws IOException {
+    final Path workspace = tempDir.resolve("workspace");
+    final Path module = Files.createDirectories(workspace.resolve("app/src"));
+    Files.createDirectories(workspace.resolve(LatheLayout.LATHE_DIR));
+    System.setProperty(LatheFlags.DISABLED, "true");
+
+    assertThat(LatheWorkspace.findRoot(module)).isEmpty();
+    assertThat(LatheWorkspace.nearestRoot(module, null)).contains(workspace);
+  }
+
   @Test
   void findRoot_missingMarker_returnsEmpty() throws IOException {
     final Path source = tempDir.resolve("app/src/main/java/com/example/App.java");

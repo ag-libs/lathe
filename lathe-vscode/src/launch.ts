@@ -1,7 +1,23 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
 const WINDOWS = process.platform === 'win32';
 
 // The launcher lathe:sync writes for this OS (the Workspace Contract's client launch rule).
 export const LAUNCHER = WINDOWS ? 'lathe-launcher.cmd' : 'lathe-launcher.sh';
+
+// The nearest directory at or above `dir` holding a .lathe/: the workspace root, as the server and the
+// launcher find it, so a module folder opened on its own still starts the root's launcher.
+export function findWorkspaceRoot(dir: string): string | undefined {
+  for (let current = path.resolve(dir); ; current = path.dirname(current)) {
+    if (fs.statSync(path.join(current, '.lathe'), { throwIfNoEntry: false })?.isDirectory()) {
+      return current;
+    }
+    if (path.dirname(current) === current) {
+      return undefined;
+    }
+  }
+}
 
 export interface LauncherCommand {
   command: string;

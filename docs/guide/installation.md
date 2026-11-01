@@ -131,8 +131,8 @@ export LATHE_JAVA_HOME="$HOME/.sdkman/candidates/java/26-tem"
 ```
 
 For a multi-module reactor the one server JVM runs the highest JDK the build used, which down-compiles
-the lower-release modules via `--release`. (Editor clients spawn the server with its working directory
-set to the workspace root so the launcher can find `.lathe/java-home`.)
+the lower-release modules via `--release`. (The launcher reads `.lathe/java-home` from the nearest `.lathe/`
+in its working directory or above it, so a client that starts it in a module directory gets the root's JDK.)
 
 ## Choosing, overriding, or opting out of the formatter
 

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LAUNCHER, launcherCommand } from '../src/launch';
+import { LAUNCHER, findWorkspaceRoot, launcherCommand } from '../src/launch';
 
 // Starts a stub launcher the way the language client does (cp.spawn with the command's options),
 // from a directory whose name has a space, as on the Windows CI row's cmd /d /s /c path. The stub
@@ -36,6 +36,23 @@ test('launcherCommand starts the launcher from the workspace root with stdio pas
     const lines = stdout.split(/\r?\n/);
     assert.ok(lines[0].endsWith(path.join(path.basename(tmp), 'workspace root')), stdout);
     assert.equal(lines[1], 'got=hello');
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// A module folder opened on its own finds the reactor root's .lathe/; a folder under no .lathe/ none.
+test('findWorkspaceRoot walks up from a module folder to the nearest .lathe', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lathe-root-'));
+  const root = path.join(tmp, 'my reactor');
+  const module = path.join(root, 'core', 'sub');
+  fs.mkdirSync(path.join(root, '.lathe'), { recursive: true });
+  fs.mkdirSync(module, { recursive: true });
+
+  try {
+    assert.equal(findWorkspaceRoot(module), root);
+    assert.equal(findWorkspaceRoot(root), root);
+    assert.equal(findWorkspaceRoot(tmp), undefined);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

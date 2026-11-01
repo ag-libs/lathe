@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.mcp;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.server.LatheLogging;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.modelcontextprotocol.json.McpJsonDefaults;
@@ -98,7 +99,7 @@ public final class LatheMcpServer {
             "[startup] %s pid=%d cwd=%s log=%s"
                 .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile));
 
-    final Optional<Path> workspaceRoot = findWorkspaceRoot(cwd);
+    final Optional<Path> workspaceRoot = LatheWorkspace.nearestRoot(cwd, null);
 
     // stdout is the MCP JSON-RPC channel: hand the transport the real stdout and redirect
     // System.out to stderr so a stray print in the engine cannot corrupt the protocol.
@@ -233,7 +234,7 @@ public final class LatheMcpServer {
     public synchronized LatheEngine get() {
       if (engine == null) {
         final Path root =
-            findWorkspaceRoot(cwd)
+            LatheWorkspace.nearestRoot(cwd, null)
                 .orElseThrow(() -> new LatheMcpTools.NoWorkspaceException(noWorkspace(cwd)));
         LOG.info(() -> "[workspace] found %s".formatted(root));
         engine = new LatheEngine(root);
@@ -246,16 +247,6 @@ public final class LatheMcpServer {
   static String noWorkspace(final Path cwd) {
     return "Lathe found no %s/ in %s or any directory above it, so it has no build to analyze. %s Once a build creates it, the tools use it without a restart."
         .formatted(LatheLayout.LATHE_DIR, cwd, LatheLayout.SETUP_REMEDIATION);
-  }
-
-  private static Optional<Path> findWorkspaceRoot(final Path cwd) {
-    for (Path dir = cwd; dir != null; dir = dir.getParent()) {
-      if (Files.isDirectory(dir.resolve(LatheLayout.LATHE_DIR))) {
-        return Optional.of(dir);
-      }
-    }
-
-    return Optional.empty();
   }
 
   private static String version() {

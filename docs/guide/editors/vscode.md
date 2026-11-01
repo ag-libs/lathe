@@ -28,7 +28,8 @@ It activates when the workspace contains a `.lathe/` directory or a Java file op
 
 4. **Open the root of the build** (the folder containing `.lathe/`) as the VS Code workspace and open a Java
    file. The extension launches the server automatically, resolving the project's JDK from
-   `.lathe/java-home`.
+   `.lathe/java-home`. A module folder opened on its own works too: the extension starts the launcher of
+   the nearest `.lathe/` above it.
 
 If VS Code's built-in Java support (the Red Hat "Language Support for Java" extension) is installed,
 disable it for this workspace — two servers attaching to `.java` files will conflict.

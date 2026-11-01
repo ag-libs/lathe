@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ExtensionContext, WorkspaceFolder, window, workspace } from 'vscode';
 import { Executable, LanguageClient, LanguageClientOptions } from 'vscode-languageclient/node';
-import { LAUNCHER, launcherCommand } from './launch';
+import { LAUNCHER, findWorkspaceRoot, launcherCommand } from './launch';
 
 const clients = new Map<string, LanguageClient>();
 let warnedMissing = false;
@@ -22,13 +22,16 @@ export async function deactivate(): Promise<void> {
   clients.clear();
 }
 
-// LATHE_SERVER_DIR dev override wins; else the workspace's per-version .lathe launcher.
-function launcherPath(folder: WorkspaceFolder): string {
+// The launcher and the directory it starts in: the workspace root, the nearest .lathe/ at or above
+// the folder (a module folder too). LATHE_SERVER_DIR dev override wins for the launcher; else the
+// workspace's per-version .lathe one.
+function launchFor(folder: WorkspaceFolder): { launcher: string; root: string } {
+  const root = findWorkspaceRoot(folder.uri.fsPath) ?? folder.uri.fsPath;
   const override = process.env.LATHE_SERVER_DIR;
-  if (override) {
-    return path.join(override, LAUNCHER);
-  }
-  return path.join(folder.uri.fsPath, '.lathe', LAUNCHER);
+  return {
+    launcher: override ? path.join(override, LAUNCHER) : path.join(root, '.lathe', LAUNCHER),
+    root,
+  };
 }
 
 function startClient(folder: WorkspaceFolder): void {
@@ -37,7 +40,7 @@ function startClient(folder: WorkspaceFolder): void {
     return;
   }
 
-  const launcher = launcherPath(folder);
+  const { launcher, root } = launchFor(folder);
   if (!fs.existsSync(launcher)) {
     if (!warnedMissing) {
       warnedMissing = true;
@@ -51,7 +54,7 @@ function startClient(folder: WorkspaceFolder): void {
   // An Executable, not a spawn of our own: the client then also stops the process if it outlives
   // shutdown (on Windows with taskkill /T, which takes the JVM under cmd.exe too). The client
   // passes the options to spawn, so windowsVerbatimArguments reaches it.
-  const serverOptions: Executable = launcherCommand(launcher, folder.uri.fsPath);
+  const serverOptions: Executable = launcherCommand(launcher, root);
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: 'file', language: 'java' }],
     workspaceFolder: folder,
