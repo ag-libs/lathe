@@ -64,7 +64,7 @@ All through Zed's built-in editor features, resolved from your real build:
 | Workspace symbols (reactor-wide) | `project symbols: toggle`                     |
 | Completion                       | as you type                                   |
 | Rename                           | `editor: rename`                              |
-| Extract variable / refactors     | `editor: toggle code actions`                 |
+| Extract variable / method / refactors | `editor: toggle code actions`                 |
 | Live diagnostics                 | inline · `diagnostics: deploy`                |
 | Formatting                       | `editor: format` · format on save             |
 

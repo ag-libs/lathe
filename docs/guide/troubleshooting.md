@@ -12,6 +12,9 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   and `maven-compiler-plugin` 3.6.2+. The message lists each problem with its fix: upgrade Maven (or the
   project's wrapper), or pin a newer compiler plugin in `<pluginManagement>`. To build without Lathe,
   add `-Dlathe.disabled=true`.
+- **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and the build's
+  `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
+  targets, and see [choosing the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home).
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
   is also surfaced as an editor notification pointing at the log, and a server that fails at JVM

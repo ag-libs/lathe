@@ -120,7 +120,7 @@ freely.
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-s>` (normal too) |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
-| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
+| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |

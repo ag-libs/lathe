@@ -4,7 +4,7 @@ Lathe runs and debugs tests by **replaying** them from the captured `.lathe/` by
 recompilation.
 To know *how* to launch that replay JVM — the exact classpath, module path, and JVM arguments Maven's
 Surefire fork used — Lathe captures the real launch from inside the test fork.
-That capture is done by `lathe-junit`, a small `test`-scoped dependency added to every module
+That capture is done by `lathe-junit`, a small `test`-scoped dependency added to every module that compiles Java
 (injected by the [Maven extension](installation.md), or declared by hand in a
 [manual setup](installation.md#method-2--manual-pom-configuration)) — nothing else to add.
 

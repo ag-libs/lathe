@@ -38,7 +38,7 @@ your real build:
 | Completion                       | `C-M-i`                                             |
 | Hover / javadoc                  | ElDoc (echo area) · `M-x eldoc-doc-buffer`          |
 | Rename (reactor-wide)            | `M-x eglot-rename`                                  |
-| Extract variable / refactors     | `M-x eglot-code-action-extract` · `eglot-code-actions` |
+| Extract variable / method / refactors | `M-x eglot-code-action-extract` · `eglot-code-actions` |
 | Live diagnostics                 | Flymake · `M-x flymake-show-buffer-diagnostics`     |
 | Formatting                       | `M-x eglot-format-buffer`                           |
 

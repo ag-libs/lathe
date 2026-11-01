@@ -47,7 +47,7 @@ Resolved from your real build, through VS Code's standard LSP UI:
 | Completion (with auto-import)    | automatic · `Ctrl`+Space                  |
 | Hover / javadoc                  | hover · `Ctrl`+`K` `Ctrl`+`I`             |
 | Signature help                   | automatic · `Ctrl`+`Shift`+Space          |
-| Code actions (import, stubs, …)  | `Ctrl`+`.`                                |
+| Code actions (import, extract variable / method, stubs, …) | `Ctrl`+`.`                                |
 | Rename (reactor-wide)            | `F2`                                      |
 | Live diagnostics                 | Problems panel · squiggles                |
 | Formatting (the project's Spotless formatter) | `Shift`+`Alt`+`F` · `editor.formatOnSave` |
@@ -68,7 +68,7 @@ Nothing to configure, unless you moved the cache with `-Dlathe.cache=<dir>`: the
 
 ## If the wrong JDK is picked
 
-The extension runs the launcher with the workspace folder as its working directory, so it reads
+The extension runs the launcher from the workspace root (the nearest `.lathe/` at or above the folder), so it reads
 `.lathe/java-home` automatically — no configuration needed, an [OpenJDK](../openjdk.md) checkout
 included (its sync records the JDK it built). To override it, set `LATHE_JAVA_HOME` in the environment
 VS Code is launched from. To point at a working-tree server build, set `LATHE_SERVER_DIR` the same way.

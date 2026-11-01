@@ -110,8 +110,8 @@ Answers are text only, with any notes after the result, so every MCP client show
 | `find_references` | `file, line, symbol or column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, symbol or column` | the implementers of an interface, or the overrides of a method |
 | `call_hierarchy` | `file, line, symbol or column, direction`, `scope` (optional) | callers (`incoming`, the default) or callees (`outgoing`, at each call site in source order) of a method, across modules; `scope: all` adds calls into the JDK and dependencies |
-| `search_symbols` | `query`, `scope` (optional) | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK, the reactor's first and never JDK internals; `scope: reactor` keeps only the project's; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); a leading or trailing `*` is ignored; types only |
-| `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
+| `search_symbols` | `query`, `scope` (optional) | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK, reactor types first and JDK-internal (non-exported) types last; `scope: reactor` keeps only the project's; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); a leading or trailing `*` is ignored; types only |
+| `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its name's line:column and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, symbol or column, newName` | rename a symbol across the whole reactor and **apply the edits to disk**; then lists, without editing, where the old name is still text (string literals naming it, qualified mentions in resources) |
 | `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no reactor build; each failure comes with the last 40 lines the test printed, and a test file that does not compile is not run |
@@ -155,21 +155,22 @@ file after your edit, with no Maven:
   code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
 
 Every tool first compiles the files you changed, however many, so its answer reflects your edits.
-What it still cannot vouch for comes as a note at the end of the result
-(`workspace_summary` carries none yet: it does not mention a pending sync or a `.lathe/` from another Lathe version):
+What it still cannot vouch for comes as a note at the end of the result:
 
 - **`Not compiled:`** lists files whose code does not compile, each with its first error, e.g.
   `Not compiled: app/src/main/java/Foo.java:12: cannot find symbol`.
   Fix the code; no sync helps. Until then, other modules see the file's last good classes. The note clears on the next query after the fix.
 - **`Sync required:`** names what only a sync fixes, with the command to run: changed build files, or a `.lathe/` written by another Lathe version.
 - **`Not checked:`** names a file no module compiles, so nothing about it was checked.
-  For a file of a module the last build compiled, it gives the sync that adds it; for one outside them
-  (a module the build's profiles or JDK leave out) it says Lathe cannot check it, since no sync would.
+  For a file of a module the last build compiled but did not sync, it gives the sync that adds it; for a file
+  outside every source root of a synced module (`docs/`, `src/it/java`) it says the file is in no source root
+  of that module, so a sync does not add it; for one outside every module (a module the build's profiles or JDK
+  leave out) it says Lathe cannot check it, since no sync would.
   `get_diagnostics` then answers "Foo.java was not checked." rather than reporting no errors.
 - **`A build is running`** means the answer reflects Lathe's classes from before that build; re-query once it ends.
 
-An edited `lombok.config` is not seen as a change: `verify_change` keeps answering from the classes compiled before it.
-Run `get_diagnostics` on the affected files, or a sync.
+An edited or deleted `lombok.config` counts as a change to every source below it, so `verify_change` checks them again.
+A `lombok.config` added after the server loaded counts only from the next reload, and Lombok rereads a config at most every 2 seconds.
 
 Three tools write to disk: `rename_symbol`, `format_file` and `fix_imports`.
 All three **refuse to touch a file outside the reactor**.
@@ -205,11 +206,12 @@ A build that was killed leaves its locks behind, and `verify_change` keeps defer
 To make an agent run it before reporting done, add [this snippet](../../examples/agents/lathe-mcp.md) to the project's `AGENTS.md` or `CLAUDE.md`.
 In Claude Code, the [verify-before-stop hook](../../examples/agents/verify-before-stop.py) enforces it:
 a `Stop` hook that, when the session edited Java files after its last `verify_change`, sends the agent
-back to run it (once per stop; a hook cannot call the tool itself). Register it in `.claude/settings.json`:
+back to run it (once per stop; a hook cannot call the tool itself). Copy it into your project (for example to
+`.claude/hooks/verify-before-stop.py`) and register that path in `.claude/settings.json`:
 
 ```json
 {"hooks": {"Stop": [{"hooks": [{"type": "command",
-  "command": "python3 examples/agents/verify-before-stop.py"}]}]}}
+  "command": "python3 .claude/hooks/verify-before-stop.py"}]}]}}
 ```
 
 ## Usage logging
