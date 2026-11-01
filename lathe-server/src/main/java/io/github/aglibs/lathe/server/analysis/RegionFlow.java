@@ -428,11 +428,13 @@ record RegionFlow(
     return null;
   }
 
-  // Where a return, break or continue stops looking for its target.
+  // Where a return, break or continue stops looking for its target: none can leave a lambda, a
+  // method, a class body or a switch expression.
   private static boolean isBodyBoundary(final Tree tree) {
     return tree instanceof LambdaExpressionTree
         || tree instanceof MethodTree
-        || tree instanceof ClassTree;
+        || tree instanceof ClassTree
+        || tree instanceof SwitchExpressionTree;
   }
 
   private static boolean isLoop(final Tree tree) {

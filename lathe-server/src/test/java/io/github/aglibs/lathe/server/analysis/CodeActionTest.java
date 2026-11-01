@@ -1930,6 +1930,10 @@ class CodeActionTest {
         "void m(int k) { switch (k) { case 1: «use(k); break;» default: break; } }");
     cases.put("never completes", "void m() { «throw new IllegalStateException();» }");
     cases.put(
+        "never completes, in a switch expression",
+        "int m(int k) { return switch (k) { case 1 -> { «throw new IllegalStateException();» }"
+            + " default -> 0; }; }");
+    cases.put(
         "assigned conditionally",
         "void m(String a) { int n = 0; «if (a.isEmpty()) n = 1;» use(n); }");
     cases.put("two values", "void m() { «int x = 1;\n    int y = 2;» use(x + y); }");
