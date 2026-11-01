@@ -6,15 +6,22 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.io.StringReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
+import org.apache.maven.plugin.logging.SystemStreamLog;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class MavenStyleTest {
+
+  @TempDir Path tmp;
 
   private static Xpp3Dom config(final String xml) throws Exception {
     return Xpp3DomBuilder.build(new StringReader(xml));
@@ -134,15 +141,72 @@ class MavenStyleTest {
     assertThat(MavenStyle.detect(new MavenProject())).isNull();
 
     final var project = new MavenProject();
-    final var build = new Build();
+    withSpotless(project, "<googleJavaFormat/>", "3.0.0");
+
+    assertThat(MavenStyle.detect(project).formatter().engine()).isEqualTo("google");
+  }
+
+  @Test
+  void styleSource_rootOnlyManagesSpotless_takesTheJavaModulesOnlyWhenAllAgree() throws Exception {
+    final MavenProject root = project("root", "pom");
+    final MavenProject core = withSpotless(javaModule("core"), "<googleJavaFormat/>", "3.0.0");
+    final MavenProject app = withSpotless(javaModule("app"), "<googleJavaFormat/>", "3.0.0");
+    final MavenProject docs = project("docs", "pom");
+    final var style = new MavenStyle(null, new SystemStreamLog());
+
+    assertThat(style.styleSource(root, List.of(root, core, app, docs))).contains(core);
+    // a Java module the build does not format
+    assertThat(style.styleSource(root, List.of(root, core, app, javaModule("plain")))).isEmpty();
+    // another configuration, or another version of the plugin
+    assertThat(
+            style.styleSource(
+                root,
+                List.of(
+                    core,
+                    withSpotless(
+                        javaModule("aosp"),
+                        "<googleJavaFormat><style>AOSP</style></googleJavaFormat>",
+                        "3.0.0"))))
+        .isEmpty();
+    assertThat(
+            style.styleSource(
+                root,
+                List.of(core, withSpotless(javaModule("newer"), "<googleJavaFormat/>", "3.1.0"))))
+        .isEmpty();
+    // the root's own Spotless still wins
+    final MavenProject formattedRoot =
+        withSpotless(project("root", "pom"), "<palantirJavaFormat/>", "3.0.0");
+    assertThat(style.styleSource(formattedRoot, List.of(formattedRoot, javaModule("plain"))))
+        .contains(formattedRoot);
+  }
+
+  private MavenProject project(final String name, final String packaging) {
+    final var project = new MavenProject();
+    project.setPackaging(packaging);
+    project.setFile(tmp.resolve(name).resolve("pom.xml").toFile());
+    return project;
+  }
+
+  private MavenProject javaModule(final String name) throws Exception {
+    final MavenProject project = project(name, "jar");
+    final Path sources = tmp.resolve(name).resolve("src/main/java");
+    Files.createDirectories(sources);
+    Files.writeString(sources.resolve("A.java"), "class A {}\n");
+    project.addCompileSourceRoot(sources.toString());
+    return project;
+  }
+
+  private static MavenProject withSpotless(
+      final MavenProject project, final String java, final String version) throws Exception {
     final var spotless = new Plugin();
     spotless.setGroupId("com.diffplug.spotless");
     spotless.setArtifactId("spotless-maven-plugin");
+    spotless.setVersion(version);
     spotless.setConfiguration(
-        config("<configuration><java><googleJavaFormat/></java></configuration>"));
+        config("<configuration><java>%s</java></configuration>".formatted(java)));
+    final var build = new Build();
     build.addPlugin(spotless);
     project.setBuild(build);
-
-    assertThat(MavenStyle.detect(project).formatter().engine()).isEqualTo("google");
+    return project;
   }
 }

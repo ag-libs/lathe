@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.StyleWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -39,14 +40,15 @@ final class MavenStyle {
 
   // Writes the style with its formatter resolved, and returns it (null when the build has no
   // Spotless Java formatter) so the caller can grant what the formatter needs.
-  WorkspaceStyleData write(final Path workspaceRoot, final MavenProject rootProject) {
-    final Plugin spotless = spotlessPlugin(rootProject);
-    final WorkspaceStyleData detected = detect(spotless);
-    if (detected == null) {
-      log.debug("[sync] no spotless java formatter — skipping style.json");
+  WorkspaceStyleData write(
+      final Path workspaceRoot, final MavenProject rootProject, final List<MavenProject> projects) {
+    final Optional<MavenProject> styleSource = styleSource(rootProject, projects);
+    if (styleSource.isEmpty()) {
       return null;
     }
 
+    final Plugin spotless = spotlessPlugin(styleSource.get());
+    final WorkspaceStyleData detected = detect(spotless);
     if (LatheFlags.FORMATTER_NONE.equals(detected.formatter().engine())) {
       log.warn(
           "[sync] formatter Spotless java formatter has no in-process engine, formatting disabled;"
@@ -54,7 +56,7 @@ final class MavenStyle {
     }
 
     final FormatterSpec formatter =
-        withLocalProfile(detected.formatter(), rootProject.getBasedir().toPath())
+        withLocalProfile(detected.formatter(), styleSource.get().getBasedir().toPath())
             .map(spec -> resolver.resolve(spec, spotless.getVersion()))
             .orElse(detected.formatter());
     final var style = new WorkspaceStyleData(formatter, detected.indent());
@@ -86,8 +88,44 @@ final class MavenStyle {
             spec.engine(), spec.command(), spec.version(), options, spec.classpath()));
   }
 
-  static WorkspaceStyleData detect(final MavenProject rootProject) {
-    return detect(spotlessPlugin(rootProject));
+  // The project whose Spotless configuration is the workspace style: the root when it runs
+  // Spotless, else any Java module when all of them run the same one. Modules running different
+  // ones, or some none, get no style: one workspace formatter would reformat code their build
+  // leaves alone.
+  Optional<MavenProject> styleSource(
+      final MavenProject rootProject, final List<MavenProject> projects) {
+    if (detect(rootProject) != null) {
+      return Optional.of(rootProject);
+    }
+
+    final List<MavenProject> javaModules =
+        projects.stream().filter(ReactorProjects::compilesJava).toList();
+    final List<MavenProject> formatted =
+        javaModules.stream().filter(project -> detect(project) != null).toList();
+    if (formatted.isEmpty()) {
+      log.debug("[sync] no spotless java formatter — skipping style.json");
+      return Optional.empty();
+    }
+
+    if (formatted.size() < javaModules.size()
+        || formatted.stream().map(MavenStyle::spotlessIdentity).distinct().count() > 1) {
+      log.warn(
+          ("[sync] spotless java formatter not the same in every java module (%d of %d run it),"
+                  + " formatting disabled; configure it once for all of them, or in the root")
+              .formatted(formatted.size(), javaModules.size()));
+      return Optional.empty();
+    }
+
+    return Optional.of(formatted.get(0));
+  }
+
+  static WorkspaceStyleData detect(final MavenProject project) {
+    return detect(spotlessPlugin(project));
+  }
+
+  // What makes two projects format alike: the plugin version and the style it maps to.
+  private static List<Object> spotlessIdentity(final MavenProject project) {
+    return Arrays.asList(spotlessPlugin(project).getVersion(), detect(project));
   }
 
   private static WorkspaceStyleData detect(final Plugin spotless) {

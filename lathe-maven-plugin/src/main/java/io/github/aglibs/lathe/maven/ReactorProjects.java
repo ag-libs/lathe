@@ -177,12 +177,21 @@ public final class ReactorProjects {
     final List<String> sourceRoots =
         main ? project.getCompileSourceRoots() : project.getTestCompileSourceRoots();
     return Files.isDirectory(Path.of(output))
-        || sourceRoots.stream()
-            .map(Path::of)
-            .anyMatch(
-                root ->
-                    !IOUtil.unchecked(() -> FileUtil.walkFiles(root, FileUtil::isJavaFile))
-                        .isEmpty());
+        || sourceRoots.stream().anyMatch(ReactorProjects::hasJavaFile);
+  }
+
+  // A project with Java sources, main or test, to compile.
+  static boolean compilesJava(final MavenProject project) {
+    return !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging())
+        && Stream.concat(
+                project.getCompileSourceRoots().stream(),
+                project.getTestCompileSourceRoots().stream())
+            .anyMatch(ReactorProjects::hasJavaFile);
+  }
+
+  private static boolean hasJavaFile(final String sourceRoot) {
+    return !IOUtil.unchecked(() -> FileUtil.walkFiles(Path.of(sourceRoot), FileUtil::isJavaFile))
+        .isEmpty();
   }
 
   // The projects .lathe/ captures: a pom-packaged one compiles nothing, and one outside the reactor

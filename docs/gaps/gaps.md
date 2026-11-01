@@ -596,48 +596,6 @@ None yet.
 
 ---
 
-## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor and MCP `format_file`, in a Maven reactor whose root only manages Spotless.**
-
-Found dogfooding Lathe on its own repository (2026-10-30).
-
-### Observed behaviour
-
-Lathe's root pom configures `spotless-maven-plugin` (google-java-format, pinned version) in `<pluginManagement>`,
-and each of its ten Java modules activates it in its own `<build><plugins>`.
-`lathe:sync` writes no `.lathe/style.json`, so the server starts with `[initialize] … formatting=false`,
-does not advertise formatting, and the editor never sends a request.
-The sync reports the skip only at debug level (`[sync] no spotless java formatter — skipping style.json`), so a normal build says nothing.
-The root pom never activated Spotless in any revision, so detection never worked for this repository.
-
-### Root cause
-
-`MavenStyle.spotlessPlugin` reads only the root project's effective `<build><plugins>`;
-a plugin declared only in `<pluginManagement>` is not there, and the modules that do run it are not looked at.
-Managing Spotless in a parent and activating it per module is a common Maven layout.
-
-### Fix direction
-
-Keep one workspace style.
-When the root does not run Spotless, take it from the reactor modules that do, but only when every module compiling Java
-runs the same Spotless Java configuration; otherwise skip `style.json` with a warning,
-since a workspace-wide formatter would reformat the modules whose build does not format them.
-Log the skip at warning level whenever reactor modules run Spotless but no style is written.
-Per-module gating or per-module formatters are a later step, for a project that needs them.
-
-Workaround: activate Spotless in the root's `<build><plugins>` (this repository does, as of the commit recording this gap).
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
 **Status: documented**
