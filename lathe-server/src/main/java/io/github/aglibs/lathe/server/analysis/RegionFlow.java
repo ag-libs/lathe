@@ -150,6 +150,10 @@ record RegionFlow(
 
         if (inRegion.test(at)) {
           noteInRegion(element);
+        } else if (element instanceof final TypeElement type
+            && type.getNestingKind() == NestingKind.LOCAL
+            && declaredWithin(type, trees, inRegion)) {
+          refusals.add("declares a local class used afterwards");
         }
 
         return super.visitIdentifier(tree, unused);

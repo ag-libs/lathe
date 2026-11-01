@@ -10,7 +10,6 @@ import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
@@ -141,6 +140,11 @@ final class ExtractMethodProvider {
                         .flatMap(CodeActionSupport::typesIn)
                         .anyMatch(type -> declaredInside(type, member, trees))
                     ? Stream.of("a type is local to the member")
+                    : Stream.<String>empty(),
+                signatureTypes.stream()
+                        .flatMap(CodeActionSupport::typesIn)
+                        .anyMatch(ExtractMethodProvider::isRaw)
+                    ? Stream.of("a raw type")
                     : Stream.<String>empty())
             .flatMap(reasons -> reasons)
             .toList();
@@ -402,34 +406,35 @@ final class ExtractMethodProvider {
           : "";
     }
 
-    // The warnings the enclosing member suppresses stay suppressed in the code it gives away: a
-    // deprecated call moved out would otherwise warn, and fail a -Werror build.
+    // The warnings suppressed around the region, by the member or a local declaration holding it,
+    // stay suppressed in the code it gives away, as one annotation: a deprecated call or an
+    // unchecked cast moved out would otherwise warn, and fail a -Werror build.
     private String suppressWarnings(final String indent) {
-      final ModifiersTree modifiers;
-      if (member.getLeaf() instanceof final MethodTree method) {
-        modifiers = method.getModifiers();
-      } else if (member.getLeaf() instanceof final VariableTree field) {
-        modifiers = field.getModifiers();
-      } else {
+      final List<String> names =
+          Stream.iterate(
+                  region.get(0).getParentPath(),
+                  path -> path.getLeaf() != member.getParentPath().getLeaf(),
+                  TreePath::getParentPath)
+              .filter(
+                  path ->
+                      path.getLeaf() instanceof MethodTree
+                          || path.getLeaf() instanceof VariableTree)
+              .map(path -> analysis.trees().getElement(path))
+              .filter(Objects::nonNull)
+              .map(declaration -> declaration.getAnnotation(SuppressWarnings.class))
+              .filter(Objects::nonNull)
+              .flatMap(suppressed -> Stream.of(suppressed.value()))
+              .distinct()
+              .map("\"%s\""::formatted)
+              .toList();
+      if (names.isEmpty()) {
         return "";
       }
 
-      final TreePath modifiersPath = new TreePath(member, modifiers);
-      return modifiers.getAnnotations().stream()
-          .map(annotation -> new TreePath(modifiersPath, annotation))
-          .filter(this::isSuppressWarnings)
-          .map(path -> "%s\n%s".formatted(sourceOf(path, path), indent))
-          .collect(Collectors.joining());
-    }
-
-    private boolean isSuppressWarnings(final TreePath annotation) {
-      return analysis
-                  .trees()
-                  .getElement(
-                      new TreePath(
-                          annotation, ((AnnotationTree) annotation.getLeaf()).getAnnotationType()))
-              instanceof final TypeElement type
-          && type.getQualifiedName().contentEquals(SuppressWarnings.class.getName());
+      return "@SuppressWarnings(%s)\n%s"
+          .formatted(
+              names.size() == 1 ? names.get(0) : "{%s}".formatted(String.join(", ", names)),
+              indent);
     }
 
     // The file's style: parameters are final when every parameter of the enclosing method is.
@@ -608,6 +613,15 @@ final class ExtractMethodProvider {
     return method.getTypeParameters().stream()
         .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
         .collect(Collectors.toUnmodifiableList());
+  }
+
+  // A generic type written without its arguments: the code may name none (`var`, `T[]::new`), but a
+  // signature would, and add a rawtypes warning the code did not have.
+  private static boolean isRaw(final TypeMirror type) {
+    return type instanceof final DeclaredType declared
+        && declared.getTypeArguments().isEmpty()
+        && declared.asElement() instanceof final TypeElement element
+        && !element.getTypeParameters().isEmpty();
   }
 
   // A local class declared in the member the code leaves: the new method, beside the member, cannot

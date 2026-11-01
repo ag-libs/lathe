@@ -1719,6 +1719,9 @@ class CodeActionTest {
     cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
     cases.put("this", "Object m() { return «this»; }");
     cases.put(
+        "raw type the code never names",
+        "void m(List<String> l) { final var a = «l.toArray(new List[0])»; use(a); }");
+    cases.put(
         "a local type in the signature",
         "void m() { record P(int v) {} final P p = new P(1); use(«p.v() + 1»); }");
     cases.forEach(
@@ -1835,6 +1838,15 @@ class CodeActionTest {
                 "@SuppressWarnings(\"deprecation\") int m(java.util.Date d) { return «d.getYear() + 1»; }",
                 method))
         .contains("  @SuppressWarnings(\"deprecation\")\n  private int extracted(");
+    // a local declaration's suppressions join the method's, in one annotation
+    assertThat(
+            assertExtracts(
+                "@SuppressWarnings(\"deprecation\") void m(Object o) {\n"
+                    + "    @SuppressWarnings(\"unchecked\") final Map<String, Object> x = "
+                    + "«(Map<String, Object>) o»;\n    use(x);\n  }",
+                method))
+        .contains(
+            "  @SuppressWarnings({\"unchecked\", \"deprecation\"})\n  private Map<String, Object> extracted(");
     // the file's final parameters are mirrored, except on one the code assigns
     assertThat(
             assertExtracts(
@@ -1917,6 +1929,7 @@ class CodeActionTest {
         "final String name;\n  Test(String n) { «this.name = n.trim();\n    use(n);» }");
     cases.put("this(...)", "Test(int x) {}\n  Test() { «this(1);» }");
     cases.put("local class", "void m() { class L {} «use(new L());» }");
+    cases.put("local class used afterwards", "void m() { «record P(int v) {}» use(new P(1)); }");
     cases.put(
         "rethrow",
         "void m(java.io.File f) throws java.io.IOException {\n"
