@@ -25,6 +25,15 @@ public final class LatheFlags {
   public static final String SCAN_INTERVAL_MS = "lathe.scanIntervalMs";
   // Overrides the user cache root, ~/.cache/lathe by default.
   public static final String CACHE_ROOT = "lathe.cache";
+  // Variables naming the agent session that started the MCP server; the first one set tags its log.
+  // Claude Code documents its own and Copilot sets its own; Codex and Gemini give theirs only to
+  // shell commands or hooks so far, so theirs are listed for when they pass them on.
+  public static final List<String> AGENT_SESSION_VARIABLES =
+      List.of(
+          "CLAUDE_CODE_SESSION_ID",
+          "COPILOT_AGENT_SESSION_ID",
+          "CODEX_THREAD_ID",
+          "GEMINI_SESSION_ID");
   // For every JVM Lathe starts (its server, launched runs and tests): stdout and stderr in UTF-8,
   // as Lathe reads them, instead of the console code page on Windows. JDK 19+; older JDKs ignore
   // the properties.

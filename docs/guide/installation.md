@@ -246,7 +246,7 @@ dependency sources.
   these back go-to-definition into library and JDK code. A dependency with no published `-sources` JAR
   is recorded as missing and simply not navigable.
 - `type-index/` — the symbol index behind workspace symbol search.
-- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`); a starting server keeps the newest 100.
+- `logs/` — one log file per MCP server session (`mcp-<timestamp>-<pid>.log`, tagged with the agent's session when it names one); a starting server keeps the newest 100.
 
 Everything under `~/.cache/lathe/` is derived and safe to delete; the next `sync`/build rebuilds what
 it needs.

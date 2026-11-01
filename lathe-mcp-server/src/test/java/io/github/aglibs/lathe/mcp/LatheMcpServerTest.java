@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -31,6 +32,26 @@ class LatheMcpServerTest {
     assertThat(LatheMcpServer.isOrphanLock(live)).isFalse();
     assertThat(LatheMcpServer.isOrphanLock(foreign)).isFalse();
     assertThat(LatheMcpServer.isOrphanLock(logs.resolve("mcp-20261024-090000-1.log"))).isFalse();
+  }
+
+  // An agent's session tags the log, cut to file-name-safe characters; any other client keeps the
+  // process name, and the first agent variable set wins.
+  @Test
+  void sessionId_agentSessionVariables_tagTheProcessName() {
+    final long pid = ProcessHandle.current().pid();
+    final String process = LatheMcpServer.sessionId(pid, Map.of());
+
+    assertThat(process).endsWith("-%d".formatted(pid));
+    assertThat(LatheMcpServer.sessionId(pid, Map.of("CLAUDE_CODE_SESSION_ID", "3f2a9c1e-77b4-4c")))
+        .isEqualTo("%s-claude-3f2a9c1e".formatted(process));
+    assertThat(
+            LatheMcpServer.sessionId(
+                pid, Map.of("COPILOT_AGENT_SESSION_ID", "a/b:c", "CODEX_THREAD_ID", "t1")))
+        .isEqualTo("%s-copilot-abc".formatted(process));
+    assertThat(
+            LatheMcpServer.sessionId(
+                pid, Map.of("CLAUDE_CODE_SESSION_ID", "--", "CODEX_THREAD_ID", "t1")))
+        .isEqualTo("%s-codex-t1".formatted(process));
   }
 
   // A client ends a stdio session by closing stdin, and one that crashes sends no signal at all:

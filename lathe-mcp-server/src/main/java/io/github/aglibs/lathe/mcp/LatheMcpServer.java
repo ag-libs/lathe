@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.mcp;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.server.ChildProcesses;
@@ -19,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.function.Supplier;
@@ -41,6 +44,7 @@ public final class LatheMcpServer {
 
   // A session log at INFO is a few kilobytes, so this keeps weeks of sessions.
   private static final int KEPT_SESSION_LOGS = 100;
+  private static final int SESSION_TAG_LENGTH = 8;
 
   // Routing guidance injected into the agent's context (Claude Code reads server instructions).
   // Dispatch-first and kept well under the ~2KB the client truncates at. The tool descriptions
@@ -92,14 +96,19 @@ public final class LatheMcpServer {
 
     final var cwd = Path.of("").toAbsolutePath();
     final long pid = ProcessHandle.current().pid();
-    final Path logFile = LatheLayout.mcpSessionLog(sessionId(pid));
+    final Map<String, String> env = System.getenv();
+    final Path logFile = LatheLayout.mcpSessionLog(sessionId(pid, env));
     LatheLogging.initFile(logFile);
     pruneSessionLogs();
+    final String agent =
+        agentSessionVariable(env)
+            .map(name -> " agent=%s session=%s".formatted(agentTag(name), env.get(name)))
+            .orElse("");
     // The client keeps only the startup burst of stderr, so this line points at the full log.
     LOG.info(
         () ->
-            "[startup] %s pid=%d cwd=%s log=%s"
-                .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile));
+            "[startup] %s pid=%d cwd=%s log=%s%s"
+                .formatted(LatheBuildInfo.summary(LatheMcpServer.class), pid, cwd, logFile, agent));
 
     final Optional<Path> workspaceRoot = LatheWorkspace.nearestRoot(cwd, null);
 
@@ -208,13 +217,36 @@ public final class LatheMcpServer {
     return LatheLayout.isMcpSessionLog(log) && Files.notExists(log);
   }
 
-  private static String sessionId(final long pid) {
-    return ProcessHandle.current()
-        .info()
-        .startInstant()
-        .map(SESSION_TIMESTAMP::format)
-        .map(timestamp -> "%s-%d".formatted(timestamp, pid))
-        .orElseGet(() -> Long.toString(pid));
+  // The process's start time and pid, then, when an agent named its session, the agent and the
+  // session's first characters: a session can start several servers (a reconnect, a resume), so
+  // the session alone would not name one log, but every log of a session shares the tag.
+  static String sessionId(final long pid, final Map<String, String> env) {
+    final String process =
+        ProcessHandle.current()
+            .info()
+            .startInstant()
+            .map(SESSION_TIMESTAMP::format)
+            .map(timestamp -> "%s-%d".formatted(timestamp, pid))
+            .orElseGet(() -> Long.toString(pid));
+    return agentSessionVariable(env)
+        .map(name -> "%s-%s-%s".formatted(process, agentTag(name), fileNamePart(env.get(name))))
+        .orElse(process);
+  }
+
+  private static Optional<String> agentSessionVariable(final Map<String, String> env) {
+    return LatheFlags.AGENT_SESSION_VARIABLES.stream()
+        .filter(name -> !fileNamePart(env.getOrDefault(name, "")).isEmpty())
+        .findFirst();
+  }
+
+  // CLAUDE_CODE_SESSION_ID names claude.
+  private static String agentTag(final String variable) {
+    return variable.substring(0, variable.indexOf('_')).toLowerCase(Locale.ROOT);
+  }
+
+  private static String fileNamePart(final String sessionId) {
+    final String safe = sessionId.replaceAll("[^A-Za-z0-9]", "");
+    return safe.substring(0, Math.min(SESSION_TAG_LENGTH, safe.length()));
   }
 
   // Started where no .lathe/ is: each call looks again, so the build that creates it is picked up

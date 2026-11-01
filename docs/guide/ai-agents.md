@@ -229,6 +229,10 @@ tool usage over a session. It is always on (no `LATHE_DEBUG` needed). Read the l
 such as Claude Code keeps only the server's startup stderr, whose `[startup] … log=<path>` line names
 the file. Each line starts with an ISO-8601 timestamp and its zone offset
 (`2026-10-24T16:21:40.134+0200`), so it lines up with a client's UTC logs.
+When the agent names its session to the server (Claude Code's `CLAUDE_CODE_SESSION_ID`, Copilot's
+`COPILOT_AGENT_SESSION_ID`), the name ends with the agent and the session's first characters, as in
+`mcp-20261101-190327-772762-claude-3f2a9c1e.log`, and the `[startup]` line carries the full session ID,
+so `ls ~/.cache/lathe/logs/*3f2a9c1e*` finds every server a session started.
 A starting server keeps the newest 100 session logs and deletes older ones, with the lock files that
 sessions killed outright leave behind.
 Set `LATHE_DEBUG=1` for finer detail.
