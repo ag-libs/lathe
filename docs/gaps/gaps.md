@@ -1898,32 +1898,6 @@ None yet.
 
 ---
 
-## MC-51 — A record's accessor resolves to the top of its file
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
-`startLine: 1` with the `package` line as the snippet.
-
-### Fix direction
-
-An implicit accessor has no tree of its own.
-Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-52 — Every result repeats a full `file://` URI
 
 **Status: documented**

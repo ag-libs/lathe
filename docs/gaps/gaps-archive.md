@@ -11068,6 +11068,39 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-51 — A record's accessor resolves to the top of its file — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
+`startLine: 1` with the `package` line as the snippet.
+
+### Fix direction
+
+An implicit accessor has no tree of its own.
+Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
+
+### Resolution
+
+`DefinitionLocator.parsePosition`, which places each outgoing callee, falls back to the record
+component when the element is a record's implicit accessor, through the same `recordComponentField`
+go-to-definition already used; an implicit accessor has no tree of its own, so it used to fall back to
+line 1. Find references already resolves an accessor through its component.
+
+### Regression targets
+
+- `CallHierarchyOutgoingLocatorTest.outgoingCalls_recordAccessor_pointsAtItsComponent` (fails without the change).
+
+---
+
 ## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist — done
 
 **Status: done.**
