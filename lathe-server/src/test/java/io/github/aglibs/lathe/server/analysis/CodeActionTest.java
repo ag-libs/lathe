@@ -1814,6 +1814,9 @@ class CodeActionTest {
     assertExtracts(
         "void m(boolean b) {\n    String line;\n«    line = String.valueOf(b);\n    use(line);»\n  }",
         method);
+    // a bare array initializer is returned with its array creation
+    assertThat(assertExtracts("String[] names = «{\"a\", \"b\"}»;", method))
+        .contains("return new String[] {\"a\", \"b\"};");
     // the warnings the enclosing method suppresses stay suppressed
     assertThat(
             assertExtracts(

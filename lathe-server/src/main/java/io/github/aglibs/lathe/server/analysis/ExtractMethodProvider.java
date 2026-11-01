@@ -10,6 +10,7 @@ import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
+import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
@@ -343,7 +344,7 @@ final class ExtractMethodProvider {
       final String bodyIndent = indent + step;
       final String body =
           expressionForm()
-              ? "%sreturn %s;".formatted(bodyIndent, text)
+              ? "%sreturn %s%s;".formatted(bodyIndent, arrayCreation(), text)
               : Stream.of(
                       declaredHere.stream()
                           .map(
@@ -383,6 +384,14 @@ final class ExtractMethodProvider {
               throwsClause,
               body,
               indent);
+    }
+
+    // A bare array initializer (`{"a", "b"}`) is legal only in a declaration; returned, it needs
+    // its `new T[]`.
+    private String arrayCreation() {
+      return region.get(0).getLeaf() instanceof final NewArrayTree array && array.getType() == null
+          ? "new %s ".formatted(typeText(returnType))
+          : "";
     }
 
     // The warnings the enclosing member suppresses stay suppressed in the code it gives away: a
