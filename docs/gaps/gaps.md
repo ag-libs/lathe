@@ -1645,27 +1645,6 @@ None yet.
 
 ---
 
-## MC-33 — Tools return structured content but declare no `outputSchema`
-
-**Status: deferred**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
-([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
-structured content without one. It helps programmatic clients, not models, so it waits for a client
-that needs it.
-Claude Code does show the model the structured content, not the text:
-see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
 
 **Status: accepted**
@@ -2278,51 +2257,6 @@ None yet.
 
 ---
 
-## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-**Affects: every MCP tool; seen in Claude Code.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
-Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
-(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
-Two consequences:
-
-- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
-  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
-  looks complete. The server instructions tell the agent to act on these notes.
-- The JSON repeats each key on every item, so answers are larger than the text form
-  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
-
-Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
-`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
-only a separate `get_diagnostics` showed the two errors.
-
-This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
-that structured content serves programmatic clients and not models.
-
-### Fix direction
-
-Decided 2026-11-01: drop `structuredContent` and answer in text only.
-Claude Code, Codex CLI and VS Code Copilot give the model the structured content and drop the text;
-Gemini CLI and Cursor give it only the text (Codex, VS Code and Gemini checked in their sources).
-The spec says nothing about which part reaches the model, so text is the only form every client shows alike,
-and no client relies on the structured form without an `outputSchema`.
-Survey: [MCP answers an agent can trust](../planned/lathe-mcp-trust.md).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-59 — `outline` overflows on a large file
 
 **Status: documented**
@@ -2338,7 +2272,7 @@ Found by a refactoring review of Lathe itself through its own MCP server (2026-1
 `outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
 Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
 The largest file is where an outline saves the most reading, and the one where the tool fails.
-Part of the size is the JSON form ([MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)),
+Part of the size was the JSON form, gone since answers are text only ([MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)),
 but 428 lines of text would still be about 25k characters.
 
 ### Fix direction
@@ -2380,7 +2314,7 @@ IntelliJ's run tool caps output at 10,000 characters and names a file holding th
 
 The same answer misleads when the test does not compile: on 2026-10-31 `run_test` reported
 0 passed, 0 failed, 0 skipped for a test file with two errors
-(see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)).
+(see [MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)).
 Say the test did not compile, with its errors, as numsu/java-lsp-mcp's `compile-failed` does.
 
 ### Regression targets

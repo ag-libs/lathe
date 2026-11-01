@@ -101,7 +101,7 @@ the Claude Code setup above has been validated.
 Every located result is one line, `path:line: code`, as grep prints it: the path is relative to the
 workspace, and a result outside the reactor is tagged `[EXTERNAL]` (a dependency or the JDK, shown by
 its URI) or `[GENERATED]`.
-The structured result carries the same, with the full `uri` and `origin`.
+Answers are text only, with any notes after the result, so every MCP client shows the agent the same thing.
 
 | Tool | Input | Use it for |
 |------|-------|-----------|
@@ -194,8 +194,7 @@ grep-style line, errors first: `path:line:column: severity: message`.
 It reports errors and warnings of the changed files, but only errors of their callers, whose warnings
 were there before the change.
 Unused-code hints are left out (`get_diagnostics` on one file still shows them).
-When the change reaches other modules, it names them (up to ten in the text, all of them in the
-structured `affectedModules`) and gives the sync command that builds them, e.g.
+When the change reaches other modules, it names them (the first ten, then a count) and gives the sync command that builds them, e.g.
 `.lathe/lathe-sync.sh core`.
 With no errors their callers have already compiled, so it says that build is optional.
 If an in-process check cannot be trusted (a build-file change waiting for a sync, or a running build),

@@ -11,7 +11,7 @@ Every answer an agent gets from `lathe-mcp-server` is either right or says why i
 and says it in a form every MCP client shows the model.
 Then fewer round trips for the questions agents ask most.
 
-The slice: [MC-58](../gaps/gaps.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes),
+The slice: [MC-58](../gaps/gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done),
 MC-37, MC-47, MC-35, MC-44, MC-43 (the notes reach the agent and are correct);
 MC-62, MC-46 (`verify_change` tells the truth);
 MC-51, MC-48 (navigation answers point at the right line);

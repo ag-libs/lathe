@@ -134,13 +134,12 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void verifyChange_emptyWorkspace_reportsCleanNotError() {
+  void verifyChange_emptyWorkspace_reportsCleanInTextOnly() {
     final CallToolResult result = call("verify_change", Map.of());
 
     assertThat(result.isError()).isNotEqualTo(true);
-    @SuppressWarnings("unchecked")
-    final Map<String, Object> structured = (Map<String, Object>) result.structuredContent();
-    assertThat(structured).containsEntry("diagnosticCount", 0);
+    assertThat(text(result)).startsWith("No errors");
+    assertThat(result.structuredContent()).isNull();
   }
 
   @Test

@@ -35,11 +35,8 @@ import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import java.io.Serial;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -794,8 +791,8 @@ final class LatheMcpTools {
         IMPLEMENTATIONS_AUTHORITY);
   }
 
-  // Shared rendering for a capped, ranked location list. noun drives both the text ("N noun(s)")
-  // and the structured list key (noun + "s"); authority is appended when the list is non-empty.
+  // Shared rendering for a capped, ranked location list ("N noun(s)"); authority is appended when
+  // the list is non-empty.
   private static CallToolResult locationListResult(
       final String noun,
       final int total,
@@ -803,8 +800,6 @@ final class LatheMcpTools {
       final List<LatheLocation> locations,
       final LatheNotes notes,
       final String authority) {
-    final List<Map<String, Object>> items =
-        locations.stream().map(LatheMcpTools::locationMap).toList();
     final String header =
         truncated
             ? "%d %ss (showing first %d):".formatted(total, noun, locations.size())
@@ -813,23 +808,14 @@ final class LatheMcpTools {
         locations.isEmpty()
             ? "No %ss found.".formatted(noun)
             : "%s%n%s%n%n%s".formatted(header, locationLines(locations), authority);
-    return result(
-        text,
-        Map.<String, Object>of(
-            "total", total, "truncated", truncated, "%ss".formatted(noun), items),
-        notes);
+    return result(text, notes);
   }
 
   private static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
-      return result(
-          "No references to rename.",
-          Map.<String, Object>of("newName", rename.newName(), "totalEdits", 0, "files", List.of()),
-          notes);
+      return result("No references to rename.", notes);
     }
 
-    final List<Map<String, Object>> items =
-        rename.files().stream().map(LatheMcpTools::fileEditMap).toList();
     final String text =
         "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s"
             .formatted(
@@ -840,32 +826,14 @@ final class LatheMcpTools {
                     .map(LatheMcpTools::fileEditLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 RENAME_AUTHORITY);
-    return result(
-        text,
-        Map.<String, Object>of(
-            "newName", rename.newName(), "totalEdits", rename.totalEdits(), "files", items),
-        notes);
+    return result(text, notes);
   }
 
   private static CallToolResult formatResult(
       final Path file, final Optional<LatheFormat> format, final LatheNotes notes) {
     return format
-        .map(
-            f ->
-                result(
-                    "Formatted %s: %s changed.".formatted(f.path(), lineSpan(f)),
-                    Map.<String, Object>of(
-                        "formatted", true,
-                        "path", f.path(),
-                        "firstLine", f.firstLine(),
-                        "lastLine", f.lastLine()),
-                    notes))
-        .orElseGet(
-            () ->
-                result(
-                    "%s was already formatted.".formatted(file.getFileName()),
-                    Map.<String, Object>of("formatted", false),
-                    notes));
+        .map(f -> result("Formatted %s: %s changed.".formatted(f.path(), lineSpan(f)), notes))
+        .orElseGet(() -> result("%s was already formatted.".formatted(file.getFileName()), notes));
   }
 
   // The path once in the header: each line carries only its line number and declaration.
@@ -881,10 +849,7 @@ final class LatheMcpTools {
                     items.stream()
                         .map(LatheMcpTools::outlineLine)
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(
-        text,
-        Map.<String, Object>of("items", items.stream().map(LatheMcpTools::outlineItemMap).toList()),
-        notes);
+    return result(text, notes);
   }
 
   private static String outlineLine(final LatheOutlineItem item) {
@@ -895,15 +860,6 @@ final class LatheMcpTools {
             item.name(),
             line(item.location()),
             item.location().snippet());
-  }
-
-  private static Map<String, Object> outlineItemMap(final LatheOutlineItem item) {
-    return Map.<String, Object>of(
-        "kind", item.kind(),
-        "name", item.name(),
-        "depth", item.depth(),
-        "line", line(item.location()),
-        "snippet", item.location().snippet());
   }
 
   static CallToolResult modulesResult(final List<LatheModuleSummary> modules) {
@@ -917,11 +873,7 @@ final class LatheMcpTools {
                     .map(LatheMcpTools::moduleLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 LatheLayout.captureTestsCommand("<module>"));
-    return result(
-        text,
-        Map.<String, Object>of(
-            "modules", modules.stream().map(LatheMcpTools::moduleSummaryMap).toList()),
-        NO_NOTES);
+    return result(text, NO_NOTES);
   }
 
   private static String moduleLine(final LatheModuleSummary module) {
@@ -934,14 +886,6 @@ final class LatheMcpTools {
             ? ""
             : "  tests: %s".formatted(module.testsCaptured() ? "captured" : "not captured");
     return "%s%s%s".formatted(module.module(), upstream, tests);
-  }
-
-  private static Map<String, Object> moduleSummaryMap(final LatheModuleSummary module) {
-    return Map.<String, Object>of(
-        "module", module.module(),
-        "dependsOn", module.dependsOn(),
-        "hasTests", module.hasTests(),
-        "testsCaptured", module.testsCaptured());
   }
 
   static CallToolResult importsResult(final LatheImports imports, final LatheNotes notes) {
@@ -975,20 +919,7 @@ final class LatheMcpTools {
                     .map(names -> "No import found for: %s".formatted(String.join(", ", names))))
             .flatMap(Optional::stream)
             .collect(Collectors.joining(System.lineSeparator()));
-    return result(
-        text,
-        Map.<String, Object>of(
-            "path", imports.path(),
-            "added", imports.added(),
-            "ambiguous",
-                ambiguous.stream()
-                    .map(
-                        item ->
-                            Map.<String, Object>of(
-                                "name", item.name(), "candidates", item.candidates()))
-                    .toList(),
-            "unknown", unknown),
-        notes);
+    return result(text, notes);
   }
 
   private static String choiceLine(final MissingImport item) {
@@ -1018,19 +949,12 @@ final class LatheMcpTools {
                     ch.calls().stream()
                         .map(call -> callLine(arrow, call))
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(
-        text,
-        Map.<String, Object>of(
-            "incoming", ch.incoming(),
-            "total", ch.total(),
-            "truncated", ch.truncated(),
-            "calls", ch.calls().stream().map(LatheMcpTools::callMap).toList()),
-        notes);
+    return result(text, notes);
   }
 
   private static CallToolResult describeResult(final String markup, final LatheNotes notes) {
     final String text = markup.isBlank() ? "No symbol information at that position." : markup;
-    return result(text, Map.<String, Object>of("markup", markup), notes);
+    return result(text, notes);
   }
 
   private static CallToolResult searchResult(
@@ -1044,13 +968,7 @@ final class LatheMcpTools {
                     symbols.stream()
                         .map(LatheMcpTools::symbolLine)
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(
-        text,
-        Map.<String, Object>of(
-            "query", query,
-            "total", symbols.size(),
-            "symbols", symbols.stream().map(LatheMcpTools::symbolMap).toList()),
-        notes);
+    return result(text, notes);
   }
 
   private static String symbolLine(final LatheSymbol symbol) {
@@ -1059,37 +977,14 @@ final class LatheMcpTools {
         .formatted(symbol.name(), symbol.kind(), where, position(symbol.location()));
   }
 
-  private static Map<String, Object> symbolMap(final LatheSymbol symbol) {
-    final LatheLocation loc = symbol.location();
-    return Map.<String, Object>of(
-        "name", symbol.name(),
-        "kind", symbol.kind(),
-        "container", symbol.container(),
-        "uri", loc.uri(),
-        "startLine", line(loc),
-        "snippet", loc.snippet());
-  }
-
   private static String callLine(final String arrow, final LatheCall call) {
     return "%s %s  %s".formatted(arrow, call.name(), locationLine(call.location()));
-  }
-
-  private static Map<String, Object> callMap(final LatheCall call) {
-    final LatheLocation loc = call.location();
-    return Map.<String, Object>of(
-        "name", call.name(),
-        "uri", loc.uri(),
-        "origin", loc.origin().name(),
-        "startLine", line(loc),
-        "snippet", loc.snippet());
   }
 
   private static CallToolResult testRunResult(final LatheTestRun run, final LatheNotes notes) {
     if (!run.launched()) {
       return result(
-          "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())),
-          Map.<String, Object>of("launched", false, "blockedReasons", run.blockedReasons()),
-          notes);
+          "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())), notes);
     }
 
     final String header =
@@ -1109,24 +1004,11 @@ final class LatheMcpTools {
                     run.failures().stream()
                         .map(LatheMcpTools::testFailureLine)
                         .collect(Collectors.joining(System.lineSeparator())));
-    return result(
-        text,
-        Map.<String, Object>of(
-            "launched", true,
-            "ran", run.ran(),
-            "passed", run.passed(),
-            "failed", run.failed(),
-            "skipped", run.skipped(),
-            "failures", run.failures().stream().map(LatheMcpTools::testFailureMap).toList()),
-        notes);
+    return result(text, notes);
   }
 
   private static String testFailureLine(final LatheTestFailure f) {
     return "  %s:%d — %s".formatted(f.test(), f.line(), f.summary());
-  }
-
-  private static Map<String, Object> testFailureMap(final LatheTestFailure f) {
-    return Map.<String, Object>of("test", f.test(), "line", f.line(), "summary", f.summary());
   }
 
   private static CallToolResult analyzeResult(
@@ -1151,18 +1033,7 @@ final class LatheMcpTools {
                 joinOrNone(impact.affectedModules()),
                 joinOrNone(impact.relevantTests()),
                 overrides);
-    return result(
-        text,
-        Map.<String, Object>of(
-            "signature", impact.signature(),
-            "productionRefs", impact.productionRefs(),
-            "testRefs", impact.testRefs(),
-            "referencesTruncated", impact.referencesTruncated(),
-            "affectedModules", impact.affectedModules(),
-            "relevantTests", impact.relevantTests(),
-            "overrideFamily",
-                impact.overrideFamily().stream().map(LatheMcpTools::locationMap).toList()),
-        notes);
+    return result(text, notes);
   }
 
   private static String joinOrNone(final List<String> items) {
@@ -1178,16 +1049,8 @@ final class LatheMcpTools {
           verify.suggestedSync() == null
               ? "Re-check in a moment."
               : "Run `%s`, then re-check.".formatted(verify.suggestedSync());
-      final var structured = new LinkedHashMap<String, Object>();
-      structured.put("deferred", verify.deferral());
-      if (verify.suggestedSync() != null) {
-        structured.put("suggestedSync", verify.suggestedSync());
-      }
-
       return result(
-          "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next),
-          Collections.unmodifiableMap(structured),
-          notes);
+          "Verification deferred: %s. %s".formatted(deferralText(verify.deferral()), next), notes);
     }
 
     final int total = verify.perModule().stream().mapToInt(m -> m.diagnostics().size()).sum();
@@ -1196,7 +1059,6 @@ final class LatheMcpTools {
         verifyHeadline(errors, total - errors, notes.notChecked().size())
             + verifyDiagnosticLines(verify.perModule())
             + crossModuleNote(verify, errors),
-        verifyStructured(verify, total),
         notes);
   }
 
@@ -1223,7 +1085,7 @@ final class LatheMcpTools {
   }
 
   // A change to a core module names over a hundred dependents; the count and the sync command carry
-  // what matters, and the structured result keeps every name.
+  // what matters.
   static String crossModuleNote(final LatheVerifyChange verify, final long errors) {
     if (verify.suggestedSync() == null) {
       return "";
@@ -1238,27 +1100,12 @@ final class LatheMcpTools {
         .formatted(modules.size(), listed(modules), advice, verify.suggestedSync());
   }
 
-  // A core module has a hundred dependents: the first few name the shape, the structured result
-  // keeps every name.
+  // A core module has a hundred dependents: the first few name the shape.
   private static String listed(final List<String> modules) {
     final String first = modules.stream().limit(LISTED_MODULES).collect(Collectors.joining(", "));
     return modules.size() > LISTED_MODULES
         ? "%s, and %d more".formatted(first, modules.size() - LISTED_MODULES)
         : first;
-  }
-
-  private static Map<String, Object> verifyStructured(
-      final LatheVerifyChange verify, final int total) {
-    final var structured = new LinkedHashMap<String, Object>();
-    structured.put("diagnosticCount", total);
-    structured.put(
-        "perModule", verify.perModule().stream().map(LatheMcpTools::moduleDiagnosticsMap).toList());
-    structured.put("affectedModules", verify.affectedModules());
-    if (verify.suggestedSync() != null) {
-      structured.put("suggestedSync", verify.suggestedSync());
-    }
-
-    return structured;
   }
 
   // One flat list, errors first: each line's path already starts with its module.
@@ -1282,20 +1129,6 @@ final class LatheMcpTools {
             messageText(d));
   }
 
-  private static Map<String, Object> moduleDiagnosticsMap(final LatheModuleDiagnostics module) {
-    return Map.<String, Object>of(
-        "module",
-        module.module(),
-        "diagnostics",
-        module.diagnostics().stream().map(LatheMcpTools::locatedDiagnosticMap).toList());
-  }
-
-  private static Map<String, Object> locatedDiagnosticMap(final LatheDiagnostic located) {
-    final var map = new LinkedHashMap<String, Object>(diagnosticMap(located.diagnostic()));
-    map.put("path", located.path());
-    return Collections.unmodifiableMap(map);
-  }
-
   private static String deferralText(final String reason) {
     return switch (reason) {
       case "BUILD_FILES_PENDING" -> "a pending build-file or dependency change needs a sync";
@@ -1307,12 +1140,7 @@ final class LatheMcpTools {
 
   private static CallToolResult diagnosticsResult(
       final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
-    final List<Map<String, Object>> items =
-        diagnostics.stream().map(LatheMcpTools::diagnosticMap).toList();
-    return result(
-        diagnosticsText(file, diagnostics, notes),
-        Map.<String, Object>of("file", file.toString(), "diagnostics", items),
-        notes);
+    return result(diagnosticsText(file, diagnostics, notes), notes);
   }
 
   // Never "compiles cleanly": no module may compile the file, and the analysis is not the write
@@ -1338,10 +1166,7 @@ final class LatheMcpTools {
 
   private static CallToolResult definitionResult(
       final List<LatheLocation> targets, final LatheNotes notes) {
-    final List<Map<String, Object>> items =
-        targets.stream().map(LatheMcpTools::locationMap).toList();
-    final String text = targets.isEmpty() ? "No definition found." : locationLines(targets);
-    return result(text, Map.<String, Object>of("targets", items), notes);
+    return result(targets.isEmpty() ? "No definition found." : locationLines(targets), notes);
   }
 
   private static String locationLines(final List<LatheLocation> locations) {
@@ -1368,12 +1193,13 @@ final class LatheMcpTools {
     return origin == LatheLocation.Origin.REACTOR ? "" : " [%s]".formatted(origin);
   }
 
-  private static CallToolResult result(
-      final String text, final Map<String, Object> structured, final LatheNotes notes) {
+  // Text only: several clients give the model a result's structured content in place of its text,
+  // and the notes are only in the text.
+  private static CallToolResult result(final String text, final LatheNotes notes) {
     final String body =
         Stream.concat(Stream.of(text), noteLines(notes))
             .collect(Collectors.joining(System.lineSeparator().repeat(2)));
-    return CallToolResult.builder().addTextContent(body).structuredContent(structured).build();
+    return CallToolResult.builder().addTextContent(body).build();
   }
 
   // What an answer cannot vouch for: code the agent must fix (no sync helps), what only a sync can
@@ -1398,34 +1224,8 @@ final class LatheMcpTools {
         .flatMap(Optional::stream);
   }
 
-  private static Map<String, Object> diagnosticMap(final Diagnostic d) {
-    return Map.<String, Object>of(
-        "severity",
-        String.valueOf(d.getSeverity()),
-        "line",
-        d.getRange().getStart().getLine() + 1,
-        "column",
-        d.getRange().getStart().getCharacter() + 1,
-        "message",
-        messageText(d));
-  }
-
   private static String fileEditLine(final LatheFileEdit f) {
     return "  %s%s — %d edit(s)".formatted(f.path(), originTag(f.origin()), f.editCount());
-  }
-
-  private static Map<String, Object> fileEditMap(final LatheFileEdit f) {
-    return Map.<String, Object>of(
-        "uri", f.uri(), "origin", f.origin().name(), "editCount", f.editCount());
-  }
-
-  private static Map<String, Object> locationMap(final LatheLocation t) {
-    return Map.<String, Object>of(
-        "uri", t.uri(),
-        "origin", t.origin().name(),
-        "startLine", line(t),
-        "startColumn", t.range().getStart().getCharacter() + 1,
-        "snippet", t.snippet());
   }
 
   private static String diagnosticLine(final Diagnostic d) {

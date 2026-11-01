@@ -11068,6 +11068,89 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-33 — Tools return structured content but declare no `outputSchema` — non-goal
+
+**Status: non-goal.**
+
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
+([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
+structured content without one. It helps programmatic clients, not models, so it waits for a client
+that needs it.
+Claude Code does show the model the structured content, not the text:
+see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done).
+
+### Resolution
+
+Closed as a non-goal with [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done):
+the tools no longer return structured content, so there is no schema to declare.
+Revisit only for a programmatic client that needs typed results (for example Codex's code mode), and
+then put every note in the structured form too.
+
+### Regression targets
+
+None: nothing to regress.
+
+---
+
+## MC-58 — Claude Code shows the structured content, so an agent never sees the notes — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: every MCP tool; seen in Claude Code.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
+Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
+(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
+Two consequences:
+
+- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
+  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
+  looks complete. The server instructions tell the agent to act on these notes.
+- The JSON repeats each key on every item, so answers are larger than the text form
+  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
+
+Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
+`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
+only a separate `get_diagnostics` showed the two errors.
+
+This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema--non-goal),
+that structured content serves programmatic clients and not models.
+
+### Fix direction
+
+Decided 2026-11-01: drop `structuredContent` and answer in text only.
+Claude Code, Codex CLI and VS Code Copilot give the model the structured content and drop the text;
+Gemini CLI and Cursor give it only the text (Codex, VS Code and Gemini checked in their sources).
+The spec says nothing about which part reaches the model, so text is the only form every client shows alike,
+and no client relies on the structured form without an `outputSchema`.
+Survey: [MCP answers an agent can trust](../planned/lathe-mcp-trust.md).
+
+### Resolution
+
+Every tool answers in text only: `LatheMcpTools.result` no longer attaches `structuredContent`, and the
+per-tool maps that fed it are gone, so each client shows the model the compact `path:line: code` text
+and the notes after it.
+Why text and not notes copied into the structured map: Claude Code, Codex CLI and VS Code Copilot give
+the model the structured content and drop the text, Gemini CLI and Cursor give it only the text, and the
+spec says nothing about which part reaches the model; no Lathe tool declares an `outputSchema`, so no
+client relied on the structured form.
+
+### Regression targets
+
+- `LatheMcpToolsTest.verifyChange_emptyWorkspace_reportsCleanInTextOnly` (asserts no structured content).
+
+---
+
 ## MC-36 — With no `.lathe/`, the MCP server exits before the handshake, so the agent never sees why — done
 
 **Status: done — Target: next.**
