@@ -144,7 +144,16 @@ class LatheEngineTest {
         engine.callHierarchy(
             fx.caller(), callerPos.getLine(), callerPos.getCharacter(), CallDirection.OUTGOING, 50);
     assertThat(outgoing.incoming()).isFalse();
-    assertThat(outgoing.calls()).anySatisfy(call -> assertThat(call.name()).contains("greet"));
+    assertThat(outgoing.calls())
+        .as("the call site in the caller, not the callee's declaration")
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.name()).contains("greet");
+              assertThat(call.location().uri()).endsWith("Caller.java");
+              assertThat(call.location().range().getStart().getCharacter())
+                  .isEqualTo(fx.callerSource().indexOf("greet()"));
+            });
   }
 
   @Test

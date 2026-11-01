@@ -39,10 +39,8 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
@@ -77,6 +75,8 @@ public final class LatheEngine {
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int TEST_CLASS_CANDIDATES = 20;
+  private static final Comparator<Position> SOURCE_ORDER =
+      Comparator.comparingInt(Position::getLine).thenComparingInt(Position::getCharacter);
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -582,29 +582,25 @@ public final class LatheEngine {
   private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
     return await(service.callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(item)))
         .stream()
-        .flatMap(this::callSites)
+        .flatMap(
+            call ->
+                callSites(call.getFrom().getName(), call.getFrom().getUri(), call.getFromRanges()))
         .toList();
   }
 
-  private Stream<LatheCall> callSites(final CallHierarchyIncomingCall call) {
-    final CallHierarchyItem from = call.getFrom();
-    return call.getFromRanges().stream()
-        .map(
-            range ->
-                new LatheCall(from.getName(), toLatheLocation(new Location(from.getUri(), range))));
-  }
-
+  // Where the method calls each callee, in source order, so the answer reads as the method does.
   private List<LatheCall> outgoingCalls(final CallHierarchyItem item) {
     return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
         .stream()
-        .map(this::toCallee)
+        .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
+        .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
         .toList();
   }
 
-  private LatheCall toCallee(final CallHierarchyOutgoingCall call) {
-    final CallHierarchyItem to = call.getTo();
-    return new LatheCall(
-        to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
+  private Stream<LatheCall> callSites(
+      final String name, final String uri, final List<Range> ranges) {
+    return ranges.stream()
+        .map(range -> new LatheCall(name, toLatheLocation(new Location(uri, range))));
   }
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.

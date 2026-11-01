@@ -250,7 +250,8 @@ final class LatheMcpTools {
                 """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
                 whole reactor — javac-accurate, following the real call graph (resolving overrides \
-                and cross-module edges), one `path:line: code` line per call. Use to scope the impact of a \
+                and cross-module edges), one `path:line: code` line per call site: for outgoing, \
+                where the method makes each call, in source order. Use to scope the impact of a \
                 change; text search cannot follow calls.\
                 """)
             .annotations(READ_ONLY)
@@ -947,7 +948,8 @@ final class LatheMcpTools {
 
   private static CallToolResult callHierarchyResult(
       final LatheCallHierarchy ch, final LatheNotes notes) {
-    final String noun = ch.incoming() ? "caller" : "callee";
+    // Outgoing entries are call sites: a callee called twice is two.
+    final String noun = ch.incoming() ? "caller" : "call";
     final String arrow = ch.incoming() ? "←" : "→";
     final String header =
         ch.truncated()

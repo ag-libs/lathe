@@ -1817,34 +1817,6 @@ None yet.
 
 ---
 
-## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Each outgoing entry is the callee's declaration.
-The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
-and had to read the method anyway.
-
-### Fix direction
-
-`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
-which already hold the call sites.
-Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
 
 **Status: accepted**
@@ -1889,7 +1861,7 @@ Tracing a resource → service → adapter chain takes one `call_hierarchy` call
 ### Fix direction
 
 A `depth` argument returning a tree, with cycles cut and a total cap.
-Most useful together with [MC-48](#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called)
+Most useful together with [MC-48](gaps-archive.md#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called--done)
 and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
 
 ### Regression targets

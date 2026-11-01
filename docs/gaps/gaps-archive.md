@@ -11068,6 +11068,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+Each outgoing entry is the callee's declaration.
+The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
+and had to read the method anyway.
+
+### Fix direction
+
+`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
+which already hold the call sites.
+Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
+
+### Resolution
+
+`LatheEngine.outgoingCalls` emits one line per call site, at the LSP answer's `fromRanges` in the
+method's own file, sorted in source order and naming the callee, sharing `callSites` with the incoming
+direction. The callee's declaration is a `get_definition` away from any of those positions.
+
+Verified end to end on Dropwizard (2026-11-01): outgoing calls of `RoutingHandler.getHandlers` list
+`stream`, `map`, `handler`, `toList` at line 51, left to right.
+
+### Regression targets
+
+- `LatheEngineTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (the outgoing call is at its
+  site in `Caller.java`, not the callee's declaration).
+
+---
+
 ## MC-51 — A record's accessor resolves to the top of its file — done
 
 **Status: done.**
