@@ -311,7 +311,7 @@ class LatheEngineTest {
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
     stampModule(iface, impl);
     engine = new LatheEngine(tmp);
-    assertThat(engine.searchSymbols("FrGreeter", 50)).isEmpty();
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50)).isEmpty();
 
     // An agent writes a new implementation with its own file tool, then queries at once.
     TestCompiler.writeModuleSource(
@@ -319,7 +319,7 @@ class LatheEngineTest {
         "com/example/FrGreeter.java",
         "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
 
-    assertThat(engine.searchSymbols("FrGreeter", 50))
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50))
         .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
     final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
     assertThat(
@@ -334,9 +334,27 @@ class LatheEngineTest {
     greetFixture();
     engine = new LatheEngine(tmp);
 
-    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", 50);
+    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", SymbolScope.ALL, 50);
 
     assertThat(symbols).anySatisfy(symbol -> assertThat(symbol.name()).contains("Callee"));
+    assertThat(engine.searchSymbols("*Callee*", SymbolScope.REACTOR, 50))
+        .as("a glob, as agents write by habit")
+        .extracting(LatheSymbol::name)
+        .contains("Callee");
+    assertThat(engine.searchSymbols("*", SymbolScope.ALL, 50)).isEmpty();
+  }
+
+  // No project code can use a type in a JDK package its module does not export to everyone.
+  @Test
+  void jdkInternal_containers_onlyTheJdksUnexportedPackages() {
+    assertThat(LatheEngine.jdkInternal("com.sun.tools.javac.comp")).isTrue();
+    assertThat(LatheEngine.jdkInternal("com.sun.tools.javac.util.JCDiagnostic"))
+        .as("an enclosing type in an internal package")
+        .isTrue();
+    assertThat(LatheEngine.jdkInternal("com.sun.source.tree")).as("exported").isFalse();
+    assertThat(LatheEngine.jdkInternal("java.util.Map")).isFalse();
+    assertThat(LatheEngine.jdkInternal("com.example.app")).as("not the JDK's").isFalse();
+    assertThat(LatheEngine.jdkInternal(null)).isFalse();
   }
 
   @Test
@@ -1467,7 +1485,7 @@ class LatheEngineTest {
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
-    engine.searchSymbols("Api", 10);
+    engine.searchSymbols("Api", SymbolScope.ALL, 10);
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()

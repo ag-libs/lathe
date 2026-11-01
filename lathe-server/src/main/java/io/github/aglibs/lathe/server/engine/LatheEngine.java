@@ -19,6 +19,9 @@ import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.io.Serial;
+import java.lang.module.ModuleDescriptor;
+import java.lang.module.ModuleFinder;
+import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -76,6 +79,14 @@ public final class LatheEngine {
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int TEST_CLASS_CANDIDATES = 20;
+  private static final Set<String> JDK_PACKAGES =
+      systemPackages(descriptor -> descriptor.packages().stream());
+  private static final Set<String> JDK_EXPORTED_PACKAGES =
+      systemPackages(
+          descriptor ->
+              descriptor.exports().stream()
+                  .filter(exports -> !exports.isQualified())
+                  .map(ModuleDescriptor.Exports::source));
   private static final Comparator<Position> SOURCE_ORDER =
       Comparator.comparingInt(Position::getLine).thenComparingInt(Position::getCharacter);
 
@@ -342,10 +353,61 @@ public final class LatheEngine {
    * per-file warmup), each hit enriched with a snippet and where it lives, capped to {@code
    * maxResults}.
    */
-  public List<LatheSymbol> searchSymbols(final String query, final int maxResults) {
+  public List<LatheSymbol> searchSymbols(
+      final String query, final SymbolScope scope, final int maxResults) {
+    // Agents write globs by habit; the search already matches a prefix.
+    final String name = query.replaceAll("^\\*+|\\*+$", "");
+    if (name.isBlank()) {
+      return List.of();
+    }
+
     await(service.reconcileForVerify()); // so types the agent just wrote are found
-    final List<? extends SymbolInformation> symbols = await(service.workspaceSymbolFuture(query));
-    return symbols.stream().limit(maxResults).map(this::toLatheSymbol).toList();
+    final List<? extends SymbolInformation> symbols =
+        await(service.workspaceSymbolFuture(name, scope == SymbolScope.REACTOR));
+    return symbols.stream()
+        .sorted(Comparator.comparingInt(this::rank))
+        .limit(maxResults)
+        .map(this::toLatheSymbol)
+        .toList();
+  }
+
+  // The reactor's types first, then the JDK's and dependencies', then JDK internals: hidden from a
+  // plain project, but one that adds exports (an annotation processor, a javac plugin) uses them.
+  private int rank(final SymbolInformation symbol) {
+    if (origin(symbol) != LatheLocation.Origin.EXTERNAL) {
+      return 0;
+    }
+
+    return jdkInternal(symbol.getContainerName()) ? 2 : 1;
+  }
+
+  private LatheLocation.Origin origin(final SymbolInformation symbol) {
+    return origin(LatheUri.toPath(symbol.getLocation().getUri()));
+  }
+
+  // In a JDK package its modules do not export to everyone (javac's internals, jdk.internal): no
+  // code uses it without --add-exports. A container is a package or an enclosing type, so its
+  // package is the longest prefix the JDK has.
+  static boolean jdkInternal(final String container) {
+    return container != null
+        && Stream.iterate(container, prefix -> !prefix.isEmpty(), LatheEngine::parentName)
+            .filter(JDK_PACKAGES::contains)
+            .findFirst()
+            .filter(jdkPackage -> !JDK_EXPORTED_PACKAGES.contains(jdkPackage))
+            .isPresent();
+  }
+
+  private static String parentName(final String qualified) {
+    final int dot = qualified.lastIndexOf('.');
+    return dot < 0 ? "" : qualified.substring(0, dot);
+  }
+
+  private static Set<String> systemPackages(
+      final Function<ModuleDescriptor, Stream<String>> packages) {
+    return ModuleFinder.ofSystem().findAll().stream()
+        .map(ModuleReference::descriptor)
+        .flatMap(packages)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private LatheSymbol toLatheSymbol(final SymbolInformation symbol) {
@@ -541,9 +603,9 @@ public final class LatheEngine {
         .findFirst()
         .orElseGet(
             () ->
-                searchSymbols("%sTest".formatted(name), TEST_CLASS_CANDIDATES).stream()
+                searchSymbols("%sTest".formatted(name), SymbolScope.REACTOR, TEST_CLASS_CANDIDATES)
+                    .stream()
                     .filter(symbol -> testNames.contains(symbol.name()))
-                    .filter(symbol -> symbol.location().origin() == LatheLocation.Origin.REACTOR)
                     .findFirst()
                     .map(
                         symbol ->

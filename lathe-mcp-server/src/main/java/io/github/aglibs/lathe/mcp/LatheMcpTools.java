@@ -290,13 +290,15 @@ final class LatheMcpTools {
                 {"type":"object","required":["query"],
                  "properties":{
                    "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
+                   "scope":{"type":"string","enum":["reactor","all"],"description":"all (default) also finds JDK and dependency types, listed after the reactor's; reactor finds only the project's own."},
                    "maxResults":{"type":"integer","minimum":1,"description":"Max symbols to return (default 50)."}}}\
                 """)
             .description(
                 """
                 Find a type by name across the whole reactor, its dependencies, and the \
-                JDK — returning each with its kind, container, and `path:line`. Use to \
-                locate a type when you know its name but not its file.\
+                JDK (the reactor's first, never JDK internals no project code can use) — \
+                returning each with its kind, container, and `path:line`. Use to locate a type \
+                when you know its name but not its file.\
                 """)
             .annotations(READ_ONLY)
             .build();
@@ -686,12 +688,19 @@ final class LatheMcpTools {
       return error("search_symbols requires a 'query' argument");
     }
 
+    final SymbolScope scope = symbolScope(request, SymbolScope.ALL);
+    if (scope == null) {
+      return error("search_symbols 'scope' must be one of reactor, all");
+    }
+
     return guarded(
         "search_symbols",
         query,
         () ->
             searchResult(
-                query, engine.searchSymbols(query, maxResults(request)), engine.notes(List.of())));
+                query,
+                engine.searchSymbols(query, scope, maxResults(request)),
+                engine.notes(List.of())));
   }
 
   // Shared body for the file tools: an existing .java file, then the handler, an engine failure

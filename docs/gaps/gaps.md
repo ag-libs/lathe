@@ -1603,45 +1603,6 @@ None yet.
 
 ---
 
-## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `search_symbols` and the editor's workspace symbols.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
-`com.sun.tools.javac.comp.WarningAnalyzer`, `com.sun.tools.javac.util.JCDiagnostic.Warning` and
-`javax.swing.plaf.metal.MetalBorders.WarningDialogBorder`: types in packages the JDK does not export, and
-no code in the project can use them.
-`*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
-
-On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
-(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
-classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
-about 30 of the 40 from dependencies and the JDK.
-The agent wanted the reactor's types and had no way to ask for only those.
-
-### Fix direction
-
-Leave out JDK packages a module does not export, at least for a classpath module.
-Strip a leading or trailing `*` (or treat the query as a glob).
-List reactor matches before any dependency or JDK match, and add a `scope` argument
-(`reactor`, `all`) so an agent can leave the rest out.
-Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
-[MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-39 — `find_references` lists generated code before the user's call sites
 
 **Status: documented**

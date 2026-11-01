@@ -11068,6 +11068,64 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `search_symbols` and the editor's workspace symbols.**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
+`com.sun.tools.javac.comp.WarningAnalyzer`, `com.sun.tools.javac.util.JCDiagnostic.Warning` and
+`javax.swing.plaf.metal.MetalBorders.WarningDialogBorder`: types in packages the JDK does not export, and
+no code in the project can use them.
+`*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
+
+On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
+(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
+classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
+about 30 of the 40 from dependencies and the JDK.
+The agent wanted the reactor's types and had no way to ask for only those.
+
+### Fix direction
+
+Leave out JDK packages a module does not export, at least for a classpath module.
+Strip a leading or trailing `*` (or treat the query as a glob).
+List reactor matches before any dependency or JDK match, and add a `scope` argument
+(`reactor`, `all`) so an agent can leave the rest out.
+Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
+[MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
+
+### Resolution
+
+`LatheEngine.searchSymbols` (the MCP tool):
+
+- lists reactor and generated types first, then JDK and dependency ones, then types in a JDK package
+  its module does not export to everyone (javac's internals, `jdk.internal`, read from the running
+  JDK's system modules): ranked last, not hidden, as a project that adds exports uses them;
+- takes `scope` (`all`, the default, or `reactor`), through the `SymbolScope` `call_hierarchy` shares;
+  `reactor` narrows the index search before its cap, so dependency matches cannot crowd the
+  reactor's out;
+- ignores a leading or trailing `*`.
+
+Filtering and ordering run on the raw symbols, before any snippet is read.
+The editor's workspace symbols are unchanged; they could take the same filter later.
+
+Verified end to end on EqualsVerifier (2026-11-01): `warning` lists the two reactor types first and no
+`com.sun.tools.javac` type, `*Checker` finds the checkers, and `scope: reactor` keeps the two reactor types.
+
+### Regression targets
+
+- `LatheEngineTest.searchSymbols_byName_findsReactorType` (glob, reactor scope).
+- `LatheEngineTest.jdkInternal_containers_onlyTheJdksUnexportedPackages`
+
+---
+
 ## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls — done
 
 **Status: done.**

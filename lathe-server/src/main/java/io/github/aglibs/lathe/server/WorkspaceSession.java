@@ -3398,11 +3398,15 @@ final class WorkspaceSession {
     List<TextEdit> apply(String content) throws Exception;
   }
 
-  List<SymbolInformation> workspaceSymbol(final String query) {
+  List<SymbolInformation> workspaceSymbol(final String query, final boolean reactorOnly) {
     final var t = Stopwatch.start();
     final List<Path> sourceDirs = typeSourceDirs();
     final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
+        WorkspaceSymbolResolver.resolve(
+            query,
+            typeIndex,
+            sourceDirs,
+            entry -> !reactorOnly || typeIndex.isReactorType(entry.binaryName()));
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;

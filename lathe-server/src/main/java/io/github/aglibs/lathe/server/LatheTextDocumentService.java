@@ -670,8 +670,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   public CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(
-      final String query) {
-    return worker.submit(() -> session.workspaceSymbol(query));
+      final String query, final boolean reactorOnly) {
+    return worker.submit(() -> session.workspaceSymbol(query, reactorOnly));
   }
 
   public CompletableFuture<LaunchOutcome> runTestFuture(

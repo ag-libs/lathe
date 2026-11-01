@@ -681,7 +681,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> symbolNames(final String query) throws Exception {
-    return service.workspaceSymbolFuture(query).get(5, TimeUnit.SECONDS).stream()
+    return service.workspaceSymbolFuture(query, false).get(5, TimeUnit.SECONDS).stream()
         .map(SymbolInformation::getName)
         .toList();
   }

@@ -41,7 +41,7 @@ class WorkspaceSymbolResolverTest {
     final var index = TempSourceCompiler.typeIndex(tmp.resolve("shard.json"), INTERNAL);
 
     final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve("Widget", index, List.of(srcRoot));
+        WorkspaceSymbolResolver.resolve("Widget", index, List.of(srcRoot), entry -> true);
 
     assertThat(results).hasSize(1);
     final SymbolInformation info = results.get(0);
@@ -56,7 +56,9 @@ class WorkspaceSymbolResolverTest {
 
     // The type is reachable through the symbol index now, but with no source file on disk there is
     // nothing to link to, so it is dropped rather than returned without a location.
-    assertThat(WorkspaceSymbolResolver.resolve("Widget", index, List.of(tmp.resolve("absent"))))
+    assertThat(
+            WorkspaceSymbolResolver.resolve(
+                "Widget", index, List.of(tmp.resolve("absent")), entry -> true))
         .isEmpty();
   }
 }
