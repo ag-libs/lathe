@@ -3,8 +3,10 @@ package io.github.aglibs.lathe.maven;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
+import io.github.aglibs.lathe.install.StyleWriter;
 import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -178,6 +180,22 @@ class MavenStyleTest {
         withSpotless(project("root", "pom"), "<palantirJavaFormat/>", "3.0.0");
     assertThat(style.styleSource(formattedRoot, List.of(formattedRoot, javaModule("plain"))))
         .contains(formattedRoot);
+  }
+
+  // A sync that finds no style drops the last one, which the server would otherwise keep using.
+  @Test
+  void write_noStyleSource_deletesThePreviousStyle() throws Exception {
+    final MavenProject root = project("root", "pom");
+    final MavenProject core = withSpotless(javaModule("core"), "<googleJavaFormat/>", "3.0.0");
+    final Path file = tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE);
+    StyleWriter.write(tmp, MavenStyle.detect(core));
+
+    final WorkspaceStyleData written =
+        new MavenStyle(null, new SystemStreamLog())
+            .write(tmp, root, List.of(root, core, javaModule("plain")));
+
+    assertThat(written).isNull();
+    assertThat(file).doesNotExist();
   }
 
   private MavenProject project(final String name, final String packaging) {

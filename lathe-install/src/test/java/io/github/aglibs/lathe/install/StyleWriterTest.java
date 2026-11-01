@@ -35,4 +35,18 @@ class StyleWriterTest {
     assertThat(Files.getLastModifiedTime(file)).isEqualTo(stamp);
     assertThat(Json.read(file, WorkspaceStyleData.class)).isEqualTo(style);
   }
+
+  @Test
+  void delete_writtenStyle_removesItAndToleratesNone() {
+    StyleWriter.write(
+        workspaceRoot,
+        new WorkspaceStyleData(
+            new FormatterSpec("google", List.of()), new IndentSpec("google", 2, 4)));
+
+    StyleWriter.delete(workspaceRoot);
+    StyleWriter.delete(workspaceRoot);
+
+    assertThat(workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE))
+        .doesNotExist();
+  }
 }
