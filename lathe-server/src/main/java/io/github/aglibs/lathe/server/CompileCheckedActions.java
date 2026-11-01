@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,9 +25,9 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Code actions whose edit is offered only once it compiles. Listing the actions computes the edit
 // cheaply and carries it in the action's data; codeAction/resolve, which the client sends only for
-// the action picked, compiles the rewritten document transiently and attaches the edit when it has
-// no error. Otherwise the action resolves disabled, with the first error as the reason. For edits
-// built from an approximate analysis (extract method), so a miss never reaches the buffer.
+// the action picked, compiles the rewritten document transiently and attaches the edit when it adds
+// no error. Otherwise the action resolves disabled, with the first new error as the reason. For
+// edits built from an approximate analysis (extract method), so a miss never reaches the buffer.
 final class CompileCheckedActions {
 
   private static final Logger LOG = Logger.getLogger(CompileCheckedActions.class.getName());
@@ -82,19 +83,34 @@ final class CompileCheckedActions {
     final var t = Stopwatch.start();
     return compile
         .apply(pending.uri(), SourceLocator.applyEdits(document.content(), pending.edits()))
-        .thenApply(diagnostics -> checked(action, pending, diagnostics, t));
+        .thenApply(CompileCheckedActions::errors)
+        .thenCompose(
+            rewritten ->
+                rewritten.isEmpty()
+                    ? CompletableFuture.completedFuture(rewritten)
+                    : compile
+                        .apply(pending.uri(), document.content())
+                        .thenApply(original -> added(rewritten, errors(original))))
+        .thenApply(added -> checked(action, pending, added, t));
+  }
+
+  // The first line of each error, the text the comparison and the reason use.
+  private static List<String> errors(final List<Diagnostic> diagnostics) {
+    return diagnostics.stream()
+        .filter(d -> d.getSeverity() == DiagnosticSeverity.Error)
+        .map(CompileCheckedActions::message)
+        .toList();
+  }
+
+  // The errors the edit added: an error the document already had (an unresolved type, a stale
+  // dependency) must not refuse every edit in the file. Compared by message, as lines move.
+  private static List<String> added(final List<String> rewritten, final List<String> original) {
+    final List<String> remaining = new ArrayList<>(original);
+    return rewritten.stream().filter(error -> !remaining.remove(error)).toList();
   }
 
   private static CodeAction checked(
-      final CodeAction action,
-      final Pending pending,
-      final List<Diagnostic> diagnostics,
-      final Stopwatch t) {
-    final Diagnostic error =
-        diagnostics.stream()
-            .filter(d -> d.getSeverity() == DiagnosticSeverity.Error)
-            .findFirst()
-            .orElse(null);
+      final CodeAction action, final Pending pending, final List<String> added, final Stopwatch t) {
     LOG.info(
         () ->
             "[codeAction:resolve] %s '%s' %dms %s"
@@ -102,11 +118,11 @@ final class CompileCheckedActions {
                     pending.uri(),
                     action.getTitle(),
                     t.elapsedMs(),
-                    error == null ? "compiles" : "refused"));
-    if (error == null) {
+                    added.isEmpty() ? "compiles" : "refused"));
+    if (added.isEmpty()) {
       action.setEdit(new WorkspaceEdit(Map.of(pending.uri(), pending.edits())));
     } else {
-      action.setDisabled(new CodeActionDisabled("Would not compile: %s".formatted(message(error))));
+      action.setDisabled(new CodeActionDisabled("Would not compile: %s".formatted(added.get(0))));
     }
 
     return action;

@@ -55,23 +55,34 @@ class CompileCheckedActionsTest {
   }
 
   @Test
-  void resolve_errorOrChangedFileOrForeignAction_neverAttachesTheEdit() {
+  void resolve_errorsChangedFileOrForeignAction_editOnlyWhenNoErrorIsAdded() {
     final CodeAction listed =
         CompileCheckedActions.defer(
                 URI, 3, List.of(Either.forRight(action(ExtractionSupport.METHOD_KIND))))
             .get(0)
             .getRight();
-    final var error = new Diagnostic(new Range(), "cannot find symbol");
-    error.setSeverity(DiagnosticSeverity.Error);
+    final Diagnostic old = error("cannot find symbol");
+    final Diagnostic added = error("incompatible types");
 
+    // an error the edit adds refuses it; one the file already had does not
     final CodeAction broken =
         CompileCheckedActions.resolve(
                 throughJson(listed),
                 uri -> new OpenDocument(URI, CONTENT, 3, 0),
-                (uri, content) -> CompletableFuture.completedFuture(List.of(error)))
+                (uri, content) ->
+                    CompletableFuture.completedFuture(
+                        content.equals(CONTENT) ? List.of(old) : List.of(old, added)))
             .join();
     assertThat(broken.getEdit()).isNull();
-    assertThat(broken.getDisabled().getReason()).isEqualTo("Would not compile: cannot find symbol");
+    assertThat(broken.getDisabled().getReason()).isEqualTo("Would not compile: incompatible types");
+    final CodeAction alreadyBroken =
+        CompileCheckedActions.resolve(
+                throughJson(listed),
+                uri -> new OpenDocument(URI, CONTENT, 3, 0),
+                (uri, content) -> CompletableFuture.completedFuture(List.of(old)))
+            .join();
+    assertThat(alreadyBroken.getDisabled()).isNull();
+    assertThat(alreadyBroken.getEdit().getChanges()).isEqualTo(Map.of(URI, EDITS));
 
     final CodeAction stale =
         CompileCheckedActions.resolve(
@@ -85,6 +96,12 @@ class CompileCheckedActionsTest {
     final CodeAction foreign = action(ExtractionSupport.VARIABLE_KIND);
     assertThat(CompileCheckedActions.resolve(foreign, uri -> null, (uri, content) -> null).join())
         .isSameAs(foreign);
+  }
+
+  private static Diagnostic error(final String message) {
+    final var diagnostic = new Diagnostic(new Range(), message);
+    diagnostic.setSeverity(DiagnosticSeverity.Error);
+    return diagnostic;
   }
 
   private static CodeAction action(final String kind) {

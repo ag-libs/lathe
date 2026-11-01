@@ -844,6 +844,44 @@ None yet.
 
 ---
 
+## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim, VS Code, any client.**
+
+Found by the extract method sweep of the Lathe repo (2026-11-01), confirmed with a probe test.
+
+### Observed behaviour
+
+These refactors write a type by its simple name and import it through `CodeActionSupport.importEditFor`,
+which looks only at the type's own qualified name.
+When the file already gives that simple name to another type, the result does not compile:
+
+| Source | Action | Result |
+|---|---|---|
+| `import java.sql.Date;` … `var d = new java.util.Date();` | Replace `var` | `Date d = …` plus `import java.util.Date;`: `Date` is ambiguous |
+| `import java.sql.Date;` … `new java.util.Date().getTime()` | Extract field | `private final Date date = …` plus the same second import |
+| a type the source only names fully qualified | Extract variable, extract constant | the simple name, with no import at all |
+
+Only the top-level type is imported, never a generic argument (`Map<String, AtomicLong>`).
+
+### Fix direction
+
+Use what extract method and implement-abstract-methods already share:
+`CodeActionSupport.sourceTypeFormatter` writes a type whose simple name the file gives another type (by an import or
+a declaration) fully qualified, and `CodeActionSupport.importEditsFor` imports every other type the text names,
+generic arguments included, skipping those.
+Then `importEditFor` and `typeFqn` can go.
+
+### Regression targets
+
+None yet. Model: `CodeActionTest.codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified`.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

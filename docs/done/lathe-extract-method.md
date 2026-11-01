@@ -252,7 +252,9 @@ class with calls; the plain action stays. Repeating the action at each copy woul
 javac's own flow analysis (definite assignment, reachability, effectively-final) is internal, so the scan
 approximates; a mistake it makes would show up as code that no longer compiles.
 Before the edit reaches the user, the provider compiles the file with the edit applied, in process (about
-100 ms for a file), and offers nothing if that compile reports an error.
+100 ms for a file), and offers nothing if that compile reports an error the original text did not have
+(compared by message, as lines move): an error the file already had, such as an unresolved type, must not
+refuse every edit in it.
 To keep that cost off every code-action request, the action is offered by title only and its edit is
 computed and checked in `codeAction/resolve`, which the client sends only when the user picks it
 (Neovim supports it); the server gains `resolveProvider` and a resolve handler.
