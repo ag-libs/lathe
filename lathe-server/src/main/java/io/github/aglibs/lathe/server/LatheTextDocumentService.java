@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
@@ -404,6 +405,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
                       session.beginRenameTransaction(edit);
                       return edit;
                     }));
+  }
+
+  public CompletableFuture<TextMentions.Sources> textMentionSourcesFuture(final String name) {
+    return worker.submit(() -> session.textMentionSources(name));
   }
 
   /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */

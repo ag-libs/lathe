@@ -11068,6 +11068,57 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-28 — `rename_symbol` does not say what text it left unchanged — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+A rename changes the code that resolves to the symbol, and the javadoc references, but not the name in
+string literals, comments, `META-INF/services` files or framework XML.
+An agent believes the rename is complete.
+A study of agent renames found location-only LSP renames missed such text in most multi-file renames
+([arXiv 2608.13568](https://arxiv.org/abs/2608.13568); figures not checked).
+
+### Fix direction
+
+After the rename, list the remaining occurrences of the old name (qualified name for resources) in
+reactor files as "not renamed — review", without editing them.
+NetBeans' Dukehoff MCP does exactly this for string literals (2026-11-01 survey); IntelliJ instead
+edits comments and text only when asked (`searchInComments`, `searchInText`).
+
+### Resolution
+
+After a rename, `rename_symbol` lists where the old name is still text, edits none of it, and says
+"Not renamed — review: the old name is still text in N place(s)" with the first 20
+(`TextMentions`; the session only lists where to look, `WorkspaceSession.textMentionSources`, and the engine scans on its own thread, so the session's worker keeps serving other requests):
+
+- Java string literals that name the symbol: the name alone (`getMethod("sell")`, a key) or qualified
+  (`"com.example.Shop"`, `"Shop#sell"`), found through javac's trees in the files the name-token index
+  lists, after a line-level filter so only files that may hold one are parsed. Prose that only contains
+  the word is left out.
+- Resource files under the reactor's resource roots naming it qualified, or by file name as a
+  `META-INF/services` file does.
+
+Comments are not listed: javac's public API does not expose them, and the rename already updates javadoc references.
+Cost on Helidon (2026-11-01): 0.3 s for a type name like `MediaType`; 1.7 s for a symbol named `name`,
+whose 739 exact `"name"` literals are counted, the first 20 listed.
+
+Verified end to end on Dropwizard: renaming `DefaultHealthFactory` lists the
+`META-INF/services/io.dropwizard.health.HealthFactory` line naming it.
+
+### Regression targets
+
+- `TextMentionsTest.inStringLiterals_literalNamingIt_notCodeProseOrALongerWord`
+- `TextMentionsTest.inResources_qualifiedNameOrServiceFile_notAnUnqualifiedWord`
+- `LatheEngineTest.rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText`
+
+---
+
 ## MC-60 — `run_test` does not return a failing test's output — done
 
 **Status: done.**

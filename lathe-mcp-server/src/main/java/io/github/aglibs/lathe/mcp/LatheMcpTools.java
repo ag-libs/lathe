@@ -196,7 +196,8 @@ final class LatheMcpTools {
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
                 match. It updates uses grep+sed would miss or silently rebind to the wrong overload, \
-                and reports exactly which files it changed. Renaming a public top-level type also \
+                and reports exactly which files it changed, then lists where the old name is still \
+                text (string literals, qualified in resources) for you to review; it edits none. Renaming a public top-level type also \
                 renames its file. Refuses if it would touch a file outside the reactor, or if the \
                 symbol (or a method it overrides) is declared in the JDK, a dependency, or \
                 generated source. The changed files are compiled before it returns, so follow-up \
@@ -889,13 +890,13 @@ final class LatheMcpTools {
     return result(text, notes);
   }
 
-  private static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
+  static CallToolResult renameResult(final LatheRename rename, final LatheNotes notes) {
     if (rename.totalEdits() == 0) {
       return result("No references to rename.", notes);
     }
 
     final String text =
-        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s"
+        "Renamed to %s: %d edit(s) across %d file(s):%n%s%n%n%s%s"
             .formatted(
                 rename.newName(),
                 rename.totalEdits(),
@@ -903,8 +904,23 @@ final class LatheMcpTools {
                 rename.files().stream()
                     .map(LatheMcpTools::fileEditLine)
                     .collect(Collectors.joining(System.lineSeparator())),
-                RENAME_AUTHORITY);
+                RENAME_AUTHORITY,
+                mentionLines(rename));
     return result(text, notes);
+  }
+
+  // The rename edits no text; the agent decides about each place the old name still stands.
+  private static String mentionLines(final LatheRename rename) {
+    if (rename.mentionCount() == 0) {
+      return "";
+    }
+
+    final String more =
+        rename.mentionCount() > rename.mentions().size()
+            ? " (showing first %d)".formatted(rename.mentions().size())
+            : "";
+    return "%n%nNot renamed — review: the old name is still text in %d place(s)%s:%n%s"
+        .formatted(rename.mentionCount(), more, locationLines(rename.mentions()));
   }
 
   private static CallToolResult formatResult(

@@ -42,6 +42,7 @@ import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
@@ -4024,6 +4025,13 @@ final class WorkspaceSession {
   private static long scanIntervalMs() {
     final long configured = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
     return configured > 0 ? configured : DEFAULT_SCAN_INTERVAL_MS;
+  }
+
+  // Where a name may survive as text: the sources whose tokens include it, and the resource roots.
+  TextMentions.Sources textMentionSources(final String name) {
+    return new TextMentions.Sources(
+        candidateIndex.candidateUris(name).stream().map(LatheUri::toPath).toList(),
+        manifest.resourceSourceDirs());
   }
 
   List<Path> takeWrittenSinceVerify() {

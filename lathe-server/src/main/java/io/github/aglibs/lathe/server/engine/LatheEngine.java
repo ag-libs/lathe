@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.io.Serial;
@@ -38,9 +39,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -79,6 +80,7 @@ public final class LatheEngine {
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
   private static final int TEST_CLASS_CANDIDATES = 20;
+  private static final int LISTED_MENTIONS = 20;
   private static final Set<String> JDK_PACKAGES =
       systemPackages(descriptor -> descriptor.packages().stream());
   private static final Set<String> JDK_EXPORTED_PACKAGES =
@@ -242,7 +244,7 @@ public final class LatheEngine {
   // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
   // The tool goes on with the analysis this compiles, so the file is compiled once.
   private void compileAtName(final Path file, final int line, final int column) {
-    if (!onWord(file, line, column)) {
+    if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
     }
 
@@ -270,7 +272,7 @@ public final class LatheEngine {
     }
   }
 
-  private boolean onWord(final Path file, final int line, final int column) {
+  private Optional<String> wordAt(final Path file, final int line, final int column) {
     return sourceLine(file, line)
         .filter(text -> column >= 0 && column < text.length())
         .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))
@@ -280,8 +282,7 @@ public final class LatheEngine {
                     SourceLocator.identifierStart(text, column),
                     SourceLocator.identifierEnd(text, column)))
         .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
-        .filter(word -> !SourceVersion.isKeyword(word))
-        .isPresent();
+        .filter(word -> !SourceVersion.isKeyword(word));
   }
 
   public Optional<String> sourceLine(final Path file, final int line) {
@@ -293,13 +294,7 @@ public final class LatheEngine {
   // that names the symbol instead of counting its column. The text only finds the candidates: javac
   // resolves each, and refuses one inside a comment or a string (NotOnName).
   public List<Integer> nameColumns(final Path file, final int line, final String name) {
-    final String text = sourceLine(file, line).orElse("");
-    return IntStream.rangeClosed(0, text.length() - name.length())
-        .filter(column -> text.startsWith(name, column))
-        .filter(column -> SourceLocator.identifierStart(text, column) == column)
-        .filter(column -> SourceLocator.identifierEnd(text, column) == column + name.length())
-        .boxed()
-        .toList();
+    return TextMentions.wordStarts(sourceLine(file, line).orElse(""), name).boxed().toList();
   }
 
   /**
@@ -382,7 +377,11 @@ public final class LatheEngine {
   }
 
   private LatheLocation.Origin origin(final SymbolInformation symbol) {
-    return origin(LatheUri.toPath(symbol.getLocation().getUri()));
+    return origin(symbol.getLocation().getUri());
+  }
+
+  private LatheLocation.Origin origin(final String uri) {
+    return origin(LatheUri.toPath(uri));
   }
 
   // In a JDK package its modules do not export to everyone (javac's internals, jdk.internal): no
@@ -427,6 +426,7 @@ public final class LatheEngine {
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
     compileAtName(file, line, column);
+    final String oldName = wordAt(file, line, column).orElseThrow();
     final var params =
         new RenameParams(
             new TextDocumentIdentifier(file.toUri().toString()),
@@ -435,13 +435,13 @@ public final class LatheEngine {
     final WorkspaceEdit edit = await(service.renameEdit(params));
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
-      return new LatheRename(newName, 0, List.of());
+      return new LatheRename(newName, 0, List.of(), List.of(), 0);
     }
 
     final Map<String, String> moves = RenameProvider.fileMoves(edit);
     final List<String> nonReactor =
         Stream.concat(textEdits.keySet().stream(), moves.values().stream())
-            .filter(uri -> origin(LatheUri.toPath(uri)) != LatheLocation.Origin.REACTOR)
+            .filter(uri -> origin(uri) != LatheLocation.Origin.REACTOR)
             .sorted()
             .toList();
     if (!nonReactor.isEmpty()) {
@@ -462,7 +462,30 @@ public final class LatheEngine {
             .toList();
     writeAndCommit(textEdits, moves, files);
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
-    return new LatheRename(newName, total, files);
+    // A rename changes only what resolves to the symbol: the name left as text is the agent's to
+    // review, never edited here.
+    final List<Location> mentions =
+        textMentions(oldName).stream()
+            .filter(mention -> origin(mention.getUri()) == LatheLocation.Origin.REACTOR)
+            .toList();
+    return new LatheRename(
+        newName,
+        total,
+        files,
+        mentions.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
+        mentions.size());
+  }
+
+  // Best effort: the rename is on disk by now, and a scan that fails must not report it as failed.
+  // The scan reads and parses files on this thread, not the session's worker, which serves every
+  // other request meanwhile.
+  private List<Location> textMentions(final String name) {
+    try {
+      return TextMentions.find(await(service.textMentionSourcesFuture(name)), name);
+    } catch (final RuntimeException e) {
+      LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
+      return List.of();
+    }
   }
 
   // Holds the reactor lock while writing, so an editor's server on the same workspace never
@@ -692,7 +715,7 @@ public final class LatheEngine {
   private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
     return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
         .stream()
-        .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
+        .filter(call -> scope.includes(origin(call.getTo().getUri())))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
         .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
         .toList();

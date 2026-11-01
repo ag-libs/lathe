@@ -527,8 +527,14 @@ class LatheEngineTest {
   }
 
   @Test
-  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk() throws Exception {
+  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText()
+      throws Exception {
     final GreetFixture fx = greetFixture();
+    final Path labels =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Labels.java",
+            "package com.example;\nclass Labels { String key = \"greet\"; }\n");
     engine = new LatheEngine(tmp);
 
     final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
@@ -541,6 +547,11 @@ class LatheEngineTest {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
     assertThat(Files.readString(fx.callee())).contains("void welcome()").doesNotContain("greet");
     assertThat(Files.readString(fx.caller())).contains("c.welcome()").doesNotContain("greet");
+    assertThat(rename.mentions())
+        .as("a string literal is never renamed, only listed")
+        .singleElement()
+        .satisfies(mention -> assertThat(mention.uri()).endsWith("Labels.java"));
+    assertThat(Files.readString(labels)).contains("\"greet\"");
   }
 
   @Test

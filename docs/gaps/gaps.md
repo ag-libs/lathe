@@ -1491,35 +1491,6 @@ None yet.
 
 ---
 
-## MC-28 — `rename_symbol` does not say what text it left unchanged
-
-**Status: accepted**
-
-**Value: high — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-A rename changes the code that resolves to the symbol, and the javadoc references, but not the name in
-string literals, comments, `META-INF/services` files or framework XML.
-An agent believes the rename is complete.
-A study of agent renames found location-only LSP renames missed such text in most multi-file renames
-([arXiv 2608.13568](https://arxiv.org/abs/2608.13568); figures not checked).
-
-### Fix direction
-
-After the rename, list the remaining occurrences of the old name (qualified name for resources) in
-reactor files as "not renamed — review", without editing them.
-NetBeans' Dukehoff MCP does exactly this for string literals (2026-11-01 survey); IntelliJ instead
-edits comments and text only when asked (`searchInComments`, `searchInText`).
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-29 — No tool maps a stack trace to source
 
 **Status: documented**
