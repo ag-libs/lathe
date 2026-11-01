@@ -907,8 +907,38 @@ The code still compiles, so `verify_change` reports nothing, and the rename repo
 
 ### Fix direction
 
-Before applying, check every use of a declaration that already has the new name and that the renamed
-symbol's scope covers: refuse with the use's location, or qualify it (`this.value`) where Java allows.
+Fixed together with [FR-023](#fr-023--a-method-rename-can-capture-another-overloads-calls): both are a name that
+resolves to a different declaration after the edit, which nothing checks today.
+`RenameConflicts` looks only at declarations (a member of the same kind and signature, a sibling type, a variable
+in scope); the rename then replaces text at the references (`WorkspaceSession.renameFuture`).
+
+Check that the edit preserves every binding, as IntelliJ and Eclipse do, reusing the transient compile extract
+method's check already uses (`CompileCheckedActions`, `compileDetached` / `compileBatch`):
+
+1. Select the files to check cheaply: the edited files that also contain the new name as an identifier.
+   Most renames choose a name used nowhere nearby and skip the check, at no cost.
+2. Before the edit, record from the current analysis what two sets of names resolve to, as a stable key
+   (owner type, kind, name, parameter types):
+   (a) each site being renamed, which must end up naming the renamed declaration;
+   (b) each existing use of the new name, which must keep naming what it names now.
+3. Apply the edits in memory and compile the checked files of one module in one transient batch, with the
+   edited file that declares the renamed symbol, so the new name is visible; nothing is written.
+4. Re-resolve: shift each recorded position by the edits before it and look up its element.
+   If an (a) site no longer names the renamed declaration, or a (b) use names something else, refuse through
+   the existing `renameRefused` path, naming the place, e.g. "Renaming `x` to `value` would change what `value`
+   refers to at RenameProbe.java:7 (it would read the parameter instead of the field)".
+   The editor shows the refusal as the rename's error, as it does for today's refusals.
+5. Later, offer the fix instead of only refusing: qualify the shadowed field as `this.value`.
+
+Scope it in two steps: same-module files first (locals, parameters, private members, overloads declared in one
+class: both reproduced cases); then FR-023's cross-module reverse capture.
+The cost is zero for most renames (the step 1 filter) and one transient compile per module involved otherwise,
+roughly 20–200 ms, acceptable for an explicit action.
+It changes the rename flow (`WorkspaceSession`), the analysis session or worker (the before/after comparison) and
+`RenameConflicts`, so it starts with a design summary.
+
+Tests in `RenameTest`: a parameter renamed to a field's name is refused; the same rename where the new name is
+not visible at any use goes through unchanged; a lambda parameter shadowing a field is refused.
 
 ### Regression targets
 
@@ -935,9 +965,20 @@ The collision check compares only signatures, so a different overload of the new
 
 ### Fix direction
 
-After computing the edits, re-attribute the renamed call sites in a transient compile (as extract method's
-compile check does) and refuse when any now resolves to another method; or check overload resolution
-against the new name's existing overloads up front.
+The binding check described under [FR-022](#fr-022--a-rename-to-a-name-a-use-already-sees-silently-rebinds-the-use)
+covers it: every renamed call site must still resolve to the renamed method after the edit, and every existing
+call of the new name must keep resolving to the method it calls now; otherwise the rename is refused, naming the
+call (here: `twice(7)` would call `setValue(int)` instead).
+
+Its first step, same-module files, catches the usual case, where the overloads live in one class.
+The second step covers reverse capture in other modules: the renamed method can become the better match for an
+existing call of the new name elsewhere (renaming `foo(int)` to `bar` when another module calls `bar(1)` on
+`bar(long)`), and those files are not edited by the rename.
+Find them with the reference index (callers of the owner type's existing overloads of the new name) and check them
+in a compile that sees the declaring module's edited classes; this is the harder part, so it comes second.
+
+Tests in `RenameTest`: a method renamed onto an overload that would capture a call is refused; renamed onto a name
+whose overloads no call could reach, it goes through.
 
 ### Regression targets
 
@@ -963,8 +1004,16 @@ with no warning, although the tool refuses the mirror case (overriding a method 
 
 ### Fix direction
 
-For each reactor subtype of the renamed method's type, check whether a supertype outside the reactor
-supplies the implementation (`Elements.overrides` on the inherited members); refuse and name the class.
+One more check in `RenameConflicts`, beside the existing refusal for overriding a method declared in a dependency:
+for each reactor subtype of the renamed method's type, if a supertype outside the reactor supplies the
+implementation (an inherited member for which `Elements.overrides` holds against the renamed method), refuse
+and name the class, e.g. "`JettyManaged` implements `stop` through `AbstractLifeCycle` (jetty-util), which a
+rename cannot change".
+The reactor subtypes come from the implementation search the override family already uses.
+It needs no transient compile, so it can ship before the binding check of FR-022 and FR-023.
+
+Test in `RenameTest`: an interface method implemented through a superclass from a dependency is refused, naming
+the subtype; one implemented in the reactor is renamed together with its implementation.
 
 ### Regression targets
 
