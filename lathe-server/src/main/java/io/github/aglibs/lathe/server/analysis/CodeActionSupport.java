@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
@@ -179,7 +180,18 @@ final class CodeActionSupport {
                 .anyMatch(
                     imported ->
                         !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
-        || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type);
+        || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type)
+        || inOwnPackage(analysis, simpleName).filter(sibling -> !sibling.equals(type)).isPresent();
+  }
+
+  // The type of the file's own package with this simple name: it is in scope there without an
+  // import, and an import of another one would shadow it for the whole file.
+  private static Optional<TypeElement> inOwnPackage(
+      final AttributedFileAnalysis analysis, final String simpleName) {
+    final ExpressionTree packageName = analysis.tree().getPackageName();
+    final String name =
+        packageName == null ? simpleName : "%s.%s".formatted(packageName, simpleName);
+    return Optional.ofNullable(analysis.elements().getTypeElement(name));
   }
 
   private static Set<String> declaredTypeNames(final AttributedFileAnalysis analysis) {

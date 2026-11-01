@@ -1985,8 +1985,9 @@ class CodeActionTest {
   }
 
   @Test
-  void codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified() {
-    // the simple name is taken by an import, or by a type the file declares
+  void codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified()
+      throws IOException {
+    // the simple name is taken by an import, by a type the file declares, or by one of its package
     final String imported =
         """
         package com.example;
@@ -1999,7 +2000,15 @@ class CodeActionTest {
     final String declared =
         inTestClass(
             "static class Date {}\n  long m(java.util.Date d) { return «d.getTime() + 1»; }");
-    for (final String source : List.of(imported, declared)) {
+    final Path sibling = tmp.resolve("Date.java");
+    Files.writeString(sibling, "package com.example;\npublic class Date {}\n");
+    final Path classDir = tmp.resolve("sibling-classes");
+    TestCompiler.compileToDir(classDir, sibling);
+    session.close();
+    session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
+    final String samePackage =
+        inTestClass("long m(java.util.Date d) { return «d.getTime() + 1»; }");
+    for (final String source : List.of(imported, declared, samePackage)) {
       final String rewritten =
           applyEdits(
               unmarked(source), editsOfActionStartingWith(markedActions(source), "Extract method"));
