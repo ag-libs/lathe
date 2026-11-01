@@ -1775,33 +1775,6 @@ None yet.
 
 ---
 
-## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `call_hierarchy`.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
-which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
-
-### Fix direction
-
-A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
-[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
-one origin classification can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-50 — `call_hierarchy` returns one level per call
 
 **Status: documented**
@@ -1820,7 +1793,7 @@ Tracing a resource → service → adapter chain takes one `call_hierarchy` call
 
 A `depth` argument returning a tree, with cycles cut and a total cap.
 Most useful together with [MC-48](gaps-archive.md#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called--done)
-and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
+and [MC-49](gaps-archive.md#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls--done), or the tree fills with JDK calls.
 
 ### Regression targets
 

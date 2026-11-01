@@ -23,6 +23,7 @@ import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
+import io.github.aglibs.lathe.server.engine.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -130,7 +131,12 @@ class LatheEngineTest {
     final var calleePos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
     final LatheCallHierarchy incoming =
         engine.callHierarchy(
-            fx.callee(), calleePos.getLine(), calleePos.getCharacter(), CallDirection.INCOMING, 50);
+            fx.callee(),
+            calleePos.getLine(),
+            calleePos.getCharacter(),
+            CallDirection.INCOMING,
+            SymbolScope.ALL,
+            50);
     assertThat(incoming.incoming()).isTrue();
     assertThat(incoming.calls())
         .anySatisfy(
@@ -142,7 +148,12 @@ class LatheEngineTest {
     final var callerPos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("run"));
     final LatheCallHierarchy outgoing =
         engine.callHierarchy(
-            fx.caller(), callerPos.getLine(), callerPos.getCharacter(), CallDirection.OUTGOING, 50);
+            fx.caller(),
+            callerPos.getLine(),
+            callerPos.getCharacter(),
+            CallDirection.OUTGOING,
+            SymbolScope.REACTOR,
+            50);
     assertThat(outgoing.incoming()).isFalse();
     assertThat(outgoing.calls())
         .as("the call site in the caller, not the callee's declaration")

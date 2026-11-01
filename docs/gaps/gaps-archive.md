@@ -11068,6 +11068,47 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `call_hierarchy`.**
+
+Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
+
+### Observed behaviour
+
+About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
+which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
+
+### Fix direction
+
+A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
+[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
+one origin classification can serve both.
+
+### Resolution
+
+`call_hierarchy` takes `scope` (`reactor`, the default, or `all`), through `LatheEngine.SymbolScope`,
+which classifies by the existing location origin (reactor and generated code against the JDK and
+dependencies) and which `search_symbols` shares.
+Outgoing calls drop callees outside the reactor unless `scope` is `all`; incoming callers are reactor
+code either way. An empty reactor-only answer says `scope=all` includes calls into the JDK and
+dependencies, so a method that calls only the JDK does not read as calling nothing.
+
+Verified end to end on Dropwizard (2026-11-01): `RoutingHandler.getHandlers` answers `handler` by
+default and `stream`, `map`, `handler`, `toList` with `scope: all`; `handle`, which calls only Jetty and
+the JDK, points at `scope=all`.
+
+### Regression targets
+
+- `LatheMcpToolsTest.callHierarchy_invalidDirectionOrScope_returnsError`
+- `LatheEngineTest.callHierarchy_findsIncomingCallerAndOutgoingCallee` (reactor scope keeps the reactor callee).
+
+---
+
 ## MC-30 — Position tools need an exact column, which agents get wrong — done
 
 **Status: done.**

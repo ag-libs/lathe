@@ -149,21 +149,21 @@ class LatheMcpToolsTest {
   }
 
   @Test
-  void callHierarchy_invalidDirection_returnsError() {
-    final CallToolResult result =
-        call(
-            "call_hierarchy",
-            Map.of(
-                "file",
-                tmp.resolve("Any.java").toString(),
-                "line",
-                1,
-                "column",
-                1,
-                "direction",
-                "sideways"));
+  void callHierarchy_invalidDirectionOrScope_returnsError() {
+    final String file = tmp.resolve("Any.java").toString();
 
-    assertThat(result.isError()).isTrue();
+    assertThat(
+            call(
+                "call_hierarchy",
+                Map.of("file", file, "line", 1, "column", 1, "direction", "sideways")))
+        .extracting(CallToolResult::isError)
+        .isEqualTo(true);
+    assertThat(
+            text(
+                call(
+                    "call_hierarchy",
+                    Map.of("file", file, "line", 1, "column", 1, "scope", "jdk"))))
+        .isEqualTo("call_hierarchy 'scope' must be one of reactor, all");
   }
 
   @Test

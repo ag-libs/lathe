@@ -135,6 +135,21 @@ public final class LatheEngine {
     }
   }
 
+  // Which code an answer covers: the reactor's own (generated sources included), or also the JDK
+  // and dependencies, whose entries bury the reactor's in a call tree or a name search.
+  public enum SymbolScope {
+    REACTOR,
+    ALL;
+
+    public static Optional<SymbolScope> from(final String wireName) {
+      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
+    }
+
+    public boolean includes(final LatheLocation.Origin origin) {
+      return this == ALL || origin != LatheLocation.Origin.EXTERNAL;
+    }
+  }
+
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
@@ -575,6 +590,7 @@ public final class LatheEngine {
       final int line,
       final int column,
       final CallDirection direction,
+      final SymbolScope scope,
       final int maxResults) {
     compileAtName(file, line, column);
     final var prepare =
@@ -587,7 +603,7 @@ public final class LatheEngine {
     }
 
     final List<LatheCall> all =
-        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0));
+        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0), scope);
     return new LatheCallHierarchy(
         incoming, all.size(), all.size() > maxResults, all.stream().limit(maxResults).toList());
   }
@@ -603,9 +619,10 @@ public final class LatheEngine {
   }
 
   // Where the method calls each callee, in source order, so the answer reads as the method does.
-  private List<LatheCall> outgoingCalls(final CallHierarchyItem item) {
+  private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
     return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
         .stream()
+        .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
         .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
         .toList();

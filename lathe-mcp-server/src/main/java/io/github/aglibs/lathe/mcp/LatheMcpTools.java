@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
+import io.github.aglibs.lathe.server.engine.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
@@ -247,6 +248,8 @@ final class LatheMcpTools {
                     """
                     ,"direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
+                    "scope":{"type":"string","enum":["reactor","all"],
+                     "description":"reactor (default) leaves out calls into the JDK and dependencies; all keeps them."},
                     "maxResults":{"type":"integer","minimum":1,"description":"Max calls to return (default 50)."}\
                     """))
             .description(
@@ -632,6 +635,13 @@ final class LatheMcpTools {
     return scope == null ? TestScope.CLASS : TestScope.from(scope).orElse(null);
   }
 
+  // Optional, case-insensitive; absent means the tool's default, unknown means null.
+  private static SymbolScope symbolScope(
+      final CallToolRequest request, final SymbolScope defaultScope) {
+    final String scope = stringArg(request, "scope");
+    return scope == null ? defaultScope : SymbolScope.from(scope).orElse(null);
+  }
+
   private static CallToolResult handleCallHierarchy(
       final LatheEngine engine, final CallToolRequest request) {
     final String directionArg = stringArg(request, "direction");
@@ -643,13 +653,19 @@ final class LatheMcpTools {
       return error("call_hierarchy 'direction' must be one of incoming, outgoing");
     }
 
+    final SymbolScope scope = symbolScope(request, SymbolScope.REACTOR);
+    if (scope == null) {
+      return error("call_hierarchy 'scope' must be one of reactor, all");
+    }
+
     return atPosition(
         engine,
         "call_hierarchy",
         request,
         (file, line, column) ->
             callHierarchyResult(
-                engine.callHierarchy(file, line, column, direction, maxResults(request)),
+                engine.callHierarchy(file, line, column, direction, scope, maxResults(request)),
+                scope,
                 engine.notes(List.of(file))));
   }
 
@@ -990,8 +1006,9 @@ final class LatheMcpTools {
         : "lines %d–%d".formatted(format.firstLine(), format.lastLine());
   }
 
+  // An empty reactor-only answer says what the scope left out: the method may call only the JDK.
   private static CallToolResult callHierarchyResult(
-      final LatheCallHierarchy ch, final LatheNotes notes) {
+      final LatheCallHierarchy ch, final SymbolScope scope, final LatheNotes notes) {
     // Outgoing entries are call sites: a callee called twice is two.
     final String noun = ch.incoming() ? "caller" : "call";
     final String arrow = ch.incoming() ? "←" : "→";
@@ -999,9 +1016,13 @@ final class LatheMcpTools {
         ch.truncated()
             ? "%d %ss (showing first %d):".formatted(ch.total(), noun, ch.calls().size())
             : "%d %s(s):".formatted(ch.total(), noun);
+    final String none =
+        !ch.incoming() && scope == SymbolScope.REACTOR
+            ? "No callees in the reactor; scope=all includes calls into the JDK and dependencies."
+            : "No %ss found.".formatted(noun);
     final String text =
         ch.calls().isEmpty()
-            ? "No %ss found.".formatted(noun)
+            ? none
             : "%s%n%s"
                 .formatted(
                     header,

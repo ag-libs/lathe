@@ -110,7 +110,7 @@ Answers are text only, with any notes after the result, so every MCP client show
 | `get_definition` | `file, line, symbol or column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, symbol or column` | every real use of a symbol across the reactor — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, symbol or column` | the implementers of an interface, or the overrides of a method |
-| `call_hierarchy` | `file, line, symbol or column, direction` (optional) | callers (`incoming`, the default) or callees (`outgoing`) of a method, across modules |
+| `call_hierarchy` | `file, line, symbol or column, direction`, `scope` (optional) | callers (`incoming`, the default) or callees (`outgoing`, at each call site in source order) of a method, across modules; `scope: all` adds calls into the JDK and dependencies |
 | `search_symbols` | `query` | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the reactor, dependencies, and JDK; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); types only, and no wildcards (`*Checker` finds nothing) |
 | `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
