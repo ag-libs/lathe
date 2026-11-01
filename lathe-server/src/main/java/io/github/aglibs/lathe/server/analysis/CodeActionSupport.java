@@ -132,10 +132,43 @@ final class CodeActionSupport {
         .toList();
   }
 
-  // For code written into the file: a type whose simple name the file already gives another type
-  // (by an import or a declaration) is written qualified, and never imported.
-  static TypeDisplayFormatter sourceTypeFormatter(final AttributedFileAnalysis analysis) {
-    return new TypeDisplayFormatter(analysis.types(), type -> clashes(analysis, type));
+  // For code written into `target`, a class of the file: a type whose simple name the file already
+  // gives another type (by an import or a declaration) is written qualified, and never imported; a
+  // type nested in the file that `target` cannot see by its simple name, from the nearest enclosing
+  // type it can (`Route.Module`, not `Module`, which would be java.lang's); any other by its simple
+  // name.
+  static TypeDisplayFormatter sourceTypeFormatter(
+      final AttributedFileAnalysis analysis, final TypeElement target) {
+    return new TypeDisplayFormatter(analysis.types(), type -> sourceName(analysis, target, type));
+  }
+
+  private static String sourceName(
+      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+    if (clashes(analysis, type)) {
+      return type.getQualifiedName().toString();
+    }
+
+    if (type.getNestingKind() == NestingKind.MEMBER
+        && declaredIn(analysis, type)
+        && !memberTypeInScope(analysis, target, type)) {
+      return "%s.%s"
+          .formatted(
+              sourceName(analysis, target, (TypeElement) type.getEnclosingElement()),
+              type.getSimpleName());
+    }
+
+    return type.getSimpleName().toString();
+  }
+
+  // A member type `target` sees by its simple name: one of its own or an enclosing class's members,
+  // declared or inherited.
+  private static boolean memberTypeInScope(
+      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+    return Stream.iterate(
+            target,
+            Objects::nonNull,
+            c -> c.getEnclosingElement() instanceof final TypeElement outer ? outer : null)
+        .anyMatch(c -> analysis.elements().getAllMembers(c).contains(type));
   }
 
   private static boolean clashes(final AttributedFileAnalysis analysis, final TypeElement type) {

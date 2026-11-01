@@ -8,6 +8,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewArrayTree;
@@ -35,9 +36,11 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.TypeParameterElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
@@ -133,6 +136,11 @@ final class ExtractMethodProvider {
                     : Stream.of("a type cannot be written"),
                 inferredOnlyFromTarget(returnType, flow.parameters())
                     ? Stream.of("a type variable only the return type names")
+                    : Stream.<String>empty(),
+                signatureTypes.stream()
+                        .flatMap(CodeActionSupport::typesIn)
+                        .anyMatch(type -> declaredInside(type, member, trees))
+                    ? Stream.of("a type is local to the member")
                     : Stream.<String>empty())
             .flatMap(reasons -> reasons)
             .toList();
@@ -433,7 +441,9 @@ final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return CodeActionSupport.sourceTypeFormatter(analysis).format(type);
+      return CodeActionSupport.sourceTypeFormatter(
+              analysis, (TypeElement) analysis.trees().getElement(member.getParentPath()))
+          .format(type);
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {
@@ -524,9 +534,12 @@ final class ExtractMethodProvider {
   // Whether a call can stand where the expression is: not a compile-time constant (a case label or
   // an annotation value needs one, and extracting one gains nothing), not inside a case label or an
   // annotation, not an assignment's target, not an enum constant's own creation (its source is only
-  // the argument list).
+  // the argument list), not a bare `this` (a call gains nothing, and its copies include the
+  // `this.field = …` of a constructor).
   private static boolean replaceableByCall(final TreePath exprPath, final Trees trees) {
-    return !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
+    return !(exprPath.getLeaf() instanceof final IdentifierTree identifier
+            && identifier.getName().contentEquals("this"))
+        && !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
         && !ExtractionSupport.isAssignmentTarget(exprPath)
         && !isEnumConstantCreation(exprPath, trees)
         && Stream.iterate(exprPath, Objects::nonNull, TreePath::getParentPath)
@@ -595,6 +608,22 @@ final class ExtractMethodProvider {
     return method.getTypeParameters().stream()
         .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
         .collect(Collectors.toUnmodifiableList());
+  }
+
+  // A local class declared in the member the code leaves: the new method, beside the member, cannot
+  // see it.
+  private static boolean declaredInside(
+      final TypeMirror type, final TreePath member, final Trees trees) {
+    if (!(type instanceof final DeclaredType declared)
+        || !(declared.asElement() instanceof final TypeElement element)
+        || element.getNestingKind() != NestingKind.LOCAL) {
+      return false;
+    }
+
+    final TreePath path = trees.getPath(element);
+    return path != null
+        && Stream.iterate(path, Objects::nonNull, TreePath::getParentPath)
+            .anyMatch(p -> p.getLeaf() == member.getLeaf());
   }
 
   // A method type variable the return type names but no parameter does is inferred from where the

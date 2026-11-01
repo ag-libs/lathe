@@ -62,7 +62,7 @@ final class MissingMethodImplProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final var formatter = CodeActionSupport.sourceTypeFormatter(analysis);
+    final var formatter = CodeActionSupport.sourceTypeFormatter(analysis, classElement);
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 

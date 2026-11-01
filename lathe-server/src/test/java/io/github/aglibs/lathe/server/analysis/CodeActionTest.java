@@ -1670,6 +1670,14 @@ class CodeActionTest {
     assertExtracts(
         "int m(Map<String, java.util.concurrent.atomic.AtomicInteger> c) { return «c.size() + 1»; }",
         method);
+    // a nested type the new method's class cannot see by its simple name is written from its
+    // top-level type (bare `Module` would be java.lang.Module)
+    assertThat(
+            assertExtracts(
+                "static class Route { static class Module {} }\n"
+                    + "  int m(Route.Module x) { return «x.hashCode() + 1»; }",
+                method))
+        .contains("private int extracted(Route.Module x)");
     // a private type of the file itself is used by its name, never imported
     assertExtracts("private record P(int v) {}\n  int m(P p) { return «p.v() + 1»; }", method);
     // the method's type variables the signature needs, with those their bounds name
@@ -1709,6 +1717,10 @@ class CodeActionTest {
         "type variable only the return type names",
         "<T> void m() { final var l = «new ArrayList<T>()»; List<T> t = l; use(t); }");
     cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
+    cases.put("this", "Object m() { return «this»; }");
+    cases.put(
+        "a local type in the signature",
+        "void m() { record P(int v) {} final P p = new P(1); use(«p.v() + 1»); }");
     cases.forEach(
         (label, member) ->
             assertThat(rightTitles(markedActions(inTestClass(member))))
