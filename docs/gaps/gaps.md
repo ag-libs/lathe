@@ -449,11 +449,11 @@ None yet.
 
 ---
 
-## EG-070 — Requests Lathe does not support answer with an internal error, and `typeDefinition` is missing
+## EG-070 — `typeDefinition` is missing
 
 **Status: documented**
 
-**Value: medium — Size: S (typeDefinition: M)**
+**Value: medium — Size: M**
 
 **Affects: the editor.**
 
@@ -461,16 +461,20 @@ Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
 
 ### Observed behaviour
 
-`textDocument/typeDefinition` and `textDocument/inlayHint` are not advertised, so well-behaved clients never send them;
-Neovim's go-to-type-definition is unavailable.
-A client that sends one anyway gets an internal error, and the server logs a SEVERE line with a stack trace,
-instead of the protocol's "method not found".
-0.1.24 behaves the same.
+`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
+A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
+and an INFO line in the log.
 
 ### Fix direction
 
-Answer an unsupported request with `MethodNotFound`, without a SEVERE line.
 Implement `typeDefinition` (the declared type of the symbol at the cursor); definition already resolves types.
+
+### Resolved part
+
+Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
+lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
+`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
+Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
 
 ### Regression targets
 
