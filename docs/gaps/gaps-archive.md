@@ -8824,6 +8824,72 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-25 — A first sync downloads dependency sources one at a time — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: the first Maven sync on a machine (`mvn` and `mvnd` alike).**
+
+Found by a code review of the sync path (2026-10-30).
+
+### Observed behaviour
+
+`DependencySourceResolver` calls `RepositorySystem.resolveArtifact` once per external artifact, so a cold `~/.m2` pays one sequential round trip per `-sources` jar (plus its checksum).
+The jars are small, so round trips, not bandwidth, set the time:
+
+| Project | Dependencies | With sources | Missing | Sources size | Median jar |
+|---|---|---|---|---|---|
+| Helidon | 209 | 206 | 3 | 50.6 MB | 62 KB |
+| Dropwizard | 210 | 208 | 2 | 63.8 MB | 70 KB |
+| Hibernate ORM | 254 | 252 | 2 | — | — |
+
+Estimated for Helidon at 30–100 ms per request: about 15–45 s sequentially, against about 3–12 s batched, so 15–30 s saved once.
+Not measured yet; a slower link (proxy, mirror, VPN) or extra repositories ahead of Central saves more.
+A warm sync, the common case, gains nothing: every lookup is local.
+
+### Root cause
+
+Maven Resolver already downloads a batch in parallel: `resolveArtifacts` groups requests by repository, and the basic connector fetches each group on `aether.connector.basic.threads` (default 5).
+Checked in Resolver 1.4.1 (`DefaultArtifactResolver`), the version Maven 3.6.3 ships, so it holds at the Maven floor.
+The per-artifact calls never hand it a batch.
+
+### Fix direction
+
+Resolve all `-sources` requests in one `resolveArtifacts` call, inside `DependencySourceResolver` only.
+A missing sources jar is normal, and the batch throws when any is missing, so read the per-request results from `ArtifactResolutionException.getResults()`;
+a `RuntimeException` still fails the sync.
+No Lathe threads, so nothing outlives a build in the `mvnd` daemon, and all logging stays on the Mojo thread.
+
+Not worth doing alongside it: parallel extraction.
+Unzipping all 206 Helidon sources jars (28,635 entries) takes about 1 s on Linux; Windows may differ.
+
+### Resolution
+
+`DependencySourceResolver` hands every `-sources` request to Maven Resolver in one `resolveArtifacts` call,
+which downloads each repository's share in parallel on its own connector threads (`aether.connector.basic.threads`, default 5).
+A missing sources jar makes the batch throw, with every request's result, in order; those results map back to the artifacts by index,
+a missing one with the same debug line as before. Lathe starts no threads, and logging stays on the Mojo thread.
+
+Measured on a probe project of 102 external artifacts (Dropwizard core and Hibernate ORM), 100 with sources,
+with a private `-Dmaven.repo.local` and Lathe cache, timing the window between the sync's
+`[sync] N unique external artifacts` and `[sync] sources … entries` lines:
+
+| | One jar at a time | One batch |
+|---|---|---|
+| Cold: fresh repository | 12.9 s | 1.8 s |
+| Sources jars only missing (five runs each, median) | 5.4 s | 2.2 s |
+
+Extraction (about 0.7 s for the 100 jars) and the type indexes (about 1.2 s) are unchanged, as the gap expected.
+
+### Regression targets
+
+- `DependencySourceResolverTest.toSource_resolvedOrMissingResult_mapsToPresentOrMissing`: a resolved result maps to a present source, an unresolved one to a missing one.
+- The invoker fixtures keep their `[sync] sources N dependency entries, M with sources` counts, those with missing sources jars included.
+
+---
+
 ## WS-22 — One external jar listed twice in the manifest switches off cross-module features — done
 
 **Status: done.**
