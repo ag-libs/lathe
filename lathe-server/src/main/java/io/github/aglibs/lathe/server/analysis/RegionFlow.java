@@ -60,11 +60,12 @@ import javax.lang.model.type.TypeKind;
 // own flow analysis (internal API) would be exact: any use outside the region counts as later, so
 // a read earlier in a loop's text is not missed. `returnsValue` says every path through the
 // statements leaves the enclosing method with a value (or a throw), so the call is returned.
-// `refusals` says why the region cannot move.
+// `assigned` holds the outer locals the region writes. `refusals` says why the region cannot move.
 record RegionFlow(
     List<VariableElement> parameters,
     List<VariableElement> declaredHere,
     List<VariableElement> outputs,
+    Set<VariableElement> assigned,
     Set<TypeParameterElement> typeVariables,
     boolean returnsValue,
     List<String> refusals) {
@@ -74,12 +75,14 @@ record RegionFlow(
         .notNull(parameters, "parameters")
         .notNull(declaredHere, "declaredHere")
         .notNull(outputs, "outputs")
+        .notNull(assigned, "assigned")
         .notNull(typeVariables, "typeVariables")
         .notNull(refusals, "refusals")
         .validate();
     parameters = List.copyOf(parameters);
     declaredHere = List.copyOf(declaredHere);
     outputs = List.copyOf(outputs);
+    assigned = Set.copyOf(assigned);
     typeVariables = Set.copyOf(typeVariables);
     refusals = List.copyOf(refusals);
   }
@@ -218,14 +221,13 @@ record RegionFlow(
     final List<VariableElement> declaredHere =
         used.stream().filter(variable -> !parameters.contains(variable)).toList();
 
+    final Set<VariableElement> assigned =
+        used.stream()
+            .filter(variable -> anyUse(usesInRegion, variable, use -> use.access() != Access.READ))
+            .collect(Collectors.toUnmodifiableSet());
     // Written or declared in the region, and used anywhere outside it.
     final List<VariableElement> outputs =
-        Stream.concat(
-                declaredInRegion.stream(),
-                used.stream()
-                    .filter(
-                        variable ->
-                            anyUse(usesInRegion, variable, use -> use.access() != Access.READ)))
+        Stream.concat(declaredInRegion.stream(), used.stream().filter(assigned::contains))
             .distinct()
             .filter(
                 variable ->
@@ -246,7 +248,8 @@ record RegionFlow(
       refusals.addAll(controlRefusals(region, trees, returnsValue));
     }
 
-    return new RegionFlow(parameters, declaredHere, outputs, typeVariables, returnsValue, refusals);
+    return new RegionFlow(
+        parameters, declaredHere, outputs, assigned, typeVariables, returnsValue, refusals);
   }
 
   private static boolean anyUse(

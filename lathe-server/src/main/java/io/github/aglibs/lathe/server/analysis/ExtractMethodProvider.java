@@ -9,6 +9,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
@@ -128,7 +129,10 @@ final class ExtractMethodProvider {
                     : Stream.<String>empty(),
                 signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
                     ? Stream.<String>empty()
-                    : Stream.of("a type cannot be written"))
+                    : Stream.of("a type cannot be written"),
+                inferredOnlyFromTarget(returnType, flow.parameters())
+                    ? Stream.of("a type variable only the return type names")
+                    : Stream.<String>empty())
             .flatMap(reasons -> reasons)
             .toList();
     final Optional<String> source = CodeActionSupport.source(analysis.tree());
@@ -154,6 +158,7 @@ final class ExtractMethodProvider {
             flow.parameters(),
             flow.declaredHere(),
             flow.outputs(),
+            flow.assigned(),
             flow.returnsValue(),
             thrown,
             signatureTypes);
@@ -175,7 +180,7 @@ final class ExtractMethodProvider {
 
     final List<Site> copies =
         expressionForm
-            ? copies(member.getParentPath(), region.get(0), trees).stream()
+            ? copies(member.getParentPath(), region.get(0), analysis).stream()
                 .map(copy -> new Site(List.of(copy), Map.of()))
                 .toList()
             : Stream.concat(
@@ -215,6 +220,7 @@ final class ExtractMethodProvider {
       List<VariableElement> parameters,
       List<VariableElement> declaredHere,
       List<VariableElement> outputs,
+      Set<VariableElement> assigned,
       boolean returnsValue,
       List<TypeMirror> thrown,
       List<TypeMirror> signatureTypes) {
@@ -231,6 +237,7 @@ final class ExtractMethodProvider {
           .notNull(parameters, "parameters")
           .notNull(declaredHere, "declaredHere")
           .notNull(outputs, "outputs")
+          .notNull(assigned, "assigned")
           .notNull(thrown, "thrown")
           .notNull(signatureTypes, "signatureTypes")
           .validate();
@@ -239,6 +246,7 @@ final class ExtractMethodProvider {
       parameters = List.copyOf(parameters);
       declaredHere = List.copyOf(declaredHere);
       outputs = List.copyOf(outputs);
+      assigned = Set.copyOf(assigned);
       thrown = List.copyOf(thrown);
       signatureTypes = List.copyOf(signatureTypes);
     }
@@ -315,14 +323,17 @@ final class ExtractMethodProvider {
       final String step =
           CodeActionSupport.indentStep(
               indent, CodeActionSupport.lineIndent(source, (int) start(member.getParentPath())));
-      final String modifier = finalParameters() ? "final " : "";
+      // A parameter the region assigns cannot be final, whatever the file's style.
+      final boolean finalStyle = finalParameters();
       final String parameterList =
           parameters.stream()
               .map(
                   parameter ->
                       "%s%s %s"
                           .formatted(
-                              modifier, typeText(parameter.asType()), parameter.getSimpleName()))
+                              finalStyle && !assigned.contains(parameter) ? "final " : "",
+                              typeText(parameter.asType()),
+                              parameter.getSimpleName()))
               .collect(Collectors.joining(", "));
       final String throwsClause =
           thrown.isEmpty()
@@ -353,9 +364,10 @@ final class ExtractMethodProvider {
                                   "%sreturn %s;".formatted(bodyIndent, output.getSimpleName())))
                   .flatMap(lines -> lines)
                   .collect(Collectors.joining("\n"));
-      return "\n\n%sprivate %s%s%s %s(%s)%s {\n%s\n%s}"
+      return "\n\n%s%sprivate %s%s%s %s(%s)%s {\n%s\n%s}"
           .formatted(
               indent,
+              suppressWarnings(indent),
               isStatic ? "static " : "",
               typeParameters.isEmpty()
                   ? ""
@@ -373,6 +385,36 @@ final class ExtractMethodProvider {
               indent);
     }
 
+    // The warnings the enclosing member suppresses stay suppressed in the code it gives away: a
+    // deprecated call moved out would otherwise warn, and fail a -Werror build.
+    private String suppressWarnings(final String indent) {
+      final ModifiersTree modifiers;
+      if (member.getLeaf() instanceof final MethodTree method) {
+        modifiers = method.getModifiers();
+      } else if (member.getLeaf() instanceof final VariableTree field) {
+        modifiers = field.getModifiers();
+      } else {
+        return "";
+      }
+
+      final TreePath modifiersPath = new TreePath(member, modifiers);
+      return modifiers.getAnnotations().stream()
+          .map(annotation -> new TreePath(modifiersPath, annotation))
+          .filter(this::isSuppressWarnings)
+          .map(path -> "%s\n%s".formatted(sourceOf(path, path), indent))
+          .collect(Collectors.joining());
+    }
+
+    private boolean isSuppressWarnings(final TreePath annotation) {
+      return analysis
+                  .trees()
+                  .getElement(
+                      new TreePath(
+                          annotation, ((AnnotationTree) annotation.getLeaf()).getAnnotationType()))
+              instanceof final TypeElement type
+          && type.getQualifiedName().contentEquals(SuppressWarnings.class.getName());
+    }
+
     // The file's style: parameters are final when every parameter of the enclosing method is.
     private boolean finalParameters() {
       return member.getLeaf() instanceof final MethodTree method
@@ -382,7 +424,7 @@ final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return new TypeDisplayFormatter(analysis.types()).format(type);
+      return CodeActionSupport.sourceTypeFormatter(analysis).format(type);
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {
@@ -472,12 +514,23 @@ final class ExtractMethodProvider {
 
   // Whether a call can stand where the expression is: not a compile-time constant (a case label or
   // an annotation value needs one, and extracting one gains nothing), not inside a case label or an
-  // annotation, not an assignment's target.
+  // annotation, not an assignment's target, not an enum constant's own creation (its source is only
+  // the argument list).
   private static boolean replaceableByCall(final TreePath exprPath, final Trees trees) {
     return !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
         && !ExtractionSupport.isAssignmentTarget(exprPath)
+        && !isEnumConstantCreation(exprPath, trees)
         && Stream.iterate(exprPath, Objects::nonNull, TreePath::getParentPath)
             .noneMatch(path -> path.getLeaf() instanceof AnnotationTree || isCaseLabel(path));
+  }
+
+  private static boolean isEnumConstantCreation(final TreePath path, final Trees trees) {
+    if (!(path.getParentPath().getLeaf() instanceof VariableTree)) {
+      return false;
+    }
+
+    final Element declared = trees.getElement(path.getParentPath());
+    return declared != null && declared.getKind() == ElementKind.ENUM_CONSTANT;
   }
 
   private static boolean isCaseLabel(final TreePath path) {
@@ -487,11 +540,15 @@ final class ExtractMethodProvider {
   }
 
   // The selection and its exact copies among the class's own members: the same shape reading the
-  // same variables, so each copy's inputs are in scope there.
+  // same variables, so each copy's inputs are in scope there. The same type too: a poly expression
+  // (`List.of()`) takes its type from where it stands, and one method returns one type.
   private static List<TreePath> copies(
-      final TreePath classPath, final TreePath exprPath, final Trees trees) {
+      final TreePath classPath, final TreePath exprPath, final AttributedFileAnalysis analysis) {
+    final Trees trees = analysis.trees();
+    final TypeMirror type = trees.getTypeMirror(exprPath);
     return ExtractionSupport.occurrences(classPath, exprPath, trees).stream()
         .filter(copy -> CodeActionSupport.enclosingClass(copy).getLeaf() == classPath.getLeaf())
+        .filter(copy -> analysis.types().isSameType(trees.getTypeMirror(copy), type))
         .toList();
   }
 
@@ -529,6 +586,22 @@ final class ExtractMethodProvider {
     return method.getTypeParameters().stream()
         .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
         .collect(Collectors.toUnmodifiableList());
+  }
+
+  // A method type variable the return type names but no parameter does is inferred from where the
+  // call stands, and a call in a `var` declaration or an argument gives it nothing to go by.
+  private static boolean inferredOnlyFromTarget(
+      final TypeMirror returnType, final List<VariableElement> parameters) {
+    final Set<TypeParameterElement> fromArguments =
+        parameters.stream()
+            .map(Element::asType)
+            .flatMap(ExtractMethodProvider::typeVariablesIn)
+            .collect(Collectors.toUnmodifiableSet());
+    return typeVariablesIn(returnType)
+        .anyMatch(
+            variable ->
+                variable.getGenericElement() instanceof ExecutableElement
+                    && !fromArguments.contains(variable));
   }
 
   private static Stream<TypeParameterElement> typeVariablesIn(final TypeMirror type) {

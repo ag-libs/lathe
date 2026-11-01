@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
@@ -12,9 +13,16 @@ import javax.lang.model.util.Types;
 public final class TypeDisplayFormatter {
 
   private final Types types;
+  private final Predicate<TypeElement> qualified;
 
   public TypeDisplayFormatter(final Types types) {
+    this(types, type -> false);
+  }
+
+  // Writes the types `qualified` accepts by their qualified name, the rest by their simple one.
+  public TypeDisplayFormatter(final Types types, final Predicate<TypeElement> qualified) {
     this.types = types;
+    this.qualified = qualified;
   }
 
   public String format(final TypeMirror type) {
@@ -41,7 +49,7 @@ public final class TypeDisplayFormatter {
     final var typeElement = types.asElement(type);
     final String name =
         typeElement instanceof final TypeElement el
-            ? el.getSimpleName().toString()
+            ? (qualified.test(el) ? el.getQualifiedName() : el.getSimpleName()).toString()
             : type.toString();
     if (type.getTypeArguments().isEmpty()) {
       return name;

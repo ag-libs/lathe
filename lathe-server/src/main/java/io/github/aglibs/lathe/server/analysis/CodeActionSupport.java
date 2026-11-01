@@ -10,11 +10,14 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreeScanner;
 import java.io.IOException;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -122,11 +125,40 @@ final class CodeActionSupport {
         .filter(TypeElement.class::isInstance)
         .map(TypeElement.class::cast)
         .distinct()
-        .filter(type -> !declaredIn(analysis, type))
+        .filter(type -> !declaredIn(analysis, type) && !clashes(analysis, type))
         .map(type -> type.getQualifiedName().toString())
         .map(importAnalyzer::importEdit)
         .filter(Objects::nonNull)
         .toList();
+  }
+
+  // For code written into the file: a type whose simple name the file already gives another type
+  // (by an import or a declaration) is written qualified, and never imported.
+  static TypeDisplayFormatter sourceTypeFormatter(final AttributedFileAnalysis analysis) {
+    return new TypeDisplayFormatter(analysis.types(), type -> clashes(analysis, type));
+  }
+
+  private static boolean clashes(final AttributedFileAnalysis analysis, final TypeElement type) {
+    final String simpleName = type.getSimpleName().toString();
+    final String qualifiedName = type.getQualifiedName().toString();
+    return new ImportAnalyzer(analysis)
+            .importedQualifiedNames().stream()
+                .anyMatch(
+                    imported ->
+                        !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
+        || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type);
+  }
+
+  private static Set<String> declaredTypeNames(final AttributedFileAnalysis analysis) {
+    final Set<String> names = new HashSet<>();
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitClass(final ClassTree tree, final Void unused) {
+        names.add(tree.getSimpleName().toString());
+        return super.visitClass(tree, unused);
+      }
+    }.scan(analysis.tree(), null);
+    return names;
   }
 
   // A type of the file itself is in scope by its simple name, and importing a private one would

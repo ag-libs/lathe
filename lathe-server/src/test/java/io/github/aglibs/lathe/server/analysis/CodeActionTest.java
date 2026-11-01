@@ -1688,28 +1688,32 @@ class CodeActionTest {
 
   @Test
   void codeAction_extractMethod_notMovableOrPointless_offersNothing() {
-    final Map<String, String> cases =
-        Map.of(
-            "void", "void m(String a) { «use(a)»; }",
-            "writes a local used later", "int m(int i) { int j = «i++»; return i + j; }",
-            "non-denotable", "void m() { use(«List.of(1, \"a\")»); }",
-            "constant", "int m() { return «1 + 2»; }",
-            "enum case label",
-                "enum E { A, B }\n  void m(E e) { switch (e) { case «A»: break; default: break; } }",
-            "annotation value",
-                "@interface Ann { Class<?> value(); }\n  @Ann(«String.class») void m() {}",
-            "interface", "interface I { default int m(String a) { return «a.length() + 1»; } }",
-            "static with class type variable",
-                "static class Box<E> {\n    Box(E e) { this(«List.of(e)»); }\n    Box(List<E> l) {}\n  }",
-            "local class", "int m() { class L { int v() { return 1; } } return «new L().v()»; }");
+    final Map<String, String> cases = new LinkedHashMap<>();
+    cases.put("void", "void m(String a) { «use(a)»; }");
+    cases.put("writes a local used later", "int m(int i) { int j = «i++»; return i + j; }");
+    cases.put("non-denotable", "void m() { use(«List.of(1, \"a\")»); }");
+    cases.put("constant", "int m() { return «1 + 2»; }");
+    cases.put(
+        "enum case label",
+        "enum E { A, B }\n  void m(E e) { switch (e) { case «A»: break; default: break; } }");
+    cases.put(
+        "annotation value",
+        "@interface Ann { Class<?> value(); }\n  @Ann(«String.class») void m() {}");
+    cases.put("interface", "interface I { default int m(String a) { return «a.length() + 1»; } }");
+    cases.put(
+        "static with class type variable",
+        "static class Box<E> {\n    Box(E e) { this(«List.of(e)»); }\n    Box(List<E> l) {}\n  }");
+    cases.put("local class", "int m() { class L { int v() { return 1; } } return «new L().v()»; }");
+    cases.put("enum constant creation", "enum E { A«(\"a\")»; E(String s) {} }");
+    cases.put(
+        "type variable only the return type names",
+        "<T> void m() { final var l = «new ArrayList<T>()»; List<T> t = l; use(t); }");
+    cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
     cases.forEach(
         (label, member) ->
             assertThat(rightTitles(markedActions(inTestClass(member))))
                 .as(label)
                 .noneMatch(t -> t.startsWith("Extract method")));
-    assertThat(rightTitles(markedActions(inTestClass("void m(int[] a) { «a[0]» = 1; }"))))
-        .as("assignment target")
-        .noneMatch(t -> t.startsWith("Extract method"));
   }
 
   @Test
@@ -1810,6 +1814,19 @@ class CodeActionTest {
     assertExtracts(
         "void m(boolean b) {\n    String line;\n«    line = String.valueOf(b);\n    use(line);»\n  }",
         method);
+    // the warnings the enclosing method suppresses stay suppressed
+    assertThat(
+            assertExtracts(
+                "@SuppressWarnings(\"deprecation\") int m(java.util.Date d) { return «d.getYear() + 1»; }",
+                method))
+        .contains("  @SuppressWarnings(\"deprecation\")\n  private int extracted(");
+    // the file's final parameters are mirrored, except on one the code assigns
+    assertThat(
+            assertExtracts(
+                "void m(final String a) {\n    int n = a.length();\n«    n = n * 2;\n    use(a);»\n"
+                    + "    use(n);\n  }",
+                method))
+        .contains("private int extracted(int n, final String a)");
     // a local the new method declares has its type imported, however the source spelled it
     assertThat(
             assertExtracts(
@@ -1923,11 +1940,46 @@ class CodeActionTest {
         applyEdits(
             unmarked(source), editsOfActionStartingWith(actions, "Extract method 'extracted'")));
 
+    // a poly expression typed differently elsewhere is not a copy: one method returns one type
+    assertThat(
+            rightTitles(
+                markedActions(
+                    inTestClass(
+                        "void m() { List<String> a = «List.of()»; List<Integer> b = List.of(); use(a); use(b); }"))))
+        .contains("Extract method 'extracted'")
+        .noneMatch(t -> t.startsWith("Extract method 'extracted' (replace all"));
+
     // a copy that is an assignment's target is not a copy
     assertThat(
             rightTitles(markedActions(inTestClass("void m(int[] a) { use(«a[0]»); a[0] = 1; }"))))
         .contains("Extract method 'extracted'")
         .noneMatch(t -> t.contains("replace all"));
+  }
+
+  @Test
+  void codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified() {
+    // the simple name is taken by an import, or by a type the file declares
+    final String imported =
+        """
+        package com.example;
+        import java.sql.Date;
+        class Test {
+          Date sql;
+          long m(java.util.Date d) { return «d.getTime() + 1»; }
+        }
+        """;
+    final String declared =
+        inTestClass(
+            "static class Date {}\n  long m(java.util.Date d) { return «d.getTime() + 1»; }");
+    for (final String source : List.of(imported, declared)) {
+      final String rewritten =
+          applyEdits(
+              unmarked(source), editsOfActionStartingWith(markedActions(source), "Extract method"));
+      assertThat(rewritten)
+          .contains("private long extracted(java.util.Date d)")
+          .doesNotContain("import java.util.Date;");
+      assertCompilesClean(rewritten);
+    }
   }
 
   @Test
