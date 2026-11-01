@@ -396,6 +396,8 @@ Found by the pre-release probes (2026-10-27) on Dropwizard, Helidon and EqualsVe
 - On `new BlockingArrayQueue<>(min, max)` (Dropwizard), the answer describes the class, not the constructor
   the call resolves to.
 
+An agent's review on Dropwizard (2026-11-01) adds: `{@inheritDoc}` is not resolved (no javadoc for an overriding `equals`), and signatures leave out modifiers and supertypes.
+
 ### Fix direction
 
 Collapse paragraph breaks to one blank line and keep links on one line.
@@ -696,32 +698,6 @@ None yet.
 
 ---
 
-## EG-082 — Workspace symbol search finds only types
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: MCP `search_symbols` and the editor's `workspace/symbol`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-`search_symbols doRoute` answers nothing: the index holds types only, so a method or field cannot be found
-by name; an agent falls back to grep.
-
-### Fix direction
-
-Index the reactor's methods and fields alongside its types (name, kind, container, location),
-rank them after types of the same name, and keep dependencies and the JDK to types unless asked.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
 **Status: documented**
@@ -740,6 +716,114 @@ Found by an agent's review of the MCP tools on Helidon (2026-11-01).
 ### Fix direction
 
 Emit each directive as a child of the module symbol, from the module declaration's tree.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-084 — Diagnostics skip the build's javac plugins, and contradict the notes that run them
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP `get_diagnostics` (and the editor's diagnostics, which compile the same way).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Related: CA-18.
+
+### Observed behaviour
+
+`get_diagnostics` answers "No errors or warnings in LatheProbe.java" and, in the same reply,
+"Not compiled: … [NullAway] …" (also seen with `[ReturnValueIgnored]`). Plain javac errors are reported,
+and `--release 17` is honoured: the open compile runs without the build's `-Xplugin` (Error Prone,
+NullAway), while the check behind the notes runs with them.
+
+### Fix direction
+
+Run the build's javac plugins in the open compile when the module's compile args have them,
+or at least report the notes' plugin errors as diagnostics instead of contradicting them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-085 — Implementations miss anonymous classes and enum constant bodies
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_implementations` and `analyze_change`, likely the editor's go to implementation.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `HttpClientBuilder:284`,
+`MessageQueueFactory:41`) and an enum constant body's override (`RED { label() }`) are absent, so
+`analyze_change` reports an override family of 7 where there are 10.
+`rename_symbol` and `find_references` include them.
+
+### Fix direction
+
+Search anonymous class bodies and enum constant bodies for overrides, as rename's override family does.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-086 — An enum constant with a body cannot be resolved at its declaration
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools by name or column, likely the editor's hover and definition there.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+At `RED {`, tools answer "no symbol named 'RED'", by name and by column, although `outline` lists it at
+16:9. Constants without a body, and every use site, resolve.
+
+### Fix direction
+
+Map the constant's name position to its `VariableTree` (javac wraps a bodied constant in an anonymous
+class whose tree overlaps the name).
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: the editor and MCP `call_hierarchy` / `get_definition`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`call_hierarchy` outgoing lists `this::compute` but not `LatheProbe::new`
+(`CallHierarchyOutgoingLocator` skips `<init>` member references).
+The `new` of `::new` and the `var` keyword resolve to nothing.
+
+### Fix direction
+
+Record `Type::new` as a constructor call; resolve `new` in `::new` to the constructor and `var` to the
+inferred type.
 
 ### Regression targets
 
@@ -797,6 +881,90 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 ### Fix direction
 
 Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-022 — A rename to a name a use already sees silently rebinds the use
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+Renaming parameter `x` to `value` in `int compute(int x) { return x + value; }`, where `value` is a field,
+gives `return value + value;`: the field's use now reads the parameter.
+The code still compiles, so `verify_change` reports nothing, and the rename reports success.
+`RenameConflicts` says as much: it does not detect "the new name shadowing the symbol at a use".
+
+### Fix direction
+
+Before applying, check every use of a declaration that already has the new name and that the renamed
+symbol's scope covers: refuse with the use's location, or qualify it (`this.value`) where Java allows.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-023 — A method rename can capture another overload's calls
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+With `void setValue(int)` and `long twice(long)`, renaming `twice` to `setValue` turns `twice(7)` into
+`setValue(7)`, which now binds to `setValue(int)`; find references afterwards no longer sees the call.
+It compiles, so nothing reports it, although the tool advertises overload-correct renames.
+The collision check compares only signatures, so a different overload of the new name passes.
+
+### Fix direction
+
+After computing the edits, re-attribute the renamed call sites in a transient compile (as extract method's
+compile check does) and refuse when any now resolves to another method; or check overload resolution
+against the new name's existing overloads up front.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-024 — Renaming an interface method misses implementations inherited from a dependency
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
+`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
+with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
+
+### Fix direction
+
+For each reactor subtype of the renamed method's type, check whether a supertype outside the reactor
+supplies the implementation (`Elements.overrides` on the inherited members); refuse and name the class.
 
 ### Regression targets
 
@@ -874,6 +1042,31 @@ The return type is the local's inferred concrete type, and the caller's `var` be
 Keep the caller's `var` when the selection declared the local with `var`, and type a returned local by the declared
 type rather than the inferred one where they differ; a check through the build's plugins is out of reach of the
 analysis compile.
+
+### Regression targets
+
+None yet.
+
+---
+
+## CA-19 — Import fixes ignore nested types
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `fix_imports`, and the editor's missing-import fixes if they share the candidates.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`fix_imports` says "No import found for: Entry" although `java.util.Map.Entry` is available.
+
+### Fix direction
+
+Offer nested types whose simple name matches (importing the nested type, or the outer type and
+qualifying), ranked after top-level types.
 
 ### Regression targets
 
@@ -1147,6 +1340,8 @@ Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 
 With two top-level test classes in one file both declaring `method`, `run_test` with `scope=method` runs only the first class's; its `Ran:` line names that class, and the second goes unmentioned.
 Class scope runs every top-level class (archived [TE-9](gaps-archive.md#te-9--running-a-file-with-two-top-level-test-classes-runs-only-the-first--done)).
+
+The same happens with a `@Nested` class: a method name in both the outer class and a nested one runs only the outer one, and the ambiguity is not reported (agent review on Dropwizard, 2026-11-01).
 
 ### Fix direction
 
@@ -1448,6 +1643,8 @@ Found by the agent-tooling landscape review (2026-10-24).
 
 IntelliJ's `search_symbol` finds classes, methods and fields, and gopls's `go_search` searches all
 symbols. For "where is method X declared" Lathe has nothing, so the agent greps.
+
+Seen again by an agent's review on Helidon (2026-11-01): `search_symbols doRoute` answers nothing, so an agent falls back to grep.
 
 ### Fix direction
 
@@ -2170,6 +2367,164 @@ although a file's structure needs no compile.
 
 Outline a file no module compiles from a parse alone (no attribution), and keep the note saying it is
 not checked.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-72 — MCP recompiles an unchanged file on every tool call; parallel calls compile it N times
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: MCP tools, on large files and with agents that call tools in parallel.**
+
+Found watching an MCP session log on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Every tool call reads the file from disk and passes it to the analysis as a new document
+(`LatheEngine.compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
+Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
+three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
+more on very large files (cf. EG-073).
+
+### Fix direction
+
+Reuse the last analysis when the file's content equals what was last compiled for it and nothing it depends
+on changed since (the compile stamps and the stale scan know); otherwise compile as today.
+Coalesce concurrent requests for one file onto one compile.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-73 — A file that does not compile gives an empty answer from stale classes, without saying so
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_implementations` (and other tools that fall back to the mirror).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`find_implementations` answered "No implementations found" for a sealed interface with two records while
+the file had a compile error: it fell back to stale classes. After the fix it found both.
+`find_references` worked in the same state.
+
+### Fix direction
+
+When the answer comes from the last good classes, say so with the compile error, as the "Not compiled"
+note does elsewhere; or answer from the file's parse where it suffices.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-74 — `search_symbols` lists types the project cannot use, though its description says it excludes them
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `search_symbols`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Follow-up to MC-38, which ranks JDK internals last by design.
+
+### Observed behaviour
+
+Results include `ThreadLocal.ThreadLocalMap.Entry`, `Hashtable.Entry` (package-private nested types)
+and `com.sun.tools.javac.util.StringUtils` (a JDK internal, ranked last per MC-38),
+while the tool's description says such types are excluded.
+
+### Fix direction
+
+Drop nested types that are not public (or not accessible from any reactor package), and make the
+description match MC-38's behaviour (internals listed last, not excluded).
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-75 — `outline` mislabels records and enum constants, and omits methods in enum constant bodies
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `outline` (and the editor's document symbols, which share it).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Records show as `struct`, enum constants as `field`, and an enum constant body's methods are missing.
+
+### Fix direction
+
+Label records `record` and enum constants `enum constant` in the MCP text (LSP has no record kind, so its
+mapping can stay), and list a constant body's members under the constant.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-76 — Two hits on one line show as duplicate rows without columns
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP tools that list locations.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+When a line holds two results, the answer shows the same `file:line: snippet` row twice, with no column
+to tell them apart.
+
+### Fix direction
+
+Print the column (`file:line:column`), or merge the hits of one line into one row with both columns.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-77 — `workspace_summary` gives no test status for some modules
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `workspace_summary`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Some modules show no test status at all, while others say `tests: not captured`.
+
+### Fix direction
+
+Show a status for every module: captured, not captured (with the command), or no tests.
 
 ### Regression targets
 
