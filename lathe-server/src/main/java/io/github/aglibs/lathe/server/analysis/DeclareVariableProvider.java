@@ -67,9 +67,10 @@ final class DeclareVariableProvider implements CodeActionProvider {
 
     final TreePath rhsPath = analysis.trees().getPath(cu, assign.getExpression());
     final TypeMirror rhsType = rhsPath != null ? analysis.trees().getTypeMirror(rhsPath) : null;
-    final String simpleName = rhsType != null ? CodeActionSupport.typeSimpleName(rhsType) : null;
-    final String fqn = rhsType != null ? CodeActionSupport.typeFqn(rhsType) : null;
-    final String typePart = simpleName != null ? simpleName : "var";
+    final CodeActionSupport.SourceType written =
+        rhsType != null && CodeActionSupport.isDenotable(rhsType)
+            ? CodeActionSupport.sourceType(analysis, rhsPath, rhsType)
+            : new CodeActionSupport.SourceType("var", List.of());
 
     final long lhsStart = positions.getStartPosition(cu, lhs);
     final long lhsEnd = positions.getEndPosition(cu, lhs);
@@ -80,12 +81,9 @@ final class DeclareVariableProvider implements CodeActionProvider {
     final var startPos = SourceLocator.offsetToPosition(cu, lhsStart);
     final var endPos = SourceLocator.offsetToPosition(cu, lhsEnd);
     final var edits = new ArrayList<TextEdit>();
-    edits.add(new TextEdit(new Range(startPos, endPos), "%s %s".formatted(typePart, varName)));
-
-    final var importEdit = CodeActionSupport.importEditFor(analysis, fqn);
-    if (importEdit != null) {
-      edits.add(importEdit);
-    }
+    edits.add(
+        new TextEdit(new Range(startPos, endPos), "%s %s".formatted(written.text(), varName)));
+    edits.addAll(written.imports());
 
     final Diagnostic diag = request.diag();
     final var action = new CodeAction();
@@ -97,7 +95,7 @@ final class DeclareVariableProvider implements CodeActionProvider {
     workspaceEdit.setChanges(Map.of(request.uri(), edits));
     action.setEdit(workspaceEdit);
 
-    LOG.fine(() -> "[codeAction:declare] %s %s".formatted(typePart, varName));
+    LOG.fine(() -> "[codeAction:declare] %s %s".formatted(written.text(), varName));
     return List.of(Either.forRight(action));
   }
 

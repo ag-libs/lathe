@@ -115,7 +115,7 @@ final class SyncCoordinator {
                   rootProject.getRemoteProjectRepositories()),
               log);
       final WorkspaceStyleData style =
-          new MavenStyle(formatterResolver, log).write(workspaceRoot, rootProject);
+          new MavenStyle(formatterResolver, log).write(workspaceRoot, rootProject, projects);
       MavenJvmArgs.write(
           workspaceRoot,
           projects,

@@ -12,6 +12,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -71,19 +72,6 @@ final class CodeActionSupport {
     };
   }
 
-  static String typeFqn(final TypeMirror type) {
-    if (type instanceof DeclaredType dt) {
-      return ((TypeElement) dt.asElement()).getQualifiedName().toString();
-    }
-    return null;
-  }
-
-  // An import edit for the fully-qualified name, or null when none is needed (already imported,
-  // java.lang, same package) or the name is null. Shared by the code-action providers.
-  static TextEdit importEditFor(final AttributedFileAnalysis analysis, final String fqn) {
-    return fqn == null ? null : new ImportAnalyzer(analysis).importEdit(fqn);
-  }
-
   static TreePath pathAt(
       final AttributedFileAnalysis analysis, final int line, final int character) {
     final CompilationUnitTree cu = analysis.tree();
@@ -101,6 +89,23 @@ final class CodeActionSupport {
       current = current.getParentPath();
     }
     return null;
+  }
+
+  // A type as code written at `path` names it, and the imports that name needs.
+  record SourceType(String text, List<TextEdit> imports) {
+
+    SourceType {
+      ValidCheck.check().notNull(text, "text").notNull(imports, "imports").validate();
+      imports = List.copyOf(imports);
+    }
+  }
+
+  static SourceType sourceType(
+      final AttributedFileAnalysis analysis, final TreePath path, final TypeMirror type) {
+    final var target = (TypeElement) analysis.trees().getElement(enclosingClass(path));
+    return new SourceType(
+        sourceTypeFormatter(analysis, target).format(type),
+        importEditsFor(analysis, target, Stream.of(type)));
   }
 
   static TreePath enclosingClass(final TreePath path) {

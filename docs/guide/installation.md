@@ -168,7 +168,9 @@ If you need every step on save, use the `command-file` recipe below.
 
 Other limits:
 
-- Only the root project's Spotless configuration is read; per-module Spotless configs are ignored.
+- One formatter serves the whole workspace: the root project's Spotless, or, when the root only manages it
+  (`<pluginManagement>`), the one every Java module runs.
+  If some Java modules run no Spotless or a different configuration, formatting is off and the sync says so.
 - An Eclipse profile must be a local file (Spotless also accepts URLs and classpath resources), and only
   Eclipse releases Spotless pins with a lockfile are supported.
 - After editing an Eclipse profile, restart the language server.

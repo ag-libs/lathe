@@ -5,7 +5,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import javax.lang.model.type.TypeMirror;
@@ -57,26 +56,24 @@ final class ReplaceVarProvider {
       return List.of();
     }
 
-    final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
+    final var written = CodeActionSupport.sourceType(analysis, varPath, type);
     final var replaceEdit =
         new TextEdit(
             new Range(
                 SourceLocator.offsetToPosition(cu, varStart),
                 SourceLocator.offsetToPosition(cu, varStart + VAR.length())),
-            typeText);
-    final TextEdit importEdit =
-        CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
+            written.text());
     final List<TextEdit> edits =
-        Stream.of(replaceEdit, importEdit).filter(Objects::nonNull).toList();
+        Stream.concat(Stream.of(replaceEdit), written.imports().stream()).toList();
 
     final var action = new CodeAction();
-    action.setTitle("Replace 'var' with '%s'".formatted(typeText));
+    action.setTitle("Replace 'var' with '%s'".formatted(written.text()));
     action.setKind(CodeActionKind.RefactorRewrite);
     final var workspaceEdit = new WorkspaceEdit();
     workspaceEdit.setChanges(Map.of(uri, edits));
     action.setEdit(workspaceEdit);
 
-    LOG.fine(() -> "[codeAction:replaceVar] %s".formatted(typeText));
+    LOG.fine(() -> "[codeAction:replaceVar] %s".formatted(written.text()));
     return List.of(Either.forRight(action));
   }
 }

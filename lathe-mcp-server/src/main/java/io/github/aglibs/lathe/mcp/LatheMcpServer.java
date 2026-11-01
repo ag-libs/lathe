@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheWorkspace;
+import io.github.aglibs.lathe.server.ChildProcesses;
 import io.github.aglibs.lathe.server.LatheLogging;
 import io.github.aglibs.lathe.server.engine.LatheEngine;
 import io.modelcontextprotocol.json.McpJsonDefaults;
@@ -87,6 +88,7 @@ public final class LatheMcpServer {
 
   public static void main(final String[] args) throws InterruptedException {
     LatheLogging.init();
+    ChildProcesses.destroyOnExit();
 
     final var cwd = Path.of("").toAbsolutePath();
     final long pid = ProcessHandle.current().pid();

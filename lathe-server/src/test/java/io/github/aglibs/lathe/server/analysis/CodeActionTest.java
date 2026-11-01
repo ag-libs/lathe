@@ -2056,6 +2056,63 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_typeWritingRefactors_typeNamedLikeAnotherInTheFile_writtenQualified() {
+    final String header =
+        "package com.example;\nimport java.sql.Date;\nclass Test {\n  Date sql;\n";
+    final Map<String, String> sources =
+        Map.of(
+            "Replace 'var'",
+            "  long m() { «var» d = new java.util.Date(); return d.getTime(); }\n}\n",
+            "Extract variable",
+            "  long m() { return «new java.util.Date()».getTime(); }\n}\n",
+            "Extract field",
+            "  long m() { return «new java.util.Date()».getTime(); }\n}\n");
+    sources.forEach(
+        (action, body) -> {
+          final String source = header + body;
+          final List<Either<Command, CodeAction>> actions = markedActions(source);
+          assertThat(rightTitles(actions)).as(action).anyMatch(t -> t.startsWith(action));
+          final String rewritten =
+              applyEdits(unmarked(source), editsOfActionStartingWith(actions, action));
+          assertThat(rewritten)
+              .as(action)
+              .contains("java.util.Date ")
+              .doesNotContain("import java.util.Date;");
+          assertCompilesClean(rewritten);
+        });
+
+    final String declare = header + "  void m() { d = new java.util.Date(); }\n}\n";
+    final List<Diagnostic> diags =
+        session.compile(TempSourceCompiler.TEST_URI, declare, 1, CompileMode.OPEN);
+    final String declared =
+        applyEdits(
+            declare,
+            editsOfActionStartingWith(diagnosticActions(declare, diags), "Declare local variable"));
+    assertThat(declared).contains("java.util.Date d = ").doesNotContain("import java.util.Date;");
+  }
+
+  @Test
+  void codeAction_extractVariable_typeOnlyNamedQualified_importsItAndItsArguments() {
+    final String source =
+        """
+        package com.example;
+        class Test {
+          int m() { return «java.util.List.of(new java.util.concurrent.atomic.AtomicLong())».size(); }
+        }
+        """;
+    final String rewritten =
+        applyEdits(
+            unmarked(source), editsOfActionStartingWith(markedActions(source), "Extract variable"));
+
+    assertThat(rewritten)
+        .contains(
+            "List<AtomicLong> ",
+            "import java.util.List;",
+            "import java.util.concurrent.atomic.AtomicLong;");
+    assertCompilesClean(rewritten);
+  }
+
+  @Test
   void codeAction_extractMethod_typeNameOfTheFile_keptOrRefusedWhenUnwritable() {
     // a nested type the file imports keeps the name the file uses
     final String imported =

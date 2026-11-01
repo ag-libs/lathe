@@ -100,7 +100,7 @@ final class ExtractVariableProvider {
     }
 
     final String exprSource = source.substring((int) exprStart, (int) exprEnd);
-    final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
+    final var written = CodeActionSupport.sourceType(analysis, exprPath, type);
     final String name =
         VariableNameSuggester.suggest(
                 CodeActionSupport.typeSimpleName(type),
@@ -108,9 +108,7 @@ final class ExtractVariableProvider {
                 expr,
                 takenNames(exprPath))
             .get(0);
-    final TextEdit importEdit =
-        CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
-    final String declaration = "%s %s = %s;".formatted(typeText, name, exprSource);
+    final String declaration = "%s %s = %s;".formatted(written.text(), name, exprSource);
 
     final List<TextEdit> edits;
     if (body != null) {
@@ -118,20 +116,20 @@ final class ExtractVariableProvider {
           ExtractionSupport.editList(
               blockEdit(analysis, source, body, declaration, name, exprStart, exprEnd),
               List.of(),
-              importEdit);
+              written.imports());
     } else if (wholeStatement) {
       edits =
           ExtractionSupport.editList(
               ExtractionSupport.replaceEdit(
-                  cu, exprStart, exprStart, "%s %s = ".formatted(typeText, name)),
+                  cu, exprStart, exprStart, "%s %s = ".formatted(written.text(), name)),
               List.of(),
-              importEdit);
+              written.imports());
     } else {
       edits =
           ExtractionSupport.editList(
               insertDecl(cu, source, anchorStart, declaration),
               List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
-              importEdit);
+              written.imports());
     }
 
     final var actions = new ArrayList<Either<Command, CodeAction>>();
@@ -142,7 +140,8 @@ final class ExtractVariableProvider {
     final Either<Command, CodeAction> replaceAll =
         body != null || wholeStatement
             ? null
-            : replaceAllAction(uri, cu, trees, exprPath, source, declaration, name, importEdit);
+            : replaceAllAction(
+                uri, cu, trees, exprPath, source, declaration, name, written.imports());
     if (replaceAll != null) {
       actions.add(replaceAll);
     }
@@ -305,7 +304,7 @@ final class ExtractVariableProvider {
       final String source,
       final String declaration,
       final String name,
-      final TextEdit importEdit) {
+      final List<TextEdit> imports) {
     final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
     if (methodPath == null) {
       return null;
@@ -369,7 +368,7 @@ final class ExtractVariableProvider {
         "Extract variable '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
         ExtractionSupport.VARIABLE_KIND,
         ExtractionSupport.editList(
-            insertDecl(cu, source, anchorStart, declaration), replaces, importEdit));
+            insertDecl(cu, source, anchorStart, declaration), replaces, imports));
   }
 
   // The innermost BlockTree that encloses every occurrence (the method body always qualifies), so
