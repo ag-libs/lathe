@@ -87,10 +87,15 @@ class MultiModuleTest {
     final String launcher = read(versionDir.resolve(Os.script("lathe-launcher")));
     if (Os.WINDOWS) {
       assertThat(launcher).startsWith("@echo off\r\n");
-      assertThat(launcher).contains("@.lathe\\jvm.args", "@\"%~dp0lathe-server.args\"");
+      assertThat(launcher)
+          .contains("@\"%lathe_dir%\\jvm.args\"", "@\"%~dp0lathe-server.args\"");
     } else {
       assertThat(launcher).startsWith("#!/bin/sh\n");
-      assertThat(launcher).contains("@.lathe/jvm.args", "@\"$(dirname \"$0\")/lathe-server.args\"");
+      assertThat(launcher)
+          .contains(
+              "\"@$lathe_dir/jvm.args\"",
+              "argfile=\"$(dirname \"$0\")/lathe-server.args\"",
+              "\"@$argfile\"");
     }
 
     assertThat(launcher).doesNotContain(".jar");
