@@ -1926,34 +1926,6 @@ None yet.
 
 ---
 
-## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-- After renaming a type back (`State` to `Status`), the answer notes "Not checked: …/State.java does not exist",
-  about the file the rename itself moved.
-- After an agent edits a POM, `workspace_summary` does not mention the pending sync, while `get_diagnostics`
-  ("Sync required") and `verify_change` (deferred) do.
-
-### Fix direction
-
-Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
-as [MC-37](gaps-archive.md#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version--done) asks for another schema.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
 
 **Status: accepted**

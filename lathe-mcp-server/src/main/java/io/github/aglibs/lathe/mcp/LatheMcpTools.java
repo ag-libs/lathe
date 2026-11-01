@@ -544,8 +544,11 @@ final class LatheMcpTools {
         engine,
         "rename_symbol",
         request,
-        (file, line, column) ->
-            renameResult(engine.rename(file, line, column, newName), engine.notes(List.of(file))));
+        (file, line, column) -> {
+          final LatheRename rename = engine.rename(file, line, column, newName);
+          return renameResult(
+              rename, engine.notes(rename.files().isEmpty() ? List.of(file) : rename.paths()));
+        });
   }
 
   private static CallToolResult handleRunTest(

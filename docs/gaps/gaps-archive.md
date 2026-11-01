@@ -11068,6 +11068,48 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+- After renaming a type back (`State` to `Status`), the answer notes "Not checked: …/State.java does not exist",
+  about the file the rename itself moved.
+- After an agent edits a POM, `workspace_summary` does not mention the pending sync, while `get_diagnostics`
+  ("Sync required") and `verify_change` (deferred) do.
+
+### Fix direction
+
+Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
+as [MC-37](gaps-archive.md#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version--done) asks for another schema.
+
+### Resolution
+
+- A rename's notes are about the files it wrote, at their paths after the rename (`LatheRename.paths`),
+  so the file a type rename moved away is no longer reported "not checked … does not exist".
+  A rename that changed nothing still notes the asked-about file.
+- `workspace_summary` names the pending sync after a POM edit: it carries every tool's notes since
+  [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version--done).
+
+Verified end to end on Dropwizard (2026-11-01): renaming `JarLocation` and back notes nothing, and a
+POM edit makes `workspace_summary` end with `Sync required: build files changed — run .lathe/lathe-sync.sh`.
+
+### Regression targets
+
+- `LatheEngineTest.rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass`
+  (the moved file's new path, and no not-checked note for the touched files).
+- `LatheEngineTest.notes_buildFileEditedMidSession_syncRequiredUntilItsContentIsBack_editsStillCompile`
+  for the pending-sync note `workspace_summary` now carries.
+
+---
+
 ## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version — done
 
 **Status: done.**
@@ -11087,7 +11129,7 @@ edge and carries no note.
 ### Fix direction
 
 `workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
-[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
+[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync--done) asks for the same note for a pending POM sync; one change can serve both.
 
 ### Resolution
 

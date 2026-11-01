@@ -894,6 +894,8 @@ class LatheEngineTest {
         .extracting(LatheFileEdit::uri)
         .anySatisfy(uri -> assertThat(uri).endsWith("Renamed.java"))
         .anySatisfy(uri -> assertThat(uri).endsWith("App.java"));
+    assertThat(rename.paths()).contains(renamed, app);
+    assertThat(engine.notes(rename.paths()).notChecked()).isEmpty();
 
     // The commit swapped the mirror's class and compiled the dependent against it, in one go.
     final Path apiClasses = tmp.resolve(".lathe/api/classes/com/example/api");
