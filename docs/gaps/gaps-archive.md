@@ -40,14 +40,18 @@ Reproduced through MCP `fix_imports` on this repository before the fix:
 `List: java.awt.List, java.util.List` and
 `Function: com.google.common.base.Function, io.reactivex.functions.Function, java.util.function.Function`.
 
-`searchExact` now sorts its group with the same ranking, one shared `WorkspaceTypeIndex.ranking()` comparator,
-so a type the project references leads its namesakes; on a cold start, before usage counts exist, the order falls back to reactor types first, then name.
-The proposed tiers (java.awt last, the module's own dependencies) are not needed.
+`searchExact` now sorts its group with the same ranking, so a type the project references leads its namesakes.
+Completion had a second, richer comparator of its own (`TypeReferenceCompleter`), with origin tiers below usage:
+`java.lang`, then everyday platform packages (`java.util`, `java.io`, `java.time`, …), then reactor types, then the rest.
+Those tiers moved into the one public `WorkspaceTypeIndex.ranking()`, which completion now applies after its prefix-match term,
+so every type list (completion, import candidates, workspace symbols) has one order,
+and a cold start, before usage counts exist, also offers `java.util.List` before `java.awt.List`.
+The gap's other proposed tier, the module's own dependencies, is not needed.
 Not done: `fix_imports` still lists a name with several matches as ambiguous, now with the likely one first, rather than adding it.
 
 ### Regression targets
 
-- `WorkspaceTypeIndexTest.searchAndSearchExact_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName`: completion and import candidates rank alike, cold and with counts.
+- `WorkspaceTypeIndexTest.searchAndSearchExact_usageThenOrigin_referencedTypeFirstElsePlatformType`: completion and import candidates rank alike; cold, `java.util.List` leads `java.awt.List`; usage outranks origin.
 - `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: with usage counts, the referenced `javax.xml.datatype.Duration` leads the alphabetically-earlier `java.time.Duration`.
 
 ---
