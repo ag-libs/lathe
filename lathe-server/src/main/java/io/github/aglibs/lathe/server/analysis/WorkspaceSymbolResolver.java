@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
@@ -23,13 +24,17 @@ public final class WorkspaceSymbolResolver {
 
   private WorkspaceSymbolResolver() {}
 
+  // keep narrows the types before the cap, so a narrowed search is not starved by the rest.
   public static List<SymbolInformation> resolve(
-      final String query, final WorkspaceTypeIndex typeIndex, final List<Path> sourceDirs) {
+      final String query,
+      final WorkspaceTypeIndex typeIndex,
+      final List<Path> sourceDirs,
+      final Predicate<TypeIndexEntry> keep) {
     if (query.isBlank()) {
       return List.of();
     }
 
-    final List<TypeIndexEntry> entries = mergedEntries(query, typeIndex);
+    final List<TypeIndexEntry> entries = mergedEntries(query, typeIndex, keep);
     final var results = new ArrayList<SymbolInformation>();
     try (var parser = new SourceParser()) {
       for (final TypeIndexEntry entry : entries) {
@@ -50,21 +55,26 @@ public final class WorkspaceSymbolResolver {
   // start with either. Prefix matches win on overlap; the combined list stays capped at
   // SEARCH_LIMIT so the per-entry declarationRange parse cost is unchanged from before.
   private static List<TypeIndexEntry> mergedEntries(
-      final String query, final WorkspaceTypeIndex typeIndex) {
+      final String query,
+      final WorkspaceTypeIndex typeIndex,
+      final Predicate<TypeIndexEntry> keep) {
     final int lastDot = query.lastIndexOf('.');
     if (lastDot >= 0) {
-      return qualifiedEntries(query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex);
+      return qualifiedEntries(
+          query.substring(0, lastDot), query.substring(lastDot + 1), typeIndex, keep);
     }
 
     final var seen = new LinkedHashSet<String>();
     final var merged = new ArrayList<TypeIndexEntry>();
-    for (final TypeIndexEntry entry : typeIndex.searchSymbols(query, SEARCH_LIMIT)) {
+    for (final TypeIndexEntry entry :
+        kept(typeIndex.searchSymbols(query, Integer.MAX_VALUE), keep)) {
       if (seen.add(entry.binaryName())) {
         merged.add(entry);
       }
     }
 
-    for (final TypeIndexEntry entry : typeIndex.searchCamelCase(query, SEARCH_LIMIT)) {
+    for (final TypeIndexEntry entry :
+        kept(typeIndex.searchCamelCase(query, Integer.MAX_VALUE), keep)) {
       if (merged.size() >= SEARCH_LIMIT) {
         break;
       }
@@ -81,11 +91,20 @@ public final class WorkspaceSymbolResolver {
   // like util.Duration): the simple-name prefix search, narrowed to the types declared in that
   // package or type. Narrowed before the cap, so java.util.List is not starved by its siblings.
   private static List<TypeIndexEntry> qualifiedEntries(
-      final String qualifier, final String simplePrefix, final WorkspaceTypeIndex typeIndex) {
+      final String qualifier,
+      final String simplePrefix,
+      final WorkspaceTypeIndex typeIndex,
+      final Predicate<TypeIndexEntry> keep) {
     return typeIndex.searchSymbols(simplePrefix, Integer.MAX_VALUE).stream()
         .filter(entry -> declaredIn(containerName(entry), qualifier))
+        .filter(keep)
         .limit(SEARCH_LIMIT)
         .toList();
+  }
+
+  private static List<TypeIndexEntry> kept(
+      final List<TypeIndexEntry> entries, final Predicate<TypeIndexEntry> keep) {
+    return entries.stream().filter(keep).limit(SEARCH_LIMIT).toList();
   }
 
   private static boolean declaredIn(final String container, final String qualifier) {

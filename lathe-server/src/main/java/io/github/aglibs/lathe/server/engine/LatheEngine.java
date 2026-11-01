@@ -16,9 +16,13 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.io.Serial;
+import java.lang.module.ModuleDescriptor;
+import java.lang.module.ModuleFinder;
+import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -35,14 +39,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyPrepareParams;
 import org.eclipse.lsp4j.DefinitionParams;
@@ -76,6 +79,18 @@ public final class LatheEngine {
   private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
+  private static final int TEST_CLASS_CANDIDATES = 20;
+  private static final int LISTED_MENTIONS = 20;
+  private static final Set<String> JDK_PACKAGES =
+      systemPackages(descriptor -> descriptor.packages().stream());
+  private static final Set<String> JDK_EXPORTED_PACKAGES =
+      systemPackages(
+          descriptor ->
+              descriptor.exports().stream()
+                  .filter(exports -> !exports.isQualified())
+                  .map(ModuleDescriptor.Exports::source));
+  private static final Comparator<Position> SOURCE_ORDER =
+      Comparator.comparingInt(Position::getLine).thenComparingInt(Position::getCharacter);
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -130,6 +145,21 @@ public final class LatheEngine {
 
     public static Optional<CallDirection> from(final String wireName) {
       return Arrays.stream(values()).filter(d -> d.name().equalsIgnoreCase(wireName)).findFirst();
+    }
+  }
+
+  // Which code an answer covers: the reactor's own (generated sources included), or also the JDK
+  // and dependencies, whose entries bury the reactor's in a call tree or a name search.
+  public enum SymbolScope {
+    REACTOR,
+    ALL;
+
+    public static Optional<SymbolScope> from(final String wireName) {
+      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
+    }
+
+    public boolean includes(final LatheLocation.Origin origin) {
+      return this == ALL || origin != LatheLocation.Origin.EXTERNAL;
     }
   }
 
@@ -214,13 +244,22 @@ public final class LatheEngine {
   // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
   // The tool goes on with the analysis this compiles, so the file is compiled once.
   private void compileAtName(final Path file, final int line, final int column) {
-    if (!onWord(file, line, column)) {
+    if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
     }
 
     compileFromDisk(file);
     if (!await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)))) {
       throw new NotOnName();
+    }
+  }
+
+  // An expected answer, not a failure: the tool cannot do this here, and the message says why.
+  public static final class Refused extends IllegalStateException {
+    @Serial private static final long serialVersionUID = 1L;
+
+    Refused(final String reason) {
+      super(reason);
     }
   }
 
@@ -233,7 +272,7 @@ public final class LatheEngine {
     }
   }
 
-  private boolean onWord(final Path file, final int line, final int column) {
+  private Optional<String> wordAt(final Path file, final int line, final int column) {
     return sourceLine(file, line)
         .filter(text -> column >= 0 && column < text.length())
         .filter(text -> Character.isJavaIdentifierPart(text.charAt(column)))
@@ -243,13 +282,19 @@ public final class LatheEngine {
                     SourceLocator.identifierStart(text, column),
                     SourceLocator.identifierEnd(text, column)))
         .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
-        .filter(word -> !SourceVersion.isKeyword(word))
-        .isPresent();
+        .filter(word -> !SourceVersion.isKeyword(word));
   }
 
   public Optional<String> sourceLine(final Path file, final int line) {
     final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
     return line >= 0 && line < lines.size() ? Optional.of(lines.get(line)) : Optional.empty();
+  }
+
+  // Where name stands as a whole word on the line (0-based columns, left to right), for an agent
+  // that names the symbol instead of counting its column. The text only finds the candidates: javac
+  // resolves each, and refuses one inside a comment or a string (NotOnName).
+  public List<Integer> nameColumns(final Path file, final int line, final String name) {
+    return TextMentions.wordStarts(sourceLine(file, line).orElse(""), name).boxed().toList();
   }
 
   /**
@@ -303,10 +348,65 @@ public final class LatheEngine {
    * per-file warmup), each hit enriched with a snippet and where it lives, capped to {@code
    * maxResults}.
    */
-  public List<LatheSymbol> searchSymbols(final String query, final int maxResults) {
+  public List<LatheSymbol> searchSymbols(
+      final String query, final SymbolScope scope, final int maxResults) {
+    // Agents write globs by habit; the search already matches a prefix.
+    final String name = query.replaceAll("^\\*+|\\*+$", "");
+    if (name.isBlank()) {
+      return List.of();
+    }
+
     await(service.reconcileForVerify()); // so types the agent just wrote are found
-    final List<? extends SymbolInformation> symbols = await(service.workspaceSymbolFuture(query));
-    return symbols.stream().limit(maxResults).map(this::toLatheSymbol).toList();
+    final List<? extends SymbolInformation> symbols =
+        await(service.workspaceSymbolFuture(name, scope == SymbolScope.REACTOR));
+    return symbols.stream()
+        .sorted(Comparator.comparingInt(this::rank))
+        .limit(maxResults)
+        .map(this::toLatheSymbol)
+        .toList();
+  }
+
+  // The reactor's types first, then the JDK's and dependencies', then JDK internals: hidden from a
+  // plain project, but one that adds exports (an annotation processor, a javac plugin) uses them.
+  private int rank(final SymbolInformation symbol) {
+    if (origin(symbol) != LatheLocation.Origin.EXTERNAL) {
+      return 0;
+    }
+
+    return jdkInternal(symbol.getContainerName()) ? 2 : 1;
+  }
+
+  private LatheLocation.Origin origin(final SymbolInformation symbol) {
+    return origin(symbol.getLocation().getUri());
+  }
+
+  private LatheLocation.Origin origin(final String uri) {
+    return origin(LatheUri.toPath(uri));
+  }
+
+  // In a JDK package its modules do not export to everyone (javac's internals, jdk.internal): no
+  // code uses it without --add-exports. A container is a package or an enclosing type, so its
+  // package is the longest prefix the JDK has.
+  static boolean jdkInternal(final String container) {
+    return container != null
+        && Stream.iterate(container, prefix -> !prefix.isEmpty(), LatheEngine::parentName)
+            .filter(JDK_PACKAGES::contains)
+            .findFirst()
+            .filter(jdkPackage -> !JDK_EXPORTED_PACKAGES.contains(jdkPackage))
+            .isPresent();
+  }
+
+  private static String parentName(final String qualified) {
+    final int dot = qualified.lastIndexOf('.');
+    return dot < 0 ? "" : qualified.substring(0, dot);
+  }
+
+  private static Set<String> systemPackages(
+      final Function<ModuleDescriptor, Stream<String>> packages) {
+    return ModuleFinder.ofSystem().findAll().stream()
+        .map(ModuleReference::descriptor)
+        .flatMap(packages)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   private LatheSymbol toLatheSymbol(final SymbolInformation symbol) {
@@ -326,6 +426,7 @@ public final class LatheEngine {
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
     compileAtName(file, line, column);
+    final String oldName = wordAt(file, line, column).orElseThrow();
     final var params =
         new RenameParams(
             new TextDocumentIdentifier(file.toUri().toString()),
@@ -334,17 +435,17 @@ public final class LatheEngine {
     final WorkspaceEdit edit = await(service.renameEdit(params));
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
-      return new LatheRename(newName, 0, List.of());
+      return new LatheRename(newName, 0, List.of(), List.of(), 0);
     }
 
     final Map<String, String> moves = RenameProvider.fileMoves(edit);
     final List<String> nonReactor =
         Stream.concat(textEdits.keySet().stream(), moves.values().stream())
-            .filter(uri -> origin(LatheUri.toPath(uri)) != LatheLocation.Origin.REACTOR)
+            .filter(uri -> origin(uri) != LatheLocation.Origin.REACTOR)
             .sorted()
             .toList();
     if (!nonReactor.isEmpty()) {
-      throw new IllegalStateException(
+      throw new Refused(
           "the rename would edit files outside the reactor: %s".formatted(nonReactor));
     }
 
@@ -361,7 +462,30 @@ public final class LatheEngine {
             .toList();
     writeAndCommit(textEdits, moves, files);
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
-    return new LatheRename(newName, total, files);
+    // A rename changes only what resolves to the symbol: the name left as text is the agent's to
+    // review, never edited here.
+    final List<Location> mentions =
+        textMentions(oldName).stream()
+            .filter(mention -> origin(mention.getUri()) == LatheLocation.Origin.REACTOR)
+            .toList();
+    return new LatheRename(
+        newName,
+        total,
+        files,
+        mentions.stream().limit(LISTED_MENTIONS).map(this::toLatheLocation).toList(),
+        mentions.size());
+  }
+
+  // Best effort: the rename is on disk by now, and a scan that fails must not report it as failed.
+  // The scan reads and parses files on this thread, not the session's worker, which serves every
+  // other request meanwhile.
+  private List<Location> textMentions(final String name) {
+    try {
+      return TextMentions.find(await(service.textMentionSourcesFuture(name)), name);
+    } catch (final RuntimeException e) {
+      LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
+      return List.of();
+    }
   }
 
   // Holds the reactor lock while writing, so an editor's server on the same workspace never
@@ -438,8 +562,7 @@ public final class LatheEngine {
   // The tools that write one file leave dependency, JDK and generated sources alone.
   private void requireReactorFile(final Path file) {
     if (origin(file) != LatheLocation.Origin.REACTOR) {
-      throw new IllegalStateException(
-          "%s is not a reactor file, so Lathe does not edit it".formatted(file));
+      throw new Refused("%s is not a reactor file, so Lathe does not edit it".formatted(file));
     }
   }
 
@@ -477,8 +600,20 @@ public final class LatheEngine {
    */
   public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
     compileFromDisk(file);
+    // Replaying the last good classes would answer for code that is no longer there.
+    await(service.failingUnderFuture(file))
+        .ifPresent(
+            error -> {
+              throw new Refused(
+                  "%s was not run: code it runs does not compile: %s"
+                      .formatted(file.getFileName(), error));
+            });
     final var uri = file.toUri().toString();
     final List<RunTarget> targets = await(service.runnablesFuture(uri));
+    if (targets.isEmpty()) {
+      throw new Refused(noTests(file));
+    }
+
     final List<RunTarget> selected = selectTargets(targets, scope, method, file);
     final List<TestSelection> selections =
         selected.stream()
@@ -488,6 +623,26 @@ public final class LatheEngine {
     return LatheTestRun.from(
         await(service.runTestFuture(selected.get(0).moduleRel(), selections, token)),
         selected.stream().map(RunTarget::id).toList());
+  }
+
+  // Why a file runs nothing: no module compiles it (the note says why), or it holds no test, and
+  // then its test class when the reactor has one by the usual name.
+  private String noTests(final Path file) {
+    final String name = FileUtil.javaTypeName(file);
+    final Set<String> testNames = Set.of("%sTest".formatted(name), "%sTests".formatted(name));
+    return notes(List.of(file)).notChecked().stream()
+        .findFirst()
+        .orElseGet(
+            () ->
+                searchSymbols("%sTest".formatted(name), SymbolScope.REACTOR, TEST_CLASS_CANDIDATES)
+                    .stream()
+                    .filter(symbol -> testNames.contains(symbol.name()))
+                    .findFirst()
+                    .map(
+                        symbol ->
+                            "no test in %s; its test class may be %s"
+                                .formatted(file.getFileName(), symbol.location().path()))
+                    .orElseGet(() -> "no test in %s".formatted(file.getFileName())));
   }
 
   // The outermost targets of the scope: a nested class runs with its enclosing one (the scan lists
@@ -501,7 +656,7 @@ public final class LatheEngine {
             .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
             .toList();
     if (matching.isEmpty()) {
-      throw new IllegalStateException(
+      throw new Refused(
           scope == TestScope.METHOD
               ? "no test method '%s' in %s".formatted(method, file.getFileName())
               : "no %s test target in %s".formatted(scope.wireName(), file.getFileName()));
@@ -528,6 +683,7 @@ public final class LatheEngine {
       final int line,
       final int column,
       final CallDirection direction,
+      final SymbolScope scope,
       final int maxResults) {
     compileAtName(file, line, column);
     final var prepare =
@@ -540,7 +696,7 @@ public final class LatheEngine {
     }
 
     final List<LatheCall> all =
-        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0));
+        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0), scope);
     return new LatheCallHierarchy(
         incoming, all.size(), all.size() > maxResults, all.stream().limit(maxResults).toList());
   }
@@ -549,29 +705,26 @@ public final class LatheEngine {
   private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
     return await(service.callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(item)))
         .stream()
-        .flatMap(this::callSites)
+        .flatMap(
+            call ->
+                callSites(call.getFrom().getName(), call.getFrom().getUri(), call.getFromRanges()))
         .toList();
   }
 
-  private Stream<LatheCall> callSites(final CallHierarchyIncomingCall call) {
-    final CallHierarchyItem from = call.getFrom();
-    return call.getFromRanges().stream()
-        .map(
-            range ->
-                new LatheCall(from.getName(), toLatheLocation(new Location(from.getUri(), range))));
-  }
-
-  private List<LatheCall> outgoingCalls(final CallHierarchyItem item) {
+  // Where the method calls each callee, in source order, so the answer reads as the method does.
+  private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
     return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
         .stream()
-        .map(this::toCallee)
+        .filter(call -> scope.includes(origin(call.getTo().getUri())))
+        .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
+        .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
         .toList();
   }
 
-  private LatheCall toCallee(final CallHierarchyOutgoingCall call) {
-    final CallHierarchyItem to = call.getTo();
-    return new LatheCall(
-        to.getName(), toLatheLocation(new Location(to.getUri(), to.getSelectionRange())));
+  private Stream<LatheCall> callSites(
+      final String name, final String uri, final List<Range> ranges) {
+    return ranges.stream()
+        .map(range -> new LatheCall(name, toLatheLocation(new Location(uri, range))));
   }
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
@@ -801,11 +954,11 @@ public final class LatheEngine {
           e);
     } catch (final ExecutionException e) {
       // A request the server refused carries its reason, which the caller must see.
-      final String message =
-          ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused
-              ? refused.getMessage()
-              : "the request failed; see the server log";
-      throw new IllegalStateException(message, e);
+      if (ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused) {
+        throw new Refused(refused.getMessage());
+      }
+
+      throw new IllegalStateException("the request failed; see the server log", e);
     }
   }
 }

@@ -42,6 +42,7 @@ import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TokenScanner;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
@@ -238,6 +239,13 @@ final class WorkspaceSession {
   // Files the pass wrote since a verify_change last took them, reported or caught up from disk: the
   // write stamps them, so verify_change's own stale scan would not list them. At most every source.
   private final Set<Path> writtenSinceVerify = new HashSet<>();
+  // The lombok.config files over the source roots (in a directory from one up to the workspace
+  // root) when the workspace loaded, with their mtimes as the last pass saw them, 0 once deleted;
+  // null until the first pass after a load finds them.
+  private Map<Path, Long> lombokConfigMtimes;
+  // Sources below a lombok.config edited since the build: their classes change though their text
+  // is what the build compiled, so verify_change counts them as changed.
+  private final Set<Path> lombokChangedSources = new HashSet<>();
   private long reportCount;
   // Per open file, the diagnostics of its last write and the content written: merged into its
   // publishes while it still has that content, for what analysis cannot report (annotation
@@ -3391,11 +3399,15 @@ final class WorkspaceSession {
     List<TextEdit> apply(String content) throws Exception;
   }
 
-  List<SymbolInformation> workspaceSymbol(final String query) {
+  List<SymbolInformation> workspaceSymbol(final String query, final boolean reactorOnly) {
     final var t = Stopwatch.start();
     final List<Path> sourceDirs = typeSourceDirs();
     final List<SymbolInformation> results =
-        WorkspaceSymbolResolver.resolve(query, typeIndex, sourceDirs);
+        WorkspaceSymbolResolver.resolve(
+            query,
+            typeIndex,
+            sourceDirs,
+            entry -> !reactorOnly || typeIndex.isReactorType(entry.binaryName()));
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;
@@ -3667,6 +3679,11 @@ final class WorkspaceSession {
                     Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
     trees.forEach(this::refreshIfWrittenElsewhere);
     trees.forEach(this::reconcileDeletedSourcesIn);
+    // Under a build the configs it compiles with are its own; the first pass after it compares.
+    if (!building) {
+      reportLombokConfigChanges(trees);
+    }
+
     // Not under a build: it rewrites the stamps itself, and a touched source is current meanwhile.
     if (!building) {
       trees.forEach(tree -> recordStamps(tree.config(), tree.touched()));
@@ -3914,9 +3931,57 @@ final class WorkspaceSession {
   // Files the editor saved or the MCP engine wrote: written by a pass, the next one if a pass is
   // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    report(changed);
+    return requestPass(false).thenAccept(stale -> {});
+  }
+
+  private void report(final Collection<Path> changed) {
     changed.forEach(source -> reported.put(source, ++reportCount));
     writtenSinceVerify.addAll(changed);
-    return requestPass(false).thenAccept(stale -> {});
+  }
+
+  // Lombok reads its config when it compiles, so an edited one rewrites every source below it. Only
+  // the configs there were at load are watched, each pass a stat apiece (most projects have none);
+  // one added later counts from the next reload. A config inside a source root's packages is not
+  // watched: the usual one sits above the roots.
+  private void reportLombokConfigChanges(final List<TreeState> trees) {
+    final Map<Path, Long> previous = lombokConfigMtimes;
+    final Set<Path> watched =
+        previous != null
+            ? previous.keySet()
+            : trees.stream()
+                .flatMap(tree -> tree.sourcesByRoot().keySet().stream())
+                .flatMap(this::lombokConfigCandidates)
+                .filter(Files::isRegularFile)
+                .collect(Collectors.toUnmodifiableSet());
+    final Map<Path, Long> current =
+        watched.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(Function.identity(), WorkspaceSession::mtimeMillis));
+    lombokConfigMtimes = current;
+    if (previous == null) {
+      return;
+    }
+
+    final List<Path> changedDirs =
+        current.entrySet().stream()
+            .filter(config -> !config.getValue().equals(previous.get(config.getKey())))
+            .map(config -> config.getKey().getParent())
+            .toList();
+    final List<Path> below =
+        trees.stream()
+            .flatMap(tree -> tree.sourcesByRoot().values().stream())
+            .flatMap(sources -> sources.keySet().stream())
+            .filter(source -> changedDirs.stream().anyMatch(source::startsWith))
+            .toList();
+    lombokChangedSources.addAll(below);
+    report(below);
+  }
+
+  private Stream<Path> lombokConfigCandidates(final Path sourceRoot) {
+    return Stream.iterate(
+            sourceRoot, dir -> dir != null && dir.startsWith(workspaceRoot), Path::getParent)
+        .map(dir -> dir.resolve(LatheLayout.LOMBOK_CONFIG_FILE));
   }
 
   // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
@@ -3962,6 +4027,13 @@ final class WorkspaceSession {
     return configured > 0 ? configured : DEFAULT_SCAN_INTERVAL_MS;
   }
 
+  // Where a name may survive as text: the sources whose tokens include it, and the resource roots.
+  TextMentions.Sources textMentionSources(final String name) {
+    return new TextMentions.Sources(
+        candidateIndex.candidateUris(name).stream().map(LatheUri::toPath).toList(),
+        manifest.resourceSourceDirs());
+  }
+
   List<Path> takeWrittenSinceVerify() {
     final List<Path> taken = List.copyOf(writtenSinceVerify);
     writtenSinceVerify.clear();
@@ -3975,7 +4047,7 @@ final class WorkspaceSession {
     final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree = new HashMap<>();
     final List<Path> differing = new ArrayList<>();
     for (final Path file : changed) {
-      if (!backToBuilt(file, builtByTree)) {
+      if (lombokChangedSources.contains(file) || !backToBuilt(file, builtByTree)) {
         differing.add(file);
       }
     }
@@ -4104,19 +4176,31 @@ final class WorkspaceSession {
         .toList();
   }
 
+  // Only the dependents a change can reach: those with a file naming a changed type. A test class,
+  // or a type no dependent names, reaches none, so no sync is suggested for it.
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
             .map(this::moduleDirOf)
             .flatMap(Optional::stream)
             .collect(Collectors.toUnmodifiableSet());
-    return changedModuleDirs.stream()
-        .flatMap(dir -> moduleGraph.downstreamModuleDirs(dir).stream())
+    return changed.stream()
+        .flatMap(this::reachedModuleDirs)
         .filter(dir -> !changedModuleDirs.contains(dir))
         .distinct()
         .map(this::moduleRelForDir)
         .sorted()
         .toList();
+  }
+
+  // A module or package declaration is named by no file, yet changes what every dependent sees.
+  private Stream<Path> reachedModuleDirs(final Path file) {
+    final String name = file.getFileName().toString();
+    if (name.equals(LatheLayout.MODULE_INFO_JAVA) || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
+      return moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of()).stream();
+    }
+
+    return referrers(file).stream().map(this::moduleDirOf).flatMap(Optional::stream);
   }
 
   private void reconcileDeletedSourcesIn(final TreeState tree) {
@@ -4184,16 +4268,7 @@ final class WorkspaceSession {
   // What an MCP answer cannot vouch for after its pass: files whose write failed and that are
   // unchanged since (fixed in code, retried on their next edit), and what only a sync can fix.
   LatheNotes notes(final List<Path> files) {
-    final List<String> notCompiled =
-        failedCompiles.entrySet().stream()
-            .filter(entry -> failedUnchanged(entry.getValue(), mtimeMillis(entry.getKey())))
-            .map(
-                entry ->
-                    "%s:%s"
-                        .formatted(
-                            workspaceRoot.relativize(entry.getKey()), entry.getValue().error()))
-            .sorted()
-            .toList();
+    final List<String> notCompiled = stillFailing().map(this::failedLine).sorted().toList();
     final Stream<String> pendingBuildFiles =
         buildFilesNotificationPending
             ? Stream.of("build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
@@ -4207,24 +4282,59 @@ final class WorkspaceSession {
         reactorBuildInProgress());
   }
 
+  // The first source that fails to compile in the file's module or one it depends on: code it runs
+  // would be the last good classes, not what is on disk.
+  Optional<String> failingUnder(final Path file) {
+    final Set<Path> reach =
+        moduleDirOf(file)
+            .map(dir -> Stream.concat(Stream.of(dir), moduleGraph.upstreamModuleDirs(dir).stream()))
+            .orElse(Stream.empty())
+            .collect(Collectors.toUnmodifiableSet());
+    return stillFailing()
+        .filter(entry -> moduleDirOf(entry.getKey()).filter(reach::contains).isPresent())
+        .map(this::failedLine)
+        .sorted()
+        .findFirst();
+  }
+
+  private Stream<Map.Entry<Path, FailedWrite>> stillFailing() {
+    return failedCompiles.entrySet().stream()
+        .filter(entry -> failedUnchanged(entry.getValue(), mtimeMillis(entry.getKey())));
+  }
+
+  private String failedLine(final Map.Entry<Path, FailedWrite> entry) {
+    return "%s:%s".formatted(workspaceRoot.relativize(entry.getKey()), entry.getValue().error());
+  }
+
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
   private boolean uncheckable(final Path file) {
     return routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing
         || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
   }
 
-  // A sync gives a module only to a file of the modules the build compiles.
+  // A sync helps only a file of a module the build compiles that has no mirror yet: in a synced
+  // module (a sync writes each module it built a .lathe directory, one without sources too) the
+  // file is outside its source roots, and outside the built modules the build left it out.
   private String notCheckedReason(final Path file) {
     final Path relative = workspaceRoot.relativize(file);
     if (Files.notExists(file)) {
       return "%s does not exist, and the last build did not compile it".formatted(relative);
     }
 
-    return manifest.inBuiltModule(file)
-        ? "%s is in no synced module — run `%s`"
-            .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND)
-        : "%s is outside the modules the last build compiled, so Lathe cannot check it"
-            .formatted(relative);
+    return manifest
+        .builtModuleDirOf(file)
+        .map(moduleDir -> FileUtil.slashed(workspaceRoot.relativize(moduleDir)))
+        .map(
+            moduleRel ->
+                Files.isDirectory(moduleLatheDir(moduleRel))
+                    ? "%s is in no source root of module %s, so a sync does not add it"
+                        .formatted(relative, moduleRel.isEmpty() ? "." : moduleRel)
+                    : "%s is in no synced module — run `%s`"
+                        .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
+        .orElseGet(
+            () ->
+                "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+                    .formatted(relative));
   }
 
   static Map<Path, Long> withoutFailedCompiles(
@@ -4915,6 +5025,8 @@ final class WorkspaceSession {
   }
 
   private void reloadWorkspace() {
+    lombokChangedSources.clear();
+    lombokConfigMtimes = null;
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
       watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());
@@ -4936,12 +5048,12 @@ final class WorkspaceSession {
   }
 
   // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
-  // instead of "ready".
+  // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
   private void showWorkspaceStatus(final String okText) {
     client.showMessage(
         manifest
             .loadProblem()
-            .map(text -> new MessageParams(MessageType.Warning, text))
+            .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }
 

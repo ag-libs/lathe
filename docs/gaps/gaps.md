@@ -1491,33 +1491,6 @@ None yet.
 
 ---
 
-## MC-28 — `rename_symbol` does not say what text it left unchanged
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-A rename changes the code that resolves to the symbol, and the javadoc references, but not the name in
-string literals, comments, `META-INF/services` files or framework XML.
-An agent believes the rename is complete.
-A study of agent renames found location-only LSP renames missed such text in most multi-file renames
-([arXiv 2608.13568](https://arxiv.org/abs/2608.13568); figures not checked).
-
-### Fix direction
-
-After the rename, list the remaining occurrences of the old name (qualified name for resources) in
-reactor files as "not renamed — review", without editing them.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-29 — No tool maps a stack trace to source
 
 **Status: documented**
@@ -1543,49 +1516,11 @@ None yet.
 
 ---
 
-## MC-30 — Position tools need an exact column, which agents get wrong
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-Found by the agent-tooling landscape review (2026-10-24);
-confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Gap
-
-Agents miscount columns; [MC-10](gaps-archive.md#mc-10--position-tools-answer-for-an-unrelated-symbol-when-the-position-is-not-on-one--done)
-now makes them retry, at the cost of a round trip; the refusal quotes the line's text, which makes the retry cheaper.
-mcp-language-server takes a symbol name for `definition` and `references`, and Serena addresses
-symbols by name path (`Class/method`).
-
-In the 2026-10-30 session, every navigation question first needed an `outline` or `search_symbols` call
-to find a position, and one of the agent's ten Lathe calls failed on a wrong position.
-The agent asked for `com.example.app.OrderDao#markShipped` or `OrderDao.markShipped`,
-which would save a round trip on almost every query.
-
-A refactoring review of Lathe itself (2026-10-30) missed twice in 21 calls,
-both times one column short on a method name taken from an `outline` line
-(`private static ExpectedValue expectedMethodArgumentValue(`: the agent sent 31, the name starts at 32).
-`outline` gives each member's line but not where its name starts, so the agent counts by hand.
-
-### Fix direction
-
-Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
-the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
-Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-31 — `get_definition` cannot return the definition's body
 
 **Status: documented**
 
-**Value: high — Size: M**
+**Value: medium — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24);
 confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
@@ -1604,154 +1539,7 @@ although `outline` already knows each member's line range.
 
 An optional `includeBody` returning the declaration's source range (the javac tree span), capped.
 Also a tool returning one member's source by name (`source("OrderCommand#store")`),
-resolved the way [MC-30](#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong) resolves a name path.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-32 — Nothing makes an agent run `verify_change` before it reports done
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-An agent that skips `verify_change` finishes with code that does not compile.
-Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hook for exactly this
-([Pyrefly blog](https://pyrefly.org/blog/pyrefly-agentic-loop/)).
-
-### Fix direction
-
-The `AGENTS.md` / `CLAUDE.md` snippet exists ([examples/agents/lathe-mcp.md](../../examples/agents/lathe-mcp.md), which says to run `verify_change` before finishing) but the agent guide does not link it.
-What remains: link it from the agent guide and add a hook recipe.
-A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
-a later, separate step.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-33 — Tools return structured content but declare no `outputSchema`
-
-**Status: deferred**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-The 2025-06-18 spec lets a tool declare the schema of its `structuredContent`
-([changelog](https://modelcontextprotocol.io/specification/2025-06-18/changelog)); Lathe returns
-structured content without one. It helps programmatic clients, not models, so it waits for a client
-that needs it.
-Claude Code does show the model the structured content, not the text:
-see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes).
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
-
-### Observed behaviour
-
-- `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
-  ``No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `.lathe/lathe-sync.sh`).``
-  `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
-  and an agent following the advice runs a 2–3 minute sync for nothing.
-- `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
-  `is in no synced module — run .lathe/lathe-sync.sh`.
-- `run_test` on a test in a module the build leaves out (Helidon `webserver/tests/static-content`, behind the
-  `tests` profile) answers `no class test target in StaticContentTest.java`, as if the file held no test;
-  `get_diagnostics` on the same file correctly says the module is outside the build.
-  On a non-test file the same terse line gives no hint toward the matching test class.
-
-### Fix direction
-
-Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
-"this file is in no source root", and "this module is not in the last build (a profile may add it)".
-For a non-test file, name the test class that tests it when one exists.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
-`get_diagnostics` then ends with the right note, but with a doubled prefix:
-`Sync required: Lathe: .lathe/ was written by another Lathe version (schema 5, expected 6)`.
-`workspace_summary`, the tool the instructions tell an agent to call first, drops every `depends on`
-edge and carries no note.
-
-### Fix direction
-
-`workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
-[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `search_symbols` and the editor's workspace symbols.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`warning` returns, after the two reactor types, `com.sun.tools.javac.comp.ThisEscapeAnalyzer.Warning`,
-`com.sun.tools.javac.comp.WarningAnalyzer`, `com.sun.tools.javac.util.JCDiagnostic.Warning` and
-`javax.swing.plaf.metal.MetalBorders.WarningDialogBorder`: types in packages the JDK does not export, and
-no code in the project can use them.
-`*Checker` answers `No symbols matching '*Checker'`, although agents write globs by habit.
-
-On Lathe itself (2026-10-30), `Sync` with `maxResults` 40 filled the cap: the six reactor types
-(`SyncScript`, `SyncCoordinator`, both `SyncMojo`s, …) came interleaved with Guava's `Synchronized*`
-classes, the MCP SDK's `SyncToolSpecification` and javac's `SynchronizedTree`,
-about 30 of the 40 from dependencies and the JDK.
-The agent wanted the reactor's types and had no way to ask for only those.
-
-### Fix direction
-
-Leave out JDK packages a module does not export, at least for a classpath module.
-Strip a leading or trailing `*` (or treat the query as a glob).
-List reactor matches before any dependency or JDK match, and add a `scope` argument
-(`reactor`, `all`) so an agent can leave the rest out.
-Related: [EG-057](#eg-057--symbol-search-matches-camelhumps-only-in-reactor-types-not-in-jdk-and-dependency-types),
-[MC-26](#mc-26--search_symbols-finds-types-only-not-methods-or-fields).
+resolved the way [MC-30](gaps-archive.md#mc-30--position-tools-need-an-exact-column-which-agents-get-wrong--done) resolves a name path.
 
 ### Regression targets
 
@@ -1867,57 +1655,6 @@ None yet.
 
 ---
 
-## MC-43 — Expected refusals are logged at SEVERE with a stack trace
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
-
-### Observed behaviour
-
-A refusal is the tool's normal answer, but each is logged as an unexpected error: a rename refused (JDK method,
-Lombok member, shared static import, existing name), `run_test` with no test target, `format_file` with no formatter.
-The editor's server does not log its refusals this way.
-
-### Fix direction
-
-Log refusals at FINE, or INFO without a stack trace; keep SEVERE for unexpected failures.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-44 — A `.lathe/` created after the MCP server started is never picked up
-
-**Status: documented**
-
-**Value: high — Size: S–M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-An MCP server started in a project with no `.lathe/` keeps answering "found no .lathe/" after a build creates it.
-The tools do not say to restart the server; only the agent guide does.
-
-### Fix direction
-
-Look for `.lathe/` again on each call while none was found, or say in the answer that a restart picks it up.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
 
 **Status: documented**
@@ -1943,114 +1680,6 @@ None yet.
 
 ---
 
-## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
-
-### Observed behaviour
-
-After an agent removes `lombok.accessors.prefix` from a `lombok.config`, `verify_change` on the affected files answers "No errors" in milliseconds, while `get_diagnostics` shows the `getCount()` error.
-Files whose `.java` content equals the last build count as unchanged, and a `lombok.config` change is not a change.
-
-### Fix direction
-
-Count a changed `lombok.config` as a change to the sources below it.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-- After renaming a type back (`State` to `Status`), the answer notes "Not checked: …/State.java does not exist",
-  about the file the rename itself moved.
-- After an agent edits a POM, `workspace_summary` does not mention the pending sync, while `get_diagnostics`
-  ("Sync required") and `verify_change` (deferred) do.
-
-### Fix direction
-
-Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
-as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy` (`direction=outgoing`).**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Each outgoing entry is the callee's declaration.
-The agent could not see where in its own method each call happens, so it could not tell the order of the calls,
-and had to read the method anyway.
-
-### Fix direction
-
-`LatheEngine.toCallee` keeps only the callee's `selectionRange` and drops the LSP `fromRanges`,
-which already hold the call sites.
-Emit one line per call site, in source order, naming the callee, as `incomingCalls` already does for callers.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `call_hierarchy`.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-About 85 of the outgoing entries in one session were JDK calls (`Optional.get`, `Stream.map`, `String.formatted`),
-which buried the reactor calls the agent was tracing and spent the `maxResults` budget.
-
-### Fix direction
-
-A scope argument (`reactor`, `dependencies`, `all`), defaulting to `reactor` for outgoing calls.
-[MC-38](#mc-38--search_symbols-lists-jdk-internals-and-a-glob-query-finds-nothing) wants the same filter for `search_symbols`;
-one origin classification can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-50 — `call_hierarchy` returns one level per call
 
 **Status: documented**
@@ -2068,34 +1697,8 @@ Tracing a resource → service → adapter chain takes one `call_hierarchy` call
 ### Fix direction
 
 A `depth` argument returning a tree, with cycles cut and a total cap.
-Most useful together with [MC-48](#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called)
-and [MC-49](#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls), or the tree fills with JDK calls.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-51 — A record's accessor resolves to the top of its file
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: MCP `call_hierarchy`; probably the editor's outgoing calls too, which build the same items.**
-
-Found by an agent's exploration of a private 61-module Maven service (2026-10-30).
-
-### Observed behaviour
-
-Outgoing calls to `Order.status()` and `Row.customerId()`, implicit accessors of records, came back as
-`startLine: 1` with the `package` line as the snippet.
-
-### Fix direction
-
-An implicit accessor has no tree of its own.
-Point it at its record component, as go-to-definition should; check that path and find references for the same fallback.
+Most useful together with [MC-48](gaps-archive.md#mc-48--outgoing-call_hierarchy-lists-where-each-callee-is-defined-not-where-it-is-called--done)
+and [MC-49](gaps-archive.md#mc-49--call_hierarchy-cannot-leave-out-jdk-and-dependency-calls--done), or the tree fills with JDK calls.
 
 ### Regression targets
 
@@ -2247,7 +1850,7 @@ None yet.
 
 **Status: documented**
 
-**Value: medium — Size: M**
+**Value: low — Size: M**
 
 **Affects: MCP.**
 
@@ -2272,50 +1875,6 @@ None yet.
 
 ---
 
-## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: every MCP tool; seen in Claude Code.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-Each tool answers with a compact text body and a `structuredContent` map (`LatheMcpTools.result`).
-Claude Code gave the agent the structured map, not the text: every answer in the session arrived as JSON
-(`{"references":[…],"total":7,"truncated":false}`), never the `path:line: code` lines the tool descriptions promise.
-Two consequences:
-
-- The notes ("Not compiled", "Sync required", "Not checked", "A build is running") are only in the text body,
-  so the agent never sees them: an answer about code that does not compile, or that only a sync can fix,
-  looks complete. The server instructions tell the agent to act on these notes.
-- The JSON repeats each key on every item, so answers are larger than the text form
-  (`outline` on a 5,324-line file came to 58k characters; see [MC-59](#mc-59--outline-overflows-on-a-large-file)).
-
-Seen again on 2026-10-31: with a test file that did not compile, `run_test` answered
-`{"passed":0,"failed":0,"skipped":0,"launched":true}` and nothing else, so the run looked empty rather than broken;
-only a separate `get_diagnostics` showed the two errors.
-
-This contradicts the premise of [MC-33](#mc-33--tools-return-structured-content-but-declare-no-outputschema),
-that structured content serves programmatic clients and not models.
-
-### Fix direction
-
-Carry the notes in the structured map too (a `notes` object with the four kinds), so they reach the agent
-whichever part a client shows.
-Then decide whether to keep `structuredContent` at all: without an `outputSchema` no client relies on it,
-and dropping it would make Claude Code show the compact text.
-Check what other clients (Codex, Cursor) show before choosing.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-59 — `outline` overflows on a large file
 
 **Status: documented**
@@ -2331,7 +1890,7 @@ Found by a refactoring review of Lathe itself through its own MCP server (2026-1
 `outline` on `WorkspaceSession.java` (5,324 lines, 428 declarations) answered 57,670 characters, over
 Claude Code's result limit; the client saved it to a file and the agent had to slice it with `jq`.
 The largest file is where an outline saves the most reading, and the one where the tool fails.
-Part of the size is the JSON form ([MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)),
+Part of the size was the JSON form, gone since answers are text only ([MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)),
 but 428 lines of text would still be about 25k characters.
 
 ### Fix direction
@@ -2340,35 +1899,6 @@ An optional `depth` (1 = the top-level types and their members, without nested t
 and a `kinds` filter (types only, methods only).
 Above a size cap, answer with the types and their member counts and say how to ask for one type's members,
 instead of an answer the client cuts.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-60 — `run_test` does not return a failing test's output
-
-**Status: documented**
-
-**Value: low — Size: S**
-
-**Affects: MCP `run_test`.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-A probe test printed the code action's edits with `System.out.println` before its assertion.
-`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
-so the agent had to move the value into the assertion's message and run again.
-Logs and printed state are often what explains a failure.
-
-### Fix direction
-
-For each failed test, the last lines of its standard output and error, capped (say 40 lines),
-from the transcript the launch already drains (`LaunchSession`).
-Nothing for passing tests.
 
 ### Regression targets
 
@@ -2405,38 +1935,111 @@ None yet.
 
 ---
 
-## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see
+## MC-63 — `find_references` cannot group its answer by the calling method
 
 **Status: documented**
 
 **Value: medium — Size: S**
 
-**Affects: MCP `verify_change`.**
+**Affects: MCP `find_references`.**
 
-Found implementing gap CA-16 through Lathe's own MCP server (2026-10-31).
+Found by the survey of other Java MCP servers (2026-11-01).
 
-### Observed behaviour
+### Gap
 
-Every `verify_change` in the session, about ten, answered
-`"affectedModules":["lathe-maven-plugin","lathe-mcp-server"]` with
-`"suggestedSync":".lathe/lathe-sync.sh lathe-maven-plugin lathe-mcp-server"`, whatever had changed:
-
-- a test-only edit (a deliberate error in `lathe-server`'s `CodeActionTest`, no arguments): the error was
-  reported, and so were both dependent modules and the sync, though test sources are on no other module's
-  classpath;
-- package-private classes (`ExtractVariableProvider`, `CodeActionSupport`) of `lathe-server`, a JPMS module whose
-  dependents cannot reference them.
-
-A suggestion that is always there gets ignored, or obeyed: an agent following it runs a reactor build for
-nothing (minutes on a large reactor). [MC-8](gaps-archive.md#mc-8--the-sync-command-verify_change-suggests-does-not-build-the-dependent-modules-it-names--done)
-made the command build what it names; this is about what it names.
+A method with forty call sites in ten methods answers forty lines; the agent's question is usually
+"which methods call it", and it reads the list to work that out.
+NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
 
 ### Fix direction
 
-Name a dependent module only when the change can reach it: never for a test source tree; for main sources, only
-when a changed file declares a type the dependent can see (public or protected, in an exported package for a
-JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
-With none left, answer no `affectedModules` and no `suggestedSync`.
+An optional `groupBy` (`file`, `caller`): one heading per containing method (or file), its call lines
+below it. The enclosing method is already known to the reference search's tree path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-64 — No safe delete: removing a symbol is find-then-edit by hand
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+To remove a method an agent runs `find_references`, then edits, then `verify_change`.
+NetBeans' Dukehoff MCP and Serena have `safe_delete`: delete only when nothing uses the symbol,
+else list the uses that block it.
+
+### Fix direction
+
+A `safe_delete` tool on the rename pipeline: refuse with the blocking uses (production before tests),
+else remove the declaration and report the file.
+Overrides and implementations count as uses.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-65 — No structural search and replace
+
+**Status: documented**
+
+**Value: low — Size: L**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+Migrations (JUnit 4 to 5, `javax` to `jakarta`, a deprecated API to its replacement) are many similar
+edits an agent makes one file at a time.
+NetBeans' Dukehoff MCP exposes NetBeans' Jackpot rules through `apply_rule`, with a dry run and rule packs,
+and reports that agents used it unprompted once `CLAUDE.md` mentioned it.
+
+### Fix direction
+
+Design first: a pattern language over javac trees with typed placeholders (`$x.foo($y)` where `$x` is a
+`java.util.List`), a dry run listing the matches, then apply.
+Weigh against what a rename plus `fix_imports` already covers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-66 — `rename_symbol` has no preview
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `rename_symbol`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A rename writes to disk at once.
+IntelliJ's rename takes `preview: true` and answers the files and usages it would change, and its
+conflicts, writing nothing; numsu/java-lsp-mcp never writes and returns the edits instead.
+An agent unsure of a rename's reach has `analyze_change`, which counts references but does not list the edits.
+
+### Fix direction
+
+An optional `preview` returning the same per-file list without applying it.
+Low value while renames are undone by git as easily as they are made.
 
 ### Regression targets
 
