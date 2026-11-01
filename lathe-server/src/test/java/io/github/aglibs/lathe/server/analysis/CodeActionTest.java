@@ -1726,6 +1726,7 @@ class CodeActionTest {
     cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
     cases.put("this", "Object m() { return «this»; }");
     cases.put("a bare variable", "Object m(Object o) { return «o»; }");
+    cases.put("enum constant argument", "enum E { A(«\"a\".trim()»); E(String s) {} }");
     cases.put(
         "inner class's super(...) argument",
         "int f = 1;\n  static class Base { Base(int x) {} }\n"
@@ -1981,6 +1982,14 @@ class CodeActionTest {
         applyEdits(
             unmarked(source), editsOfActionStartingWith(actions, "Extract method 'extracted'")));
 
+    // a copy in an annotation value is not a copy: it needs a constant, not a call
+    assertThat(
+            rightTitles(
+                markedActions(
+                    inTestClass(
+                        "@interface Ann { Class<?> value(); }\n"
+                            + "  Object m() { return «String.class»; }\n  @Ann(String.class) void n() {}"))))
+        .noneMatch(t -> t.startsWith("Extract method 'extracted' (replace all"));
     // a poly expression typed differently elsewhere is not a copy: one method returns one type
     assertThat(
             rightTitles(

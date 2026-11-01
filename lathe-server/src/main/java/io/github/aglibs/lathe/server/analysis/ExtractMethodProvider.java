@@ -93,7 +93,7 @@ final class ExtractMethodProvider {
       final String uri, final AttributedFileAnalysis analysis, final List<TreePath> region) {
     final Trees trees = analysis.trees();
     final TreePath member = enclosingMember(region.get(0));
-    if (member == null || inInterface(member)) {
+    if (member == null || inInterface(member) || isEnumConstant(member, trees)) {
       return List.of();
     }
 
@@ -538,6 +538,12 @@ final class ExtractMethodProvider {
         .orElse(null);
   }
 
+  // A method cannot go right after an enum constant, inside the constant list.
+  private static boolean isEnumConstant(final TreePath member, final Trees trees) {
+    final Element element = trees.getElement(member);
+    return element != null && element.getKind() == ElementKind.ENUM_CONSTANT;
+  }
+
   // A private interface method needs Java 9+, and the project's release is not known here.
   private static boolean inInterface(final TreePath member) {
     final Tree.Kind kind = member.getParentPath().getLeaf().getKind();
@@ -584,6 +590,7 @@ final class ExtractMethodProvider {
     final TypeMirror type = trees.getTypeMirror(exprPath);
     return ExtractionSupport.occurrences(classPath, exprPath, trees).stream()
         .filter(copy -> CodeActionSupport.enclosingClass(copy).getLeaf() == classPath.getLeaf())
+        .filter(copy -> replaceableByCall(copy, trees))
         .filter(copy -> analysis.types().isSameType(trees.getTypeMirror(copy), type))
         .toList();
   }
