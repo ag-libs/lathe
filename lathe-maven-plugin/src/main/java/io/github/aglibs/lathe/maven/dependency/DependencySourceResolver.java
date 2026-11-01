@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.maven.ReactorProjects;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.IntStream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.logging.Log;
@@ -15,6 +16,7 @@ import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.eclipse.aether.resolution.ArtifactRequest;
 import org.eclipse.aether.resolution.ArtifactResolutionException;
+import org.eclipse.aether.resolution.ArtifactResult;
 
 public final class DependencySourceResolver {
 
@@ -34,9 +36,19 @@ public final class DependencySourceResolver {
       final Map<String, List<Path>> artifactClasspaths,
       final List<RemoteRepository> repositories) {
     log.info("[sync] %d unique external artifacts".formatted(artifacts.size()));
+    final List<Artifact> binaries = List.copyOf(artifacts.values());
+    final List<ArtifactResult> results =
+        resolveAll(binaries.stream().map(binary -> sourcesRequest(binary, repositories)).toList());
     final List<DependencySource> dependencySources =
-        artifacts.values().stream()
-            .map(artifact -> resolve(artifact, artifactClasspaths, repositories))
+        IntStream.range(0, binaries.size())
+            .mapToObj(
+                i ->
+                    toSource(
+                        binaries.get(i),
+                        results.get(i),
+                        artifactClasspaths.getOrDefault(
+                            ReactorProjects.artifactKey(binaries.get(i)), List.of()),
+                        log))
             .toList();
 
     log.info(
@@ -46,39 +58,49 @@ public final class DependencySourceResolver {
     return dependencySources;
   }
 
-  private DependencySource resolve(
-      final Artifact artifact,
-      final Map<String, List<Path>> artifactClasspaths,
-      final List<RemoteRepository> repositories) {
-    final var binaryJar = artifact.getFile().toPath();
-    final var classpath =
-        artifactClasspaths.getOrDefault(ReactorProjects.artifactKey(artifact), List.of());
-    final var sourceArtifact =
-        new DefaultArtifact(
-            artifact.getGroupId(),
-            artifact.getArtifactId(),
-            "sources",
-            "jar",
-            artifact.getVersion());
-    final var request = new ArtifactRequest(sourceArtifact, repositories, null);
+  // One batch, so Maven Resolver downloads each repository's share in parallel. A missing sources
+  // jar is normal: the batch then throws, carrying every request's result, in request order.
+  private List<ArtifactResult> resolveAll(final List<ArtifactRequest> requests) {
     try {
-      final org.eclipse.aether.artifact.Artifact resolvedArtifact =
-          repositorySystem.resolveArtifact(session.getRepositorySession(), request).getArtifact();
-      return DependencySource.present(
-          ReactorProjects.gav(resolvedArtifact),
-          binaryJar,
-          LatheLayout.artifactDir(
-              LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
-              resolvedArtifact.getGroupId(),
-              resolvedArtifact.getArtifactId(),
-              resolvedArtifact.getVersion()),
-          ReactorProjects.resolvedJar(resolvedArtifact),
-          classpath);
+      return repositorySystem.resolveArtifacts(session.getRepositorySession(), requests);
     } catch (final ArtifactResolutionException e) {
-      log.debug("[sync] source missing %s".formatted(ReactorProjects.gav(artifact)), e);
-      return DependencySource.missing(ReactorProjects.gav(artifact), binaryJar, classpath);
+      return e.getResults();
     } catch (final RuntimeException e) {
       throw new SyncException("lathe:sync failed to resolve source artifacts", e);
     }
+  }
+
+  private static ArtifactRequest sourcesRequest(
+      final Artifact binary, final List<RemoteRepository> repositories) {
+    final var sourceArtifact =
+        new DefaultArtifact(
+            binary.getGroupId(), binary.getArtifactId(), "sources", "jar", binary.getVersion());
+    return new ArtifactRequest(sourceArtifact, repositories, null);
+  }
+
+  static DependencySource toSource(
+      final Artifact binary,
+      final ArtifactResult result,
+      final List<Path> classpath,
+      final Log log) {
+    final var binaryJar = binary.getFile().toPath();
+    if (!result.isResolved()) {
+      log.debug(
+          "[sync] source missing %s".formatted(ReactorProjects.gav(binary)),
+          result.getExceptions().stream().findFirst().orElse(null));
+      return DependencySource.missing(ReactorProjects.gav(binary), binaryJar, classpath);
+    }
+
+    final org.eclipse.aether.artifact.Artifact resolved = result.getArtifact();
+    return DependencySource.present(
+        ReactorProjects.gav(resolved),
+        binaryJar,
+        LatheLayout.artifactDir(
+            LatheLayout.userCacheRoot().resolve(LatheLayout.CACHE_DEPS_DIR),
+            resolved.getGroupId(),
+            resolved.getArtifactId(),
+            resolved.getVersion()),
+        ReactorProjects.resolvedJar(resolved),
+        classpath);
   }
 }

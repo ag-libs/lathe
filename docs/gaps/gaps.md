@@ -821,35 +821,6 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ---
 
-## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: MCP `fix_imports`, and the editor's import quick fix.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`fix_imports` reports `List: java.awt.List, java.util.List` and
-`Function: kotlin.Function, java.util.function.Function` as ambiguous, and the editor quick fix offers
-`Import 'kotlin.Function'` first.
-An agent has to pick, and in a Java module the answer is almost always the `java.util` one.
-
-### Fix direction
-
-Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
-then the module's own dependencies, then the rest.
-`fix_imports` could add the top candidate when the ranking is decisive, and list the others.
-
-### Regression targets
-
-None yet.
-
----
-
 ## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently
 
 **Status: documented**
@@ -1078,54 +1049,6 @@ Report a broken manifest to the client with the remedy (a sync), keep watching, 
 ### Regression targets
 
 None yet.
-
----
-
-## WS-25 — A first sync downloads dependency sources one at a time
-
-**Status: accepted**
-
-**Value: low — Size: S**
-
-**Affects: the first Maven sync on a machine (`mvn` and `mvnd` alike).**
-
-Found by a code review of the sync path (2026-10-30).
-
-### Observed behaviour
-
-`DependencySourceResolver` calls `RepositorySystem.resolveArtifact` once per external artifact, so a cold `~/.m2` pays one sequential round trip per `-sources` jar (plus its checksum).
-The jars are small, so round trips, not bandwidth, set the time:
-
-| Project | Dependencies | With sources | Missing | Sources size | Median jar |
-|---|---|---|---|---|---|
-| Helidon | 209 | 206 | 3 | 50.6 MB | 62 KB |
-| Dropwizard | 210 | 208 | 2 | 63.8 MB | 70 KB |
-| Hibernate ORM | 254 | 252 | 2 | — | — |
-
-Estimated for Helidon at 30–100 ms per request: about 15–45 s sequentially, against about 3–12 s batched, so 15–30 s saved once.
-Not measured yet; a slower link (proxy, mirror, VPN) or extra repositories ahead of Central saves more.
-A warm sync, the common case, gains nothing: every lookup is local.
-
-### Root cause
-
-Maven Resolver already downloads a batch in parallel: `resolveArtifacts` groups requests by repository, and the basic connector fetches each group on `aether.connector.basic.threads` (default 5).
-Checked in Resolver 1.4.1 (`DefaultArtifactResolver`), the version Maven 3.6.3 ships, so it holds at the Maven floor.
-The per-artifact calls never hand it a batch.
-
-### Fix direction
-
-Resolve all `-sources` requests in one `resolveArtifacts` call, inside `DependencySourceResolver` only.
-A missing sources jar is normal, and the batch throws when any is missing, so read the per-request results from `ArtifactResolutionException.getResults()`;
-a `RuntimeException` still fails the sync.
-No Lathe threads, so nothing outlives a build in the `mvnd` daemon, and all logging stays on the Mojo thread.
-
-Not worth doing alongside it: parallel extraction.
-Unzipping all 206 Helidon sources jars (28,635 entries) takes about 1 s on Linux; Windows may differ.
-
-### Regression targets
-
-- The existing invoker fixtures with and without sources jars keep their `[sync] sources N dependency entries, M with sources` counts.
-- A cold Helidon sync with a fresh `-Dmaven.repo.local`, timed before and after the change.
 
 ---
 

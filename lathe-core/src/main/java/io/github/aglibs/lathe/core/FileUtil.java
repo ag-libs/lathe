@@ -1,8 +1,8 @@
 package io.github.aglibs.lathe.core;
 
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -25,6 +25,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
@@ -32,7 +33,6 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
-import java.util.zip.ZipInputStream;
 
 public final class FileUtil {
 
@@ -413,26 +413,42 @@ public final class FileUtil {
     IOUtil.sleep(RETRY_PAUSE_MS * attempt);
   }
 
+  // Returns the number of entries skipped because they would escape destDir (see extractZipEntry).
+  // Entries are written in parallel (creating many small files is slow on Windows), split from a
+  // list: ZipFile's own stream splits only per 1024 entries. A failure is a value, not thrown, so
+  // no write outlives the call.
   public static int unzip(final Path zipFile, final Path destDir) throws IOException {
-    return unzip(Files.newInputStream(zipFile), destDir);
+    try (final var zip = new ZipFile(zipFile.toFile())) {
+      final List<EntryResult> results =
+          zip.stream().toList().parallelStream()
+              .map(entry -> unzipEntry(zip, destDir, entry))
+              .toList();
+      final Optional<IOException> failure =
+          results.stream().map(EntryResult::failure).filter(Objects::nonNull).findFirst();
+      if (failure.isPresent()) {
+        throw failure.get();
+      }
+
+      return (int) results.stream().filter(EntryResult::skipped).count();
+    }
   }
 
-  // Returns the number of entries skipped because they would escape destDir (see extractZipEntry).
-  public static int unzip(final InputStream zipStream, final Path destDir) throws IOException {
-    int skipped = 0;
-    try (final var in = new ZipInputStream(zipStream)) {
-      ZipEntry entry = in.getNextEntry();
-      while (entry != null) {
-        if (!extractZipEntry(destDir, in, entry)) {
-          skipped++;
-        }
-
-        in.closeEntry();
-        entry = in.getNextEntry();
-      }
+  private static EntryResult unzipEntry(
+      final ZipFile zip, final Path destDir, final ZipEntry entry) {
+    try {
+      return new EntryResult(!extractZipEntry(destDir, zip, entry), null);
+    } catch (final IOException e) {
+      return new EntryResult(false, e);
     }
+  }
 
-    return skipped;
+  // One entry's outcome: written (or deliberately dropped), skipped as unsafe, or failed.
+  private record EntryResult(boolean skipped, IOException failure) {
+    private EntryResult {
+      ValidCheck.check()
+          .assertTrue(!skipped || failure == null, "a skipped entry has no failure")
+          .validate();
+    }
   }
 
   // Entry names of a zip whose name passes `keep`, read from the central directory only (no
@@ -462,13 +478,18 @@ public final class FileUtil {
         throw new IOException("no entry %s in %s".formatted(entryName, zipFile));
       }
 
-      Files.createDirectories(dest.getParent());
-      try (final var in = zip.getInputStream(entry)) {
-        Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
-      }
-
-      setReadOnly(dest);
+      writeEntry(zip, entry, dest);
     }
+  }
+
+  private static void writeEntry(final ZipFile zip, final ZipEntry entry, final Path dest)
+      throws IOException {
+    Files.createDirectories(dest.getParent());
+    try (final var in = zip.getInputStream(entry)) {
+      Files.copy(in, dest, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    setReadOnly(dest);
   }
 
   // The UTF-8 text of one zip entry, without unpacking the rest; empty when there is no such file.
@@ -501,7 +522,7 @@ public final class FileUtil {
   // still escape destDir after normalization — a zip-slip attempt — is skipped rather than written,
   // returning false so a single hostile or malformed entry cannot abort the whole archive.
   private static boolean extractZipEntry(
-      final Path destDir, final ZipInputStream in, final ZipEntry entry) throws IOException {
+      final Path destDir, final ZipFile zip, final ZipEntry entry) throws IOException {
     final Path entryPath = Path.of(entry.getName());
     // A rooted entry (/x) is placed under destDir: on Windows /x has a root but no drive, so it is
     // not "absolute" there, yet resolving it would still leave destDir.
@@ -527,9 +548,7 @@ public final class FileUtil {
       return true;
     }
 
-    Files.createDirectories(target.getParent());
-    Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
-    setReadOnly(target);
+    writeEntry(zip, entry, target);
     return true;
   }
 

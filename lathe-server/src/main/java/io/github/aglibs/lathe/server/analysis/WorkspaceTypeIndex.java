@@ -29,6 +29,9 @@ import java.util.stream.Stream;
 
 public final class WorkspaceTypeIndex {
 
+  private static final Set<String> COMMON_PLATFORM_PACKAGES =
+      Set.of("java.lang", "java.util", "java.io", "java.time", "java.nio", "java.math");
+
   private static final Logger LOG = Logger.getLogger(WorkspaceTypeIndex.class.getName());
 
   private final List<TypeIndexEntry> staticEntries;
@@ -240,11 +243,13 @@ public final class WorkspaceTypeIndex {
     return prefixMatches(bySimpleNameLower, prefix, limit);
   }
 
-  // The full group of importable types with this exact simple name, unbounded. Import resolution
-  // needs every exact match; a limit-truncated prefix scan starves common names (java.util.List)
-  // when many `List*` siblings sort ahead of them by binaryName.
+  // The full group of importable types with this exact simple name, unbounded and ranked like
+  // completion. Import resolution needs every exact match; a limit-truncated prefix scan starves
+  // common names (java.util.List) when many `List*` siblings sort ahead of them by binaryName.
   public List<TypeIndexEntry> searchExact(final String simpleName) {
-    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(), List.of());
+    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(), List.of()).stream()
+        .sorted(ranking())
+        .toList();
   }
 
   // Same exact-prefix match as search(), but over the visibility-unfiltered symbol map, so
@@ -265,19 +270,38 @@ public final class WorkspaceTypeIndex {
     }
 
     final String lower = prefix.toLowerCase();
-    // Usage frequency first, so the limit keeps the types the project actually references (a
-    // ubiquitous java.util.List beats alphabetically-earlier dependency `List*` types) instead of
-    // whatever sorts first by binaryName. A cold-start index carries no counts, so every entry ties
-    // on usage and the order degrades to the reactor-first, binaryName tie-breaks below.
-    final Comparator<TypeIndexEntry> order =
-        Comparator.<TypeIndexEntry>comparingInt(e -> -usageCount(e.binaryName()))
-            .thenComparing(e -> !reactorBinaryNames.contains(e.binaryName()))
-            .thenComparing(TypeIndexEntry::binaryName);
     return index.subMap(lower, lower + "￿").values().stream()
         .flatMap(List::stream)
-        .sorted(order)
+        .sorted(ranking())
         .limit(limit)
         .toList();
+  }
+
+  // The one order for types offered to the user (completion, import candidates, workspace
+  // symbols). Usage frequency first, so the types the project actually references lead (a
+  // ubiquitous java.util.List beats java.awt.List and alphabetically-earlier dependency `List*`
+  // types). Origin decides equal usage -- notably a cold-start index with no counts yet -- so
+  // common java.* types still lead there; then the shorter name, then the name.
+  public Comparator<TypeIndexEntry> ranking() {
+    return Comparator.<TypeIndexEntry>comparingInt(e -> -usageCount(e.binaryName()))
+        .thenComparingInt(this::originRank)
+        .thenComparingInt(e -> e.qualifiedName().length())
+        .thenComparing(TypeIndexEntry::qualifiedName);
+  }
+
+  // Core java.lang, then other everyday platform packages, then reactor types, then the rest. Exact
+  // package match only: subpackages like java.lang.management or java.util.spi are specialized, not
+  // everyday types, so they rank as ordinary JDK entries (below reactor).
+  private int originRank(final TypeIndexEntry entry) {
+    if ("java.lang".equals(entry.packageName())) {
+      return 0;
+    }
+
+    if (COMMON_PLATFORM_PACKAGES.contains(entry.packageName())) {
+      return 1;
+    }
+
+    return reactorBinaryNames.contains(entry.binaryName()) ? 2 : 3;
   }
 
   // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
