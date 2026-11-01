@@ -45,6 +45,7 @@ class LatheLanguageServerTest {
     assertThat(capabilities.getDocumentSymbolProvider().getLeft()).isTrue();
     assertThat(capabilities.getFoldingRangeProvider().getLeft()).isTrue();
     assertThat(capabilities.getCodeActionProvider().getRight().getCodeActionKinds()).isNotEmpty();
+    assertThat(capabilities.getCodeActionProvider().getRight().getResolveProvider()).isTrue();
     assertThat(capabilities.getWorkspaceSymbolProvider().getLeft()).isTrue();
   }
 

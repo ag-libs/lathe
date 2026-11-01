@@ -1,31 +1,19 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
-import com.sun.source.tree.MemberSelectTree;
-import com.sun.source.tree.ParenthesizedTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.tree.TypeCastTree;
-import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
-import com.sun.source.util.Trees;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
-import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
@@ -61,7 +49,7 @@ final class ExtractConstantProvider {
     final TypeMirror type = trees.getTypeMirror(exprPath);
     if (type == null
         || !CodeActionSupport.isDenotable(type)
-        || !isCompileTimeConstant(exprPath, trees)) {
+        || !ExtractionSupport.isCompileTimeConstant(exprPath, trees)) {
       return List.of();
     }
 
@@ -77,11 +65,8 @@ final class ExtractConstantProvider {
       return List.of();
     }
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:extractConst] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 
@@ -164,57 +149,6 @@ final class ExtractConstantProvider {
         source,
         brace,
         "private static final %s %s = %s;".formatted(typeText, name, exprSource));
-  }
-
-  // ── compile-time constant gate (JLS 15.29, the safe subset) ──────────────────────────────────
-
-  private static boolean isCompileTimeConstant(final TreePath path, final Trees trees) {
-    final Tree node = path.getLeaf();
-
-    if (node instanceof final LiteralTree literal) {
-      return literal.getValue() != null; // the `null` literal is not a constant expression
-    }
-
-    if (node instanceof final ParenthesizedTree p) {
-      return isCompileTimeConstant(child(path, p.getExpression()), trees);
-    }
-
-    if (node instanceof final UnaryTree u && isPureUnary(u.getKind())) {
-      return isCompileTimeConstant(child(path, u.getExpression()), trees);
-    }
-
-    if (node instanceof final BinaryTree b) {
-      return isCompileTimeConstant(child(path, b.getLeftOperand()), trees)
-          && isCompileTimeConstant(child(path, b.getRightOperand()), trees);
-    }
-
-    if (node instanceof final ConditionalExpressionTree c) {
-      return isCompileTimeConstant(child(path, c.getCondition()), trees)
-          && isCompileTimeConstant(child(path, c.getTrueExpression()), trees)
-          && isCompileTimeConstant(child(path, c.getFalseExpression()), trees);
-    }
-
-    if (node instanceof final TypeCastTree cast) {
-      return isCompileTimeConstant(child(path, cast.getExpression()), trees);
-    }
-
-    if (node instanceof IdentifierTree || node instanceof MemberSelectTree) {
-      return trees.getElement(path) instanceof final VariableElement variable
-          && variable.getConstantValue() != null;
-    }
-
-    return false;
-  }
-
-  private static boolean isPureUnary(final Tree.Kind kind) {
-    return kind == Tree.Kind.UNARY_PLUS
-        || kind == Tree.Kind.UNARY_MINUS
-        || kind == Tree.Kind.LOGICAL_COMPLEMENT
-        || kind == Tree.Kind.BITWISE_COMPLEMENT;
-  }
-
-  private static TreePath child(final TreePath parent, final Tree node) {
-    return new TreePath(parent, node);
   }
 
   // ── name derivation (SCREAMING_SNAKE) ────────────────────────────────────────────────────────

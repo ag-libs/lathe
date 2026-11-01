@@ -1,5 +1,46 @@
 # Lathe — Extract Method (`refactor.extract.method`)
 
+## Status
+
+Implemented (2026-10-31), all five slices of section 5, closing gap CA-16.
+As built, beyond what the sections below say:
+the provider is `ExtractMethodProvider`, the flow analysis `RegionFlow`, the `throws` scan `UncaughtExceptions`,
+and the compile check `CompileCheckedActions`;
+every call site, the selection and its copies, is an `ExtractionSupport.Site` (a run plus its local mapping),
+and statement copies are found by `ExtractionSupport.statementCopies` through the shared `Equivalence` matcher.
+The check's compile goes through `JavaSourceCompiler.compileDetached`, which leaves the document's own compile,
+and so the trees cached from it, undisturbed.
+A declaration moved to the call keeps `final` but not annotations.
+The refinements and later options at the end of section 5 remain open, as do behaviour tests that run the original
+and the rewritten code (section 7).
+
+### Measured (2026-11-01)
+
+Section 7's coverage measurement, done with `ExtractMethodSweep` (a dev tool in `lathe-server`'s test sources): every
+run of 1–5 statements and every initializer, argument and return value of a repo, through the editor's own path
+(open, `codeAction`, `codeAction/resolve` on a 30% sample of the offers).
+
+| Repo | Selections | Offers resolved | False offers, first run | Crashes |
+|---|---|---|---|---|
+| Lathe (all 596 files) | 119,000 | 31,000 | 400 (1.3%) | 0 |
+| Dropwizard (all 928) | 81,000 | 23,000 | 52 (0.2%) | 0 |
+| Helidon (1,500 of 6,239) | 247,000 | 57,000 | 168 (0.3%) | 0 |
+
+A false offer is one the compile check then disables: safe, but wasted.
+Each kind found was fixed at its cause, with a test: poly expressions (`List.of()`) and other-typed copies in
+replace-all; names the file already gives another type (an import, a declaration, its package, a nested
+`Builder`); `final` on an assigned parameter; `@SuppressWarnings` of the member or a local declaration; enum
+constants; bare array initializers; bare variables and `this`; local classes in the signature or moved away;
+inaccessible types; an inner class's constructor-call arguments; returns out of a switch expression; statement
+parentheses; copies in annotation values. A re-run on the fixed build found none in 16,315 resolved Helidon
+offers; Lathe's re-run, a few fixes earlier, found 8, of kinds fixed since.
+The compile check now refuses only errors the edit adds, so a file with an unrelated error still extracts.
+
+Refusals, in all three repos alike, are led by more than one value flowing out and by `return` (partial, or from a
+lambda or `void` method), well ahead of a value assigned conditionally, the case JDT's flow model would win: the
+later options of section 5 (several outputs through a local record, early returns) would pay more than adopting
+that model. Timing: `codeAction` p99 under 15 ms, resolve p99 under 250 ms.
+
 ## 1. Goal
 
 Select code, invoke code actions, and get **Extract method**: the selection becomes a new private method,
@@ -48,30 +89,29 @@ selection (and for a caret inside an expression, like extract variable).
 | Statements, nothing used afterwards | `private void extracted(…) { … }`; the statements become `extracted(…);` |
 | Statements declaring a local used afterwards | `T x = extracted(…);` and the method ends `return x;` |
 | Statements assigning an earlier local used afterwards | `x = extracted(…);` |
+| Statements leaving a method that returns a value on every path (`return` or `throw`) | `return extracted(…);` |
+| Code naming the enclosing generic method's type variables | the new method declares those type parameters, and the ones their bounds name |
 | Statements calling methods that throw checked exceptions they don't catch | the new method declares them (`throws IOException`) |
 | Inside a static method, a static initializer, or a static nested context | the new method is `static` |
-| The same code elsewhere in the class | a second action, `… (replace N duplicates)`, calls the new method there too |
+| The same code elsewhere in the class | a second action, `… (replace all N occurrences)`, calls the new method there too |
 
 Refused, with no action offered (each one listed in the tests):
 
 - the selection is not one expression nor a run of whole sibling statements of one block (or `case:` list);
 - more than one local would have to come back out (Java has one return value);
-- a `return`, or a `break`/`continue`/`yield` whose target lies outside the selection, inside it
-  (outside nested lambdas and classes);
-- it never completes normally (it ends in a `throw`, or every path of its last `if`/`try` throws): moved
-  into a method, the call looks like it completes, and the original method or value lambda would lack its
-  `return`;
+- a `return` on only some paths, or from a lambda or a `void` method, or a `break`/`continue`/`yield`
+  whose target lies outside the selection, inside it (outside nested lambdas and classes);
+- it never completes normally (it ends in a `throw`, or every path of its last `if`/`try` throws) outside
+  a method returning a value: moved into a method, the call looks like it completes, and a value lambda
+  would lack its `return`;
 - a local it declares without an initializer flows out but is not assigned at its top level;
 - an earlier local assigned only in a branch or loop of the selection and read afterwards
   (its value may or may not change — the scan cannot prove which);
 - it uses a local class or record declared earlier in the method (invisible to the new method);
 - it assigns a `final` field (anywhere), contains `this(…)`/`super(…)`, or is a try-with-resources resource;
-- a local that comes back out is captured by a lambda or inner class anywhere in the scope
-  (a second assignment would make it no longer effectively final);
 - it rethrows a catch parameter (`catch (Exception e) { throw e; }`: Java's precise rethrow throws less
   than the parameter's type says, and an over-broad `throws` would not compile at the call site);
-- a parameter, return or thrown type cannot be written (`isDenotable`);
-- the enclosing method's type variables are used (until slice 4 adds type parameters).
+- a parameter, return or thrown type cannot be written (`isDenotable`).
 
 The generated name is `extracted` (uniquified against the class's methods); the user renames it with rename,
 as for extract variable — Neovim code actions carry no snippet placeholders.
@@ -91,7 +131,9 @@ The use/def scan lives in its own small class, `RegionFlow`, because it is the o
 - **Statement form**: the outermost trees inside the selection (the span scan of `soleTreeWithin`, returning the
   list instead of requiring one) must all be statements, consecutive children of the same block or `case:`
   statement list.
-  One whole expression statement selected is the statement form, not the expression form.
+  One whole expression statement selected is the statement form, not the expression form,
+  except a lone declaration with an initializer or a lone assignment: it extracts the value it stores
+  (`t = extracted(a);` with `return a.trim();`, not `t = a.trim(); return t;`).
 
 The region is a list of tree paths plus its source span.
 
@@ -160,9 +202,11 @@ with its own `break` is fine.
 It also refuses a region that never completes normally (JLS 14.22, approximated: a final `throw`, an `if`/`else`
 or a `try` all of whose paths end so).
 
-- `return`, unless **every** path of the region returns (slice 4): the call site becomes
-  `return extracted(…);` (`yield` in a switch rule), and a trailing `return;` of a void method is dropped.
-  When only some paths return, the region is refused (JDT warns and proceeds; refusing keeps behaviour);
+- `return`, unless the region cannot complete normally and sits directly in a method returning a value
+  (slice 4): every path then ends in `return value;` or a throw, and the call site becomes
+  `return extracted(…);`. Returns from a lambda (`yield` in a switch rule) and from a `void` method are
+  still refused, as is a region where only some paths return (JDT warns and proceeds; refusing keeps
+  behaviour);
 - `break`, `continue` and `yield` whose target statement (labelled, or the innermost loop/switch) is outside the
   region.
 
@@ -212,7 +256,7 @@ The user's format-on-save normalizes layout.
 
 ### 4.6 Duplicates
 
-A second action, `Extract method 'extracted' (replace N duplicates)`, also replaces copies of the region in the
+A second action, `Extract method 'extracted' (replace all N occurrences)`, also replaces copies of the region in the
 class with calls; the plain action stays. Repeating the action at each copy would instead create
 `extracted1`, `extracted2`, … rather than reuse the method.
 
@@ -222,15 +266,22 @@ class with calls; the plain action stays. Repeating the action at each copy woul
 - **Statements and copies with other locals (slice 5)**, after JDT's `SnippetFinder`: match consecutive statements
   sharing one parent (block or `case:` list); a local of the region may match a different local of the same type at
   the copy, through a one-to-one mapping (JDT's is one-directional); each candidate is re-analysed with
-  `RegionFlow` and kept only when it yields the same parameters, return value and throws; mapped locals become
-  different arguments at each call.
+  `RegionFlow` and kept only when it yields the same parameters, locals, return value and return; mapped locals
+  become different arguments at each call, and a declaration moved to a copy's call keeps the copy's name.
+  Throws need no check: the same calls on locals of the same types throw the same.
+  The statement match covers blocks, expression statements, local declarations, `if`, `return`, `throw`,
+  enhanced `for` and `while`, plus assignments and `++`/`--`; anything else (lambdas, method references, `try`,
+  `switch`) is not a copy, so it gains no replace-all, never a wrong one.
+  Copies in expression form stay exact, so extract variable's replace-all is unchanged.
 
 ### 4.7 Compile check (second line of defence)
 
 javac's own flow analysis (definite assignment, reachability, effectively-final) is internal, so the scan
 approximates; a mistake it makes would show up as code that no longer compiles.
 Before the edit reaches the user, the provider compiles the file with the edit applied, in process (about
-100 ms for a file), and offers nothing if that compile reports an error.
+100 ms for a file), and offers nothing if that compile reports an error the original text did not have
+(compared by message, as lines move): an error the file already had, such as an unresolved type, must not
+refuse every edit in it.
 To keep that cost off every code-action request, the action is offered by title only and its edit is
 computed and checked in `codeAction/resolve`, which the client sends only when the user picks it
 (Neovim supports it); the server gains `resolveProvider` and a resolve handler.

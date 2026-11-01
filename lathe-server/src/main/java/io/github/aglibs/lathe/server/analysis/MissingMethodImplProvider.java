@@ -6,7 +6,6 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -15,11 +14,9 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.ExecutableType;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -65,8 +62,7 @@ final class MissingMethodImplProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final var formatter = new TypeDisplayFormatter(analysis.types());
-    final var importAnalyzer = new ImportAnalyzer(analysis);
+    final var formatter = CodeActionSupport.sourceTypeFormatter(analysis, classElement);
     final Types types = analysis.types();
     final DeclaredType classType = (DeclaredType) classElement.asType();
 
@@ -77,12 +73,10 @@ final class MissingMethodImplProvider implements CodeActionProvider {
             buildStubs(unimplemented, formatter, types, classType));
 
     final List<TextEdit> importEdits =
-        unimplemented.stream()
-            .flatMap(m -> methodFqns(m, types, classType).stream())
-            .distinct()
-            .map(importAnalyzer::importEdit)
-            .filter(Objects::nonNull)
-            .toList();
+        CodeActionSupport.importEditsFor(
+            analysis,
+            classElement,
+            unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
 
     final List<TextEdit> allEdits =
         Stream.concat(Stream.of(stubEdit), importEdits.stream()).toList();
@@ -171,39 +165,13 @@ final class MissingMethodImplProvider implements CodeActionProvider {
         .formatted(MethodStubRenderer.signature(method, classType, types, formatter));
   }
 
-  private static Set<String> methodFqns(
+  private static Stream<TypeMirror> signatureTypes(
       final ExecutableElement method, final Types types, final DeclaredType classType) {
     final ExecutableType exeType = (ExecutableType) types.asMemberOf(classType, method);
-    return Stream.concat(
-            Stream.concat(Stream.of(exeType.getReturnType()), exeType.getParameterTypes().stream()),
+    return Stream.of(
+            Stream.of(exeType.getReturnType()),
+            exeType.getParameterTypes().stream(),
             exeType.getThrownTypes().stream())
-        .flatMap(t -> collectFqns(t).stream())
-        .collect(Collectors.toUnmodifiableSet());
-  }
-
-  private static Set<String> collectFqns(final TypeMirror type) {
-    if (type instanceof final DeclaredType dt) {
-      final Stream<String> self =
-          dt.asElement() instanceof TypeElement te
-              ? Stream.of(te.getQualifiedName().toString())
-              : Stream.of();
-      final Stream<String> args =
-          dt.getTypeArguments().stream().flatMap(arg -> collectFqns(arg).stream());
-      return Stream.concat(self, args).collect(Collectors.toUnmodifiableSet());
-    }
-
-    if (type instanceof final ArrayType at) {
-      return collectFqns(at.getComponentType());
-    }
-
-    if (type instanceof final WildcardType wt) {
-      final Stream<String> ext =
-          wt.getExtendsBound() != null ? collectFqns(wt.getExtendsBound()).stream() : Stream.of();
-      final Stream<String> sup =
-          wt.getSuperBound() != null ? collectFqns(wt.getSuperBound()).stream() : Stream.of();
-      return Stream.concat(ext, sup).collect(Collectors.toUnmodifiableSet());
-    }
-
-    return Set.of();
+        .flatMap(stream -> stream);
   }
 }

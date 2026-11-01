@@ -61,6 +61,9 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // type (which must move its .java file). Written in initialize, read per rename request.
   private volatile boolean fileRenameSupported;
 
+  // Whether the client resolves code actions (CompileCheckedActions). Written in initialize.
+  private volatile boolean codeActionResolveSupported;
+
   public LatheTextDocumentService() {
     this(DEFAULT_DEBOUNCE_MS);
   }
@@ -85,6 +88,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   public void setFileRenameSupported(final boolean supported) {
     fileRenameSupported = supported;
+  }
+
+  void setCodeActionResolveSupported(final boolean supported) {
+    codeActionResolveSupported = supported;
   }
 
   // On the worker like all session state; queued after connect, so it is set before initialize.
@@ -279,8 +286,16 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return worker
-        .submit(() -> session.codeActionFuture(uri, params.getRange(), context))
+        .submit(
+            () ->
+                session.codeActionFuture(
+                    uri, params.getRange(), context, codeActionResolveSupported))
         .thenCompose(f -> f);
+  }
+
+  @Override
+  public CompletableFuture<CodeAction> resolveCodeAction(final CodeAction unresolved) {
+    return worker.submit(() -> session.resolveCodeActionFuture(unresolved)).thenCompose(f -> f);
   }
 
   @Override

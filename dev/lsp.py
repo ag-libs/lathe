@@ -569,6 +569,10 @@ class LspClient:
         })
         return result or []
 
+    def resolve_code_action(self, action: dict) -> dict:
+        """codeAction/resolve: the action with its edit, or disabled with a reason."""
+        return self.request("codeAction/resolve", action) or action
+
     def prepare_rename(self, file: str | Path, line: int, col: int) -> dict | None:
         """Prepare rename at 0-based line/col. Returns the renameable Range (or {range,placeholder})
         when the position is renameable, else None."""
@@ -702,7 +706,8 @@ class LatheClient(LspClient):
                     "typeHierarchy": {},
                     "callHierarchy": {},
                     "foldingRange": {},
-                    "codeAction": {},
+                    # Like Neovim: an action may arrive without its edit, resolved when applied.
+                    "codeAction": {"dataSupport": True, "resolveSupport": {"properties": ["edit"]}},
                     "rename": {"prepareSupport": True},
                     "completion": {"completionItem": {"snippetSupport": False}},
                     "signatureHelp": {},

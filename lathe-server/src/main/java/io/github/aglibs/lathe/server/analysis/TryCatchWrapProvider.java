@@ -2,10 +2,8 @@ package io.github.aglibs.lathe.server.analysis;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionKind;
@@ -48,11 +46,8 @@ final class TryCatchWrapProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:tryCatch] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 

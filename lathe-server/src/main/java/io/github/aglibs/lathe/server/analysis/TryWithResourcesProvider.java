@@ -13,11 +13,9 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
@@ -71,11 +69,8 @@ final class TryWithResourcesProvider {
       return List.of();
     }
 
-    final String source;
-    try {
-      source = cu.getSourceFile().getCharContent(false).toString();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[codeAction:tryWithResources] failed to read source");
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
       return List.of();
     }
 

@@ -360,6 +360,10 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
   `IllegalArgumentException: error: release version 26 not supported`.
   The module-access flags of `jvm.args` are dropped too.
   The `[startup]` line does not name the JVM, so the mismatch is invisible.
+- **The 30 s wait.** A compile that throws (here javac refusing the release) only publishes the error to the
+  editor (`WorkspaceSession.submitTo` → `publishError`); the engine's `diagnosticsFuture` waiting on it is never
+  completed, so the request runs into its timeout instead of failing at once with javac's reason.
+  The extract method sweep (2026-11-01) hung the same way on Helidon's release-27 modules from a JDK 26 JVM.
 - **VS Code.** The extension looks only for `<opened folder>/.lathe/lathe-launcher.sh`.
   Opening a module folder answers "no launcher … run a Lathe-enabled build to generate it", although the
   build already ran at the root.
@@ -370,6 +374,8 @@ Launchers resolve `.lathe/` the way the server does (walk up from the working di
 `java-home` and `jvm.args` from there.
 The VS Code extension walks up from the opened folder.
 `[startup]` logs `java.home` and the Java version.
+A failed compile completes the engine's waiting future exceptionally, so the request fails at once with the
+compiler's message.
 
 ### Regression targets
 
@@ -815,117 +821,41 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ---
 
-## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
+## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently
 
-**Status: accepted (selection, placement and safety delivered; extract method remains).**
+**Status: documented**
 
-**Value: high — Size: L**
+**Value: medium — Size: S**
 
 **Affects: Neovim, VS Code, any client.**
 
-Found in daily use (2026-10-30/31): extraction "does not work in many places", on multi-line statements above all.
-Investigated with a probe matrix of 59 Java contexts in `CodeActionTest` (each compiled clean),
-each asked four ways: a caret at the target's start, the exact expression, the expression through its `;`,
-and the whole lines (`V`: column 0 to the last line's end); then the offered edits were applied and recompiled.
-A read-only probe of a 387-line service class in the running editor (a caret code action at each of 800 identifiers)
-matched: extract variable at 201 of them, and every miss on a code line falls under the cases below.
+Found by the extract method sweep of the Lathe repo (2026-11-01), confirmed with a probe test.
 
-### Delivered (2026-10-31)
+### Observed behaviour
 
-Sections 1–3 are fixed; the matrix's misses on code lines and its broken or unsafe offers are gone.
-Design notes in [Extract Variable](../done/lathe-extract-variable.md#selections-and-placement-ca-16).
+These refactors write a type by its simple name and import it through `CodeActionSupport.importEditFor`,
+which looks only at the type's own qualified name.
+When the file already gives that simple name to another type, the result does not compile:
 
-- 5818ef69, 3ad4ed54 — selection (section 1): `ExtractionSupport.selectedExpression` takes the one outermost
-  tree inside a selection, a statement meaning its value; shared by extract variable, field and constant.
-- 19962f60 — safety (section 3): `ExtractionSupport.pinnedInPlace` and a deep `isDenotable`.
-- 195c9dc8 — placement without restructuring (section 2): `case:` lists, resources, `for` initializers,
-  whole expression statements.
-- fa655223 — placement with a new block (section 2): expression lambdas, switch rules, brace-less bodies.
-
-Remaining: section 4, extract method, designed in [Extract Method](../planned/lathe-extract-method.md).
-Not changed: a lambda or anonymous class as the extracted value (needs a target type or `var`), and extract
-field's own placement rules.
-
-### 1. A selection must be character-exact
-
-| Selection | Offered |
-|---|---|
-| caret at the expression, or exactly the expression (multi-line too) | yes |
-| through the `;` | no, in every context |
-| line-wise (`V`), or starting in the indentation | no, in every context |
-
-Selecting several lines is usually line-wise, so on multi-line code the extractions look absent;
-`V` on a single line fails the same way.
-`ExtractionSupport.coveringExpression` starts at the tree under the selection's start and walks up to an expression
-covering the whole selection: a start in the indentation is above every expression, and an end past the expression
-is covered by none.
-
-### 2. Extract variable is refused where the expression's statement is not directly in a block
-
-| Context | Example | Offered |
+| Source | Action | Result |
 |---|---|---|
-| expression lambda | `l.forEach(x -> use(x.trim()))`, `orElseThrow(() -> new X(a.trim()))`, `.map(x -> x.length() * 2)` | nothing |
-| switch, colon case | `case "x": use(a.trim()); break;` | nothing |
-| switch, arrow case / expression arm | `case "x" -> use(a.trim());`, `case "x" -> a.length() + 1;` | nothing |
-| brace-less body | `if (ok) use(a.trim());`, `else use(…)`, `for (…) use(…)` | nothing |
-| try-with-resources | `try (var in = open(f.getPath()))` | nothing |
-| `for` initializer | `for (int i = seed(); …)` | field only |
-| a whole expression statement | `a.trim();` (non-void) | nothing |
+| `import java.sql.Date;` … `var d = new java.util.Date();` | Replace `var` | `Date d = …` plus `import java.util.Date;`: `Date` is ambiguous |
+| `import java.sql.Date;` … `new java.util.Date().getTime()` | Extract field | `private final Date date = …` plus the same second import |
+| a type the source only names fully qualified | Extract variable, extract constant | the simple name, with no import at all |
 
-`ExtractVariableProvider` declares before the expression's statement and requires that statement's parent to be a block;
-`CodeActionSupport.nearestEnclosingStatement` stops at a lambda, and these statements' parents are a `case`, an `if`, a `for` or a `try`.
-Extract field and constant are still offered in some of these places, which makes the gap look arbitrary.
-Block lambdas, `yield`, `try`/`catch`/`synchronized` bodies, initializer blocks, constructors, anonymous and local classes,
-and record compact constructors all work.
-
-Also not offered: a lambda or anonymous class as a value (`l.forEach(x -> use(x))`, `use(new Object() { })`):
-the first needs its target type, the second a `var`.
-
-### 3. Extract variable is offered where it breaks the code or changes what it does
-
-It always declares before the statement, so an expression that is evaluated conditionally, repeatedly, or in a
-narrower scope is hoisted:
-
-| Context | Result |
-|---|---|
-| `if (o instanceof String s && s.isEmpty())` | `s.isEmpty()` hoisted above the pattern that declares `s`: does not compile |
-| `use(List.of(1, "a"))` (intersection element type) | `List<> of = List.of(1, "a");`: does not compile |
-| `if (a != null && a.isEmpty())` | `a.isEmpty()` evaluated before the null check: throws |
-| `use(ok(a) ? a.trim() : "")` | the branch evaluated unconditionally |
-| `while (l.isEmpty())`, `do … while (!l.isEmpty())`, `i < l.size()` | the condition evaluated once, before the loop |
-| `super(a.length())` | a statement before `super(…)`, legal only from Java 25, offered whatever the project's release |
-
-### 4. No extract method
-
-The only extractions are variable, field and constant (`ExtractionSupport.KINDS`); selecting statements offers nothing.
-It was proposed in [Basic Refactorings](../potential/lathe-basic-refactorings.md) but never planned.
+Only the top-level type is imported, never a generic argument (`Map<String, AtomicLong>`).
 
 ### Fix direction
 
-1. Match the selection by the tree: ignore whitespace around it, and when it covers a whole statement take that statement's
-   expression (an expression statement's expression, a declaration's initializer, a `return`'s value).
-2. Make room where there is no block, as IntelliJ does: an expression lambda's body becomes a block
-   (`x -> { var v = …; return …; }`), a case arm or brace-less body is wrapped in braces, a resource or `for` initializer
-   declares before the `try`/`for`; a non-void expression statement becomes a declaration.
-   Never hoist out of a lambda.
-3. Refuse (or declare in place) what cannot move: the right side of `&&`/`||`, a `?:` branch, a loop condition or update,
-   and anything reading a pattern binding; insert before `super(…)` only from Java 25.
-   Use `var` for a non-denotable type (intersection, anonymous class) instead of writing a broken one.
-4. Extract method: selected statements become a method, captured locals its parameters, a value used after the selection
-   its return value (refused when more than one); needs javac flow analysis, and rule 1 for its selections.
-
-The test helper `CodeActionTest.applyEdits` garbled two edits that start at the same offset; fixed in 06bcde58.
+Use what extract method and implement-abstract-methods already share:
+`CodeActionSupport.sourceTypeFormatter` writes a type whose simple name the file gives another type (by an import or
+a declaration) fully qualified, and `CodeActionSupport.importEditsFor` imports every other type the text names,
+generic arguments included, skipping those.
+Then `importEditFor` and `typeFqn` can go.
 
 ### Regression targets
 
-For sections 1–3, in `CodeActionTest`, each offered edit applied and compiled:
-`codeAction_extraction_lineWiseSelection_findsTheExpression`,
-`codeAction_extractVariable_evaluatedOnlyInPlace_offersNothing`,
-`codeAction_extractVariable_evaluatedOnceBeforeStatement_rewritesToCompilingCode`,
-`codeAction_extractVariable_outsideABlock_declaresWhereItFits`,
-`codeAction_extractVariable_bodyWithoutRoom_becomesABlock`,
-`codeAction_extractVariable_atStatementStart_rewritesToCompilingCode`.
-Extract method: none yet.
+None yet. Model: `CodeActionTest.codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified`.
 
 ---
 

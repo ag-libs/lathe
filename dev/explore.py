@@ -189,6 +189,25 @@ accept inject <code> [at <line>] <selector>
     For accept inject, <code> may contain § to place the completion cursor
     before trailing text.  The marker is removed from the temporary content.
 
+actions <selection> [<assertions>]
+    Request code actions for a selection and list them, numbered, with their
+    kind. <selection> is one of:
+      <line>:<col>                 a caret (0-based)
+      <line>:<col>-<line>:<col>    a range (0-based)
+      lines <a>-<b>                whole lines, 1-based, as Neovim's V sends them
+                                   (column 0 to the end of line <b>)
+      <text>                       the span of the first occurrence of <text>
+    Assertions apply to the titles; 'absent' checks a refusal.
+    Example: actions "a.trim()" expect "Extract method" absent "Extract field"
+
+apply <index | title-prefix>
+    Apply an action from the last 'actions' list to the live buffer (never the
+    file on disk): resolve it first when it arrives without its edit (extract
+    method is compile-checked on resolve; a disabled answer fails the probe),
+    print the changed lines as a diff, then wait for the server's diagnostics of
+    the rewritten buffer and fail the probe on any error, so an action that breaks
+    the code is caught end to end. 'reset' restores the original content.
+
 reset
     Discard any injected content and restore the server's view to the
     original file content.
@@ -223,12 +242,17 @@ completion list.  Multiple qualifiers may be combined.
       Every returned item's label must start with <prefix> (case-insensitive).
       Example: complete after "set" filter set
 
+  absent <label> [<label> ...]
+      No returned item's label may start with any listed label.
+      Example: actions lines 12-14 absent "Extract method"
+
 When all qualifiers pass the line starts with  [PASS].
 When any qualifier fails the line starts with  [FAIL]  and the exit code is 1.
 When there are no qualifiers the result is printed without a status badge.
 """
 
 import argparse
+import difflib
 import json
 import re
 import shlex
@@ -274,7 +298,7 @@ _LOG_KEYWORDS = (
     "unused",
 )
 
-_ASSERTION_KEYWORDS = frozenset(("expect", "min", "max", "filter"))
+_ASSERTION_KEYWORDS = frozenset(("expect", "absent", "min", "max", "filter"))
 _ACCEPT_SELECTOR_KEYWORDS = frozenset((
     "label", "filter-text", "label-detail", "detail-contains", "index",
 ))
@@ -323,13 +347,13 @@ def _parse_assertions(args: list[str]) -> tuple[list[str], dict]:
     i = 0
     while i < len(rest):
         kw = rest[i].lower()
-        if kw == "expect":
+        if kw in ("expect", "absent"):
             i += 1
             labels: list[str] = []
             while i < len(rest) and rest[i].lower() not in _ASSERTION_KEYWORDS:
                 labels.append(rest[i])
                 i += 1
-            assertions["expect"] = labels
+            assertions[kw] = labels
         elif kw == "min":
             i += 1
             assertions["min"] = int(rest[i])
@@ -391,6 +415,10 @@ def _check_assertions(items: list[dict], assertions: dict) -> list[str]:
     for expected in assertions.get("expect", []):
         if not any(lbl.startswith(expected) for lbl in labels):
             failures.append(f"expected label starting with {expected!r} — not found")
+
+    for absent in assertions.get("absent", []):
+        if any(lbl.startswith(absent) for lbl in labels):
+            failures.append(f"expected no label starting with {absent!r} — found one")
 
     if "min" in assertions and len(items) < assertions["min"]:
         failures.append(f"expected ≥{assertions['min']} items, got {len(items)}")
@@ -458,6 +486,26 @@ def _edit_range(edit: dict) -> dict:
     if "insert" in edit:
         return edit["insert"]
     raise ValueError(f"unsupported text edit shape: {edit}")
+
+
+def _print_diff(before: str, after: str, indent: str) -> None:
+    """The changed lines as a unified diff with one line of context, without file headers."""
+    for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=1):
+        if not line.startswith(("---", "+++")):
+            print(f"{indent}{line}")
+
+
+def _apply_text_edits(content: str, edits: list[dict]) -> str:
+    """Apply LSP TextEdits to content. Edits at one offset land in list order, as LSP specifies:
+    a stable ascending sort keeps that order, and walking it backwards applies the later one first."""
+    def offset(pos: dict) -> int:
+        return _offset_at(content, pos["line"], pos["character"])
+
+    result = content
+    for edit in reversed(sorted(edits, key=lambda e: offset(e["range"]["start"]))):
+        start, end = offset(edit["range"]["start"]), offset(edit["range"]["end"])
+        result = result[:start] + edit["newText"] + result[end:]
+    return result
 
 
 def _snippet_text_and_cursor(text: str) -> tuple[str, int | None]:
@@ -550,6 +598,7 @@ class ExploreShell:
         self._version: int = 1
         self._injected: bool = False
         self._last_runnables: list[dict] | None = None
+        self._last_actions: list[dict] = []
         self.any_failure: bool = False  # set True if any assertion fails
 
     # ── command dispatch ──────────────────────────────────────────────────────
@@ -605,6 +654,8 @@ class ExploreShell:
             "imports":         self._cmd_missing_imports,
             "missing-imports": self._cmd_missing_imports,
             "inject":      self._cmd_inject,
+            "actions":     self._cmd_actions,
+            "apply":       self._cmd_apply,
             "reset":       self._cmd_reset,
             "log":         self._cmd_log,
             "help":        self._cmd_help,
@@ -1795,6 +1846,115 @@ class ExploreShell:
             return
 
         self._evaluate(items, assertions)
+
+    def _selection(self, args: list[str]) -> tuple[int, int, int, int] | None:
+        """A 0-based (line, col, end line, end col) from a caret, a range, 'lines a-b' or a text."""
+        if len(args) >= 2 and args[0].lower() == "lines":
+            first, _, last = args[1].partition("-")
+            a, b = int(first) - 1, int(last or first) - 1
+            return a, 0, b, len(self._lines()[b])
+
+        token = args[0]
+        if token[:1].isdigit() and ":" in token:
+            start, _, end = token.partition("-")
+            sl, sc = self._parse_line_col(start, "<line>:<col>") or (None, None)
+            if sl is None:
+                return None
+            el, ec = self._parse_line_col(end, "<line>:<col>") if end else (sl, sc)
+            return sl, sc, el, ec
+
+        offset = self._current.find(token)
+        if offset < 0:
+            print(f"  text not found: {token!r}")
+            return None
+        sl, sc = _position_at(self._current, offset)
+        el, ec = _position_at(self._current, offset + len(token))
+        return sl, sc, el, ec
+
+    def _cmd_actions(self, args: list[str]) -> None:
+        pre, assertions = _parse_assertions(args)
+        if not pre:
+            print("usage: actions <selection> [assertions]")
+            return
+
+        selection = self._selection(pre)
+        if selection is None:
+            return
+
+        sl, sc, el, ec = selection
+        print(f"  range {sl}:{sc}-{el}:{ec}")
+        self._last_actions = self._client.code_action(self._file, sl, sc, el, ec)
+        for i, action in enumerate(self._last_actions):
+            print(f"  [{i}] {action.get('title')}  ({action.get('kind', '-')})")
+        if not self._last_actions:
+            print("  (no actions)")
+        self._evaluate([{"label": a.get("title", "")} for a in self._last_actions], assertions)
+
+    def _cmd_apply(self, args: list[str]) -> None:
+        if not args:
+            print("usage: apply <index | title-prefix>")
+            return
+
+        key = " ".join(args)
+        matches = (
+            [self._last_actions[int(key)]] if key.isdigit() and int(key) < len(self._last_actions)
+            else [a for a in self._last_actions if a.get("title", "").startswith(key)]
+        )
+        if not matches:
+            print(f"  no action {key!r} in the last 'actions' list")
+            self.any_failure = True
+            return
+
+        action = matches[0]
+        if not action.get("edit"):
+            # A compile-checked action (extract method) carries its edit only once resolved.
+            action = self._client.resolve_code_action(action)
+            if action.get("disabled"):
+                print(f"  [DISABLED] {action['disabled'].get('reason')}")
+                self._print_refused_edit(action)
+                self.any_failure = True
+                return
+
+        uri = self._file.resolve().as_uri()
+        edits = (action.get("edit") or {}).get("changes", {}).get(uri, [])
+        if not edits:
+            print(f"  {action.get('title')!r} carries no edit for this file")
+            self.any_failure = True
+            return
+
+        rewritten = _apply_text_edits(self._current, edits)
+        print(f"  applied {action.get('title')!r}")
+        _print_diff(self._current, rewritten, "  ")
+
+        queue_ = self._client._notification_queue("textDocument/publishDiagnostics")
+        while not queue_.empty():
+            queue_.get_nowait()
+        self._current = rewritten
+        self._version += 1
+        self._injected = True
+        self._client.change(self._file, rewritten, self._version)
+        try:
+            msg = self._client.wait_notification(
+                "textDocument/publishDiagnostics", predicate=lambda m: m["params"]["uri"] == uri)
+        except TimeoutError:
+            print("  TIMEOUT waiting for diagnostics")
+            self.any_failure = True
+            return
+
+        errors = [d for d in msg["params"]["diagnostics"] if d.get("severity") == 1]
+        for d in errors:
+            print(f"  [ERROR] {d['range']['start']['line'] + 1}: {d['message'].splitlines()[0]}")
+        self.any_failure |= not _print_assertion_result(
+            [f"{len(errors)} error(s) after applying"] if errors else [])
+
+    def _print_refused_edit(self, action: dict) -> None:
+        """The edit a disabled action carried in its data (extract method's), as the diff it would
+        have made: what to look at when the server's compile check refuses it."""
+        edits = (action.get("data") or {}).get("edits") or []
+        if not edits:
+            return
+        print("  would have applied:")
+        _print_diff(self._current, _apply_text_edits(self._current, edits), "    ")
 
     def _cmd_reset(self, args: list[str]) -> None:
         if not self._injected:

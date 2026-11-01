@@ -3156,7 +3156,10 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
-      final String uri, final Range range, final CodeActionContext context) {
+      final String uri,
+      final Range range,
+      final CodeActionContext context,
+      final boolean resolveSupported) {
     final OpenDocument openFile = docs.get(uri);
     if (openFile == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -3196,9 +3199,24 @@ final class WorkspaceSession {
                           enriched,
                           staticImports);
                     })
+                .thenApply(
+                    actions ->
+                        resolveSupported
+                            ? CompileCheckedActions.defer(uri, openFile.version(), actions)
+                            : actions)
                 .exceptionally(
                     ex -> logAndReturn(ex, "[codeAction] failed for %s".formatted(uri), List.of())),
         List.of());
+  }
+
+  // The check may compile twice (the rewritten text, then the original to compare errors), and the
+  // second starts from the first one's completion, off the loop: each compile routes on the loop.
+  CompletableFuture<CodeAction> resolveCodeActionFuture(final CodeAction action) {
+    return CompileCheckedActions.resolve(
+        action,
+        docs::get,
+        (uri, content) ->
+            worker.submit(() -> diagnosticsTransientFuture(uri, content)).thenCompose(f -> f));
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
