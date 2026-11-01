@@ -4213,18 +4213,29 @@ final class WorkspaceSession {
         || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
   }
 
-  // A sync gives a module only to a file of the modules the build compiles.
+  // A sync helps only a file of a module the build compiles that has no mirror yet: in a synced
+  // module (a sync writes each module it built a .lathe directory, one without sources too) the
+  // file is outside its source roots, and outside the built modules the build left it out.
   private String notCheckedReason(final Path file) {
     final Path relative = workspaceRoot.relativize(file);
     if (Files.notExists(file)) {
       return "%s does not exist, and the last build did not compile it".formatted(relative);
     }
 
-    return manifest.inBuiltModule(file)
-        ? "%s is in no synced module — run `%s`"
-            .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND)
-        : "%s is outside the modules the last build compiled, so Lathe cannot check it"
-            .formatted(relative);
+    return manifest
+        .builtModuleDirOf(file)
+        .map(moduleDir -> FileUtil.slashed(workspaceRoot.relativize(moduleDir)))
+        .map(
+            moduleRel ->
+                Files.isDirectory(moduleLatheDir(moduleRel))
+                    ? "%s is in no source root of module %s, so a sync does not add it"
+                        .formatted(relative, moduleRel.isEmpty() ? "." : moduleRel)
+                    : "%s is in no synced module — run `%s`"
+                        .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
+        .orElseGet(
+            () ->
+                "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+                    .formatted(relative));
   }
 
   static Map<Path, Long> withoutFailedCompiles(

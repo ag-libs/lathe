@@ -76,6 +76,7 @@ public final class LatheEngine {
   private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
   private static final long REQUEST_TIMEOUT_SECONDS = 30;
+  private static final int TEST_CLASS_CANDIDATES = 20;
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -479,6 +480,10 @@ public final class LatheEngine {
     compileFromDisk(file);
     final var uri = file.toUri().toString();
     final List<RunTarget> targets = await(service.runnablesFuture(uri));
+    if (targets.isEmpty()) {
+      throw new IllegalStateException(noTests(file));
+    }
+
     final List<RunTarget> selected = selectTargets(targets, scope, method, file);
     final List<TestSelection> selections =
         selected.stream()
@@ -488,6 +493,26 @@ public final class LatheEngine {
     return LatheTestRun.from(
         await(service.runTestFuture(selected.get(0).moduleRel(), selections, token)),
         selected.stream().map(RunTarget::id).toList());
+  }
+
+  // Why a file runs nothing: no module compiles it (the note says why), or it holds no test, and
+  // then its test class when the reactor has one by the usual name.
+  private String noTests(final Path file) {
+    final String name = FileUtil.javaTypeName(file);
+    final Set<String> testNames = Set.of("%sTest".formatted(name), "%sTests".formatted(name));
+    return notes(List.of(file)).notChecked().stream()
+        .findFirst()
+        .orElseGet(
+            () ->
+                searchSymbols("%sTest".formatted(name), TEST_CLASS_CANDIDATES).stream()
+                    .filter(symbol -> testNames.contains(symbol.name()))
+                    .filter(symbol -> symbol.location().origin() == LatheLocation.Origin.REACTOR)
+                    .findFirst()
+                    .map(
+                        symbol ->
+                            "no test in %s; its test class may be %s"
+                                .formatted(file.getFileName(), symbol.location().path()))
+                    .orElseGet(() -> "no test in %s".formatted(file.getFileName())));
   }
 
   // The outermost targets of the scope: a nested class runs with its enclosing one (the scan lists

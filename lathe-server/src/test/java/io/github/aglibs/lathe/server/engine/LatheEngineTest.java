@@ -344,10 +344,10 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
   }
 
-  // A sync helps only a file of a module the build compiles; one outside them (a module the build's
-  // profiles or JDK leave out) it cannot.
+  // A sync cannot add a file outside a synced module's source roots, nor one in a module the
+  // build's profiles or JDK leave out.
   @Test
-  void notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules() throws Exception {
+  void notes_fileNoModuleCompiles_notCheckedWithItsCause() throws Exception {
     TestCompiler.writeMirroredModule(
         tmp,
         "module",
@@ -364,18 +364,27 @@ class LatheEngineTest {
             tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
             "package com.example; class Fresh {}",
             1_000L);
+    final Path builtNotSynced =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "other",
+                Map.of("com/example/Other.java", "package com.example; class Other {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    FileUtil.deleteDir(tmp.resolve(LatheLayout.LATHE_DIR).resolve("other"));
     engine = new LatheEngine(tmp);
 
-    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild));
+    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild, builtNotSynced));
 
     assertThat(notes.notChecked())
         .containsExactly(
+            "%s is in no source root of module module, so a sync does not add it"
+                .formatted(Path.of("module/src/it/java/com/example/Probe.java")),
+            "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")),
             "%s is in no synced module — run `%s`"
-                .formatted(
-                    Path.of("module/src/it/java/com/example/Probe.java"),
-                    LatheLayout.SYNC_SCRIPT_COMMAND),
-            "%s is outside the modules the last build compiled, so Lathe cannot check it"
-                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")));
+                .formatted(tmp.relativize(builtNotSynced), LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(notes.syncRequired()).isEmpty();
   }
 
@@ -609,6 +618,44 @@ class LatheEngineTest {
         .containsExactly("demo.Outer#run()");
     assertThatThrownBy(() -> LatheEngine.selectTargets(targets, TestScope.METHOD, "missing", file))
         .hasMessage("no test method 'missing' in Outer.java");
+  }
+
+  // A file with no test says why: its module is outside the build, or it is the class under test,
+  // and then its test class is named.
+  @Test
+  void runTest_fileWithNoTest_namesItsTestClass_orWhyNoModuleCompilesIt() throws Exception {
+    final List<Path> sources =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Shop.java", "package com.example; class Shop {}",
+                "com/example/ShopTest.java", "package com.example; class ShopTest {}",
+                "com/example/Lone.java", "package com.example; class Lone {}"),
+            List.of(),
+            1_000L);
+    final Path outsideTheBuild =
+        TestCompiler.writeAt(
+            tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
+            "package com.example; class Fresh {}",
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+        .as("a location's path, written with / on every OS")
+        .hasMessage(
+            "no test in Shop.java; its test class may be module/src/main/java/com/example/ShopTest.java");
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Lone"), TestScope.CLASS, null))
+        .hasMessage("no test in Lone.java");
+    assertThatThrownBy(() -> engine.runTest(outsideTheBuild, TestScope.CLASS, null))
+        .hasMessageContaining("is outside the modules the last build compiled");
+  }
+
+  private static Path sourceNamed(final List<Path> sources, final String type) {
+    return sources.stream()
+        .filter(source -> FileUtil.javaTypeName(source).equals(type))
+        .findFirst()
+        .orElseThrow();
   }
 
   private static RunTarget target(final String id, final RunnableKind kind, final String label) {
@@ -971,8 +1018,9 @@ class LatheEngineTest {
     assertThat(Files.readString(source)).isEqualTo(broken);
   }
 
+  // A sync resolves a pinned formatter's jars; it cannot pin one the project does not have.
   @Test
-  void format_noFormatterPinned_refusesWithTheSyncRemedy() throws Exception {
+  void format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync() throws Exception {
     final Path source =
         TestCompiler.writeModuleSource(
             tmp, "com/example/Sample.java", "package com.example; class Sample {}");
@@ -980,7 +1028,18 @@ class LatheEngineTest {
 
     assertThatThrownBy(() -> engine.format(source))
         .hasMessageStartingWith("No formatter for this workspace")
-        .hasMessageContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+        .hasMessageContaining(LatheLayout.STYLE_SHARED_FILE)
+        .hasMessageNotContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+
+    engine.close();
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"google\"}}");
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessage(
+            "The project's formatter is not resolved yet: run `%s`."
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test

@@ -234,14 +234,14 @@ class LatheMcpToolsTest {
   // Without a pinned formatter "already formatted" would be a lie: the answer is an error with the
   // remedy.
   @Test
-  void formatFile_noFormatterPinned_returnsErrorWithTheSyncRemedy() throws Exception {
+  void formatFile_noFormatterPinned_returnsErrorWithTheRemedy() throws Exception {
     final Path file = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
 
     final CallToolResult result = call("format_file", Map.of("file", file.toString()));
 
     assertThat(result.isError()).isTrue();
     assertThat(text(result))
-        .contains("No formatter for this workspace", LatheLayout.SYNC_SCRIPT_COMMAND);
+        .contains("No formatter for this workspace", LatheLayout.STYLE_SHARED_FILE);
   }
 
   // No module compiles it, so nothing was checked; the note says whether a sync would help.

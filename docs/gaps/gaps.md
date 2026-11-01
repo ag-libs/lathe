@@ -1645,39 +1645,6 @@ None yet.
 
 ---
 
-## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
-
-### Observed behaviour
-
-- `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
-  ``No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `.lathe/lathe-sync.sh`).``
-  `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
-  and an agent following the advice runs a 2–3 minute sync for nothing.
-- `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
-  `is in no synced module — run .lathe/lathe-sync.sh`.
-- `run_test` on a test in a module the build leaves out (Helidon `webserver/tests/static-content`, behind the
-  `tests` profile) answers `no class test target in StaticContentTest.java`, as if the file held no test;
-  `get_diagnostics` on the same file correctly says the module is outside the build.
-  On a non-test file the same terse line gives no hint toward the matching test class.
-
-### Fix direction
-
-Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
-"this file is in no source root", and "this module is not in the last build (a profile may add it)".
-For a non-test file, name the test class that tests it when one exists.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
 
 **Status: accepted**

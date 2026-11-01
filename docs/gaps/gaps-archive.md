@@ -11068,6 +11068,58 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+Found by the pre-release probes (2026-10-27) on Dropwizard and Helidon.
+
+### Observed behaviour
+
+- `format_file` on a project that pins no formatter (Dropwizard, Helidon) answers
+  ``No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `.lathe/lathe-sync.sh`).``
+  `LatheTextDocumentService` already knows which case it is (no formatter spec means nothing is pinned),
+  and an agent following the advice runs a 2–3 minute sync for nothing.
+- `Not checked:` for `dropwizard/docs/LatheOut.java`, in no source root at all, says
+  `is in no synced module — run .lathe/lathe-sync.sh`.
+- `run_test` on a test in a module the build leaves out (Helidon `webserver/tests/static-content`, behind the
+  `tests` profile) answers `no class test target in StaticContentTest.java`, as if the file held no test;
+  `get_diagnostics` on the same file correctly says the module is outside the build.
+  On a non-test file the same terse line gives no hint toward the matching test class.
+
+### Fix direction
+
+Give each case its own message: "the project pins no formatter" (with the `lathe-style.json` pointer),
+"this file is in no source root", and "this module is not in the last build (a profile may add it)".
+For a non-test file, name the test class that tests it when one exists.
+
+### Resolution
+
+Each refusal names its real cause, and only a cause a sync fixes names the sync:
+
+- `format_file` with no formatter says the project pins none and points at `lathe-style.json`; only a
+  pinned formatter whose jars are missing says "not resolved yet: run `.lathe/lathe-sync.sh`".
+- `Not checked:` for a file outside every source root of a module the last sync wrote says
+  "is in no source root of module X, so a sync does not add it"; the sync is named only for a built
+  module the sync has not written (no `.lathe/<module>/`); a module outside the last build notes that
+  a profile may leave it out.
+- `run_test` on a file with no test gives the not-checked reason when no module compiles it, else
+  "no test in X.java", naming `XTest`/`XTests` when the reactor has one.
+
+Verified end to end (2026-11-01): Dropwizard's `format_file`, `docs/LatheLoose.java` (the `docs` module
+has no sources) and `run_test` on `Duration.java` (names `DurationTest.java`); Helidon's
+`webserver/tests/static-content` test (outside the default profile).
+
+### Regression targets
+
+- `LatheEngineTest.format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync`
+- `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
+- `LatheEngineTest.runTest_fileWithNoTest_namesItsTestClass_orWhyNoModuleCompilesIt`
+
+---
+
 ## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync — done
 
 **Status: done.**

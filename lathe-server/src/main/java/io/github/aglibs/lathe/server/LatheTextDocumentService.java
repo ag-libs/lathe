@@ -57,6 +57,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
   // disabled.
   private volatile FormatEngine formatEngine;
+  private volatile boolean formatterPinned;
   // Whether the client can apply a RenameFile resource operation; gates renaming a public top-level
   // type (which must move its .java file). Written in initialize, read per rename request.
   private volatile boolean fileRenameSupported;
@@ -574,20 +575,24 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
   public void useWorkspaceFormatter(final Path root) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(root);
+    formatterPinned = spec != null;
     formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root, this);
   }
 
   // The whole-file formatting edits, refused (not empty) when there is no formatter or it fails.
+  // Only a pinned formatter whose jars are missing is one a sync can supply.
   public CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
     final FormatEngine engine = formatEngine;
     if (engine == null) {
+      final String reason =
+          formatterPinned
+              ? "The project's formatter is not resolved yet: run `%s`."
+                  .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
+              : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
+                  .formatted(LatheLayout.STYLE_SHARED_FILE);
       return CompletableFuture.failedFuture(
           new ResponseErrorException(
-              new ResponseError(
-                  ResponseErrorCode.RequestFailed,
-                  "No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `%s`)."
-                      .formatted(LatheLayout.SYNC_SCRIPT_COMMAND),
-                  null)));
+              new ResponseError(ResponseErrorCode.RequestFailed, reason, null)));
     }
 
     final String canonical = LatheUri.canonical(uri);
