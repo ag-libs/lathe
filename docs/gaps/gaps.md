@@ -842,6 +842,39 @@ None yet. Model: `CodeActionTest.codeAction_extractMethod_typeNamedLikeAnotherIn
 
 ---
 
+## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: Neovim, VS Code, any client, on builds that run Error Prone (or another javac plugin) with `-Werror`.**
+
+Found by the pre-release test round (2026-11-01) on EqualsVerifier.
+
+### Observed behaviour
+
+Extracting `var fieldTypes = new ArrayList<Class<?>>();` and the loop that fills it in
+`InstantiatorFactory.findConstructorMatchingFields` offers "Extract method", whose compile check passes, and writes
+`ArrayList<Class<?>> fieldTypes = extracted(type);` with `private static ArrayList<Class<?>> extracted(Class<?> type)`.
+That is valid Java, but EqualsVerifier's build runs Error Prone with `-Werror`, and `[NonApiType] Prefer a java.util.List
+instead` on the new return type fails the module; the code before the edit builds clean.
+The check is an analysis compile, which runs no annotation processor or javac plugin (Error Prone runs only in the
+full compile on save), so it cannot see the warning; the editor shows it after the next save.
+The return type is the local's inferred concrete type, and the caller's `var` becomes that explicit type.
+
+### Fix direction
+
+Keep the caller's `var` when the selection declared the local with `var`, and type a returned local by the declared
+type rather than the inferred one where they differ; a check through the build's plugins is out of reach of the
+analysis compile.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Completion Gaps (CQ)
 
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the

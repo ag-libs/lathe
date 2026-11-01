@@ -26,6 +26,8 @@ When you build, Lathe [records how the build compiles, tests and runs each modul
   This is in the Neovim client today.
 - **Works across the whole project.**
   Navigation, references and rename cover every module, and navigation also steps into your dependencies' sources and the JDK's.
+- **Refactors the compiler checks.**
+  Extract method, variable, constant and field, and rename across every module; extract method compiles its result before you apply it.
 - **Keeps up with outside changes.**
   After a branch switch, a `git pull` or an AI agent's edits, Lathe recompiles the changed files on its own.
 - **Gives AI agents the same view.**

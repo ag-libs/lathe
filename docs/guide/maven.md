@@ -32,10 +32,10 @@ you pass `-Dlathe.disabled=false`.
 Both methods add the same three pieces, for the whole reactor:
 
 - the **`lathe-compiler` shim** on `maven-compiler-plugin`, selected by `compilerId=lathe`, for every
-  module — it records the exact `javac` inputs the language server reads;
+  module that compiles Java (`pom` modules are left alone) — it records the exact `javac` inputs the language server reads;
 - the **`lathe-maven-plugin` goals** `init` (bound to `initialize`) and `sync` (bound to
   `process-test-classes`), once at the reactor root;
-- the **`lathe-junit` test-scoped dependency**, for every module — it enables run/test capture.
+- the **`lathe-junit` test-scoped dependency**, for every module that compiles Java — it enables run/test capture.
 
 Coordinates: groupId `io.github.ag-libs`; artifacts `lathe-compiler`, `lathe-maven-plugin`,
 `lathe-junit`; use one Lathe version throughout.

@@ -21,4 +21,4 @@ Prefer it over text search where the compiler knows better; plain `grep` is fine
   give the name as `symbol` with the `line` instead of counting the column (`outline` gives `line:column`).
 - Start with `workspace_summary` if you do not know the module layout.
 - Read the note at the end of a result:
-  `Not compiled:` means fix the code; `Sync required:` and `Not checked:` give the command to run.
+  `Not compiled:` means fix the code; `Sync required:` and `Not checked:` give the command to run when a sync helps.

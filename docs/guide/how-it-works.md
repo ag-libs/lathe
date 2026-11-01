@@ -100,7 +100,8 @@ Lathe compiles a copy of each file elsewhere, so it lays that chain out beside t
 
 Limits:
 - An `import` line in a `lombok.config` is resolved from Lathe's copy, not from the file's own directory.
-- A changed `lombok.config` applies to an open file at its next edit, and Lombok rereads a config at most every 2 seconds.
+- A changed `lombok.config` applies to an open file at its next edit, and the closed sources below it are compiled again; Lombok rereads a config at most every 2 seconds.
+- A `lombok.config` added after the server loaded counts only from the next reload.
 - Lathe recognizes generated members by the `@lombok.Generated` mark Lombok adds; with
   `lombok.addLombokGeneratedAnnotation = false` in `lombok.config`, navigation treats them as written code.
 - Accessors named through `lombok.config` other than by `lombok.accessors.prefix` lead to the class, not the field.

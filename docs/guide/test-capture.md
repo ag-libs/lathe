@@ -23,7 +23,7 @@ from build files.
 
 ## On Maven
 
-`lathe-junit` is a small `test`-scoped dependency in every module (injected by the
+`lathe-junit` is a small `test`-scoped dependency in every module that compiles Java (injected by the
 [Maven extension](maven.md), or declared by hand in a [manual setup](maven.md#method-2--manual-pom-configuration)).
 It registers a JUnit Platform `LauncherSessionListener` through the standard service-loader SPI, and
 Surefire's JUnit Platform provider detects it, so no `maven-surefire-plugin` configuration is needed.

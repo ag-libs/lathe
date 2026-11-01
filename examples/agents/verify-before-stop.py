@@ -6,10 +6,10 @@ A hook cannot call an MCP tool, so it asks the agent to: when the session's tran
 edit (Edit, Write, MultiEdit, or a Lathe rename or import fix) after the last verify_change, it
 blocks the stop with that instruction. It asks once per stop, so a failing check cannot loop.
 
-Register it in .claude/settings.json:
+Copy it into your project (e.g. .claude/hooks/) and register that path in .claude/settings.json:
 
     {"hooks": {"Stop": [{"hooks": [{"type": "command",
-        "command": "python3 examples/agents/verify-before-stop.py"}]}]}}
+        "command": "python3 .claude/hooks/verify-before-stop.py"}]}]}}
 """
 
 import json
