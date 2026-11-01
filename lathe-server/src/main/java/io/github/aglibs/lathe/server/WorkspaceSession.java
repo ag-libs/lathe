@@ -4104,19 +4104,31 @@ final class WorkspaceSession {
         .toList();
   }
 
+  // Only the dependents a change can reach: those with a file naming a changed type. A test class,
+  // or a type no dependent names, reaches none, so no sync is suggested for it.
   List<String> downstreamModuleRels(final List<Path> changed) {
     final Set<Path> changedModuleDirs =
         changed.stream()
             .map(this::moduleDirOf)
             .flatMap(Optional::stream)
             .collect(Collectors.toUnmodifiableSet());
-    return changedModuleDirs.stream()
-        .flatMap(dir -> moduleGraph.downstreamModuleDirs(dir).stream())
+    return changed.stream()
+        .flatMap(this::reachedModuleDirs)
         .filter(dir -> !changedModuleDirs.contains(dir))
         .distinct()
         .map(this::moduleRelForDir)
         .sorted()
         .toList();
+  }
+
+  // A module or package declaration is named by no file, yet changes what every dependent sees.
+  private Stream<Path> reachedModuleDirs(final Path file) {
+    final String name = file.getFileName().toString();
+    if (name.equals(LatheLayout.MODULE_INFO_JAVA) || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
+      return moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of()).stream();
+    }
+
+    return referrers(file).stream().map(this::moduleDirOf).flatMap(Optional::stream);
   }
 
   private void reconcileDeletedSourcesIn(final TreeState tree) {

@@ -1519,16 +1519,32 @@ class LatheEngineTest {
             tuple("tool1", List.of(), false));
   }
 
+  // A dependent that never names the changed type cannot break, so it is not built.
   @Test
-  void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
+  void verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents()
+      throws Exception {
     final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "idle",
+        Map.of("com/example/idle/Idle.java", "package com.example.idle;\nclass Idle {}\n"),
+        List.of("api"),
+        1_000L);
     engine = new LatheEngine(tmp);
 
     TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
 
-    assertThat(engine.verifyChange(List.of()).suggestedSync())
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+    assertThat(verify.affectedModules()).containsExactly("app1", "app2");
+    assertThat(verify.suggestedSync())
         .as("the dependents, not the changed module: -am builds api along with them")
         .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app1", "app2")));
+
+    TestCompiler.writeAt(
+        api.resolveSibling(LatheLayout.PACKAGE_INFO_JAVA), "package com.example.api;\n", 20_000L);
+    assertThat(engine.verifyChange(List.of()).affectedModules())
+        .as("a package declaration no file names reaches every dependent")
+        .containsExactly("app1", "app2", "idle");
   }
 
   @Test

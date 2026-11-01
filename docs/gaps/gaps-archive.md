@@ -11068,6 +11068,59 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found implementing gap CA-16 through Lathe's own MCP server (2026-10-31).
+
+### Observed behaviour
+
+Every `verify_change` in the session, about ten, answered
+`"affectedModules":["lathe-maven-plugin","lathe-mcp-server"]` with
+`"suggestedSync":".lathe/lathe-sync.sh lathe-maven-plugin lathe-mcp-server"`, whatever had changed:
+
+- a test-only edit (a deliberate error in `lathe-server`'s `CodeActionTest`, no arguments): the error was
+  reported, and so were both dependent modules and the sync, though test sources are on no other module's
+  classpath;
+- package-private classes (`ExtractVariableProvider`, `CodeActionSupport`) of `lathe-server`, a JPMS module whose
+  dependents cannot reference them.
+
+A suggestion that is always there gets ignored, or obeyed: an agent following it runs a reactor build for
+nothing (minutes on a large reactor). [MC-8](gaps-archive.md#mc-8--the-sync-command-verify_change-suggests-does-not-build-the-dependent-modules-it-names--done)
+made the command build what it names; this is about what it names.
+
+### Fix direction
+
+Name a dependent module only when the change can reach it: never for a test source tree; for main sources, only
+when a changed file declares a type the dependent can see (public or protected, in an exported package for a
+JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
+With none left, answer no `affectedModules` and no `suggestedSync`.
+
+### Resolution
+
+`verify_change` names a dependent module, and the sync that builds it, only when one of its files names
+a type of a changed file (`WorkspaceSession.downstreamModuleRels` over the same name-token referrers
+the check already compiles), so a test-only change, or a type no dependent names, names no module and
+suggests no sync.
+The name match can over-select (a file that only mentions the name), never miss a direct use.
+A `module-info.java` or `package-info.java`, which no file names, still names every dependent.
+A dependent that reaches the type only through another module's API (`b.getA().foo()`, never writing `A`) is not named; the check itself compiles only direct users too.
+
+Verified end to end on Dropwizard (2026-11-01): an edit to `DurationTest` answers "No errors" with no
+dependents; an edit to `Duration` still names its dependents and the sync.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents`
+  (a dependent that never names the type is left out).
+
+---
+
 ## MC-43 — Expected refusals are logged at SEVERE with a stack trace — done
 
 **Status: done.**

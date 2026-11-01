@@ -66,6 +66,7 @@ public final class LatheLayout {
   // and an agent's) never write the same output at once.
   public static final String WRITE_LOCK_FILE = "write.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
+  public static final String PACKAGE_INFO_JAVA = "package-info.java";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
