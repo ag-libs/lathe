@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +26,18 @@ public final class StyleWriter {
       }
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write style.json", e);
+    }
+  }
+
+  // A build that no longer has a style: the server must not keep formatting with the last one.
+  public static void delete(final Path workspaceRoot) {
+    final Path file = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.STYLE_FILE);
+    try {
+      if (Files.deleteIfExists(file)) {
+        LOG.info("[sync] style removed, formatting off");
+      }
+    } catch (final IOException e) {
+      throw new SyncException("lathe:sync failed to delete style.json", e);
     }
   }
 }

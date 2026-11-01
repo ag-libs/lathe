@@ -44,6 +44,7 @@ final class MavenStyle {
       final Path workspaceRoot, final MavenProject rootProject, final List<MavenProject> projects) {
     final Optional<MavenProject> styleSource = styleSource(rootProject, projects);
     if (styleSource.isEmpty()) {
+      StyleWriter.delete(workspaceRoot);
       return null;
     }
 

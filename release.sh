@@ -87,10 +87,12 @@ fi
 # address leaves unrelated dependencies' <version> tags untouched.
 # Every tracked text doc is a candidate, so a new guide or client README with a snippet is bumped
 # without editing this list. Dated records (design docs, gaps, dev notes) mention past versions on
-# purpose and are left alone.
+# purpose and are left alone, as are the docs that use a version only as an example (the release
+# process, the roadmap, the design doc), which would otherwise trip the leftover check below.
 public_docs=(
   -- '*.md' '*.txt'
   ':!docs/done/' ':!docs/planned/' ':!docs/potential/' ':!docs/gaps/' ':!dev/'
+  ':!RELEASING.md' ':!docs/roadmap.md' ':!docs/lathe-design.md'
 )
 mapfile -t docs < <(git ls-files "${public_docs[@]}")
 for f in "${docs[@]}"; do

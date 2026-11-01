@@ -22,8 +22,10 @@ import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -436,13 +438,22 @@ public final class FileUtil {
   // Returns the number of entries skipped because they would escape destDir (see extractZipEntry).
   // Entries are written in parallel (creating many small files is slow on Windows), split from a
   // list: ZipFile's own stream splits only per 1024 entries. A failure is a value, not thrown, so
-  // no write outlives the call.
+  // no write outlives the call. Some published jars list an entry twice (asm 5.0.3's sources), so
+  // only the last entry for each path is written, as a sequential unzip would leave it: two threads
+  // replacing the same file race.
   public static int unzip(final Path zipFile, final Path destDir) throws IOException {
     try (final var zip = new ZipFile(zipFile.toFile())) {
+      final Collection<? extends ZipEntry> entries =
+          zip.stream()
+              .collect(
+                  Collectors.toMap(
+                      entry -> relativeEntryPath(entry).normalize(),
+                      entry -> entry,
+                      (first, last) -> last,
+                      LinkedHashMap::new))
+              .values();
       final List<EntryResult> results =
-          zip.stream().toList().parallelStream()
-              .map(entry -> unzipEntry(zip, destDir, entry))
-              .toList();
+          entries.parallelStream().map(entry -> unzipEntry(zip, destDir, entry)).toList();
       final Optional<IOException> failure =
           results.stream().map(EntryResult::failure).filter(Objects::nonNull).findFirst();
       if (failure.isPresent()) {
@@ -543,11 +554,7 @@ public final class FileUtil {
   // returning false so a single hostile or malformed entry cannot abort the whole archive.
   private static boolean extractZipEntry(
       final Path destDir, final ZipFile zip, final ZipEntry entry) throws IOException {
-    final Path entryPath = Path.of(entry.getName());
-    // A rooted entry (/x) is placed under destDir: on Windows /x has a root but no drive, so it is
-    // not "absolute" there, yet resolving it would still leave destDir.
-    final Path relative =
-        entryPath.getRoot() != null ? entryPath.getRoot().relativize(entryPath) : entryPath;
+    final Path relative = relativeEntryPath(entry);
     if (relative.getNameCount() == 0) {
       return false;
     }
@@ -570,6 +577,13 @@ public final class FileUtil {
 
     writeEntry(zip, entry, target);
     return true;
+  }
+
+  // A rooted entry (/x) is placed under destDir: on Windows /x has a root but no drive, so it is
+  // not "absolute" there, yet resolving it would still leave destDir.
+  private static Path relativeEntryPath(final ZipEntry entry) {
+    final Path entryPath = Path.of(entry.getName());
+    return entryPath.getRoot() != null ? entryPath.getRoot().relativize(entryPath) : entryPath;
   }
 
   private static void setReadOnly(final Path path) throws IOException {

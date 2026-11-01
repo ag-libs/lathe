@@ -27,7 +27,7 @@ the repository:
 
 ```kotlin
 plugins {
-    id("io.github.ag-libs.lathe") version "0.2.0"
+    id("io.github.ag-libs.lathe") version "0.2.2"
 }
 ```
 
@@ -37,7 +37,7 @@ Or as a **personal init script**, with no change to the build: save it as
 ```kotlin
 initscript {
     repositories { gradlePluginPortal() }
-    dependencies { classpath("io.github.ag-libs:lathe-gradle-plugin:0.2.0") }
+    dependencies { classpath("io.github.ag-libs:lathe-gradle-plugin:0.2.2") }
 }
 
 settingsEvaluated {

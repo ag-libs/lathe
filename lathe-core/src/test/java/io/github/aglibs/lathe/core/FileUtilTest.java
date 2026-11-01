@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -139,6 +140,29 @@ final class FileUtilTest {
 
     assertThat(entries)
         .allSatisfy((name, content) -> assertThat(dest.resolve(name)).hasContent(content));
+  }
+
+  // A jar can list the same file twice (asm 5.0.3's sources jar lists every entry twice); the
+  // parallel writes must not race on it, and the last entry wins as in a sequential unzip.
+  @Test
+  void unzip_entriesListedTwice_writesEachFileOnceLastWins() throws IOException {
+    final Map<String, String> entries = new LinkedHashMap<>();
+    IntStream.range(0, 200)
+        .forEach(
+            i -> {
+              entries.put("d%d/F%d.java".formatted(i % 5, i), "first");
+              entries.put("d%d/./F%d.java".formatted(i % 5, i), "class F%d {}".formatted(i));
+            });
+    final Path zip = ZipFixture.create(tempDir.resolve("twice-sources.jar"), entries);
+    final Path dest = tempDir.resolve("dest");
+
+    assertThat(FileUtil.unzip(zip, dest)).isZero();
+
+    IntStream.range(0, 200)
+        .forEach(
+            i ->
+                assertThat(dest.resolve("d%d/F%d.java".formatted(i % 5, i)))
+                    .hasContent("class F%d {}".formatted(i)));
   }
 
   @Test

@@ -25,6 +25,9 @@ import org.eclipse.lsp4j.Range;
 final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
 
   private final Map<Element, List<Range>> callSites = new LinkedHashMap<>();
+  // The scan still walks the class's field initializers, enum constants among them (each an
+  // implicit constructor call); only calls inside the target method's body are its own.
+  private boolean inTarget;
 
   private CallHierarchyOutgoingLocator(
       final Trees trees,
@@ -59,8 +62,11 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   public Void visitMethod(final MethodTree node, final Void ignored) {
     final var element = trees.getElement(getCurrentPath());
     if (target.matches(element, types, elements) && node.getBody() != null) {
+      inTarget = true;
       scan(node.getBody(), null);
+      inTarget = false;
     }
+
     return null;
   }
 
@@ -120,6 +126,10 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
   }
 
   private void addCallSite(final Element element, final Range range) {
+    if (!inTarget) {
+      return;
+    }
+
     callSites.computeIfAbsent(element, k -> new ArrayList<>()).add(range);
   }
 
