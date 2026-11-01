@@ -19,11 +19,16 @@ public final class LatheBuildInfo {
 
   public static String summary(final Class<?> type) {
     final Attributes attributes = manifestAttributes(Objects.requireNonNull(type));
-    return "version=%s git=%s built=%s"
+    // The JVM too: a server on another JDK than the build's (a launcher that missed
+    // .lathe/java-home)
+    // fails on newer-release modules, and only this line shows which one it got.
+    return "version=%s git=%s built=%s java=%s java.home=%s"
         .formatted(
             value(attributes, Attributes.Name.IMPLEMENTATION_VERSION),
             value(attributes, GIT_COMMIT),
-            value(attributes, BUILD_TIME));
+            value(attributes, BUILD_TIME),
+            Runtime.version(),
+            System.getProperty("java.home"));
   }
 
   private static String value(final Attributes attributes, final Attributes.Name name) {

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
@@ -279,6 +280,26 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     assertThat(progressCaptor.getAllValues()).extracting(ProgressParams::getToken).contains(token);
     assertThat(CollectionUtil.last(progressCaptor.getAllValues()).getValue().getLeft())
         .isInstanceOf(WorkDoneProgressEnd.class);
+  }
+
+  // A compile that throws (javac refusing an option, as it refuses a release the JVM lacks) fails
+  // the engine's request at once with its cause, instead of leaving it to its timeout.
+  @Test
+  void diagnosticsFuture_compileThrows_failsAtOnceWithTheCause() throws Exception {
+    final Path sourceRoot = tmp.resolve("module/src/main/java");
+    final Path source = sourceRoot.resolve("com/example/Foo.java");
+    Files.createDirectories(source.getParent());
+    Files.writeString(source, "package com.example; class Foo {}");
+    TestCompiler.writeModuleParams(
+        tmp, "module", List.of(sourceRoot), null, List.of(), List.of(), List.of("-Xno-such-flag"));
+    service.initialize(tmp);
+
+    final var diagnostics =
+        service.diagnosticsFuture(source.toUri().toString(), Files.readString(source), 1);
+
+    assertThatThrownBy(() -> diagnostics.get(5, TimeUnit.SECONDS))
+        .isInstanceOf(ExecutionException.class)
+        .hasRootCauseInstanceOf(IllegalArgumentException.class);
   }
 
   // VS Code writes '@' as %40, Path.toUri leaves it alone: both spellings must reach one document.
