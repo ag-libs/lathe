@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
@@ -57,6 +58,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
   // disabled.
   private volatile FormatEngine formatEngine;
+  private volatile boolean formatterPinned;
   // Whether the client can apply a RenameFile resource operation; gates renaming a public top-level
   // type (which must move its .java file). Written in initialize, read per rename request.
   private volatile boolean fileRenameSupported;
@@ -405,6 +407,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
                     }));
   }
 
+  public CompletableFuture<TextMentions.Sources> textMentionSourcesFuture(final String name) {
+    return worker.submit(() -> session.textMentionSources(name));
+  }
+
   /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */
   public CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
     final String uri = LatheUri.canonical(params.getTextDocument().getUri());
@@ -574,20 +580,24 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
   public void useWorkspaceFormatter(final Path root) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(root);
+    formatterPinned = spec != null;
     formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root, this);
   }
 
   // The whole-file formatting edits, refused (not empty) when there is no formatter or it fails.
+  // Only a pinned formatter whose jars are missing is one a sync can supply.
   public CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
     final FormatEngine engine = formatEngine;
     if (engine == null) {
+      final String reason =
+          formatterPinned
+              ? "The project's formatter is not resolved yet: run `%s`."
+                  .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
+              : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
+                  .formatted(LatheLayout.STYLE_SHARED_FILE);
       return CompletableFuture.failedFuture(
           new ResponseErrorException(
-              new ResponseError(
-                  ResponseErrorCode.RequestFailed,
-                  "No formatter for this workspace: the project pins none, or its formatter's jars are not resolved yet (run `%s`)."
-                      .formatted(LatheLayout.SYNC_SCRIPT_COMMAND),
-                  null)));
+              new ResponseError(ResponseErrorCode.RequestFailed, reason, null)));
     }
 
     final String canonical = LatheUri.canonical(uri);
@@ -659,14 +669,18 @@ public final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
+  public CompletableFuture<Optional<String>> failingUnderFuture(final Path file) {
+    return worker.submit(() -> session.failingUnder(file));
+  }
+
   /** What an answer about {@code files} cannot vouch for, after the last write pass. */
   public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
     return worker.submit(() -> session.notes(files));
   }
 
   public CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(
-      final String query) {
-    return worker.submit(() -> session.workspaceSymbol(query));
+      final String query, final boolean reactorOnly) {
+    return worker.submit(() -> session.workspaceSymbol(query, reactorOnly));
   }
 
   public CompletableFuture<LaunchOutcome> runTestFuture(

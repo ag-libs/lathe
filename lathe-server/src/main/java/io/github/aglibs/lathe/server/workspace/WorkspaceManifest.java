@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -245,9 +246,12 @@ public final class WorkspaceManifest {
 
   // The modules the last build compiled. A file outside them (a module the build's profiles or JDK
   // leave out, or no module at all) is one a sync cannot give a module.
-  public boolean inBuiltModule(final Path file) {
+  // The innermost module directory the last build compiled that holds the file.
+  public Optional<Path> builtModuleDirOf(final Path file) {
     final Path normalized = file.normalize();
-    return builtModuleDirs.stream().anyMatch(normalized::startsWith);
+    return builtModuleDirs.stream()
+        .filter(normalized::startsWith)
+        .max(Comparator.comparingInt(Path::getNameCount));
   }
 
   public Optional<String> loadProblem() {

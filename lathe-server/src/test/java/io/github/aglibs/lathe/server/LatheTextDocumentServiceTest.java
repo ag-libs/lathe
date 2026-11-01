@@ -593,6 +593,25 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .contains(LatheLayout.captureTestsCommand("app"));
   }
 
+  // The agent's notes share the problem text without the prefix; the editor's message keeps it.
+  @Test
+  void initialize_latheFromAnotherVersion_warnsWithThePrefixedRemedy() throws Exception {
+    Files.writeString(
+        Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR))
+            .resolve(LatheLayout.WORKSPACE_JSON),
+        "{\"schemaVersion\": \"0\", \"workspaceRoot\": \".\"}");
+
+    service.initialize(tmp);
+
+    verify(client, timeout(5_000))
+        .showMessage(
+            argThat(
+                m ->
+                    m.getType() == MessageType.Warning
+                        && m.getMessage()
+                            .startsWith("Lathe: .lathe/ was written by another Lathe version")));
+  }
+
   private void writeManifest() throws Exception {
     Json.write(
         new WorkspaceManifestData(
@@ -683,7 +702,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> symbolNames(final String query) throws Exception {
-    return service.workspaceSymbolFuture(query).get(5, TimeUnit.SECONDS).stream()
+    return service.workspaceSymbolFuture(query, false).get(5, TimeUnit.SECONDS).stream()
         .map(SymbolInformation::getName)
         .toList();
   }

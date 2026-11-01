@@ -19,9 +19,11 @@ import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.FormatterFixtures;
+import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
+import io.github.aglibs.lathe.server.engine.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheEngine.TestScope;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunTarget;
@@ -37,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -129,7 +132,12 @@ class LatheEngineTest {
     final var calleePos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
     final LatheCallHierarchy incoming =
         engine.callHierarchy(
-            fx.callee(), calleePos.getLine(), calleePos.getCharacter(), CallDirection.INCOMING, 50);
+            fx.callee(),
+            calleePos.getLine(),
+            calleePos.getCharacter(),
+            CallDirection.INCOMING,
+            SymbolScope.ALL,
+            50);
     assertThat(incoming.incoming()).isTrue();
     assertThat(incoming.calls())
         .anySatisfy(
@@ -141,9 +149,23 @@ class LatheEngineTest {
     final var callerPos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("run"));
     final LatheCallHierarchy outgoing =
         engine.callHierarchy(
-            fx.caller(), callerPos.getLine(), callerPos.getCharacter(), CallDirection.OUTGOING, 50);
+            fx.caller(),
+            callerPos.getLine(),
+            callerPos.getCharacter(),
+            CallDirection.OUTGOING,
+            SymbolScope.REACTOR,
+            50);
     assertThat(outgoing.incoming()).isFalse();
-    assertThat(outgoing.calls()).anySatisfy(call -> assertThat(call.name()).contains("greet"));
+    assertThat(outgoing.calls())
+        .as("the call site in the caller, not the callee's declaration")
+        .singleElement()
+        .satisfies(
+            call -> {
+              assertThat(call.name()).contains("greet");
+              assertThat(call.location().uri()).endsWith("Caller.java");
+              assertThat(call.location().range().getStart().getCharacter())
+                  .isEqualTo(fx.callerSource().indexOf("greet()"));
+            });
   }
 
   @Test
@@ -290,7 +312,7 @@ class LatheEngineTest {
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
     stampModule(iface, impl);
     engine = new LatheEngine(tmp);
-    assertThat(engine.searchSymbols("FrGreeter", 50)).isEmpty();
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50)).isEmpty();
 
     // An agent writes a new implementation with its own file tool, then queries at once.
     TestCompiler.writeModuleSource(
@@ -298,7 +320,7 @@ class LatheEngineTest {
         "com/example/FrGreeter.java",
         "package com.example; class FrGreeter implements Greeter { public void greet() {} }");
 
-    assertThat(engine.searchSymbols("FrGreeter", 50))
+    assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50))
         .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
     final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
     assertThat(
@@ -313,9 +335,27 @@ class LatheEngineTest {
     greetFixture();
     engine = new LatheEngine(tmp);
 
-    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", 50);
+    final List<LatheSymbol> symbols = engine.searchSymbols("Callee", SymbolScope.ALL, 50);
 
     assertThat(symbols).anySatisfy(symbol -> assertThat(symbol.name()).contains("Callee"));
+    assertThat(engine.searchSymbols("*Callee*", SymbolScope.REACTOR, 50))
+        .as("a glob, as agents write by habit")
+        .extracting(LatheSymbol::name)
+        .contains("Callee");
+    assertThat(engine.searchSymbols("*", SymbolScope.ALL, 50)).isEmpty();
+  }
+
+  // No project code can use a type in a JDK package its module does not export to everyone.
+  @Test
+  void jdkInternal_containers_onlyTheJdksUnexportedPackages() {
+    assertThat(LatheEngine.jdkInternal("com.sun.tools.javac.comp")).isTrue();
+    assertThat(LatheEngine.jdkInternal("com.sun.tools.javac.util.JCDiagnostic"))
+        .as("an enclosing type in an internal package")
+        .isTrue();
+    assertThat(LatheEngine.jdkInternal("com.sun.source.tree")).as("exported").isFalse();
+    assertThat(LatheEngine.jdkInternal("java.util.Map")).isFalse();
+    assertThat(LatheEngine.jdkInternal("com.example.app")).as("not the JDK's").isFalse();
+    assertThat(LatheEngine.jdkInternal(null)).isFalse();
   }
 
   @Test
@@ -344,10 +384,10 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
   }
 
-  // A sync helps only a file of a module the build compiles; one outside them (a module the build's
-  // profiles or JDK leave out) it cannot.
+  // A sync cannot add a file outside a synced module's source roots, nor one in a module the
+  // build's profiles or JDK leave out.
   @Test
-  void notes_fileNoModuleCompiles_notCheckedWithASyncOnlyInsideTheBuiltModules() throws Exception {
+  void notes_fileNoModuleCompiles_notCheckedWithItsCause() throws Exception {
     TestCompiler.writeMirroredModule(
         tmp,
         "module",
@@ -364,18 +404,27 @@ class LatheEngineTest {
             tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
             "package com.example; class Fresh {}",
             1_000L);
+    final Path builtNotSynced =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "other",
+                Map.of("com/example/Other.java", "package com.example; class Other {}"),
+                List.of(),
+                1_000L)
+            .get(0);
+    FileUtil.deleteDir(tmp.resolve(LatheLayout.LATHE_DIR).resolve("other"));
     engine = new LatheEngine(tmp);
 
-    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild));
+    final LatheNotes notes = engine.notes(List.of(inBuiltModule, outsideTheBuild, builtNotSynced));
 
     assertThat(notes.notChecked())
         .containsExactly(
+            "%s is in no source root of module module, so a sync does not add it"
+                .formatted(Path.of("module/src/it/java/com/example/Probe.java")),
+            "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
+                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")),
             "%s is in no synced module — run `%s`"
-                .formatted(
-                    Path.of("module/src/it/java/com/example/Probe.java"),
-                    LatheLayout.SYNC_SCRIPT_COMMAND),
-            "%s is outside the modules the last build compiled, so Lathe cannot check it"
-                .formatted(Path.of("newmodule/src/main/java/com/example/Fresh.java")));
+                .formatted(tmp.relativize(builtNotSynced), LatheLayout.SYNC_SCRIPT_COMMAND));
     assertThat(notes.syncRequired()).isEmpty();
   }
 
@@ -409,7 +458,7 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of()).syncRequired())
         .singleElement()
         .asString()
-        .contains("another Lathe version")
+        .startsWith(".lathe/ was written by another Lathe version")
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
@@ -478,8 +527,14 @@ class LatheEngineTest {
   }
 
   @Test
-  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk() throws Exception {
+  void rename_methodUsedInAnotherFile_rewritesBothFilesOnDisk_listsTheNameLeftAsText()
+      throws Exception {
     final GreetFixture fx = greetFixture();
+    final Path labels =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/Labels.java",
+            "package com.example;\nclass Labels { String key = \"greet\"; }\n");
     engine = new LatheEngine(tmp);
 
     final LatheRename rename = renameAt(fx.callee(), fx.calleeSource(), "greet", "welcome");
@@ -492,6 +547,11 @@ class LatheEngineTest {
         .anySatisfy(uri -> assertThat(uri).endsWith("Caller.java"));
     assertThat(Files.readString(fx.callee())).contains("void welcome()").doesNotContain("greet");
     assertThat(Files.readString(fx.caller())).contains("c.welcome()").doesNotContain("greet");
+    assertThat(rename.mentions())
+        .as("a string literal is never renamed, only listed")
+        .singleElement()
+        .satisfies(mention -> assertThat(mention.uri()).endsWith("Labels.java"));
+    assertThat(Files.readString(labels)).contains("\"greet\"");
   }
 
   @Test
@@ -609,6 +669,52 @@ class LatheEngineTest {
         .containsExactly("demo.Outer#run()");
     assertThatThrownBy(() -> LatheEngine.selectTargets(targets, TestScope.METHOD, "missing", file))
         .hasMessage("no test method 'missing' in Outer.java");
+  }
+
+  // A file with no test says why: its module is outside the build, or it is the class under test,
+  // and then its test class is named; one that does not compile is not run on its old classes.
+  @Test
+  void runTest_fileWithNoTestOrNotCompiling_saysWhy() throws Exception {
+    final List<Path> sources =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Shop.java", "package com.example; class Shop {}",
+                "com/example/ShopTest.java", "package com.example; class ShopTest {}",
+                "com/example/Lone.java", "package com.example; class Lone {}"),
+            List.of(),
+            1_000L);
+    final Path outsideTheBuild =
+        TestCompiler.writeAt(
+            tmp.resolve("newmodule/src/main/java/com/example/Fresh.java"),
+            "package com.example; class Fresh {}",
+            1_000L);
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+        .as("a location's path, written with / on every OS")
+        .hasMessage(
+            "no test in Shop.java; its test class may be module/src/main/java/com/example/ShopTest.java");
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Lone"), TestScope.CLASS, null))
+        .hasMessage("no test in Lone.java");
+    assertThatThrownBy(() -> engine.runTest(outsideTheBuild, TestScope.CLASS, null))
+        .hasMessageContaining("is outside the modules the last build compiled");
+
+    Files.writeString(
+        sourceNamed(sources, "Lone"), "package com.example; class Lone { Missing m; }");
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+        .as("another file of its module does not compile")
+        .hasMessageStartingWith("Shop.java was not run: code it runs does not compile: ")
+        .hasMessageContaining("Lone.java")
+        .hasMessageContaining("cannot find symbol");
+  }
+
+  private static Path sourceNamed(final List<Path> sources, final String type) {
+    return sources.stream()
+        .filter(source -> FileUtil.javaTypeName(source).equals(type))
+        .findFirst()
+        .orElseThrow();
   }
 
   private static RunTarget target(final String id, final RunnableKind kind, final String label) {
@@ -894,6 +1000,8 @@ class LatheEngineTest {
         .extracting(LatheFileEdit::uri)
         .anySatisfy(uri -> assertThat(uri).endsWith("Renamed.java"))
         .anySatisfy(uri -> assertThat(uri).endsWith("App.java"));
+    assertThat(rename.paths()).contains(renamed, app);
+    assertThat(engine.notes(rename.paths()).notChecked()).isEmpty();
 
     // The commit swapped the mirror's class and compiled the dependent against it, in one go.
     final Path apiClasses = tmp.resolve(".lathe/api/classes/com/example/api");
@@ -969,8 +1077,9 @@ class LatheEngineTest {
     assertThat(Files.readString(source)).isEqualTo(broken);
   }
 
+  // A sync resolves a pinned formatter's jars; it cannot pin one the project does not have.
   @Test
-  void format_noFormatterPinned_refusesWithTheSyncRemedy() throws Exception {
+  void format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync() throws Exception {
     final Path source =
         TestCompiler.writeModuleSource(
             tmp, "com/example/Sample.java", "package com.example; class Sample {}");
@@ -978,7 +1087,18 @@ class LatheEngineTest {
 
     assertThatThrownBy(() -> engine.format(source))
         .hasMessageStartingWith("No formatter for this workspace")
-        .hasMessageContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+        .hasMessageContaining(LatheLayout.STYLE_SHARED_FILE)
+        .hasMessageNotContaining(LatheLayout.SYNC_SCRIPT_COMMAND);
+
+    engine.close();
+    Files.writeString(
+        tmp.resolve(LatheLayout.STYLE_SHARED_FILE), "{\"formatter\": {\"engine\": \"google\"}}");
+    engine = new LatheEngine(tmp);
+
+    assertThatThrownBy(() -> engine.format(source))
+        .hasMessage(
+            "The project's formatter is not resolved yet: run `%s`."
+                .formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
   @Test
@@ -1115,11 +1235,16 @@ class LatheEngineTest {
   }
 
   @Test
-  void latheTestRun_completedOutcome_mapsCountsAndFailure() {
+  void latheTestRun_completedOutcome_mapsCountsAndFailureWithItsOutput() {
     final var outcome =
         LaunchOutcome.completed(
             0,
-            List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
+            List.of(
+                new TranscriptLine(TranscriptLine.Stream.COMMAND, "java -cp ..."),
+                new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok", "passes-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDOUT, "edits: [a, b]", "fails-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDERR, "WARN retry", "fails-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDERR, "setup: no database")),
             List.of(
                 new TestResult(
                     "com.example.FooTest",
@@ -1146,7 +1271,7 @@ class LatheEngineTest {
                     null,
                     null,
                     List.of(),
-                    null),
+                    "fails-id"),
                 new TestResult(
                     "com.example.FooTest",
                     "skips",
@@ -1189,18 +1314,36 @@ class LatheEngineTest {
               assertThat(f.test()).isEqualTo("com.example.FooTest#fails");
               assertThat(f.summary()).contains("boom");
               assertThat(f.line()).isEqualTo(42);
+              assertThat(f.output()).containsExactly("edits: [a, b]", "WARN retry");
             })
-        .anySatisfy(f -> assertThat(f.test()).isEqualTo("com.example.BrokenTest"));
+        .anySatisfy(
+            f -> {
+              assertThat(f.test()).isEqualTo("com.example.BrokenTest");
+              assertThat(f.output())
+                  .as("printed outside any test")
+                  .containsExactly("setup: no database");
+            });
   }
 
   @Test
-  void latheTestRun_blockedOutcome_carriesReasons() {
+  void latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput() {
     final LatheTestRun run =
         LatheTestRun.from(LaunchOutcome.blocked(List.of("no runner jar")), List.of());
 
     assertThat(run.launched()).isFalse();
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
     assertThat(run.total()).isZero();
+
+    final List<TranscriptLine> printed =
+        IntStream.range(0, 45)
+            .mapToObj(i -> new TranscriptLine(TranscriptLine.Stream.STDERR, "line %d".formatted(i)))
+            .toList();
+    final LatheTestRun nothing =
+        LatheTestRun.from(LaunchOutcome.completed(1, printed, List.of()), List.of("a.FooTest"));
+
+    assertThat(nothing.total()).isZero();
+    assertThat(nothing.exitCode()).isEqualTo(1);
+    assertThat(nothing.output()).hasSize(40).startsWith("line 5").endsWith("line 44");
   }
 
   @Test
@@ -1385,7 +1528,7 @@ class LatheEngineTest {
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
-    engine.searchSymbols("Api", 10);
+    engine.searchSymbols("Api", SymbolScope.ALL, 10);
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()
@@ -1458,16 +1601,80 @@ class LatheEngineTest {
             tuple("tool1", List.of(), false));
   }
 
+  // A dependent that never names the changed type cannot break, so it is not built.
   @Test
-  void verifyChange_twoOfFiveModulesDepend_suggestsTheScopedSyncOfTheDependents() throws Exception {
+  void verifyChange_twoOfSixModulesUseTheChange_suggestsTheScopedSyncOfThoseDependents()
+      throws Exception {
     final Path api = apiReactor(List.of("app1", "app2"), List.of("tool1", "tool2"));
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "idle",
+        Map.of("com/example/idle/Idle.java", "package com.example.idle;\nclass Idle {}\n"),
+        List.of("api"),
+        1_000L);
     engine = new LatheEngine(tmp);
 
     TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
 
-    assertThat(engine.verifyChange(List.of()).suggestedSync())
+    final LatheVerifyChange verify = engine.verifyChange(List.of());
+    assertThat(verify.affectedModules()).containsExactly("app1", "app2");
+    assertThat(verify.suggestedSync())
         .as("the dependents, not the changed module: -am builds api along with them")
         .isEqualTo(LatheLayout.scopedSyncCommand(List.of("app1", "app2")));
+
+    TestCompiler.writeAt(
+        api.resolveSibling(LatheLayout.PACKAGE_INFO_JAVA), "package com.example.api;\n", 20_000L);
+    assertThat(engine.verifyChange(List.of()).affectedModules())
+        .as("a package declaration no file names reaches every dependent")
+        .containsExactly("app1", "app2", "idle");
+  }
+
+  // Lombok reads lombok.config when it compiles: an edit to it changes the classes below it, though
+  // every source is still what the build compiled.
+  @Test
+  @EnabledForJreRange(maxVersion = LombokFixtures.MAX_JDK)
+  void verifyChange_lombokConfigEdited_checksTheSourcesBelowIt() throws Exception {
+    final Path root = tmp.resolve("module/src/main/java");
+    final Path config =
+        TestCompiler.writeAt(
+            tmp.resolve("module").resolve(LatheLayout.LOMBOK_CONFIG_FILE),
+            "lombok.accessors.prefix += f\n",
+            1_000L);
+    final Path person =
+        TestCompiler.writeAt(
+            root.resolve("com/example/Person.java"),
+            "package com.example;\n@lombok.Getter class Person { private int fCount; }\n",
+            1_000L);
+    final Path use =
+        TestCompiler.writeAt(
+            root.resolve("com/example/Use.java"),
+            "package com.example;\nclass Use { int u(final Person p) { return p.getCount(); } }\n",
+            1_000L);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        List.of(root),
+        null,
+        List.of(LombokFixtures.jar()),
+        List.of(LombokFixtures.jar()),
+        List.of());
+    // The first session compiles the mirror; the build then records what it compiled.
+    engine = new LatheEngine(tmp);
+    engine.verifyChange(List.of());
+    engine.close();
+    stampModule(person, use);
+    engine = new LatheEngine(tmp);
+    assertThat(engine.verifyChange(List.of(person, use)).perModule()).isEmpty();
+
+    Files.writeString(config, "");
+
+    assertThat(engine.verifyChange(List.of(person, use)).perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .extracting(located -> located.diagnostic().getMessage().getLeft())
+                    .anySatisfy(message -> assertThat(message).contains("getCount()")));
   }
 
   @Test

@@ -66,6 +66,7 @@ public final class LatheLayout {
   // and an agent's) never write the same output at once.
   public static final String WRITE_LOCK_FILE = "write.lock";
   public static final String MODULE_INFO_JAVA = "module-info.java";
+  public static final String PACKAGE_INFO_JAVA = "package-info.java";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -127,12 +128,12 @@ public final class LatheLayout {
 
   // The remaining %s pair is the found and expected SCHEMA_VERSION.
   public static final String SCHEMA_REMEDIATION =
-      "Lathe: .lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."
+      ".lathe/ was written by another Lathe version (schema %%s, expected %%s). Run `%s` to regenerate it."
           .formatted(SYNC_SCRIPT_COMMAND);
 
   // The remaining %s is the error's root cause.
   public static final String MANIFEST_UNREADABLE_REMEDIATION =
-      "Lathe: %s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
+      "%s/%s could not be read (%%s); dependency sources and cross-module features are off. Run `%s` to regenerate it, and report it with the server log if it persists."
           .formatted(LATHE_DIR, WORKSPACE_JSON, SYNC_SCRIPT_COMMAND);
 
   private LatheLayout() {}

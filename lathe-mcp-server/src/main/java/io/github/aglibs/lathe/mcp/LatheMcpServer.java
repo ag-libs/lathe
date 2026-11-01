@@ -119,7 +119,7 @@ public final class LatheMcpServer {
       } else {
         instructions = noWorkspace(cwd);
         LOG.warning(() -> "[startup] %s".formatted(instructions));
-        engine = missing(instructions);
+        engine = new AwaitedEngine(cwd);
       }
 
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
@@ -215,14 +215,37 @@ public final class LatheMcpServer {
         .orElseGet(() -> Long.toString(pid));
   }
 
-  static Supplier<LatheEngine> missing(final String message) {
-    return () -> {
-      throw new LatheMcpTools.NoWorkspaceException(message);
-    };
+  // Started where no .lathe/ is: each call looks again, so the build that creates it is picked up
+  // without restarting the agent's session. get is synchronized because the SDK runs each sync tool
+  // handler on Reactor's boundedElastic pool, so an agent's parallel calls reach it on several
+  // threads, and two engines opened on one workspace would each start a worker, a watcher and write
+  // passes. The lock covers only the lookup, not the tool call: once found it is an uncontended
+  // check.
+  static final class AwaitedEngine implements Supplier<LatheEngine> {
+
+    private final Path cwd;
+    private LatheEngine engine;
+
+    AwaitedEngine(final Path cwd) {
+      this.cwd = cwd;
+    }
+
+    @Override
+    public synchronized LatheEngine get() {
+      if (engine == null) {
+        final Path root =
+            LatheWorkspace.nearestRoot(cwd, null)
+                .orElseThrow(() -> new LatheMcpTools.NoWorkspaceException(noWorkspace(cwd)));
+        LOG.info(() -> "[workspace] found %s".formatted(root));
+        engine = new LatheEngine(root);
+      }
+
+      return engine;
+    }
   }
 
   static String noWorkspace(final Path cwd) {
-    return "Lathe found no %s/ in %s or any directory above it, so it has no build to analyze. %s"
+    return "Lathe found no %s/ in %s or any directory above it, so it has no build to analyze. %s Once a build creates it, the tools use it without a restart."
         .formatted(LatheLayout.LATHE_DIR, cwd, LatheLayout.SETUP_REMEDIATION);
   }
 
