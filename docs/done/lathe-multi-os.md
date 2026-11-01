@@ -237,7 +237,7 @@ The `cmd` rendering has the same shape: `if not exist "%tool%"` for the check, a
 
 **The template is today's script.** The working Maven `lathe-sync.sh` stays the reference: the front-end supplies only its goals, its `--tests` goals, its module flag and its fixed flags.
 - **Maven:** `process-test-classes`; `test -Dlathe.capture.only=true -DfailIfNoTests=false`; `-pl <module>` plus `-am`; `--no-transfer-progress -Dmaven.build.cache.enabled=false`.
-- **Gradle:** `latheSync`, with its own `--tests` form, module pattern and `--no-build-cache` ([Gradle support](../planned/lathe-gradle-support.md)).
+- **Gradle:** `latheSync`, with its own `--tests` form, module pattern and `--no-build-cache` ([Gradle support](lathe-gradle-support.md)).
 - **OpenJDK:** its own goal, invoked by plugin coordinates. It supplies no `--tests` goals and no module flag, so the script keeps today's "arguments ignored" message. It gains the literals too: today it runs a bare `mvn` from `PATH` without `JAVA_HOME`, which in a JDK development shell can mean Maven on the unreleased JDK just built.
 
 The renderers (D2) turn these into the host dialect: POSIX first, since it exists, then Gradle on the same renderer, then `cmd`.
@@ -385,7 +385,7 @@ exit /b %ERRORLEVEL%
   | module flag, before each module | `-pl` | `--module`, a repeatable `latheSync` task option | not supported |
   | after the modules | `-am` | nothing: `latheSync` adds upstream itself | — |
 
-  "Not supported" is modeled explicitly, not as an empty-string sentinel. The Gradle column is an assumption that the [Gradle design](../planned/lathe-gradle-support.md) confirms; the golden tests include a Gradle-shaped model so the template is proven before Gradle starts.
+  "Not supported" is modeled explicitly, not as an empty-string sentinel. The Gradle column is an assumption that the [Gradle design](lathe-gradle-support.md) confirms; the golden tests include a Gradle-shaped model so the template is proven before Gradle starts.
 - The front-end writes the tool to `workspace.json`'s `buildTool` too, for the formatter's `%MVN%`.
 - `LatheLayout.SYNC_SCRIPT_COMMAND` and `scopedSyncCommand` get the name from E1, so every fix-it hint shows the host's command.
 
@@ -411,7 +411,7 @@ exit /b %ERRORLEVEL%
 
 ## Gradle front-end
 
-[Gradle support](../planned/lathe-gradle-support.md) is proposed and spiked. Its central constraint is that the Gradle front-end writes the **same `.lathe/` contract**.
+[Gradle support](lathe-gradle-support.md) is proposed and spiked. Its central constraint is that the Gradle front-end writes the **same `.lathe/` contract**.
 That makes it a beneficiary of this design rather than a separate porting job:
 
 - **Most of it is portable for free.** The Gradle plugin builds on `lathe-core` and `lathe-install`. The schema records' path normalization (D8), the portable cache names (D7), the launcher renderers (D2), the argfiles (D5) and the tool resolver (D9) all come with them.
@@ -447,7 +447,7 @@ Each slice can be merged on its own.
    Enforcement (A0's `forbiddenapis`, A5) was dropped on 2026-10-21: the rules are a convention in `AGENTS.md`, and a tool can be added if violations show up.
 6. **B1** (the `cmd` renderers, the Windows CI row), **B2 + B4** (Cursor and Zed), **B3** (hardening).
 
-`lathe-install` without Maven (formerly A2b) moved to the [Gradle design](../planned/lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
+`lathe-install` without Maven (formerly A2b) moved to the [Gradle design](lathe-gradle-support.md) as its first slice: only Gradle needs it, and the renderers already import no Maven types.
 
 ### Phase A — Portable core
 

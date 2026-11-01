@@ -121,12 +121,6 @@ reused):
 - [Workspace Contract](lathe-workspace-contract.md) — **reference.** Every `.lathe/` file a build
   front-end writes: path, schema record, writer, readers, required/recommended/optional, Maven vs
   OpenJDK coverage, and known issues.
-- [Gradle Support](planned/lathe-gradle-support.md) — **implemented (slices 0–4, 2026-10-25); Plugin Portal release wiring remains.** A
-  `lathe-gradle-plugin` (settings + project plugin) emitting the same `.lathe/` files, kept current by every build as on Maven:
-  typed-API compiler capture finalizing `JavaCompile`, a workspace write after every test compile, in-fork test-launch capture
-  through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
-  Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
-  `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
 - [OpenJDK Support](done/lathe-openjdk-support.md) — **shipped (code-intelligence MVP, 2026-10-03).**
   `lathe-openjdk-maven-plugin` `sync` emits `.lathe/` for the JDK's own GNU Make build by reading the
   per-module compile descriptors the build already persists (`_the.<module>.vardeps` /
@@ -266,6 +260,12 @@ reused):
 
 ## Completed Designs
 
+- [Gradle Support](done/lathe-gradle-support.md) — **shipped (slices 0–4, 2026-10-25); Plugin Portal release wiring remains.** A
+  `lathe-gradle-plugin` (settings + project plugin) emitting the same `.lathe/` files, kept current by every build as on Maven:
+  typed-API compiler capture finalizing `JavaCompile`, a workspace write after every test compile, in-fork test-launch capture
+  through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
+  Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
+  `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
 - [One Write Pass: Simplifying Recompilation](done/lathe-recompile-simplification.md) — every trigger (save,
   external change, rename commit, MCP query, startup) requests one pass that writes stale files a dependency
   level at a time and re-analyzes the affected open files once; removed the 50-file bulk threshold, the save
