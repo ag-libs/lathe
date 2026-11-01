@@ -433,7 +433,10 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleWorkspaceSummary(final LatheEngine engine) {
-    return guarded("workspace_summary", "workspace", () -> modulesResult(engine.modules()));
+    return guarded(
+        "workspace_summary",
+        "workspace",
+        () -> modulesResult(engine.modules(), engine.notes(List.of())));
   }
 
   private static SyncToolSpecification spec(
@@ -862,7 +865,10 @@ final class LatheMcpTools {
             item.location().snippet());
   }
 
-  static CallToolResult modulesResult(final List<LatheModuleSummary> modules) {
+  // The notes say why the list may be empty or stale: a .lathe/ from another Lathe version loads no
+  // modules, and a pending build-file change awaits a sync.
+  static CallToolResult modulesResult(
+      final List<LatheModuleSummary> modules, final LatheNotes notes) {
     final String text =
         "%d module(s); build them with `%s`, one with `%s`.%n%s%n%nCapture a module's tests for run_test with `%s`."
             .formatted(
@@ -873,7 +879,7 @@ final class LatheMcpTools {
                     .map(LatheMcpTools::moduleLine)
                     .collect(Collectors.joining(System.lineSeparator())),
                 LatheLayout.captureTestsCommand("<module>"));
-    return result(text, NO_NOTES);
+    return result(text, notes);
   }
 
   private static String moduleLine(final LatheModuleSummary module) {

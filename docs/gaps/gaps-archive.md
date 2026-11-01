@@ -11068,6 +11068,44 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
+`get_diagnostics` then ends with the right note, but with a doubled prefix:
+`Sync required: Lathe: .lathe/ was written by another Lathe version (schema 5, expected 6)`.
+`workspace_summary`, the tool the instructions tell an agent to call first, drops every `depends on`
+edge and carries no note.
+
+### Fix direction
+
+`workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
+[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
+
+### Resolution
+
+`workspace_summary` carries the notes every other tool does (`engine.notes` over no files), so a
+`.lathe/` from another schema, or an unreadable one, answers `0 module(s)` followed by
+`Sync required: .lathe/ was written by another Lathe version (schema 5, expected 6). Run … to regenerate it.`
+The same note covers a pending build-file sync and a running build.
+The doubled prefix is gone: the remediation texts in `LatheLayout` no longer start with `Lathe:`, and
+the editor's warning adds it where it shows the message.
+
+### Regression targets
+
+- `LatheMcpToolsTest.workspaceSummary_latheFromAnotherVersion_notesTheSyncWithoutAPrefix`
+- `LatheTextDocumentServiceTest.initialize_latheFromAnotherVersion_warnsWithThePrefixedRemedy` (the editor keeps the prefix)
+- `LatheEngineTest.notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand`
+
+---
+
 ## MC-33 — Tools return structured content but declare no `outputSchema` — non-goal
 
 **Status: non-goal.**

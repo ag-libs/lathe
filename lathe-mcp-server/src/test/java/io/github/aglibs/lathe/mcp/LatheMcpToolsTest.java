@@ -408,6 +408,26 @@ class LatheMcpToolsTest {
     assertThat(text(result)).startsWith("0 module(s)");
   }
 
+  // The first call an agent makes says why it lists no modules, as every other tool does.
+  @Test
+  void workspaceSummary_latheFromAnotherVersion_notesTheSyncWithoutAPrefix() throws Exception {
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Files.writeString(
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+        "{\"schemaVersion\": \"0\", \"workspaceRoot\": \".\"}");
+    engine.close();
+    engine = new LatheEngine(tmp);
+
+    final String text = text(call("workspace_summary", Map.of()));
+
+    assertThat(text)
+        .startsWith("0 module(s)")
+        .contains(
+            "Sync required: .lathe/ was written by another Lathe version (schema 0, expected %s)"
+                .formatted(LatheLayout.SCHEMA_VERSION))
+        .doesNotContain("Lathe: .lathe/");
+  }
+
   @Test
   void modulesResult_modules_oneLineEachWithUpstreamAndTestCapture_longListsCut() {
     final List<String> upstream =
@@ -419,7 +439,8 @@ class LatheMcpToolsTest {
                 List.of(
                     new LatheModuleSummary("app", upstream, true, true),
                     new LatheModuleSummary("lib01", List.of(), true, false),
-                    new LatheModuleSummary("docs", List.of(), false, false))));
+                    new LatheModuleSummary("docs", List.of(), false, false)),
+                LatheMcpTools.NO_NOTES));
 
     assertThat(text.lines())
         .contains(

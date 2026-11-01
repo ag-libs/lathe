@@ -4936,12 +4936,12 @@ final class WorkspaceSession {
   }
 
   // A workspace.json from another schema, or one that cannot be read, loads as empty, so say why
-  // instead of "ready".
+  // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
   private void showWorkspaceStatus(final String okText) {
     client.showMessage(
         manifest
             .loadProblem()
-            .map(text -> new MessageParams(MessageType.Warning, text))
+            .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
   }
 

@@ -1678,33 +1678,6 @@ None yet.
 
 ---
 
-## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-With `workspace.json` at an older `schemaVersion`, the server ignores the manifest.
-`get_diagnostics` then ends with the right note, but with a doubled prefix:
-`Sync required: Lathe: .lathe/ was written by another Lathe version (schema 5, expected 6)`.
-`workspace_summary`, the tool the instructions tell an agent to call first, drops every `depends on`
-edge and carries no note.
-
-### Fix direction
-
-`workspace_summary` carries the same `Sync required:` note; drop the inner `Lathe:` prefix.
-[MC-47](#mc-47--notes-that-mislead-a-moved-file-not-checked-no-word-of-a-pending-sync) asks for the same note for a pending POM sync; one change can serve both.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
 
 **Status: accepted**
@@ -1973,7 +1946,7 @@ Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
 ### Fix direction
 
 Leave the files a rename moved out of the not-checked notes; give `workspace_summary` the same sync note,
-as [MC-37](#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version) asks for another schema.
+as [MC-37](gaps-archive.md#mc-37--workspace_summary-is-silent-when-lathe-was-written-by-another-lathe-version--done) asks for another schema.
 
 ### Regression targets
 

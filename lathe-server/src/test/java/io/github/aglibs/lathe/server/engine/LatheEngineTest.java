@@ -409,7 +409,7 @@ class LatheEngineTest {
     assertThat(engine.notes(List.of()).syncRequired())
         .singleElement()
         .asString()
-        .contains("another Lathe version")
+        .startsWith(".lathe/ was written by another Lathe version")
         .contains("`%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND));
   }
 
