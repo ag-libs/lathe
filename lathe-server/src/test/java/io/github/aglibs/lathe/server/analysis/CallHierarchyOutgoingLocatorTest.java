@@ -85,6 +85,48 @@ class CallHierarchyOutgoingLocatorTest {
     }
   }
 
+  // Only the method's own calls, a lambda's included: not a field initializer's, nor the implicit
+  // constructor call of each enum constant, which elsewhere in the class are not the method's.
+  @Test
+  void outgoingCalls_classWithFieldInitializerAndEnum_returnsOnlyTheMethodsCalls()
+      throws IOException {
+    final String content =
+        """
+        class Target {
+            static final Callee EMPTY = make();
+            enum Kind { A, B }
+            void work(Callee c) {
+                c.doStuff("x");
+                Runnable r = () -> c.doStuff("y");
+            }
+            private static Callee make() { return null; }
+        }
+        class Callee { void doStuff(String s) {} }
+        """;
+    Files.writeString(sourceRoot.resolve("Target.java"), content);
+    Files.writeString(
+        sourceRoot.resolve("Callee.java"), "class Callee { void doStuff(String s) {} }\n");
+    final var request = request(content, new Position(3, 9));
+
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      session.compile(request.uri(), content, 1, CompileMode.OPEN);
+      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+
+      final List<CallHierarchyOutgoingCall> calls =
+          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+
+      assertThat(calls)
+          .singleElement()
+          .satisfies(
+              call -> {
+                assertThat(call.getTo().getName()).isEqualTo("doStuff");
+                assertThat(call.getFromRanges())
+                    .extracting(r -> r.getStart().getLine())
+                    .containsExactly(4, 5);
+              });
+    }
+  }
+
   // An implicit accessor has no tree of its own; it points at its component, not the file's top.
   @Test
   void outgoingCalls_recordAccessor_pointsAtItsComponent() throws IOException {
