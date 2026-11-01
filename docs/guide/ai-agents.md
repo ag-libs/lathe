@@ -227,7 +227,7 @@ Set `LATHE_DEBUG=1` for finer detail.
 - **Every tool answers "Lathe found no `.lathe/`"** — the agent was started outside a Lathe-enabled
   build: start it at the reactor root, or run the first build there (`mvn clean test -Dlathe.capture.only=true`); see
   the prerequisite above. The server stays up, so the agent sees this reason rather than a server that
-  failed to connect; restart the agent's session after the build.
+  failed to connect; once the build has created `.lathe/`, the next tool call uses it, with no restart.
 - **`run_test` says the build's test filter leaves a class out** — it is an integration test (Failsafe)
   or another class the build's test run excludes; Lathe cannot capture or run it, so run it with the
   build.

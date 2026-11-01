@@ -1818,31 +1818,6 @@ None yet.
 
 ---
 
-## MC-44 — A `.lathe/` created after the MCP server started is never picked up
-
-**Status: accepted**
-
-**Value: high — Size: S–M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
-
-### Observed behaviour
-
-An MCP server started in a project with no `.lathe/` keeps answering "found no .lathe/" after a build creates it.
-The tools do not say to restart the server; only the agent guide does.
-
-### Fix direction
-
-Look for `.lathe/` again on each call while none was found, or say in the answer that a restart picks it up.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
 
 **Status: documented**

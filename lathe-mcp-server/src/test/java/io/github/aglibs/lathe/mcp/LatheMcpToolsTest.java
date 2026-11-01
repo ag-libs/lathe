@@ -349,14 +349,17 @@ class LatheMcpToolsTest {
   }
 
   // Started where no .lathe/ is, the server still lists every tool, and each answers why and how
-  // to set the project up, instead of the server failing to connect.
+  // to set the project up, instead of the server failing to connect; once a build creates .lathe/,
+  // the tools use it.
   @Test
-  void all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup() {
-    final String noWorkspace = LatheMcpServer.noWorkspace(tmp);
+  void all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup_untilABuildCreatesIt(
+      @TempDir final Path bare) throws Exception {
+    final String noWorkspace = LatheMcpServer.noWorkspace(bare);
+    final var awaited = new LatheMcpServer.AwaitedEngine(bare);
     final List<SyncToolSpecification> unconfigured =
-        LatheMcpTools.all(LatheMcpServer.missing(noWorkspace), McpJsonDefaults.getMapper());
+        LatheMcpTools.all(awaited, McpJsonDefaults.getMapper());
 
-    assertThat(noWorkspace).contains(".lathe/", tmp.toString(), "lathe-maven-extension");
+    assertThat(noWorkspace).contains(".lathe/", bare.toString(), "lathe-maven-extension");
     assertThat(unconfigured)
         .hasSameSizeAs(specs)
         .allSatisfy(
@@ -369,6 +372,14 @@ class LatheMcpToolsTest {
               assertThat(result.isError()).isTrue();
               assertThat(text(result)).isEqualTo(noWorkspace);
             });
+
+    Files.createDirectories(bare.resolve(LatheLayout.LATHE_DIR));
+    final LatheEngine found = awaited.get();
+    try {
+      assertThat(awaited.get()).isSameAs(found);
+    } finally {
+      found.close();
+    }
   }
 
   private CallToolResult call(final String name, final Map<String, Object> arguments) {

@@ -11068,6 +11068,41 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-44 — A `.lathe/` created after the MCP server started is never picked up — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a fresh Maven project.
+
+### Observed behaviour
+
+An MCP server started in a project with no `.lathe/` keeps answering "found no .lathe/" after a build creates it.
+The tools do not say to restart the server; only the agent guide does.
+
+### Fix direction
+
+Look for `.lathe/` again on each call while none was found, or say in the answer that a restart picks it up.
+
+### Resolution
+
+Started where no `.lathe/` is, the server looks for it again on each tool call (`LatheMcpServer.AwaitedEngine`)
+and opens the engine the first time it finds one, so the build that creates it is picked up without
+restarting the agent's session; the "found no .lathe/" answer says so.
+One engine opens the workspace however many calls arrive at once.
+
+Verified end to end (2026-11-01): a server started in an empty directory answers "found no .lathe/",
+then `0 module(s)` once `.lathe/` is created.
+
+### Regression targets
+
+- `LatheMcpToolsTest.all_noWorkspace_everyToolAnswersWhereItLookedAndTheSetup_untilABuildCreatesIt`
+
+---
+
 ## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test — done
 
 **Status: done.**
