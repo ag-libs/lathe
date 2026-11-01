@@ -12,14 +12,16 @@ public final class LatheWorkspace {
     return findRoot(startDir, null);
   }
 
+  // For a build: the nearest root, unless the build disables Lathe (lathe.disabled, or on CI).
+  public static Optional<Path> findRoot(final Path startDir, final Path ceiling) {
+    return LatheFlags.isDisabled() ? Optional.empty() : nearestRoot(startDir, ceiling);
+  }
+
   // Search upward from startDir for a .lathe/, but never climb above ceiling — the directory Maven
   // treats as this build's root. A build inside a nested checkout/worktree therefore cannot adopt a
-  // parent repo's .lathe/. A null ceiling leaves the search unbounded.
-  public static Optional<Path> findRoot(final Path startDir, final Path ceiling) {
-    if (LatheFlags.isDisabled()) {
-      return Optional.empty();
-    }
-
+  // parent repo's .lathe/. A null ceiling leaves the search unbounded. Whether a build disables
+  // Lathe does not matter here: a server reads the workspace a build already wrote.
+  public static Optional<Path> nearestRoot(final Path startDir, final Path ceiling) {
     var current = startDir;
     while (current != null) {
       if (Files.isDirectory(current.resolve(LatheLayout.LATHE_DIR))) {
