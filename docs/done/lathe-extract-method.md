@@ -11,8 +11,35 @@ and statement copies are found by `ExtractionSupport.statementCopies` through th
 The check's compile goes through `JavaSourceCompiler.compileDetached`, which leaves the document's own compile,
 and so the trees cached from it, undisturbed.
 A declaration moved to the call keeps `final` but not annotations.
-The refinements and later options at the end of section 5 remain open, as do two parts of section 7's plan:
-the coverage measurement, and behaviour tests that run the original and the rewritten code.
+The refinements and later options at the end of section 5 remain open, as do behaviour tests that run the original
+and the rewritten code (section 7).
+
+### Measured (2026-11-01)
+
+Section 7's coverage measurement, done with `ExtractMethodSweep` (a dev tool in `lathe-server`'s test sources): every
+run of 1–5 statements and every initializer, argument and return value of a repo, through the editor's own path
+(open, `codeAction`, `codeAction/resolve` on a 30% sample of the offers).
+
+| Repo | Selections | Offers resolved | False offers, first run | Crashes |
+|---|---|---|---|---|
+| Lathe (all 596 files) | 119,000 | 31,000 | 400 (1.3%) | 0 |
+| Dropwizard (all 928) | 81,000 | 23,000 | 52 (0.2%) | 0 |
+| Helidon (1,500 of 6,239) | 247,000 | 57,000 | 168 (0.3%) | 0 |
+
+A false offer is one the compile check then disables: safe, but wasted.
+Each kind found was fixed at its cause, with a test: poly expressions (`List.of()`) and other-typed copies in
+replace-all; names the file already gives another type (an import, a declaration, its package, a nested
+`Builder`); `final` on an assigned parameter; `@SuppressWarnings` of the member or a local declaration; enum
+constants; bare array initializers; bare variables and `this`; local classes in the signature or moved away;
+inaccessible types; an inner class's constructor-call arguments; returns out of a switch expression; statement
+parentheses; copies in annotation values. A re-run on the fixed build found none in 16,315 resolved Helidon
+offers; Lathe's re-run, a few fixes earlier, found 8, of kinds fixed since.
+The compile check now refuses only errors the edit adds, so a file with an unrelated error still extracts.
+
+Refusals, in all three repos alike, are led by more than one value flowing out and by `return` (partial, or from a
+lambda or `void` method), well ahead of a value assigned conditionally, the case JDT's flow model would win: the
+later options of section 5 (several outputs through a local record, early returns) would pay more than adopting
+that model. Timing: `codeAction` p99 under 15 ms, resolve p99 under 250 ms.
 
 ## 1. Goal
 
