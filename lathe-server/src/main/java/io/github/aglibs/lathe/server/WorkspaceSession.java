@@ -1749,11 +1749,18 @@ final class WorkspaceSession {
     }
 
     final var result = new CompletableFuture<List<Diagnostic>>();
+    // A compile that throws (javac refusing the JVM's release, say) fails the request at once with
+    // its cause, rather than leaving the caller to its timeout.
     submitCompile(
-        route,
-        snapshot,
-        CompileMode.OPEN,
-        (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()));
+            route,
+            snapshot,
+            CompileMode.OPEN,
+            (ignored, response) -> result.complete(reactor ? response.diagnostics() : List.of()))
+        .exceptionally(
+            ex -> {
+              result.completeExceptionally(ex);
+              return null;
+            });
     return result;
   }
 
@@ -4987,20 +4994,21 @@ final class WorkspaceSession {
     submitCompile(routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
   }
 
-  private void submitCompile(
+  // The compile, which completes exceptionally if it threw; its error is published either way.
+  private CompletableFuture<CompileResponse> submitCompile(
       final CompilerRoute route,
       final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
     if (route instanceof final CompilerRoute.Missing missing) {
       publisher.publishMissing(missing.uri(), missing.message());
-      return;
+      return CompletableFuture.completedFuture(null);
     }
 
-    submitTo(route, route.analysisWorker().orElseThrow(), snapshot, mode, afterCompile);
+    return submitTo(route, route.analysisWorker().orElseThrow(), snapshot, mode, afterCompile);
   }
 
-  private void submitTo(
+  private CompletableFuture<CompileResponse> submitTo(
       final CompilerRoute route,
       final CompilationWorker moduleWorker,
       final OpenDocument snapshot,
@@ -5011,14 +5019,16 @@ final class WorkspaceSession {
         route instanceof final CompilerRoute.Module module
             ? unsavedSiblings(module.config(), snapshot)
             : List.of();
-    moduleWorker
-        .compile(requestFor(snapshot, mode), siblings)
+    final CompletableFuture<CompileResponse> compiled =
+        moduleWorker.compile(requestFor(snapshot, mode), siblings);
+    compiled
         .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
         .exceptionally(
             ex -> {
               worker.execute(() -> publisher.publishError(snapshot, mode, ex));
               return null;
             });
+    return compiled;
   }
 
   // The tree's other unsaved open buffers, most recently edited first; the worker takes those that
