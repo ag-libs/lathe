@@ -44,9 +44,9 @@
         <artifactId>spotless-maven-plugin</artifactId>
       </plugin>
       <plugin>
-        <!-- JUnit loads the listener and the filter in every test JVM, including one older than
-             Lathe's code (Java 17), which then must not fail to load them: they are compiled for
-             Java 8 and leave the capture alone below 17. The rest stays Java 17. Plain javac, not
+        <!-- JUnit loads the listener and the filter in every test JVM, and the Gradle plugin loads
+             the agent there, including one older than Lathe's code (Java 17), which then must not
+             fail to load them: they are compiled for Java 8 and leave the capture alone below 17. The rest stays Java 17. Plain javac, not
              Lathe's capturing compiler, so the editor keeps analysing this module as Java 17. -->
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -57,6 +57,7 @@
               <excludes>
                 <exclude>**/CaptureLauncherSessionListener.java</exclude>
                 <exclude>**/CaptureOnlyPostDiscoveryFilter.java</exclude>
+                <exclude>**/LatheAgent.java</exclude>
                 <exclude>**/CaptureOnly.java</exclude>
               </excludes>
             </configuration>
@@ -73,6 +74,7 @@
               <includes>
                 <include>**/CaptureLauncherSessionListener.java</include>
                 <include>**/CaptureOnlyPostDiscoveryFilter.java</include>
+                <include>**/LatheAgent.java</include>
                 <include>**/CaptureOnly.java</include>
               </includes>
               <compilerArgs combine.children="append">
@@ -129,6 +131,12 @@
               </relocations>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <!-- The Gradle plugin starts the test JVM with this jar as an agent; see LatheAgent. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <manifestEntries>
+                    <Premain-Class>io.github.aglibs.lathe.junit.LatheAgent</Premain-Class>
+                  </manifestEntries>
+                </transformer>
               </transformers>
               <filters>
                 <filter>

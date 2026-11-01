@@ -27,7 +27,7 @@ Related designs:
 - [Run and Test in VS Code](../planned/lathe-vscode-run-test.md): what needs a test capture, and how a run reports a missing one.
 - [OpenJDK support](../done/lathe-openjdk-support.md): the coordinate-invoked front-end the OpenJDK mode runs.
 - [Pinned Formatters](../done/lathe-pinned-formatters.md): the formatter is a Spotless step Lathe already reads.
-- [Gradle support](../planned/lathe-gradle-support.md): Gradle's personal (init script) and team (plugin) modes slot into the same dialog.
+- [Gradle support](../done/lathe-gradle-support.md): Gradle's personal (init script) and team (plugin) modes slot into the same dialog.
 - [Lessons from Metals v2](lathe-metals-v2-lessons.md): Lathe trusts the real build; here the build is generated or borrowed, but real.
 
 ## Problem / motivation

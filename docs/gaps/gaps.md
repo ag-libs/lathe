@@ -640,6 +640,33 @@ None yet.
 
 ---
 
+## EG-078 — No formatter detection on a Gradle build
+
+**Status: documented**
+
+**Value: medium — Size: M**
+
+**Affects: formatting in the editor and `format_file` on Gradle builds.**
+
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+On Maven the sync reads the project's Spotless configuration and runs the exact formatter release it pins.
+The Gradle plugin reads no formatting plugin, so a Gradle project formats only through a committed
+`lathe-style.json` with a command engine.
+
+### Fix direction
+
+Detect the Spotless Gradle plugin's Java step (its name is readable; its version and options are not, per the
+design spike), or document the `lathe-style.json` recipe as the supported path.
+
+### Regression targets
+
+None yet.
+
+---
+
 ## EG-080 — Incoming calls of an override include callers that can never reach it
 
 **Status: documented**
@@ -1352,6 +1379,32 @@ None yet.
 
 ---
 
+## WS-26 — On Gradle, included builds are not covered
+
+**Status: documented**
+
+**Value: low — Size: L**
+
+**Affects: the editor and MCP on Gradle composite builds.**
+
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+The settings plugin acts on the root build only, so the projects of an included build (`includeBuild`) get no
+`.lathe/` configuration: their Java files have no code intelligence, and a project whose directory is outside the
+root build is left out with a `[lathe] … left out` line.
+
+### Fix direction
+
+Capture included builds that hold Java projects as more modules of the same workspace.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1473,6 +1526,34 @@ and map it in the replay to the mirror trees it was built from (here the main mi
 Where Lathe cannot tell what a copied directory holds, the completeness gate should at least say the run uses classes
 from the last build, as it does for other stale inputs.
 For this repo alone, the build could test against the compile output plus the `versions/21` overlay without a copy.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-12 — On Gradle, only each project's `test` task is captured
+
+**Status: documented**
+
+**Value: medium — Size: L**
+
+**Affects: run, debug and replay on Gradle builds with more than one test task or source set.**
+
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+The plugin loads `lathe-junit` into each project's `test` task only.
+Tests in other test tasks (an `integrationTest` task, say) are never captured, so they can't be run or debugged
+from the editor or an agent, and source sets other than `main` and `test` (`integrationTest`, `testFixtures`,
+`jmh`) get no module configuration, so their files have no code intelligence either.
+Maven has no counterpart: Failsafe tests are their own limit there.
+
+### Fix direction
+
+Capture every `Test` task, and model each extra source set as a source tree of its project.
 
 ### Regression targets
 

@@ -20,8 +20,9 @@ class CompileCaptureTest {
 
   @TempDir Path tmp;
 
-  // The main and the test compile each mirror their classes and annotation-processor output; the
-  // test compile, which runs second, must not overwrite the main compile's generated sources.
+  // The main and the test compile each mirror their classes, their processed resources (a tree
+  // without any has no directory), and their annotation-processor output; the test compile, which
+  // runs second, must not overwrite the main compile's generated sources.
   @Test
   void mirror_mainThenTestCompile_keepsEachScopeSeparate() throws Exception {
     final Path moduleDir = latheModuleDir();
@@ -31,11 +32,19 @@ class CompileCaptureTest {
     write("target/generated-test-sources/test-annotations/com/example/TestGen.java", 1L);
     write("target/classes/com/example/Main.class", 1L);
     write("target/test-classes/com/example/MainTest.class", 1L);
+    write("build/resources/main/META-INF/services/com.example.Api", 1L);
 
-    CompileCapture.mirror(moduleDir, config("classes", mainGen, List.of()));
-    CompileCapture.mirror(moduleDir, config("test-classes", testGen, List.of()));
+    CompileCapture.mirror(
+        moduleDir,
+        config("classes", mainGen, List.of()),
+        List.of(tmp.resolve("build/resources/main")));
+    CompileCapture.mirror(
+        moduleDir,
+        config("test-classes", testGen, List.of()),
+        List.of(tmp.resolve("build/resources/test")));
 
     assertThat(moduleDir.resolve("classes/com/example/Main.class")).exists();
+    assertThat(moduleDir.resolve("classes/META-INF/services/com.example.Api")).exists();
     assertThat(moduleDir.resolve("test-classes/com/example/MainTest.class")).exists();
     assertThat(moduleDir.resolve(LatheLayout.GENERATED_SOURCES).resolve("com/example/Main.java"))
         .exists();
@@ -61,7 +70,7 @@ class CompileCaptureTest {
     Files.createDirectories(tmp.resolve("target/classes"));
 
     CompileCapture.mirror(
-        moduleDir, config("classes", gen, List.of(src.toString(), gen.toString())));
+        moduleDir, config("classes", gen, List.of(src.toString(), gen.toString())), List.of());
 
     // Each stamp carries the content compiled, which is also what the build compiled.
     final var foo =
@@ -99,12 +108,12 @@ class CompileCaptureTest {
     final Path gen = tmp.resolve("target/generated-sources/annotations");
     write("target/generated-sources/annotations/com/example/Gen.java", 1L);
     Files.createDirectories(tmp.resolve("target/classes"));
-    CompileCapture.mirror(moduleDir, config("classes", gen, List.of()));
+    CompileCapture.mirror(moduleDir, config("classes", gen, List.of()), List.of());
     final Path mirrored =
         moduleDir.resolve(LatheLayout.GENERATED_SOURCES).resolve("com/example/Gen.java");
     assertThat(mirrored).exists();
 
-    CompileCapture.mirror(moduleDir, config("classes", null, List.of()));
+    CompileCapture.mirror(moduleDir, config("classes", null, List.of()), List.of());
 
     assertThat(moduleDir.resolve(LatheLayout.GENERATED_SOURCES)).doesNotExist();
   }

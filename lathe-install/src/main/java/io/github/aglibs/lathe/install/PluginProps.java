@@ -10,6 +10,7 @@ public final class PluginProps {
   static final String SERVER_ARTIFACT_ID = "lathe-server";
   static final String MCP_SERVER_ARTIFACT_ID = "lathe-mcp-server";
   static final String TEST_RUNNER_ARTIFACT_ID = "lathe-test-runner";
+  static final String JUNIT_ARTIFACT_ID = "lathe-junit";
 
   private static final Properties PROPS = load();
 

@@ -28,7 +28,7 @@ Without a project that hurdle is the whole experience: the user opens a `Main.ja
 ## 3. Scope
 
 - **VS Code only.** No server, Neovim or Maven-plugin changes.
-- **Maven only.** Gradle follows once [Gradle support](lathe-gradle-support.md) exists.
+- **Maven only.** Gradle follows once [Gradle support](../done/lathe-gradle-support.md) exists.
 - **No archetypes and no `mvn` at generation time.** The extension writes the files itself:
   `maven-archetype-quickstart` is interactive and its defaults are dated.
 - **Lathe installs nothing system-wide.** No JDK download, no Maven installation, no changes outside the new project and VS Code's own state.

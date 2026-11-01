@@ -4,14 +4,16 @@ Common problems and their fixes.
 If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) with the Lathe version, your editor, and the server log from a run with `LATHE_DEBUG=1`.
 
 - **No Lathe features, or a "launcher not found" notice** — Lathe isn't active in the build yet. Run the
-  first build at the reactor root, `mvn clean test -Dlathe.capture.only=true` (it sets up Lathe without running the
-  tests). If it still isn't working, confirm the Lathe extension is registered
-  (see [installation.md](installation.md)). A build log with no `[lathe]` lines means the
-  extension didn't load: check `mvn -v` (or the project's `.mvn/wrapper`) for Maven 3.6.3 or newer.
+  first build at the root of the build, which sets up Lathe without running the tests:
+  `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle.
+  If it still isn't working, confirm Lathe is set up in the build ([Maven](maven.md), [Gradle](gradle.md)).
+  A build log with no `[lathe]` lines means Lathe didn't load: on Maven, check `mvn -v` (or the project's
+  `.mvn/wrapper`) for Maven 3.6.3 or newer.
 - **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+
-  and `maven-compiler-plugin` 3.6.2+. The message lists each problem with its fix: upgrade Maven (or the
-  project's wrapper), or pin a newer compiler plugin in `<pluginManagement>`. To build without Lathe,
-  add `-Dlathe.disabled=true`.
+  with `maven-compiler-plugin` 3.6.2+, or Gradle 8.8+. The message lists each problem with its fix: upgrade
+  the build tool (or the project's wrapper), or on Maven pin a newer compiler plugin in
+  `<pluginManagement>`. To build without Lathe, add the switch the message names (`-Dlathe.disabled=true`
+  on Maven, `-Plathe.disabled=true` on Gradle).
 - **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and the build's
   `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
   targets, and see [choosing the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home).
@@ -24,13 +26,15 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   its `java.import.exclusions`; see
   [installation.md](installation.md#coexisting-with-another-java-language-server-jdtls).
 - **Lombok: "cannot find symbol" on a generated member, or the server stops on opening a Lombok
-  file** — Lathe runs Lombok from the module's processor path (or class path), unless `<proc>none</proc>`;
+  file** — Lathe runs Lombok from the module's processor path (or class path), unless the build turns
+  annotation processing off (`<proc>none</proc>`, `-proc:none`);
   re-sync after adding it. The server stopping on open means the JDK is newer than the project's Lombok
   supports, which fails the build too: upgrade Lombok. See [Lombok](how-it-works.md#lombok) for what
   works and its limits.
 - **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
-  javac. Sync carries the build's own module grants (forked `-J--add-exports`/`--add-opens`,
-  `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`) into `.lathe/jvm.args` automatically;
+  javac. Sync carries the build's own module grants into `.lathe/jvm.args` automatically (on Maven, forked
+  `-J--add-exports`/`--add-opens`, `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`; on Gradle,
+  those in `org.gradle.jvmargs`);
   restart the server after it changes. Add anything else (or tune heap/GC) with
   `LATHE_JVM_OPTS`; see
   [installation.md](installation.md#tuning-the-server-jvm-lathe_jvm_opts).

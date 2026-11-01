@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>lathe-gradle-plugin</artifactId>
+  <packaging>pom</packaging>
+
+  <name>lathe-gradle-plugin</name>
+  <description>Gradle plugin, built by Gradle: this module fills a repository with the reactor-built
+    Lathe jars and runs the Gradle build against it.</description>
+
+  <properties>
+    <!-- -Dlathe.gradle.skip=true skips the Gradle build; -Dlathe.gradle.home=<dir> runs <dir>/bin/gradle
+         instead of the gradle on the PATH. -->
+    <lathe.gradle.skip>false</lathe.gradle.skip>
+    <lathe.gradle.bin/>
+    <lathe.gradle.script>gradle</lathe.gradle.script>
+    <!-- The Gradle and JDK the TestKit fixtures run on; empty runs them on the Gradle and JDK that build
+         the plugin. The older-Maven CI jobs set these, as they set invoker.mavenHome and invoker.javaHome. -->
+    <invoker.javaHome/>
+    <lathe.gradle.fixturesHome/>
+    <lathe.gradle.fixturesJavaHome>${invoker.javaHome}</lathe.gradle.fixturesJavaHome>
+    <skipTests>false</skipTests>
+    <maven.test.skip.exec>false</maven.test.skip.exec>
+    <!-- The plugin's unit tests follow maven.test.skip.exec, as everywhere else; a CI job that builds
+         the plugin's dependencies without their tests sets this to false to run them anyway. -->
+    <lathe.gradle.skipUnitTests>${maven.test.skip.exec}</lathe.gradle.skipUnitTests>
+  </properties>
+
+  <!-- Not compiled against: orders this module after the jars it consumes, also under -T, and is what
+       invoker:install copies into the repository. The servers are what latheSync installs, and
+       lathe-test-runner what replay runs, so the TestKit fixtures resolve them from there. -->
+  <dependencies>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-install</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-test-runner</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-server</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-mcp-server</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <configuration>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+              <include>src/functionalTest/java/**/*.java</include>
+            </includes>
+          </java>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-invoker-plugin</artifactId>
+        <version>${maven-invoker-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>fill-lathe-repo</id>
+            <goals>
+              <goal>install</goal>
+            </goals>
+            <phase>package</phase>
+            <configuration>
+              <localRepositoryPath>${project.build.directory}/lathe-repo</localRepositoryPath>
+              <!-- Not a dependency: Lathe's own Maven extension, on in this repository, pins any
+                   lathe-junit dependency to its released version. -->
+              <extraArtifacts>
+                <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
+              </extraArtifacts>
+              <skipInstallation>${lathe.gradle.skip}</skipInstallation>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>gradle-build</id>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <phase>integration-test</phase>
+            <configuration>
+              <skip>${lathe.gradle.skip}</skip>
+              <executable>${lathe.gradle.bin}${lathe.gradle.script}</executable>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <arguments>
+                <argument>--console=plain</argument>
+                <!-- One build per Maven run gains nothing from a daemon, and on Windows a daemon that
+                     outlives the build inherits this build's output pipe and keeps Maven waiting. -->
+                <argument>--no-daemon</argument>
+                <argument>build</argument>
+                <argument>-PlatheRepo=${project.build.directory}/lathe-repo</argument>
+                <argument>-Plathe.version=${project.version}</argument>
+                <argument>-Pjunit.version=${junit.version}</argument>
+                <argument>-Passertj.version=${assertj.version}</argument>
+                <argument>-PskipTests=${skipTests}</argument>
+                <argument>-PskipUnitTests=${lathe.gradle.skipUnitTests}</argument>
+                <argument>-Plathe.gradle.fixturesHome=${lathe.gradle.fixturesHome}</argument>
+                <argument>-Plathe.gradle.fixturesJavaHome=${lathe.gradle.fixturesJavaHome}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>gradle-home</id>
+      <activation>
+        <property>
+          <name>lathe.gradle.home</name>
+        </property>
+      </activation>
+      <properties>
+        <lathe.gradle.bin>${lathe.gradle.home}/bin/</lathe.gradle.bin>
+      </properties>
+    </profile>
+    <!-- A distribution's bin/ holds a POSIX script named gradle beside gradle.bat, so a Gradle home
+         on Windows runs gradle.bat; from the PATH, plain gradle resolves through PATHEXT, whatever
+         form the installed Gradle takes. -->
+    <profile>
+      <id>gradle-home-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+        <property>
+          <name>lathe.gradle.home</name>
+        </property>
+      </activation>
+      <properties>
+        <lathe.gradle.script>gradle.bat</lathe.gradle.script>
+      </properties>
+    </profile>
+  </profiles>
+</project>

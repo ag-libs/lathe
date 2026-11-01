@@ -44,6 +44,12 @@ jobs:
         with:
           maven-version: 3.9.16
 
+      - name: Set up Gradle 9.8.2
+        # Builds lathe-gradle-plugin, which the release build verifies with the rest.
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: 9.8.2
+
       - name: Set up Neovim
         # The release build runs the full verify, including the client specs.
         uses: rhysd/action-setup-vim@v1

@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.install.CompileCapture;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import org.codehaus.plexus.compiler.Compiler;
 import org.codehaus.plexus.compiler.CompilerConfiguration;
@@ -123,7 +124,7 @@ public final class LatheCompiler implements Compiler {
         return;
       }
 
-      CompileCapture.mirror(moduleDir, moduleConfig);
+      CompileCapture.mirror(moduleDir, moduleConfig, List.of());
       LOG.info(
           "[lathe] {} {} capture complete {}ms",
           moduleRel,

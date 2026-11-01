@@ -59,6 +59,28 @@ class JdkSourceResolverTest {
     assertThat(result.sourceDir().toString()).doesNotContain(" ");
   }
 
+  // A toolchain JDK, not the running one: vendor and version come from its release file.
+  @Test
+  void resolveAt_otherJdk_readsVendorAndVersionFromItsReleaseFile() throws IOException {
+    writeRelease(
+        """
+        IMPLEMENTOR="Eclipse Adoptium"
+        JAVA_VERSION="21.0.9"
+        """);
+    Files.createDirectories(tmp.resolve("lib"));
+    Files.createFile(tmp.resolve("lib/src.zip"));
+
+    final JdkSource result = JdkSourceResolver.resolveAt(tmp);
+    final JdkSource noRelease = JdkSourceResolver.resolveAt(tmp.resolve("lib"));
+
+    assertThat(result.isPresent()).isTrue();
+    assertThat(result.vendor()).isEqualTo("Eclipse Adoptium");
+    assertThat(result.version()).isEqualTo("21.0.9");
+    assertThat(result.cacheKey()).isEqualTo("eclipse-adoptium-21.0.9");
+    assertThat(noRelease.isPresent()).isFalse();
+    assertThat(noRelease.version()).isEqualTo("unknown");
+  }
+
   @Test
   void cacheKey_correttoRelease_returnsCorrettoKey() throws IOException {
     writeRelease(
@@ -68,6 +90,17 @@ class JdkSourceResolverTest {
         JAVA_VERSION="26"
         """);
     assertThat(JdkSourceResolver.cacheKey(tmp, "any", "0")).isEqualTo("corretto-26.0.0.35.2");
+  }
+
+  // A JDK other than the running one (a Gradle toolchain) whose release file names no implementor:
+  // its own vendor and version, never the running JVM's vendor version, which would share its key.
+  @Test
+  void cacheKey_otherJdkWithoutImplementor_keysOnItsOwnVersion() throws IOException {
+    writeRelease(
+        """
+        JAVA_VERSION="11.0.25"
+        """);
+    assertThat(JdkSourceResolver.cacheKey(tmp, "unknown", "11.0.25")).isEqualTo("unknown-11.0.25");
   }
 
   @Test

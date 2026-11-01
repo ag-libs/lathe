@@ -15,10 +15,6 @@
   <description>Neovim client (Lua). Runs the headless specs during the build; published to
     ag-libs/lathe.nvim by publish-nvim.sh.</description>
 
-  <properties>
-    <exec-maven-plugin.version>3.6.4</exec-maven-plugin.version>
-  </properties>
-
   <dependencies>
     <!-- Build order only: the e2e needs the multi-module fixture lathe-maven-plugin's invoker builds,
          and a parallel build (mvnd, -T) would otherwise run this module first. -->
