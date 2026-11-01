@@ -46,7 +46,7 @@ You need Java 17+, Maven 3.6.3+ and `maven-compiler-plugin` 3.6.2+ (see [require
   <extension>
     <groupId>io.github.ag-libs</groupId>
     <artifactId>lathe-maven-extension</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
   </extension>
 </extensions>
 ```
