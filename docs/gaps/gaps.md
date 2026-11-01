@@ -815,35 +815,6 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ---
 
-## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice
-
-**Status: documented**
-
-**Value: medium — Size: M**
-
-**Affects: MCP `fix_imports`, and the editor's import quick fix.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier.
-
-### Observed behaviour
-
-`fix_imports` reports `List: java.awt.List, java.util.List` and
-`Function: kotlin.Function, java.util.function.Function` as ambiguous, and the editor quick fix offers
-`Import 'kotlin.Function'` first.
-An agent has to pick, and in a Java module the answer is almost always the `java.util` one.
-
-### Fix direction
-
-Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
-then the module's own dependencies, then the rest.
-`fix_imports` could add the top candidate when the ranking is decisive, and list the others.
-
-### Regression targets
-
-None yet.
-
----
-
 ## CA-16 — Extractions are missing in common places, wrong in others, and there is no extract method
 
 **Status: accepted (selection, placement and safety delivered; extract method remains).**

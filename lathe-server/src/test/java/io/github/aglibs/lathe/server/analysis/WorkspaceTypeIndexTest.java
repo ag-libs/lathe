@@ -135,25 +135,34 @@ class WorkspaceTypeIndexTest {
         .containsExactlyInAnyOrder("java.util.List", "java.awt.List");
   }
 
+  // Completion (search) and import candidates (searchExact) rank alike: the type the project
+  // references first, so an import fix offers java.util.List before java.awt.List.
   @Test
-  void search_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName() throws IOException {
+  void searchAndSearchExact_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName()
+      throws IOException {
     final var shard =
         writeShard(tmp, "shard.json", shard(entry("List", "aaa.dep"), entry("List", "java.util")));
 
     // Cold start: no usage data attached, so the order degrades to alphabetical binaryName.
-    assertThat(WorkspaceTypeIndex.build(List.of(shard)).search("List", 10))
-        .extracting(TypeIndexEntry::binaryName)
-        .containsExactly("aaa.dep.List", "java.util.List");
+    assertListRanked(WorkspaceTypeIndex.build(List.of(shard)), "aaa.dep.List", "java.util.List");
 
     // With usage data the referenced type dominates that order and survives a tight cap.
     final var ranked =
         WorkspaceTypeIndex.build(List.of(shard)).withUsageCounts(Map.of("java.util.List", 7));
-    assertThat(ranked.search("List", 10))
-        .extracting(TypeIndexEntry::binaryName)
-        .containsExactly("java.util.List", "aaa.dep.List");
+    assertListRanked(ranked, "java.util.List", "aaa.dep.List");
     assertThat(ranked.search("List", 1))
         .extracting(TypeIndexEntry::binaryName)
         .containsExactly("java.util.List");
+  }
+
+  private static void assertListRanked(
+      final WorkspaceTypeIndex index, final String... binaryNames) {
+    assertThat(List.of(index.search("List", 10), index.searchExact("List")))
+        .allSatisfy(
+            found ->
+                assertThat(found)
+                    .extracting(TypeIndexEntry::binaryName)
+                    .containsExactly(binaryNames));
   }
 
   @Test

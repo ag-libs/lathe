@@ -293,13 +293,19 @@ class CodeActionTest {
   // added, several are a choice, and a qualifier matching nothing is a typo, left out.
   @Test
   void missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates() throws IOException {
+    // The project references javax.xml.datatype.Duration, so it leads its alphabetically-earlier
+    // namesake.
     final var result =
         session.missingImports(
-            TempSourceCompiler.TEST_URI, UNRESOLVED_QUALIFIERS, 1, qualifierIndex(), LEARNED_FIELD);
+            TempSourceCompiler.TEST_URI,
+            UNRESOLVED_QUALIFIERS,
+            1,
+            qualifierIndex().withUsageCounts(Map.of("javax.xml.datatype.Duration", 3)),
+            LEARNED_FIELD);
 
     assertThat(candidatesOf(result, "Objects")).containsExactly("java.util.Objects");
     assertThat(candidatesOf(result, "Duration"))
-        .containsExactlyInAnyOrder("java.time.Duration", "javax.xml.datatype.Duration");
+        .containsExactly("javax.xml.datatype.Duration", "java.time.Duration");
     assertThat(candidatesOf(result, "separator")).containsExactly("static java.io.File.separator");
     assertThat(candidatesOf(result, "TimeUnit")).containsExactly("java.util.concurrent.TimeUnit");
     assertThat(candidatesOf(result, "Map")).containsExactly("java.util.Map");

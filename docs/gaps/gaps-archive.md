@@ -7,6 +7,51 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `fix_imports`, and the editor's import quick fix.**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+`fix_imports` reports `List: java.awt.List, java.util.List` and
+`Function: kotlin.Function, java.util.function.Function` as ambiguous, and the editor quick fix offers
+`Import 'kotlin.Function'` first.
+An agent has to pick, and in a Java module the answer is almost always the `java.util` one.
+
+### Fix direction
+
+Rank candidates: types the module already imports elsewhere, then `java.*` packages other than `java.awt`,
+then the module's own dependencies, then the rest.
+`fix_imports` could add the top candidate when the ranking is decisive, and list the others.
+
+### Resolution
+
+Size S, not M. Both the import quick fix and MCP `fix_imports` (and `:LatheMissingImports`) take their candidates from
+`ImportCandidates.resolve`, which keeps the order of `WorkspaceTypeIndex.searchExact`; that returned each simple name's group
+in index build order, never ranked. Completion's `prefixMatches` already ranked by the project's usage counts, then reactor types,
+then binary name, which is why completion put `java.util.List` first and the import fix did not.
+Reproduced through MCP `fix_imports` on this repository before the fix:
+`List: java.awt.List, java.util.List` and
+`Function: com.google.common.base.Function, io.reactivex.functions.Function, java.util.function.Function`.
+
+`searchExact` now sorts its group with the same ranking, one shared `WorkspaceTypeIndex.ranking()` comparator,
+so a type the project references leads its namesakes; on a cold start, before usage counts exist, the order falls back to reactor types first, then name.
+The proposed tiers (java.awt last, the module's own dependencies) are not needed.
+Not done: `fix_imports` still lists a name with several matches as ambiguous, now with the likely one first, rather than adding it.
+
+### Regression targets
+
+- `WorkspaceTypeIndexTest.searchAndSearchExact_usageCount_referencedTypeWinsThenColdStartFallsBackToBinaryName`: completion and import candidates rank alike, cold and with counts.
+- `CodeActionTest.missingImports_unresolvedQualifiers_listedWithTypeAndStaticCandidates`: with usage counts, the referenced `javax.xml.datatype.Duration` leads the alphabetically-earlier `java.time.Duration`.
+
+---
+
 ## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online — done
 
 **Status: done.**
