@@ -449,11 +449,11 @@ None yet.
 
 ---
 
-## EG-070 — Requests Lathe does not support answer with an internal error, and `typeDefinition` is missing
+## EG-070 — `typeDefinition` is missing
 
 **Status: documented**
 
-**Value: medium — Size: S (typeDefinition: M)**
+**Value: medium — Size: M**
 
 **Affects: the editor.**
 
@@ -461,16 +461,20 @@ Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
 
 ### Observed behaviour
 
-`textDocument/typeDefinition` and `textDocument/inlayHint` are not advertised, so well-behaved clients never send them;
-Neovim's go-to-type-definition is unavailable.
-A client that sends one anyway gets an internal error, and the server logs a SEVERE line with a stack trace,
-instead of the protocol's "method not found".
-0.1.24 behaves the same.
+`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
+A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
+and an INFO line in the log.
 
 ### Fix direction
 
-Answer an unsupported request with `MethodNotFound`, without a SEVERE line.
 Implement `typeDefinition` (the declared type of the symbol at the cursor); definition already resolves types.
+
+### Resolved part
+
+Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
+lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
+`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
+Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
 
 ### Regression targets
 
@@ -585,48 +589,6 @@ Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier and Dropw
 
 Log the dropped options once per workspace, or at FINE.
 Keep compile-time library warnings out of the server's stderr.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor and MCP `format_file`, in a Maven reactor whose root only manages Spotless.**
-
-Found dogfooding Lathe on its own repository (2026-10-30).
-
-### Observed behaviour
-
-Lathe's root pom configures `spotless-maven-plugin` (google-java-format, pinned version) in `<pluginManagement>`,
-and each of its ten Java modules activates it in its own `<build><plugins>`.
-`lathe:sync` writes no `.lathe/style.json`, so the server starts with `[initialize] … formatting=false`,
-does not advertise formatting, and the editor never sends a request.
-The sync reports the skip only at debug level (`[sync] no spotless java formatter — skipping style.json`), so a normal build says nothing.
-The root pom never activated Spotless in any revision, so detection never worked for this repository.
-
-### Root cause
-
-`MavenStyle.spotlessPlugin` reads only the root project's effective `<build><plugins>`;
-a plugin declared only in `<pluginManagement>` is not there, and the modules that do run it are not looked at.
-Managing Spotless in a parent and activating it per module is a common Maven layout.
-
-### Fix direction
-
-Keep one workspace style.
-When the root does not run Spotless, take it from the reactor modules that do, but only when every module compiling Java
-runs the same Spotless Java configuration; otherwise skip `style.json` with a warning,
-since a workspace-wide formatter would reformat the modules whose build does not format them.
-Log the skip at warning level whenever reactor modules run Spotless but no style is written.
-Per-module gating or per-module formatters are a later step, for a project that needs them.
-
-Workaround: activate Spotless in the root's `<build><plugins>` (this repository does, as of the commit recording this gap).
 
 ### Regression targets
 
@@ -774,44 +736,6 @@ so the common case needs no manual invocation. A Neovim-client concern layered o
 keep it opt-in like `format_on_save`. Unused-import removal and import sorting for this command (a fuller
 "organize imports") are separate later slices; formatting with a pinned google-java-format or palantir already
 removes unused imports and reorders them as the project's Spotless does.
-
----
-
-## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: Neovim, VS Code, any client.**
-
-Found by the extract method sweep of the Lathe repo (2026-11-01), confirmed with a probe test.
-
-### Observed behaviour
-
-These refactors write a type by its simple name and import it through `CodeActionSupport.importEditFor`,
-which looks only at the type's own qualified name.
-When the file already gives that simple name to another type, the result does not compile:
-
-| Source | Action | Result |
-|---|---|---|
-| `import java.sql.Date;` … `var d = new java.util.Date();` | Replace `var` | `Date d = …` plus `import java.util.Date;`: `Date` is ambiguous |
-| `import java.sql.Date;` … `new java.util.Date().getTime()` | Extract field | `private final Date date = …` plus the same second import |
-| a type the source only names fully qualified | Extract variable, extract constant | the simple name, with no import at all |
-
-Only the top-level type is imported, never a generic argument (`Map<String, AtomicLong>`).
-
-### Fix direction
-
-Use what extract method and implement-abstract-methods already share:
-`CodeActionSupport.sourceTypeFormatter` writes a type whose simple name the file gives another type (by an import or
-a declaration) fully qualified, and `CodeActionSupport.importEditsFor` imports every other type the text names,
-generic arguments included, skipping those.
-Then `importEditFor` and `typeFqn` can go.
-
-### Regression targets
-
-None yet. Model: `CodeActionTest.codeAction_extractMethod_typeNamedLikeAnotherInTheFile_writtenQualified`.
 
 ---
 
@@ -1314,31 +1238,6 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 
 - Cross-module source lookup: `LatheSourceLookUpProviderTest.getSourceFileURI_classInAnotherModule_resolvesWhenRootsSpanTheReactor`.
 - Arming without an analysis: none yet — a file never opened, a file opened then closed, and lines in a nested, an anonymous and a local class.
-
----
-
-## DB-8 — A debugged test's JVM outlives the server
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
-
-### Observed behaviour
-
-A test launched by `lathe.debug.test` stays running, suspended, after the server exits: on a clean shutdown/exit, on stdin EOF and on SIGTERM.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Destroy the debuggee's process tree when the server shuts down, as test runs are.
-
-### Regression targets
-
-None yet.
 
 ---
 

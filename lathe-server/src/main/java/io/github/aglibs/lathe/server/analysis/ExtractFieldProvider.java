@@ -93,11 +93,10 @@ final class ExtractFieldProvider {
 
     final var cls = (ClassTree) classPath.getLeaf();
     final String exprSource = source.substring((int) exprStart, (int) exprEnd);
-    final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
+    final var written = CodeActionSupport.sourceType(analysis, exprPath, type);
     final String name = fieldName(type, expr, cls, methodPath);
-    final TextEdit importEdit =
-        CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
-    final TextEdit insert = insertFieldEdit(cls, cu, positions, source, typeText, name, exprSource);
+    final TextEdit insert =
+        insertFieldEdit(cls, cu, positions, source, written.text(), name, exprSource);
     if (insert == null) {
       return List.of();
     }
@@ -111,10 +110,11 @@ final class ExtractFieldProvider {
             ExtractionSupport.editList(
                 insert,
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
-                importEdit)));
+                written.imports())));
 
     final Either<Command, CodeAction> replaceAll =
-        replaceAllAction(uri, cu, trees, classPath, exprPath, reads, name, insert, importEdit);
+        replaceAllAction(
+            uri, cu, trees, classPath, exprPath, reads, name, insert, written.imports());
     if (replaceAll != null) {
       actions.add(replaceAll);
     }
@@ -132,7 +132,7 @@ final class ExtractFieldProvider {
       final Set<Element> reads,
       final String name,
       final TextEdit insert,
-      final TextEdit importEdit) {
+      final List<TextEdit> imports) {
     final List<TreePath> occurrences = ExtractionSupport.occurrences(classPath, exprPath, trees);
     if (occurrences.size() < 2) {
       return null;
@@ -171,7 +171,7 @@ final class ExtractFieldProvider {
         uri,
         "Extract field '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
         ExtractionSupport.FIELD_KIND,
-        ExtractionSupport.editList(insert, replaces, importEdit));
+        ExtractionSupport.editList(insert, replaces, imports));
   }
 
   private static boolean isStatic(final TreePath methodPath, final Trees trees) {

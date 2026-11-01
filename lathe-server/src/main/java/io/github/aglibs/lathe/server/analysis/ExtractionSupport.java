@@ -48,6 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
@@ -644,14 +645,10 @@ public final class ExtractionSupport {
   }
 
   static List<TextEdit> editList(
-      final TextEdit insert, final List<TextEdit> replaces, final TextEdit importEdit) {
-    final var edits = new ArrayList<TextEdit>();
-    edits.add(insert);
-    edits.addAll(replaces);
-    if (importEdit != null) {
-      edits.add(importEdit);
-    }
-    return edits;
+      final TextEdit insert, final List<TextEdit> replaces, final List<TextEdit> imports) {
+    return Stream.of(Stream.of(insert), replaces.stream(), imports.stream())
+        .flatMap(edits -> edits)
+        .toList();
   }
 
   static Either<Command, CodeAction> action(

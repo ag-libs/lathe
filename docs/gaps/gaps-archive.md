@@ -7,6 +7,109 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-076 — Spotless activated per module, not in the root, leaves formatting off without a word — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor and MCP `format_file`, in a Maven reactor whose root only manages Spotless.**
+
+Found dogfooding Lathe on its own repository (2026-10-30).
+
+### Observed behaviour
+
+Lathe's root pom configures `spotless-maven-plugin` (google-java-format, pinned version) in `<pluginManagement>`,
+and each of its ten Java modules activates it in its own `<build><plugins>`.
+`lathe:sync` writes no `.lathe/style.json`, so the server starts with `[initialize] … formatting=false`,
+does not advertise formatting, and the editor never sends a request.
+The sync reports the skip only at debug level (`[sync] no spotless java formatter — skipping style.json`), so a normal build says nothing.
+The root pom never activated Spotless in any revision, so detection never worked for this repository.
+
+### Root cause
+
+`MavenStyle.spotlessPlugin` reads only the root project's effective `<build><plugins>`;
+a plugin declared only in `<pluginManagement>` is not there, and the modules that do run it are not looked at.
+Managing Spotless in a parent and activating it per module is a common Maven layout.
+
+### Fix direction
+
+Keep one workspace style.
+When the root does not run Spotless, take it from the reactor modules that do, but only when every module compiling Java
+runs the same Spotless Java configuration; otherwise skip `style.json` with a warning,
+since a workspace-wide formatter would reformat the modules whose build does not format them.
+Log the skip at warning level whenever reactor modules run Spotless but no style is written.
+Per-module gating or per-module formatters are a later step, for a project that needs them.
+
+Workaround: activate Spotless in the root's `<build><plugins>` (this repository does, as of the commit recording this gap).
+
+### Resolution
+
+`MavenStyle.styleSource` picks the project whose Spotless configuration becomes the workspace style:
+the root when it runs Spotless, as before, else any Java module (one that is not `pom`-packaged and has a Java
+source) when every Java module runs Spotless with the same version and Java configuration.
+Otherwise no `style.json` is written, and the sync warns, naming how many Java modules run Spotless;
+the debug line remains only for a build with no Spotless at all.
+An Eclipse profile is resolved against the module the configuration came from.
+
+The root `pom.xml` workaround (Spotless declared in the root with `<skip>`) stays until the dogfood pin moves to
+a release with this fix.
+
+### Regression targets
+
+`MavenStyleTest.styleSource_rootOnlyManagesSpotless_takesTheJavaModulesOnlyWhenAllAgree`.
+
+---
+
+## CA-17 — Replace `var`, extract field, variable and constant write a type the file names differently — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: Neovim, VS Code, any client.**
+
+Found by the extract method sweep of the Lathe repo (2026-11-01), confirmed with a probe test.
+
+### Observed behaviour
+
+These refactors write a type by its simple name and import it through `CodeActionSupport.importEditFor`,
+which looks only at the type's own qualified name.
+When the file already gives that simple name to another type, the result does not compile:
+
+| Source | Action | Result |
+|---|---|---|
+| `import java.sql.Date;` … `var d = new java.util.Date();` | Replace `var` | `Date d = …` plus `import java.util.Date;`: `Date` is ambiguous |
+| `import java.sql.Date;` … `new java.util.Date().getTime()` | Extract field | `private final Date date = …` plus the same second import |
+| a type the source only names fully qualified | Extract variable, extract constant | the simple name, with no import at all |
+
+Only the top-level type is imported, never a generic argument (`Map<String, AtomicLong>`).
+
+### Fix direction
+
+Use what extract method and implement-abstract-methods already share:
+`CodeActionSupport.sourceTypeFormatter` writes a type whose simple name the file gives another type (by an import or
+a declaration) fully qualified, and `CodeActionSupport.importEditsFor` imports every other type the text names,
+generic arguments included, skipping those.
+Then `importEditFor` and `typeFqn` can go.
+
+### Resolution
+
+Replace `var`, extract variable, extract field and declare local variable now write their type through
+`CodeActionSupport.sourceType`, which pairs what extract method and implement-abstract-methods already shared:
+`sourceTypeFormatter` writes a type whose simple name the file gives another type fully qualified, and
+`importEditsFor` imports every other type the text names, generic arguments included.
+`importEditFor` and `typeFqn` are gone.
+Declare local variable also writes the full type now (`List<String> x`) rather than its raw simple name.
+Extract constant takes the same path, but only ever writes a primitive or `String`, so it was never affected.
+
+### Regression targets
+
+`CodeActionTest.codeAction_typeWritingRefactors_typeNamedLikeAnotherInTheFile_writtenQualified`,
+`CodeActionTest.codeAction_extractVariable_typeOnlyNamedQualified_importsItAndItsArguments`.
+
+---
+
 ## CA-12 — Import candidates are not ranked: `java.awt.List` and `kotlin.Function` tie with the obvious choice — done
 
 **Status: done.**
@@ -10557,6 +10660,40 @@ back carrying `moduleRel == ""` instead of throwing.
 ---
 
 # Debug (DB) — resolved
+
+## DB-8 — A debugged test's JVM outlives the server — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+A test launched by `lathe.debug.test` stays running, suspended, after the server exits: on a clean shutdown/exit, on stdin EOF and on SIGTERM.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Destroy the debuggee's process tree when the server shuts down, as test runs are.
+
+### Resolution
+
+Nothing ended the server's child processes when its JVM exited:
+a test run or a debuggee suspended at a breakpoint kept running after the editor or agent went away.
+`ChildProcesses.destroyOnExit`, registered first thing by both the language server and the MCP server,
+adds a shutdown hook that kills every descendant process forcibly, without waiting.
+It covers `exit`, the end of input and SIGTERM (not SIGKILL, which no hook sees),
+and formatter and plain run processes as well as the debuggee.
+
+### Regression targets
+
+`ChildProcessesTest.destroyOnExit_parentExits_childIsKilledOnlyWithTheHook`.
+
+---
 
 ## DB-3 — Object-scoped `evaluate` overload — done
 

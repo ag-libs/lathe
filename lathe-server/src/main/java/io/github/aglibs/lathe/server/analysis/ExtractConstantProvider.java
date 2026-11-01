@@ -71,13 +71,17 @@ final class ExtractConstantProvider {
     }
 
     final String exprSource = source.substring((int) exprStart, (int) exprEnd);
-    final String typeText = new TypeDisplayFormatter(analysis.types()).format(type);
+    final var written = CodeActionSupport.sourceType(analysis, exprPath, type);
     final String name = constantName(expr, (ClassTree) classPath.getLeaf());
-    final TextEdit importEdit =
-        CodeActionSupport.importEditFor(analysis, CodeActionSupport.typeFqn(type));
     final TextEdit insert =
         insertConstantEdit(
-            (ClassTree) classPath.getLeaf(), cu, positions, source, typeText, name, exprSource);
+            (ClassTree) classPath.getLeaf(),
+            cu,
+            positions,
+            source,
+            written.text(),
+            name,
+            exprSource);
     if (insert == null) {
       return List.of();
     }
@@ -91,7 +95,7 @@ final class ExtractConstantProvider {
             ExtractionSupport.editList(
                 insert,
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
-                importEdit)));
+                written.imports())));
 
     final List<TreePath> occurrences = ExtractionSupport.occurrences(classPath, exprPath, trees);
     if (occurrences.size() >= 2) {
@@ -111,7 +115,7 @@ final class ExtractConstantProvider {
               "Extract constant '%s' (replace all %d occurrences)"
                   .formatted(name, occurrences.size()),
               ExtractionSupport.CONSTANT_KIND,
-              ExtractionSupport.editList(insert, replaces, importEdit)));
+              ExtractionSupport.editList(insert, replaces, written.imports())));
     }
 
     LOG.fine(() -> "[codeAction:extractConst] %s actions=%d".formatted(name, actions.size()));
