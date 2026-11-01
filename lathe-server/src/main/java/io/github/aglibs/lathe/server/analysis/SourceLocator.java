@@ -5,6 +5,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.MemberReferenceTree.ReferenceMode;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
@@ -637,6 +638,11 @@ public final class SourceLocator {
       i--;
     }
     return i;
+  }
+
+  // javac names a constructor reference `<init>`; the source says `new`
+  static String referenceName(final MemberReferenceTree node) {
+    return node.getMode() == ReferenceMode.NEW ? "new" : node.getName().toString();
   }
 
   public static long findIdentifierFrom(

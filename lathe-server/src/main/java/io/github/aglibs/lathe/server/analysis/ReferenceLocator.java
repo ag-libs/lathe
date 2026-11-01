@@ -111,7 +111,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
     if (target.matchesFamily(element, types, elements, targetMethod)) {
-      addMatchAtIdentifier(node, node.getName().toString(), ReferenceRole.INVOCATION);
+      addMatchAtIdentifier(node, SourceLocator.referenceName(node), ReferenceRole.INVOCATION);
     }
     return null;
   }

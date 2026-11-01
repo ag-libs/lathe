@@ -130,7 +130,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
-      final String name = node.getName().toString();
+      final String name = SourceLocator.referenceName(node);
       final long startOff =
           SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (startOff >= 0) {
