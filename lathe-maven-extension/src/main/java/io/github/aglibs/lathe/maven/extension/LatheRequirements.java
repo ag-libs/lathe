@@ -48,10 +48,7 @@ final class LatheRequirements {
   }
 
   private static Optional<String> oldCompilerVersion(final MavenProject project) {
-    return LatheModelInjector.findPlugin(
-            project,
-            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
-            LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_ARTIFACT_ID)
+    return LatheModelInjector.compilerPlugin(project)
         .map(Plugin::getVersion)
         .filter(version -> isOlder(version, LatheLayout.Maven.MIN_COMPILER_PLUGIN_VERSION));
   }
