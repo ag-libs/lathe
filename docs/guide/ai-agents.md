@@ -68,7 +68,6 @@ claude mcp add --transport stdio lathe -- .lathe/lathe-mcp-launcher.sh
 - **Run it from the project root.** The server finds its reactor by walking up from its working
   directory to the nearest `.lathe/`, so the client must launch it with the project as its cwd — which
   is also what resolves the relative launcher path.
-  Started from a module's directory, the launcher misses the root's `.lathe/java-home` and `jvm.args` and runs on the `java` on your `PATH`.
 - **Scope.** The default scope is this project, for you only. Add `--scope project` to write a shared
   `.mcp.json` you can commit so teammates get the same setup — the relative path keeps it portable.
 - **One registration for every project** — register the user-global launcher once at user scope:

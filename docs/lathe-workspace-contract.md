@@ -101,7 +101,8 @@ They are plain files, not symlinks, so `.lathe/` works where links can't be crea
 Every sync rewrites them when their content changes.
 The scripts pick the JVM as `$LATHE_JAVA_HOME`, else the content of `.lathe/java-home`, else `java` on `PATH`,
 then add `@.lathe/jvm.args` when present and `$LATHE_JVM_OPTS`, before the argfile.
-`java-home` and `jvm.args` are resolved relative to the working directory, so clients spawn the launcher with the workspace root as cwd.
+`java-home` and `jvm.args` are read from the nearest `.lathe/` in the working directory or above it, the one the
+server walks up to as well, so a launcher started in a module directory still uses the root's.
 
 ### `lathe.lock`, `module.lock`
 
