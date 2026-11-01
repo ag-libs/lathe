@@ -141,6 +141,11 @@ final class ExtractMethodProvider {
                         .anyMatch(type -> declaredInside(type, member, trees))
                     ? Stream.of("a type is local to the member")
                     : Stream.<String>empty(),
+                signatureTypes.stream()
+                        .flatMap(CodeActionSupport::typesIn)
+                        .anyMatch(type -> !accessible(type, member, trees))
+                    ? Stream.of("a type is not accessible here")
+                    : Stream.<String>empty(),
                 isConstructorCallArgument(region.get(0), member, trees)
                         && hasEnclosingInstance(member.getParentPath(), trees)
                     ? Stream.of("an inner class's this(...) or super(...) argument")
@@ -630,6 +635,15 @@ final class ExtractMethodProvider {
     return method.getTypeParameters().stream()
         .filter(parameter -> needed.contains(trees.getElement(new TreePath(member, parameter))))
         .collect(Collectors.toUnmodifiableList());
+  }
+
+  // Whether code in the member could name the type: a private nested type of another class is
+  // returned by its methods but cannot be written outside it.
+  private static boolean accessible(
+      final TypeMirror type, final TreePath member, final Trees trees) {
+    return !(type instanceof final DeclaredType declared)
+        || !(declared.asElement() instanceof final TypeElement element)
+        || trees.isAccessible(trees.getScope(member), element);
   }
 
   // A local class declared in the member the code leaves: the new method, beside the member, cannot

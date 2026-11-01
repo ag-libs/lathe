@@ -2033,6 +2033,39 @@ class CodeActionTest {
   }
 
   @Test
+  void codeAction_extractMethod_typeNameOfTheFile_keptOrRefusedWhenUnwritable() {
+    // a nested type the file imports keeps the name the file uses
+    final String imported =
+        """
+        package com.example;
+        import java.util.Map.Entry;
+        class Test {
+          int m(Entry<String, String> e) { return «e.hashCode() + 1»; }
+        }
+        """;
+    final String rewritten =
+        applyEdits(
+            unmarked(imported),
+            editsOfActionStartingWith(markedActions(imported), "Extract method"));
+    assertThat(rewritten).contains("private int extracted(Entry<String, String> e)");
+    assertCompilesClean(rewritten);
+
+    // another class's private nested type, returned by its method, cannot be written here
+    final String hidden =
+        """
+        package com.example;
+        class Other {
+          private static class Hidden {}
+          static Hidden make() { return new Hidden(); }
+        }
+        class Test {
+          Object m() { return «Other.make()»; }
+        }
+        """;
+    assertThat(rightTitles(markedActions(hidden))).noneMatch(t -> t.startsWith("Extract method"));
+  }
+
+  @Test
   void codeAction_extractMethod_statementCopies_calledWithTheirOwnLocals() {
     // a copy in another method, its locals and its declaration named differently
     final String source =

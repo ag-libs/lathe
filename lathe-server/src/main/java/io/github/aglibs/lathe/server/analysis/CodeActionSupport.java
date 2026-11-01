@@ -158,10 +158,15 @@ final class CodeActionSupport {
   }
 
   // The type a written name starts from: the type itself, or for a nested type `target` cannot see
-  // by its simple name, the nearest enclosing type it can (or the top-level type).
+  // by its simple name (as a member, or through an import of it), the nearest enclosing type it can
+  // (or the top-level type).
   private static TypeElement nameRoot(
       final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    return type.getNestingKind() == NestingKind.MEMBER && !memberTypeInScope(analysis, target, type)
+    return type.getNestingKind() == NestingKind.MEMBER
+            && !memberTypeInScope(analysis, target, type)
+            && !new ImportAnalyzer(analysis)
+                .importedQualifiedNames()
+                .contains(type.getQualifiedName().toString())
         ? nameRoot(analysis, target, (TypeElement) type.getEnclosingElement())
         : type;
   }
