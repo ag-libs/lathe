@@ -1982,6 +1982,14 @@ class CodeActionTest {
         applyEdits(
             unmarked(source), editsOfActionStartingWith(actions, "Extract method 'extracted'")));
 
+    // an if's parentheses are the statement's: replaced, `if extracted()` would not parse
+    assertThat(
+            rightTitles(
+                markedActions(
+                    inTestClass(
+                        "boolean m(Object o) { boolean b = «(o == null)»; if (o == null) { use(o); } return b; }"))))
+        .contains("Extract method 'extracted'")
+        .noneMatch(t -> t.startsWith("Extract method 'extracted' (replace all"));
     // a copy in an annotation value is not a copy: it needs a constant, not a call
     assertThat(
             rightTitles(

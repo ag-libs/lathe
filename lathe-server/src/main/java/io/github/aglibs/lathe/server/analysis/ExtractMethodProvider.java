@@ -11,6 +11,7 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewArrayTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
@@ -61,6 +62,14 @@ final class ExtractMethodProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractMethodProvider.class.getName());
   private static final String BASE_NAME = "extracted";
+  private static final Set<Tree.Kind> STATEMENT_PARENTHESES =
+      Set.of(
+          Tree.Kind.IF,
+          Tree.Kind.WHILE_LOOP,
+          Tree.Kind.DO_WHILE_LOOP,
+          Tree.Kind.SWITCH,
+          Tree.Kind.SWITCH_EXPRESSION,
+          Tree.Kind.SYNCHRONIZED);
 
   List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
@@ -562,8 +571,16 @@ final class ExtractMethodProvider {
         && !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
         && !ExtractionSupport.isAssignmentTarget(exprPath)
         && !isEnumConstantCreation(exprPath, trees)
+        && !isStatementParentheses(exprPath)
         && Stream.iterate(exprPath, Objects::nonNull, TreePath::getParentPath)
             .noneMatch(path -> path.getLeaf() instanceof AnnotationTree || isCaseLabel(path));
+  }
+
+  // The parentheses of an if, while, do, switch or synchronized belong to the statement:
+  // `if extracted()` is not Java.
+  private static boolean isStatementParentheses(final TreePath path) {
+    return path.getLeaf() instanceof ParenthesizedTree
+        && STATEMENT_PARENTHESES.contains(path.getParentPath().getLeaf().getKind());
   }
 
   private static boolean isEnumConstantCreation(final TreePath path, final Trees trees) {
