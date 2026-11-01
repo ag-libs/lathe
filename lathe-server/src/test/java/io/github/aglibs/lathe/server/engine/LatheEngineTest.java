@@ -19,6 +19,7 @@ import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.FormatterFixtures;
+import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheEngine.CallDirection;
@@ -1545,6 +1546,54 @@ class LatheEngineTest {
     assertThat(engine.verifyChange(List.of()).affectedModules())
         .as("a package declaration no file names reaches every dependent")
         .containsExactly("app1", "app2", "idle");
+  }
+
+  // Lombok reads lombok.config when it compiles: an edit to it changes the classes below it, though
+  // every source is still what the build compiled.
+  @Test
+  @EnabledForJreRange(maxVersion = LombokFixtures.MAX_JDK)
+  void verifyChange_lombokConfigEdited_checksTheSourcesBelowIt() throws Exception {
+    final Path root = tmp.resolve("module/src/main/java");
+    final Path config =
+        TestCompiler.writeAt(
+            tmp.resolve("module").resolve(LatheLayout.LOMBOK_CONFIG_FILE),
+            "lombok.accessors.prefix += f\n",
+            1_000L);
+    final Path person =
+        TestCompiler.writeAt(
+            root.resolve("com/example/Person.java"),
+            "package com.example;\n@lombok.Getter class Person { private int fCount; }\n",
+            1_000L);
+    final Path use =
+        TestCompiler.writeAt(
+            root.resolve("com/example/Use.java"),
+            "package com.example;\nclass Use { int u(final Person p) { return p.getCount(); } }\n",
+            1_000L);
+    TestCompiler.writeModuleParams(
+        tmp,
+        "module",
+        List.of(root),
+        null,
+        List.of(LombokFixtures.jar()),
+        List.of(LombokFixtures.jar()),
+        List.of());
+    // The first session compiles the mirror; the build then records what it compiled.
+    engine = new LatheEngine(tmp);
+    engine.verifyChange(List.of());
+    engine.close();
+    stampModule(person, use);
+    engine = new LatheEngine(tmp);
+    assertThat(engine.verifyChange(List.of(person, use)).perModule()).isEmpty();
+
+    Files.writeString(config, "");
+
+    assertThat(engine.verifyChange(List.of(person, use)).perModule())
+        .singleElement()
+        .satisfies(
+            module ->
+                assertThat(module.diagnostics())
+                    .extracting(located -> located.diagnostic().getMessage().getLeft())
+                    .anySatisfy(message -> assertThat(message).contains("getCount()")));
   }
 
   @Test

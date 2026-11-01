@@ -238,6 +238,13 @@ final class WorkspaceSession {
   // Files the pass wrote since a verify_change last took them, reported or caught up from disk: the
   // write stamps them, so verify_change's own stale scan would not list them. At most every source.
   private final Set<Path> writtenSinceVerify = new HashSet<>();
+  // The lombok.config files over the source roots (in a directory from one up to the workspace
+  // root) when the workspace loaded, with their mtimes as the last pass saw them, 0 once deleted;
+  // null until the first pass after a load finds them.
+  private Map<Path, Long> lombokConfigMtimes;
+  // Sources below a lombok.config edited since the build: their classes change though their text
+  // is what the build compiled, so verify_change counts them as changed.
+  private final Set<Path> lombokChangedSources = new HashSet<>();
   private long reportCount;
   // Per open file, the diagnostics of its last write and the content written: merged into its
   // publishes while it still has that content, for what analysis cannot report (annotation
@@ -3667,6 +3674,11 @@ final class WorkspaceSession {
                     Map.Entry::getKey, Map.Entry::getValue, (first, ignored) -> first));
     trees.forEach(this::refreshIfWrittenElsewhere);
     trees.forEach(this::reconcileDeletedSourcesIn);
+    // Under a build the configs it compiles with are its own; the first pass after it compares.
+    if (!building) {
+      reportLombokConfigChanges(trees);
+    }
+
     // Not under a build: it rewrites the stamps itself, and a touched source is current meanwhile.
     if (!building) {
       trees.forEach(tree -> recordStamps(tree.config(), tree.touched()));
@@ -3914,9 +3926,57 @@ final class WorkspaceSession {
   // Files the editor saved or the MCP engine wrote: written by a pass, the next one if a pass is
   // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    report(changed);
+    return requestPass(false).thenAccept(stale -> {});
+  }
+
+  private void report(final Collection<Path> changed) {
     changed.forEach(source -> reported.put(source, ++reportCount));
     writtenSinceVerify.addAll(changed);
-    return requestPass(false).thenAccept(stale -> {});
+  }
+
+  // Lombok reads its config when it compiles, so an edited one rewrites every source below it. Only
+  // the configs there were at load are watched, each pass a stat apiece (most projects have none);
+  // one added later counts from the next reload. A config inside a source root's packages is not
+  // watched: the usual one sits above the roots.
+  private void reportLombokConfigChanges(final List<TreeState> trees) {
+    final Map<Path, Long> previous = lombokConfigMtimes;
+    final Set<Path> watched =
+        previous != null
+            ? previous.keySet()
+            : trees.stream()
+                .flatMap(tree -> tree.sourcesByRoot().keySet().stream())
+                .flatMap(this::lombokConfigCandidates)
+                .filter(Files::isRegularFile)
+                .collect(Collectors.toUnmodifiableSet());
+    final Map<Path, Long> current =
+        watched.stream()
+            .collect(
+                Collectors.toUnmodifiableMap(Function.identity(), WorkspaceSession::mtimeMillis));
+    lombokConfigMtimes = current;
+    if (previous == null) {
+      return;
+    }
+
+    final List<Path> changedDirs =
+        current.entrySet().stream()
+            .filter(config -> !config.getValue().equals(previous.get(config.getKey())))
+            .map(config -> config.getKey().getParent())
+            .toList();
+    final List<Path> below =
+        trees.stream()
+            .flatMap(tree -> tree.sourcesByRoot().values().stream())
+            .flatMap(sources -> sources.keySet().stream())
+            .filter(source -> changedDirs.stream().anyMatch(source::startsWith))
+            .toList();
+    lombokChangedSources.addAll(below);
+    report(below);
+  }
+
+  private Stream<Path> lombokConfigCandidates(final Path sourceRoot) {
+    return Stream.iterate(
+            sourceRoot, dir -> dir != null && dir.startsWith(workspaceRoot), Path::getParent)
+        .map(dir -> dir.resolve(LatheLayout.LOMBOK_CONFIG_FILE));
   }
 
   // The engine's freshen step, before every MCP query and verify_change: the watcher's check, so
@@ -3975,7 +4035,7 @@ final class WorkspaceSession {
     final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree = new HashMap<>();
     final List<Path> differing = new ArrayList<>();
     for (final Path file : changed) {
-      if (!backToBuilt(file, builtByTree)) {
+      if (lombokChangedSources.contains(file) || !backToBuilt(file, builtByTree)) {
         differing.add(file);
       }
     }
@@ -4938,6 +4998,8 @@ final class WorkspaceSession {
   }
 
   private void reloadWorkspace() {
+    lombokChangedSources.clear();
+    lombokConfigMtimes = null;
     final var newManifest = WorkspaceManifest.load(workspaceRoot);
     if (watcher != null) {
       watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());

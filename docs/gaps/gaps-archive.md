@@ -11068,6 +11068,49 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
+
+### Observed behaviour
+
+After an agent removes `lombok.accessors.prefix` from a `lombok.config`, `verify_change` on the affected files answers "No errors" in milliseconds, while `get_diagnostics` shows the `getCount()` error.
+Files whose `.java` content equals the last build count as unchanged, and a `lombok.config` change is not a change.
+
+### Fix direction
+
+Count a changed `lombok.config` as a change to the sources below it.
+
+### Resolution
+
+When a workspace loads, the server notes the `lombok.config` files over its source roots (one per
+directory from a root up to the workspace root); each pass stats just those (most projects have
+none). An edited or deleted one reports every source below its directory for a write, so the mirror's
+classes follow the new settings, and those sources count as changed for `verify_change` until the
+next sync, though their text is what the build compiled (`WorkspaceSession.reportLombokConfigChanges`).
+Passes under a running build skip the check; the first pass after it compares.
+A config added after the load counts from the next reload, and one inside a source root's packages
+is not watched; the usual one sits above the roots.
+
+Verified end to end on the `lombok` invoker fixture (2026-11-01): adding `lombok.accessors.fluent = true`
+in a `model/lombok.config` makes `verify_change` on `Person.java` report the `getName()` error, and
+removing it clears it (run before the check was limited to configs present at load).
+Known limit: Lombok caches a config file in-process and rechecks the file system about every two
+seconds, so a second config edit checked within two seconds of the previous compile can still see
+the old settings; the next check sees the new ones.
+
+### Regression targets
+
+- `LatheEngineTest.verifyChange_lombokConfigEdited_checksTheSourcesBelowIt` (fails without the change).
+
+---
+
 ## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see — done
 
 **Status: done.**

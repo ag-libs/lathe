@@ -1817,31 +1817,6 @@ None yet.
 
 ---
 
-## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
-
-**Status: accepted**
-
-**Value: high — Size: M**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on a Lombok project.
-
-### Observed behaviour
-
-After an agent removes `lombok.accessors.prefix` from a `lombok.config`, `verify_change` on the affected files answers "No errors" in milliseconds, while `get_diagnostics` shows the `getCount()` error.
-Files whose `.java` content equals the last build count as unchanged, and a `lombok.config` change is not a change.
-
-### Fix direction
-
-Count a changed `lombok.config` as a change to the sources below it.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
 
 **Status: accepted**
