@@ -56,6 +56,65 @@ Not done: `fix_imports` still lists a name with several matches as ambiguous, no
 
 ---
 
+## EG-066 — Started from a module subdirectory, Lathe runs on the wrong JDK or does not start — done
+
+**Status: done.**
+
+Decision (2026-10-27): not before the release; the fix touches the generated launchers on every OS.
+Done 2026-11-01.
+**Affects: the editor and MCP.**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier.
+
+### Observed behaviour
+
+- **Launchers.** `lathe-launcher.sh` and `lathe-mcp-launcher.sh` read `.lathe/java-home` and
+  `.lathe/jvm.args` relative to the working directory, while the server itself walks up to the nearest
+  `.lathe/`.
+  The user-global `~/.cache/lathe/latest/lathe-mcp-launcher.sh`, started in `equalsverifier-core/` (an agent
+  launched in a module), finds neither and runs on the `java` on `PATH`.
+  With JDK 17 first on `PATH`, files of the release-17 modules work, but a file of `equalsverifier-26` takes
+  30 s and answers `the request failed; see the server log`; the log has
+  `IllegalArgumentException: error: release version 26 not supported`.
+  The module-access flags of `jvm.args` are dropped too.
+  The `[startup]` line does not name the JVM, so the mismatch is invisible.
+- **The 30 s wait.** A compile that throws (here javac refusing the release) only publishes the error to the
+  editor (`WorkspaceSession.submitTo` → `publishError`); the engine's `diagnosticsFuture` waiting on it is never
+  completed, so the request runs into its timeout instead of failing at once with javac's reason.
+  The extract method sweep (2026-11-01) hung the same way on Helidon's release-27 modules from a JDK 26 JVM.
+- **VS Code.** The extension looks only for `<opened folder>/.lathe/lathe-launcher.sh`.
+  Opening a module folder answers "no launcher … run a Lathe-enabled build to generate it", although the
+  build already ran at the root.
+
+### Fix direction
+
+Launchers resolve `.lathe/` the way the server does (walk up from the working directory) and read
+`java-home` and `jvm.args` from there.
+The VS Code extension walks up from the opened folder.
+`[startup]` logs `java.home` and the Java version.
+A failed compile completes the engine's waiting future exceptionally, so the request fails at once with the
+compiler's message.
+
+### Delivered (2026-11-01)
+
+- The server and MCP launchers (POSIX and cmd) walk up from the working directory to the nearest `.lathe/`, as
+  the server does, and read `java-home` and `jvm.args` there.
+- The VS Code extension starts the launcher of the nearest `.lathe/` above the opened folder, from that root.
+- The `[startup]` lines (and the compiler's build-log line) end with `java=<version> java.home=<…>`.
+- A compile that throws completes the engine's diagnostics future exceptionally, so MCP tools fail at once with
+  the cause instead of after 30 s.
+- The MCP server's walk-up is `LatheWorkspace.nearestRoot`, shared with builds' `findRoot`.
+
+### Regression targets
+
+- `LauncherScriptTest.render_startedInAModuleDirectory_readsTheWorkspaceRootLathe` (runs the `.cmd` on Windows).
+- `lathe-vscode` `launch.test.ts`: `findWorkspaceRoot walks up from a module folder to the nearest .lathe`.
+- `LatheBuildInfoTest.summary_anyClass_namesTheRunningJvm`.
+- `LatheTextDocumentServiceTest.diagnosticsFuture_compileThrows_failsAtOnceWithTheCause`.
+- `LatheWorkspaceTest.findRoot_disabled_returnsEmptyButNearestRootFindsIt`.
+
+---
+
 ## EG-075 — A build on a root `pom` module looks up the newest compiler plugin online — done
 
 **Status: done.**
