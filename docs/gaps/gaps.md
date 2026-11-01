@@ -360,6 +360,10 @@ Found by the pre-release probes (2026-10-27) on EqualsVerifier.
   `IllegalArgumentException: error: release version 26 not supported`.
   The module-access flags of `jvm.args` are dropped too.
   The `[startup]` line does not name the JVM, so the mismatch is invisible.
+- **The 30 s wait.** A compile that throws (here javac refusing the release) only publishes the error to the
+  editor (`WorkspaceSession.submitTo` → `publishError`); the engine's `diagnosticsFuture` waiting on it is never
+  completed, so the request runs into its timeout instead of failing at once with javac's reason.
+  The extract method sweep (2026-11-01) hung the same way on Helidon's release-27 modules from a JDK 26 JVM.
 - **VS Code.** The extension looks only for `<opened folder>/.lathe/lathe-launcher.sh`.
   Opening a module folder answers "no launcher … run a Lathe-enabled build to generate it", although the
   build already ran at the root.
@@ -370,6 +374,8 @@ Launchers resolve `.lathe/` the way the server does (walk up from the working di
 `java-home` and `jvm.args` from there.
 The VS Code extension walks up from the opened folder.
 `[startup]` logs `java.home` and the Java version.
+A failed compile completes the engine's waiting future exceptionally, so the request fails at once with the
+compiler's message.
 
 ### Regression targets
 

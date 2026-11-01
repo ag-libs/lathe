@@ -42,6 +42,7 @@ import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.tools.JavaCompiler;
 import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
@@ -65,11 +66,11 @@ import org.eclipse.lsp4j.services.LanguageClient;
 //
 //   java -Xmx3g -cp <server jar>:<test classes>:<deps>
 // io.github.aglibs.lathe.server.ExtractMethodSweep
-//       <repo> <out dir> [--files N] [--seed S] [--resolve FRACTION]
+//       <repo> <out dir> [--files N] [--seed S] [--resolve FRACTION] [--only a.java,b.java]
 public final class ExtractMethodSweep {
 
   private static final int MAX_RUN = 5;
-  private static final long TIMEOUT_SECONDS = 120;
+  private static final long TIMEOUT_SECONDS = Long.getLong("sweep.timeout", 300);
   // Held strongly: JUL keeps loggers weakly, and a collected one would take its level with it.
   private static final Logger PROVIDER_LOG =
       Logger.getLogger("io.github.aglibs.lathe.server.analysis.ExtractMethodProvider");
@@ -116,7 +117,11 @@ public final class ExtractMethodSweep {
     Files.deleteIfExists(out.resolve("results.jsonl"));
     final var sweep = new ExtractMethodSweep(repo, out, resolve, seed);
     try {
-      sweep.run(files);
+      sweep.run(
+          files,
+          Stream.of(option(args, "--only", "").split(","))
+              .filter(name -> !name.isBlank())
+              .toList());
     } finally {
       sweep.service.close();
     }
@@ -124,23 +129,45 @@ public final class ExtractMethodSweep {
     System.exit(0);
   }
 
-  private void run(final int maxFiles) throws Exception {
+  private void run(final int maxFiles, final List<String> only) throws Exception {
     captureLogs();
     service.connect(noopClient());
     service.setDocumentsFollowDisk(true);
     service.setCodeActionResolveSupported(true);
     service.initialize(repo);
+    // As LatheEngine does before its first compile: bring the mirror up to date.
+    service.reconcileForVerify().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     final List<Path> files =
         new ArrayList<>(FileUtil.walkFiles(repo, ExtractMethodSweep::isSource));
     Collections.sort(files);
     Collections.shuffle(files, random);
-    final List<Path> chosen = files.subList(0, Math.min(maxFiles, files.size()));
+    final List<Path> chosen =
+        only.isEmpty()
+            ? files.subList(0, Math.min(maxFiles, files.size()))
+            : only.stream().map(repo::resolve).toList();
     final var t = Stopwatch.start();
     for (int i = 0; i < chosen.size(); i++) {
       final Path file = chosen.get(i);
       final int done = i;
-      sweepFile(file);
+      try {
+        sweepFile(file);
+      } catch (final Exception e) {
+        // A file the server cannot open in time is a finding of its own; the sweep goes on.
+        count(outcomes, "file failed: %s".formatted(e.getClass().getSimpleName()));
+        findings++;
+        append(
+            "findings.md",
+            "### file failed: %s\n\n`%s`\n\n```\n%s\n```\n"
+                .formatted(
+                    e,
+                    repo.relativize(file),
+                    drainRecords().stream()
+                        .filter(r -> r.getLevel().intValue() >= Level.WARNING.intValue())
+                        .map(ExtractMethodSweep::describe)
+                        .collect(Collectors.joining("\n"))));
+      }
+
       if (done % 20 == 0) {
         System.err.printf(
             "[sweep] %d/%d files %ds %s%n", done, chosen.size(), t.elapsedMs() / 1000, outcomes);
