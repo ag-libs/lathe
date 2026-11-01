@@ -17,6 +17,7 @@ public final class LatheServer {
 
   public static void main(final String[] ignored) throws Exception {
     LatheLogging.init();
+    ChildProcesses.destroyOnExit();
 
     LOG.info(
         () -> "[startup] server %s starting".formatted(LatheBuildInfo.summary(LatheServer.class)));

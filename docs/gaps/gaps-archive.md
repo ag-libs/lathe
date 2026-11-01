@@ -10558,6 +10558,40 @@ back carrying `moduleRel == ""` instead of throwing.
 
 # Debug (DB) — resolved
 
+## DB-8 — A debugged test's JVM outlives the server — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
+
+### Observed behaviour
+
+A test launched by `lathe.debug.test` stays running, suspended, after the server exits: on a clean shutdown/exit, on stdin EOF and on SIGTERM.
+0.1.24 behaves the same.
+
+### Fix direction
+
+Destroy the debuggee's process tree when the server shuts down, as test runs are.
+
+### Resolution
+
+Nothing ended the server's child processes when its JVM exited:
+a test run or a debuggee suspended at a breakpoint kept running after the editor or agent went away.
+`ChildProcesses.destroyOnExit`, registered first thing by both the language server and the MCP server,
+adds a shutdown hook that kills every descendant process forcibly, without waiting.
+It covers `exit`, the end of input and SIGTERM (not SIGKILL, which no hook sees),
+and formatter and plain run processes as well as the debuggee.
+
+### Regression targets
+
+`ChildProcessesTest.destroyOnExit_parentExits_childIsKilledOnlyWithTheHook`.
+
+---
+
 ## DB-3 — Object-scoped `evaluate` overload — done
 
 **Status: done — Target: M2.**

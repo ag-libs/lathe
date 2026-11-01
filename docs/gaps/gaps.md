@@ -1317,31 +1317,6 @@ python3 -I /tmp/lt/db7_probe.py <ws> none <core/StringUtils.java>:8 <app/Main.ja
 
 ---
 
-## DB-8 — A debugged test's JVM outlives the server
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier.
-
-### Observed behaviour
-
-A test launched by `lathe.debug.test` stays running, suspended, after the server exits: on a clean shutdown/exit, on stdin EOF and on SIGTERM.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Destroy the debuggee's process tree when the server shuts down, as test runs are.
-
-### Regression targets
-
-None yet.
-
----
-
 # Neovim Client Gaps (NV)
 
 Gaps in the shipped Neovim client plugin (`lua/lathe/…`) and its recommended configuration, as distinct from the server's LSP/DAP surface.
