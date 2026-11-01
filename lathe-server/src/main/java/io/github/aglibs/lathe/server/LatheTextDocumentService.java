@@ -664,6 +664,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
         .thenCompose(f -> f);
   }
 
+  public CompletableFuture<Optional<String>> failingUnderFuture(final Path file) {
+    return worker.submit(() -> session.failingUnder(file));
+  }
+
   /** What an answer about {@code files} cannot vouch for, after the last write pass. */
   public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
     return worker.submit(() -> session.notes(files));

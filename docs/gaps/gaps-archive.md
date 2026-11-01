@@ -11068,6 +11068,57 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-60 — `run_test` does not return a failing test's output — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `run_test`.**
+
+Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
+
+### Observed behaviour
+
+A probe test printed the code action's edits with `System.out.println` before its assertion.
+`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
+so the agent had to move the value into the assertion's message and run again.
+Logs and printed state are often what explains a failure.
+
+### Fix direction
+
+For each failed test, the last lines of its standard output and error, capped (say 40 lines),
+from the transcript the launch already drains (`LaunchSession`).
+Nothing for passing tests.
+IntelliJ's run tool caps output at 10,000 characters and names a file holding the rest.
+
+The same answer misleads when the test does not compile: on 2026-10-31 `run_test` reported
+0 passed, 0 failed, 0 skipped for a test file with two errors
+(see [MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)).
+Say the test did not compile, with its errors, as numsu/java-lsp-mcp's `compile-failed` does.
+
+### Resolution
+
+- Each failed test carries the last 40 lines it printed (`LatheTestFailure.output`): transcript lines
+  carry the test they belong to (`positionId`), as the test results do, so each failure gets its own.
+- A run where no test reported back answers "No test ran (exit N)" with the run's last 40 lines, not
+  "PASS — 0 passed".
+- A test whose module, or a module it depends on, has a source that does not compile is not run on
+  the last good classes: `run_test` answers "X.java was not run: code it runs does not compile:
+  <file:line: error>", asking the session's failed compiles, not the notes' text.
+- A class-level failure (`@BeforeAll`, a static initializer) shows the output printed outside any test.
+
+Verified end to end on Dropwizard (2026-11-01): a failing probe test shows what it printed, and the
+same file with a syntax error is refused with the error.
+
+### Regression targets
+
+- `LatheEngineTest.latheTestRun_completedOutcome_mapsCountsAndFailureWithItsOutput`
+- `LatheEngineTest.latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput`
+- `LatheEngineTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
+
+---
+
 ## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing — done
 
 **Status: done.**
@@ -11512,7 +11563,7 @@ has no sources) and `run_test` on `Duration.java` (names `DurationTest.java`); H
 
 - `LatheEngineTest.format_noFormatter_namesTheStyleFile_unresolvedOne_namesTheSync`
 - `LatheEngineTest.notes_fileNoModuleCompiles_notCheckedWithItsCause`
-- `LatheEngineTest.runTest_fileWithNoTest_namesItsTestClass_orWhyNoModuleCompilesIt`
+- `LatheEngineTest.runTest_fileWithNoTestOrNotCompiling_saysWhy`
 
 ---
 

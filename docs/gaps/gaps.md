@@ -1962,41 +1962,6 @@ None yet.
 
 ---
 
-## MC-60 — `run_test` does not return a failing test's output
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `run_test`.**
-
-Found by a refactoring review of Lathe itself through its own MCP server (2026-10-30).
-
-### Observed behaviour
-
-A probe test printed the code action's edits with `System.out.println` before its assertion.
-`run_test` returned the failure's message and line only (`LatheTestFailure`: test, summary, line),
-so the agent had to move the value into the assertion's message and run again.
-Logs and printed state are often what explains a failure.
-
-### Fix direction
-
-For each failed test, the last lines of its standard output and error, capped (say 40 lines),
-from the transcript the launch already drains (`LaunchSession`).
-Nothing for passing tests.
-IntelliJ's run tool caps output at 10,000 characters and names a file holding the rest.
-
-The same answer misleads when the test does not compile: on 2026-10-31 `run_test` reported
-0 passed, 0 failed, 0 skipped for a test file with two errors
-(see [MC-58](gaps-archive.md#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes--done)).
-Say the test did not compile, with its errors, as numsu/java-lsp-mcp's `compile-failed` does.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-61 — No overview of how a type's members are used
 
 **Status: documented**

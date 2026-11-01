@@ -577,6 +577,14 @@ public final class LatheEngine {
    */
   public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
     compileFromDisk(file);
+    // Replaying the last good classes would answer for code that is no longer there.
+    await(service.failingUnderFuture(file))
+        .ifPresent(
+            error -> {
+              throw new Refused(
+                  "%s was not run: code it runs does not compile: %s"
+                      .formatted(file.getFileName(), error));
+            });
     final var uri = file.toUri().toString();
     final List<RunTarget> targets = await(service.runnablesFuture(uri));
     if (targets.isEmpty()) {

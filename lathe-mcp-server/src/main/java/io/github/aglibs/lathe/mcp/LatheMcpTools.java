@@ -229,7 +229,7 @@ final class LatheMcpTools {
                 Replay a test against the compiled classpath — no full build. Runs one method, \
                 the whole test class, or its package; prefer it over the build's own test command \
                 for a single target after an edit. Returns pass/fail/skip counts and each failure's \
-                message and line. Needs a captured test-launch.json (run `%s` once); it reports \
+                message, line and last printed lines (the run's last lines when no test ran). Needs a captured test-launch.json (run `%s` once); it reports \
                 that if missing.\
                 """
                     .formatted(LatheLayout.captureTestsCommand("<module>")))
@@ -1076,6 +1076,15 @@ final class LatheMcpTools {
           "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())), notes);
     }
 
+    // No test reported back: the JVM failed before (a test that does not compile, a broken
+    // launch), so its exit code and last lines say why, not a "PASS" over nothing.
+    if (run.total() == 0) {
+      return result(
+          "No test ran (exit %d)%nRan: %s%s"
+              .formatted(run.exitCode(), String.join(", ", run.ran()), outputLines(run.output())),
+          notes);
+    }
+
     final String header =
         "%s — %d passed, %d failed, %d skipped%nRan: %s"
             .formatted(
@@ -1084,20 +1093,20 @@ final class LatheMcpTools {
                 run.failed(),
                 run.skipped(),
                 String.join(", ", run.ran()));
-    final String text =
-        run.failures().isEmpty()
-            ? header
-            : "%s%n%s"
-                .formatted(
-                    header,
-                    run.failures().stream()
-                        .map(LatheMcpTools::testFailureLine)
-                        .collect(Collectors.joining(System.lineSeparator())));
-    return result(text, notes);
+    return result(
+        header
+            + run.failures().stream()
+                .map(LatheMcpTools::testFailureLines)
+                .collect(Collectors.joining()),
+        notes);
   }
 
-  private static String testFailureLine(final LatheTestFailure f) {
-    return "  %s:%d — %s".formatted(f.test(), f.line(), f.summary());
+  private static String testFailureLines(final LatheTestFailure f) {
+    return "%n  %s:%d — %s%s".formatted(f.test(), f.line(), f.summary(), outputLines(f.output()));
+  }
+
+  private static String outputLines(final List<String> output) {
+    return output.stream().map(line -> "%n    | %s".formatted(line)).collect(Collectors.joining());
   }
 
   private static CallToolResult analyzeResult(

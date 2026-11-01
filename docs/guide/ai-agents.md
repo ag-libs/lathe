@@ -115,7 +115,7 @@ Answers are text only, with any notes after the result, so every MCP client show
 | `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its line and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
 | `rename_symbol` | `file, line, symbol or column, newName` | rename a symbol across the whole reactor and **apply the edits to disk** |
-| `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no reactor build |
+| `run_test` | `file, scope` (optional), `method` (with `scope=method`) | replay a test method / class / package from captured bytecode — no reactor build; each failure comes with the last 40 lines the test printed, and a test file that does not compile is not run |
 | `analyze_change` | `file, line, symbol or column` | before an edit: a symbol's override family, production vs test reference counts, the modules that use it, and the relevant tests |
 | `format_file` | `file` | format a file in place with the formatter the project pins (its Spotless step), so edits pass the build's formatting check; answers with the lines it rewrote |
 | `fix_imports` | `file` | add the imports a file is missing — each unresolved type with exactly one match, plus static imports the file's scope already uses elsewhere; the ambiguous ones are listed with their candidates for you to pick, and names with no match are listed too |

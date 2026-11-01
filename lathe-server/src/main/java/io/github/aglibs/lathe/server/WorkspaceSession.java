@@ -4260,16 +4260,7 @@ final class WorkspaceSession {
   // What an MCP answer cannot vouch for after its pass: files whose write failed and that are
   // unchanged since (fixed in code, retried on their next edit), and what only a sync can fix.
   LatheNotes notes(final List<Path> files) {
-    final List<String> notCompiled =
-        failedCompiles.entrySet().stream()
-            .filter(entry -> failedUnchanged(entry.getValue(), mtimeMillis(entry.getKey())))
-            .map(
-                entry ->
-                    "%s:%s"
-                        .formatted(
-                            workspaceRoot.relativize(entry.getKey()), entry.getValue().error()))
-            .sorted()
-            .toList();
+    final List<String> notCompiled = stillFailing().map(this::failedLine).sorted().toList();
     final Stream<String> pendingBuildFiles =
         buildFilesNotificationPending
             ? Stream.of("build files changed — run `%s`".formatted(LatheLayout.SYNC_SCRIPT_COMMAND))
@@ -4281,6 +4272,30 @@ final class WorkspaceSession {
         Stream.concat(pendingBuildFiles, manifest.loadProblem().stream()).toList(),
         notChecked,
         reactorBuildInProgress());
+  }
+
+  // The first source that fails to compile in the file's module or one it depends on: code it runs
+  // would be the last good classes, not what is on disk.
+  Optional<String> failingUnder(final Path file) {
+    final Set<Path> reach =
+        moduleDirOf(file)
+            .map(dir -> Stream.concat(Stream.of(dir), moduleGraph.upstreamModuleDirs(dir).stream()))
+            .orElse(Stream.empty())
+            .collect(Collectors.toUnmodifiableSet());
+    return stillFailing()
+        .filter(entry -> moduleDirOf(entry.getKey()).filter(reach::contains).isPresent())
+        .map(this::failedLine)
+        .sorted()
+        .findFirst();
+  }
+
+  private Stream<Map.Entry<Path, FailedWrite>> stillFailing() {
+    return failedCompiles.entrySet().stream()
+        .filter(entry -> failedUnchanged(entry.getValue(), mtimeMillis(entry.getKey())));
+  }
+
+  private String failedLine(final Map.Entry<Path, FailedWrite> entry) {
+    return "%s:%s".formatted(workspaceRoot.relativize(entry.getKey()), entry.getValue().error());
   }
 
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.

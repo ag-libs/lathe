@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.Position;
@@ -660,9 +661,9 @@ class LatheEngineTest {
   }
 
   // A file with no test says why: its module is outside the build, or it is the class under test,
-  // and then its test class is named.
+  // and then its test class is named; one that does not compile is not run on its old classes.
   @Test
-  void runTest_fileWithNoTest_namesItsTestClass_orWhyNoModuleCompilesIt() throws Exception {
+  void runTest_fileWithNoTestOrNotCompiling_saysWhy() throws Exception {
     final List<Path> sources =
         TestCompiler.writeMirroredModule(
             tmp,
@@ -688,6 +689,14 @@ class LatheEngineTest {
         .hasMessage("no test in Lone.java");
     assertThatThrownBy(() -> engine.runTest(outsideTheBuild, TestScope.CLASS, null))
         .hasMessageContaining("is outside the modules the last build compiled");
+
+    Files.writeString(
+        sourceNamed(sources, "Lone"), "package com.example; class Lone { Missing m; }");
+    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+        .as("another file of its module does not compile")
+        .hasMessageStartingWith("Shop.java was not run: code it runs does not compile: ")
+        .hasMessageContaining("Lone.java")
+        .hasMessageContaining("cannot find symbol");
   }
 
   private static Path sourceNamed(final List<Path> sources, final String type) {
@@ -1215,11 +1224,16 @@ class LatheEngineTest {
   }
 
   @Test
-  void latheTestRun_completedOutcome_mapsCountsAndFailure() {
+  void latheTestRun_completedOutcome_mapsCountsAndFailureWithItsOutput() {
     final var outcome =
         LaunchOutcome.completed(
             0,
-            List.of(new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok")),
+            List.of(
+                new TranscriptLine(TranscriptLine.Stream.COMMAND, "java -cp ..."),
+                new TranscriptLine(TranscriptLine.Stream.STDOUT, "ok", "passes-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDOUT, "edits: [a, b]", "fails-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDERR, "WARN retry", "fails-id"),
+                new TranscriptLine(TranscriptLine.Stream.STDERR, "setup: no database")),
             List.of(
                 new TestResult(
                     "com.example.FooTest",
@@ -1246,7 +1260,7 @@ class LatheEngineTest {
                     null,
                     null,
                     List.of(),
-                    null),
+                    "fails-id"),
                 new TestResult(
                     "com.example.FooTest",
                     "skips",
@@ -1289,18 +1303,36 @@ class LatheEngineTest {
               assertThat(f.test()).isEqualTo("com.example.FooTest#fails");
               assertThat(f.summary()).contains("boom");
               assertThat(f.line()).isEqualTo(42);
+              assertThat(f.output()).containsExactly("edits: [a, b]", "WARN retry");
             })
-        .anySatisfy(f -> assertThat(f.test()).isEqualTo("com.example.BrokenTest"));
+        .anySatisfy(
+            f -> {
+              assertThat(f.test()).isEqualTo("com.example.BrokenTest");
+              assertThat(f.output())
+                  .as("printed outside any test")
+                  .containsExactly("setup: no database");
+            });
   }
 
   @Test
-  void latheTestRun_blockedOutcome_carriesReasons() {
+  void latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput() {
     final LatheTestRun run =
         LatheTestRun.from(LaunchOutcome.blocked(List.of("no runner jar")), List.of());
 
     assertThat(run.launched()).isFalse();
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
     assertThat(run.total()).isZero();
+
+    final List<TranscriptLine> printed =
+        IntStream.range(0, 45)
+            .mapToObj(i -> new TranscriptLine(TranscriptLine.Stream.STDERR, "line %d".formatted(i)))
+            .toList();
+    final LatheTestRun nothing =
+        LatheTestRun.from(LaunchOutcome.completed(1, printed, List.of()), List.of("a.FooTest"));
+
+    assertThat(nothing.total()).isZero();
+    assertThat(nothing.exitCode()).isEqualTo(1);
+    assertThat(nothing.output()).hasSize(40).startsWith("line 5").endsWith("line 44");
   }
 
   @Test
