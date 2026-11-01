@@ -689,8 +689,20 @@ implementation of a functional interface.
 
 ### Fix direction
 
-For a functional interface, include the lambdas and method references that implement it,
-as the method-level answer already finds them, or say in the answer that they are listed under its method.
+Part of the implementation-search set described under
+[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+
+Why: for a type, `implementationForTarget` calls `typeImplementations`, which lists named subtypes only; the lambda
+and method-reference search runs only when the target is the method.
+
+The fix: when the target type is a functional interface, also run the existing method search for its single
+abstract method (`lambdaImplementationFiles`, `bytecodeLambdaImplementationFiles`) and add its lambdas and method
+references, so `Handler` answers the classes and the lambdas, as `Handler.handle` already does.
+Anonymous classes implement the type too, so the type query lists them as well, at their `new Handler() {` line,
+through EG-085's change.
+
+Tests: the type query on a functional interface returns its classes and lambdas; a lambda converted to a different
+functional interface is not listed.
 
 ### Regression targets
 
@@ -770,7 +782,31 @@ Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `Ht
 
 ### Fix direction
 
-Search anonymous class bodies and enum constant bodies for overrides, as rename's override family does.
+Fixed together with [EG-081](#eg-081--implementations-of-an-interface-omit-lambdas-that-implementations-of-its-method-include),
+[MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one) and
+[MC-69](#mc-69--analyze_change-names-too-few-affected-modules): go to implementation, `find_implementations` and
+`analyze_change`'s override family all run one search (`WorkspaceSession.implementationFuture`).
+
+Why they are missed: the method search starts from the type index's subtypes and drops every unnamed one
+(`TypeSourceLocator::isNamedDeclaration` in `subtypeImplementationFiles`), a filter from the first implementation
+that suits jumping to a type's declaration, which needs a name, but not method implementations.
+The index does know `JerseyClientBuilder$1` and `Color$1` (javac compiles an enum constant's body as an anonymous
+subclass of the enum); `MethodImplementationLocator.visitClass` then matches only the filtered binary names.
+
+The fix:
+
+- `subtypeImplementationFiles` keeps the unnamed subtypes for the method search, mapping `Outer$1` to `Outer`'s
+  source file (`findSourceFile` already resolves nested names to their top-level file).
+- `MethodImplementationLocator.visitClass` recognises an anonymous class from the attributed tree, not by binary
+  name: it qualifies when its type is a subtype of the target method's owner, and the usual `Elements.overrides`
+  check picks the method. This does not rely on javac's `$1`, `$2` numbering agreeing between the compiled
+  classes and the source; an enum constant body is the same case.
+- The result points at the overriding method inside the body, as for a named class.
+
+Tests beside the existing implementation tests: anonymous classes and an enum constant body overriding an abstract
+enum method are found; an anonymous class of an unrelated interface with a method of the same name is not.
+It touches `WorkspaceSession`, `MethodImplementationLocator`, the worker's type-implementation path and
+`LatheEngine`, so the set starts with a design summary.
 
 ### Regression targets
 
@@ -2310,8 +2346,17 @@ so the two halves of the answer contradict each other.
 
 ### Fix direction
 
-List the whole family: the methods this one overrides or implements, then those overriding it,
-marking which is which.
+Part of the implementation-search set described under
+[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+
+Why: `LatheEngine.analyzeChange` takes the family from the implementation search (`implementationsAt`), which looks
+only down the hierarchy; the methods the target overrides never appear.
+
+The fix: add the overridden methods, walking the owner's supertypes and keeping each method the target overrides
+(`Elements.overrides`), cheap and without the index; label the two directions ("overrides", "overridden by").
+EG-085's change completes the downward half for free, since the family reuses the same search.
+
+Test: an override's `analyze_change` lists its parent method under "overrides".
 
 ### Regression targets
 
@@ -2362,8 +2407,15 @@ On `Handler.handle` it names 5 affected modules, while the 225 implementations i
 
 ### Fix direction
 
-Count a module as affected when it holds a reference or a member of the override family,
-not only a reference.
+Part of the implementation-search set described under
+[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+
+Why: `LatheEngine.analyzeChange` counts the modules of reference sites only, never of the override family's members.
+
+The fix: classify the family's locations as the references are (`classifyPaths`) and add their modules, since a
+signature change breaks every implementation; EG-085's change brings in the anonymous and enum constant bodies.
+
+Test: a method implemented in a module that never calls it counts that module as affected.
 
 ### Regression targets
 
