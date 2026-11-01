@@ -133,32 +133,30 @@ final class ExtractMethodProvider {
                 thrown.stream())
             .flatMap(types -> types)
             .toList();
+    final List<TypeMirror> writtenTypes =
+        signatureTypes.stream().flatMap(CodeActionSupport::typesIn).toList();
     final List<String> refusals =
         Stream.of(
                 flow.refusals().stream(),
-                flow.outputs().size() > (expressionForm || flow.returnsValue() ? 0 : 1)
-                    ? Stream.of("values flow out")
-                    : Stream.<String>empty(),
-                signatureTypes.stream().allMatch(CodeActionSupport::isDenotable)
-                    ? Stream.<String>empty()
-                    : Stream.of("a type cannot be written"),
-                inferredOnlyFromTarget(returnType, flow.parameters())
-                    ? Stream.of("a type variable only the return type names")
-                    : Stream.<String>empty(),
-                signatureTypes.stream()
-                        .flatMap(CodeActionSupport::typesIn)
-                        .anyMatch(type -> declaredInside(type, member, trees))
-                    ? Stream.of("a type is local to the member")
-                    : Stream.<String>empty(),
-                signatureTypes.stream()
-                        .flatMap(CodeActionSupport::typesIn)
-                        .anyMatch(type -> !accessible(type, member, trees))
-                    ? Stream.of("a type is not accessible here")
-                    : Stream.<String>empty(),
-                isConstructorCallArgument(region.get(0), member, trees)
-                        && hasEnclosingInstance(member.getParentPath(), trees)
-                    ? Stream.of("an inner class's this(...) or super(...) argument")
-                    : Stream.<String>empty())
+                refusedIf(
+                    flow.outputs().size() > (expressionForm || flow.returnsValue() ? 0 : 1),
+                    "values flow out"),
+                refusedIf(
+                    !signatureTypes.stream().allMatch(CodeActionSupport::isDenotable),
+                    "a type cannot be written"),
+                refusedIf(
+                    inferredOnlyFromTarget(returnType, flow.parameters()),
+                    "a type variable only the return type names"),
+                refusedIf(
+                    writtenTypes.stream().anyMatch(type -> declaredInside(type, member, trees)),
+                    "a type is local to the member"),
+                refusedIf(
+                    !writtenTypes.stream().allMatch(type -> accessible(type, member, trees)),
+                    "a type is not accessible here"),
+                refusedIf(
+                    isConstructorCallArgument(region.get(0), member, trees)
+                        && hasEnclosingInstance(member.getParentPath(), trees),
+                    "an inner class's this(...) or super(...) argument"))
             .flatMap(reasons -> reasons)
             .toList();
     final Optional<String> source = CodeActionSupport.source(analysis.tree());
@@ -559,18 +557,18 @@ final class ExtractMethodProvider {
     return kind == Tree.Kind.INTERFACE || kind == Tree.Kind.ANNOTATION_TYPE;
   }
 
-  // Whether a call can stand where the expression is: not a compile-time constant (a case label or
-  // an annotation value needs one, and extracting one gains nothing), not inside a case label or an
-  // annotation, not an assignment's target, not an enum constant's own creation (its source is only
-  // the argument list), not a bare variable or `this` (a call gains nothing, and a copy may be the
-  // `throw e` of a precise rethrow or a constructor's `this.field = …`).
+  // Whether a call can stand where the expression is, for the selection and for each copy: not a
+  // compile-time constant (a case label or an annotation value needs one, and extracting one gains
+  // nothing), not inside a case label or an annotation, not an assignment's target, not a
+  // statement's own parentheses, not a bare variable or `this` (a call gains nothing, and a copy
+  // may
+  // be the `throw e` of a precise rethrow or a constructor's `this.field = …`).
   private static boolean replaceableByCall(final TreePath exprPath, final Trees trees) {
     return !(exprPath.getLeaf() instanceof final IdentifierTree identifier
             && (identifier.getName().contentEquals("this")
                 || trees.getElement(exprPath) instanceof VariableElement))
         && !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
         && !ExtractionSupport.isAssignmentTarget(exprPath)
-        && !isEnumConstantCreation(exprPath, trees)
         && !isStatementParentheses(exprPath)
         && Stream.iterate(exprPath, Objects::nonNull, TreePath::getParentPath)
             .noneMatch(path -> path.getLeaf() instanceof AnnotationTree || isCaseLabel(path));
@@ -581,15 +579,6 @@ final class ExtractMethodProvider {
   private static boolean isStatementParentheses(final TreePath path) {
     return path.getLeaf() instanceof ParenthesizedTree
         && STATEMENT_PARENTHESES.contains(path.getParentPath().getLeaf().getKind());
-  }
-
-  private static boolean isEnumConstantCreation(final TreePath path, final Trees trees) {
-    if (!(path.getParentPath().getLeaf() instanceof VariableTree)) {
-      return false;
-    }
-
-    final Element declared = trees.getElement(path.getParentPath());
-    return declared != null && declared.getKind() == ElementKind.ENUM_CONSTANT;
   }
 
   private static boolean isCaseLabel(final TreePath path) {
@@ -668,6 +657,10 @@ final class ExtractMethodProvider {
     return !(type instanceof final DeclaredType declared)
         || !(declared.asElement() instanceof final TypeElement element)
         || trees.isAccessible(trees.getScope(member), element);
+  }
+
+  private static Stream<String> refusedIf(final boolean refused, final String reason) {
+    return refused ? Stream.of(reason) : Stream.empty();
   }
 
   // A local class declared in the member the code leaves: the new method, beside the member, cannot

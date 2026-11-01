@@ -164,9 +164,7 @@ final class CodeActionSupport {
       final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
     return type.getNestingKind() == NestingKind.MEMBER
             && !memberTypeInScope(analysis, target, type)
-            && !new ImportAnalyzer(analysis)
-                .importedQualifiedNames()
-                .contains(type.getQualifiedName().toString())
+            && !importedNames(analysis).contains(type.getQualifiedName().toString())
         ? nameRoot(analysis, target, (TypeElement) type.getEnclosingElement())
         : type;
   }
@@ -185,13 +183,15 @@ final class CodeActionSupport {
   private static boolean clashes(final AttributedFileAnalysis analysis, final TypeElement type) {
     final String simpleName = type.getSimpleName().toString();
     final String qualifiedName = type.getQualifiedName().toString();
-    return new ImportAnalyzer(analysis)
-            .importedQualifiedNames().stream()
-                .anyMatch(
-                    imported ->
-                        !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
+    return importedNames(analysis).stream()
+            .anyMatch(
+                imported -> !imported.equals(qualifiedName) && imported.endsWith("." + simpleName))
         || declaredTypeNames(analysis).contains(simpleName) && !declaredIn(analysis, type)
         || inOwnPackage(analysis, simpleName).filter(sibling -> !sibling.equals(type)).isPresent();
+  }
+
+  private static Set<String> importedNames(final AttributedFileAnalysis analysis) {
+    return new ImportAnalyzer(analysis).importedQualifiedNames();
   }
 
   // The type of the file's own package with this simple name: it is in scope there without an

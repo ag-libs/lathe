@@ -3209,8 +3209,14 @@ final class WorkspaceSession {
         List.of());
   }
 
+  // The check may compile twice (the rewritten text, then the original to compare errors), and the
+  // second starts from the first one's completion, off the loop: each compile routes on the loop.
   CompletableFuture<CodeAction> resolveCodeActionFuture(final CodeAction action) {
-    return CompileCheckedActions.resolve(action, docs::get, this::diagnosticsTransientFuture);
+    return CompileCheckedActions.resolve(
+        action,
+        docs::get,
+        (uri, content) ->
+            worker.submit(() -> diagnosticsTransientFuture(uri, content)).thenCompose(f -> f));
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
