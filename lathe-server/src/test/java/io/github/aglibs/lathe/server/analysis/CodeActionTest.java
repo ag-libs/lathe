@@ -1678,6 +1678,13 @@ class CodeActionTest {
                     + "  int m(Route.Module x) { return «x.hashCode() + 1»; }",
                 method))
         .contains("private int extracted(Route.Module x)");
+    // two nested types of one simple name stay apart, each from its enclosing type
+    assertThat(
+            assertExtracts(
+                "static class A { static class Builder {} }\n  static class B { static class Builder {} }\n"
+                    + "  int m(A.Builder a, B.Builder b) { return «a.hashCode() + b.hashCode()»; }",
+                method))
+        .contains("private int extracted(A.Builder a, B.Builder b)");
     // a private type of the file itself is used by its name, never imported
     assertExtracts("private record P(int v) {}\n  int m(P p) { return «p.v() + 1»; }", method);
     // the method's type variables the signature needs, with those their bounds name
@@ -1718,6 +1725,7 @@ class CodeActionTest {
         "<T> void m() { final var l = «new ArrayList<T>()»; List<T> t = l; use(t); }");
     cases.put("assignment target", "void m(int[] a) { «a[0]» = 1; }");
     cases.put("this", "Object m() { return «this»; }");
+    cases.put("a bare variable", "Object m(Object o) { return «o»; }");
     cases.put(
         "inner class's super(...) argument",
         "int f = 1;\n  static class Base { Base(int x) {} }\n"

@@ -116,15 +116,20 @@ final class CodeActionSupport {
   }
 
   // Import edits for every type the given types mention, each needed import once.
+  // The imports code written into `target` needs for these types: the top-level type each written
+  // name starts from (see sourceTypeFormatter).
   static List<TextEdit> importEditsFor(
-      final AttributedFileAnalysis analysis, final Stream<? extends TypeMirror> types) {
+      final AttributedFileAnalysis analysis,
+      final TypeElement target,
+      final Stream<? extends TypeMirror> types) {
     final var importAnalyzer = new ImportAnalyzer(analysis);
     return types
         .flatMap(CodeActionSupport::typesIn)
         .filter(DeclaredType.class::isInstance)
         .map(type -> ((DeclaredType) type).asElement())
         .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
+        .map(type -> nameRoot(analysis, target, (TypeElement) type))
+        .filter(root -> root.getNestingKind() != NestingKind.MEMBER)
         .distinct()
         .filter(type -> !declaredIn(analysis, type) && !clashes(analysis, type))
         .map(type -> type.getQualifiedName().toString())
@@ -133,11 +138,11 @@ final class CodeActionSupport {
         .toList();
   }
 
-  // For code written into `target`, a class of the file: a type whose simple name the file already
-  // gives another type (by an import or a declaration) is written qualified, and never imported; a
-  // type nested in the file that `target` cannot see by its simple name, from the nearest enclosing
-  // type it can (`Route.Module`, not `Module`, which would be java.lang's); any other by its simple
-  // name.
+  // For code written into `target`, a class of the file: a nested type `target` cannot see by its
+  // simple name is written from the nearest enclosing type it can (`ClassModel.Builder`, as Java
+  // code usually does; a bare `Module` could be java.lang's, two `Builder`s would clash); the name
+  // it starts from is written qualified when the file already gives that simple name another type
+  // (by an import, a declaration or its package), else simply.
   static TypeDisplayFormatter sourceTypeFormatter(
       final AttributedFileAnalysis analysis, final TypeElement target) {
     return new TypeDisplayFormatter(analysis.types(), type -> sourceName(analysis, target, type));
@@ -145,20 +150,20 @@ final class CodeActionSupport {
 
   private static String sourceName(
       final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
-    if (clashes(analysis, type)) {
-      return type.getQualifiedName().toString();
-    }
+    final TypeElement root = nameRoot(analysis, target, type);
+    final String rootName =
+        (clashes(analysis, root) ? root.getQualifiedName() : root.getSimpleName()).toString();
+    return rootName
+        + type.getQualifiedName().toString().substring(root.getQualifiedName().length());
+  }
 
-    if (type.getNestingKind() == NestingKind.MEMBER
-        && declaredIn(analysis, type)
-        && !memberTypeInScope(analysis, target, type)) {
-      return "%s.%s"
-          .formatted(
-              sourceName(analysis, target, (TypeElement) type.getEnclosingElement()),
-              type.getSimpleName());
-    }
-
-    return type.getSimpleName().toString();
+  // The type a written name starts from: the type itself, or for a nested type `target` cannot see
+  // by its simple name, the nearest enclosing type it can (or the top-level type).
+  private static TypeElement nameRoot(
+      final AttributedFileAnalysis analysis, final TypeElement target, final TypeElement type) {
+    return type.getNestingKind() == NestingKind.MEMBER && !memberTypeInScope(analysis, target, type)
+        ? nameRoot(analysis, target, (TypeElement) type.getEnclosingElement())
+        : type;
   }
 
   // A member type `target` sees by its simple name: one of its own or an enclosing class's members,

@@ -74,7 +74,9 @@ final class MissingMethodImplProvider implements CodeActionProvider {
 
     final List<TextEdit> importEdits =
         CodeActionSupport.importEditsFor(
-            analysis, unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
+            analysis,
+            classElement,
+            unimplemented.stream().flatMap(m -> signatureTypes(m, types, classType)));
 
     final List<TextEdit> allEdits =
         Stream.concat(Stream.of(stubEdit), importEdits.stream()).toList();

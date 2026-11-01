@@ -287,7 +287,8 @@ final class ExtractMethodProvider {
                               start(site.run().get(0)),
                               end(CollectionUtil.last(site.run())),
                               call(site))),
-              CodeActionSupport.importEditsFor(analysis, signatureTypes.stream()).stream())
+              CodeActionSupport.importEditsFor(analysis, targetClass(), signatureTypes.stream())
+                  .stream())
           .flatMap(edits -> edits)
           .toList();
     }
@@ -445,9 +446,12 @@ final class ExtractMethodProvider {
     }
 
     private String typeText(final TypeMirror type) {
-      return CodeActionSupport.sourceTypeFormatter(
-              analysis, (TypeElement) analysis.trees().getElement(member.getParentPath()))
-          .format(type);
+      return CodeActionSupport.sourceTypeFormatter(analysis, targetClass()).format(type);
+    }
+
+    // The class the new method joins.
+    private TypeElement targetClass() {
+      return (TypeElement) analysis.trees().getElement(member.getParentPath());
     }
 
     private String sourceOf(final TreePath first, final TreePath last) {
@@ -538,11 +542,12 @@ final class ExtractMethodProvider {
   // Whether a call can stand where the expression is: not a compile-time constant (a case label or
   // an annotation value needs one, and extracting one gains nothing), not inside a case label or an
   // annotation, not an assignment's target, not an enum constant's own creation (its source is only
-  // the argument list), not a bare `this` (a call gains nothing, and its copies include the
-  // `this.field = …` of a constructor).
+  // the argument list), not a bare variable or `this` (a call gains nothing, and a copy may be the
+  // `throw e` of a precise rethrow or a constructor's `this.field = …`).
   private static boolean replaceableByCall(final TreePath exprPath, final Trees trees) {
     return !(exprPath.getLeaf() instanceof final IdentifierTree identifier
-            && identifier.getName().contentEquals("this"))
+            && (identifier.getName().contentEquals("this")
+                || trees.getElement(exprPath) instanceof VariableElement))
         && !ExtractionSupport.isCompileTimeConstant(exprPath, trees)
         && !ExtractionSupport.isAssignmentTarget(exprPath)
         && !isEnumConstantCreation(exprPath, trees)
