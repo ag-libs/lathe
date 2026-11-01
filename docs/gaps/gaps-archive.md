@@ -11068,6 +11068,45 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-32 — Nothing makes an agent run `verify_change` before it reports done — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+Found by the agent-tooling landscape review (2026-10-24).
+
+### Gap
+
+An agent that skips `verify_change` finishes with code that does not compile.
+Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hook for exactly this
+([Pyrefly blog](https://pyrefly.org/blog/pyrefly-agentic-loop/)).
+
+### Fix direction
+
+The `AGENTS.md` / `CLAUDE.md` snippet exists ([examples/agents/lathe-mcp.md](../../examples/agents/lathe-mcp.md), which says to run `verify_change` before finishing) but the agent guide does not link it.
+What remains: link it from the agent guide and add a hook recipe.
+A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
+a later, separate step.
+
+### Resolution
+
+The agent guide links the `AGENTS.md`/`CLAUDE.md` snippet (which says to run `verify_change` before
+finishing) and now gives a Claude Code `Stop` hook,
+[examples/agents/verify-before-stop.py](../../examples/agents/verify-before-stop.py): when the
+session's transcript shows a Java edit (Edit, Write, MultiEdit, a Lathe rename or import fix) after the
+last `verify_change`, it blocks the stop and tells the agent to run it, once per stop.
+A hook cannot call an MCP tool, so the agent runs the check; a command-line entry point to the engine,
+which would let a hook check itself, stays a later step.
+The snippet also mentions `symbol` addressing.
+
+### Regression targets
+
+None in the build: the hook was checked by hand against synthetic transcripts (an edit with and
+without a later check, a rename after a check, a non-Java edit, a second stop).
+
+---
+
 ## MC-28 — `rename_symbol` does not say what text it left unchanged — done
 
 **Status: done.**

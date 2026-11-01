@@ -204,6 +204,14 @@ it says so and gives that command instead.
 A build that was killed leaves its locks behind, and `verify_change` keeps deferring until they go stale, about two minutes later.
 
 To make an agent run it before reporting done, add [this snippet](../../examples/agents/lathe-mcp.md) to the project's `AGENTS.md` or `CLAUDE.md`.
+In Claude Code, the [verify-before-stop hook](../../examples/agents/verify-before-stop.py) enforces it:
+a `Stop` hook that, when the session edited Java files after its last `verify_change`, sends the agent
+back to run it (once per stop; a hook cannot call the tool itself). Register it in `.claude/settings.json`:
+
+```json
+{"hooks": {"Stop": [{"hooks": [{"type": "command",
+  "command": "python3 examples/agents/verify-before-stop.py"}]}]}}
+```
 
 ## Usage logging
 

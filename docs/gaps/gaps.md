@@ -1547,33 +1547,6 @@ None yet.
 
 ---
 
-## MC-32 — Nothing makes an agent run `verify_change` before it reports done
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-Found by the agent-tooling landscape review (2026-10-24).
-
-### Gap
-
-An agent that skips `verify_change` finishes with code that does not compile.
-Pyrefly documents a skill, an `AGENTS.md` directive and a Claude Code `Stop` hook for exactly this
-([Pyrefly blog](https://pyrefly.org/blog/pyrefly-agentic-loop/)).
-
-### Fix direction
-
-The `AGENTS.md` / `CLAUDE.md` snippet exists ([examples/agents/lathe-mcp.md](../../examples/agents/lathe-mcp.md), which says to run `verify_change` before finishing) but the agent guide does not link it.
-What remains: link it from the agent guide and add a hook recipe.
-A hook cannot call an MCP tool, so a hook proper needs a command-line entry point to the engine —
-a later, separate step.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-39 — `find_references` lists generated code before the user's call sites
 
 **Status: documented**
