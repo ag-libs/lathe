@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -29,9 +30,14 @@ class ZipCacheTest {
     }
   }
 
+  // A failing callback, or an entry that cannot be written (a file `a` and a file under `a/`),
+  // fails the extraction; the entries are written in parallel, and still no temp dir is left.
   @Test
-  void extract_cleansTempDirOnFailure() throws IOException {
+  void extract_failingCallbackOrEntry_throwsAndCleansTempDir() throws IOException {
     final Path zip = ZipFixture.create(tmp.resolve("src.zip"), "A.java", "class A {}");
+    final Path conflicting =
+        ZipFixture.create(
+            tmp.resolve("conflict.zip"), Map.of("a", "file", "a/B.java", "class B {}"));
 
     assertThatThrownBy(
             () ->
@@ -43,6 +49,8 @@ class ZipCacheTest {
                     }))
         .isInstanceOf(IOException.class)
         .hasMessage("callback failed");
+    assertThatThrownBy(() -> ZipCache.extract(conflicting, tmp.resolve("other"), ignored -> {}))
+        .isInstanceOf(IOException.class);
 
     try (final var children = Files.list(tmp)) {
       assertThat(children.filter(p -> p.getFileName().toString().contains(".tmp-"))).isEmpty();

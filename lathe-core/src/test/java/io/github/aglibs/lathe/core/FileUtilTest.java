@@ -17,6 +17,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
@@ -119,6 +120,25 @@ final class FileUtilTest {
     // The escaping entry is skipped, never written outside dest, and counted.
     assertThat(tempDir.resolve("escape.java")).doesNotExist();
     assertThat(skipped).isEqualTo(1);
+  }
+
+  // The entries are written in parallel: every one lands, however their directories are shared.
+  @Test
+  void unzip_manyNestedEntries_writesEveryOne() throws IOException {
+    final Map<String, String> entries =
+        IntStream.range(0, 400)
+            .boxed()
+            .collect(
+                Collectors.toMap(
+                    i -> "p%d/q%d/F%d.java".formatted(i % 20, i % 7, i),
+                    i -> "class F%d {}".formatted(i)));
+    final Path zip = ZipFixture.create(tempDir.resolve("many.jar"), entries);
+    final Path dest = tempDir.resolve("dest");
+
+    assertThat(FileUtil.unzip(zip, dest)).isZero();
+
+    assertThat(entries)
+        .allSatisfy((name, content) -> assertThat(dest.resolve(name)).hasContent(content));
   }
 
   @Test
