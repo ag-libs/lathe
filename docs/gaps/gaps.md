@@ -1493,9 +1493,9 @@ None yet.
 
 ## MC-28 — `rename_symbol` does not say what text it left unchanged
 
-**Status: documented**
+**Status: accepted**
 
-**Value: medium — Size: M**
+**Value: high — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24).
 
@@ -1511,6 +1511,8 @@ A study of agent renames found location-only LSP renames missed such text in mos
 
 After the rename, list the remaining occurrences of the old name (qualified name for resources) in
 reactor files as "not renamed — review", without editing them.
+NetBeans' Dukehoff MCP does exactly this for string literals (2026-11-01 survey); IntelliJ instead
+edits comments and text only when asked (`searchInComments`, `searchInText`).
 
 ### Regression targets
 
@@ -1545,7 +1547,7 @@ None yet.
 
 ## MC-30 — Position tools need an exact column, which agents get wrong
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: M**
 
@@ -1574,6 +1576,10 @@ both times one column short on a method name taken from an `outline` line
 Cheap: accept `line` plus the symbol's text (`symbol`) instead of a column, resolving the column from
 the line. Full: a name path (`pkg.Type#method(params)`), which needs overload handling.
 Cheaper still for the `outline`-then-query pattern: give each `outline` item the name's column.
+Prior art (2026-11-01): numsu/java-lsp-mcp makes the column optional (the innermost declaration on the
+line) and clamps one past the end; IntelliJ's rename takes the symbol's name plus an optional exact
+snippet; NetBeans' Dukehoff MCP takes `com.acme.Foo#bar(String,int)`.
+This slice takes the cheap form: `column` optional, `symbol` picks the occurrence on the line.
 
 ### Regression targets
 
@@ -1585,7 +1591,7 @@ None yet.
 
 **Status: documented**
 
-**Value: high — Size: M**
+**Value: medium — Size: M**
 
 Found by the agent-tooling landscape review (2026-10-24);
 confirmed by an agent's exploration of a private 61-module Maven service (2026-10-30).
@@ -1614,7 +1620,7 @@ None yet.
 
 ## MC-32 — Nothing makes an agent run `verify_change` before it reports done
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -1662,7 +1668,7 @@ None yet.
 
 ## MC-35 — Remedies that cannot help: a sync for a missing formatter, a file outside every source root, or a profile-excluded test
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -1695,7 +1701,7 @@ None yet.
 
 ## MC-37 — `workspace_summary` is silent when `.lathe/` was written by another Lathe version
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -1722,7 +1728,7 @@ None yet.
 
 ## MC-38 — `search_symbols` lists JDK internals, and a glob query finds nothing
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -1869,7 +1875,7 @@ None yet.
 
 ## MC-43 — Expected refusals are logged at SEVERE with a stack trace
 
-**Status: documented**
+**Status: accepted**
 
 **Value: low — Size: S**
 
@@ -1895,7 +1901,7 @@ None yet.
 
 ## MC-44 — A `.lathe/` created after the MCP server started is never picked up
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S–M**
 
@@ -1945,7 +1951,7 @@ None yet.
 
 ## MC-46 — After an agent edits `lombok.config`, `verify_change` reports no errors that exist
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: M**
 
@@ -1970,7 +1976,7 @@ None yet.
 
 ## MC-47 — Notes that mislead: a moved file "not checked", no word of a pending sync
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -1998,7 +2004,7 @@ None yet.
 
 ## MC-48 — Outgoing `call_hierarchy` lists where each callee is defined, not where it is called
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -2026,7 +2032,7 @@ None yet.
 
 ## MC-49 — `call_hierarchy` cannot leave out JDK and dependency calls
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -2079,7 +2085,7 @@ None yet.
 
 ## MC-51 — A record's accessor resolves to the top of its file
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -2247,7 +2253,7 @@ None yet.
 
 **Status: documented**
 
-**Value: medium — Size: M**
+**Value: low — Size: M**
 
 **Affects: MCP.**
 
@@ -2274,7 +2280,7 @@ None yet.
 
 ## MC-58 — Claude Code shows the structured content, so an agent never sees the notes
 
-**Status: documented**
+**Status: accepted**
 
 **Value: high — Size: S**
 
@@ -2304,11 +2310,12 @@ that structured content serves programmatic clients and not models.
 
 ### Fix direction
 
-Carry the notes in the structured map too (a `notes` object with the four kinds), so they reach the agent
-whichever part a client shows.
-Then decide whether to keep `structuredContent` at all: without an `outputSchema` no client relies on it,
-and dropping it would make Claude Code show the compact text.
-Check what other clients (Codex, Cursor) show before choosing.
+Decided 2026-11-01: drop `structuredContent` and answer in text only.
+Claude Code, Codex CLI and VS Code Copilot give the model the structured content and drop the text;
+Gemini CLI and Cursor give it only the text (Codex, VS Code and Gemini checked in their sources).
+The spec says nothing about which part reaches the model, so text is the only form every client shows alike,
+and no client relies on the structured form without an `outputSchema`.
+Survey: [MCP answers an agent can trust](../planned/lathe-mcp-trust.md).
 
 ### Regression targets
 
@@ -2349,9 +2356,9 @@ None yet.
 
 ## MC-60 — `run_test` does not return a failing test's output
 
-**Status: documented**
+**Status: accepted**
 
-**Value: low — Size: S**
+**Value: medium — Size: S**
 
 **Affects: MCP `run_test`.**
 
@@ -2369,6 +2376,12 @@ Logs and printed state are often what explains a failure.
 For each failed test, the last lines of its standard output and error, capped (say 40 lines),
 from the transcript the launch already drains (`LaunchSession`).
 Nothing for passing tests.
+IntelliJ's run tool caps output at 10,000 characters and names a file holding the rest.
+
+The same answer misleads when the test does not compile: on 2026-10-31 `run_test` reported
+0 passed, 0 failed, 0 skipped for a test file with two errors
+(see [MC-58](#mc-58--claude-code-shows-the-structured-content-so-an-agent-never-sees-the-notes)).
+Say the test did not compile, with its errors, as numsu/java-lsp-mcp's `compile-failed` does.
 
 ### Regression targets
 
@@ -2407,9 +2420,9 @@ None yet.
 
 ## MC-62 — `verify_change` names dependent modules and a sync for changes no other module can see
 
-**Status: documented**
+**Status: accepted**
 
-**Value: medium — Size: S**
+**Value: high — Size: S**
 
 **Affects: MCP `verify_change`.**
 
@@ -2437,6 +2450,118 @@ Name a dependent module only when the change can reach it: never for a test sour
 when a changed file declares a type the dependent can see (public or protected, in an exported package for a
 JPMS module), or, more precisely, when the reference index finds a use of a changed file's types there.
 With none left, answer no `affectedModules` and no `suggestedSync`.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-63 — `find_references` cannot group its answer by the calling method
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_references`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A method with forty call sites in ten methods answers forty lines; the agent's question is usually
+"which methods call it", and it reads the list to work that out.
+NetBeans' Dukehoff MCP takes `group_by: "caller"` and names each containing method by signature.
+
+### Fix direction
+
+An optional `groupBy` (`file`, `caller`): one heading per containing method (or file), its call lines
+below it. The enclosing method is already known to the reference search's tree path.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-64 — No safe delete: removing a symbol is find-then-edit by hand
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+To remove a method an agent runs `find_references`, then edits, then `verify_change`.
+NetBeans' Dukehoff MCP and Serena have `safe_delete`: delete only when nothing uses the symbol,
+else list the uses that block it.
+
+### Fix direction
+
+A `safe_delete` tool on the rename pipeline: refuse with the blocking uses (production before tests),
+else remove the declaration and report the file.
+Overrides and implementations count as uses.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-65 — No structural search and replace
+
+**Status: documented**
+
+**Value: low — Size: L**
+
+**Affects: MCP.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+Migrations (JUnit 4 to 5, `javax` to `jakarta`, a deprecated API to its replacement) are many similar
+edits an agent makes one file at a time.
+NetBeans' Dukehoff MCP exposes NetBeans' Jackpot rules through `apply_rule`, with a dry run and rule packs,
+and reports that agents used it unprompted once `CLAUDE.md` mentioned it.
+
+### Fix direction
+
+Design first: a pattern language over javac trees with typed placeholders (`$x.foo($y)` where `$x` is a
+`java.util.List`), a dry run listing the matches, then apply.
+Weigh against what a rename plus `fix_imports` already covers.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-66 — `rename_symbol` has no preview
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: MCP `rename_symbol`.**
+
+Found by the survey of other Java MCP servers (2026-11-01).
+
+### Gap
+
+A rename writes to disk at once.
+IntelliJ's rename takes `preview: true` and answers the files and usages it would change, and its
+conflicts, writing nothing; numsu/java-lsp-mcp never writes and returns the edits instead.
+An agent unsure of a rename's reach has `analyze_change`, which counts references but does not list the edits.
+
+### Fix direction
+
+An optional `preview` returning the same per-file list without applying it.
+Low value while renames are undone by git as easily as they are made.
 
 ### Regression targets
 
