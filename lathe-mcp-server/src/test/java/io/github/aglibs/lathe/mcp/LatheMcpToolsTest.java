@@ -305,8 +305,9 @@ class LatheMcpToolsTest {
     assertThat(result.isError()).isTrue();
   }
 
+  // A refusal is the tool's normal answer: logged as a call, never as an unexpected failure.
   @Test
-  void logged_recordsToolNameAndArguments() {
+  void logged_recordsToolNameAndArguments_aRefusalWithoutAnError() throws Exception {
     final var records = new ArrayList<LogRecord>();
     final Logger logger = Logger.getLogger(LatheMcpTools.class.getName());
     final Handler handler =
@@ -324,10 +325,12 @@ class LatheMcpToolsTest {
         };
     final Level previous = logger.getLevel();
     final String file = tmp.resolve("Missing.java").toString();
+    final Path loose = Files.writeString(tmp.resolve("Loose.java"), "class Loose {}");
     logger.setLevel(Level.INFO);
     logger.addHandler(handler);
     try {
       call("get_diagnostics", Map.of("file", file));
+      assertThat(call("format_file", Map.of("file", loose.toString())).isError()).isTrue();
     } finally {
       logger.removeHandler(handler);
       logger.setLevel(previous);
@@ -338,6 +341,7 @@ class LatheMcpToolsTest {
         .anySatisfy(
             message ->
                 assertThat(message).contains("[tool] get_diagnostics", "file=%s".formatted(file)));
+    assertThat(records).extracting(LogRecord::getLevel).doesNotContain(Level.SEVERE);
   }
 
   private CallToolResult describe(final Path file, final int line, final int column) {

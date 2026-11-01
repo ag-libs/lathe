@@ -225,6 +225,15 @@ public final class LatheEngine {
     }
   }
 
+  // An expected answer, not a failure: the tool cannot do this here, and the message says why.
+  public static final class Refused extends IllegalStateException {
+    @Serial private static final long serialVersionUID = 1L;
+
+    Refused(final String reason) {
+      super(reason);
+    }
+  }
+
   /** A position tool was asked at a position that is not on a name. */
   public static final class NotOnName extends RuntimeException {
     @Serial private static final long serialVersionUID = 1L;
@@ -345,7 +354,7 @@ public final class LatheEngine {
             .sorted()
             .toList();
     if (!nonReactor.isEmpty()) {
-      throw new IllegalStateException(
+      throw new Refused(
           "the rename would edit files outside the reactor: %s".formatted(nonReactor));
     }
 
@@ -439,8 +448,7 @@ public final class LatheEngine {
   // The tools that write one file leave dependency, JDK and generated sources alone.
   private void requireReactorFile(final Path file) {
     if (origin(file) != LatheLocation.Origin.REACTOR) {
-      throw new IllegalStateException(
-          "%s is not a reactor file, so Lathe does not edit it".formatted(file));
+      throw new Refused("%s is not a reactor file, so Lathe does not edit it".formatted(file));
     }
   }
 
@@ -481,7 +489,7 @@ public final class LatheEngine {
     final var uri = file.toUri().toString();
     final List<RunTarget> targets = await(service.runnablesFuture(uri));
     if (targets.isEmpty()) {
-      throw new IllegalStateException(noTests(file));
+      throw new Refused(noTests(file));
     }
 
     final List<RunTarget> selected = selectTargets(targets, scope, method, file);
@@ -526,7 +534,7 @@ public final class LatheEngine {
             .filter(target -> scope != TestScope.METHOD || target.label().equals(method))
             .toList();
     if (matching.isEmpty()) {
-      throw new IllegalStateException(
+      throw new Refused(
           scope == TestScope.METHOD
               ? "no test method '%s' in %s".formatted(method, file.getFileName())
               : "no %s test target in %s".formatted(scope.wireName(), file.getFileName()));
@@ -826,11 +834,11 @@ public final class LatheEngine {
           e);
     } catch (final ExecutionException e) {
       // A request the server refused carries its reason, which the caller must see.
-      final String message =
-          ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused
-              ? refused.getMessage()
-              : "the request failed; see the server log";
-      throw new IllegalStateException(message, e);
+      if (ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused) {
+        throw new Refused(refused.getMessage());
+      }
+
+      throw new IllegalStateException("the request failed; see the server log", e);
     }
   }
 }

@@ -1792,32 +1792,6 @@ None yet.
 
 ---
 
-## MC-43 — Expected refusals are logged at SEVERE with a stack trace
-
-**Status: accepted**
-
-**Value: low — Size: S**
-
-**Affects: MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
-
-### Observed behaviour
-
-A refusal is the tool's normal answer, but each is logged as an unexpected error: a rename refused (JDK method,
-Lombok member, shared static import, existing name), `run_test` with no test target, `format_file` with no formatter.
-The editor's server does not log its refusals this way.
-
-### Fix direction
-
-Log refusals at FINE, or INFO without a stack trace; keep SEVERE for unexpected failures.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-45 — Read tools open `.java` files outside the workspace, through symlinks too
 
 **Status: documented**

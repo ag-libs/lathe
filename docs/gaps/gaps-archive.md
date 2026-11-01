@@ -11068,6 +11068,43 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-43 — Expected refusals are logged at SEVERE with a stack trace — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard and EqualsVerifier.
+
+### Observed behaviour
+
+A refusal is the tool's normal answer, but each is logged as an unexpected error: a rename refused (JDK method,
+Lombok member, shared static import, existing name), `run_test` with no test target, `format_file` with no formatter.
+The editor's server does not log its refusals this way.
+
+### Fix direction
+
+Log refusals at FINE, or INFO without a stack trace; keep SEVERE for unexpected failures.
+
+### Resolution
+
+The engine throws `LatheEngine.Refused` (an `IllegalStateException`) for every answer that is a
+refusal rather than a failure: a request the server refused with a reason (rename refusals, no
+formatter, a formatter error), a write outside the reactor, and a file with no test to run.
+`LatheMcpTools.guarded` logs a refusal at FINE, without a stack trace; SEVERE with the stack trace stays
+for unexpected failures (a timeout, a request that failed without a reason).
+
+Verified end to end on Dropwizard (2026-11-01): the `format_file` and `run_test` refusals leave no
+SEVERE line in the session log.
+
+### Regression targets
+
+- `LatheMcpToolsTest.logged_recordsToolNameAndArguments_aRefusalWithoutAnError`
+
+---
+
 ## MC-44 — A `.lathe/` created after the MCP server started is never picked up — done
 
 **Status: done.**

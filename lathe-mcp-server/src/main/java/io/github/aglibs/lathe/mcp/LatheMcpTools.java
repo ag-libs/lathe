@@ -735,11 +735,15 @@ final class LatheMcpTools {
         .formatted(line, column, line, text.strip());
   }
 
-  // Run an engine call, turning an unexpected failure into a logged isError result.
+  // Run an engine call, turning a refusal or an unexpected failure into an isError result; only
+  // the failure is logged as an error.
   private static CallToolResult guarded(
       final String tool, final Object context, final Supplier<CallToolResult> body) {
     try {
       return body.get();
+    } catch (final LatheEngine.Refused e) {
+      LOG.fine(() -> "[%s] %s refused: %s".formatted(tool, context, e.getMessage()));
+      return error(e.getMessage());
     } catch (final RuntimeException e) {
       LOG.log(Level.SEVERE, e, () -> "[%s] failed for %s".formatted(tool, context));
       return error(agentMessage(tool, e));
