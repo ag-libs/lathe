@@ -159,7 +159,11 @@ def rename_keeps_meaning(b, probe, label, token, old, new, known):
     if "No references" in text:
         b.check(label, False, "found nothing to rename: %s" % first(text))
     elif result.get("isError") or not text.startswith("Renamed"):
-        b.check(label, True, "refused: %s" % first(text), known=known)
+        # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
+        if "would then" in text:
+            b.check(label, True, "refused: %s" % first(text), known=known)
+        else:
+            b.check(label, False, "refused for another reason: %s" % first(text))
     else:
         after = reference_counts(b, probe, [(t, n) for t, n in WATCHED if n != old])
         moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
