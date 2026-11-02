@@ -37,8 +37,7 @@ record TestCounterparts(boolean fromTest, List<Target> targets) {
 
   // The counterparts of the file's top-level type (its file name), from the other tree: the test
   // trees for a main file, the main trees for a test file. Ranked by same package, then same
-  // module,
-  // then the convention the name follows (FooTest before FooIT).
+  // module, then the convention the name follows (FooTest before FooIT).
   static TestCounterparts find(
       final Path file,
       final String pkg,
