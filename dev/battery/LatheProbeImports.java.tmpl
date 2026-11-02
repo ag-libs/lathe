@@ -1,0 +1,19 @@
+package @PACKAGE@;
+
+import java.util.Map;
+
+// Copied into a workspace module by dev/mcp_battery.py for fix_imports, and deleted after: one type
+// with a single candidate and one nested type, both left unimported on purpose.
+class LatheProbeImports {
+    int sum(Map<String, Integer> m) {
+        int s = 0;
+        for (Entry<String, Integer> e : m.entrySet()) {
+            s += e.getValue();
+        }
+        return s;
+    }
+
+    Object make() {
+        return new ConcurrentHashMap<String, String>();
+    }
+}

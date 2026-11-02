@@ -1,0 +1,150 @@
+package @PACKAGE@;
+
+import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Function;
+import java.util.function.IntUnaryOperator;
+import java.util.function.Supplier;
+
+// Copied into a workspace module by dev/mcp_battery.py and deleted after the run: one of each
+// construct the MCP tools have answered wrongly on, plus two renames that would change what a
+// name means. Keep every line it locates by text unique.
+class LatheProbe {
+    private int value;
+
+    public int compute(int x) {
+        return x + value;
+    }
+
+    void setValue(int v) {
+        value = v;
+    }
+
+    long twice(long n) {
+        return n * 2;
+    }
+
+    void callers() {
+        setValue(1);
+        twice(7);
+    }
+
+    interface Shape {
+        double area();
+    }
+
+    sealed interface Node permits Leaf, Pair {}
+
+    record Leaf(int v) implements Node {}
+
+    record Pair(Node left, Node right) implements Node {}
+
+    enum Color {
+        RED {
+            @Override
+            String label() {
+                return "red";
+            }
+        },
+        GREEN;
+
+        String label() {
+            return name();
+        }
+    }
+
+    static Shape unit() {
+        return new Shape() {
+            @Override
+            public double area() {
+                return 1;
+            }
+        };
+    }
+
+    static Shape circle(double r) {
+        return () -> Math.PI * r * r;
+    }
+
+    static final class Square implements Shape {
+        private final double side;
+
+        Square(double side) {
+            this.side = side;
+        }
+
+        @Override
+        public double area() {
+            return side * side;
+        }
+    }
+
+    static List<Shape> shapes() {
+        var list = new ArrayList<Shape>();
+        Function<Double, Square> make = Square::new;
+        Supplier<Shape> unitShape = LatheProbe::unit;
+        list.add(make.apply(2.0));
+        list.add(unitShape.get());
+        list.add(circle(1));
+        return list;
+    }
+
+    // One rename per way a use can start meaning another declaration; mcp_probe.RENAMES renames them.
+    private int limit;
+    private int total;
+    private int width;
+
+    int lambdaShadow() {
+        IntUnaryOperator op = n -> n + limit;
+        return op.applyAsInt(1);
+    }
+
+    int localShadow() {
+        int count = 1;
+        return count + total;
+    }
+
+    int fieldCapture(int height) {
+        int size = 2;
+        return width * height + size;
+    }
+
+    public void ping() {}
+
+    static class Base2 {
+        void pong() {}
+    }
+
+    class Inner extends Base2 {
+        void go() {
+            ping();
+        }
+    }
+
+    static class Animal {
+        void speak() {}
+    }
+
+    static class Dog extends Animal {
+        public void bark() {}
+
+        void call() {
+            speak();
+        }
+    }
+
+    static final class Dice {}
+
+    Random rng() {
+        return new Random();
+    }
+
+    static long measure(long v) {
+        return v;
+    }
+
+    static int gauge(int v) {
+        return v;
+    }
+}

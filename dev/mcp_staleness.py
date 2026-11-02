@@ -7,7 +7,7 @@ file tools, git, or another process would) and check every answer reflects the d
 Restores every file it touched. One PASS/FAIL line per check; exit 1 on any FAIL. A check that
 fails is retried after 3 s and 8 s and tagged [LAG] or [NEVER]. The branch scenario needs
 LATHE_PROBE_OLD_REF (a git ref: its Java sources are checked out, the build files are kept).
-Uses the launcher dev/mcp.py picks (LATHE_MCP_LAUNCHER, else the newest cached server).
+Uses the launcher dev/mcp.py picks: LATHE_MCP_LAUNCHER, else the workspace's own .lathe/ launcher.
 """
 import os
 import re
@@ -122,7 +122,7 @@ class Probe:
         self.log: list[str] = []
 
     def start(self):
-        self.client = mcp.McpClient(mcp._default_launcher(), self.ws)
+        self.client = mcp.McpClient(mcp.launcher_for(self.ws), self.ws)
         self.client.initialize()
 
     def stop(self):
@@ -420,7 +420,7 @@ def s_two_sessions(pr: Probe):
     """Two agent sessions on one workspace: what one writes, the other must see."""
     c = pr.cfg
     pkg = c["up_pkg"]
-    other = mcp.McpClient(mcp._default_launcher(), pr.ws)
+    other = mcp.McpClient(mcp.launcher_for(pr.ws), pr.ws)
     other.initialize()
     try:
         down = pr.p(c["down_file"])
