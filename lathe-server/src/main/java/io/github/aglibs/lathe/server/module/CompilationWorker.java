@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -318,23 +319,19 @@ public final class CompilationWorker {
         cancelChecker);
   }
 
-  public CompletableFuture<List<Location>> methodImplementations(
+  public <T> CompletableFuture<List<T>> queryFile(
       final String uri,
       final String content,
       final int version,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
-    return submit(
-        ctx -> ctx.methodImplementations(uri, content, version, target, candidateBinaryNames));
+      final Function<AttributedFileAnalysis, List<T>> query) {
+    return submit(ctx -> ctx.queryFile(uri, content, version, query));
   }
 
-  public CompletableFuture<List<Location>> methodImplementationsTransient(
+  public <T> CompletableFuture<List<T>> queryFileTransient(
       final String uri,
       final String content,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
-    return submit(
-        ctx -> ctx.methodImplementationsTransient(uri, content, target, candidateBinaryNames));
+      final Function<AttributedFileAnalysis, List<T>> query) {
+    return submit(ctx -> ctx.queryFileTransient(uri, content, query));
   }
 
   public CompletableFuture<Optional<String>> functionalInterfaceName(

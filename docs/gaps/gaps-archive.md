@@ -7,6 +7,39 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-024 — Renaming an interface method misses implementations inherited from a dependency — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
+`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
+with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
+
+### Resolution
+
+Before a method rename edits anything, each reactor subtype of the renamed method's type is checked in its own module
+(the per-file routing go to implementation uses): when the member that implements the method there is inherited from
+a class whose method is outside the override family, the rename is refused, naming both, e.g.
+"`stop` cannot be renamed: JettyManaged implements it through AbstractLifeCycle.stop, which the rename would leave behind".
+The check is not limited to dependencies: a project superclass with a same-signature method that overrides nothing
+in the family is left behind the same way, and is refused too.
+It runs against the family's contract, the method the rename starts from, and costs one attribution per subtype file
+that is not open.
+
+### Regression targets
+
+`LatheEngineTest.rename_methodImplementedThroughASuperclassOutsideTheFamily_refusesNamingTheSubtype`.
+
+---
+
 ## EG-088 — Signature help is empty inside `new P(|)` and `super(|)` when no constructor takes zero arguments — done
 
 **Status: done.**

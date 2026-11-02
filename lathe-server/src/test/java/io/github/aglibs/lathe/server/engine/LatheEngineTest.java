@@ -837,6 +837,58 @@ class LatheEngineTest {
                     .doesNotContain("run"));
   }
 
+  // A subtype implementing the interface method through a superclass outside the family, Thread's
+  // (Worker) or a project class's that overrides nothing (Job), would lose its implementation. One
+  // implemented through a superclass in the family renames with it.
+  @Test
+  void rename_methodImplementedThroughASuperclassOutsideTheFamily_refusesNamingTheSubtype()
+      throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Task", "package com.example; interface Task { void run(); }",
+            "Worker", "package com.example; class Worker extends Thread implements Task {}",
+            "Base", "package com.example; class Base { public void run() {} }",
+            "Step", "package com.example; interface Step { void run(); }",
+            "Job", "package com.example; class Job extends Base implements Step {}",
+            "Plan", "package com.example; interface Plan { void run(); }",
+            "AbstractPlan",
+                "package com.example; abstract class AbstractPlan implements Plan {"
+                    + " public void run() {} }",
+            "Impl", "package com.example; class Impl extends AbstractPlan implements Plan {}");
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    source -> "com/example/%s.java".formatted(source.getKey()),
+                    Map.Entry::getValue)),
+        List.of(),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    Map.of(
+            "Task",
+            "Worker implements it through Thread.run",
+            "Step",
+            "Job implements it through Base.run")
+        .forEach(
+            (start, reason) ->
+                assertThat(
+                        catchThrowable(
+                            () ->
+                                renameAt(exampleFile(start), sources.get(start), "run", "execute")))
+                    .as(start)
+                    .hasMessageContaining(reason));
+    sources.forEach(
+        (type, source) -> assertThat(exampleFile(type)).as(type).content().isEqualTo(source));
+
+    renameAt(exampleFile("Plan"), sources.get("Plan"), "run", "execute");
+    List.of("Plan", "AbstractPlan")
+        .forEach(
+            type -> assertThat(exampleFile(type)).as(type).content().contains("void execute()"));
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }

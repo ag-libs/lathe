@@ -1022,41 +1022,6 @@ None yet.
 
 ---
 
-## FR-024 — Renaming an interface method misses implementations inherited from a dependency
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
-`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
-with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
-
-### Fix direction
-
-One more check in `RenameConflicts`, beside the existing refusal for overriding a method declared in a dependency:
-for each reactor subtype of the renamed method's type, if a supertype outside the reactor supplies the
-implementation (an inherited member for which `Elements.overrides` holds against the renamed method), refuse
-and name the class, e.g. "`JettyManaged` implements `stop` through `AbstractLifeCycle` (jetty-util), which a
-rename cannot change".
-The reactor subtypes come from the implementation search the override family already uses.
-It needs no transient compile, so it can ship before the binding check of FR-022 and FR-023.
-
-Test in `RenameTest`: an interface method implemented through a superclass from a dependency is refused, naming
-the subtype; one implemented in the reactor is renamed together with its implementation.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
