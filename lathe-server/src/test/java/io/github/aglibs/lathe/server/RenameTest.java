@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -14,7 +15,11 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidCloseTextDocumentParams;
 import org.eclipse.lsp4j.RenameParams;
@@ -108,5 +113,58 @@ class RenameTest extends ServiceTestBase {
       assertThat(classes.resolve("Dep2.class")).exists();
       assertThat(classes.resolve("Dep.class")).doesNotExist();
     }
+  }
+
+  // A refusal reaches the client only as the request's error, so the log keeps why: an invalid name
+  // refused up front, and a clash refused once the rename has resolved its target.
+  @Test
+  void rename_refused_logsTheReasonAtInfo() throws Exception {
+    final DepFixture fx = depWithUsers(1);
+    service.initialize(tmp);
+    awaitStartup();
+    final String depSource = Files.readString(fx.dep());
+    openDoc(fx.dep(), depSource);
+    awaitWorkerIdle();
+    final var uri = fx.dep().toUri().toString();
+    final var logged = new ConcurrentLinkedQueue<String>();
+    final var handler =
+        new Handler() {
+          @Override
+          public void publish(final LogRecord record) {
+            logged.add(record.getMessage());
+          }
+
+          @Override
+          public void flush() {}
+
+          @Override
+          public void close() {}
+        };
+    final var log = Logger.getLogger(WorkspaceSession.class.getName());
+    log.addHandler(handler);
+    try {
+      Map.of("v()", "a.b", "Dep {", "User0")
+          .forEach(
+              (at, newName) ->
+                  assertThat(
+                          catchThrowable(
+                              () ->
+                                  service
+                                      .rename(
+                                          new RenameParams(
+                                              new TextDocumentIdentifier(uri),
+                                              offsetToPosition(depSource, depSource.indexOf(at)),
+                                              newName))
+                                      .get(10, TimeUnit.SECONDS)))
+                      .as(newName)
+                      .isNotNull());
+    } finally {
+      log.removeHandler(handler);
+    }
+
+    assertThat(logged)
+        .filteredOn(message -> message.startsWith("[rename] %s ".formatted(uri)))
+        .anySatisfy(message -> assertThat(message).contains("refused: `a.b` is not a valid name"))
+        .anySatisfy(message -> assertThat(message).contains("refused:").contains("User0"));
   }
 }

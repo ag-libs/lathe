@@ -1957,6 +1957,7 @@ final class WorkspaceSession {
     }
 
     final var request = featureRequest(openFile, pos);
+    final var t = Stopwatch.start();
     return module
         .worker()
         .resolveRenameTarget(request)
@@ -1975,9 +1976,13 @@ final class WorkspaceSession {
               }
 
               final Range range = RenameProvider.identifierRange(openFile.content(), pos);
-              return range == null ? null : Either3.forFirst(range);
+              return range == null
+                  ? null
+                  : Either3.<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>forFirst(
+                      range);
             },
-            worker::execute);
+            worker::execute)
+        .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
@@ -2145,11 +2150,14 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
+    final var t = Stopwatch.start();
     if (!RenameProvider.isValidName(newName)) {
-      return CompletableFuture.failedFuture(
+      final var invalid =
           renameRefused(
               "`%s` is not a valid name: it must be one Java identifier, not a keyword"
-                  .formatted(newName)));
+                  .formatted(newName));
+      logRefusal("rename", uri, t, invalid);
+      return CompletableFuture.failedFuture(invalid);
     }
 
     final OpenDocument openFile = docs.get(uri);
@@ -2161,7 +2169,6 @@ final class WorkspaceSession {
     final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         workspace.moduleSourceFor(LatheUri.toPath(uri));
-    final var t = Stopwatch.start();
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
@@ -2212,7 +2219,21 @@ final class WorkspaceSession {
                                   },
                                   worker::execute));
             },
-            worker::execute);
+            worker::execute)
+        .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
+  }
+
+  // A refusal reaches the client as the request's error; the log keeps why it was refused.
+  private static void logRefusal(
+      final String operation, final String uri, final Stopwatch t, final Throwable failure) {
+    final Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    if (cause instanceof final ResponseErrorException refused) {
+      LOG.info(
+          () ->
+              "[%s] %s %dms refused: %s"
+                  .formatted(
+                      operation, uri, t.elapsedMs(), refused.getResponseError().getMessage()));
+    }
   }
 
   // The request a position feature sends to the module's worker, for the open document.
