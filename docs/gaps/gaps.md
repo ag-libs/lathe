@@ -867,58 +867,6 @@ None yet.
 
 ---
 
-## EG-088 — Signature help is empty inside `new P(|)` and `super(|)` when no constructor takes zero arguments
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor.**
-
-Found in a colleague's daily use (2026-11-02), confirmed with a throwaway `SignatureHelpTest`-style probe.
-
-### Observed behaviour
-
-With the cursor between the empty parentheses of a constructor call, signature help answers nothing
-when the class has no no-arg constructor: `new P(|)` for `P(int)` / `P(String)` / `P(int, int)`,
-and `super(|)` in a subclass of such a `P`.
-The same call without its closing paren, `new P(|`, lists both constructors, and so does a class with a no-arg
-constructor (`new StringBuilder(|)`, `new ArrayList<String>(|)`).
-Method calls are not affected: `m(|)`, `new T().m(|)`, `String.valueOf(|)` list every overload.
-
-Two smaller differences from IntelliJ's parameter info turned up on the way:
-
-- Overloads the caller cannot access are listed: `new ArrayList<String>().add(|)` shows the private
-  `void add(E, Object[], int)` beside the two public `add`s.
-- The active overload of an unresolved call is the first declared, not one whose arity fits the arguments typed so far
-  (also noted under [NV-10](#nv-10--signature-help-highlights-no-parameter-when-the-active-overload-is-not-the-first)).
-
-### Root cause
-
-javac resolves no constructor for `()` when none takes zero arguments, so `Trees.getElement` on the
-`NewClassTree` is null and `SignatureHelpResolver.resolve` returns null.
-The method branch falls back to every overload of the name (`methodsNamed`, `memberSelectCandidates`);
-the constructor branch has no such fallback.
-`super(|)` / `this(|)` are `MethodInvocationTree`s whose select element is likewise null, and the identifier fallback
-looks for methods named `super`, of which there are none.
-
-### Fix direction
-
-Match IntelliJ: inside any call's parentheses, list every accessible overload, whether or not the call attributes.
-
-- `new P(…)`: when the element is null, take the constructors of the type the `NewClassTree`'s identifier names.
-- `super(…)` / `this(…)`: take the constructors of the enclosing class's superclass / of the enclosing class.
-- Filter by `Trees.isAccessible` from the call's scope.
-- Pick the active overload by arity when the call does not attribute.
-
-### Regression targets
-
-None yet.
-Add to `SignatureHelpTest`: `new P(§)` and `super(§)` with no no-arg constructor list all constructors;
-a private overload is not listed.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1074,41 +1022,6 @@ None yet.
 
 ---
 
-## FR-024 — Renaming an interface method misses implementations inherited from a dependency
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
-`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
-with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
-
-### Fix direction
-
-One more check in `RenameConflicts`, beside the existing refusal for overriding a method declared in a dependency:
-for each reactor subtype of the renamed method's type, if a supertype outside the reactor supplies the
-implementation (an inherited member for which `Elements.overrides` holds against the renamed method), refuse
-and name the class, e.g. "`JettyManaged` implements `stop` through `AbstractLifeCycle` (jetty-util), which a
-rename cannot change".
-The reactor subtypes come from the implementation search the override family already uses.
-It needs no transient compile, so it can ship before the binding check of FR-022 and FR-023.
-
-Test in `RenameTest`: an interface method implemented through a superclass from a dependency is refused, naming
-the subtype; one implemented in the reactor is renamed together with its implementation.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -1216,38 +1129,6 @@ None yet.
 Active completion-quality gaps. Discovered and triaged via the completion appendix of the
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
-
-## CQ-0061 — While typing, a `switch` case label offers no enum constants
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
-
-### Observed behaviour
-
-`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
-0.1.24 behaves the same.
-
-Case-label completion itself works (archived [CQ-0006](gaps-archive.md#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
-on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
-What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
-a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
-The existing tests only exercise the fresh compile.
-
-### Fix direction
-
-Make the case-label path (`CompletionEngine.enumCaseLabelCandidates`) find the selector's enum type on the cached analysis too, as member access does for a receiver.
-Test it through `completeWithCache`, with and without a prefix.
-
-### Regression targets
-
-None yet.
-
----
 
 # Workspace Lifecycle Gaps (WS)
 
@@ -1750,11 +1631,9 @@ Report it to blink.cmp: the line must be the active signature's index in its own
 Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
 which every client renders correctly, at the cost of the overload order changing as the arguments change.
 
-Related, on the server and not reproduced: when the call does not attribute yet, `SignatureHelpResolver` falls back
-to the first overload of that name whatever the argument count, so an active parameter beyond that overload's
-parameters is highlighted in no client.
-Prefer an overload whose arity fits the arguments typed;
-see also [EG-048](#eg-048--go-to-definition-on-a-call-with-the-wrong-arguments-finds-nothing-and-offers-one-overload-only).
+Related, on the server: when the call does not attribute yet, `SignatureHelpResolver` now makes active the first
+overload whose arity fits the arguments typed, not the first declared
+([EG-088](gaps-archive.md#eg-088--signature-help-is-empty-inside-new-p-and-super-when-no-constructor-takes-zero-arguments--done)).
 
 ### Regression targets
 

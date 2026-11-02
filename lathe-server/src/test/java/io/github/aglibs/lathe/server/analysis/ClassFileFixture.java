@@ -42,7 +42,20 @@ final class ClassFileFixture implements AutoCloseable {
                 public void greet(String name, int count) {}
             }
             """);
-    TestCompiler.compileToDir(classDir, src);
+    // A superclass in another package, so protected access is decided by subclassing alone.
+    final var base =
+        Files.writeString(
+            Files.createDirectory(srcDir.resolve("lib")).resolve("Base.java"),
+            """
+            package lib;
+            public abstract class Base {
+                protected Base(String label) {}
+                protected Base(int x, int y) {}
+                protected void helper(String text) {}
+                public void foo(String text) {}
+            }
+            """);
+    TestCompiler.compileToDir(classDir, src, base);
     this.session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
   }
 

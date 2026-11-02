@@ -27,6 +27,7 @@ import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
@@ -34,6 +35,7 @@ import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceRole;
@@ -1955,10 +1957,11 @@ final class WorkspaceSession {
     }
 
     final var request = featureRequest(openFile, pos);
+    final var t = Stopwatch.start();
     return module
         .worker()
         .resolveRenameTarget(request)
-        .thenApply(
+        .thenApplyAsync(
             target -> {
               if (target == null) {
                 return null;
@@ -1973,8 +1976,13 @@ final class WorkspaceSession {
               }
 
               final Range range = RenameProvider.identifierRange(openFile.content(), pos);
-              return range == null ? null : Either3.forFirst(range);
-            });
+              return range == null
+                  ? null
+                  : Either3.<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>forFirst(
+                      range);
+            },
+            worker::execute)
+        .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
@@ -2042,6 +2050,47 @@ final class WorkspaceSession {
     return Optional.empty();
   }
 
+  // A subtype implementing the method through a superclass outside the override family keeps that
+  // superclass's method, which then implements nothing; the rename cannot change it. Only an
+  // interface method can be implemented that way: a class method is what its subtypes inherit.
+  private CompletableFuture<ReferenceTarget> requireImplementationsRenamed(
+      final ReferenceTarget target) {
+    if (target.kind() != ElementKind.METHOD
+        || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+      return CompletableFuture.completedFuture(target);
+    }
+
+    return worker
+        .submit(
+            () ->
+                typeIndex
+                        .findType(target.qualifiedName())
+                        .filter(
+                            type ->
+                                type.kind()
+                                    == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
+                        .isEmpty()
+                    ? CompletableFuture.completedFuture(List.<String>of())
+                    : concatAll(
+                        subtypeImplementationFiles(target, typeIndex)
+                            .map(
+                                entry ->
+                                    fileQueryFuture(
+                                        entry.getKey(),
+                                        analysis ->
+                                            MethodImplementationLocator.inheritedOutsideFamily(
+                                                analysis, target, entry.getValue())))))
+        .thenCompose(future -> future)
+        .thenApply(
+            reasons -> {
+              if (!reasons.isEmpty()) {
+                throw renameRefused(reasons.get(0));
+              }
+
+              return target;
+            });
+  }
+
   private static ResponseErrorException renameRefused(final String message) {
     return new ResponseErrorException(
         new ResponseError(ResponseErrorCode.RequestFailed, message, null));
@@ -2101,11 +2150,14 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
+    final var t = Stopwatch.start();
     if (!RenameProvider.isValidName(newName)) {
-      return CompletableFuture.failedFuture(
+      final var invalid =
           renameRefused(
               "`%s` is not a valid name: it must be one Java identifier, not a keyword"
-                  .formatted(newName)));
+                  .formatted(newName));
+      logRefusal("rename", uri, t, invalid);
+      return CompletableFuture.failedFuture(invalid);
     }
 
     final OpenDocument openFile = docs.get(uri);
@@ -2117,7 +2169,6 @@ final class WorkspaceSession {
     final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         workspace.moduleSourceFor(LatheUri.toPath(uri));
-    final var t = Stopwatch.start();
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
@@ -2128,7 +2179,7 @@ final class WorkspaceSession {
                   });
               return cursorWorker.resolveRenameTarget(request);
             })
-        .thenCompose(
+        .thenComposeAsync(
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
@@ -2137,6 +2188,7 @@ final class WorkspaceSession {
 
               requireRenameable(target);
               return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
+                  .thenCompose(this::requireImplementationsRenamed)
                   .thenCompose(
                       searchTarget ->
                           searchReferencesForTarget(
@@ -2148,7 +2200,7 @@ final class WorkspaceSession {
                                   cancelChecker,
                                   progress,
                                   "Renaming %s".formatted(searchTarget.simpleName()))
-                              .thenApply(
+                              .thenApplyAsync(
                                   matches -> {
                                     LOG.info(
                                         () ->
@@ -2164,8 +2216,24 @@ final class WorkspaceSession {
                                         toLocations(matches),
                                         newName,
                                         fileRenameSupported);
-                                  }));
-            });
+                                  },
+                                  worker::execute));
+            },
+            worker::execute)
+        .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
+  }
+
+  // A refusal reaches the client as the request's error; the log keeps why it was refused.
+  private static void logRefusal(
+      final String operation, final String uri, final Stopwatch t, final Throwable failure) {
+    final Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    if (cause instanceof final ResponseErrorException refused) {
+      LOG.info(
+          () ->
+              "[%s] %s %dms refused: %s"
+                  .formatted(
+                      operation, uri, t.elapsedMs(), refused.getResponseError().getMessage()));
+    }
   }
 
   // The request a position feature sends to the module's worker, for the open document.
@@ -2767,14 +2835,27 @@ final class WorkspaceSession {
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, WorkspaceSession::unionNames));
-    return candidatesByFile.entrySet().stream()
-        .map(entry -> methodImplementationFuture(entry.getKey(), entry.getValue(), target))
-        .reduce(
-            CompletableFuture.completedFuture(List.of()),
-            (left, right) ->
-                left.thenCombine(
-                    right,
-                    (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
+    return concatAll(
+        candidatesByFile.entrySet().stream()
+            .map(
+                entry ->
+                    fileQueryFuture(
+                        entry.getKey(),
+                        analysis ->
+                            MethodImplementationLocator.locate(
+                                analysis,
+                                target,
+                                entry.getValue(),
+                                entry.getKey().toUri().toString()))));
+  }
+
+  private static <T> CompletableFuture<List<T>> concatAll(
+      final Stream<CompletableFuture<List<T>>> futures) {
+    return futures.reduce(
+        CompletableFuture.completedFuture(List.of()),
+        (left, right) ->
+            left.thenCombine(
+                right, (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
   }
 
   private Stream<Map.Entry<Path, Set<String>>> subtypeImplementationFiles(
@@ -2839,8 +2920,10 @@ final class WorkspaceSession {
     return Stream.concat(left.stream(), right.stream()).collect(Collectors.toUnmodifiableSet());
   }
 
-  private CompletableFuture<List<Location>> methodImplementationFuture(
-      final Path sourceFile, final Set<String> candidateBinaryNames, final ReferenceTarget target) {
+  // A query over a source file's analysis in its own module: the open document's, or else the
+  // file on disk attributed once.
+  private <T> CompletableFuture<List<T>> fileQueryFuture(
+      final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
     final var config = workspace.moduleSourceFor(sourceFile);
     if (config.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
@@ -2858,10 +2941,10 @@ final class WorkspaceSession {
     final var worker = workspace.workerFor(config.get());
     if (openFile != null) {
       touchAnalysisCache(openFile.uri());
-      return worker.methodImplementations(uri, content, version, target, candidateBinaryNames);
+      return worker.queryFile(uri, content, version, query);
     }
 
-    return worker.methodImplementationsTransient(uri, content, target, candidateBinaryNames);
+    return worker.queryFileTransient(uri, content, query);
   }
 
   CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(

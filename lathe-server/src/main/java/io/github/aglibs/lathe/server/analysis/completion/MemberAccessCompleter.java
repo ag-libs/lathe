@@ -290,7 +290,7 @@ final class MemberAccessCompleter {
     return parsed.receiverText() != null && parsed.receiverText().indexOf('(') >= 0;
   }
 
-  private static boolean staleBeforeCompletionToken(
+  static boolean staleBeforeCompletionToken(
       final CompletionRequest req, final SentinelInjectionResult injected) {
     final int tokenStart = injected.tokenStart();
     if (req.cached() == null || req.noDiff() || tokenStart < 0) {

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -723,16 +724,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
   }
 
-  public List<Location> methodImplementations(
+  // A query over an open file's attributed analysis, the cached one when it is current.
+  public <T> List<T> queryFile(
       final String uri,
       final String content,
       final int version,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
+      final Function<AttributedFileAnalysis, List<T>> query) {
     final var analysis = ensureAttributedAnalysis(uri, content, version);
-    return analysis != null
-        ? MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri)
-        : List.of();
+    return analysis != null ? query.apply(analysis) : List.of();
   }
 
   /**
@@ -760,19 +759,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : Optional.empty();
   }
 
-  public List<Location> methodImplementationsTransient(
+  // A query over a file that is not open, attributed once and not cached.
+  public <T> List<T> queryFileTransient(
       final String uri,
       final String content,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
+      final Function<AttributedFileAnalysis, List<T>> query) {
     final var t = Stopwatch.start();
     final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, () -> {});
     LOG.info(
         () ->
             "[compile:fast] %s %dms diags=%d"
                 .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return MethodImplementationLocator.locate(
-        run.fileAnalysis(), target, candidateBinaryNames, uri);
+    return query.apply(run.fileAnalysis());
   }
 
   private Optional<Location> findDefinitionLocation(

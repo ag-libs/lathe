@@ -5,7 +5,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.SignatureHelp;
+import org.eclipse.lsp4j.SignatureInformation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -281,6 +285,47 @@ class SignatureHelpTest {
     }
   }
 
+  // Access is decided through the class a member is reached from, not the class declaring it.
+  @Test
+  void signatureHelp_protectedMembersFromASubclassInAnotherPackage_areListed(
+      @TempDir final Path tmpDir) throws Exception {
+    try (final var fixture = new ClassFileFixture(tmpDir)) {
+      final String impl =
+          """
+          class Impl extends lib.Base {
+              Impl() { %s }
+              void foo(int x) {}
+              void m(Impl other) { %s }
+          }
+          """;
+      final Map<String, List<String>> expected =
+          Map.of(
+              impl.formatted("super(§);", ""),
+              List.of("Base(", "Base("),
+              impl.formatted("super(\"\");", "helper(§);"),
+              List.of("void helper("),
+              impl.formatted("super(\"\");", "super.helper(§);"),
+              List.of("void helper("),
+              impl.formatted("super(\"\");", "other.foo(\"x\"§);"),
+              List.of("void foo(", "void foo("),
+              "class Test { Object m() { return new lib.Base(1, 2§) {}; } }",
+              List.of("Base(", "Base("),
+              "class Test { char m() { return new StringBuilder().charAt(§); } }",
+              List.of("char charAt("));
+
+      final Map<String, List<String>> actual =
+          expected.keySet().stream()
+              .collect(
+                  Collectors.toMap(
+                      Function.identity(), source -> labelPrefixes(fixture, source, expected)));
+
+      assertThat(actual).isEqualTo(expected);
+      final var anonymous =
+          fixture.signatureHelpAt("class Test { Object m() { return new lib.Base(1, 2§) {}; } }");
+      assertThat(anonymous.getActiveSignature()).isEqualTo(1);
+    }
+  }
+
   // --- javadoc in documentation field ---
 
   @Test
@@ -350,6 +395,93 @@ class SignatureHelpTest {
     assertThat(help.getSignatures()).anyMatch(sig -> sig.getLabel().contains("int x"));
     assertThat(help.getSignatures().get(help.getActiveSignature()).getLabel()).contains("int x");
     assertThat(help.getActiveParameter()).isEqualTo(0);
+  }
+
+  @Test
+  void signatureHelp_constructorCallWithoutNoArgConstructor_listsEveryConstructor() {
+    final var declarations =
+        """
+        class P {
+            P(int x) {}
+            P(String s) {}
+            P(int x, int y) {}
+        }
+        """;
+    final List<String> calls =
+        List.of(
+            "class Test { Object m() { return new P(§); } }",
+            "class Test { Object m() { return new P(§) {}; } }",
+            "class Child extends P { Child() { super(§); } }");
+
+    calls.forEach(
+        call -> {
+          final var help = signatureHelpAt(declarations + call);
+
+          assertThat(help).as(call).isNotNull();
+          assertThat(help.getSignatures())
+              .as(call)
+              .extracting(SignatureInformation::getLabel)
+              .containsExactly("P(int x)", "P(String s)", "P(int x, int y)");
+          assertThat(help.getActiveParameter()).as(call).isEqualTo(0);
+        });
+  }
+
+  @Test
+  void signatureHelp_inaccessibleOverload_isNotListed() {
+    final var source =
+        """
+        import java.util.ArrayList;
+        class Hidden {
+            private Hidden(int x) {}
+            Hidden(String s) {}
+            private void m(int x) {}
+            void m(String s) {}
+        }
+        class Test {
+            void caller() {
+                new ArrayList<String>().add(§);
+                new Hidden("x").m(%s);
+                new Hidden(%s);
+            }
+        }
+        """;
+
+    assertThat(signatureHelpAt(source.formatted("", "")).getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .hasSize(2)
+        .noneMatch(label -> label.contains("Object[]"));
+    assertThat(signatureHelpAt(source.replace("§", "").formatted("§", "")).getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("void m(String s)");
+    assertThat(signatureHelpAt(source.replace("§", "").formatted("", "§")).getSignatures())
+        .extracting(SignatureInformation::getLabel)
+        .containsExactly("Hidden(String s)");
+  }
+
+  @Test
+  void signatureHelp_unattributedCall_activeOverloadFitsArgumentsTyped() {
+    final var source =
+        """
+        class Test {
+            Test(int x) {}
+            Test(int x, int y) {}
+            void m(int x) {}
+            void m(int x, int y) {}
+            void caller() { %s }
+        }
+        """;
+
+    final var method = signatureHelpAt(source.formatted("m(\"a\", §"));
+    final var constructor = signatureHelpAt(source.formatted("new Test(\"a\", §"));
+    final var single = signatureHelpAt(source.formatted("m(§"));
+
+    assertThat(method.getSignatures().get(method.getActiveSignature()).getLabel())
+        .isEqualTo("void m(int x, int y)");
+    assertThat(method.getActiveParameter()).isEqualTo(1);
+    assertThat(constructor.getSignatures().get(constructor.getActiveSignature()).getLabel())
+        .isEqualTo("Test(int x, int y)");
+    assertThat(single.getSignatures().get(single.getActiveSignature()).getLabel())
+        .isEqualTo("void m(int x)");
   }
 
   // --- activeParam at closing paren ---
@@ -460,6 +592,25 @@ class SignatureHelpTest {
   }
 
   // --- helpers ---
+
+  // Each label cut to the prefix it is expected to start with, so labels compare without the
+  // parameter names a class file may lack.
+  private static List<String> labelPrefixes(
+      final ClassFileFixture fixture,
+      final String source,
+      final Map<String, List<String>> expected) {
+    final var help = fixture.signatureHelpAt(source);
+    if (help == null) {
+      return List.of();
+    }
+
+    return help.getSignatures().stream()
+        .map(SignatureInformation::getLabel)
+        .map(
+            label ->
+                expected.get(source).stream().filter(label::startsWith).findFirst().orElse(label))
+        .toList();
+  }
 
   private SignatureHelp signatureHelpAt(final String rawSource) {
     final var source = rawSource.replace(MARKER, "");

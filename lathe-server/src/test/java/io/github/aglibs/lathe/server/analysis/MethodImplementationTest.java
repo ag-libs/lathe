@@ -53,8 +53,12 @@ class MethodImplementationTest {
     try (var candidateSession =
         new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
       final List<Location> locations =
-          candidateSession.methodImplementations(
-              candidateUri, candidateContent, 1, target, Set.of("AbstractService", "Direct"));
+          implementations(
+              candidateSession,
+              candidateUri,
+              candidateContent,
+              target,
+              Set.of("AbstractService", "Direct"));
 
       assertThat(locations).hasSize(1);
       assertThat(locations.get(0).getUri()).isEqualTo(candidateUri);
@@ -90,8 +94,7 @@ class MethodImplementationTest {
     try (var candidateSession =
         new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
       final List<Location> locations =
-          candidateSession.methodImplementations(
-              recordUri, recordContent, 1, target, Set.of("Impl"));
+          implementations(candidateSession, recordUri, recordContent, target, Set.of("Impl"));
 
       assertThat(locations).hasSize(1);
       assertThat(locations.get(0).getUri()).isEqualTo(recordUri);
@@ -132,8 +135,12 @@ class MethodImplementationTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       assertThat(
-              session.methodImplementations(
-                  TempSourceCompiler.TEST_URI, "class Service {}", 1, target, Set.of("Service")))
+              implementations(
+                  session,
+                  TempSourceCompiler.TEST_URI,
+                  "class Service {}",
+                  target,
+                  Set.of("Service")))
           .isEmpty();
     }
   }
@@ -155,9 +162,14 @@ class MethodImplementationTest {
     final var compiler = new CountingJavaSourceCompiler();
 
     try (var session = new SourceAnalysisSession(compiler)) {
-      assertThat(session.methodImplementationsTransient(uri, content, target, Set.of("Impl")))
+      assertThat(
+              session.queryFileTransient(
+                  uri,
+                  content,
+                  analysis ->
+                      MethodImplementationLocator.locate(analysis, target, Set.of("Impl"), uri)))
           .isEmpty();
-      assertThat(session.methodImplementations(uri, content, 1, target, Set.of("Impl"))).isEmpty();
+      assertThat(implementations(session, uri, content, target, Set.of("Impl"))).isEmpty();
 
       assertThat(compiler.count(CompileMode.FAST)).isEqualTo(1);
       assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(1);
@@ -189,8 +201,7 @@ class MethodImplementationTest {
     try (var candidateSession =
         new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
       final List<Location> locations =
-          candidateSession.methodImplementations(
-              candidateUri, candidateContent, 1, target, Set.of("Impl"));
+          implementations(candidateSession, candidateUri, candidateContent, target, Set.of("Impl"));
 
       // The named override (apply, line 2), the Transformer lambda (line 5), and the Transformer
       // method reference (line 6) — but not the Supplier lambda (line 7), whose target type is a
@@ -229,8 +240,7 @@ class MethodImplementationTest {
     try (var candidateSession =
         new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)))) {
       final List<Location> locations =
-          candidateSession.methodImplementations(
-              candidateUri, candidateContent, 1, target, Set.of());
+          implementations(candidateSession, candidateUri, candidateContent, target, Set.of());
 
       assertThat(locations.stream().map(l -> l.getRange().getStart().getLine()).toList())
           .containsExactly(6);
@@ -250,6 +260,20 @@ class MethodImplementationTest {
       assertThat(session.functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
           .isEmpty();
     }
+  }
+
+  private static List<Location> implementations(
+      final SourceAnalysisSession session,
+      final String uri,
+      final String content,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    return session.queryFile(
+        uri,
+        content,
+        1,
+        analysis ->
+            MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri));
   }
 
   private ReferenceTarget samTarget(final String interfaceContent) {
