@@ -19,7 +19,10 @@ All files live in `dev/` and are never shipped with the distribution.
 | `jdtls_diff.py` | Differential tester — drives Lathe and jdtls over identical probes, reports divergences |
 | `explore.py` | Interactive LSP shell — explore any file like an engineer would |
 | `mcp.py` | Minimal MCP stdio client (`McpClient`) and CLI for the Lathe MCP server |
-| `mcp_battery.py` | MCP smoke on a real workspace: every tool, break → verify → repair, rename round-trip |
+| `mcp_battery.py` | MCP release battery on a real workspace: every tool, tools agreeing with each other, a probe file of less common constructs, renames that keep what names mean, bad requests, server health |
+| `mcp_consistency.py` | The battery's checks that two tools agree about one symbol, and the parsers for MCP answers |
+| `mcp_probe.py` | The battery's construct probe (`battery/*.java.tmpl`) and what each tool must answer on it |
+| `release_check.py` | The battery on every clone found (plus staleness and scale on request), in one dated report |
 | `mcp_staleness.py` | MCP answers after outside changes (file tools, git, a build) on a real workspace |
 | `lsp_staleness.py` | The same outside changes seen by an editor session, polled up to a deadline |
 | `mixed_staleness.py` | An editor and an MCP session on one workspace at once (EqualsVerifier) |
@@ -112,27 +115,57 @@ harness builds by default; `SKIP_BUILD=1` reuses whatever is already built.
 
 ---
 
-## Release smoke on real workspaces — mcp_battery.py, editor-smoke.sh
+## Release smoke on real workspaces — release_check.py, mcp_battery.py, editor-smoke.sh
 
-Two batteries for checking a server build against Dropwizard, EqualsVerifier and Helidon clones before
+Batteries for checking a server version against Dropwizard, EqualsVerifier and Helidon clones before
 a release.
-Sync each workspace with the build under test first (`mvn process-test-classes`; Helidon's HEAD
-needs JDK 27, Dropwizard JDK 25).
+Sync each workspace with the version under test first: set its `lathe-maven-extension` to that version
+and run `mvn process-test-classes` (Helidon's HEAD needs JDK 27, Dropwizard JDK 25).
 `mcp_battery.py`'s two `run_test` checks also need a captured test launch: run its test module once
-with `.lathe/lathe-sync.sh --tests <module>` (or `mvn test` on one test class).
+with `.lathe/lathe-sync.sh --tests <module>` (or `mvn test` on one test class); without it they SKIP.
 
 ```bash
-# MCP: every tool once, a break/verify/repair cycle, and a cross-module rename round-trip
-python3 -I dev/mcp_battery.py ~/git/dropwizard dropwizard
+# All MCP checks on every clone found under ~/git, one report in dev/reports/
+python3 -I dev/release_check.py ~/git --expect-version 0.2.2            # add --staleness, --scale
+
+# MCP battery on one workspace
+python3 -I dev/mcp_battery.py ~/git/dropwizard dropwizard --expect-version 0.2.2
 
 # Editor: navigation, references, completion while typing, diagnostics, format, dependency
 # sources and neotest, driven inside your own Neovim config with this checkout's Lua client
 dev/editor-smoke.sh ~/git                    # all three; or name some: ~/git helidon
 ```
 
-Both print one `PASS`/`FAIL` line per check and exit 1 if any check fails.
+The MCP battery runs the server the workspace was synced with (`.lathe/lathe-mcp-launcher.sh`;
+`LATHE_MCP_LAUNCHER` overrides it) and refuses to run when that server, or the sync, is not the
+`--expect-version`, or when a `.java` file in the clone has uncommitted edits.
+It warns when the clone's HEAD is not the commit its expectations were written against (`pin` in
+`CONFIGS`).
+It checks:
+
+- **every tool**, with answers that must hold content (references in several modules, callers, a
+  rename that edits several modules), and fails when the server lists a tool the battery has no check for;
+- **tools agreeing with each other** (`mcp_consistency.py`): every outline item resolves, an interface's
+  implementations cover its method's, a method's override family, `analyze_change`'s modules, references
+  leading back to their declaration, location lists without duplicates and grouped by module;
+- **a probe file** (`mcp_probe.py`, `battery/LatheProbe.java.tmpl`) copied into one module and deleted
+  after: anonymous classes, enum constant bodies, lambdas, records, `Type::new`, `var`, a file that stops
+  compiling, `fix_imports` on a nested type and on a CRLF file;
+- **renames that keep what names mean**: the reference count of every nearby declaration must not move,
+  or the rename must refuse — a rename can still compile and change which declaration a use binds to;
+- **bad requests** (missing file or argument, a position on whitespace, a file outside the workspace or
+  reached through a symlink, an unknown tool), each answered with an error an agent can act on;
+- **the server's health**: no `SEVERE` or stack trace in its log, an answer after a garbage line, and
+  an exit when stdin closes.
+
+Each check prints `PASS`, `FAIL`, `SKIP`, `KNOWN` (a wrong answer already in the gap log; the run still
+passes) or `NOW PASSES` (a `KNOWN` one that is right now: drop its `known=` mark).
+A `NOW PASSES` on a workspace check (not a `probe` one) can also mean that workspace does not hit the
+gap — EqualsVerifier has no lambda implementing `Checker` — so confirm on the probe or another clone first.
+A JSON report per workspace and version goes to `dev/reports/battery/`; a check more than twice as slow
+(and 500 ms slower) as in the previous version's report is listed as `SLOWER`.
+Every request times out after `LATHE_MCP_TIMEOUT` seconds (default 120).
 `mcp_battery.py` restores every file it touched; the editor smoke never writes a file.
-`mcp_battery.py` uses the launcher `mcp.py` picks: `LATHE_MCP_LAUNCHER`, else the newest cached server.
 
 ---
 

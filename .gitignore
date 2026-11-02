@@ -7,3 +7,5 @@ __pycache__/
 node_modules/
 
 /docs/videos/
+/dev/reports/battery/
+/dev/reports/release-*.md
