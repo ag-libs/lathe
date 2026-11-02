@@ -125,13 +125,16 @@ def diagnostics_agree_with_notes(b, file: Path, label, known=None):
 
 
 def references_round_trip(b, ws: Path, decl_file: Path, pos, name, label, limit=10):
-    """get_definition at each of the first references leads back to the declaration's file."""
+    """get_definition at each of the first references leads back to the declaration, or to an
+    override of it: a call through an implementing type resolves to that type's method."""
     refs = locations(b.raw("find_references", dict(pos, maxResults=limit))[0])
+    family = {decl_file.name} | {Path(p).name for p, _, _ in locations(b.raw("find_implementations", pos)[0])}
     wrong = []
     for path, line, _ in refs[:limit]:
         file = Path(path) if Path(path).is_absolute() else ws / path
-        answer = b.raw("get_definition", {"file": str(file), "line": line, "symbol": name})[0]
-        if decl_file.name not in answer:
+        targets = {Path(p).name for p, _, _ in locations(b.raw("get_definition", {"file": str(file), "line": line,
+                                                                                  "symbol": name})[0])}
+        if not targets & family:
             wrong.append("%s:%d" % (path, line))
     b.check(label, bool(refs) and not wrong, "%d reference(s) checked; wrong: %s"
             % (min(len(refs), limit), ", ".join(wrong[:3]) or "none"))

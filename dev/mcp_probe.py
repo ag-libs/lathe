@@ -22,6 +22,7 @@ def line_of(text, token):
     return hits[0]
 
 
+# The probe classes are package-private: a public class needs an API stability annotation in Helidon.
 class Probe:
     def __init__(self, ws: Path, src_dir: str, package: str):
         self.dir = ws / src_dir
