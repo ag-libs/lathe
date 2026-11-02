@@ -118,8 +118,10 @@ require("lazy").setup({
       -- Run the `main` under the cursor from .lathe/ bytecode; output streams into Lathe's docked
       -- split (reopen with <leader>to). Its own <leader>r group keeps it clear of tests (<leader>t).
       vim.keymap.set("n", "<leader>rr", "<cmd>LatheRun<cr>", { desc = "Run main under cursor" })
-      -- Lathe commands with no built-in key: grN/grh sit in the references family (grr).
+      -- Lathe commands with no built-in key: grN/grh/grT sit in the references family (grr); grT is
+      -- capital as grt is Neovim's go to type definition.
       vim.keymap.set("n", "grN", "<cmd>LatheInstances<cr>", { desc = "Lathe: instantiation sites of the type" })
+      vim.keymap.set("n", "grT", "<cmd>LatheGoToTest<cr>", { desc = "Lathe: go to test / tested class" })
       vim.keymap.set("n", "grh", "<cmd>LatheTypeHierarchy<cr>", { desc = "Lathe: full type hierarchy" })
       vim.keymap.set("n", "<leader>li", "<cmd>LatheMissingImports<cr>", { desc = "Lathe: add missing imports" })
     end,

@@ -60,6 +60,7 @@ Adapter Protocol for debugging), not standard LSP methods. The Neovim commands (
 | Feature  | What it does                                                                                                      | Command                                                   |
 |----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
 | New type | scaffolds a `class` / `interface` / `record` / `enum` / `annotation` / `test`, plus `package-info` and `module-info` — pick the kind, fuzzy-pick the destination package, and name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
+| Go to test | from a class to its test (`FooTest`, `FooIT`, … in any module; several picked from), from a test back to its class; no test offers to create one | Neovim `:LatheGoToTest` · `lathe.testCounterparts` |
 
 `:LatheNew <kind>` adds a type in the current package; bare `:LatheNew` runs a guided module/package
 picker. The server owns placement — module, source root, package, and skeleton.
