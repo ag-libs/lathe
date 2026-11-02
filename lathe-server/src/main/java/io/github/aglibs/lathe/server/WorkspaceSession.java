@@ -2167,7 +2167,6 @@ final class WorkspaceSession {
                                                     moved.getOrDefault(uri, uri),
                                                     content,
                                                     renamed.getOrDefault(uri, List.of()),
-                                                    target.simpleName(),
                                                     newName))))
                         .stream())
             .collect(
@@ -2184,7 +2183,7 @@ final class WorkspaceSession {
     final ReferenceTarget renamedTarget =
         RenameBindingCheck.renamedTarget(target, newName, declaringFiles.get(0));
     final List<RenameBindingCheck.EditedFile> declaringEdits =
-        declaringFiles.stream().filter(file -> !file.oldStarts().isEmpty()).toList();
+        declaringFiles.stream().filter(RenameBindingCheck.EditedFile::edited).toList();
     return concatAll(
             byConfig.entrySet().stream()
                 .map(

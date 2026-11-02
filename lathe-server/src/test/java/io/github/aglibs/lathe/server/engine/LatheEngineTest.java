@@ -1111,6 +1111,102 @@ class LatheEngineTest {
     assertThat(exampleFile("UsesList")).content().contains("Assistant helper = new Assistant();");
   }
 
+  // Renames whose sites are not plain names the check sees as they are: record components (header,
+  // accessor, canonical constructor), enum constants in case labels, static imports, Javadoc links,
+  // an interface method with its implementation, a method reference, a type renamed at its `new`.
+  // None changes meaning, so each renames.
+  @Test
+  void rename_unusualSitesKeepingTheirMeaning_renames() throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Point",
+                """
+                package com.example;
+                record Point(int x, int y) {
+                  Point {
+                    if (x < 0) { throw new IllegalArgumentException(); }
+                  }
+                  int sum() { return x + y(); }
+                }
+                """,
+            "Color", "package com.example;\nenum Color { RED, GREEN }\n",
+            "Shape",
+                """
+                package com.example;
+                interface Shape {
+                  /** Area; see {@link #area()}. */
+                  double area();
+                }
+                """,
+            "Circle",
+                """
+                package com.example;
+                import java.util.function.ToDoubleFunction;
+                class Circle implements Shape {
+                  public double area() { return 1; }
+                  ToDoubleFunction<Shape> ref() { return Shape::area; }
+                }
+                """,
+            "Util",
+                "package com.example;\nclass Util { static int twice(int n) { return n * 2; } }\n",
+            "Client",
+                """
+                package com.example;
+                import static com.example.Util.twice;
+                class Client {
+                  int use(Point p, Color c) {
+                    switch (c) {
+                      case RED: return twice(p.x());
+                      default: return new Helper().hashCode();
+                    }
+                  }
+                }
+                """,
+            "Helper", "package com.example;\nclass Helper {}\n");
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    source -> "com/example/%s.java".formatted(source.getKey()),
+                    Map.Entry::getValue)),
+        List.of(),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    final List<List<String>> renames =
+        List.of(
+            List.of("Point", "x, int", "left"),
+            List.of("Color", "RED", "CRIMSON"),
+            List.of("Shape", "area();", "surface"),
+            List.of("Util", "twice(int", "doubled"),
+            List.of("Client", "Helper()", "Assistant"));
+    for (final List<String> rename : renames) {
+      final Path file = exampleFile(rename.get(0));
+      renameAt(file, Files.readString(file), rename.get(1), rename.get(2));
+    }
+
+    assertThat(exampleFile("Point"))
+        .content()
+        .contains("record Point(int left, int y)")
+        .contains("if (left < 0)")
+        .contains("return left + y();");
+    assertThat(exampleFile("Shape"))
+        .content()
+        .contains("{@link #surface()}")
+        .contains("double surface();");
+    assertThat(exampleFile("Circle"))
+        .content()
+        .contains("public double surface()")
+        .contains("Shape::surface");
+    assertThat(exampleFile("Client"))
+        .content()
+        .contains("import static com.example.Util.doubled;")
+        .contains("case CRIMSON: return doubled(p.left());")
+        .contains("new Assistant().hashCode()");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }

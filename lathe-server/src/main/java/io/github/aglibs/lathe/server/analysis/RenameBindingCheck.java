@@ -5,18 +5,20 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
 
 // Whether a rename keeps what every name means. A rename adds one declaration of the new name and
 // removes the old one, so a name means something else afterwards exactly when the uses of the
@@ -27,42 +29,37 @@ public final class RenameBindingCheck {
 
   private RenameBindingCheck() {}
 
-  // A file as the rename leaves it: its text, and where each renamed name starts before and after.
-  public record EditedFile(String uri, String content, List<Integer> oldStarts, int delta) {
+  // A file as the rename leaves it: its text, with the rename's edits applied as the client applies
+  // them, and the spans the edits replaced, to move the old text's offsets to the new.
+  public record EditedFile(String uri, String content, List<Span> renamed, int newLength) {
 
     public EditedFile {
       ValidCheck.check().notBlank(uri, "uri").notNull(content, "content").validate();
-      oldStarts = oldStarts.stream().sorted().toList();
+      renamed = renamed.stream().sorted(Comparator.comparingInt(Span::start)).toList();
     }
 
-    // The file with the renamed ranges replaced by the new name; a file the rename does not edit
-    // keeps its text and has no renamed sites.
+    // The file with each renamed range replaced by the new name; a file the rename does not edit
+    // keeps its text.
     public static EditedFile of(
-        final String uri,
-        final String content,
-        final List<Range> renamed,
-        final String oldName,
-        final String newName) {
-      final List<Integer> starts =
-          renamed.stream()
-              .map(
-                  range ->
-                      SourceLocator.toOffset(
-                          content, range.getStart().getLine(), range.getStart().getCharacter()))
-              .sorted()
-              .toList();
-      final var text = new StringBuilder(content);
-      for (int i = starts.size() - 1; i >= 0; i--) {
-        text.replace(starts.get(i), starts.get(i) + oldName.length(), newName);
-      }
+        final String uri, final String content, final List<Range> ranges, final String newName) {
+      final List<Span> renamed = ranges.stream().map(range -> span(content, range)).toList();
+      final List<TextEdit> edits =
+          ranges.stream().map(range -> new TextEdit(range, newName)).toList();
+      return new EditedFile(
+          uri, SourceLocator.applyEdits(content, edits), renamed, newName.length());
+    }
 
-      return new EditedFile(uri, text.toString(), starts, newName.length() - oldName.length());
+    public boolean edited() {
+      return !renamed.isEmpty();
     }
 
     // Where an offset of the text before the rename lands after it.
     private int shifted(final int oldOffset) {
       return oldOffset
-          + delta * (int) oldStarts.stream().filter(start -> start < oldOffset).count();
+          + renamed.stream()
+              .filter(span -> span.start() < oldOffset)
+              .mapToInt(span -> newLength - span.length())
+              .sum();
     }
 
     TransientSource source() {
@@ -70,9 +67,26 @@ public final class RenameBindingCheck {
     }
 
     private Set<Integer> renamedStarts() {
-      return IntStream.range(0, oldStarts.size())
-          .mapToObj(i -> oldStarts.get(i) + i * delta)
+      return renamed.stream()
+          .map(span -> shifted(span.start()))
           .collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static Span span(final String content, final Range range) {
+      final int start = offset(content, range.getStart());
+      return new Span(start, offset(content, range.getEnd()) - start);
+    }
+
+    private static int offset(final String content, final Position position) {
+      return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
+    }
+  }
+
+  // A replaced span of the text before the rename.
+  public record Span(int start, int length) {
+
+    public Span {
+      ValidCheck.check().assertTrue(start >= 0 && length >= 0, "span").validate();
     }
   }
 
