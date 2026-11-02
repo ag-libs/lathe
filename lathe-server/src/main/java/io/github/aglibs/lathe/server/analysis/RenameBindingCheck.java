@@ -4,6 +4,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
@@ -19,6 +21,7 @@ import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 
 // Whether a rename keeps what every name means. A rename adds one declaration of the new name and
 // removes the old one, so a name means something else afterwards exactly when the uses of the
@@ -31,26 +34,22 @@ public final class RenameBindingCheck {
 
   // A file as the rename leaves it: its text, with the rename's edits applied as the client applies
   // them, and the spans the edits replaced, to move the old text's offsets to the new.
-  public record EditedFile(String uri, String content, List<Span> renamed, int newLength) {
+  private record EditedFile(String uri, String content, List<Span> renamed, int newLength) {
 
-    public EditedFile {
+    private EditedFile {
       ValidCheck.check().notBlank(uri, "uri").notNull(content, "content").validate();
       renamed = renamed.stream().sorted(Comparator.comparingInt(Span::start)).toList();
     }
 
     // The file with each renamed range replaced by the new name; a file the rename does not edit
     // keeps its text.
-    public static EditedFile of(
+    static EditedFile of(
         final String uri, final String content, final List<Range> ranges, final String newName) {
       final List<Span> renamed = ranges.stream().map(range -> span(content, range)).toList();
       final List<TextEdit> edits =
           ranges.stream().map(range -> new TextEdit(range, newName)).toList();
       return new EditedFile(
           uri, SourceLocator.applyEdits(content, edits), renamed, newName.length());
-    }
-
-    public boolean edited() {
-      return !renamed.isEmpty();
     }
 
     // Where an offset of the text before the rename lands after it.
@@ -83,16 +82,16 @@ public final class RenameBindingCheck {
   }
 
   // A replaced span of the text before the rename.
-  public record Span(int start, int length) {
+  private record Span(int start, int length) {
 
-    public Span {
+    private Span {
       ValidCheck.check().assertTrue(start >= 0 && length >= 0, "span").validate();
     }
   }
 
   // The renamed declaration under its new name, a type's binary name included; a local keeps its
   // identity by where its declaration starts, which moves with the renamed sites before it.
-  public static ReferenceTarget renamedTarget(
+  private static ReferenceTarget renamedTarget(
       final ReferenceTarget target, final String newName, final EditedFile declaringFile) {
     final boolean type = target.kind().isClass() || target.kind().isInterface();
     return new ReferenceTarget(
@@ -103,7 +102,7 @@ public final class RenameBindingCheck {
         target.scope(),
         target.overriddenDeclarers(),
         target.overrideFamilyBounded(),
-        target.hasDeclarationIdentity()
+        target.hasDeclarationIdentity() && declaringFile != null
             ? declaringFile.shifted((int) target.declarationOffset())
             : target.declarationOffset());
   }
@@ -114,25 +113,130 @@ public final class RenameBindingCheck {
     return "%s%s".formatted(binaryName.substring(0, end + 1), newName);
   }
 
-  // Attributes the files together, the edited ones as the rename leaves them, and checks the
-  // checked ones: the first name whose meaning would change, as the reason to refuse.
+  // A rename to check, shared by every module that sees the symbol: what is renamed, the file
+  // declaring a local (whose identity is where it is declared), every file the rename edits, which
+  // the checked files are attributed with so the renamed declaration is what they see, and the open
+  // documents' text, which a file's text on disk would not be.
+  public record RenameCheck(
+      ReferenceTarget target,
+      String newName,
+      String declaringUri,
+      List<CheckedFile> edited,
+      Map<String, String> openContents) {
+
+    public RenameCheck {
+      ValidCheck.check()
+          .notNull(target, "target")
+          .notBlank(newName, "newName")
+          .notBlank(declaringUri, "declaringUri")
+          .validate();
+      edited = List.copyOf(edited);
+      openContents = Map.copyOf(openContents);
+    }
+  }
+
+  // A file to attribute: where its text is, the file it is attributed as (a moved type's new one),
+  // and the ranges the rename edits in it.
+  public record CheckedFile(String uri, String compiledUri, List<Range> renamed) {
+
+    public CheckedFile {
+      ValidCheck.check().notBlank(uri, "uri").notBlank(compiledUri, "compiledUri").validate();
+      renamed = List.copyOf(renamed);
+    }
+
+    public boolean edited() {
+      return !renamed.isEmpty();
+    }
+  }
+
+  // Untouched files attributed per javac task with the edited ones: a common new name can bring in
+  // thousands, and one task holding them all would hold all their trees at once.
+  private static final int UNTOUCHED_PER_TASK = 100;
+
+  // The first name in a module's checked files whose meaning the rename would change, as the reason
+  // to refuse; the files are attributed as the rename leaves them, with every edited file.
   public static Optional<String> find(
       final JavaSourceCompiler compiler,
-      final List<EditedFile> files,
-      final Set<String> checkedUris,
-      final ReferenceTarget renamed,
-      final String oldName) {
+      final RenameCheck check,
+      final List<CheckedFile> checked,
+      final CancelChecker cancelChecker) {
+    final List<EditedFile> edited = editedFiles(check.edited().stream(), check);
+    final List<EditedFile> untouched =
+        editedFiles(
+            checked.stream()
+                .filter(file -> !file.edited())
+                .sorted(Comparator.comparing(CheckedFile::compiledUri)),
+            check);
     final Map<String, EditedFile> byUri =
-        files.stream().collect(Collectors.toMap(EditedFile::uri, Function.identity()));
-    return compiler.analyzeDetached(
-        files.stream().map(EditedFile::source).toList(),
-        analyses ->
-            analyses.stream()
-                .filter(analysis -> checkedUris.contains(analysis.uri()))
-                .flatMap(
-                    analysis ->
-                        changedMeaning(analysis, byUri.get(analysis.uri()), renamed, oldName))
-                .findFirst());
+        Stream.concat(edited.stream(), untouched.stream())
+            .collect(Collectors.toUnmodifiableMap(EditedFile::uri, Function.identity()));
+    final ReferenceTarget renamed =
+        renamedTarget(check.target(), check.newName(), byUri.get(check.declaringUri()));
+    final Set<String> checkedEdits =
+        checked.stream()
+            .filter(CheckedFile::edited)
+            .map(CheckedFile::compiledUri)
+            .collect(Collectors.toUnmodifiableSet());
+    // Every batch holds every edited file, so the renamed declarations are what the rest see; this
+    // module's edited files are checked in the first, its untouched ones in their own.
+    final List<List<EditedFile>> batches =
+        untouched.isEmpty()
+            ? List.of(List.of())
+            : IntStream.iterate(
+                    0, from -> from < untouched.size(), from -> from + UNTOUCHED_PER_TASK)
+                .mapToObj(
+                    from ->
+                        untouched.subList(
+                            from, Math.min(untouched.size(), from + UNTOUCHED_PER_TASK)))
+                .toList();
+    for (int i = 0; i < batches.size(); i++) {
+      final Set<String> checking =
+          Stream.concat(
+                  i == 0 ? checkedEdits.stream() : Stream.<String>empty(),
+                  batches.get(i).stream().map(EditedFile::uri))
+              .collect(Collectors.toUnmodifiableSet());
+      final Optional<String> conflict =
+          compiler.analyzeDetached(
+              Stream.concat(edited.stream(), batches.get(i).stream())
+                  .map(EditedFile::source)
+                  .toList(),
+              cancelChecker,
+              analyses ->
+                  analyses.stream()
+                      .filter(analysis -> checking.contains(analysis.uri()))
+                      .flatMap(
+                          analysis ->
+                              changedMeaning(
+                                  analysis,
+                                  byUri.get(analysis.uri()),
+                                  renamed,
+                                  check.target().simpleName()))
+                      .findFirst());
+      if (conflict.isPresent()) {
+        return conflict;
+      }
+    }
+
+    return Optional.empty();
+  }
+
+  private static List<EditedFile> editedFiles(
+      final Stream<CheckedFile> files, final RenameCheck check) {
+    return files.flatMap(file -> editedFile(file, check).stream()).toList();
+  }
+
+  // The file as the rename leaves it, from the open document's text or else the file on disk; a
+  // file gone from disk is left out.
+  private static Optional<EditedFile> editedFile(final CheckedFile file, final RenameCheck check) {
+    final String open = check.openContents().get(file.uri());
+    try {
+      final String content =
+          open != null ? open : Files.readString(Path.of(URI.create(file.uri())));
+      return Optional.of(
+          EditedFile.of(file.compiledUri(), content, file.renamed(), check.newName()));
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
   }
 
   private static Stream<String> changedMeaning(

@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -1205,6 +1206,41 @@ class LatheEngineTest {
         .contains("import static com.example.Util.doubled;")
         .contains("case CRIMSON: return doubled(p.left());")
         .contains("new Assistant().hashCode()");
+  }
+
+  // A common new name brings in many files that already use it; they are attributed in bounded
+  // batches with the edited files, and a capture in the last batch still refuses the rename.
+  @Test
+  void rename_captureAmongManyFilesUsingTheNewName_refuses() throws Exception {
+    final String api =
+        """
+        package com.example;
+        public class Api {
+          public void bar(long n) {}
+          public void foo(int n) {}
+        }
+        """;
+    final Map<String, String> sources = new HashMap<>();
+    sources.put("com/example/Api.java", api);
+    IntStream.range(0, 104)
+        .forEach(
+            i ->
+                sources.put(
+                    "com/example/Caller%03d.java".formatted(i),
+                    "package com.example;\nclass Caller%03d { void c(Api a) { a.bar(1L); } }\n"
+                        .formatted(i)));
+    sources.put(
+        "com/example/ZCaller.java",
+        "package com.example;\nclass ZCaller { void c(Api a) { a.bar(1); } }\n");
+    final Path apiFile =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L).stream()
+            .filter(file -> file.endsWith("Api.java"))
+            .findFirst()
+            .orElseThrow();
+    engine = new LatheEngine(tmp);
+
+    assertThat(catchThrowable(() -> renameAt(apiFile, api, "foo(", "bar")))
+        .hasMessageContaining("`bar` at ZCaller.java:2 would then refer to the renamed method");
   }
 
   private Path exampleFile(final String type) {

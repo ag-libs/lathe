@@ -2023,14 +2023,11 @@ final class WorkspaceSession {
   // leaves the renamed member's calls in that file without one.
   private static void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
-    matches.stream()
-        .map(match -> leftBehind(target, match))
-        .flatMap(Optional::stream)
-        .findFirst()
-        .ifPresent(
-            reason -> {
-              throw renameRefused(reason);
-            });
+    refuseIfPresent(
+        matches.stream()
+            .map(match -> leftBehind(target, match))
+            .flatMap(Optional::stream)
+            .findFirst());
   }
 
   private static Optional<String> leftBehind(
@@ -2084,45 +2081,39 @@ final class WorkspaceSession {
         .thenCompose(future -> future)
         .thenApply(
             reasons -> {
-              if (!reasons.isEmpty()) {
-                throw renameRefused(reasons.get(0));
-              }
-
+              refuseIfPresent(reasons.stream().findFirst());
               return target;
             });
   }
 
   // A rename that would change what a name means, a use the new name captures or a renamed site
-  // that would then mean something else, is refused: the edited text is attributed once to check.
+  // that would then mean something else, is refused: the edited text is attributed to check.
   private CompletableFuture<Void> requireMeaningKept(
       final ReferenceTarget target,
       final List<ReferenceMatch> matches,
       final String newName,
-      final ModuleSourceConfig cursorConfig) {
-    if (cursorConfig == null) {
-      return CompletableFuture.completedFuture(null);
-    }
-
+      final String cursorUri,
+      final ModuleSourceConfig cursorConfig,
+      final CancelChecker cancelChecker) {
     return worker
-        .submit(() -> meaningConflict(target, matches, newName, cursorConfig))
+        .submit(
+            () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
         .thenCompose(conflict -> conflict)
-        .thenAccept(
-            conflict ->
-                conflict.ifPresent(
-                    reason -> {
-                      throw renameRefused(reason);
-                    }));
+        .thenAccept(WorkspaceSession::refuseIfPresent);
   }
 
-  // The files whose meaning the rename can change, as it leaves them, checked in every module that
-  // sees the symbol: the edited ones and, unless nothing outside the declaring file sees it, those
-  // already using the new name, where a use can be captured. Another module's files are attributed
-  // with the declaring module's edited files, so the renamed declaration is what they see.
+  // The files whose meaning the rename can change, checked in every module that sees the symbol or
+  // has an edit: the edited ones and, unless nothing outside the declaring file sees the symbol,
+  // those already using the new name, where a use can be captured. Each module's files are
+  // attributed with every edited file, so the renamed declarations are what they see. Only names
+  // and ranges are gathered here; the module workers read the files.
   private CompletableFuture<Optional<String>> meaningConflict(
       final ReferenceTarget target,
       final List<ReferenceMatch> matches,
       final String newName,
-      final ModuleSourceConfig cursorConfig) {
+      final String cursorUri,
+      final ModuleSourceConfig cursorConfig,
+      final CancelChecker cancelChecker) {
     final Map<String, List<Range>> renamed =
         matches.stream()
             .filter(match -> !isGeneratedSource(LatheUri.toPath(match.uri())))
@@ -2130,15 +2121,17 @@ final class WorkspaceSession {
                 Collectors.groupingBy(
                     ReferenceMatch::uri,
                     Collectors.mapping(ReferenceMatch::range, Collectors.toList())));
-    final ModuleSourceConfig declaring = declaringConfigFor(target, cursorConfig);
     final boolean fileScoped = target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE;
+    final ModuleSourceConfig declaring = declaringConfigFor(target, cursorConfig);
     final Set<ModuleSourceConfig> seeing =
-        fileScoped
-            ? Set.of(declaring)
-            : Stream.concat(Stream.of(declaring), planSearchScope(target, declaring).stream())
-                .collect(Collectors.toUnmodifiableSet());
-    final Stream<String> usingNewName =
-        fileScoped ? Stream.empty() : candidateIndex.candidateUris(newName).stream();
+        Stream.of(
+                Stream.ofNullable(declaring),
+                fileScoped
+                    ? Stream.<ModuleSourceConfig>empty()
+                    : planSearchScope(target, declaring).stream(),
+                renamed.keySet().stream().flatMap(uri -> compilingConfig(uri).stream()))
+            .flatMap(configs -> configs)
+            .collect(Collectors.toUnmodifiableSet());
     // A type whose file the rename moves is attributed under its new file name, which a public
     // type must match; its text is still read from where it is.
     final Map<String, String> moved =
@@ -2149,58 +2142,50 @@ final class WorkspaceSession {
                         LatheUri.canonical(file.toUri().toString()),
                         LatheUri.canonical(movedFile(file, newName).toUri().toString())))
             .orElse(Map.of());
-    final Map<ModuleSourceConfig, List<RenameBindingCheck.EditedFile>> byConfig =
+    final Stream<String> usingNewName =
+        fileScoped
+            ? Stream.empty()
+            : candidateIndex.candidateUris(newName).stream()
+                .filter(uri -> !moved.containsValue(uri));
+    final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig =
         Stream.concat(renamed.keySet().stream(), usingNewName)
             .distinct()
             .flatMap(
                 uri ->
                     compilingConfig(uri)
                         .filter(seeing::contains)
-                        .flatMap(
+                        .map(
                             config ->
-                                currentContent(uri)
-                                    .map(
-                                        content ->
-                                            Map.entry(
-                                                config,
-                                                RenameBindingCheck.EditedFile.of(
-                                                    moved.getOrDefault(uri, uri),
-                                                    content,
-                                                    renamed.getOrDefault(uri, List.of()),
-                                                    newName))))
+                                Map.entry(
+                                    config,
+                                    new RenameBindingCheck.CheckedFile(
+                                        uri,
+                                        moved.getOrDefault(uri, uri),
+                                        renamed.getOrDefault(uri, List.of()))))
                         .stream())
             .collect(
                 Collectors.groupingBy(
                     Map.Entry::getKey,
                     Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
-    final List<RenameBindingCheck.EditedFile> declaringFiles =
-        byConfig.getOrDefault(declaring, List.of());
-    if (declaringFiles.isEmpty()) {
-      return CompletableFuture.completedFuture(Optional.empty());
-    }
-
-    // A symbol with a declaration identity (a local) is renamed in its one file.
-    final ReferenceTarget renamedTarget =
-        RenameBindingCheck.renamedTarget(target, newName, declaringFiles.get(0));
-    final List<RenameBindingCheck.EditedFile> declaringEdits =
-        declaringFiles.stream().filter(RenameBindingCheck.EditedFile::edited).toList();
+    final List<RenameBindingCheck.CheckedFile> all =
+        byConfig.values().stream().flatMap(List::stream).toList();
+    final var check =
+        new RenameBindingCheck.RenameCheck(
+            target,
+            newName,
+            cursorUri,
+            all.stream().filter(RenameBindingCheck.CheckedFile::edited).toList(),
+            all.stream()
+                .map(file -> docs.get(file.uri()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableMap(OpenDocument::uri, OpenDocument::content)));
     return concatAll(
             byConfig.entrySet().stream()
                 .map(
                     entry ->
                         workspace
                             .workerFor(entry.getKey())
-                            .renameBindingConflict(
-                                entry.getKey().equals(declaring)
-                                    ? entry.getValue()
-                                    : Stream.concat(
-                                            declaringEdits.stream(), entry.getValue().stream())
-                                        .toList(),
-                                entry.getValue().stream()
-                                    .map(RenameBindingCheck.EditedFile::uri)
-                                    .collect(Collectors.toUnmodifiableSet()),
-                                renamedTarget,
-                                target.simpleName())
+                            .renameBindingConflict(check, entry.getValue(), cancelChecker)
                             .thenApply(conflict -> conflict.stream().toList())))
         .thenApply(conflicts -> conflicts.stream().findFirst());
   }
@@ -2211,12 +2196,10 @@ final class WorkspaceSession {
     return isGeneratedSource(file) ? Optional.empty() : workspace.moduleSourceFor(file);
   }
 
-  // The file's text as the editor has it: the open document's, or else the file on disk.
-  private Optional<String> currentContent(final String uri) {
-    final OpenDocument open = docs.get(uri);
-    return open != null
-        ? Optional.of(open.content())
-        : readDiskCandidate(uri).map(DiskCandidate::content);
+  private static void refuseIfPresent(final Optional<String> reason) {
+    if (reason.isPresent()) {
+      throw renameRefused(reason.get());
+    }
   }
 
   private static ResponseErrorException renameRefused(final String message) {
@@ -2305,10 +2288,7 @@ final class WorkspaceSession {
         .renameConflict(request, newName)
         .thenCompose(
             conflict -> {
-              conflict.ifPresent(
-                  reason -> {
-                    throw renameRefused(reason);
-                  });
+              refuseIfPresent(conflict);
               return cursorWorker.resolveRenameTarget(request);
             })
         .thenComposeAsync(
@@ -2352,7 +2332,9 @@ final class WorkspaceSession {
                                               searchTarget,
                                               matches,
                                               newName,
-                                              cursorConfig.orElse(null))
+                                              uri,
+                                              cursorConfig.orElse(null),
+                                              cancelChecker)
                                           .thenApplyAsync(
                                               kept ->
                                                   renameEdit(
