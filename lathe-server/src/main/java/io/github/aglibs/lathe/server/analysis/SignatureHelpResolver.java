@@ -16,12 +16,19 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.Name;
+import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.util.ElementFilter;
@@ -84,7 +91,8 @@ final class SignatureHelpResolver {
   }
 
   // Every accessible overload a call can name, whether or not it attributes yet: javac resolves
-  // nothing for `new P()` or `super()` when no constructor takes zero arguments.
+  // nothing for `new P()` or `super()` when no constructor takes zero arguments. Access is checked
+  // through the type the call reaches its overloads from, as javac does, not the declaring class.
   private static CallTarget invocationTarget(
       final AttributedFileAnalysis analysis,
       final TreePath callPath,
@@ -93,90 +101,176 @@ final class SignatureHelpResolver {
     final var scope = trees.getScope(callPath);
     final var select = inv.getMethodSelect();
     final var args = inv.getArguments();
-    if (trees.getElement(new TreePath(callPath, select)) instanceof final ExecutableElement exe
-        && exe.getEnclosingElement() instanceof final TypeElement owner) {
-      return exe.getKind() == ElementKind.CONSTRUCTOR
-          ? constructorTarget(analysis, scope, owner, exe, args)
-          : methodTarget(analysis, scope, owner, exe.getSimpleName(), exe, args);
-    }
-
-    if (select instanceof final IdentifierTree id) {
-      final var self = enclosingClass(callPath, trees);
-      if (self == null) {
+    final var resolved =
+        trees.getElement(new TreePath(callPath, select)) instanceof final ExecutableElement exe
+            ? exe
+            : null;
+    final var self = enclosingClass(callPath, trees);
+    if (select instanceof final MemberSelectTree member) {
+      if (!(trees.getTypeMirror(
+                  new TreePath(new TreePath(callPath, member), member.getExpression()))
+              instanceof final DeclaredType receiver)
+          || !(receiver.asElement() instanceof final TypeElement owner)) {
         return null;
       }
 
-      if (id.getName().contentEquals("this")) {
-        return constructorTarget(analysis, scope, self, null, args);
-      }
-
-      if (id.getName().contentEquals("super")) {
-        return analysis.types().asElement(self.getSuperclass()) instanceof final TypeElement parent
-            ? constructorTarget(analysis, scope, parent, null, args)
-            : null;
-      }
-
-      return methodTarget(analysis, scope, self, id.getName(), null, args);
+      // `super.m()` reaches m through the calling class, which protected access is checked from.
+      final var site = isNamed(member.getExpression(), "super") && self != null ? self : owner;
+      return methodTarget(analysis, scope, owner, site, member.getIdentifier(), resolved, args);
     }
 
-    if (select instanceof final MemberSelectTree member
-        && trees.getTypeMirror(new TreePath(new TreePath(callPath, member), member.getExpression()))
-            instanceof final DeclaredType receiver
-        && receiver.asElement() instanceof final TypeElement owner) {
-      return methodTarget(analysis, scope, owner, member.getIdentifier(), null, args);
+    if (!(select instanceof final IdentifierTree id) || self == null) {
+      return null;
     }
 
-    return null;
+    if (isNamed(id, "this")) {
+      return constructorTarget(self, resolved, args, constructor -> true);
+    }
+
+    if (isNamed(id, "super")) {
+      return analysis.types().asElement(self.getSuperclass()) instanceof final TypeElement parent
+          ? constructorTarget(
+              parent,
+              resolved,
+              args,
+              constructor -> reachableFromSubclass(analysis, constructor, self))
+          : null;
+    }
+
+    final var owner = innermostDeclaring(analysis, callPath, id.getName()).orElse(self);
+    return methodTarget(analysis, scope, owner, owner, id.getName(), resolved, args);
   }
 
   private static CallTarget constructionTarget(
       final AttributedFileAnalysis analysis, final TreePath callPath, final NewClassTree call) {
     final var trees = analysis.trees();
+    if (!(trees.getElement(new TreePath(callPath, call.getIdentifier()))
+        instanceof final TypeElement owner)) {
+      return null;
+    }
+
     final var resolved =
         trees.getElement(callPath) instanceof final ExecutableElement exe ? exe : null;
-    return trees.getElement(new TreePath(callPath, call.getIdentifier()))
-            instanceof final TypeElement owner
-        ? constructorTarget(
-            analysis, trees.getScope(callPath), owner, resolved, call.getArguments())
-        : null;
+    if (call.getClassBody() == null) {
+      final var scope = trees.getScope(callPath);
+      final var site = (DeclaredType) owner.asType();
+      return constructorTarget(
+          owner,
+          resolved,
+          call.getArguments(),
+          constructor -> trees.isAccessible(scope, constructor, site));
+    }
+
+    // javac resolves the anonymous class's own constructor, which mirrors the one it calls.
+    final var self = enclosingClass(callPath, trees);
+    final var called =
+        ElementFilter.constructorsIn(owner.getEnclosedElements()).stream()
+            .filter(constructor -> sameParameters(analysis, constructor, resolved))
+            .findFirst()
+            .orElse(null);
+    return constructorTarget(
+        owner,
+        called,
+        call.getArguments(),
+        constructor -> self != null && reachableFromSubclass(analysis, constructor, self));
+  }
+
+  // A subclass reaches its superclass's constructors through `super(…)` or an anonymous body, which
+  // javac's public access check cannot express (it needs the `super` call's own context), so the
+  // subclass rule is applied directly.
+  private static boolean reachableFromSubclass(
+      final AttributedFileAnalysis analysis,
+      final ExecutableElement constructor,
+      final TypeElement subclass) {
+    final Set<Modifier> modifiers = constructor.getModifiers();
+    if (modifiers.contains(Modifier.PUBLIC) || modifiers.contains(Modifier.PROTECTED)) {
+      return true;
+    }
+
+    if (modifiers.contains(Modifier.PRIVATE)) {
+      return outermost(constructor).equals(outermost(subclass));
+    }
+
+    final var elements = analysis.elements();
+    return elements.getPackageOf(constructor).equals(elements.getPackageOf(subclass));
+  }
+
+  private static Element outermost(final Element element) {
+    return Stream.iterate(
+            element, e -> !(e instanceof PackageElement), Element::getEnclosingElement)
+        .reduce((inner, outer) -> outer)
+        .orElse(element);
+  }
+
+  // The innermost enclosing class with a method of that name: the class an unqualified call
+  // reaches its overloads from.
+  private static Optional<TypeElement> innermostDeclaring(
+      final AttributedFileAnalysis analysis, final TreePath callPath, final Name name) {
+    return Stream.iterate(callPath, Objects::nonNull, TreePath::getParentPath)
+        .filter(path -> path.getLeaf() instanceof ClassTree)
+        .map(path -> analysis.trees().getElement(path))
+        .filter(TypeElement.class::isInstance)
+        .map(TypeElement.class::cast)
+        .filter(type -> !methodsNamed(analysis, type, name).isEmpty())
+        .findFirst();
+  }
+
+  private static boolean isNamed(final Tree tree, final String name) {
+    return tree instanceof final IdentifierTree id && id.getName().contentEquals(name);
+  }
+
+  private static boolean sameParameters(
+      final AttributedFileAnalysis analysis,
+      final ExecutableElement constructor,
+      final ExecutableElement other) {
+    final var types = analysis.types();
+    return other != null
+        && constructor.getParameters().size() == other.getParameters().size()
+        && IntStream.range(0, constructor.getParameters().size())
+            .allMatch(
+                i ->
+                    types.isSameType(
+                        types.erasure(constructor.getParameters().get(i).asType()),
+                        types.erasure(other.getParameters().get(i).asType())));
+  }
+
+  private static List<ExecutableElement> methodsNamed(
+      final AttributedFileAnalysis analysis, final TypeElement owner, final Name name) {
+    return ElementFilter.methodsIn(analysis.elements().getAllMembers(owner)).stream()
+        .filter(m -> m.getSimpleName().equals(name))
+        .toList();
   }
 
   private static CallTarget methodTarget(
       final AttributedFileAnalysis analysis,
       final Scope scope,
       final TypeElement owner,
+      final TypeElement site,
       final Name name,
       final ExecutableElement resolved,
       final List<? extends Tree> args) {
-    final Stream<ExecutableElement> methods =
-        ElementFilter.methodsIn(analysis.elements().getAllMembers(owner)).stream()
-            .filter(m -> m.getSimpleName().equals(name));
+    final var siteType = (DeclaredType) site.asType();
     return new CallTarget(
-        name.toString(), accessible(analysis, scope, owner, methods), resolved, args);
-  }
-
-  private static CallTarget constructorTarget(
-      final AttributedFileAnalysis analysis,
-      final Scope scope,
-      final TypeElement owner,
-      final ExecutableElement resolved,
-      final List<? extends Tree> args) {
-    final Stream<ExecutableElement> constructors =
-        ElementFilter.constructorsIn(owner.getEnclosedElements()).stream();
-    return new CallTarget(
-        owner.getSimpleName().toString(),
-        accessible(analysis, scope, owner, constructors),
+        name.toString(),
+        methodsNamed(analysis, owner, name).stream()
+            .filter(method -> analysis.trees().isAccessible(scope, method, siteType))
+            .toList(),
         resolved,
         args);
   }
 
-  private static List<ExecutableElement> accessible(
-      final AttributedFileAnalysis analysis,
-      final Scope scope,
+  private static CallTarget constructorTarget(
       final TypeElement owner,
-      final Stream<ExecutableElement> members) {
-    final var site = (DeclaredType) owner.asType();
-    return members.filter(m -> analysis.trees().isAccessible(scope, m, site)).toList();
+      final ExecutableElement resolved,
+      final List<? extends Tree> args,
+      final Predicate<ExecutableElement> reachable) {
+    return new CallTarget(
+        owner.getSimpleName().toString(),
+        ElementFilter.constructorsIn(owner.getEnclosedElements()).stream()
+            .filter(reachable)
+            .toList(),
+        resolved,
+        args);
   }
 
   // The resolved overload; for a call that does not attribute yet, the first whose arity fits the

@@ -79,14 +79,18 @@ looks for methods named `super`, of which there are none.
 
 Signature help now lists every accessible overload a call can name, whether or not it attributes:
 the constructors of the type `new` names, of the enclosing class for `this(…)`, and of its superclass for `super(…)`.
-Overloads the caller cannot access are dropped (`Trees.isAccessible` from the call's scope),
-and for a call that does not attribute yet the active overload is the first whose arity fits the arguments typed.
+Overloads the caller cannot access are dropped, checked as javac does through the type the call reaches them from
+(the receiver, the calling class for `super.m(…)`, the innermost class declaring the name for an unqualified call);
+`super(…)` and an anonymous class body apply the subclass rule to their superclass's constructors, which javac's public
+access check cannot express.
+For a call that does not attribute yet the active overload is the first whose arity fits the arguments typed.
 
 ### Regression targets
 
 `SignatureHelpTest.signatureHelp_constructorCallWithoutNoArgConstructor_listsEveryConstructor`,
 `SignatureHelpTest.signatureHelp_inaccessibleOverload_isNotListed`,
-`SignatureHelpTest.signatureHelp_unattributedCall_activeOverloadFitsArgumentsTyped`.
+`SignatureHelpTest.signatureHelp_unattributedCall_activeOverloadFitsArgumentsTyped`,
+`SignatureHelpTest.signatureHelp_protectedMembersFromASubclassInAnotherPackage_areListed`.
 
 ---
 

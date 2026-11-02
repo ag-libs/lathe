@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.SignatureInformation;
 import org.junit.jupiter.api.AfterEach;
@@ -282,6 +285,47 @@ class SignatureHelpTest {
     }
   }
 
+  // Access is decided through the class a member is reached from, not the class declaring it.
+  @Test
+  void signatureHelp_protectedMembersFromASubclassInAnotherPackage_areListed(
+      @TempDir final Path tmpDir) throws Exception {
+    try (final var fixture = new ClassFileFixture(tmpDir)) {
+      final String impl =
+          """
+          class Impl extends lib.Base {
+              Impl() { %s }
+              void foo(int x) {}
+              void m(Impl other) { %s }
+          }
+          """;
+      final Map<String, List<String>> expected =
+          Map.of(
+              impl.formatted("super(§);", ""),
+              List.of("Base(", "Base("),
+              impl.formatted("super(\"\");", "helper(§);"),
+              List.of("void helper("),
+              impl.formatted("super(\"\");", "super.helper(§);"),
+              List.of("void helper("),
+              impl.formatted("super(\"\");", "other.foo(\"x\"§);"),
+              List.of("void foo(", "void foo("),
+              "class Test { Object m() { return new lib.Base(1, 2§) {}; } }",
+              List.of("Base(", "Base("),
+              "class Test { char m() { return new StringBuilder().charAt(§); } }",
+              List.of("char charAt("));
+
+      final Map<String, List<String>> actual =
+          expected.keySet().stream()
+              .collect(
+                  Collectors.toMap(
+                      Function.identity(), source -> labelPrefixes(fixture, source, expected)));
+
+      assertThat(actual).isEqualTo(expected);
+      final var anonymous =
+          fixture.signatureHelpAt("class Test { Object m() { return new lib.Base(1, 2§) {}; } }");
+      assertThat(anonymous.getActiveSignature()).isEqualTo(1);
+    }
+  }
+
   // --- javadoc in documentation field ---
 
   @Test
@@ -548,6 +592,25 @@ class SignatureHelpTest {
   }
 
   // --- helpers ---
+
+  // Each label cut to the prefix it is expected to start with, so labels compare without the
+  // parameter names a class file may lack.
+  private static List<String> labelPrefixes(
+      final ClassFileFixture fixture,
+      final String source,
+      final Map<String, List<String>> expected) {
+    final var help = fixture.signatureHelpAt(source);
+    if (help == null) {
+      return List.of();
+    }
+
+    return help.getSignatures().stream()
+        .map(SignatureInformation::getLabel)
+        .map(
+            label ->
+                expected.get(source).stream().filter(label::startsWith).findFirst().orElse(label))
+        .toList();
+  }
 
   private SignatureHelp signatureHelpAt(final String rawSource) {
     final var source = rawSource.replace(MARKER, "");
