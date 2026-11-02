@@ -2046,34 +2046,42 @@ final class WorkspaceSession {
   }
 
   // A subtype implementing the method through a superclass outside the override family keeps that
-  // superclass's method, which then implements nothing; the rename cannot change it.
+  // superclass's method, which then implements nothing; the rename cannot change it. Only an
+  // interface method can be implemented that way: a class method is what its subtypes inherit.
   private CompletableFuture<ReferenceTarget> requireImplementationsRenamed(
       final ReferenceTarget target) {
-    if (target.kind() != ElementKind.METHOD) {
+    if (target.kind() != ElementKind.METHOD
+        || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       return CompletableFuture.completedFuture(target);
     }
 
     return worker
         .submit(
             () ->
-                concatAll(
-                    subtypeImplementationFiles(target, typeIndex)
-                        .map(
-                            entry ->
-                                fileQueryFuture(
-                                    entry.getKey(),
-                                    analysis ->
-                                        MethodImplementationLocator.inheritedOutsideFamily(
-                                            analysis, target, entry.getValue())))))
+                typeIndex
+                        .findType(target.qualifiedName())
+                        .filter(
+                            type ->
+                                type.kind()
+                                    == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
+                        .isEmpty()
+                    ? CompletableFuture.completedFuture(List.<String>of())
+                    : concatAll(
+                        subtypeImplementationFiles(target, typeIndex)
+                            .map(
+                                entry ->
+                                    fileQueryFuture(
+                                        entry.getKey(),
+                                        analysis ->
+                                            MethodImplementationLocator.inheritedOutsideFamily(
+                                                analysis, target, entry.getValue())))))
         .thenCompose(future -> future)
         .thenApply(
             reasons -> {
-              reasons.stream()
-                  .findFirst()
-                  .ifPresent(
-                      reason -> {
-                        throw renameRefused(reason);
-                      });
+              if (!reasons.isEmpty()) {
+                throw renameRefused(reasons.get(0));
+              }
+
               return target;
             });
   }

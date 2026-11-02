@@ -31,8 +31,9 @@ a class whose method is outside the override family, the rename is refused, nami
 "`stop` cannot be renamed: JettyManaged implements it through AbstractLifeCycle.stop, which the rename would leave behind".
 The check is not limited to dependencies: a project superclass with a same-signature method that overrides nothing
 in the family is left behind the same way, and is refused too.
-It runs against the family's contract, the method the rename starts from, and costs one attribution per subtype file
-that is not open.
+It runs against the family's contract, the method the rename starts from, and only for an interface method:
+a class method is what its subtypes inherit, so it cannot be implemented from outside the family.
+It costs one attribution per implementing file that is not open.
 
 ### Regression targets
 
