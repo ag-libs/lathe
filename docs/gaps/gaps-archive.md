@@ -2811,7 +2811,8 @@ The existing tests only exercise the fresh compile.
 The case label finds its enum through the switch selector, read from the tree at the cursor offset;
 the cached tree is the text before the edit, so that offset no longer falls inside the `switch`.
 When the cache differs from the current text before the token being typed, the case label is now attributed
-from a recompile of the current text, the same staleness check member access already uses.
+from a recompile of the current text, the same staleness check member access already uses,
+and the recompile is cached as member access caches its own, so the next keystroke reuses it.
 
 ### Regression targets
 

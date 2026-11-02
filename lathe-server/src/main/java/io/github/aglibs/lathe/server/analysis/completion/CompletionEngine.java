@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis.completion;
 import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
 import io.github.aglibs.lathe.server.analysis.StaticImportCandidates;
@@ -11,7 +12,6 @@ import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -85,55 +85,79 @@ public final class CompletionEngine {
           injected, parsed.directiveKeyword(), req.typeIndex(), req.moduleNames());
     }
 
-    final var site = CompletionSite.from(req, injected, parsed);
+    // A case label finds its enum through the switch selector at the cursor. While typing, the
+    // cached tree predates the edit and no longer has the switch there, so the current text is
+    // recompiled; the recompile is returned for caching, as member access caches its own.
+    final var recompiled =
+        parsed.sentinelContext() == SentinelContext.CASE_LABEL
+                && compiler != null
+                && MemberAccessCompleter.staleBeforeCompletionToken(req, injected)
+            ? compiler.reattribute(req.uri(), req.content())
+            : null;
+    final var request =
+        recompiled == null
+            ? req
+            : new CompletionRequest(
+                req.uri(),
+                req.content(),
+                req.pos(),
+                req.context(),
+                new CachedFileAnalysis(req.content(), req.cached().version(), recompiled),
+                req.typeIndex(),
+                req.moduleNames(),
+                req.staticImports());
+    final var site = CompletionSite.from(request, injected, parsed);
     final var outcome =
         switch (parsed.sentinelContext()) {
-          case IMPORT -> completeImport(parsed, injected, req);
+          case IMPORT -> completeImport(parsed, injected, request);
           case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL ->
-              completeSimpleName(parsed, injected, req, site);
+              completeSimpleName(parsed, injected, request, site);
           case CONSTRUCTOR_CALL ->
               parsed.argIndex() >= 0
-                  ? completeSimpleName(parsed, injected, req, site)
+                  ? completeSimpleName(parsed, injected, request, site)
                   : typeReferenceCompleter.completeConstructorTypeReference(
-                      injected, req, parsed, site);
+                      injected, request, parsed, site);
           case TYPE_REFERENCE ->
               shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected)
-                  ? completeSimpleName(parsed, injected, req, site)
-                  : typeReferenceCompleter.completeTypeReference(parsed, injected, req);
+                  ? completeSimpleName(parsed, injected, request, site)
+                  : typeReferenceCompleter.completeTypeReference(parsed, injected, request);
           case ANNOTATION_CONTEXT ->
               typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
-                  injected, req, parsed.typeReferenceRole());
-          case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, req);
-          case ANNOTATION_ARGUMENT_VALUE -> completeAnnotationArgumentValue(parsed, injected, req);
+                  injected, request, parsed.typeReferenceRole());
+          case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, request);
+          case ANNOTATION_ARGUMENT_VALUE ->
+              completeAnnotationArgumentValue(parsed, injected, request);
           case VARIABLE_DECLARATION ->
               isRealNameSlot(parsed)
-                  ? completeDeclarationName(parsed, req)
+                  ? completeDeclarationName(parsed, request)
                   : (parsed.enclosingMethod() == null
-                      ? typeReferenceCompleter.completeTypeReference(parsed, injected, req)
+                      ? typeReferenceCompleter.completeTypeReference(parsed, injected, request)
                       : CompletionOutcome.of(List.of()));
           case MEMBER_ACCESS, STATIC_IMPORT, MEMBER_REFERENCE ->
-              memberAccessCompleter.complete(parsed, injected, req, site);
+              memberAccessCompleter.complete(parsed, injected, request, site);
           case LAMBDA_BODY ->
               parsed.receiverText() != null
-                  ? memberAccessCompleter.complete(parsed, injected, req, site)
-                  : completeSimpleName(parsed, injected, req, site);
+                  ? memberAccessCompleter.complete(parsed, injected, request, site)
+                  : completeSimpleName(parsed, injected, request, site);
           default -> CompletionOutcome.of(List.of());
         };
-    final var withOverrides = mergeOverrideCandidates(outcome, parsed, injected, req);
+    final var withOverrides = mergeOverrideCandidates(outcome, parsed, injected, request);
     CompletionItemPresenter.applyReplacementRange(withOverrides.items(), site.replacementRange());
     CompletionEditApplier.preserveExistingMethodCall(
-        withOverrides.items(), req, injected.tokenEnd());
+        withOverrides.items(), request, injected.tokenEnd());
     CompletionEditApplier.absorbFollowingSpaceAfterKeyword(
-        withOverrides.items(), req, injected.tokenEnd());
+        withOverrides.items(), request, injected.tokenEnd());
     final var analysis =
         withOverrides.freshAnalysis() != null
             ? withOverrides.freshAnalysis()
-            : resolveAnalysis(req);
+            : resolveAnalysis(request);
     CompletionEditApplier.applyNestedOuterImportEdits(
         withOverrides.items(), injected.receiverText(), analysis);
     CompletionEditApplier.applyStatementSemicolonEdits(
-        withOverrides.items(), site, analysis, req, injected.tokenStart());
-    return withOverrides;
+        withOverrides.items(), site, analysis, request, injected.tokenStart());
+    return recompiled != null && withOverrides.freshAnalysis() == null
+        ? new CompletionOutcome(withOverrides.items(), recompiled, withOverrides.incomplete())
+        : withOverrides;
   }
 
   // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
@@ -203,7 +227,7 @@ public final class CompletionEngine {
       final SentinelInjectionResult injected,
       final CompletionRequest req,
       final CompletionSite site) {
-    final var semanticContext = semanticContext(site, req, parsed, injected);
+    final var semanticContext = semanticContext(site, req, parsed);
     final boolean recoveredMixedStatement =
         shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
     final var instanceofCandidates = instanceofKeywordCandidates(injected, semanticContext);
@@ -593,27 +617,13 @@ public final class CompletionEngine {
     return items;
   }
 
-  private SemanticCompletionContext semanticContext(
-      final CompletionSite site,
-      final CompletionRequest req,
-      final ParsedSentinel parsed,
-      final SentinelInjectionResult injected) {
+  private static SemanticCompletionContext semanticContext(
+      final CompletionSite site, final CompletionRequest req, final ParsedSentinel parsed) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return null;
     }
 
-    // A case label finds its enum through the switch selector, read at the cursor; while typing,
-    // the cached tree no longer has the switch there, so read it from the current text.
-    final boolean staleCaseLabel =
-        parsed.sentinelContext() == SentinelContext.CASE_LABEL
-            && compiler != null
-            && MemberAccessCompleter.staleBeforeCompletionToken(req, injected);
-    final var analysis =
-        staleCaseLabel
-            ? Objects.requireNonNullElse(
-                compiler.reattribute(req.uri(), req.content()), req.cached().analysis())
-            : req.cached().analysis();
-    return SemanticCompletionContext.from(site, req, parsed, analysis);
+    return SemanticCompletionContext.from(site, req, parsed, req.cached().analysis());
   }
 
   private CompletionOutcome completeAnnotationArgument(
