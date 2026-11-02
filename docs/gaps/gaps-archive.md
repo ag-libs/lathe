@@ -34,7 +34,8 @@ another call picking the renamed overload, a subclass method that would override
 that now means something else ([FR-023](#fr-023--a-method-rename-can-capture-another-overloads-calls--done)).
 Either refuses the rename, naming the file and line.
 The files are the edited ones and, unless only the declaring file sees the symbol, those already using the new name
-(identifier index); another module's are attributed with the declaring module's edited files.
+(identifier index); each module's are attributed, in batches of at most 100 untouched files, with the edited files of
+the modules it depends on, so every renamed declaration it sees is the edited one.
 Type renames are checked too, the moved file under its new name.
 A renamed site that no longer resolves is a compile error the diagnostics report, as before.
 

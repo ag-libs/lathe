@@ -265,9 +265,12 @@ public final class CompilationWorker {
 
   public CompletableFuture<Optional<String>> renameBindingConflict(
       final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
       final List<RenameBindingCheck.CheckedFile> checked,
       final CancelChecker cancelChecker) {
-    return submit(ctx -> ctx.renameBindingConflict(check, checked, cancelChecker), cancelChecker);
+    return submit(
+        ctx -> ctx.renameBindingConflict(check, visibleEdits, checked, cancelChecker),
+        cancelChecker);
   }
 
   public CompletableFuture<List<ReferenceTarget>> instantiationTargets(

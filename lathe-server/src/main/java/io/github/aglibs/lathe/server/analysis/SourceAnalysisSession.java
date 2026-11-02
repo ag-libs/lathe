@@ -532,17 +532,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // as the rename leaves them; the reason to refuse when it does not.
   public Optional<String> renameBindingConflict(
       final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
       final List<RenameBindingCheck.CheckedFile> checked,
       final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
     final Optional<String> conflict =
-        RenameBindingCheck.find(compiler, check, checked, cancelChecker);
+        RenameBindingCheck.find(compiler, check, visibleEdits, checked, cancelChecker);
     LOG.fine(
         () ->
             "[rename:check] %s edited=%d checked=%d %dms conflict=%s"
                 .formatted(
                     check.newName(),
-                    check.edited().size(),
+                    visibleEdits.size(),
                     checked.size(),
                     t.elapsedMs(),
                     conflict.isPresent()));

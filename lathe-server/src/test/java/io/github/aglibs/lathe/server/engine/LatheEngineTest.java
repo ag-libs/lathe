@@ -1243,6 +1243,47 @@ class LatheEngineTest {
         .hasMessageContaining("`bar` at ZCaller.java:2 would then refer to the renamed method");
   }
 
+  // Each module's check sees only the edits of modules it depends on: app2's edited caller, which
+  // uses a type only app2 has, is not attributed in app1, where it could not compile and would
+  // leave app1's renamed calls unresolved. Nothing changes meaning, so the rename goes through.
+  @Test
+  void rename_editsInIndependentModules_eachCheckedWithWhatItSeesAndRenames() throws Exception {
+    final String api = "package com.example.api;\npublic class Api { public void foo() {} }\n";
+    final Path apiFile =
+        TestCompiler.writeMirroredModule(
+                tmp, "api", Map.of("com/example/api/Api.java", api), List.of(), 1_000L)
+            .get(0);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "app1",
+        Map.of(
+            "com/example/app1/Use1.java",
+            "package com.example.app1;\nclass Use1 { void u(com.example.api.Api a) { a.foo(); } }\n"),
+        List.of("api"),
+        1_000L);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "app2",
+        Map.of(
+            "com/example/app2/local/Local.java",
+            "package com.example.app2.local;\npublic class Local {}\n",
+            "com/example/app2/Use2.java",
+            "package com.example.app2;\nimport com.example.app2.local.Local;\nclass Use2 { Local l; void u(com.example.api.Api a) { a.foo(); } }\n"),
+        List.of("api"),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    renameAt(apiFile, api, "foo(", "bar");
+
+    assertThat(apiFile).content().contains("public void bar() {}");
+    assertThat(tmp.resolve("app1/src/main/java/com/example/app1/Use1.java"))
+        .content()
+        .contains("a.bar();");
+    assertThat(tmp.resolve("app2/src/main/java/com/example/app2/Use2.java"))
+        .content()
+        .contains("a.bar();");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }

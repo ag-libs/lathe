@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.Position;
@@ -114,14 +115,12 @@ public final class RenameBindingCheck {
   }
 
   // A rename to check, shared by every module that sees the symbol: what is renamed, the file
-  // declaring a local (whose identity is where it is declared), every file the rename edits, which
-  // the checked files are attributed with so the renamed declaration is what they see, and the open
-  // documents' text, which a file's text on disk would not be.
+  // declaring a local (whose identity is where it is declared), and the open documents' text, which
+  // a file's text on disk would not be.
   public record RenameCheck(
       ReferenceTarget target,
       String newName,
       String declaringUri,
-      List<CheckedFile> edited,
       Map<String, String> openContents) {
 
     public RenameCheck {
@@ -130,7 +129,6 @@ public final class RenameBindingCheck {
           .notBlank(newName, "newName")
           .notBlank(declaringUri, "declaringUri")
           .validate();
-      edited = List.copyOf(edited);
       openContents = Map.copyOf(openContents);
     }
   }
@@ -154,13 +152,15 @@ public final class RenameBindingCheck {
   private static final int UNTOUCHED_PER_TASK = 100;
 
   // The first name in a module's checked files whose meaning the rename would change, as the reason
-  // to refuse; the files are attributed as the rename leaves them, with every edited file.
+  // to refuse; the files are attributed as the rename leaves them, with the edited files the module
+  // sees (its own and its dependencies'), so the renamed declarations are what the rest see.
   public static Optional<String> find(
       final JavaSourceCompiler compiler,
       final RenameCheck check,
+      final List<CheckedFile> visibleEdits,
       final List<CheckedFile> checked,
       final CancelChecker cancelChecker) {
-    final List<EditedFile> edited = editedFiles(check.edited().stream(), check);
+    final List<EditedFile> edited = editedFiles(visibleEdits.stream(), check);
     final List<EditedFile> untouched =
         editedFiles(
             checked.stream()
@@ -177,8 +177,8 @@ public final class RenameBindingCheck {
             .filter(CheckedFile::edited)
             .map(CheckedFile::compiledUri)
             .collect(Collectors.toUnmodifiableSet());
-    // Every batch holds every edited file, so the renamed declarations are what the rest see; this
-    // module's edited files are checked in the first, its untouched ones in their own.
+    // Every batch holds the visible edited files; this module's edited files are checked in the
+    // first, its untouched ones in their own.
     final List<List<EditedFile>> batches =
         untouched.isEmpty()
             ? List.of(List.of())
@@ -275,7 +275,9 @@ public final class RenameBindingCheck {
             .sorted()
             .flatMap(
                 start ->
-                    elementAt(analysis, start).stream()
+                    elementAt(analysis, start)
+                        .filter(other -> named(other, renamed.simpleName()))
+                        .stream()
                         .map(
                             other ->
                                 "%s: the renamed use at %s would then refer to %s"
@@ -299,6 +301,15 @@ public final class RenameBindingCheck {
     } catch (final IOException e) {
       throw new UncheckedIOException("cannot read the edited text of %s".formatted(file.uri()), e);
     }
+  }
+
+  // A renamed site that now resolves to another declaration of the new name means something else;
+  // one that resolves to nothing named so (javac found only an enclosing tree) does not resolve at
+  // all, a compile error the diagnostics report.
+  private static boolean named(final Element element, final String name) {
+    final Element named =
+        element.getKind() == ElementKind.CONSTRUCTOR ? element.getEnclosingElement() : element;
+    return named.getSimpleName().contentEquals(name);
   }
 
   private static Optional<Element> elementAt(

@@ -2167,15 +2167,13 @@ final class WorkspaceSession {
                 Collectors.groupingBy(
                     Map.Entry::getKey,
                     Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
-    final List<RenameBindingCheck.CheckedFile> all =
-        byConfig.values().stream().flatMap(List::stream).toList();
     final var check =
         new RenameBindingCheck.RenameCheck(
             target,
             newName,
             cursorUri,
-            all.stream().filter(RenameBindingCheck.CheckedFile::edited).toList(),
-            all.stream()
+            byConfig.values().stream()
+                .flatMap(List::stream)
                 .map(file -> docs.get(file.uri()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toUnmodifiableMap(OpenDocument::uri, OpenDocument::content)));
@@ -2185,9 +2183,31 @@ final class WorkspaceSession {
                     entry ->
                         workspace
                             .workerFor(entry.getKey())
-                            .renameBindingConflict(check, entry.getValue(), cancelChecker)
+                            .renameBindingConflict(
+                                check,
+                                visibleEdits(byConfig, entry.getKey()),
+                                entry.getValue(),
+                                cancelChecker)
                             .thenApply(conflict -> conflict.stream().toList())))
         .thenApply(conflicts -> conflicts.stream().findFirst());
+  }
+
+  // The edited files a module's compile sees: its own, and its main dependencies' (a test tree's
+  // files are seen by nothing else), so the renamed declarations are what its files see.
+  private List<RenameBindingCheck.CheckedFile> visibleEdits(
+      final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig,
+      final ModuleSourceConfig config) {
+    return byConfig.entrySet().stream()
+        .filter(
+            entry ->
+                entry.getKey().equals(config)
+                    || !entry.getKey().isTestTree()
+                        && moduleGraph
+                            .downstreamModuleDirs(entry.getKey().moduleDir())
+                            .contains(config.moduleDir()))
+        .flatMap(entry -> entry.getValue().stream())
+        .filter(RenameBindingCheck.CheckedFile::edited)
+        .toList();
   }
 
   // The module source config that compiles the file, unless it is generated.
