@@ -2748,6 +2748,40 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 
 # Completion (CQ) — resolved
 
+## CQ-0061 — While typing, a `switch` case label offers no enum constants — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
+0.1.24 behaves the same.
+
+Case-label completion itself works (archived [CQ-0006](#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
+on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
+What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
+a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
+The existing tests only exercise the fresh compile.
+
+### Resolution
+
+The case label finds its enum through the switch selector, read from the tree at the cursor offset;
+the cached tree is the text before the edit, so that offset no longer falls inside the `switch`.
+When the cache differs from the current text before the token being typed, the case label is now attributed
+from a recompile of the current text, the same staleness check member access already uses.
+
+### Regression targets
+
+`CompletionSimpleNameTest.simpleName_switchCaseLabelWhileTyping_suggestsEnumConstantsOfTheSelectorOnly`.
+
+---
+
 ## CQ-0060 — No completions after `::` (method reference) — done
 
 **Status: done — Target: next.**

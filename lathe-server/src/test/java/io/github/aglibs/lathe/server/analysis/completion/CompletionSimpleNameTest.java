@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
 import org.junit.jupiter.api.Test;
@@ -700,6 +701,35 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
                 }"""));
 
     assertThat(items).contains("RESOURCE_METHOD", "SUB_RESOURCE_LOCATOR");
+  }
+
+  @Test
+  void simpleName_switchCaseLabelWhileTyping_suggestsEnumConstantsOfTheSelectorOnly() {
+    final var source =
+        """
+        import java.util.concurrent.TimeUnit;
+        class Test {
+            void m(%s value) {
+                switch (value) {
+                    %s
+                }
+            }
+        }""";
+    final Function<String, List<String>> typing =
+        typed ->
+            labels(
+                fixture.completeWithCache(
+                    source.formatted("TimeUnit", ""), source.formatted("TimeUnit", typed)));
+
+    assertThat(typing.apply("case §"))
+        .containsExactlyInAnyOrder(
+            "DAYS", "HOURS", "MICROSECONDS", "MILLISECONDS", "MINUTES", "NANOSECONDS", "SECONDS");
+    assertThat(typing.apply("case MIL§")).containsExactly("MILLISECONDS");
+    assertThat(
+            labels(
+                fixture.completeWithCache(
+                    source.formatted("String", ""), source.formatted("String", "case §"))))
+        .isEmpty();
   }
 
   // CQ-0021

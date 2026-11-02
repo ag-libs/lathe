@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -202,7 +203,7 @@ public final class CompletionEngine {
       final SentinelInjectionResult injected,
       final CompletionRequest req,
       final CompletionSite site) {
-    final var semanticContext = semanticContext(site, req, parsed);
+    final var semanticContext = semanticContext(site, req, parsed, injected);
     final boolean recoveredMixedStatement =
         shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
     final var instanceofCandidates = instanceofKeywordCandidates(injected, semanticContext);
@@ -592,13 +593,27 @@ public final class CompletionEngine {
     return items;
   }
 
-  private static SemanticCompletionContext semanticContext(
-      final CompletionSite site, final CompletionRequest req, final ParsedSentinel parsed) {
+  private SemanticCompletionContext semanticContext(
+      final CompletionSite site,
+      final CompletionRequest req,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected) {
     if (req.cached() == null || req.cached().analysis() == null) {
       return null;
     }
 
-    return SemanticCompletionContext.from(site, req, parsed, req.cached().analysis());
+    // A case label finds its enum through the switch selector, read at the cursor; while typing,
+    // the cached tree no longer has the switch there, so read it from the current text.
+    final boolean staleCaseLabel =
+        parsed.sentinelContext() == SentinelContext.CASE_LABEL
+            && compiler != null
+            && MemberAccessCompleter.staleBeforeCompletionToken(req, injected);
+    final var analysis =
+        staleCaseLabel
+            ? Objects.requireNonNullElse(
+                compiler.reattribute(req.uri(), req.content()), req.cached().analysis())
+            : req.cached().analysis();
+    return SemanticCompletionContext.from(site, req, parsed, analysis);
   }
 
   private CompletionOutcome completeAnnotationArgument(

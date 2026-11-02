@@ -1165,38 +1165,6 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
-## CQ-0061 — While typing, a `switch` case label offers no enum constants
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
-
-### Observed behaviour
-
-`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
-0.1.24 behaves the same.
-
-Case-label completion itself works (archived [CQ-0006](gaps-archive.md#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
-on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
-What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
-a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
-The existing tests only exercise the fresh compile.
-
-### Fix direction
-
-Make the case-label path (`CompletionEngine.enumCaseLabelCandidates`) find the selector's enum type on the cached analysis too, as member access does for a receiver.
-Test it through `completeWithCache`, with and without a prefix.
-
-### Regression targets
-
-None yet.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
