@@ -120,7 +120,9 @@ public final class RenameConflicts {
             found ->
                 "%s already declares %s `%s`"
                     .formatted(
-                        found.getEnclosingElement().getSimpleName(), kindName(found), newName));
+                        found.getEnclosingElement().getSimpleName(),
+                        kindName(found.getKind()),
+                        newName));
   }
 
   private static boolean sameErasedParameters(
@@ -220,7 +222,7 @@ public final class RenameConflicts {
     return element.getSimpleName().contentEquals(name);
   }
 
-  private static String kindName(final Element found) {
-    return found.getKind().name().toLowerCase(Locale.ROOT).replace('_', ' ');
+  static String kindName(final ElementKind kind) {
+    return kind.name().toLowerCase(Locale.ROOT).replace('_', ' ');
   }
 }

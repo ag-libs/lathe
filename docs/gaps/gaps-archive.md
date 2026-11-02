@@ -7,6 +7,86 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-022 — A rename to a name a use already sees silently rebinds the use — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+Renaming parameter `x` to `value` in `int compute(int x) { return x + value; }`, where `value` is a field,
+gives `return value + value;`: the field's use now reads the parameter.
+The code still compiles, so `verify_change` reports nothing, and the rename reports success.
+`RenameConflicts` says as much: it does not detect "the new name shadowing the symbol at a use".
+
+### Resolution
+
+Before editing, a rename now attributes the files it can change as it would leave them, in one batch per module source
+config that sees the symbol, nothing written, and runs the reference locator for the renamed declaration under its new
+name. A rename adds one declaration of the new name and removes the old one, so a name means something else exactly when
+those uses differ from the renamed sites: an extra use is one the new name captures (a field a renamed parameter shadows,
+another call picking the renamed overload, a subclass method that would override the renamed one), a missing site one
+that now means something else ([FR-023](#fr-023--a-method-rename-can-capture-another-overloads-calls--done)).
+Either refuses the rename, naming the file and line.
+The files are the edited ones and, unless only the declaring file sees the symbol, those already using the new name
+(identifier index); each module's are attributed, in batches of at most 100 untouched files, with the edited files of
+the modules it depends on, so every renamed declaration it sees is the edited one.
+Type renames are checked too, the moved file under its new name.
+A renamed site that no longer resolves is a compile error the diagnostics report, as before.
+
+Not checked: uses javac cannot see (reflection, strings, configuration, sources a processor generates later), and in a
+JPMS reactor another module's files, whose task cannot take the declaring module's sources.
+
+jdtls 1.51 applies all of these renames silently over LSP (spike on a scratch two-module project, 2026-11-02:
+shadowing by a parameter, lambda parameter and local, a field captured by a local, overload capture, capture through an
+inherited member, reverse capture in an untouched file of the same and another module, a type capturing an on-demand
+import); Lathe matched it until this check.
+
+### Regression targets
+
+`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`,
+`LatheEngineTest.rename_typeCapturingAnImportedName_refusesAndOtherwiseRenamesAndMoves`,
+`ModuleSourceCompilerTest.detached_otherText_cachedTreeKeepsItsOwnText`.
+
+---
+
+## FR-023 — A method rename can capture another overload's calls — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+With `void setValue(int)` and `long twice(long)`, renaming `twice` to `setValue` turns `twice(7)` into
+`setValue(7)`, which now binds to `setValue(int)`; find references afterwards no longer sees the call.
+It compiles, so nothing reports it, although the tool advertises overload-correct renames.
+The collision check compares only signatures, so a different overload of the new name passes.
+
+### Resolution
+
+Fixed by the meaning check of [FR-022](#fr-022--a-rename-to-a-name-a-use-already-sees-silently-rebinds-the-use--done):
+`twice(7)` renamed to `setValue(7)` would call `setValue(int)`, a renamed site that now means something else, and an
+untouched call in this or another module that the renamed method would capture is an extra use; both refuse the rename,
+naming the call.
+
+### Regression targets
+
+`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`.
+
+---
+
 ## FR-024 — Renaming an interface method misses implementations inherited from a dependency — done
 
 **Status: done.**

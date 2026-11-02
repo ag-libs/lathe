@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -260,6 +261,16 @@ public final class CompilationWorker {
   public CompletableFuture<Optional<String>> renameConflict(
       final SourceFeatureRequest request, final String newName) {
     return submit(ctx -> ctx.renameConflict(request, newName));
+  }
+
+  public CompletableFuture<Optional<String>> renameBindingConflict(
+      final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
+      final List<RenameBindingCheck.CheckedFile> checked,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx -> ctx.renameBindingConflict(check, visibleEdits, checked, cancelChecker),
+        cancelChecker);
   }
 
   public CompletableFuture<List<ReferenceTarget>> instantiationTargets(

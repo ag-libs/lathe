@@ -528,6 +528,28 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : RenameConflicts.find(element, newName, cur.analysis());
   }
 
+  // Whether renaming keeps what every name in this module's checked files means, attributing them
+  // as the rename leaves them; the reason to refuse when it does not.
+  public Optional<String> renameBindingConflict(
+      final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
+      final List<RenameBindingCheck.CheckedFile> checked,
+      final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final Optional<String> conflict =
+        RenameBindingCheck.find(compiler, check, visibleEdits, checked, cancelChecker);
+    LOG.fine(
+        () ->
+            "[rename:check] %s edited=%d checked=%d %dms conflict=%s"
+                .formatted(
+                    check.newName(),
+                    visibleEdits.size(),
+                    checked.size(),
+                    t.elapsedMs(),
+                    conflict.isPresent()));
+    return conflict;
+  }
+
   private static Element renameElement(
       final SourceFeatureRequest request, final CursorContext cur) {
     final Element constructor =
