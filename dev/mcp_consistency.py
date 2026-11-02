@@ -12,6 +12,12 @@ OUTLINE_ITEM = re.compile(r"^( *)(\S+) (.+?)  (\d+):(\d+): ")
 SERVER_LOG_FAILURE = "see the server log"
 
 
+def first(text):
+    """The answer's first line, shortened for a report row."""
+    lines = (text or "").strip().splitlines()
+    return lines[0][:110] if lines else "(empty)"
+
+
 def locations(text):
     """(path, line, snippet) of every location line, in answer order."""
     found = []

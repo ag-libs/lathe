@@ -139,6 +139,10 @@ dev/editor-smoke.sh ~/git                    # all three; or name some: ~/git he
 The MCP battery runs the server the workspace was synced with (`.lathe/lathe-mcp-launcher.sh`;
 `LATHE_MCP_LAUNCHER` overrides it) and refuses to run when that server, or the sync, is not the
 `--expect-version`, or when a `.java` file in the clone has uncommitted edits.
+The other MCP probes (`mcp.py`, `mcp_staleness.py`, `verify_scale.py`, `agent_task.py`, …) pick the
+server the same way, so on a clone pinned to a release they run that release, not your checkout: set
+`LATHE_MCP_LAUNCHER` to a `~/.cache/lathe/servers/<version>-SNAPSHOT/lathe-mcp-launcher.sh` to test a
+server change.
 It warns when the clone's HEAD is not the commit its expectations were written against (`pin` in
 `CONFIGS`).
 It checks:

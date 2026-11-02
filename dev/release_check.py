@@ -18,18 +18,21 @@ DEV = Path(__file__).resolve().parent
 sys.path.insert(0, str(DEV))
 import mcp_battery  # noqa: E402
 
-STATUS = re.compile(r"^(PASS|FAIL|KNOWN|NOW PASSES|SKIP|SLOWER|REFUSED)\b")
+STATUS = re.compile(r"^(PASS|FAIL|KNOWN|NOW PASSES|SKIP|SLOWER|REFUSED|WARN|RESTORED)\b")
 
 
 def run(title, command):
     """Runs one probe, echoing its output; returns (title, exit code, the lines worth reporting)."""
     print("\n=== %s" % title, flush=True)
-    proc = subprocess.run(command, capture_output=True, text=True)
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr[-4000:])
-    out = proc.stdout + proc.stderr
-    lines = [line for line in out.splitlines() if STATUS.match(line) or line.startswith(("SUMMARY", "SERVER"))]
-    return title, proc.returncode, lines
+    # Streamed, not buffered: a long Helidon run shows its progress, and a hang shows where.
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    lines = []
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        if STATUS.match(line) or line.startswith(("SUMMARY", "SERVER")):
+            lines.append(line.rstrip("\n"))
+    return title, proc.wait(), lines
 
 
 def main():

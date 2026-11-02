@@ -20,6 +20,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 PROTOCOL_VERSION = "2025-06-18"
@@ -92,8 +93,10 @@ class McpClient:
         self._id += 1
         rid = self._id
         self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        # One deadline for the request: notifications and late answers must not restart it.
+        deadline = time.monotonic() + timeout
         while True:
-            msg = self._read(timeout)
+            msg = self._read(max(0.0, deadline - time.monotonic()))
             if msg.get("id") == rid:
                 if "error" in msg:
                     raise RuntimeError("%s error: %s" % (method, msg["error"]))

@@ -25,6 +25,7 @@ sys.path.insert(0, str(DEV))
 import mcp  # noqa: E402
 import mcp_consistency as mc  # noqa: E402
 import mcp_probe  # noqa: E402
+from mcp_consistency import first  # noqa: E402
 
 # Per workspace: the commit the expectations were written against; a symbol with cross-module uses
 # (renamed and back); an interface and one of its methods; a dependency or JDK type used in the
@@ -83,7 +84,7 @@ def locate(path: Path, token: str):
         c = line.find(token)
         if c >= 0 and not line.strip().startswith(("*", "//", "/*", "import ", "package ")):
             return i + 1, c + 1
-    raise SystemExit("token %r not in %s" % (token, path))
+    raise LookupError("token %r not in %s" % (token, path.name))
 
 
 def text_of(result):
@@ -92,11 +93,6 @@ def text_of(result):
 
 def git(ws, *args):
     return subprocess.run(["git", "-C", str(ws), *args], capture_output=True, text=True).stdout
-
-
-def first(text):
-    lines = (text or "").strip().splitlines()
-    return lines[0][:110] if lines else "(empty)"
 
 
 class Battery:
@@ -135,6 +131,13 @@ class Battery:
         self.check(label, "exception" not in result and ok(text, result), first(text), known=known)
         return text
 
+    def section(self, name, fn, *args):
+        """Runs one group of checks; an error in it becomes a FAIL line and the run goes on."""
+        try:
+            fn(*args)
+        except Exception as e:  # noqa: BLE001 -- one broken section must not hide the others
+            self.record("FAIL", "%s aborted" % name, "%s: %s" % (type(e).__name__, str(e)[:100]), 0)
+
     def failures(self):
         return sum(1 for r in self.results if r["status"] == "FAIL")
 
@@ -145,7 +148,7 @@ def dirty_java(ws):
 
 
 def untracked(ws):
-    return set(git(ws, "ls-files", "--others", "--exclude-standard").split())
+    return set(git(ws, "ls-files", "--others", "--exclude-standard").splitlines())
 
 
 def preflight(ws, cfg, expected):
@@ -157,7 +160,10 @@ def preflight(ws, cfg, expected):
     head = git(ws, "rev-parse", "HEAD").strip()
     if not head.startswith(cfg["pin"]):
         print("WARN        HEAD %s is not the pinned %s; the expectations may not match" % (head[:10], cfg["pin"]))
-    synced = json.loads((ws / ".lathe" / "workspace.json").read_text(encoding="utf-8")).get("serverVersion")
+    manifest = ws / ".lathe" / "workspace.json"
+    if not manifest.is_file():
+        raise SystemExit("REFUSED: %s has no .lathe/workspace.json; run `mvn process-test-classes` first" % ws)
+    synced = json.loads(manifest.read_text(encoding="utf-8")).get("serverVersion")
     if synced != expected:
         raise SystemExit("REFUSED: .lathe/ was synced by Lathe %s, not %s; set the extension to %s and run "
                          "`mvn process-test-classes` first" % (synced, expected, expected))
@@ -265,8 +271,7 @@ def rename_round_trip(b, ws, cfg, f, pos):
     nl, _ = locate(f, cfg["newname"])
     b.call("rename_symbol back", "rename_symbol",
            {"file": str(f), "line": nl, "symbol": cfg["newname"], "newName": cfg["symbol"].rstrip("()")})
-    left = [line for line in git(ws, "status", "--porcelain", "--untracked-files=no").splitlines()
-            if line.rstrip().endswith(".java")]
+    left = dirty_java(ws)
     b.check("rename round-trip leaves tree clean", not left, "; ".join(left)[:300] or "clean")
 
 
@@ -334,6 +339,8 @@ def health_checks(b, exited):
     lines = list(b.client.stderr_lines)
     if log and log.is_file():
         lines += log.read_text(encoding="utf-8", errors="replace").splitlines()
+    # The console and the file handler write the same records; count each line once.
+    lines = list(dict.fromkeys(lines))
     severe = [line for line in lines if " SEVERE " in line]
     traces = [line for line in lines if re.match(r"\s+at [\w.$]+\(", line)]
     b.check("server log: no SEVERE or stack trace", not severe and not traces,
@@ -344,7 +351,8 @@ def health_checks(b, exited):
 
 
 def restore_java(ws, created=()):
-    touched = [p for p in git(ws, "diff", "--name-only").split() if p.endswith(".java")]
+    # --relative: paths from the workspace, which may sit below the repository root.
+    touched = [p for p in git(ws, "diff", "--name-only", "--relative").splitlines() if p.endswith(".java")]
     if touched:
         git(ws, "checkout", "--", *touched)
     for p in created:
@@ -377,6 +385,16 @@ def main():
     opts = parser.parse_args()
     ws, cfg = Path(opts.workspace).resolve(), CONFIGS[opts.config]
     head = preflight(ws, cfg, opts.expect_version)
+    f = ws / cfg["file"]
+    try:
+        line, _ = locate(f, cfg["symbol"])
+    except LookupError as e:
+        raise SystemExit("REFUSED: %s; the config no longer matches this clone" % e)
+    pos = {"file": str(f), "line": line, "symbol": cfg["symbol"].rstrip("()")}
+    test_module = mc.module_of(ws, cfg["test"][0])
+    tests_captured = bool(test_module) and (ws / ".lathe" / test_module / "test-launch.json").is_file()
+    probe = mcp_probe.Probe(ws, *cfg["probe"])
+
     launcher = mcp.launcher_for(ws)
     untracked_before = untracked(ws)
     b = Battery(ws, launcher)
@@ -386,29 +404,23 @@ def main():
         b.client.close()
         raise SystemExit("REFUSED: the server reports %s, not %s" % (version, opts.expect_version))
 
-    f = ws / cfg["file"]
-    line, _ = locate(f, cfg["symbol"])
-    pos = {"file": str(f), "line": line, "symbol": cfg["symbol"].rstrip("()")}
-    test_module = mc.module_of(ws, cfg["test"][0])
-    tests_captured = bool(test_module) and (ws / ".lathe" / test_module / "test-launch.json").is_file()
-    probe = mcp_probe.Probe(ws, *cfg["probe"])
     exited = False
     try:
         listed = {t["name"] for t in b.client.tools_list().get("tools", [])}
         b.check("every listed tool has a check", listed <= CHECKED_TOOLS,
                 "untested: %s" % ", ".join(sorted(listed - CHECKED_TOOLS)) if listed - CHECKED_TOOLS
                 else "%d tool(s)" % len(listed))
-        workspace_checks(b, ws, cfg, f, pos, tests_captured)
-        consistency_checks(b, ws, cfg, f, pos)
-        break_and_repair(b, f)
-        rename_round_trip(b, ws, cfg, f, pos)
+        b.section("workspace", workspace_checks, b, ws, cfg, f, pos, tests_captured)
+        b.section("consistency", consistency_checks, b, ws, cfg, f, pos)
+        b.section("break and repair", break_and_repair, b, f)
+        b.section("rename round-trip", rename_round_trip, b, ws, cfg, f, pos)
         if cfg.get("inherited_rename"):
-            inherited_rename(b, ws, cfg)
+            b.section("inherited rename", inherited_rename, b, ws, cfg)
         try:
-            mcp_probe.run(b, ws, probe)
+            b.section("probe", mcp_probe.run, b, ws, probe)
         finally:
             probe.remove()
-        negative_checks(b, ws, f)
+        b.section("bad requests", negative_checks, b, ws, f)
     finally:
         exited = b.client.close()
         created = sorted(untracked(ws) - untracked_before)

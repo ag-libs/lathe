@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import mcp_consistency as mc
+from mcp_consistency import first
 
 TEMPLATES = Path(__file__).resolve().parent / "battery"
 
@@ -17,7 +18,7 @@ def line_of(text, token):
     """1-based line of the only line holding token."""
     hits = [i + 1 for i, line in enumerate(text.splitlines()) if token in line]
     if len(hits) != 1:
-        raise SystemExit("probe token %r matches %d lines" % (token, len(hits)))
+        raise LookupError("probe token %r matches %d lines" % (token, len(hits)))
     return hits[0]
 
 
@@ -76,18 +77,22 @@ def run(b, ws: Path, probe: Probe):
     b.call("probe: compiles cleanly", "get_diagnostics", {"file": str(probe.file)},
            ok=lambda t, r: not r.get("isError") and " Error " not in t and "not checked" not in t)
     b.check("probe: reaches the type index", wait_indexed(b, "LatheProbe"), "search_symbols finds LatheProbe")
-    outline_checks(b, probe)
-    implementation_checks(b, probe)
-    navigation_checks(b, probe)
+    b.section("probe outline", outline_checks, b, probe)
+    b.section("probe implementations", implementation_checks, b, probe)
+    b.section("probe navigation", navigation_checks, b, probe)
+    b.section("probe consistency", consistency_checks, b, probe)
+    b.section("probe renames", rename_checks, b, probe)
+    b.section("probe stale answer", stale_answer_check, b, probe)
+    b.section("probe imports", imports_checks, b, probe)
+
+
+def consistency_checks(b, probe):
     mc.outline_resolves(b, probe.file, known_names={
         "RED": "an enum constant with a body cannot be resolved at its declaration"})
     mc.override_family_present(b, probe.pos("return side * side", "area", offset=-1),
                                "probe: override family of Square.area",
                                known="analyze_change reports no override family for a method that overrides one")
     mc.diagnostics_agree_with_notes(b, probe.file, "probe: diagnostics agree with notes")
-    rename_checks(b, probe)
-    stale_answer_check(b, probe)
-    imports_checks(b, probe)
 
 
 def outline_checks(b, probe):
@@ -151,8 +156,10 @@ def rename_keeps_meaning(b, probe, label, token, old, new, known):
     original = probe.file.read_bytes()
     before = reference_counts(b, probe, WATCHED)
     text, result = b.raw("rename_symbol", dict(probe.pos(token, old), newName=new))
-    if result.get("isError") or "No references" in text:
-        b.check(label, True, "refused: %s" % first(text))
+    if "No references" in text:
+        b.check(label, False, "found nothing to rename: %s" % first(text))
+    elif result.get("isError") or not text.startswith("Renamed"):
+        b.check(label, True, "refused: %s" % first(text), known=known)
     else:
         after = reference_counts(b, probe, [(t, n) for t, n in WATCHED if n != old])
         moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
@@ -186,14 +193,13 @@ def imports_checks(b, probe):
     b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text),
             known="import fixes ignore nested types")
     target = probe.write("LatheProbeImports", crlf=True)
-    b.raw("fix_imports", {"file": str(target)})
+    text = b.raw("fix_imports", {"file": str(target)})[0]
     data = target.read_bytes()
-    bare_lf = data.count(b"\n") - data.count(b"\r\n")
-    b.check("probe fix_imports: keeps CRLF", bare_lf == 0, "%d bare LF line ending(s)" % bare_lf,
-            known="MCP edits written to a CRLF file add LF line endings")
+    if b"import java.util.concurrent.ConcurrentHashMap;" not in data:
+        b.check("probe fix_imports: keeps CRLF", False, "no import added to the CRLF file: %s" % first(text))
+    else:
+        bare_lf = data.count(b"\n") - data.count(b"\r\n")
+        b.check("probe fix_imports: keeps CRLF", bare_lf == 0, "%d bare LF line ending(s)" % bare_lf,
+                known="MCP edits written to a CRLF file add LF line endings")
     target.unlink()
 
-
-def first(text):
-    lines = text.strip().splitlines()
-    return lines[0][:110] if lines else "(empty)"
