@@ -539,8 +539,10 @@ do -- a Ctrl-C at a picker cancels cleanly instead of surfacing the LSP-callback
 end
 
 do -- :LatheGoToTest: one test opens, several are picked from, none offers to create one
+	-- Real path: macOS's temp dir is a symlink, and a buffer is named by the file's real path.
 	local dir = vim.fn.tempname()
 	vim.fn.mkdir(dir, "p")
+	dir = vim.uv.fs_realpath(dir)
 	local foo_test = dir .. "/FooTest.java"
 	local foo_it = dir .. "/FooIT.java"
 	vim.fn.writefile({ "class FooTest {}" }, foo_test)
