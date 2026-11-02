@@ -867,58 +867,6 @@ None yet.
 
 ---
 
-## EG-088 — Signature help is empty inside `new P(|)` and `super(|)` when no constructor takes zero arguments
-
-**Status: documented**
-
-**Value: high — Size: S**
-
-**Affects: the editor.**
-
-Found in a colleague's daily use (2026-11-02), confirmed with a throwaway `SignatureHelpTest`-style probe.
-
-### Observed behaviour
-
-With the cursor between the empty parentheses of a constructor call, signature help answers nothing
-when the class has no no-arg constructor: `new P(|)` for `P(int)` / `P(String)` / `P(int, int)`,
-and `super(|)` in a subclass of such a `P`.
-The same call without its closing paren, `new P(|`, lists both constructors, and so does a class with a no-arg
-constructor (`new StringBuilder(|)`, `new ArrayList<String>(|)`).
-Method calls are not affected: `m(|)`, `new T().m(|)`, `String.valueOf(|)` list every overload.
-
-Two smaller differences from IntelliJ's parameter info turned up on the way:
-
-- Overloads the caller cannot access are listed: `new ArrayList<String>().add(|)` shows the private
-  `void add(E, Object[], int)` beside the two public `add`s.
-- The active overload of an unresolved call is the first declared, not one whose arity fits the arguments typed so far
-  (also noted under [NV-10](#nv-10--signature-help-highlights-no-parameter-when-the-active-overload-is-not-the-first)).
-
-### Root cause
-
-javac resolves no constructor for `()` when none takes zero arguments, so `Trees.getElement` on the
-`NewClassTree` is null and `SignatureHelpResolver.resolve` returns null.
-The method branch falls back to every overload of the name (`methodsNamed`, `memberSelectCandidates`);
-the constructor branch has no such fallback.
-`super(|)` / `this(|)` are `MethodInvocationTree`s whose select element is likewise null, and the identifier fallback
-looks for methods named `super`, of which there are none.
-
-### Fix direction
-
-Match IntelliJ: inside any call's parentheses, list every accessible overload, whether or not the call attributes.
-
-- `new P(…)`: when the element is null, take the constructors of the type the `NewClassTree`'s identifier names.
-- `super(…)` / `this(…)`: take the constructors of the enclosing class's superclass / of the enclosing class.
-- Filter by `Trees.isAccessible` from the call's scope.
-- Pick the active overload by arity when the call does not attribute.
-
-### Regression targets
-
-None yet.
-Add to `SignatureHelpTest`: `new P(§)` and `super(§)` with no no-arg constructor list all constructors;
-a private overload is not listed.
-
----
-
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -1750,11 +1698,9 @@ Report it to blink.cmp: the line must be the active signature's index in its own
 Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
 which every client renders correctly, at the cost of the overload order changing as the arguments change.
 
-Related, on the server and not reproduced: when the call does not attribute yet, `SignatureHelpResolver` falls back
-to the first overload of that name whatever the argument count, so an active parameter beyond that overload's
-parameters is highlighted in no client.
-Prefer an overload whose arity fits the arguments typed;
-see also [EG-048](#eg-048--go-to-definition-on-a-call-with-the-wrong-arguments-finds-nothing-and-offers-one-overload-only).
+Related, on the server: when the call does not attribute yet, `SignatureHelpResolver` now makes active the first
+overload whose arity fits the arguments typed, not the first declared
+([EG-088](gaps-archive.md#eg-088--signature-help-is-empty-inside-new-p-and-super-when-no-constructor-takes-zero-arguments--done)).
 
 ### Regression targets
 

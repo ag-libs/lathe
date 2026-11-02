@@ -6,21 +6,25 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.Scope;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.util.ElementFilter;
 import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.ParameterInformation;
 import org.eclipse.lsp4j.SignatureHelp;
@@ -52,99 +56,148 @@ final class SignatureHelpResolver {
       return null;
     }
 
-    final var trees = analysis.trees();
-    final var fmt = new TypeDisplayFormatter(analysis.types());
-
-    final ExecutableElement resolved;
-    final List<ExecutableElement> overloads;
-    final String callName;
-    final List<? extends Tree> args;
-
-    if (callPath.getLeaf() instanceof final MethodInvocationTree inv) {
-      final var sel = trees.getElement(new TreePath(callPath, inv.getMethodSelect()));
-      if (sel instanceof ExecutableElement exe) {
-        resolved = exe;
-        if (resolved.getKind() == ElementKind.CONSTRUCTOR) {
-          final var owner = enclosingType(resolved);
-          if (owner == null) {
-            return null;
-          }
-
-          callName = owner.getSimpleName().toString();
-          overloads = constructorsOf(analysis, owner);
-        } else {
-          callName = resolved.getSimpleName().toString();
-          overloads =
-              methodsNamed(
-                  analysis, (TypeElement) resolved.getEnclosingElement(), resolved.getSimpleName());
-        }
-      } else if (inv.getMethodSelect() instanceof final IdentifierTree id) {
-        final var owner = enclosingClass(callPath, trees);
-        if (owner == null) {
-          return null;
-        }
-
-        final List<ExecutableElement> candidates = methodsNamed(analysis, owner, id.getName());
-        if (candidates.isEmpty()) {
-          return null;
-        }
-
-        callName = id.getName().toString();
-        overloads = candidates;
-        resolved = candidates.get(0);
-      } else if (inv.getMethodSelect() instanceof final MemberSelectTree select) {
-        final List<ExecutableElement> candidates =
-            memberSelectCandidates(analysis, callPath, select);
-        if (candidates.isEmpty()) {
-          return null;
-        }
-
-        callName = select.getIdentifier().toString();
-        overloads = candidates;
-        resolved = candidates.get(0);
-      } else {
-        return null;
-      }
-
-      args = inv.getArguments();
-    } else {
-      final var element = trees.getElement(callPath);
-      if (!(element instanceof ExecutableElement exe)) {
-        return null;
-      }
-
-      resolved = exe;
-      final var owner = enclosingType(resolved);
-      if (owner == null) {
-        return null;
-      }
-
-      callName = owner.getSimpleName().toString();
-      overloads = constructorsOf(analysis, owner);
-      args = ((NewClassTree) callPath.getLeaf()).getArguments();
-    }
-
-    if (overloads.isEmpty()) {
+    final var target =
+        callPath.getLeaf() instanceof final MethodInvocationTree inv
+            ? invocationTarget(analysis, callPath, inv)
+            : constructionTarget(analysis, callPath, (NewClassTree) callPath.getLeaf());
+    if (target == null || target.overloads().isEmpty()) {
       return null;
     }
 
-    final int activeParam = activeParamFromArgs(args, positions, cu, cursorOffset);
-
+    final var trees = analysis.trees();
+    final var fmt = new TypeDisplayFormatter(analysis.types());
+    final int activeParam = activeParamFromArgs(target.args(), positions, cu, cursorOffset);
     final List<SignatureInformation> signatures =
-        overloads.stream()
-            .map(m -> buildSignature(m, fmt, callName, parser, sourceRoots, javadocLocator, trees))
+        target.overloads().stream()
+            .map(
+                m ->
+                    buildSignature(
+                        m, fmt, target.name(), parser, sourceRoots, javadocLocator, trees))
             .toList();
-    final int activeSignature =
-        IntStream.range(0, overloads.size())
-            .filter(i -> overloads.get(i).equals(resolved))
-            .findFirst()
-            .orElse(0);
+    final int activeSignature = activeSignature(target);
 
     LOG.fine(
         () ->
             "[signatureHelp] sig=%s param=%d"
                 .formatted(signatures.get(activeSignature).getLabel(), activeParam));
     return new SignatureHelp(signatures, activeSignature, activeParam);
+  }
+
+  // Every accessible overload a call can name, whether or not it attributes yet: javac resolves
+  // nothing for `new P()` or `super()` when no constructor takes zero arguments.
+  private static CallTarget invocationTarget(
+      final AttributedFileAnalysis analysis,
+      final TreePath callPath,
+      final MethodInvocationTree inv) {
+    final var trees = analysis.trees();
+    final var scope = trees.getScope(callPath);
+    final var select = inv.getMethodSelect();
+    final var args = inv.getArguments();
+    if (trees.getElement(new TreePath(callPath, select)) instanceof final ExecutableElement exe
+        && exe.getEnclosingElement() instanceof final TypeElement owner) {
+      return exe.getKind() == ElementKind.CONSTRUCTOR
+          ? constructorTarget(analysis, scope, owner, exe, args)
+          : methodTarget(analysis, scope, owner, exe.getSimpleName(), exe, args);
+    }
+
+    if (select instanceof final IdentifierTree id) {
+      final var self = enclosingClass(callPath, trees);
+      if (self == null) {
+        return null;
+      }
+
+      if (id.getName().contentEquals("this")) {
+        return constructorTarget(analysis, scope, self, null, args);
+      }
+
+      if (id.getName().contentEquals("super")) {
+        return analysis.types().asElement(self.getSuperclass()) instanceof final TypeElement parent
+            ? constructorTarget(analysis, scope, parent, null, args)
+            : null;
+      }
+
+      return methodTarget(analysis, scope, self, id.getName(), null, args);
+    }
+
+    if (select instanceof final MemberSelectTree member
+        && trees.getTypeMirror(new TreePath(new TreePath(callPath, member), member.getExpression()))
+            instanceof final DeclaredType receiver
+        && receiver.asElement() instanceof final TypeElement owner) {
+      return methodTarget(analysis, scope, owner, member.getIdentifier(), null, args);
+    }
+
+    return null;
+  }
+
+  private static CallTarget constructionTarget(
+      final AttributedFileAnalysis analysis, final TreePath callPath, final NewClassTree call) {
+    final var trees = analysis.trees();
+    final var resolved =
+        trees.getElement(callPath) instanceof final ExecutableElement exe ? exe : null;
+    return trees.getElement(new TreePath(callPath, call.getIdentifier()))
+            instanceof final TypeElement owner
+        ? constructorTarget(
+            analysis, trees.getScope(callPath), owner, resolved, call.getArguments())
+        : null;
+  }
+
+  private static CallTarget methodTarget(
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final TypeElement owner,
+      final Name name,
+      final ExecutableElement resolved,
+      final List<? extends Tree> args) {
+    final Stream<ExecutableElement> methods =
+        ElementFilter.methodsIn(analysis.elements().getAllMembers(owner)).stream()
+            .filter(m -> m.getSimpleName().equals(name));
+    return new CallTarget(
+        name.toString(), accessible(analysis, scope, owner, methods), resolved, args);
+  }
+
+  private static CallTarget constructorTarget(
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final TypeElement owner,
+      final ExecutableElement resolved,
+      final List<? extends Tree> args) {
+    final Stream<ExecutableElement> constructors =
+        ElementFilter.constructorsIn(owner.getEnclosedElements()).stream();
+    return new CallTarget(
+        owner.getSimpleName().toString(),
+        accessible(analysis, scope, owner, constructors),
+        resolved,
+        args);
+  }
+
+  private static List<ExecutableElement> accessible(
+      final AttributedFileAnalysis analysis,
+      final Scope scope,
+      final TypeElement owner,
+      final Stream<ExecutableElement> members) {
+    final var site = (DeclaredType) owner.asType();
+    return members.filter(m -> analysis.trees().isAccessible(scope, m, site)).toList();
+  }
+
+  // The resolved overload; for a call that does not attribute yet, the first whose arity fits the
+  // arguments typed so far.
+  private static int activeSignature(final CallTarget target) {
+    final List<ExecutableElement> overloads = target.overloads();
+    final int argCount = target.args().size();
+    return IntStream.range(0, overloads.size())
+        .filter(i -> overloads.get(i).equals(target.resolved()))
+        .findFirst()
+        .orElseGet(
+            () ->
+                IntStream.range(0, overloads.size())
+                    .filter(i -> fitsArity(overloads.get(i), argCount))
+                    .findFirst()
+                    .orElse(0));
+  }
+
+  private static boolean fitsArity(final ExecutableElement method, final int argCount) {
+    final int params = method.getParameters().size();
+    return method.isVarArgs() ? argCount >= params - 1 : argCount <= params;
   }
 
   private static TreePath findEnclosingCall(
@@ -168,41 +221,6 @@ final class SignatureHelpResolver {
       path = path.getParentPath();
     }
     return null;
-  }
-
-  private static List<ExecutableElement> methodsNamed(
-      final AttributedFileAnalysis analysis, final TypeElement owner, final Name name) {
-    return analysis.elements().getAllMembers(owner).stream()
-        .filter(e -> e.getKind() == ElementKind.METHOD && e.getSimpleName().equals(name))
-        .map(e -> (ExecutableElement) e)
-        .toList();
-  }
-
-  private static List<ExecutableElement> memberSelectCandidates(
-      final AttributedFileAnalysis analysis,
-      final TreePath callPath,
-      final MemberSelectTree select) {
-    final var receiverPath = new TreePath(new TreePath(callPath, select), select.getExpression());
-    final var receiverType = analysis.trees().getTypeMirror(receiverPath);
-    if (!(receiverType instanceof final DeclaredType declaredType)
-        || !(declaredType.asElement() instanceof final TypeElement owner)) {
-      return List.of();
-    }
-
-    return methodsNamed(analysis, owner, select.getIdentifier());
-  }
-
-  private static List<ExecutableElement> constructorsOf(
-      final AttributedFileAnalysis analysis, final TypeElement owner) {
-    return analysis.elements().getAllMembers(owner).stream()
-        .filter(
-            e -> e.getKind() == ElementKind.CONSTRUCTOR && e.getEnclosingElement().equals(owner))
-        .map(e -> (ExecutableElement) e)
-        .toList();
-  }
-
-  private static TypeElement enclosingType(final ExecutableElement element) {
-    return element.getEnclosingElement() instanceof TypeElement te ? te : null;
   }
 
   private static TypeElement enclosingClass(TreePath path, final Trees trees) {
@@ -297,5 +315,20 @@ final class SignatureHelpResolver {
               }
             });
     return sig;
+  }
+
+  // The overloads a call can name, and the one javac resolved it to (null until the call
+  // attributes).
+  private record CallTarget(
+      String name,
+      List<ExecutableElement> overloads,
+      ExecutableElement resolved,
+      List<? extends Tree> args) {
+
+    CallTarget {
+      ValidCheck.check().notBlank(name, "name").notNull(args, "args").validate();
+      overloads = List.copyOf(overloads);
+      args = List.copyOf(args);
+    }
   }
 }
