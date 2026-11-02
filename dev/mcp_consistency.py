@@ -148,6 +148,22 @@ def references_round_trip(b, ws: Path, decl_file: Path, pos, name, label, limit=
             % (min(len(refs), limit), ", ".join(wrong[:3]) or "none"))
 
 
+def family_covers_definitions(b, ws: Path, decl_file: Path, pos, name, label, limit=500, known=None):
+    """Every declaration a reference resolves to, other than the declaration itself, is in
+    analyze_change's override family: an agent changing the method must hear about it."""
+    family = {(Path(p).name, line) for p, line, _ in locations(b.raw("analyze_change", pos)[0])}
+    refs = locations(b.raw("find_references", dict(pos, maxResults=limit))[0])
+    missing = set()
+    for path, line, _ in refs[:limit]:
+        file = Path(path) if Path(path).is_absolute() else ws / path
+        for target, target_line, _ in locations(b.raw("get_definition", {"file": str(file), "line": line,
+                                                                         "symbol": name})[0]):
+            if Path(target).name != decl_file.name and (Path(target).name, target_line) not in family:
+                missing.add("%s:%d" % (target, target_line))
+    b.check(label, not missing, "%d family member(s); left out: %s"
+            % (len(family), ", ".join(sorted(missing)[:3]) or "none"), known=known)
+
+
 def list_shape(b, ws: Path, text, label):
     """A location list has no duplicate rows and keeps each module's rows together."""
     rows = locations(text)

@@ -247,6 +247,8 @@ def consistency_checks(b, ws, cfg, f, pos):
     mc.analyze_modules_cover(b, ws, method_pos, "analyze_change modules cover its locations",
                              known="analyze_change names too few affected modules")
     mc.references_round_trip(b, ws, f, pos, cfg["symbol"].rstrip("()"), "references lead back to the declaration")
+    mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach",
+                                 known="analyze_change's override family leaves out abstract redeclarations")
     mc.outline_resolves(b, f)
     mc.diagnostics_agree_with_notes(b, f, "diagnostics agree with notes")
 
