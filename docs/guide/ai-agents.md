@@ -182,6 +182,12 @@ leave behind.
 It refuses a Lombok field or a member Lombok generates, whose accessors' calls the rename would leave behind,
 and one member of a statically imported name the import also brings in other members of.
 It refuses a new name the owner already declares or inherits, a sibling type already has, or a variable in scope already uses.
+It refuses an interface method a project class implements through a superclass outside the project, which keeps its method.
+It refuses a rename that would change what a name means, in any module that sees the symbol:
+a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
+a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);
+the error names the file and line.
+Uses only reflection, strings or configuration make are not checked.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 

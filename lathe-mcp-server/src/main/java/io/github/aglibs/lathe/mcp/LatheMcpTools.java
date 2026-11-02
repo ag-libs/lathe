@@ -200,7 +200,10 @@ final class LatheMcpTools {
                 text (string literals, qualified in resources) for you to review; it edits none. Renaming a public top-level type also \
                 renames its file. Refuses if it would touch a file outside the reactor, or if the \
                 symbol (or a method it overrides) is declared in the JDK, a dependency, or \
-                generated source. The changed files are compiled before it returns, so follow-up \
+                generated source, or if it would change what a name means: a use the new name \
+                would capture (a shadowed field, a call picking the renamed overload) or a renamed \
+                use that would then refer to something else; the error names the file and line. \
+                The changed files are compiled before it returns, so follow-up \
                 queries see the new names. Then \
                 call verify_change with no arguments to check the rewritten files and their callers, \
                 and run the sync it suggests for other modules.\
