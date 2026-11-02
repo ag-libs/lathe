@@ -2463,3 +2463,51 @@ Show a status for every module: captured, not captured (with the command), or no
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-78 — `analyze_change`'s override family leaves out abstract redeclarations
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `analyze_change`. Go to implementation and `find_implementations` leave them out by design.**
+
+Found by the MCP release battery's reference round trip on Helidon (2026-11-02).
+
+### Observed behaviour
+
+For Helidon's `MediaType.text()`, `analyze_change` reports an override family of 3: `HttpMediaTypeImpl.text()`,
+the `MediaTypeImpl` record component, and `MediaTypeEnum.text()`.
+It leaves out `HttpMediaType.text()`, the `String text();` that the subinterface `HttpMediaType extends MediaType`
+redeclares (`http/http/src/main/java/io/helidon/http/HttpMediaType.java:191`).
+That redeclaration matters to a change: `get_definition` at calls such as `HttpMediaTypes.JSON.text()` and
+`HttpMediaType::text` lands on it, `find_references` there lists 77 uses, and `rename_symbol` renames it with the rest.
+An agent asking what changing `MediaType.text()` affects is not told that a subinterface redeclares it.
+
+### Fix direction
+
+Why: `LatheEngine.analyzeChange` takes the family from the implementation search (`implementationsAt`), and
+`MethodImplementationLocator.visitClass` keeps only methods without the `abstract` modifier.
+That is right for an implementation, but an interface method without a body is abstract, so a subinterface's
+redeclaration (and an abstract class's) is dropped.
+The subinterface already reaches the search: the type index's transitive subtypes include interfaces, so only this
+filter removes it.
+
+The fix: the locator keeps abstract overriders too and marks each result as an implementation or a redeclaration;
+go to implementation and `find_implementations` keep the implementations only; `analyze_change` keeps both and
+labels the redeclarations ("redeclared by").
+It belongs to the one-search set under
+[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies) and
+[MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one): MC-67 adds the methods
+the target overrides, this completes the ones that override it.
+A second search only for `analyze_change` would walk the same candidates twice.
+
+Test: `analyze_change` on an interface method that a subinterface redeclares lists the redeclaration;
+`find_implementations` on it does not.
+
+### Regression targets
+
+None yet. The battery's reference round trip no longer catches this: since it accepts a definition that
+`find_references` agrees with, it passes on Helidon either way.
