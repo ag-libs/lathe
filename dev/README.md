@@ -155,8 +155,12 @@ It checks:
 - **a probe file** (`mcp_probe.py`, `battery/LatheProbe.java.tmpl`) copied into one module and deleted
   after: anonymous classes, enum constant bodies, lambdas, records, `Type::new`, `var`, a file that stops
   compiling, `fix_imports` on a nested type and on a CRLF file;
-- **renames that keep what names mean**: the reference count of every nearby declaration must not move,
-  or the rename must refuse — a rename can still compile and change which declaration a use binds to;
+- **renames that keep what names mean** (`mcp_probe.RENAMES`): a parameter, lambda parameter or local
+  renamed onto a field, a field onto a local, a method onto an overload, an enclosing method or a
+  subclass method, a type onto a wildcard-imported name, and a method that captures another file's
+  call. The reference count of each watched declaration must not move, or the rename must refuse with
+  a reason that the use "would then" mean something else: a rename can still compile and change which
+  declaration a use binds to;
 - **bad requests** (missing file or argument, a position on whitespace, a file outside the workspace or
   reached through a symlink, an unknown tool), each answered with an error an agent can act on;
 - **the server's health**: no `SEVERE` or stack trace in its log, an answer after a garbage line, and

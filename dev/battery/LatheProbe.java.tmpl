@@ -1,8 +1,10 @@
 package @PACKAGE@;
 
+import java.util.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.IntUnaryOperator;
 import java.util.function.Supplier;
 
 // Copied into a workspace module by dev/mcp_battery.py and deleted after the run: one of each
@@ -86,5 +88,63 @@ public class LatheProbe {
         list.add(unitShape.get());
         list.add(circle(1));
         return list;
+    }
+
+    // One rename per way a use can start meaning another declaration; mcp_probe.RENAMES renames them.
+    private int limit;
+    private int total;
+    private int width;
+
+    int lambdaShadow() {
+        IntUnaryOperator op = n -> n + limit;
+        return op.applyAsInt(1);
+    }
+
+    int localShadow() {
+        int count = 1;
+        return count + total;
+    }
+
+    int fieldCapture(int height) {
+        int size = 2;
+        return width * height + size;
+    }
+
+    public void ping() {}
+
+    static class Base2 {
+        void pong() {}
+    }
+
+    class Inner extends Base2 {
+        void go() {
+            ping();
+        }
+    }
+
+    static class Animal {
+        void speak() {}
+    }
+
+    static class Dog extends Animal {
+        public void bark() {}
+
+        void call() {
+            speak();
+        }
+    }
+
+    static final class Dice {}
+
+    Random rng() {
+        return new Random();
+    }
+
+    static long measure(long v) {
+        return v;
+    }
+
+    static int gauge(int v) {
+        return v;
     }
 }

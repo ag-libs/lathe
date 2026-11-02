@@ -28,6 +28,7 @@ class Probe:
         self.package = package
         self.file = self.dir / "LatheProbe.java"
         self.imports_file = self.dir / "LatheProbeImports.java"
+        self.caller_file = self.dir / "LatheProbeCaller.java"
 
     def write(self, name, crlf=False):
         text = (TEMPLATES / ("%s.java.tmpl" % name)).read_text(encoding="utf-8").replace("@PACKAGE@", self.package)
@@ -38,7 +39,7 @@ class Probe:
         return target
 
     def remove(self):
-        for f in (self.file, self.imports_file):
+        for f in (self.file, self.imports_file, self.caller_file):
             f.unlink(missing_ok=True)
 
     def text(self):
@@ -74,6 +75,7 @@ def has_line(text, line):
 
 def run(b, ws: Path, probe: Probe):
     probe.write("LatheProbe")
+    probe.write("LatheProbeCaller")
     b.call("probe: compiles cleanly", "get_diagnostics", {"file": str(probe.file)},
            ok=lambda t, r: not r.get("isError") and " Error " not in t and "not checked" not in t)
     b.check("probe: reaches the type index", wait_indexed(b, "LatheProbe"), "search_symbols finds LatheProbe")
@@ -140,22 +142,50 @@ def navigation_checks(b, probe):
             known="outgoing calls drop constructor references")
 
 
-def reference_counts(b, probe, names):
+def reference_counts(b, probe, watched):
     counts = {}
-    for token, name in names:
+    for token, name in watched:
         counts[name] = mc.count(b.raw("find_references", dict(probe.pos(token, name), maxResults=200))[0])
     return counts
 
 
-# Every declaration the rename could rebind; their reference counts must not move.
-WATCHED = [("private int value;", "value"), ("void setValue(int v)", "setValue"),
-           ("public int compute(", "compute"), ("long twice(long n)", "twice")]
+# Before 0.2.2 these renames went through and changed what a use means; the rename binding check
+# refuses them after 0.2.2, with a reason that says the use "would then" refer elsewhere.
+REFUSED_AFTER_0_2_2 = "a rename can change which declaration a use binds to (refused after 0.2.2)"
+
+# Each rename: the line and name renamed (a word for a column where the name is too short to find
+# by name), the new name, and the declarations whose reference counts must not move.
+RENAMES = [
+    ("parameter to a field's name", ("public int compute(int x)", "x"), "value",
+     [("private int value;", "value"), ("void setValue(int v)", "setValue")],
+     "a rename to a name a use already sees silently rebinds the use"),
+    ("method to an overload's name", ("long twice(long n)", "twice"), "setValue",
+     [("void setValue(int v)", "setValue"), ("public int compute(", "compute")],
+     "a method rename can capture another overload's calls"),
+    ("lambda parameter to a field's name", ("IntUnaryOperator op = n ->", "n ->"), "limit",
+     [("private int limit;", "limit")], REFUSED_AFTER_0_2_2),
+    ("local to a field's name", ("int count = 1;", "count"), "total",
+     [("private int total;", "total")], REFUSED_AFTER_0_2_2),
+    ("field to a local's name", ("private int width;", "width"), "size",
+     [("int size = 2;", "size")], REFUSED_AFTER_0_2_2),
+    ("inherited method to an enclosing method's name", ("void pong() {}", "pong"), "ping",
+     [("public void ping() {}", "ping")], REFUSED_AFTER_0_2_2),
+    ("method to a subclass method's name", ("void speak() {}", "speak"), "bark",
+     [("public void bark() {}", "bark")], REFUSED_AFTER_0_2_2),
+    ("type to a wildcard-imported name", ("static final class Dice {}", "Dice"), "Random",
+     [("Random rng()", "Random")], REFUSED_AFTER_0_2_2),
+    ("method capturing another file's call", ("static int gauge(int v)", "gauge"), "measure",
+     [("static long measure(long v)", "measure")], REFUSED_AFTER_0_2_2),
+]
 
 
-def rename_keeps_meaning(b, probe, label, token, old, new, known):
-    original = probe.file.read_bytes()
-    before = reference_counts(b, probe, WATCHED)
-    text, result = b.raw("rename_symbol", dict(probe.pos(token, old), newName=new))
+def rename_keeps_meaning(b, probe, label, target, new, watched, known):
+    files = (probe.file, probe.caller_file)
+    originals = [f.read_bytes() for f in files]
+    before = reference_counts(b, probe, watched)
+    token, word = target
+    position = probe.at(token, word) if " " in word else probe.pos(token, word)
+    text, result = b.raw("rename_symbol", dict(position, newName=new))
     if "No references" in text:
         b.check(label, False, "found nothing to rename: %s" % first(text))
     elif result.get("isError") or not text.startswith("Renamed"):
@@ -165,18 +195,18 @@ def rename_keeps_meaning(b, probe, label, token, old, new, known):
         else:
             b.check(label, False, "refused for another reason: %s" % first(text))
     else:
-        after = reference_counts(b, probe, [(t, n) for t, n in WATCHED if n != old])
+        after = reference_counts(b, probe, watched)
         moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
         b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses", known=known)
-    probe.file.write_bytes(original)
+    for f, original in zip(files, originals):
+        f.write_bytes(original)
     b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def rename_checks(b, probe):
-    rename_keeps_meaning(b, probe, "probe rename: parameter to a field's name", "public int compute(int x)", "x", "value",
-                         known="a rename to a name a use already sees silently rebinds the use")
-    rename_keeps_meaning(b, probe, "probe rename: method to an overload's name", "long twice(long n)", "twice", "setValue",
-                         known="a method rename can capture another overload's calls")
+    for label, target, new, watched, known in RENAMES:
+        b.section("probe rename: %s" % label, rename_keeps_meaning, b, probe, "probe rename: %s" % label,
+                  target, new, watched, known)
 
 
 def stale_answer_check(b, probe):

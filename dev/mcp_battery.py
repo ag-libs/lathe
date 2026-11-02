@@ -105,7 +105,7 @@ class Battery:
     def record(self, status, label, detail, ms=None):
         ms = self.last_ms if ms is None else ms
         self.results.append(dict(status=status, label=label, detail=detail, ms=ms))
-        print("%-11s %-46s %6dms  %s" % (status, label, ms, detail), flush=True)
+        print("%-11s %-56s %6dms  %s" % (status, label, ms, detail), flush=True)
 
     def check(self, label, passed, detail, known=None):
         if known is None:
@@ -374,7 +374,7 @@ def write_report(cfg_name, version, head, results):
     for check in results:
         was = times.get(check["label"])
         if was is not None and check["ms"] > 2 * was and check["ms"] - was > 500:
-            print("SLOWER      %-46s %6dms  was %dms in %s" % (check["label"], check["ms"], was, before["version"]))
+            print("SLOWER      %-56s %6dms  was %dms in %s" % (check["label"], check["ms"], was, before["version"]))
 
 
 def main():
