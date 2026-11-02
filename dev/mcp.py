@@ -6,12 +6,17 @@ and optionally calls get_diagnostics / get_definition. Framing is newline-delimi
 JSON-RPC (the SDK stdio transport), so no Content-Length headers.
 
 Usage:
-    LATHE_MCP_LAUNCHER=/path/to/lathe-mcp-launcher.sh \\
-        python3 dev/mcp.py <workspace-root> [file.java [line col]]
+    python3 dev/mcp.py <workspace-root> [file.java [line col]]
+
+The server is LATHE_MCP_LAUNCHER, else the workspace's own .lathe/lathe-mcp-launcher.sh (the version
+that synced it), else the newest cached server. Each request times out after LATHE_MCP_TIMEOUT
+seconds (default 120).
 """
 
 import json
 import os
+import queue
+import re
 import subprocess
 import sys
 import threading
@@ -20,10 +25,13 @@ from pathlib import Path
 PROTOCOL_VERSION = "2025-06-18"
 # Lathe sets no heap limit; dev runs cap theirs so probes on large reactors stay light.
 DEV_JVM_OPTS = "-Xmx2g"
+# A hung tool must fail the probe that called it, not stall the whole run.
+DEFAULT_TIMEOUT_S = float(os.environ.get("LATHE_MCP_TIMEOUT", "120"))
 
 
 class McpClient:
-    def __init__(self, launcher: Path, cwd: Path):
+    def __init__(self, launcher: Path, cwd: Path, echo_stderr: bool = True):
+        self.launcher = launcher
         self.proc = subprocess.Popen(
             [str(launcher)],
             cwd=str(cwd),
@@ -33,28 +41,59 @@ class McpClient:
             env={**os.environ, "LATHE_JVM_OPTS": os.environ.get("LATHE_JVM_OPTS", DEV_JVM_OPTS)},
         )
         self._id = 0
+        self._echo = echo_stderr
+        self.stderr_lines = []
+        self._messages = queue.Queue()
         threading.Thread(target=self._drain_stderr, daemon=True).start()
+        threading.Thread(target=self._drain_stdout, daemon=True).start()
 
     def _drain_stderr(self):
         for line in self.proc.stderr:
-            sys.stderr.write("[server] " + line.decode(errors="replace"))
+            text = line.decode(errors="replace")
+            self.stderr_lines.append(text.rstrip("\n"))
+            if self._echo:
+                sys.stderr.write("[server] " + text)
+
+    # Reads on its own thread so a request can give up after a deadline.
+    def _drain_stdout(self):
+        for line in self.proc.stdout:
+            try:
+                self._messages.put(json.loads(line))
+            except ValueError:
+                self._messages.put({"unparseable": line.decode(errors="replace")})
+        self._messages.put(None)
+
+    def session_log(self):
+        """The server's full log file, named in its startup line on stderr."""
+        for line in self.stderr_lines:
+            m = re.search(r"\blog=(\S+)", line)
+            if m:
+                return Path(m.group(1))
+        return None
 
     def _send(self, msg: dict):
         self.proc.stdin.write((json.dumps(msg) + "\n").encode())
         self.proc.stdin.flush()
 
-    def _read(self) -> dict:
-        line = self.proc.stdout.readline()
-        if not line:
-            raise RuntimeError("server closed stdout without responding")
-        return json.loads(line)
+    def send_raw(self, line: str):
+        self.proc.stdin.write((line + "\n").encode())
+        self.proc.stdin.flush()
 
-    def request(self, method: str, params: dict):
+    def _read(self, timeout: float) -> dict:
+        try:
+            msg = self._messages.get(timeout=timeout)
+        except queue.Empty:
+            raise TimeoutError("no answer within %ds" % timeout) from None
+        if msg is None:
+            raise RuntimeError("server closed stdout without responding")
+        return msg
+
+    def request(self, method: str, params: dict, timeout: float = DEFAULT_TIMEOUT_S):
         self._id += 1
         rid = self._id
         self._send({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         while True:
-            msg = self._read()
+            msg = self._read(timeout)
             if msg.get("id") == rid:
                 if "error" in msg:
                     raise RuntimeError("%s error: %s" % (method, msg["error"]))
@@ -78,28 +117,48 @@ class McpClient:
     def tools_list(self):
         return self.request("tools/list", {})
 
-    def call_tool(self, name: str, arguments: dict):
-        return self.request("tools/call", {"name": name, "arguments": arguments})
+    def call_tool(self, name: str, arguments: dict, timeout: float = DEFAULT_TIMEOUT_S):
+        return self.request("tools/call", {"name": name, "arguments": arguments}, timeout)
 
-    def close(self):
+    def close(self, grace_s: float = 5.0) -> bool:
+        """Close stdin and wait for the server to exit on its own; True if it did."""
         try:
             self.proc.stdin.close()
         except OSError:
             pass
-        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=grace_s)
+            return True
+        except subprocess.TimeoutExpired:
+            self.proc.terminate()
+            return False
 
 
-def _default_launcher() -> Path:
+def _version_key(path: Path):
+    """Orders server dirs by version number; a release sorts above its own SNAPSHOT."""
+    name = path.parent.name
+    base, _, qualifier = name.partition("-")
+    nums = tuple(int(n) if n.isdigit() else 0 for n in base.split("."))
+    return nums, qualifier == ""
+
+
+def launcher_for(workspace: Path) -> Path:
+    """LATHE_MCP_LAUNCHER, else the workspace's own launcher (the version that synced it), else the
+    newest cached server."""
     if os.environ.get("LATHE_MCP_LAUNCHER"):
         return Path(os.environ["LATHE_MCP_LAUNCHER"])
+    own = Path(workspace) / ".lathe" / "lathe-mcp-launcher.sh"
+    if own.is_file():
+        return own
+    return _cached_launcher()
+
+
+def _cached_launcher() -> Path:
     cache = os.environ.get("LATHE_CACHE", str(Path.home() / ".cache" / "lathe"))
     servers = Path(cache) / "servers"
-    snapshots = sorted(servers.glob("*-SNAPSHOT/lathe-mcp-launcher.sh"))
-    if snapshots:
-        return snapshots[-1]
-    installed = sorted(servers.glob("*/lathe-mcp-launcher.sh"))
-    if installed:
-        return installed[-1]
+    launchers = sorted(servers.glob("*/lathe-mcp-launcher.sh"), key=_version_key)
+    if launchers:
+        return launchers[-1]
     raise SystemExit("no lathe-mcp-launcher.sh under %s — install the server first" % servers)
 
 
@@ -111,8 +170,8 @@ def _print_text(result: dict):
 
 
 def main(argv):
-    launcher = _default_launcher()
     workspace = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd()
+    launcher = launcher_for(workspace)
     client = McpClient(launcher, workspace)
     try:
         init = client.initialize()

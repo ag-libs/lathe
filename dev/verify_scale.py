@@ -36,7 +36,7 @@ def verify(client, label):
     return out
 
 
-client = mcp.McpClient(mcp._default_launcher(), ws)
+client = mcp.McpClient(mcp.launcher_for(ws), ws)
 try:
     client.initialize()
     t0 = time.monotonic()

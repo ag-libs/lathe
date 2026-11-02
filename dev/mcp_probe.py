@@ -1,0 +1,199 @@
+"""The construct probe: dev/battery/LatheProbe.java.tmpl and LatheProbeImports.java.tmpl, copied into
+one workspace module, and what every tool must answer on them.
+
+A check marked `known` describes a wrong answer already in the gap log: it reports KNOWN while the
+answer stays wrong and NOW PASSES once it is right, so the mark can be dropped. Used by
+dev/mcp_battery.py, which passes its Battery (call/raw/check) in as `b`.
+"""
+import time
+from pathlib import Path
+
+import mcp_consistency as mc
+
+TEMPLATES = Path(__file__).resolve().parent / "battery"
+
+
+def line_of(text, token):
+    """1-based line of the only line holding token."""
+    hits = [i + 1 for i, line in enumerate(text.splitlines()) if token in line]
+    if len(hits) != 1:
+        raise SystemExit("probe token %r matches %d lines" % (token, len(hits)))
+    return hits[0]
+
+
+class Probe:
+    def __init__(self, ws: Path, src_dir: str, package: str):
+        self.dir = ws / src_dir
+        self.package = package
+        self.file = self.dir / "LatheProbe.java"
+        self.imports_file = self.dir / "LatheProbeImports.java"
+
+    def write(self, name, crlf=False):
+        text = (TEMPLATES / ("%s.java.tmpl" % name)).read_text(encoding="utf-8").replace("@PACKAGE@", self.package)
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        target = self.dir / ("%s.java" % name)
+        target.write_bytes(text.encode("utf-8"))
+        return target
+
+    def remove(self):
+        for f in (self.file, self.imports_file):
+            f.unlink(missing_ok=True)
+
+    def text(self):
+        return self.file.read_text(encoding="utf-8")
+
+    def pos(self, token, name, offset=0):
+        """The symbol `name` on the line holding token, or `offset` lines from it."""
+        return {"file": str(self.file), "line": line_of(self.text(), token) + offset, "symbol": name}
+
+    def line(self, token):
+        return line_of(self.text(), token)
+
+    def at(self, token, word):
+        """The column of `word` on the line holding token: for a keyword such as new or var, which
+        the tools cannot find by name."""
+        line = line_of(self.text(), token)
+        return {"file": str(self.file), "line": line, "column": self.text().splitlines()[line - 1].index(word) + 1}
+
+
+def wait_indexed(b, name, deadline_s=30):
+    """A new file reaches the type index after a moment; later checks need it there."""
+    end = time.monotonic() + deadline_s
+    while time.monotonic() < end:
+        if mc.count(b.raw("search_symbols", {"query": name})[0]) >= 1:
+            return True
+        time.sleep(1)
+    return False
+
+
+def has_line(text, line):
+    return any(found == line for _, found, _ in mc.locations(text))
+
+
+def run(b, ws: Path, probe: Probe):
+    probe.write("LatheProbe")
+    b.call("probe: compiles cleanly", "get_diagnostics", {"file": str(probe.file)},
+           ok=lambda t, r: not r.get("isError") and " Error " not in t and "not checked" not in t)
+    b.check("probe: reaches the type index", wait_indexed(b, "LatheProbe"), "search_symbols finds LatheProbe")
+    outline_checks(b, probe)
+    implementation_checks(b, probe)
+    navigation_checks(b, probe)
+    mc.outline_resolves(b, probe.file, known_names={
+        "RED": "an enum constant with a body cannot be resolved at its declaration"})
+    mc.override_family_present(b, probe.pos("return side * side", "area", offset=-1),
+                               "probe: override family of Square.area",
+                               known="analyze_change reports no override family for a method that overrides one")
+    mc.diagnostics_agree_with_notes(b, probe.file, "probe: diagnostics agree with notes")
+    rename_checks(b, probe)
+    stale_answer_check(b, probe)
+    imports_checks(b, probe)
+
+
+def outline_checks(b, probe):
+    items = mc.outline_items(b.raw("outline", {"file": str(probe.file)})[0])
+    kinds = {name: kind.lower() for _, kind, name, _, _ in items}
+    b.check("probe outline: lists every type", all(n in kinds for n in ("LatheProbe", "Shape", "Node", "Leaf", "Color", "Square")),
+            "%d item(s)" % len(items))
+    b.check("probe outline: record kind", kinds.get("Leaf") not in (None, "struct"), "Leaf is %s" % kinds.get("Leaf"),
+            known="records show as struct")
+    b.check("probe outline: enum constant kind", kinds.get("RED") not in (None, "field"), "RED is %s" % kinds.get("RED"),
+            known="enum constants show as field")
+    labels = sum(1 for _, _, name, _, _ in items if name.startswith("label"))
+    b.check("probe outline: enum constant body methods", labels >= 2, "%d label() item(s)" % labels,
+            known="methods in an enum constant body are omitted")
+
+
+def implementation_checks(b, probe):
+    shape = b.raw("find_implementations", probe.pos("interface Shape {", "Shape"))[0]
+    b.check("probe impls(Shape): named class", has_line(shape, probe.line("static final class Square")), first(shape))
+    b.check("probe impls(Shape): anonymous class", has_line(shape, probe.line("return new Shape() {")), first(shape),
+            known="implementations miss anonymous classes")
+    b.check("probe impls(Shape): lambda", has_line(shape, probe.line("return () -> Math.PI")), first(shape),
+            known="implementations of an interface omit lambdas")
+    area = b.raw("find_implementations", probe.pos("double area();", "area"))[0]
+    b.check("probe impls(area): lambda", has_line(area, probe.line("return () -> Math.PI")), first(area))
+    node = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
+    b.check("probe impls(Node): records", has_line(node, probe.line("record Leaf(")) and has_line(node, probe.line("record Pair(")),
+            first(node))
+    label = b.raw("find_implementations", probe.pos("return name();", "label", offset=-1))[0]
+    b.check("probe impls(Color.label): enum constant body", has_line(label, probe.line('return "red";') - 1), first(label),
+            known="implementations miss enum constant bodies")
+
+
+def navigation_checks(b, probe):
+    ctor = b.raw("get_definition", probe.at("Square::new", "new"))[0]
+    b.check("probe definition: Type::new", has_line(ctor, probe.line("Square(double side) {")), first(ctor),
+            known="Type::new is not navigable")
+    # A refusal echoes the source line, so look for ArrayList in a location's path only.
+    var = b.raw("get_definition", probe.at("var list = ", "var"))[0]
+    b.check("probe definition: var", any("ArrayList" in p for p, _, _ in mc.locations(var)), first(var),
+            known="var is not navigable")
+    calls = b.raw("call_hierarchy", dict(probe.pos("static List<Shape> shapes()", "shapes"), direction="outgoing"))[0]
+    b.check("probe outgoing: method reference", "unit" in calls, first(calls))
+    b.check("probe outgoing: constructor reference", "Square" in calls, first(calls),
+            known="outgoing calls drop constructor references")
+
+
+def reference_counts(b, probe, names):
+    counts = {}
+    for token, name in names:
+        counts[name] = mc.count(b.raw("find_references", dict(probe.pos(token, name), maxResults=200))[0])
+    return counts
+
+
+# Every declaration the rename could rebind; their reference counts must not move.
+WATCHED = [("private int value;", "value"), ("void setValue(int v)", "setValue"),
+           ("public int compute(", "compute"), ("long twice(long n)", "twice")]
+
+
+def rename_keeps_meaning(b, probe, label, token, old, new, known):
+    original = probe.file.read_bytes()
+    before = reference_counts(b, probe, WATCHED)
+    text, result = b.raw("rename_symbol", dict(probe.pos(token, old), newName=new))
+    if result.get("isError") or "No references" in text:
+        b.check(label, True, "refused: %s" % first(text))
+    else:
+        after = reference_counts(b, probe, [(t, n) for t, n in WATCHED if n != old])
+        moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
+        b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses", known=known)
+    probe.file.write_bytes(original)
+    b.raw("get_diagnostics", {"file": str(probe.file)})
+
+
+def rename_checks(b, probe):
+    rename_keeps_meaning(b, probe, "probe rename: parameter to a field's name", "public int compute(int x)", "x", "value",
+                         known="a rename to a name a use already sees silently rebinds the use")
+    rename_keeps_meaning(b, probe, "probe rename: method to an overload's name", "long twice(long n)", "twice", "setValue",
+                         known="a method rename can capture another overload's calls")
+
+
+def stale_answer_check(b, probe):
+    original = probe.file.read_bytes()
+    probe.file.write_bytes(original.replace(b"return list;", b"return listBroken;"))
+    text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
+    current = has_line(text, probe.line("record Leaf("))
+    b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text),
+            known="a file that does not compile gives an empty answer from stale classes, without saying so")
+    probe.file.write_bytes(original)
+    b.raw("get_diagnostics", {"file": str(probe.file)})
+
+
+def imports_checks(b, probe):
+    target = probe.write("LatheProbeImports")
+    text = b.raw("fix_imports", {"file": str(target)})[0]
+    b.check("probe fix_imports: single candidate", "java.util.concurrent.ConcurrentHashMap" in text, first(text))
+    b.check("probe fix_imports: nested type", "java.util.Map.Entry" in text, first(text),
+            known="import fixes ignore nested types")
+    target = probe.write("LatheProbeImports", crlf=True)
+    b.raw("fix_imports", {"file": str(target)})
+    data = target.read_bytes()
+    bare_lf = data.count(b"\n") - data.count(b"\r\n")
+    b.check("probe fix_imports: keeps CRLF", bare_lf == 0, "%d bare LF line ending(s)" % bare_lf,
+            known="MCP edits written to a CRLF file add LF line endings")
+    target.unlink()
+
+
+def first(text):
+    lines = text.strip().splitlines()
+    return lines[0][:110] if lines else "(empty)"
