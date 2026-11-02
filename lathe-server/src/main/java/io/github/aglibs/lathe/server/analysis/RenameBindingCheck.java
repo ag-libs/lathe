@@ -76,13 +76,14 @@ public final class RenameBindingCheck {
     }
   }
 
-  // The renamed declaration under its new name; a local keeps its identity by where its
-  // declaration starts, which moves with the renamed sites before it.
+  // The renamed declaration under its new name, a type's binary name included; a local keeps its
+  // identity by where its declaration starts, which moves with the renamed sites before it.
   public static ReferenceTarget renamedTarget(
       final ReferenceTarget target, final String newName, final EditedFile declaringFile) {
+    final boolean type = target.kind().isClass() || target.kind().isInterface();
     return new ReferenceTarget(
         target.kind(),
-        target.qualifiedName(),
+        type ? renamedBinaryName(target.qualifiedName(), newName) : target.qualifiedName(),
         newName,
         target.erasedDescriptor(),
         target.scope(),
@@ -91,6 +92,12 @@ public final class RenameBindingCheck {
         target.hasDeclarationIdentity()
             ? declaringFile.shifted((int) target.declarationOffset())
             : target.declarationOffset());
+  }
+
+  // A binary name with its last segment, after the package's `.` or the outer type's `$`, renamed.
+  private static String renamedBinaryName(final String binaryName, final String newName) {
+    final int end = Math.max(binaryName.lastIndexOf('.'), binaryName.lastIndexOf('$'));
+    return "%s%s".formatted(binaryName.substring(0, end + 1), newName);
   }
 
   // Attributes the files together, the edited ones as the rename leaves them, and checks the

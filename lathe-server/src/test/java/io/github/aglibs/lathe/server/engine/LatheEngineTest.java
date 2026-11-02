@@ -1071,6 +1071,46 @@ class LatheEngineTest {
     assertThat(apiFile).content().contains("public void bar(int n) {}");
   }
 
+  // A type renamed onto a name a file already uses through an on-demand import would capture that
+  // use; renamed onto a free name, it renames and moves its file.
+  @Test
+  void rename_typeCapturingAnImportedName_refusesAndOtherwiseRenamesAndMoves() throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Helper", "package com.example;\npublic class Helper {}\n",
+            "UsesList",
+                """
+                package com.example;
+                import java.util.*;
+                class UsesList {
+                  List<String> names = new ArrayList<>();
+                  Helper helper = new Helper();
+                }
+                """);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    source -> "com/example/%s.java".formatted(source.getKey()),
+                    Map.Entry::getValue)),
+        List.of(),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    assertThat(
+            catchThrowable(
+                () -> renameAt(exampleFile("Helper"), sources.get("Helper"), "Helper {", "List")))
+        .hasMessageContaining("`List` at UsesList.java:4 would then refer to the renamed class");
+    sources.forEach(
+        (type, source) -> assertThat(exampleFile(type)).as(type).content().isEqualTo(source));
+
+    renameAt(exampleFile("Helper"), sources.get("Helper"), "Helper {", "Assistant");
+    assertThat(exampleFile("Assistant")).content().contains("public class Assistant {}");
+    assertThat(exampleFile("UsesList")).content().contains("Assistant helper = new Assistant();");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }

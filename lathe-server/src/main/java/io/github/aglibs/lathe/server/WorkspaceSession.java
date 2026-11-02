@@ -2099,7 +2099,7 @@ final class WorkspaceSession {
       final List<ReferenceMatch> matches,
       final String newName,
       final ModuleSourceConfig cursorConfig) {
-    if (target.kind().isClass() || target.kind().isInterface() || cursorConfig == null) {
+    if (cursorConfig == null) {
       return CompletableFuture.completedFuture(null);
     }
 
@@ -2139,6 +2139,16 @@ final class WorkspaceSession {
                 .collect(Collectors.toUnmodifiableSet());
     final Stream<String> usingNewName =
         fileScoped ? Stream.empty() : candidateIndex.candidateUris(newName).stream();
+    // A type whose file the rename moves is attributed under its new file name, which a public
+    // type must match; its text is still read from where it is.
+    final Map<String, String> moved =
+        renameDeclaringFile(target)
+            .map(
+                file ->
+                    Map.of(
+                        LatheUri.canonical(file.toUri().toString()),
+                        LatheUri.canonical(movedFile(file, newName).toUri().toString())))
+            .orElse(Map.of());
     final Map<ModuleSourceConfig, List<RenameBindingCheck.EditedFile>> byConfig =
         Stream.concat(renamed.keySet().stream(), usingNewName)
             .distinct()
@@ -2154,7 +2164,7 @@ final class WorkspaceSession {
                                             Map.entry(
                                                 config,
                                                 RenameBindingCheck.EditedFile.of(
-                                                    uri,
+                                                    moved.getOrDefault(uri, uri),
                                                     content,
                                                     renamed.getOrDefault(uri, List.of()),
                                                     target.simpleName(),
@@ -2227,6 +2237,10 @@ final class WorkspaceSession {
         .filter(file -> file.getFileName().toString().equals(target.simpleName() + ".java"));
   }
 
+  private static Path movedFile(final Path file, final String newName) {
+    return file.resolveSibling("%s.java".formatted(newName));
+  }
+
   private WorkspaceEdit renameEdit(
       final ReferenceTarget target,
       final List<Location> occurrences,
@@ -2253,7 +2267,7 @@ final class WorkspaceSession {
 
     final var file = declaringFile.get();
     final var oldUri = file.toUri().toString();
-    final var newUri = file.resolveSibling(newName + ".java").toUri().toString();
+    final var newUri = movedFile(file, newName).toUri().toString();
     return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
   }
 
