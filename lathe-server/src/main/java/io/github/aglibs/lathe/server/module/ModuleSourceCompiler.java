@@ -26,6 +26,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -257,29 +258,41 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   private Path writeTempFile(final String uri, final String content) {
     final var filePath = LatheUri.toPath(uri);
-    final Path sourceRoot = sourceRootOf(filePath, uri);
+    final Path tempFile = tempFileOf(uri);
     try {
-      if (lombok.present()) {
-        mirrorLombokConfigs(sourceRoot, filePath.getParent());
+      final Optional<Path> sourceRoot = ownSourceRoot(filePath);
+      if (lombok.present() && sourceRoot.isPresent()) {
+        mirrorLombokConfigs(sourceRoot.get(), filePath.getParent());
       }
 
-      return FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
+      Files.createDirectories(tempFile.getParent());
+      Files.writeString(tempFile, content);
+      return tempFile;
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
   }
 
-  // Where a document's text is written for javac.
+  // Where a document's text is written for javac. Another module's file, attributed here only so
+  // its edited declarations are visible to this module's files, goes into a directory of its own:
+  // javac needs only a source's file name to match its public class.
   private Path tempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
-    return FileUtil.tempSourceFile(tempDir, sourceRootOf(filePath, uri), filePath);
+    return ownSourceRoot(filePath)
+        .map(root -> FileUtil.tempSourceFile(tempDir, root, filePath))
+        .orElseGet(
+            () ->
+                tempDir
+                    .resolve(LatheLayout.FOREIGN_SOURCES_DIR)
+                    .resolve(Integer.toHexString(filePath.getParent().hashCode()))
+                    .resolve(filePath.getFileName()));
   }
 
-  private Path sourceRootOf(final Path filePath, final String uri) {
+  private Optional<Path> ownSourceRoot(final Path filePath) {
     return config.sourceRoots().stream()
         .filter(filePath::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount))
-        .orElseGet(() -> generatedSourceRoot(filePath, uri));
+        .or(() -> Optional.of(config.generatedSourcesDir()).filter(filePath::startsWith));
   }
 
   // Lombok reads lombok.config from the compiled file's directory up, and javac compiles a copy
@@ -326,15 +339,6 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         .lines()
         .map(line -> line.replaceAll("\\s+", ""))
         .anyMatch(line -> line.equalsIgnoreCase(LOMBOK_STOP_BUBBLING.replace(" ", "")));
-  }
-
-  private Path generatedSourceRoot(final Path filePath, final String uri) {
-    final Path genRoot = config.generatedSourcesDir();
-    if (filePath.startsWith(genRoot)) {
-      return genRoot;
-    }
-
-    throw new IllegalStateException("no source root for %s".formatted(uri));
   }
 
   @Override

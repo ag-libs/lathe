@@ -2114,9 +2114,10 @@ final class WorkspaceSession {
                     }));
   }
 
-  // The files whose meaning the rename can change, as it leaves them, checked in the declaring
-  // module: the edited ones and, unless nothing outside the declaring file sees the symbol, those
-  // already using the new name, where a use can be captured.
+  // The files whose meaning the rename can change, as it leaves them, checked in every module that
+  // sees the symbol: the edited ones and, unless nothing outside the declaring file sees it, those
+  // already using the new name, where a use can be captured. Another module's files are attributed
+  // with the declaring module's edited files, so the renamed declaration is what they see.
   private CompletableFuture<Optional<String>> meaningConflict(
       final ReferenceTarget target,
       final List<ReferenceMatch> matches,
@@ -2130,47 +2131,75 @@ final class WorkspaceSession {
                     ReferenceMatch::uri,
                     Collectors.mapping(ReferenceMatch::range, Collectors.toList())));
     final ModuleSourceConfig declaring = declaringConfigFor(target, cursorConfig);
+    final boolean fileScoped = target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE;
+    final Set<ModuleSourceConfig> seeing =
+        fileScoped
+            ? Set.of(declaring)
+            : Stream.concat(Stream.of(declaring), planSearchScope(target, declaring).stream())
+                .collect(Collectors.toUnmodifiableSet());
     final Stream<String> usingNewName =
-        target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE
-            ? Stream.empty()
-            : candidateIndex.candidateUris(newName).stream();
-    final List<RenameBindingCheck.EditedFile> files =
+        fileScoped ? Stream.empty() : candidateIndex.candidateUris(newName).stream();
+    final Map<ModuleSourceConfig, List<RenameBindingCheck.EditedFile>> byConfig =
         Stream.concat(renamed.keySet().stream(), usingNewName)
             .distinct()
-            .filter(uri -> isCompiledBy(uri, declaring))
             .flatMap(
                 uri ->
-                    currentContent(uri).stream()
-                        .map(
-                            content ->
-                                RenameBindingCheck.EditedFile.of(
-                                    uri,
-                                    content,
-                                    renamed.getOrDefault(uri, List.of()),
-                                    target.simpleName(),
-                                    newName)))
-            .toList();
-    if (files.isEmpty()) {
+                    compilingConfig(uri)
+                        .filter(seeing::contains)
+                        .flatMap(
+                            config ->
+                                currentContent(uri)
+                                    .map(
+                                        content ->
+                                            Map.entry(
+                                                config,
+                                                RenameBindingCheck.EditedFile.of(
+                                                    uri,
+                                                    content,
+                                                    renamed.getOrDefault(uri, List.of()),
+                                                    target.simpleName(),
+                                                    newName))))
+                        .stream())
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+    final List<RenameBindingCheck.EditedFile> declaringFiles =
+        byConfig.getOrDefault(declaring, List.of());
+    if (declaringFiles.isEmpty()) {
       return CompletableFuture.completedFuture(Optional.empty());
     }
 
     // A symbol with a declaration identity (a local) is renamed in its one file.
     final ReferenceTarget renamedTarget =
-        RenameBindingCheck.renamedTarget(target, newName, files.get(0));
-    return workspace
-        .workerFor(declaring)
-        .renameBindingConflict(
-            files,
-            files.stream()
-                .map(RenameBindingCheck.EditedFile::uri)
-                .collect(Collectors.toUnmodifiableSet()),
-            renamedTarget,
-            target.simpleName());
+        RenameBindingCheck.renamedTarget(target, newName, declaringFiles.get(0));
+    final List<RenameBindingCheck.EditedFile> declaringEdits =
+        declaringFiles.stream().filter(file -> !file.oldStarts().isEmpty()).toList();
+    return concatAll(
+            byConfig.entrySet().stream()
+                .map(
+                    entry ->
+                        workspace
+                            .workerFor(entry.getKey())
+                            .renameBindingConflict(
+                                entry.getKey().equals(declaring)
+                                    ? entry.getValue()
+                                    : Stream.concat(
+                                            declaringEdits.stream(), entry.getValue().stream())
+                                        .toList(),
+                                entry.getValue().stream()
+                                    .map(RenameBindingCheck.EditedFile::uri)
+                                    .collect(Collectors.toUnmodifiableSet()),
+                                renamedTarget,
+                                target.simpleName())
+                            .thenApply(conflict -> conflict.stream().toList())))
+        .thenApply(conflicts -> conflicts.stream().findFirst());
   }
 
-  private boolean isCompiledBy(final String uri, final ModuleSourceConfig config) {
+  // The module source config that compiles the file, unless it is generated.
+  private Optional<ModuleSourceConfig> compilingConfig(final String uri) {
     final Path file = LatheUri.toPath(uri);
-    return !isGeneratedSource(file) && workspace.moduleSourceFor(file).equals(Optional.of(config));
+    return isGeneratedSource(file) ? Optional.empty() : workspace.moduleSourceFor(file);
   }
 
   // The file's text as the editor has it: the open document's, or else the file on disk.

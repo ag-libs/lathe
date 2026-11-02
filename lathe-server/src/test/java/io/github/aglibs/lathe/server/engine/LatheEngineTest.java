@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
@@ -1019,6 +1020,55 @@ class LatheEngineTest {
         .contains("int safe(int v) { return v + 1; }")
         .contains("int sibling() { int value = 1; return value; }");
     assertThat(exampleFile("Overload")).content().contains("void use() { doubled(7); }");
+  }
+
+  // A call in another module that the new name would capture is refused too: that module's files
+  // are attributed with the edited declaration. A call no overload change can reach renames.
+  @Test
+  void rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning() throws Exception {
+    final String api =
+        """
+        package com.example.api;
+        public class Api {
+          public void bar(long n) {}
+          public void foo(int n) {}
+        }
+        """;
+    final Path apiFile =
+        TestCompiler.writeMirroredModule(
+                tmp, "api", Map.of("com/example/api/Api.java", api), List.of(), 1_000L)
+            .get(0);
+    final Function<String, Path> app =
+        argument ->
+            IOUtil.unchecked(
+                () ->
+                    TestCompiler.writeMirroredModule(
+                            tmp,
+                            "app",
+                            Map.of(
+                                "com/example/app/Remote.java",
+                                """
+                                package com.example.app;
+                                class Remote {
+                                  void call(com.example.api.Api api) { api.bar(%s); }
+                                }
+                                """
+                                    .formatted(argument)),
+                            List.of("api"),
+                            1_000L)
+                        .get(0));
+    app.apply("2");
+    engine = new LatheEngine(tmp);
+
+    assertThat(catchThrowable(() -> renameAt(apiFile, api, "foo(", "bar")))
+        .hasMessageContaining("`bar` at Remote.java:3 would then refer to the renamed method");
+    assertThat(apiFile).content().isEqualTo(api);
+
+    engine.close();
+    app.apply("2L");
+    engine = new LatheEngine(tmp);
+    renameAt(apiFile, api, "foo(", "bar");
+    assertThat(apiFile).content().contains("public void bar(int n) {}");
   }
 
   private Path exampleFile(final String type) {
