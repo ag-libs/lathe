@@ -1,5 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -201,17 +205,21 @@ public final class RenameBindingCheck {
                   .map(EditedFile::source)
                   .toList(),
               cancelChecker,
-              analyses ->
-                  analyses.stream()
-                      .filter(analysis -> checking.contains(analysis.uri()))
-                      .flatMap(
-                          analysis ->
-                              changedMeaning(
-                                  analysis,
-                                  byUri.get(analysis.uri()),
-                                  renamed,
-                                  check.target().simpleName()))
-                      .findFirst());
+              analyses -> {
+                final Predicate<Element> renamedDeclaration =
+                    renamedDeclarations(analyses, byUri, check.newName());
+                return analyses.stream()
+                    .filter(analysis -> checking.contains(analysis.uri()))
+                    .flatMap(
+                        analysis ->
+                            changedMeaning(
+                                analysis,
+                                byUri.get(analysis.uri()),
+                                renamed,
+                                check.target().simpleName(),
+                                renamedDeclaration))
+                    .findFirst();
+              });
       if (conflict.isPresent()) {
         return conflict;
       }
@@ -243,7 +251,8 @@ public final class RenameBindingCheck {
       final TransientAnalysis transientAnalysis,
       final EditedFile file,
       final ReferenceTarget renamed,
-      final String oldName) {
+      final String oldName,
+      final Predicate<Element> renamedDeclaration) {
     final var analysis = transientAnalysis.analysis();
     final Set<Integer> expected = file.renamedStarts();
     final Map<Integer, ReferenceRole> found = uses(analysis, renamed, file);
@@ -277,6 +286,7 @@ public final class RenameBindingCheck {
                 start ->
                     elementAt(analysis, start)
                         .filter(other -> named(other, renamed.simpleName()))
+                        .filter(other -> !renamedDeclaration.test(other))
                         .stream()
                         .map(
                             other ->
@@ -301,6 +311,50 @@ public final class RenameBindingCheck {
     } catch (final IOException e) {
       throw new UncheckedIOException("cannot read the edited text of %s".formatted(file.uri()), e);
     }
+  }
+
+  // Whether an element is one the rename renames: its declaration's name is a renamed site of a
+  // file
+  // in the batch. A renamed site resolving to it means what it meant, even where the check cannot
+  // see that it belongs to the renamed family (a JPMS module cannot take another's sources, so an
+  // implementation there no longer appears to override the renamed interface method).
+  private static Predicate<Element> renamedDeclarations(
+      final List<TransientAnalysis> analyses,
+      final Map<String, EditedFile> byUri,
+      final String newName) {
+    final Map<CompilationUnitTree, EditedFile> byTree =
+        analyses.stream()
+            .filter(analysis -> byUri.containsKey(analysis.uri()))
+            .collect(
+                Collectors.toMap(
+                    analysis -> analysis.analysis().tree(),
+                    analysis -> byUri.get(analysis.uri()),
+                    (first, second) -> first));
+    if (analyses.isEmpty()) {
+      return element -> false;
+    }
+
+    final Trees trees = analyses.get(0).analysis().trees();
+    return element -> {
+      final TreePath path = trees.getPath(element);
+      final EditedFile file = path == null ? null : byTree.get(path.getCompilationUnit());
+      if (file == null) {
+        return false;
+      }
+
+      try {
+        return SourceLocator.declarationNamePosition(
+                trees, path.getCompilationUnit(), path, newName)
+            .map(
+                position ->
+                    SourceLocator.toOffset(
+                        file.content(), position.getLine(), position.getCharacter()))
+            .filter(file.renamedStarts()::contains)
+            .isPresent();
+      } catch (final IOException e) {
+        throw new UncheckedIOException(e);
+      }
+    };
   }
 
   // A renamed site that now resolves to another declaration of the new name means something else;
