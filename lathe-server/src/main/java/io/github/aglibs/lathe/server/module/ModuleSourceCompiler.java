@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -102,19 +104,35 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return runner.run(jfo, options, cancelChecker);
   }
 
-  // javac reads a compiled file's text lazily, from the per-document temp file, which is what trees
-  // cached from the document's last compile read their text from too: put its text back after.
   @Override
   public CompilerResult compileDetached(final String uri, final String content) {
-    final Path tempFile = tempFileOf(uri);
-    final String kept =
-        Files.isRegularFile(tempFile) ? IOUtil.unchecked(() -> Files.readString(tempFile)) : null;
+    return keepingTempText(List.of(uri), () -> compile(uri, content, CompileMode.OPEN));
+  }
+
+  @Override
+  public <T> T analyzeDetached(
+      final List<TransientSource> sources, final Function<List<TransientAnalysis>, T> use) {
+    return keepingTempText(
+        sources.stream().map(TransientSource::uri).toList(),
+        () -> use.apply(analyzeBatch(sources, () -> {})));
+  }
+
+  // javac reads a compiled file's text lazily, from the per-document temp file, which is what trees
+  // cached from the document's last compile read their text from too: put its text back after.
+  private <T> T keepingTempText(final List<String> uris, final Supplier<T> run) {
+    final Map<Path, String> kept =
+        uris.stream()
+            .map(this::tempFileOf)
+            .filter(Files::isRegularFile)
+            .distinct()
+            .collect(
+                Collectors.toMap(
+                    tempFile -> tempFile,
+                    tempFile -> IOUtil.unchecked(() -> Files.readString(tempFile))));
     try {
-      return compile(uri, content, CompileMode.OPEN);
+      return run.get();
     } finally {
-      if (kept != null) {
-        IOUtil.unchecked(() -> Files.writeString(tempFile, kept));
-      }
+      kept.forEach((tempFile, text) -> IOUtil.unchecked(() -> Files.writeString(tempFile, text)));
     }
   }
 

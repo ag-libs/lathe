@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.tree.ClassTree;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.JavacCrashFixtures;
@@ -107,12 +108,13 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // A detached compile (a check of edited text, as codeAction/resolve and verify_change run) leaves
-  // the document's own compile undisturbed: javac reads text lazily from the per-document temp
-  // file,
-  // so a tree cached from that compile, which code actions cut text by, keeps reading its own text.
+  // A detached compile or analysis (a check of edited text, as codeAction/resolve, verify_change
+  // and
+  // a rename's meaning check run) leaves the document's own compile undisturbed: javac reads text
+  // lazily from the per-document temp file, so a tree cached from that compile, which code actions
+  // cut text by, keeps reading its own text, while the check reads the edited text.
   @Test
-  void compileDetached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
+  void detached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
     final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
     Files.createDirectories(sourceRoot);
@@ -122,8 +124,22 @@ class ModuleSourceCompilerTest {
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final var document = compiler.compile(fooUri, "class Foo { int a; }", CompileMode.OPEN);
       final var check = compiler.compileDetached(fooUri, "class Foo { int renamed; }");
+      final String analyzed =
+          compiler.analyzeDetached(
+              List.of(new TransientSource(fooUri, "class Foo { int other; }")),
+              analyses ->
+                  IOUtil.unchecked(
+                      () ->
+                          analyses
+                              .get(0)
+                              .analysis()
+                              .tree()
+                              .getSourceFile()
+                              .getCharContent(false)
+                              .toString()));
 
       assertThat(check.diagnostics()).isEmpty();
+      assertThat(analyzed).isEqualTo("class Foo { int other; }");
       assertThat(document.fileAnalysis().tree().getSourceFile().getCharContent(false).toString())
           .isEqualTo("class Foo { int a; }");
     }

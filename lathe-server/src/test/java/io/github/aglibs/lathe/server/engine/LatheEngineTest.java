@@ -889,6 +889,138 @@ class LatheEngineTest {
             type -> assertThat(exampleFile(type)).as(type).content().contains("void execute()"));
   }
 
+  // A rename that changes what a name means is refused, naming the place: a use the new name
+  // captures (a shadowed field, a call another file makes) or a renamed site that would then mean
+  // something else (another overload, an inherited method, a local). The same renames where nothing
+  // changes meaning go through, a same-named local in a sibling method included.
+  @Test
+  void rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames() throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Shadow",
+                """
+                package com.example;
+                import java.util.function.IntUnaryOperator;
+                class Shadow {
+                  int value = 10;
+                  int count = 1;
+                  int param(int x) { return x + value; }
+                  IntUnaryOperator lambda() { return y -> y + value; }
+                  int local() { int z = 1; return z + value; }
+                  int field() { int total = 0; return count + total; }
+                  int safe(int w) { return w + 1; }
+                  int sibling() { int n = 1; return n; }
+                  int other() { int value = 2; return value; }
+                }
+                """,
+            "Overload",
+                """
+                package com.example;
+                class Overload {
+                  void setValue(int v) {}
+                  long twice(long n) { return n * 2; }
+                  void use() { twice(7); }
+                }
+                """,
+            "Api",
+                """
+                package com.example;
+                public class Api {
+                  public void bar(long n) {}
+                  public void foo(int n) {}
+                }
+                """,
+            "Caller",
+                """
+                package com.example;
+                class Caller {
+                  void call(Api api) { api.bar(1); }
+                }
+                """,
+            "Base", "package com.example; class Base { void setValue(int v) {} void greet() {} }",
+            "Greeter", "package com.example; class Greeter extends Base { void welcome() {} }",
+            "Sub",
+                """
+                package com.example;
+                class Sub extends Base {
+                  long twice(long n) { return n * 2; }
+                  void use() { twice(7); }
+                }
+                """);
+    TestCompiler.writeMirroredModule(
+        tmp,
+        "module",
+        sources.entrySet().stream()
+            .collect(
+                Collectors.toMap(
+                    source -> "com/example/%s.java".formatted(source.getKey()),
+                    Map.Entry::getValue)),
+        List.of(),
+        1_000L);
+    engine = new LatheEngine(tmp);
+
+    final List<List<String>> refused =
+        List.of(
+            List.of(
+                "Shadow",
+                "x)",
+                "value",
+                "`value` at Shadow.java:6 would then refer to the renamed parameter"),
+            List.of(
+                "Shadow",
+                "y ->",
+                "value",
+                "`value` at Shadow.java:7 would then refer to the renamed parameter"),
+            List.of(
+                "Shadow",
+                "z =",
+                "value",
+                "`value` at Shadow.java:8 would then refer to the renamed local variable"),
+            List.of(
+                "Shadow",
+                "count =",
+                "total",
+                "Shadow.java:9 would then refer to the local variable `total`"),
+            List.of(
+                "Overload",
+                "twice(long",
+                "setValue",
+                "Overload.java:5 would then refer to the method `Overload.setValue(int)`"),
+            List.of(
+                "Sub",
+                "twice(long",
+                "setValue",
+                "Sub.java:4 would then refer to the method `Base.setValue(int)`"),
+            List.of(
+                "Api",
+                "foo(",
+                "bar",
+                "`bar` at Caller.java:3 would then refer to the renamed method"));
+    refused.forEach(
+        probe ->
+            assertThat(
+                    catchThrowable(
+                        () ->
+                            renameAt(
+                                exampleFile(probe.get(0)),
+                                sources.get(probe.get(0)),
+                                probe.get(1),
+                                probe.get(2))))
+                .as("%s %s -> %s", probe.get(0), probe.get(1), probe.get(2))
+                .hasMessageContaining(probe.get(3)));
+    sources.forEach(
+        (type, source) -> assertThat(exampleFile(type)).as(type).content().isEqualTo(source));
+
+    renameAt(exampleFile("Shadow"), sources.get("Shadow"), "w)", "v");
+    renameAt(exampleFile("Shadow"), Files.readString(exampleFile("Shadow")), "n = 1", "value");
+    renameAt(exampleFile("Overload"), sources.get("Overload"), "twice(long", "doubled");
+    assertThat(exampleFile("Shadow"))
+        .content()
+        .contains("int safe(int v) { return v + 1; }")
+        .contains("int sibling() { int value = 1; return value; }");
+    assertThat(exampleFile("Overload")).content().contains("void use() { doubled(7); }");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }
@@ -1521,13 +1653,13 @@ class LatheEngineTest {
   void verifyChange_noFilesAfterARenameThatBreaksAnUneditedSubclass_reportsIt() throws Exception {
     final String source = "package com.example;\nclass Callee {\n  void greet() {}\n}\n";
     final Path callee = TestCompiler.writeModuleSource(tmp, "com/example/Callee.java", source);
-    // No use of greet(): the rename leaves Sub alone, but then its welcome() clashes on the
-    // return type.
+    // No use of greet(): the rename leaves Sub alone, but then its static welcome() cannot hide
+    // the renamed instance method; a compile error, which the rename leaves to the diagnostics.
     final Path sub =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Sub.java",
-            "package com.example;\nclass Sub extends Callee {\n  int welcome() { return 1; }\n}\n");
+            "package com.example;\nclass Sub extends Callee {\n  static void welcome() {}\n}\n");
     TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, sub);
     stampModule(callee, sub);
     engine = new LatheEngine(tmp);

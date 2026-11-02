@@ -40,6 +40,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceRole;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -2091,6 +2092,95 @@ final class WorkspaceSession {
             });
   }
 
+  // A rename that would change what a name means, a use the new name captures or a renamed site
+  // that would then mean something else, is refused: the edited text is attributed once to check.
+  private CompletableFuture<Void> requireMeaningKept(
+      final ReferenceTarget target,
+      final List<ReferenceMatch> matches,
+      final String newName,
+      final ModuleSourceConfig cursorConfig) {
+    if (target.kind().isClass() || target.kind().isInterface() || cursorConfig == null) {
+      return CompletableFuture.completedFuture(null);
+    }
+
+    return worker
+        .submit(() -> meaningConflict(target, matches, newName, cursorConfig))
+        .thenCompose(conflict -> conflict)
+        .thenAccept(
+            conflict ->
+                conflict.ifPresent(
+                    reason -> {
+                      throw renameRefused(reason);
+                    }));
+  }
+
+  // The files whose meaning the rename can change, as it leaves them, checked in the declaring
+  // module: the edited ones and, unless nothing outside the declaring file sees the symbol, those
+  // already using the new name, where a use can be captured.
+  private CompletableFuture<Optional<String>> meaningConflict(
+      final ReferenceTarget target,
+      final List<ReferenceMatch> matches,
+      final String newName,
+      final ModuleSourceConfig cursorConfig) {
+    final Map<String, List<Range>> renamed =
+        matches.stream()
+            .filter(match -> !isGeneratedSource(LatheUri.toPath(match.uri())))
+            .collect(
+                Collectors.groupingBy(
+                    ReferenceMatch::uri,
+                    Collectors.mapping(ReferenceMatch::range, Collectors.toList())));
+    final ModuleSourceConfig declaring = declaringConfigFor(target, cursorConfig);
+    final Stream<String> usingNewName =
+        target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE
+            ? Stream.empty()
+            : candidateIndex.candidateUris(newName).stream();
+    final List<RenameBindingCheck.EditedFile> files =
+        Stream.concat(renamed.keySet().stream(), usingNewName)
+            .distinct()
+            .filter(uri -> isCompiledBy(uri, declaring))
+            .flatMap(
+                uri ->
+                    currentContent(uri).stream()
+                        .map(
+                            content ->
+                                RenameBindingCheck.EditedFile.of(
+                                    uri,
+                                    content,
+                                    renamed.getOrDefault(uri, List.of()),
+                                    target.simpleName(),
+                                    newName)))
+            .toList();
+    if (files.isEmpty()) {
+      return CompletableFuture.completedFuture(Optional.empty());
+    }
+
+    // A symbol with a declaration identity (a local) is renamed in its one file.
+    final ReferenceTarget renamedTarget =
+        RenameBindingCheck.renamedTarget(target, newName, files.get(0));
+    return workspace
+        .workerFor(declaring)
+        .renameBindingConflict(
+            files,
+            files.stream()
+                .map(RenameBindingCheck.EditedFile::uri)
+                .collect(Collectors.toUnmodifiableSet()),
+            renamedTarget,
+            target.simpleName());
+  }
+
+  private boolean isCompiledBy(final String uri, final ModuleSourceConfig config) {
+    final Path file = LatheUri.toPath(uri);
+    return !isGeneratedSource(file) && workspace.moduleSourceFor(file).equals(Optional.of(config));
+  }
+
+  // The file's text as the editor has it: the open document's, or else the file on disk.
+  private Optional<String> currentContent(final String uri) {
+    final OpenDocument open = docs.get(uri);
+    return open != null
+        ? Optional.of(open.content())
+        : readDiskCandidate(uri).map(DiskCandidate::content);
+  }
+
   private static ResponseErrorException renameRefused(final String message) {
     return new ResponseErrorException(
         new ResponseError(ResponseErrorCode.RequestFailed, message, null));
@@ -2211,13 +2301,24 @@ final class WorkspaceSession {
                                                     searchTarget.simpleName(),
                                                     matches.size()));
                                     requireNothingLeftBehind(searchTarget, matches);
-                                    return renameEdit(
-                                        searchTarget,
-                                        toLocations(matches),
-                                        newName,
-                                        fileRenameSupported);
+                                    return matches;
                                   },
-                                  worker::execute));
+                                  worker::execute)
+                              .thenCompose(
+                                  matches ->
+                                      requireMeaningKept(
+                                              searchTarget,
+                                              matches,
+                                              newName,
+                                              cursorConfig.orElse(null))
+                                          .thenApplyAsync(
+                                              kept ->
+                                                  renameEdit(
+                                                      searchTarget,
+                                                      toLocations(matches),
+                                                      newName,
+                                                      fileRenameSupported),
+                                              worker::execute)));
             },
             worker::execute)
         .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
