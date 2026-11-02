@@ -1960,7 +1960,7 @@ final class WorkspaceSession {
     return module
         .worker()
         .resolveRenameTarget(request)
-        .thenApply(
+        .thenApplyAsync(
             target -> {
               if (target == null) {
                 return null;
@@ -1976,7 +1976,8 @@ final class WorkspaceSession {
 
               final Range range = RenameProvider.identifierRange(openFile.content(), pos);
               return range == null ? null : Either3.forFirst(range);
-            });
+            },
+            worker::execute);
   }
 
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
@@ -2163,7 +2164,7 @@ final class WorkspaceSession {
                   });
               return cursorWorker.resolveRenameTarget(request);
             })
-        .thenCompose(
+        .thenComposeAsync(
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
@@ -2184,7 +2185,7 @@ final class WorkspaceSession {
                                   cancelChecker,
                                   progress,
                                   "Renaming %s".formatted(searchTarget.simpleName()))
-                              .thenApply(
+                              .thenApplyAsync(
                                   matches -> {
                                     LOG.info(
                                         () ->
@@ -2200,8 +2201,10 @@ final class WorkspaceSession {
                                         toLocations(matches),
                                         newName,
                                         fileRenameSupported);
-                                  }));
-            });
+                                  },
+                                  worker::execute));
+            },
+            worker::execute);
   }
 
   // The request a position feature sends to the module's worker, for the open document.
