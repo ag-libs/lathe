@@ -23,6 +23,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.TypeKind;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
@@ -358,9 +359,15 @@ public final class RenameBindingCheck {
   }
 
   // A renamed site that now resolves to another declaration of the new name means something else;
-  // one that resolves to nothing named so (javac found only an enclosing tree) does not resolve at
-  // all, a compile error the diagnostics report.
+  // one that does not resolve does not: javac found only an enclosing tree, or made up an error
+  // symbol bearing the name (a module that cannot see the edited declaration, as another module of
+  // a
+  // JPMS reactor, still has the old one). That is a compile error the diagnostics report.
   private static boolean named(final Element element, final String name) {
+    if (element.asType().getKind() == TypeKind.ERROR) {
+      return false;
+    }
+
     final Element named =
         element.getKind() == ElementKind.CONSTRUCTOR ? element.getEnclosingElement() : element;
     return named.getSimpleName().contentEquals(name);
