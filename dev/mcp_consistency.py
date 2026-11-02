@@ -125,16 +125,24 @@ def diagnostics_agree_with_notes(b, file: Path, label, known=None):
 
 
 def references_round_trip(b, ws: Path, decl_file: Path, pos, name, label, limit=10):
-    """get_definition at each of the first references leads back to the declaration, or to an
-    override of it: a call through an implementing type resolves to that type's method."""
+    """get_definition at each of the first references leads back to the declaration, or to a
+    declaration that counts this reference among its own: a call through a subtype resolves to
+    that subtype's override or redeclaration."""
     refs = locations(b.raw("find_references", dict(pos, maxResults=limit))[0])
-    family = {decl_file.name} | {Path(p).name for p, _, _ in locations(b.raw("find_implementations", pos)[0])}
     wrong = []
     for path, line, _ in refs[:limit]:
         file = Path(path) if Path(path).is_absolute() else ws / path
-        targets = {Path(p).name for p, _, _ in locations(b.raw("get_definition", {"file": str(file), "line": line,
-                                                                                  "symbol": name})[0])}
-        if not targets & family:
+        targets = locations(b.raw("get_definition", {"file": str(file), "line": line, "symbol": name})[0])
+        if any(Path(p).name == decl_file.name for p, _, _ in targets):
+            continue
+        if not targets:
+            wrong.append("%s:%d (no definition)" % (path, line))
+            continue
+        target_path, target_line, _ = targets[0]
+        target_file = Path(target_path) if Path(target_path).is_absolute() else ws / target_path
+        back = locations(b.raw("find_references", {"file": str(target_file), "line": target_line, "symbol": name,
+                                                   "maxResults": 500})[0])
+        if not any(p == path and found == line for p, found, _ in back):
             wrong.append("%s:%d" % (path, line))
     b.check(label, bool(refs) and not wrong, "%d reference(s) checked; wrong: %s"
             % (min(len(refs), limit), ", ".join(wrong[:3]) or "none"))
