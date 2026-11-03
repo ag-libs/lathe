@@ -28,8 +28,9 @@ Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `Ht
 
 Go to implementation, which MCP `find_implementations` shares, now searches the type index's unnamed subtypes too
 (`Outer$1` maps to `Outer`'s file), and `MethodImplementationLocator` recognises an anonymous class from the attributed
-tree, a subtype of the target's owner, not by javac's numbering; an enum constant's body is the same case. On a method
-the result is the overriding method in the body; on a type, the `new Handler() {` site.
+tree, a subtype of the target's owner, not by javac's numbering; an enum constant's body and a local class are the same
+case. On a method the result is the overriding method in the body; on a type, the `new Handler() {` site, or a local
+class's name.
 Dropwizard's `Managed.stop` now answers 10 implementations, the three anonymous classes included (7 before).
 MCP `analyze_change` builds its override family from the same search, so it now lists them too (the downward half of
 MC-67); MC-67's upward half and MC-69 remain open.
@@ -61,13 +62,15 @@ implementation of a functional interface.
 ### Resolution
 
 On a type, go to implementation now adds to its named subtypes the anonymous subclasses and, for a functional
-interface, the lambdas and method references the method search finds for its single abstract method; a lambda converted
-to another functional interface is not listed. Helidon's `Handler` now answers 226 (23 before), at the cost of
-attributing the files with lambdas (about 4 s there, as `Handler.handle` already took).
+interface, its lambdas and method references: those of the type itself or a sub-interface, not of its parent or a
+sibling, nor converted to another functional interface. They come from the bytecode lambda index and the open documents,
+not from every file naming the interface. Helidon's `Handler` now answers 226 (23 before) in about 2.7 s, the files with
+lambdas attributed; a failure there still leaves the named subtypes.
 
 ### Regression targets
 
 `MethodImplementationTest.typeImplementations_functionalInterface_anonymousClassesLambdasAndMethodReferences`,
+`MethodImplementationTest.typeImplementations_subInterface_ownLambdasAndLocalClassNotParentOrSiblingLambdas`,
 `LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
 
 ---

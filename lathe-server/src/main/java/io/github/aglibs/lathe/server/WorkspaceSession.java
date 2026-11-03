@@ -3002,48 +3002,74 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final boolean typeTarget = target.kind().isClass() || target.kind().isInterface();
-    if (!typeTarget && target.kind() != ElementKind.METHOD) {
+    if (!target.isType() && target.kind() != ElementKind.METHOD) {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    // A type's named subtypes come from the type index alone; its anonymous subclasses, and for a
-    // functional interface its lambdas and method references, need the sources attributed. Reading
-    // the workspace to plan that runs on the event loop.
-    return cursorWorker
-        .functionalInterfaceName(request)
-        .thenComposeAsync(
-            samInterface ->
-                typeTarget
-                    ? cursorWorker
-                        .typeImplementations(request, indexSnapshot)
-                        .thenCombine(
-                            implementationsIn(
-                                target,
-                                samInterface,
-                                indexSnapshot,
-                                lambdaSnapshot,
-                                entry -> !TypeSourceLocator.isNamedDeclaration(entry)),
-                            (named, found) ->
-                                Stream.concat(named.stream(), found.stream()).toList())
-                    : implementationsIn(
-                        target, samInterface, indexSnapshot, lambdaSnapshot, entry -> true),
-            worker::execute);
+    // Only an interface, or its method, can be implemented by lambdas.
+    final CompletableFuture<Optional<String>> samInterface =
+        target.kind().isInterface() || target.kind() == ElementKind.METHOD
+            ? cursorWorker.functionalInterfaceName(request)
+            : CompletableFuture.completedFuture(Optional.empty());
+    // Reading the workspace to plan the search runs on the event loop.
+    return samInterface.thenComposeAsync(
+        sam ->
+            target.isType()
+                ? implementationsOfType(
+                    target, request, cursorWorker, sam, indexSnapshot, lambdaSnapshot)
+                : implementationsIn(
+                    target, sam, indexSnapshot, lambdaSnapshot, entry -> true, uri -> true),
+        worker::execute);
+  }
+
+  // A type's named subtypes come from the type index alone; its local and anonymous subclasses, and
+  // for a functional interface its lambdas and method references, need sources attributed: the
+  // bytecode lambda index and the open documents, not every file naming the interface. A failure
+  // there leaves the named subtypes.
+  private CompletableFuture<List<Location>> implementationsOfType(
+      final ReferenceTarget target,
+      final SourceFeatureRequest request,
+      final CompilationWorker cursorWorker,
+      final Optional<String> samInterface,
+      final WorkspaceTypeIndex indexSnapshot,
+      final Map<String, List<String>> lambdaSnapshot) {
+    return concatAll(
+        Stream.of(
+            cursorWorker.typeImplementations(request, indexSnapshot),
+            implementationsIn(
+                    target,
+                    samInterface,
+                    indexSnapshot,
+                    lambdaSnapshot,
+                    entry -> !TypeSourceLocator.isNamedDeclaration(entry),
+                    uri -> docs.get(uri) != null)
+                .exceptionally(
+                    failure -> {
+                      LOG.log(
+                          Level.WARNING,
+                          failure,
+                          () ->
+                              "[implementation:type] %s attributed search failed, named subtypes only"
+                                  .formatted(request.uri()));
+                      return List.of();
+                    })));
   }
 
   // The implementations found by attributing the files that may hold them: the subtypes the filter
-  // keeps (anonymous ones among them, matched from the tree), and the files with lambdas and method
-  // references when the target is a functional interface or its method.
+  // keeps (local and anonymous ones among them, matched from the tree), and the files with lambdas
+  // and method references when the target is a functional interface or its method: those the
+  // bytecode lambda index names, and of the files naming the interface those the filter keeps.
   private CompletableFuture<List<Location>> implementationsIn(
       final ReferenceTarget target,
       final Optional<String> samInterface,
       final WorkspaceTypeIndex indexSnapshot,
       final Map<String, List<String>> lambdaSnapshot,
-      final Predicate<TypeIndexEntry> subtypes) {
+      final Predicate<TypeIndexEntry> subtypes,
+      final Predicate<String> namingFiles) {
     final Map<Path, Set<String>> candidatesByFile =
         Stream.of(
                 subtypeImplementationFiles(target, indexSnapshot, subtypes),
-                lambdaImplementationFiles(samInterface),
+                lambdaImplementationFiles(samInterface, namingFiles),
                 bytecodeLambdaImplementationFiles(
                     target, samInterface, indexSnapshot, lambdaSnapshot))
             .flatMap(stream -> stream)
@@ -3092,9 +3118,10 @@ final class WorkspaceSession {
   // Argument-position lambdas, which never spell the interface, are covered instead by
   // bytecodeLambdaImplementationFiles.
   private Stream<Map.Entry<Path, Set<String>>> lambdaImplementationFiles(
-      final Optional<String> samInterface) {
+      final Optional<String> samInterface, final Predicate<String> namingFiles) {
     return samInterface.stream()
         .flatMap(name -> candidateIndex.candidateUris(name).stream())
+        .filter(namingFiles)
         .map(LatheUri::toPath)
         .map(path -> Map.entry(path, Set.<String>of()));
   }

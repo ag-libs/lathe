@@ -53,6 +53,10 @@ public record ReferenceTarget(
     return declarationOffset >= 0;
   }
 
+  public boolean isType() {
+    return kind.isClass() || kind.isInterface();
+  }
+
   public boolean isLocalScope() {
     return isLocalScopeKind(kind);
   }

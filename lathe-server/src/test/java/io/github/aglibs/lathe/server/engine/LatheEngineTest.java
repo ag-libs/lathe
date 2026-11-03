@@ -246,6 +246,7 @@ class LatheEngineTest {
     assertThat(found.apply("Managed", "stop")).containsExactly("Holder.java:5", "Impl.java:4");
     assertThat(found.apply("Managed", "Managed")).containsExactly("Holder.java:3", "Impl.java:2");
     assertThat(found.apply("Color", "label();")).containsExactly("Color.java:4");
+    assertThat(found.apply("Color", "Color {")).containsExactly("Color.java:3");
     assertThat(found.apply("Handler", "Handler")).containsExactly("Echo.java:2", "Routes.java:3");
   }
 

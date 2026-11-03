@@ -33,8 +33,8 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   private final AttributedFileAnalysis analysis;
   private final ReferenceTarget target;
   private final Set<String> candidateBinaryNames;
-  // The method to find implementations of, or null for a type target, whose anonymous subclasses
-  // are found instead.
+  // The method to find implementations of, or null for a type target, whose local and anonymous
+  // subclasses are found instead.
   private final ExecutableElement targetMethod;
   // The target method's owner, or the target type.
   private final TypeElement targetType;
@@ -66,7 +66,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
       final String uri) {
-    final boolean typeTarget = target.kind().isClass() || target.kind().isInterface();
+    final boolean typeTarget = target.isType();
     if (target.kind() != ElementKind.METHOD && !typeTarget) {
       return List.of();
     }
@@ -162,21 +162,21 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     return super.visitClass(classTree, unused);
   }
 
-  // An anonymous class is recognised from the attributed tree, not by binary name: javac numbers
-  // anonymous classes, and the compiled classes' numbers need not match the edited source's.
+  // An anonymous or local class is recognised from the attributed tree, not by binary name: javac
+  // numbers them, and the compiled classes' numbers need not match the edited source's.
   // An enum constant's body is an anonymous subclass of its enum.
   private void addImplementation(
       final TypeElement candidateType, final ClassTree classTree, final TreePath classPath) {
-    final boolean anonymous = isAnonymousSubtype(candidateType);
+    final boolean unnamed = isLocalOrAnonymousSubtype(candidateType);
     if (targetMethod == null) {
-      if (anonymous) {
-        anonymousClassLocation(classPath).ifPresent(results::add);
+      if (unnamed) {
+        unnamedClassLocation(candidateType, classPath).ifPresent(results::add);
       }
 
       return;
     }
 
-    if (!anonymous
+    if (!unnamed
         && !candidateBinaryNames.contains(
             analysis.elements().getBinaryName(candidateType).toString())) {
       return;
@@ -193,15 +193,26 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
         .forEach(results::add);
   }
 
-  private boolean isAnonymousSubtype(final TypeElement candidateType) {
-    final var types = analysis.types();
-    return candidateType.getNestingKind() == NestingKind.ANONYMOUS
-        && types.isSubtype(
-            types.erasure(candidateType.asType()), types.erasure(targetType.asType()));
+  // A class the type index knows only by a binary name like Outer$1 or Outer$1Local.
+  private boolean isLocalOrAnonymousSubtype(final TypeElement candidateType) {
+    final NestingKind nesting = candidateType.getNestingKind();
+    return (nesting == NestingKind.ANONYMOUS || nesting == NestingKind.LOCAL)
+        && isSubtypeOfTarget(candidateType);
   }
 
-  // Where an anonymous class is created: its `new Handler() {`, or an enum constant with a body.
-  private Optional<Location> anonymousClassLocation(final TreePath classPath) {
+  private boolean isSubtypeOfTarget(final TypeElement type) {
+    final var types = analysis.types();
+    return types.isSubtype(types.erasure(type.asType()), types.erasure(targetType.asType()));
+  }
+
+  // A local class at its name; an anonymous one where it is created, its `new Handler() {` or an
+  // enum constant with a body.
+  private Optional<Location> unnamedClassLocation(
+      final TypeElement candidateType, final TreePath classPath) {
+    if (candidateType.getNestingKind() == NestingKind.LOCAL) {
+      return locationAtPath(classPath, analysis.tree(), candidateType.getSimpleName().toString());
+    }
+
     if (!(classPath.getParentPath().getLeaf() instanceof final NewClassTree creation)) {
       return Optional.empty();
     }
@@ -235,8 +246,12 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
     // Match when the converted type's single abstract method is (or overrides) the target — so a
     // lambda typed as the interface itself or as a functional sub-interface that inherits/overrides
     // the SAM is found, while a sub-interface whose SAM comes from a different parent is not.
+    // On a type, the lambda must also be one of the type: a lambda of its parent or of a sibling
+    // sub-interface implements the same method without being the type.
     final var sam = FunctionalInterfaces.singleAbstractMethod(convertedType, analysis.elements());
-    if (sam == null || !implementsTarget(sam, convertedType)) {
+    if (sam == null
+        || !implementsTarget(sam, convertedType)
+        || targetMethod == null && !isSubtypeOfTarget(convertedType)) {
       return;
     }
 

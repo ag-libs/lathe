@@ -324,6 +324,44 @@ class MethodImplementationTest {
     }
   }
 
+  private static final String SUBTYPE_SOURCE =
+      """
+      interface Base { void run(); }
+      interface Sub extends Base {}
+      interface Sibling extends Base {}
+      class Uses {
+        Sub sub = () -> {};
+        Base base = () -> {};
+        Sibling sibling = () -> {};
+        void m() {
+          class Local implements Sub { public void run() {} }
+        }
+      }
+      """;
+
+  // On a type, a lambda counts only when it is one of the type: a lambda of its parent or of a
+  // sibling sub-interface implements the same method without being it. A local class counts, at its
+  // name.
+  @Test
+  void typeImplementations_subInterface_ownLambdasAndLocalClassNotParentOrSiblingLambdas() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final int at = SUBTYPE_SOURCE.indexOf("Sub extends");
+      final ReferenceTarget target;
+      try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
+        targetSession.compile(TempSourceCompiler.TEST_URI, SUBTYPE_SOURCE, 1, CompileMode.OPEN);
+        target =
+            targetSession.resolveTarget(
+                samRequest(SUBTYPE_SOURCE, SourceLocator.offsetToPosition(SUBTYPE_SOURCE, at)));
+      }
+
+      assertThat(
+              lines(
+                  implementations(
+                      session, TempSourceCompiler.TEST_URI, SUBTYPE_SOURCE, target, Set.of())))
+          .containsExactlyInAnyOrder(4, 8);
+    }
+  }
+
   private static List<Integer> lines(final List<Location> locations) {
     return locations.stream().map(location -> location.getRange().getStart().getLine()).toList();
   }
