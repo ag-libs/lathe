@@ -290,7 +290,7 @@ None: the behaviour is unchanged; only the docs and the tool description were co
 
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -316,7 +316,7 @@ None yet.
 
 ## EG-064 — No code lens: reference counts and run/debug actions above declarations
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -453,7 +453,7 @@ None yet.
 
 ## EG-070 — `typeDefinition` is missing
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -486,7 +486,7 @@ None yet.
 
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -512,7 +512,7 @@ None yet.
 
 ## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -545,35 +545,9 @@ None yet.
 
 ---
 
-## EG-073 — Find references in a 20,000-line file takes more than 90 seconds
-
-**Status: documented**
-
-**Value: low — Size: M**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-On a synthetic 20,000-line buffer, find references did not answer within 90 s.
-Real files are rarely this large, but generated sources can be.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Profile the single-file search on a large unit; bound the work per file, or report progress and allow cancellation as reactor-wide searches do.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -689,7 +663,7 @@ None yet.
 
 ## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -729,7 +703,7 @@ None yet.
 
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -782,7 +756,7 @@ None yet.
 
 ## EG-085 — Implementations miss anonymous classes and enum constant bodies
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -833,7 +807,7 @@ None yet.
 
 ## EG-086 — An enum constant with a body cannot be resolved at its declaration
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -859,7 +833,7 @@ None yet.
 
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -891,7 +865,7 @@ Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
 ## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -987,10 +961,10 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
 
-**Status: documented**
+**Status: deferred.**
 
-**Value: low — Size: M**
-
+Decision (2026-11-03): Error Prone is too heavy for the analysis compile, so it runs only in the full compile on save,
+where the editor shows the warning; a refactor's compile check is not expected to run it.
 **Affects: Neovim, VS Code, any client, on builds that run Error Prone (or another javac plugin) with `-Werror`.**
 
 Found by the pre-release test round (2026-11-01) on EqualsVerifier.
@@ -1093,7 +1067,7 @@ None yet.
 
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1176,7 +1150,7 @@ None yet.
 
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -1292,7 +1266,7 @@ None yet.
 
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1490,7 +1464,7 @@ Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -2341,7 +2315,7 @@ Every tool call reads the file from disk and passes it to the analysis as a new 
 (`LatheEngine.compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
 Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
 three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
-more on very large files (cf. EG-073).
+more on very large files.
 
 ### Fix direction
 
