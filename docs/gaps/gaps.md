@@ -661,46 +661,6 @@ None yet.
 
 ---
 
-## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: the editor's go to implementation and MCP `find_implementations`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-On Helidon's `Handler` interface, `find_implementations` answers 23 classes and no lambdas;
-on `Handler.handle` it answers 225, lambdas and method references such as `this::handle` included.
-The tool's description says it includes lambdas, but asked on the type it misses the most common kind of
-implementation of a functional interface.
-
-### Fix direction
-
-Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
-
-Why: for a type, `implementationForTarget` calls `typeImplementations`, which lists named subtypes only; the lambda
-and method-reference search runs only when the target is the method.
-
-The fix: when the target type is a functional interface, also run the existing method search for its single
-abstract method (`lambdaImplementationFiles`, `bytecodeLambdaImplementationFiles`) and add its lambdas and method
-references, so `Handler` answers the classes and the lambdas, as `Handler.handle` already does.
-Anonymous classes implement the type too, so the type query lists them as well, at their `new Handler() {` line,
-through EG-085's change.
-
-Tests: the type query on a functional interface returns its classes and lambdas; a lambda converted to a different
-functional interface is not listed.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
@@ -747,57 +707,6 @@ NullAway), while the check behind the notes runs with them.
 
 Run the build's javac plugins in the open compile when the module's compile args have them,
 or at least report the notes' plugin errors as diagnostics instead of contradicting them.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-085 — Implementations miss anonymous classes and enum constant bodies
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `find_implementations` and `analyze_change`, likely the editor's go to implementation.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `HttpClientBuilder:284`,
-`MessageQueueFactory:41`) and an enum constant body's override (`RED { label() }`) are absent, so
-`analyze_change` reports an override family of 7 where there are 10.
-`rename_symbol` and `find_references` include them.
-
-### Fix direction
-
-Fixed together with [EG-081](#eg-081--implementations-of-an-interface-omit-lambdas-that-implementations-of-its-method-include),
-[MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one) and
-[MC-69](#mc-69--analyze_change-names-too-few-affected-modules): go to implementation, `find_implementations` and
-`analyze_change`'s override family all run one search (`WorkspaceSession.implementationFuture`).
-
-Why they are missed: the method search starts from the type index's subtypes and drops every unnamed one
-(`TypeSourceLocator::isNamedDeclaration` in `subtypeImplementationFiles`), a filter from the first implementation
-that suits jumping to a type's declaration, which needs a name, but not method implementations.
-The index does know `JerseyClientBuilder$1` and `Color$1` (javac compiles an enum constant's body as an anonymous
-subclass of the enum); `MethodImplementationLocator.visitClass` then matches only the filtered binary names.
-
-The fix:
-
-- `subtypeImplementationFiles` keeps the unnamed subtypes for the method search, mapping `Outer$1` to `Outer`'s
-  source file (`findSourceFile` already resolves nested names to their top-level file).
-- `MethodImplementationLocator.visitClass` recognises an anonymous class from the attributed tree, not by binary
-  name: it qualifies when its type is a subtype of the target method's owner, and the usual `Elements.overrides`
-  check picks the method. This does not rely on javac's `$1`, `$2` numbering agreeing between the compiled
-  classes and the source; an enum constant body is the same case.
-- The result points at the overriding method inside the body, as for a named class.
-
-Tests beside the existing implementation tests: anonymous classes and an enum constant body overriding an abstract
-enum method are found; an anonymous class of an unrelated interface with a method of the same name is not.
-It touches `WorkspaceSession`, `MethodImplementationLocator`, the worker's type-implementation path and
-`LatheEngine`, so the set starts with a design summary.
 
 ### Regression targets
 
@@ -2171,7 +2080,7 @@ so the two halves of the answer contradict each other.
 ### Fix direction
 
 Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done).
 
 Why: `LatheEngine.analyzeChange` takes the family from the implementation search (`implementationsAt`), which looks
 only down the hierarchy; the methods the target overrides never appear.
@@ -2232,7 +2141,7 @@ On `Handler.handle` it names 5 affected modules, while the 225 implementations i
 ### Fix direction
 
 Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done).
 
 Why: `LatheEngine.analyzeChange` counts the modules of reference sites only, never of the override family's members.
 
@@ -2490,7 +2399,7 @@ The fix: the locator keeps abstract overriders too and marks each result as an i
 go to implementation and `find_implementations` keep the implementations only; `analyze_change` keeps both and
 labels the redeclarations ("redeclared by").
 It belongs to the one-search set under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies) and
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done) and
 [MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one): MC-67 adds the methods
 the target overrides, this completes the ones that override it.
 A second search only for `analyze_change` would walk the same candidates twice.

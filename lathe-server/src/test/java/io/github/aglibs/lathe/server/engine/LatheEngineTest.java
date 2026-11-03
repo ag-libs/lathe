@@ -39,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -192,6 +193,61 @@ class LatheEngineTest {
 
     assertThat(impls.implementations())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+  }
+
+  // Go to implementation finds anonymous classes and enum constant bodies, which the type index
+  // knows only as Outer$1, and on a functional interface its lambdas beside its classes.
+  @Test
+  void findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType() throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Managed",
+                "package com.example;\ninterface Managed {\n  void start();\n  void stop();\n}\n",
+            "Impl",
+                "package com.example;\nclass Impl implements Managed {\n  public void start() {}\n  public void stop() {}\n}\n",
+            "Holder",
+                "package com.example;\nclass Holder {\n  Managed managed = new Managed() {\n    public void start() {}\n    public void stop() {}\n  };\n}\n",
+            "Color",
+                "package com.example;\nenum Color {\n  RED {\n    String label() { return \"r\"; }\n  };\n  abstract String label();\n}\n",
+            "Handler",
+                "package com.example;\ninterface Handler {\n  void handle(String request);\n}\n",
+            "Echo",
+                "package com.example;\nclass Echo implements Handler {\n  public void handle(String request) {}\n}\n",
+            "Routes",
+                "package com.example;\nclass Routes {\n  Handler handler = request -> {};\n  Runnable other = () -> {};\n}\n");
+    final Map<String, Path> files = new HashMap<>();
+    for (final var source : sources.entrySet()) {
+      files.put(
+          source.getKey(),
+          TestCompiler.writeModuleSource(
+              tmp, "com/example/%s.java".formatted(source.getKey()), source.getValue()));
+    }
+
+    TestCompiler.compileToDir(
+        tmp.resolve(".lathe/module/classes"), files.values().toArray(Path[]::new));
+    engine = new LatheEngine(tmp);
+    final BiFunction<String, String, List<String>> found =
+        (type, token) -> {
+          final var pos = offsetToPosition(sources.get(type), sources.get(type).indexOf(token));
+          return engine
+              .findImplementations(files.get(type), pos.getLine(), pos.getCharacter(), 50)
+              .implementations()
+              .stream()
+              .map(
+                  location ->
+                      "%s:%d"
+                          .formatted(
+                              Path.of(location.path()).getFileName(),
+                              location.range().getStart().getLine() + 1))
+              .sorted()
+              .toList();
+        };
+
+    assertThat(found.apply("Managed", "stop")).containsExactly("Holder.java:5", "Impl.java:4");
+    assertThat(found.apply("Managed", "Managed")).containsExactly("Holder.java:3", "Impl.java:2");
+    assertThat(found.apply("Color", "label();")).containsExactly("Color.java:4");
+    assertThat(found.apply("Color", "Color {")).containsExactly("Color.java:3");
+    assertThat(found.apply("Handler", "Handler")).containsExactly("Echo.java:2", "Routes.java:3");
   }
 
   @Test
@@ -1282,6 +1338,30 @@ class LatheEngineTest {
     assertThat(tmp.resolve("app2/src/main/java/com/example/app2/Use2.java"))
         .content()
         .contains("a.bar();");
+  }
+
+  // A pattern variable is a local: renaming one `s` leaves a same-named pattern variable in another
+  // method alone, as for any local.
+  @Test
+  void rename_patternVariable_renamesOnlyItsOwnUses() throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Patterns {
+          int first(Object o) { return o instanceof String s ? s.length() : 0; }
+          int second(Object o) { return o instanceof String s ? s.length() : 1; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Patterns.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    renameAt(file, source, "s ?", "text");
+
+    assertThat(file)
+        .content()
+        .contains("int first(Object o) { return o instanceof String text ? text.length() : 0; }")
+        .contains("int second(Object o) { return o instanceof String s ? s.length() : 1; }");
   }
 
   private Path exampleFile(final String type) {
