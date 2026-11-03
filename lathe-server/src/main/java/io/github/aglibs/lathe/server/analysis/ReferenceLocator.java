@@ -17,10 +17,14 @@ import com.sun.source.tree.UnaryTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -35,7 +39,9 @@ final class ReferenceLocator extends SourceTreeLocator {
   private final String uri;
   private final boolean includeDeclaration;
   private final ExecutableElement targetMethod;
+  private final Element targetLocal;
   private final List<ReferenceMatch> results = new ArrayList<>();
+  private final Set<Range> reported = new HashSet<>();
 
   private ReferenceLocator(
       final Trees trees,
@@ -46,11 +52,13 @@ final class ReferenceLocator extends SourceTreeLocator {
       final Elements elements,
       final String uri,
       final boolean includeDeclaration,
-      final ExecutableElement targetMethod) {
+      final ExecutableElement targetMethod,
+      final Element targetLocal) {
     super(trees, cu, content, target, types, elements);
     this.uri = uri;
     this.includeDeclaration = includeDeclaration;
     this.targetMethod = targetMethod;
+    this.targetLocal = targetLocal;
   }
 
   static List<ReferenceMatch> references(
@@ -76,7 +84,8 @@ final class ReferenceLocator extends SourceTreeLocator {
             analysis.elements(),
             uri,
             includeDeclaration,
-            targetMethod);
+            targetMethod,
+            target.hasDeclarationIdentity() ? declaredLocal(analysis, target) : null);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
   }
@@ -287,8 +296,45 @@ final class ReferenceLocator extends SourceTreeLocator {
       return false;
     }
 
-    return !target.hasDeclarationIdentity()
-        || SourceLocator.declarationStartOffset(trees, element) == target.declarationOffset();
+    if (!target.hasDeclarationIdentity()) {
+      return true;
+    }
+
+    // Every same-named local in the file matches the family, and looking up a local's declaration
+    // walks the whole file, so compare against the target's own element, found once.
+    return targetLocal != null
+        ? element == targetLocal
+        : SourceLocator.declarationStartOffset(trees, element) == target.declarationOffset();
+  }
+
+  private static Element declaredLocal(
+      final AttributedFileAnalysis analysis, final ReferenceTarget target) {
+    final var trees = analysis.trees();
+    final var cu = analysis.tree();
+    final var positions = trees.getSourcePositions();
+    final var result = new AtomicReference<Element>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void scan(final Tree tree, final Void unused) {
+        if (tree == null || result.get() != null) {
+          return null;
+        }
+
+        if (positions.getStartPosition(cu, tree) == target.declarationOffset()) {
+          final var element = trees.getElement(new TreePath(getCurrentPath(), tree));
+          if (element != null
+              && ReferenceTarget.isLocalScopeKind(element.getKind())
+              && element.getSimpleName().contentEquals(target.simpleName())) {
+            result.set(element);
+            return null;
+          }
+        }
+
+        return super.scan(tree, unused);
+      }
+    }.scan(cu, null);
+
+    return result.get();
   }
 
   private ReferenceRole roleForElement(final Element element) {
@@ -412,7 +458,7 @@ final class ReferenceLocator extends SourceTreeLocator {
 
     // A record component's backing field and its canonical-constructor parameter share the header
     // range, so the same identifier can be reached twice; never report one source range twice.
-    if (results.stream().anyMatch(match -> match.range().equals(range))) {
+    if (!reported.add(range)) {
       return;
     }
 

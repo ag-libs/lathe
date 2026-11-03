@@ -26,8 +26,11 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -102,19 +105,46 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     return runner.run(jfo, options, cancelChecker);
   }
 
-  // javac reads a compiled file's text lazily, from the per-document temp file, which is what trees
-  // cached from the document's last compile read their text from too: put its text back after.
   @Override
   public CompilerResult compileDetached(final String uri, final String content) {
-    final Path tempFile = tempFileOf(uri);
-    final String kept =
-        Files.isRegularFile(tempFile) ? IOUtil.unchecked(() -> Files.readString(tempFile)) : null;
+    return keepingTempText(List.of(tempFileOf(uri)), () -> compile(uri, content, CompileMode.OPEN));
+  }
+
+  // Another module's files may be attributed here too, so their edited declarations are what this
+  // module's files see; every other path refuses a file outside this module's source roots.
+  @Override
+  public <T> T analyzeDetached(
+      final List<TransientSource> sources,
+      final CancelChecker cancelChecker,
+      final Function<List<TransientAnalysis>, T> use) {
+    return keepingTempText(
+        sources.stream().map(source -> detachedTempFileOf(source.uri())).toList(),
+        () ->
+            use.apply(
+                analyze(
+                    writeTempSources(sources, cancelChecker, this::detachedTempFileOf),
+                    cancelChecker)));
+  }
+
+  // javac reads a compiled file's text lazily, from the per-document temp file, which is what trees
+  // cached from the document's last compile read their text from too: put its text back after, and
+  // remove a temp file the detached run created, which no compile of its own would read.
+  private <T> T keepingTempText(final List<Path> tempFiles, final Supplier<T> run) {
+    final Map<Path, String> kept =
+        tempFiles.stream()
+            .filter(Files::isRegularFile)
+            .distinct()
+            .collect(
+                Collectors.toMap(
+                    tempFile -> tempFile,
+                    tempFile -> IOUtil.unchecked(() -> Files.readString(tempFile))));
     try {
-      return compile(uri, content, CompileMode.OPEN);
+      return run.get();
     } finally {
-      if (kept != null) {
-        IOUtil.unchecked(() -> Files.writeString(tempFile, kept));
-      }
+      tempFiles.stream()
+          .filter(tempFile -> !kept.containsKey(tempFile))
+          .forEach(tempFile -> IOUtil.unchecked(() -> Files.deleteIfExists(tempFile)));
+      kept.forEach((tempFile, text) -> IOUtil.unchecked(() -> Files.writeString(tempFile, text)));
     }
   }
 
@@ -162,10 +192,14 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   @Override
   public List<TransientAnalysis> analyzeBatch(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
-    final var options = buildOptions(CompileMode.FAST);
-    final Map<Path, String> uriByTempFile = writeTempSources(sources, cancelChecker);
+    return analyze(writeTempSources(sources, cancelChecker), cancelChecker);
+  }
+
+  private List<TransientAnalysis> analyze(
+      final Map<Path, String> uriByTempFile, final CancelChecker cancelChecker) {
     final List<AttributedFileAnalysis> analyses =
-        runner.analyzeBatch(javaFilesOf(uriByTempFile), options, cancelChecker);
+        runner.analyzeBatch(
+            javaFilesOf(uriByTempFile), buildOptions(CompileMode.FAST), cancelChecker);
     return analyses.stream().map(analysis -> toTransientAnalysis(analysis, uriByTempFile)).toList();
   }
 
@@ -224,10 +258,19 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   // map compiler outputs back to their source.
   private Map<Path, String> writeTempSources(
       final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    return writeTempSources(sources, cancelChecker, this::tempFileOf);
+  }
+
+  private Map<Path, String> writeTempSources(
+      final List<TransientSource> sources,
+      final CancelChecker cancelChecker,
+      final Function<String, Path> location) {
     final Map<Path, String> uriByTempFile = new LinkedHashMap<>();
     for (final var source : sources) {
       cancelChecker.checkCanceled();
-      uriByTempFile.put(writeTempFile(source.uri(), source.content()).normalize(), source.uri());
+      final Path tempFile = location.apply(source.uri());
+      uriByTempFile.put(
+          writeAt(tempFile, source.uri(), source.content()).normalize(), source.uri());
     }
 
     return uriByTempFile;
@@ -238,14 +281,20 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   }
 
   private Path writeTempFile(final String uri, final String content) {
+    return writeAt(tempFileOf(uri), uri, content);
+  }
+
+  private Path writeAt(final Path tempFile, final String uri, final String content) {
     final var filePath = LatheUri.toPath(uri);
-    final Path sourceRoot = sourceRootOf(filePath, uri);
     try {
-      if (lombok.present()) {
-        mirrorLombokConfigs(sourceRoot, filePath.getParent());
+      final Optional<Path> sourceRoot = ownSourceRoot(filePath);
+      if (lombok.present() && sourceRoot.isPresent()) {
+        mirrorLombokConfigs(sourceRoot.get(), filePath.getParent());
       }
 
-      return FileUtil.writeTempSourceFile(tempDir, sourceRoot, filePath, content);
+      Files.createDirectories(tempFile.getParent());
+      Files.writeString(tempFile, content);
+      return tempFile;
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -254,14 +303,31 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   // Where a document's text is written for javac.
   private Path tempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
-    return FileUtil.tempSourceFile(tempDir, sourceRootOf(filePath, uri), filePath);
+    return FileUtil.tempSourceFile(
+        tempDir,
+        ownSourceRoot(filePath)
+            .orElseThrow(() -> new IllegalStateException("no source root for %s".formatted(uri))),
+        filePath);
   }
 
-  private Path sourceRootOf(final Path filePath, final String uri) {
+  // Where a detached run writes a file's text: its own temp file, or for another module's file one
+  // under a directory of its own mirroring the file's path, as javac needs only a source's file
+  // name
+  // to match its public class.
+  private Path detachedTempFileOf(final String uri) {
+    final var filePath = LatheUri.toPath(uri);
+    return ownSourceRoot(filePath).isPresent()
+        ? tempFileOf(uri)
+        : tempDir
+            .resolve(LatheLayout.FOREIGN_SOURCES_DIR)
+            .resolve(filePath.getRoot().relativize(filePath));
+  }
+
+  private Optional<Path> ownSourceRoot(final Path filePath) {
     return config.sourceRoots().stream()
         .filter(filePath::startsWith)
         .max(Comparator.comparingInt(Path::getNameCount))
-        .orElseGet(() -> generatedSourceRoot(filePath, uri));
+        .or(() -> Optional.of(config.generatedSourcesDir()).filter(filePath::startsWith));
   }
 
   // Lombok reads lombok.config from the compiled file's directory up, and javac compiles a copy
@@ -308,15 +374,6 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
         .lines()
         .map(line -> line.replaceAll("\\s+", ""))
         .anyMatch(line -> line.equalsIgnoreCase(LOMBOK_STOP_BUBBLING.replace(" ", "")));
-  }
-
-  private Path generatedSourceRoot(final Path filePath, final String uri) {
-    final Path genRoot = config.generatedSourcesDir();
-    if (filePath.startsWith(genRoot)) {
-      return genRoot;
-    }
-
-    throw new IllegalStateException("no source root for %s".formatted(uri));
   }
 
   @Override

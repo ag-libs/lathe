@@ -1,9 +1,12 @@
 package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.source.tree.ClassTree;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.LombokFixtures;
@@ -107,12 +110,13 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  // A detached compile (a check of edited text, as codeAction/resolve and verify_change run) leaves
-  // the document's own compile undisturbed: javac reads text lazily from the per-document temp
-  // file,
-  // so a tree cached from that compile, which code actions cut text by, keeps reading its own text.
+  // A detached compile or analysis (a check of edited text, as codeAction/resolve, verify_change
+  // and
+  // a rename's meaning check run) leaves the document's own compile undisturbed: javac reads text
+  // lazily from the per-document temp file, so a tree cached from that compile, which code actions
+  // cut text by, keeps reading its own text, while the check reads the edited text.
   @Test
-  void compileDetached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
+  void detached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
     final String fooUri = sourceRoot.resolve("Foo.java").toUri().toString();
     Files.createDirectories(sourceRoot);
@@ -122,10 +126,73 @@ class ModuleSourceCompilerTest {
     try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
       final var document = compiler.compile(fooUri, "class Foo { int a; }", CompileMode.OPEN);
       final var check = compiler.compileDetached(fooUri, "class Foo { int renamed; }");
+      final String analyzed =
+          compiler.analyzeDetached(
+              List.of(new TransientSource(fooUri, "class Foo { int other; }")),
+              () -> {},
+              analyses ->
+                  IOUtil.unchecked(
+                      () ->
+                          analyses
+                              .get(0)
+                              .analysis()
+                              .tree()
+                              .getSourceFile()
+                              .getCharContent(false)
+                              .toString()));
 
       assertThat(check.diagnostics()).isEmpty();
+      assertThat(analyzed).isEqualTo("class Foo { int other; }");
       assertThat(document.fileAnalysis().tree().getSourceFile().getCharContent(false).toString())
           .isEqualTo("class Foo { int a; }");
+    }
+  }
+
+  // A detached analysis attributes a file of its own module that was never compiled here and a file
+  // of another module (the declaring module's edits in a rename's check) together, then removes the
+  // temp files it created; any other compile still refuses a file outside the module.
+  @Test
+  void analyzeDetached_newAndForeignFiles_attributesThemAndLeavesNoTempFileBehind()
+      throws Exception {
+    final Path sourceRoot = td.resolve("src/main/java");
+    final Path otherRoot = td.resolve("other/src/main/java");
+    final String barUri = sourceRoot.resolve("com/example/Bar.java").toUri().toString();
+    final String apiUri = otherRoot.resolve("com/example/api/Api.java").toUri().toString();
+    final var config =
+        TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
+
+    try (var compiler = new ModuleSourceCompiler(config, new CompilationAdmission(1))) {
+      final List<Path> tempFiles =
+          compiler.analyzeDetached(
+              List.of(
+                  new TransientSource(
+                      apiUri, "package com.example.api;\npublic class Api { public int n; }\n"),
+                  new TransientSource(
+                      barUri,
+                      "package com.example;\nclass Bar { int m(com.example.api.Api a) { return a.n; } }\n")),
+              () -> {},
+              analyses -> {
+                assertThat(analyses)
+                    .allSatisfy(
+                        analysis ->
+                            assertThat(
+                                    analysis
+                                        .analysis()
+                                        .elements()
+                                        .getTypeElement("com.example.api.Api"))
+                                .isNotNull());
+                return analyses.stream()
+                    .map(analysis -> Path.of(analysis.analysis().tree().getSourceFile().toUri()))
+                    .toList();
+              });
+
+      assertThat(tempFiles)
+          .hasSize(2)
+          .anySatisfy(
+              tempFile -> assertThat(tempFile.toString()).contains(LatheLayout.FOREIGN_SOURCES_DIR))
+          .allSatisfy(tempFile -> assertThat(tempFile).doesNotExist());
+      assertThatThrownBy(() -> compiler.compile(apiUri, "class Api {}", CompileMode.OPEN))
+          .hasMessageContaining("no source root");
     }
   }
 

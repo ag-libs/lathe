@@ -7,6 +7,208 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## FR-022 — A rename to a name a use already sees silently rebinds the use — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+Renaming parameter `x` to `value` in `int compute(int x) { return x + value; }`, where `value` is a field,
+gives `return value + value;`: the field's use now reads the parameter.
+The code still compiles, so `verify_change` reports nothing, and the rename reports success.
+`RenameConflicts` says as much: it does not detect "the new name shadowing the symbol at a use".
+
+### Resolution
+
+Before editing, a rename now attributes the files it can change as it would leave them, in one batch per module source
+config that sees the symbol, nothing written, and runs the reference locator for the renamed declaration under its new
+name. A rename adds one declaration of the new name and removes the old one, so a name means something else exactly when
+those uses differ from the renamed sites: an extra use is one the new name captures (a field a renamed parameter shadows,
+another call picking the renamed overload, a subclass method that would override the renamed one), a missing site one
+that now means something else ([FR-023](#fr-023--a-method-rename-can-capture-another-overloads-calls--done)).
+Either refuses the rename, naming the file and line.
+The files are the edited ones and, unless only the declaring file sees the symbol, those already using the new name
+(identifier index); each module's are attributed, in batches of at most 100 untouched files, with the edited files of
+the modules it depends on, so every renamed declaration it sees is the edited one.
+Type renames are checked too, the moved file under its new name.
+A renamed site that no longer resolves is a compile error the diagnostics report, as before.
+
+Not checked: uses javac cannot see (reflection, strings, configuration, sources a processor generates later), and in a
+JPMS reactor another module's files, whose task cannot take the declaring module's sources.
+
+jdtls 1.51 applies all of these renames silently over LSP (spike on a scratch two-module project, 2026-11-02:
+shadowing by a parameter, lambda parameter and local, a field captured by a local, overload capture, capture through an
+inherited member, reverse capture in an untouched file of the same and another module, a type capturing an on-demand
+import); Lathe matched it until this check.
+
+### Regression targets
+
+`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`,
+`LatheEngineTest.rename_typeCapturingAnImportedName_refusesAndOtherwiseRenamesAndMoves`,
+`ModuleSourceCompilerTest.detached_otherText_cachedTreeKeepsItsOwnText`.
+
+---
+
+## FR-023 — A method rename can capture another overload's calls — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
+
+### Observed behaviour
+
+With `void setValue(int)` and `long twice(long)`, renaming `twice` to `setValue` turns `twice(7)` into
+`setValue(7)`, which now binds to `setValue(int)`; find references afterwards no longer sees the call.
+It compiles, so nothing reports it, although the tool advertises overload-correct renames.
+The collision check compares only signatures, so a different overload of the new name passes.
+
+### Resolution
+
+Fixed by the meaning check of [FR-022](#fr-022--a-rename-to-a-name-a-use-already-sees-silently-rebinds-the-use--done):
+`twice(7)` renamed to `setValue(7)` would call `setValue(int)`, a renamed site that now means something else, and an
+untouched call in this or another module that the renamed method would capture is an extra use; both refuse the rename,
+naming the call.
+
+### Regression targets
+
+`LatheEngineTest.rename_changingWhatANameMeans_refusesNamingThePlaceAndOtherwiseRenames`,
+`LatheEngineTest.rename_capturingACallInAnotherModule_refusesUnlessNoCallChangesMeaning`.
+
+---
+
+## FR-024 — Renaming an interface method misses implementations inherited from a dependency — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor's rename and MCP `rename_symbol`.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
+`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
+with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
+
+### Resolution
+
+Before a method rename edits anything, each reactor subtype of the renamed method's type is checked in its own module
+(the per-file routing go to implementation uses): when the member that implements the method there is inherited from
+a class whose method is outside the override family, the rename is refused, naming both, e.g.
+"`stop` cannot be renamed: JettyManaged implements it through AbstractLifeCycle.stop, which the rename would leave behind".
+The check is not limited to dependencies: a project superclass with a same-signature method that overrides nothing
+in the family is left behind the same way, and is refused too.
+It runs against the family's contract, the method the rename starts from, and only for an interface method:
+a class method is what its subtypes inherit, so it cannot be implemented from outside the family.
+It costs one attribution per implementing file that is not open.
+
+### Regression targets
+
+`LatheEngineTest.rename_methodImplementedThroughASuperclassOutsideTheFamily_refusesNamingTheSubtype`.
+
+---
+
+## EG-088 — Signature help is empty inside `new P(|)` and `super(|)` when no constructor takes zero arguments — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: the editor.**
+
+Found in a colleague's daily use (2026-11-02), confirmed with a throwaway `SignatureHelpTest`-style probe.
+
+### Observed behaviour
+
+With the cursor between the empty parentheses of a constructor call, signature help answers nothing
+when the class has no no-arg constructor: `new P(|)` for `P(int)` / `P(String)` / `P(int, int)`,
+and `super(|)` in a subclass of such a `P`.
+The same call without its closing paren, `new P(|`, lists both constructors, and so does a class with a no-arg
+constructor (`new StringBuilder(|)`, `new ArrayList<String>(|)`).
+Method calls are not affected: `m(|)`, `new T().m(|)`, `String.valueOf(|)` list every overload.
+
+Two smaller differences from IntelliJ's parameter info turned up on the way:
+
+- Overloads the caller cannot access are listed: `new ArrayList<String>().add(|)` shows the private
+  `void add(E, Object[], int)` beside the two public `add`s.
+- The active overload of an unresolved call is the first declared, not one whose arity fits the arguments typed so far
+  (also noted under [NV-10](gaps.md#nv-10--signature-help-highlights-no-parameter-when-the-active-overload-is-not-the-first)).
+
+### Root cause
+
+javac resolves no constructor for `()` when none takes zero arguments, so `Trees.getElement` on the
+`NewClassTree` is null and `SignatureHelpResolver.resolve` returns null.
+The method branch falls back to every overload of the name (`methodsNamed`, `memberSelectCandidates`);
+the constructor branch has no such fallback.
+`super(|)` / `this(|)` are `MethodInvocationTree`s whose select element is likewise null, and the identifier fallback
+looks for methods named `super`, of which there are none.
+
+### Resolution
+
+Signature help now lists every accessible overload a call can name, whether or not it attributes:
+the constructors of the type `new` names, of the enclosing class for `this(…)`, and of its superclass for `super(…)`.
+Overloads the caller cannot access are dropped, checked as javac does through the type the call reaches them from
+(the receiver, the calling class for `super.m(…)`, the innermost class declaring the name for an unqualified call);
+`super(…)` and an anonymous class body apply the subclass rule to their superclass's constructors, which javac's public
+access check cannot express.
+For a call that does not attribute yet the active overload is the first whose arity fits the arguments typed.
+
+### Regression targets
+
+`SignatureHelpTest.signatureHelp_constructorCallWithoutNoArgConstructor_listsEveryConstructor`,
+`SignatureHelpTest.signatureHelp_inaccessibleOverload_isNotListed`,
+`SignatureHelpTest.signatureHelp_unattributedCall_activeOverloadFitsArgumentsTyped`,
+`SignatureHelpTest.signatureHelp_protectedMembersFromASubclassInAnotherPackage_areListed`.
+
+---
+
+## EG-073 — Find references on a local in a 20,000-line file takes more than 90 seconds — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+On a synthetic 20,000-line buffer, find references did not answer within 90 s.
+Reproduced on generated files of 2,000 methods, each with its own local `i`: references on one `i` took
+274 ms at 2,254 lines, 884 ms at 4,504, 3,259 ms at 9,004, and 13,654 ms at 18,004, four times as long for each
+doubling, while a field took under 100 ms and the compile under 0.5 s.
+documentHighlight and rename run the same search, highlight on every cursor move.
+
+### Resolution
+
+Every same-named local in a file matches a local target's structural family, and each match was told apart by its
+declaration offset, which `Trees.getPath(Element)` finds by walking the whole file: one walk per same-named local.
+The target's own element is now found once, by one walk to its declaration offset, and compared by identity; the
+duplicate check on matched ranges is a set instead of a scan of the results.
+References on the local at 18,004 lines now take 14 ms.
+
+### Regression targets
+
+`ReferenceLocatorTest.localScope_lambdaCatchAndResourceInTwoMethods_eachScopedToItsDeclaration`,
+`ReferenceLocatorTest.localScope_sameNameInAnotherMethod_notMerged`,
+`ReferenceLocatorTest.localScope_blockScopeShadowing_distinctDeclarationsNotMerged`.
+
+---
+
 ## EG-079 — Outgoing calls include calls from the class's field and enum initializers — done
 
 **Status: done.**
@@ -2697,6 +2899,41 @@ edits across 15 files), EqualsVerifier (31 across 16) and Helidon (77 across 33)
 ---
 
 # Completion (CQ) — resolved
+
+## CQ-0061 — While typing, a `switch` case label offers no enum constants — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
+0.1.24 behaves the same.
+
+Case-label completion itself works (archived [CQ-0006](#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
+on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
+What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
+a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
+The existing tests only exercise the fresh compile.
+
+### Resolution
+
+The case label finds its enum through the switch selector, read from the tree at the cursor offset;
+the cached tree is the text before the edit, so that offset no longer falls inside the `switch`.
+When the cache differs from the current text before the token being typed, the case label is now attributed
+from a recompile of the current text, the same staleness check member access already uses,
+and the recompile is cached as member access caches its own, so the next keystroke reuses it.
+
+### Regression targets
+
+`CompletionSimpleNameTest.simpleName_switchCaseLabelWhileTyping_suggestsEnumConstantsOfTheSelectorOnly`.
+
+---
 
 ## CQ-0060 — No completions after `::` (method reference) — done
 

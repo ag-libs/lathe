@@ -1,6 +1,8 @@
 -- :LatheNew -- create a class / interface / record / enum / annotation / test / package-info /
 -- module-info through the Lathe server, which owns every Java/Maven decision (module, source root,
 -- package, skeleton, caret). The client only resolves *where* and *what to call it*.
+-- :LatheGoToTest -- go to the test of the buffer's type, or back; offers :LatheNew's test step when
+-- there is none.
 --
 -- v5 UX: the destination is a single fuzzy pick, not a colon-grammar string.
 --
@@ -517,6 +519,75 @@ function M.create(kind_arg, pkg_arg)
 	end)
 end
 
+-- ── :LatheGoToTest ───────────────────────────────────────────────────────────
+
+local function open_uri(uri)
+	vim.cmd.edit(vim.fn.fnameescape(vim.uri_to_fname(uri)))
+end
+
+-- No test yet: offer to create one through :LatheNew's test step, in the buffer's package.
+local function offer_test(client, bufnr)
+	local seed = M._test_seed(bufnr)
+	pick.pick({
+		title = "No test found:",
+		items = { "Create test " .. seed },
+		on_choice = function(choice)
+			if not choice then
+				return
+			end
+
+			execute(client, bufnr, "lathe.resolveContext", { uri = vim.uri_from_bufnr(bufnr) }, function(ctx)
+				if not ctx then
+					warn("the file is in no module — run a build first")
+					return
+				end
+
+				name_step(client, bufnr, "test", { module = ctx.moduleRel, scope = "test", pkg = ctx.pkg })
+			end)
+		end,
+	})
+end
+
+-- Go to the test of the buffer's type, or from a test to the type it tests: one found opens, several
+-- are picked from, best first; none from a main file offers to create the test.
+function M.go_to_test()
+	local bufnr = vim.api.nvim_get_current_buf()
+	local client = lathe_client(bufnr)
+	if not client then
+		warn("server not attached — going to a test needs the language server")
+		return
+	end
+
+	execute(client, bufnr, "lathe.testCounterparts", { uri = vim.uri_from_bufnr(bufnr) }, function(found)
+		local targets = found and found.targets or {}
+		if #targets == 1 then
+			return open_uri(targets[1].uri)
+		end
+
+		if #targets > 1 then
+			return pick.pick({
+				title = found.fromTest and "Tested class:" or "Test:",
+				items = targets,
+				format = function(target)
+					return target.qualifiedName
+				end,
+				on_choice = function(target)
+					if target then
+						open_uri(target.uri)
+					end
+				end,
+			})
+		end
+
+		if found and found.fromTest then
+			warn("no class found for " .. vim.fn.fnamemodify(vim.api.nvim_buf_get_name(bufnr), ":t:r"))
+			return
+		end
+
+		offer_test(client, bufnr)
+	end)
+end
+
 -- ── command-line completion ──────────────────────────────────────────────────
 
 local function prefix_matches(list, arglead)
@@ -578,6 +649,9 @@ function M.setup()
 		complete = M._cmd_complete,
 		desc = "Lathe: create a new class/interface/record/enum/annotation/test/package-info/module-info",
 	})
+	vim.api.nvim_create_user_command("LatheGoToTest", function()
+		M.go_to_test()
+	end, { desc = "Lathe: go to the test, or from a test to its class" })
 end
 
 return M

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.tools.Diagnostic;
@@ -50,6 +51,15 @@ public interface JavaSourceCompiler extends AutoCloseable {
   // compile undisturbed, so trees cached from that compile keep reading their own text.
   default CompilerResult compileDetached(final String uri, final String content) {
     return compile(uri, content, CompileMode.OPEN);
+  }
+
+  // Attributes edited text of several files together and hands the analyses to `use` while that
+  // text is in place; like compileDetached, the files' own compiles are left undisturbed.
+  default <T> T analyzeDetached(
+      final List<TransientSource> sources,
+      final CancelChecker cancelChecker,
+      final Function<List<TransientAnalysis>, T> use) {
+    return use.apply(analyzeBatch(sources, cancelChecker));
   }
 
   default CompilerResult compile(

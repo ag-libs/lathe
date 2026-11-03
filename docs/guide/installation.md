@@ -11,7 +11,7 @@ Lathe has two parts, set up independently and in either order.
    | Gradle 8.8+ | [Lathe for Gradle](gradle.md) |
    | The OpenJDK `make` build | [Lathe for OpenJDK](openjdk.md) |
 
-2. **The editor client**, for [Neovim](editors/neovim.md), [VS Code](editors/vscode.md),
+2. **The editor client**, for [Neovim](editors/neovim.md#install), [VS Code](editors/vscode.md),
    [Emacs](editors/emacs.md) or [Zed](editors/zed.md); an AI agent uses the [MCP server](ai-agents.md).
    A client that finds no `.lathe/` yet asks you to run the build.
 

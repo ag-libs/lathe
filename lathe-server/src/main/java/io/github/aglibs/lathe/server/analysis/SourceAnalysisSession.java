@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -527,6 +528,28 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : RenameConflicts.find(element, newName, cur.analysis());
   }
 
+  // Whether renaming keeps what every name in this module's checked files means, attributing them
+  // as the rename leaves them; the reason to refuse when it does not.
+  public Optional<String> renameBindingConflict(
+      final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
+      final List<RenameBindingCheck.CheckedFile> checked,
+      final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final Optional<String> conflict =
+        RenameBindingCheck.find(compiler, check, visibleEdits, checked, cancelChecker);
+    LOG.fine(
+        () ->
+            "[rename:check] %s edited=%d checked=%d %dms conflict=%s"
+                .formatted(
+                    check.newName(),
+                    visibleEdits.size(),
+                    checked.size(),
+                    t.elapsedMs(),
+                    conflict.isPresent()));
+    return conflict;
+  }
+
   private static Element renameElement(
       final SourceFeatureRequest request, final CursorContext cur) {
     final Element constructor =
@@ -723,16 +746,14 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
   }
 
-  public List<Location> methodImplementations(
+  // A query over an open file's attributed analysis, the cached one when it is current.
+  public <T> List<T> queryFile(
       final String uri,
       final String content,
       final int version,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
+      final Function<AttributedFileAnalysis, List<T>> query) {
     final var analysis = ensureAttributedAnalysis(uri, content, version);
-    return analysis != null
-        ? MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri)
-        : List.of();
+    return analysis != null ? query.apply(analysis) : List.of();
   }
 
   /**
@@ -760,19 +781,18 @@ public final class SourceAnalysisSession implements AutoCloseable {
         : Optional.empty();
   }
 
-  public List<Location> methodImplementationsTransient(
+  // A query over a file that is not open, attributed once and not cached.
+  public <T> List<T> queryFileTransient(
       final String uri,
       final String content,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
+      final Function<AttributedFileAnalysis, List<T>> query) {
     final var t = Stopwatch.start();
     final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, () -> {});
     LOG.info(
         () ->
             "[compile:fast] %s %dms diags=%d"
                 .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return MethodImplementationLocator.locate(
-        run.fileAnalysis(), target, candidateBinaryNames, uri);
+    return query.apply(run.fileAnalysis());
   }
 
   private Optional<Location> findDefinitionLocation(

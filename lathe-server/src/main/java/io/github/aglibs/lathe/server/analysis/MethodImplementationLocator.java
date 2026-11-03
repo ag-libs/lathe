@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.ElementKind;
@@ -20,11 +21,13 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.Elements;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
-final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
+public final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
 
   private final AttributedFileAnalysis analysis;
   private final ReferenceTarget target;
@@ -51,7 +54,7 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
     this.uri = uri;
   }
 
-  static List<Location> locate(
+  public static List<Location> locate(
       final AttributedFileAnalysis analysis,
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
@@ -76,6 +79,50 @@ final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
             uri);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
+  }
+
+  // Why a rename of the target method cannot follow a candidate class: the class implements it
+  // through an inherited method outside the override family (a dependency's superclass, say), which
+  // the rename leaves behind, so the class silently loses its implementation.
+  public static List<String> inheritedOutsideFamily(
+      final AttributedFileAnalysis analysis,
+      final ReferenceTarget target,
+      final Set<String> candidateBinaryNames) {
+    final ExecutableElement targetMethod =
+        target.resolveMethodElement(analysis.elements(), analysis.types());
+    if (targetMethod == null) {
+      return List.of();
+    }
+
+    return candidateBinaryNames.stream()
+        .map(binaryName -> analysis.elements().getTypeElement(binaryName.replace('$', '.')))
+        .filter(Objects::nonNull)
+        .flatMap(
+            type ->
+                inheritedOutsideFamily(analysis.elements(), targetMethod, type).stream()
+                    .map(
+                        inherited ->
+                            "`%s` cannot be renamed: %s implements it through %s.%s, which the rename would leave behind"
+                                .formatted(
+                                    target.simpleName(),
+                                    type.getSimpleName(),
+                                    inherited.getEnclosingElement().getSimpleName(),
+                                    inherited.getSimpleName())))
+        .toList();
+  }
+
+  private static Optional<ExecutableElement> inheritedOutsideFamily(
+      final Elements elements, final ExecutableElement targetMethod, final TypeElement type) {
+    return ElementFilter.methodsIn(elements.getAllMembers(type)).stream()
+        .filter(method -> !method.equals(targetMethod))
+        .filter(method -> method.getSimpleName().equals(targetMethod.getSimpleName()))
+        .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
+        .filter(method -> elements.overrides(method, targetMethod, type))
+        .filter(
+            method ->
+                !elements.overrides(
+                    method, targetMethod, (TypeElement) method.getEnclosingElement()))
+        .findFirst();
   }
 
   private static DeclaredType functionalInterfaceOf(

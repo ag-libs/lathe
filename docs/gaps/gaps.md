@@ -290,7 +290,7 @@ None: the behaviour is unchanged; only the docs and the tool description were co
 
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -316,7 +316,7 @@ None yet.
 
 ## EG-064 — No code lens: reference counts and run/debug actions above declarations
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -453,7 +453,7 @@ None yet.
 
 ## EG-070 — `typeDefinition` is missing
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -486,7 +486,7 @@ None yet.
 
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -512,7 +512,7 @@ None yet.
 
 ## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -545,35 +545,9 @@ None yet.
 
 ---
 
-## EG-073 — Find references in a 20,000-line file takes more than 90 seconds
-
-**Status: documented**
-
-**Value: low — Size: M**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-On a synthetic 20,000-line buffer, find references did not answer within 90 s.
-Real files are rarely this large, but generated sources can be.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Profile the single-file search on a large unit; bound the work per file, or report progress and allow cancellation as reactor-wide searches do.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -600,7 +574,7 @@ None yet.
 
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
-**Status: documented**
+**Status: accepted (server and Neovim shipped; VS Code pending).**
 
 **Value: high — Size: M**
 
@@ -634,9 +608,26 @@ when the module has one), then, as a fallback, test classes that reference the t
 The reverse direction strips the same suffixes and looks in the main roots.
 Then a Neovim mapping and command over it, and the same in VS Code.
 
+### Delivered — server and Neovim
+
+`lathe.testCounterparts { uri }` answers the counterparts of the file's top-level type, best first: from a main file
+its tests, from a test file the type it tests. They are found by Surefire's and Failsafe's default test names
+(`FooTest`, `FooTests`, `FooTestCase`, `FooIT`, `FooITCase`, `TestFoo`, `ITFoo`) through the type index, so a test in
+a separate test module is found too, ranked same package, then same module, then name convention.
+The module's `test-filter.json` is not used: its patterns say what the build runs, not what a class is named after,
+and a reference-index fallback was left out until the names miss real tests.
+Neovim's `:LatheGoToTest` (suggested `grT`) opens one, picks among several, and with none offers the `:LatheNew test`
+step in the file's package.
+
+### Remaining — VS Code
+
+A VS Code command over the same server command.
+
 ### Regression targets
 
-None yet.
+`WorkspaceSessionTest.testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject`,
+`WorkspaceSessionTest.testCounterpartNames_conventions_testNamesAndTheSubjectTheyStripTo`,
+`new_spec.lua` (`:LatheGoToTest`).
 
 ---
 
@@ -699,7 +690,7 @@ None yet.
 
 ## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -739,7 +730,7 @@ None yet.
 
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -792,7 +783,7 @@ None yet.
 
 ## EG-085 — Implementations miss anonymous classes and enum constant bodies
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -843,7 +834,7 @@ None yet.
 
 ## EG-086 — An enum constant with a body cannot be resolved at its declaration
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -869,7 +860,7 @@ None yet.
 
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -901,7 +892,7 @@ Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
 ## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -944,139 +935,6 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 ### Fix direction
 
 Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
-
-### Regression targets
-
-None yet.
-
----
-
-## FR-022 — A rename to a name a use already sees silently rebinds the use
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
-
-### Observed behaviour
-
-Renaming parameter `x` to `value` in `int compute(int x) { return x + value; }`, where `value` is a field,
-gives `return value + value;`: the field's use now reads the parameter.
-The code still compiles, so `verify_change` reports nothing, and the rename reports success.
-`RenameConflicts` says as much: it does not detect "the new name shadowing the symbol at a use".
-
-### Fix direction
-
-Fixed together with [FR-023](#fr-023--a-method-rename-can-capture-another-overloads-calls): both are a name that
-resolves to a different declaration after the edit, which nothing checks today.
-`RenameConflicts` looks only at declarations (a member of the same kind and signature, a sibling type, a variable
-in scope); the rename then replaces text at the references (`WorkspaceSession.renameFuture`).
-
-Check that the edit preserves every binding, as IntelliJ and Eclipse do, reusing the transient compile extract
-method's check already uses (`CompileCheckedActions`, `compileDetached` / `compileBatch`):
-
-1. Select the files to check cheaply: the edited files that also contain the new name as an identifier.
-   Most renames choose a name used nowhere nearby and skip the check, at no cost.
-2. Before the edit, record from the current analysis what two sets of names resolve to, as a stable key
-   (owner type, kind, name, parameter types):
-   (a) each site being renamed, which must end up naming the renamed declaration;
-   (b) each existing use of the new name, which must keep naming what it names now.
-3. Apply the edits in memory and compile the checked files of one module in one transient batch, with the
-   edited file that declares the renamed symbol, so the new name is visible; nothing is written.
-4. Re-resolve: shift each recorded position by the edits before it and look up its element.
-   If an (a) site no longer names the renamed declaration, or a (b) use names something else, refuse through
-   the existing `renameRefused` path, naming the place, e.g. "Renaming `x` to `value` would change what `value`
-   refers to at RenameProbe.java:7 (it would read the parameter instead of the field)".
-   The editor shows the refusal as the rename's error, as it does for today's refusals.
-5. Later, offer the fix instead of only refusing: qualify the shadowed field as `this.value`.
-
-Scope it in two steps: same-module files first (locals, parameters, private members, overloads declared in one
-class: both reproduced cases); then FR-023's cross-module reverse capture.
-The cost is zero for most renames (the step 1 filter) and one transient compile per module involved otherwise,
-roughly 20–200 ms, acceptable for an explicit action.
-It changes the rename flow (`WorkspaceSession`), the analysis session or worker (the before/after comparison) and
-`RenameConflicts`, so it starts with a design summary.
-
-Tests in `RenameTest`: a parameter renamed to a field's name is refused; the same rename where the new name is
-not visible at any use goes through unchanged; a lambda parameter shadowing a field is refused.
-
-### Regression targets
-
-None yet.
-
----
-
-## FR-023 — A method rename can capture another overload's calls
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01). Reproduced on a scratch project.
-
-### Observed behaviour
-
-With `void setValue(int)` and `long twice(long)`, renaming `twice` to `setValue` turns `twice(7)` into
-`setValue(7)`, which now binds to `setValue(int)`; find references afterwards no longer sees the call.
-It compiles, so nothing reports it, although the tool advertises overload-correct renames.
-The collision check compares only signatures, so a different overload of the new name passes.
-
-### Fix direction
-
-The binding check described under [FR-022](#fr-022--a-rename-to-a-name-a-use-already-sees-silently-rebinds-the-use)
-covers it: every renamed call site must still resolve to the renamed method after the edit, and every existing
-call of the new name must keep resolving to the method it calls now; otherwise the rename is refused, naming the
-call (here: `twice(7)` would call `setValue(int)` instead).
-
-Its first step, same-module files, catches the usual case, where the overloads live in one class.
-The second step covers reverse capture in other modules: the renamed method can become the better match for an
-existing call of the new name elsewhere (renaming `foo(int)` to `bar` when another module calls `bar(1)` on
-`bar(long)`), and those files are not edited by the rename.
-Find them with the reference index (callers of the owner type's existing overloads of the new name) and check them
-in a compile that sees the declaring module's edited classes; this is the harder part, so it comes second.
-
-Tests in `RenameTest`: a method renamed onto an overload that would capture a call is refused; renamed onto a name
-whose overloads no call could reach, it goes through.
-
-### Regression targets
-
-None yet.
-
----
-
-## FR-024 — Renaming an interface method misses implementations inherited from a dependency
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor's rename and MCP `rename_symbol`.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`JettyManaged extends AbstractLifeCycle implements Managed`, so Jetty's `stop()` implements
-`Managed.stop()`. Renaming `Managed.stop` leaves `JettyManaged` with the interface's no-op default,
-with no warning, although the tool refuses the mirror case (overriding a method declared in a dependency).
-
-### Fix direction
-
-One more check in `RenameConflicts`, beside the existing refusal for overriding a method declared in a dependency:
-for each reactor subtype of the renamed method's type, if a supertype outside the reactor supplies the
-implementation (an inherited member for which `Elements.overrides` holds against the renamed method), refuse
-and name the class, e.g. "`JettyManaged` implements `stop` through `AbstractLifeCycle` (jetty-util), which a
-rename cannot change".
-The reactor subtypes come from the implementation search the override family already uses.
-It needs no transient compile, so it can ship before the binding check of FR-022 and FR-023.
-
-Test in `RenameTest`: an interface method implemented through a superclass from a dependency is refused, naming
-the subtype; one implemented in the reactor is renamed together with its implementation.
 
 ### Regression targets
 
@@ -1130,10 +988,10 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
 
-**Status: documented**
+**Status: deferred.**
 
-**Value: low — Size: M**
-
+Decision (2026-11-03): Error Prone is too heavy for the analysis compile, so it runs only in the full compile on save,
+where the editor shows the warning; a refactor's compile check is not expected to run it.
 **Affects: Neovim, VS Code, any client, on builds that run Error Prone (or another javac plugin) with `-Werror`.**
 
 Found by the pre-release test round (2026-11-01) on EqualsVerifier.
@@ -1192,38 +1050,6 @@ Active completion-quality gaps. Discovered and triaged via the completion append
 [gap workflow](gap-workflow.md); checked against the completion [expectations](../done/lathe-completion-expectations.md)
 contract. Resolved CQ entries are in [gaps-archive.md](gaps-archive.md).
 
-## CQ-0061 — While typing, a `switch` case label offers no enum constants
-
-**Status: documented**
-
-**Value: high — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
-
-### Observed behaviour
-
-`switch (unit) { case MIL` offers nothing; a bare `case ` offers unrelated JDK classes instead of `TimeUnit`'s constants.
-0.1.24 behaves the same.
-
-Case-label completion itself works (archived [CQ-0006](gaps-archive.md#cq-0006--enum-switch-case-labels-do-not-use-the-selector-enum-type)):
-on a fresh compile both cases offer `TimeUnit`'s constants, and `CompletionSimpleNameTest.simpleName_switchCaseLabel_suggestsEnumConstants` covers it.
-What fails is the while-typing path, which completes from the last clean analysis (`CompletionFixture.completeWithCache`):
-a bare `case ` offers the in-scope names and `Object`'s methods, and `case MIL` offers nothing.
-The existing tests only exercise the fresh compile.
-
-### Fix direction
-
-Make the case-label path (`CompletionEngine.enumCaseLabelCandidates`) find the selector's enum type on the cached analysis too, as member access does for a receiver.
-Test it through `completeWithCache`, with and without a prefix.
-
-### Regression targets
-
-None yet.
-
----
-
 # Workspace Lifecycle Gaps (WS)
 
 Workspace freshness and lifecycle gaps: reactor mirror / type-index staleness, source watching, sync
@@ -1268,7 +1094,7 @@ None yet.
 
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1351,7 +1177,7 @@ None yet.
 
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -1493,7 +1319,7 @@ None yet.
 
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1719,7 +1545,7 @@ Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -1779,11 +1605,9 @@ Report it to blink.cmp: the line must be the active signature's index in its own
 Until it is fixed, Lathe could list the active signature first (`activeSignature` 0) in `SignatureHelpResolver`,
 which every client renders correctly, at the cost of the overload order changing as the arguments change.
 
-Related, on the server and not reproduced: when the call does not attribute yet, `SignatureHelpResolver` falls back
-to the first overload of that name whatever the argument count, so an active parameter beyond that overload's
-parameters is highlighted in no client.
-Prefer an overload whose arity fits the arguments typed;
-see also [EG-048](#eg-048--go-to-definition-on-a-call-with-the-wrong-arguments-finds-nothing-and-offers-one-overload-only).
+Related, on the server: when the call does not attribute yet, `SignatureHelpResolver` now makes active the first
+overload whose arity fits the arguments typed, not the first declared
+([EG-088](gaps-archive.md#eg-088--signature-help-is-empty-inside-new-p-and-super-when-no-constructor-takes-zero-arguments--done)).
 
 ### Regression targets
 
@@ -2572,7 +2396,7 @@ Every tool call reads the file from disk and passes it to the analysis as a new 
 (`LatheEngine.compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
 Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
 three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
-more on very large files (cf. EG-073).
+more on very large files.
 
 ### Fix direction
 
@@ -2711,3 +2535,51 @@ Show a status for every module: captured, not captured (with the command), or no
 ### Regression targets
 
 None yet.
+
+---
+
+## MC-78 — `analyze_change`'s override family leaves out abstract redeclarations
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `analyze_change`. Go to implementation and `find_implementations` leave them out by design.**
+
+Found by the MCP release battery's reference round trip on Helidon (2026-11-02).
+
+### Observed behaviour
+
+For Helidon's `MediaType.text()`, `analyze_change` reports an override family of 3: `HttpMediaTypeImpl.text()`,
+the `MediaTypeImpl` record component, and `MediaTypeEnum.text()`.
+It leaves out `HttpMediaType.text()`, the `String text();` that the subinterface `HttpMediaType extends MediaType`
+redeclares (`http/http/src/main/java/io/helidon/http/HttpMediaType.java:191`).
+That redeclaration matters to a change: `get_definition` at calls such as `HttpMediaTypes.JSON.text()` and
+`HttpMediaType::text` lands on it, `find_references` there lists 77 uses, and `rename_symbol` renames it with the rest.
+An agent asking what changing `MediaType.text()` affects is not told that a subinterface redeclares it.
+
+### Fix direction
+
+Why: `LatheEngine.analyzeChange` takes the family from the implementation search (`implementationsAt`), and
+`MethodImplementationLocator.visitClass` keeps only methods without the `abstract` modifier.
+That is right for an implementation, but an interface method without a body is abstract, so a subinterface's
+redeclaration (and an abstract class's) is dropped.
+The subinterface already reaches the search: the type index's transitive subtypes include interfaces, so only this
+filter removes it.
+
+The fix: the locator keeps abstract overriders too and marks each result as an implementation or a redeclaration;
+go to implementation and `find_implementations` keep the implementations only; `analyze_change` keeps both and
+labels the redeclarations ("redeclared by").
+It belongs to the one-search set under
+[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies) and
+[MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one): MC-67 adds the methods
+the target overrides, this completes the ones that override it.
+A second search only for `analyze_change` would walk the same candidates twice.
+
+Test: `analyze_change` on an interface method that a subinterface redeclares lists the redeclaration;
+`find_implementations` on it does not.
+
+### Regression targets
+
+None yet. The battery's reference round trip no longer catches this: since it accepts a definition that
+`find_references` agrees with, it passes on Helidon either way.

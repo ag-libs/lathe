@@ -27,6 +27,7 @@ import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
@@ -34,10 +35,12 @@ import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceRole;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -789,6 +792,18 @@ final class WorkspaceSession {
 
   ContextInfo resolveContext(final String uri) {
     return resolveContext(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
+  }
+
+  // The tests of the file's type, or from a test the type it tests.
+  TestCounterparts testCounterparts(final String uri) {
+    final Path file = LatheUri.toPath(uri);
+    final ContextInfo context = resolveContext(uri);
+    return TestCounterparts.find(
+        file,
+        context == null ? "" : context.pkg(),
+        workspace::moduleSourceFor,
+        typeIndex,
+        workspace.allSourceRoots());
   }
 
   DirRun dirRun(final String uri) {
@@ -1955,10 +1970,11 @@ final class WorkspaceSession {
     }
 
     final var request = featureRequest(openFile, pos);
+    final var t = Stopwatch.start();
     return module
         .worker()
         .resolveRenameTarget(request)
-        .thenApply(
+        .thenApplyAsync(
             target -> {
               if (target == null) {
                 return null;
@@ -1973,8 +1989,13 @@ final class WorkspaceSession {
               }
 
               final Range range = RenameProvider.identifierRange(openFile.content(), pos);
-              return range == null ? null : Either3.forFirst(range);
-            });
+              return range == null
+                  ? null
+                  : Either3.<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>forFirst(
+                      range);
+            },
+            worker::execute)
+        .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
@@ -2014,14 +2035,11 @@ final class WorkspaceSession {
   // leaves the renamed member's calls in that file without one.
   private static void requireNothingLeftBehind(
       final ReferenceTarget target, final List<ReferenceMatch> matches) {
-    matches.stream()
-        .map(match -> leftBehind(target, match))
-        .flatMap(Optional::stream)
-        .findFirst()
-        .ifPresent(
-            reason -> {
-              throw renameRefused(reason);
-            });
+    refuseIfPresent(
+        matches.stream()
+            .map(match -> leftBehind(target, match))
+            .flatMap(Optional::stream)
+            .findFirst());
   }
 
   private static Optional<String> leftBehind(
@@ -2042,6 +2060,180 @@ final class WorkspaceSession {
     return Optional.empty();
   }
 
+  // A subtype implementing the method through a superclass outside the override family keeps that
+  // superclass's method, which then implements nothing; the rename cannot change it. Only an
+  // interface method can be implemented that way: a class method is what its subtypes inherit.
+  private CompletableFuture<ReferenceTarget> requireImplementationsRenamed(
+      final ReferenceTarget target) {
+    if (target.kind() != ElementKind.METHOD
+        || target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
+      return CompletableFuture.completedFuture(target);
+    }
+
+    return worker
+        .submit(
+            () ->
+                typeIndex
+                        .findType(target.qualifiedName())
+                        .filter(
+                            type ->
+                                type.kind()
+                                    == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
+                        .isEmpty()
+                    ? CompletableFuture.completedFuture(List.<String>of())
+                    : concatAll(
+                        subtypeImplementationFiles(target, typeIndex)
+                            .map(
+                                entry ->
+                                    fileQueryFuture(
+                                        entry.getKey(),
+                                        analysis ->
+                                            MethodImplementationLocator.inheritedOutsideFamily(
+                                                analysis, target, entry.getValue())))))
+        .thenCompose(future -> future)
+        .thenApply(
+            reasons -> {
+              refuseIfPresent(reasons.stream().findFirst());
+              return target;
+            });
+  }
+
+  // A rename that would change what a name means, a use the new name captures or a renamed site
+  // that would then mean something else, is refused: the edited text is attributed to check.
+  private CompletableFuture<Void> requireMeaningKept(
+      final ReferenceTarget target,
+      final List<ReferenceMatch> matches,
+      final String newName,
+      final String cursorUri,
+      final ModuleSourceConfig cursorConfig,
+      final CancelChecker cancelChecker) {
+    return worker
+        .submit(
+            () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
+        .thenCompose(conflict -> conflict)
+        .thenAccept(WorkspaceSession::refuseIfPresent);
+  }
+
+  // The files whose meaning the rename can change, checked in every module that sees the symbol or
+  // has an edit: the edited ones and, unless nothing outside the declaring file sees the symbol,
+  // those already using the new name, where a use can be captured. Each module's files are
+  // attributed with every edited file, so the renamed declarations are what they see. Only names
+  // and ranges are gathered here; the module workers read the files.
+  private CompletableFuture<Optional<String>> meaningConflict(
+      final ReferenceTarget target,
+      final List<ReferenceMatch> matches,
+      final String newName,
+      final String cursorUri,
+      final ModuleSourceConfig cursorConfig,
+      final CancelChecker cancelChecker) {
+    final Map<String, List<Range>> renamed =
+        matches.stream()
+            .filter(match -> !isGeneratedSource(LatheUri.toPath(match.uri())))
+            .collect(
+                Collectors.groupingBy(
+                    ReferenceMatch::uri,
+                    Collectors.mapping(ReferenceMatch::range, Collectors.toList())));
+    final boolean fileScoped = target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE;
+    final ModuleSourceConfig declaring = declaringConfigFor(target, cursorConfig);
+    final Set<ModuleSourceConfig> seeing =
+        Stream.of(
+                Stream.ofNullable(declaring),
+                fileScoped
+                    ? Stream.<ModuleSourceConfig>empty()
+                    : planSearchScope(target, declaring).stream(),
+                renamed.keySet().stream().flatMap(uri -> compilingConfig(uri).stream()))
+            .flatMap(configs -> configs)
+            .collect(Collectors.toUnmodifiableSet());
+    // A type whose file the rename moves is attributed under its new file name, which a public
+    // type must match; its text is still read from where it is.
+    final Map<String, String> moved =
+        renameDeclaringFile(target)
+            .map(
+                file ->
+                    Map.of(
+                        LatheUri.canonical(file.toUri().toString()),
+                        LatheUri.canonical(movedFile(file, newName).toUri().toString())))
+            .orElse(Map.of());
+    final Stream<String> usingNewName =
+        fileScoped
+            ? Stream.empty()
+            : candidateIndex.candidateUris(newName).stream()
+                .filter(uri -> !moved.containsValue(uri));
+    final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig =
+        Stream.concat(renamed.keySet().stream(), usingNewName)
+            .distinct()
+            .flatMap(
+                uri ->
+                    compilingConfig(uri)
+                        .filter(seeing::contains)
+                        .map(
+                            config ->
+                                Map.entry(
+                                    config,
+                                    new RenameBindingCheck.CheckedFile(
+                                        uri,
+                                        moved.getOrDefault(uri, uri),
+                                        renamed.getOrDefault(uri, List.of()))))
+                        .stream())
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(Map.Entry::getValue, Collectors.toList())));
+    final var check =
+        new RenameBindingCheck.RenameCheck(
+            target,
+            newName,
+            cursorUri,
+            byConfig.values().stream()
+                .flatMap(List::stream)
+                .map(file -> docs.get(file.uri()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableMap(OpenDocument::uri, OpenDocument::content)));
+    return concatAll(
+            byConfig.entrySet().stream()
+                .map(
+                    entry ->
+                        workspace
+                            .workerFor(entry.getKey())
+                            .renameBindingConflict(
+                                check,
+                                visibleEdits(byConfig, entry.getKey()),
+                                entry.getValue(),
+                                cancelChecker)
+                            .thenApply(conflict -> conflict.stream().toList())))
+        .thenApply(conflicts -> conflicts.stream().findFirst());
+  }
+
+  // The edited files a module's compile sees: its own, and its main dependencies' (a test tree's
+  // files are seen by nothing else), so the renamed declarations are what its files see.
+  private List<RenameBindingCheck.CheckedFile> visibleEdits(
+      final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig,
+      final ModuleSourceConfig config) {
+    return byConfig.entrySet().stream()
+        .filter(
+            entry ->
+                entry.getKey().equals(config)
+                    || !entry.getKey().isTestTree()
+                        && moduleGraph
+                            .downstreamModuleDirs(entry.getKey().moduleDir())
+                            .contains(config.moduleDir()))
+        .flatMap(entry -> entry.getValue().stream())
+        .filter(RenameBindingCheck.CheckedFile::edited)
+        .toList();
+  }
+
+  // The module source config that compiles the file, unless it is generated.
+  private Optional<ModuleSourceConfig> compilingConfig(final String uri) {
+    final Path file = LatheUri.toPath(uri);
+    return isGeneratedSource(file) ? Optional.empty() : workspace.moduleSourceFor(file);
+  }
+
+  private static void refuseIfPresent(final Optional<String> reason) {
+    if (reason.isPresent()) {
+      throw renameRefused(reason.get());
+    }
+  }
+
   private static ResponseErrorException renameRefused(final String message) {
     return new ResponseErrorException(
         new ResponseError(ResponseErrorCode.RequestFailed, message, null));
@@ -2057,6 +2249,10 @@ final class WorkspaceSession {
 
     return TypeSourceLocator.findSourceFile(target.qualifiedName(), workspace.allSourceRoots())
         .filter(file -> file.getFileName().toString().equals(target.simpleName() + ".java"));
+  }
+
+  private static Path movedFile(final Path file, final String newName) {
+    return file.resolveSibling("%s.java".formatted(newName));
   }
 
   private WorkspaceEdit renameEdit(
@@ -2085,7 +2281,7 @@ final class WorkspaceSession {
 
     final var file = declaringFile.get();
     final var oldUri = file.toUri().toString();
-    final var newUri = file.resolveSibling(newName + ".java").toUri().toString();
+    final var newUri = movedFile(file, newName).toUri().toString();
     return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
   }
 
@@ -2101,11 +2297,14 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
+    final var t = Stopwatch.start();
     if (!RenameProvider.isValidName(newName)) {
-      return CompletableFuture.failedFuture(
+      final var invalid =
           renameRefused(
               "`%s` is not a valid name: it must be one Java identifier, not a keyword"
-                  .formatted(newName)));
+                  .formatted(newName));
+      logRefusal("rename", uri, t, invalid);
+      return CompletableFuture.failedFuture(invalid);
     }
 
     final OpenDocument openFile = docs.get(uri);
@@ -2117,18 +2316,14 @@ final class WorkspaceSession {
     final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         workspace.moduleSourceFor(LatheUri.toPath(uri));
-    final var t = Stopwatch.start();
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
             conflict -> {
-              conflict.ifPresent(
-                  reason -> {
-                    throw renameRefused(reason);
-                  });
+              refuseIfPresent(conflict);
               return cursorWorker.resolveRenameTarget(request);
             })
-        .thenCompose(
+        .thenComposeAsync(
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
@@ -2137,6 +2332,7 @@ final class WorkspaceSession {
 
               requireRenameable(target);
               return referenceSearchTarget(cursorWorker, request, target, cancelChecker)
+                  .thenCompose(this::requireImplementationsRenamed)
                   .thenCompose(
                       searchTarget ->
                           searchReferencesForTarget(
@@ -2148,7 +2344,7 @@ final class WorkspaceSession {
                                   cancelChecker,
                                   progress,
                                   "Renaming %s".formatted(searchTarget.simpleName()))
-                              .thenApply(
+                              .thenApplyAsync(
                                   matches -> {
                                     LOG.info(
                                         () ->
@@ -2159,13 +2355,42 @@ final class WorkspaceSession {
                                                     searchTarget.simpleName(),
                                                     matches.size()));
                                     requireNothingLeftBehind(searchTarget, matches);
-                                    return renameEdit(
-                                        searchTarget,
-                                        toLocations(matches),
-                                        newName,
-                                        fileRenameSupported);
-                                  }));
-            });
+                                    return matches;
+                                  },
+                                  worker::execute)
+                              .thenCompose(
+                                  matches ->
+                                      requireMeaningKept(
+                                              searchTarget,
+                                              matches,
+                                              newName,
+                                              uri,
+                                              cursorConfig.orElse(null),
+                                              cancelChecker)
+                                          .thenApplyAsync(
+                                              kept ->
+                                                  renameEdit(
+                                                      searchTarget,
+                                                      toLocations(matches),
+                                                      newName,
+                                                      fileRenameSupported),
+                                              worker::execute)));
+            },
+            worker::execute)
+        .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
+  }
+
+  // A refusal reaches the client as the request's error; the log keeps why it was refused.
+  private static void logRefusal(
+      final String operation, final String uri, final Stopwatch t, final Throwable failure) {
+    final Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    if (cause instanceof final ResponseErrorException refused) {
+      LOG.info(
+          () ->
+              "[%s] %s %dms refused: %s"
+                  .formatted(
+                      operation, uri, t.elapsedMs(), refused.getResponseError().getMessage()));
+    }
   }
 
   // The request a position feature sends to the module's worker, for the open document.
@@ -2320,21 +2545,55 @@ final class WorkspaceSession {
               });
     }
 
+    // Planning reads session state, so it runs on the event loop; reading the candidate files does
+    // not, so it runs off it, where a search over thousands of files cannot stall the loop.
+    final var planningTimer = Stopwatch.start();
+    return worker
+        .submit(() -> planSearch(cursorConfig, target))
+        .thenApplyAsync(plans -> plans.stream().map(WorkspaceSession::readCandidates).toList())
+        .thenCompose(
+            searchInputs ->
+                runSearch(
+                    searchInputs,
+                    openFile.uri(),
+                    planningTimer,
+                    target,
+                    includeDeclaration,
+                    cancelChecker,
+                    progress,
+                    progressTitle));
+  }
+
+  private List<ModuleSearchPlan> planSearch(
+      final ModuleSourceConfig cursorConfig, final ReferenceTarget target) {
     final Path packageRel =
         target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
             ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
+    return planSearchScope(target, declaringConfigFor(target, cursorConfig)).stream()
+        .map(config -> planModuleSearch(config, target, packageRel))
+        .toList();
+  }
 
-    final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
-    final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
-    final var planningTimer = Stopwatch.start();
-    final List<ModuleSearchInputs> searchInputs =
-        configs.stream()
-            .map(
-                config ->
-                    new ModuleSearchInputs(
-                        workspace.workerFor(config), planSearchInputs(config, target, packageRel)))
-            .toList();
+  private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
+    return new ModuleSearchInputs(
+        plan.worker(),
+        new WorkspaceSearchInputs(
+            plan.openDocuments(),
+            plan.candidateUris().stream()
+                .flatMap(uri -> readDiskCandidate(uri).stream())
+                .toList()));
+  }
+
+  private CompletableFuture<List<ReferenceMatch>> runSearch(
+      final List<ModuleSearchInputs> searchInputs,
+      final String uri,
+      final Stopwatch planningTimer,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress,
+      final String progressTitle) {
     final int openCount =
         searchInputs.stream()
             .map(ModuleSearchInputs::inputs)
@@ -2355,7 +2614,7 @@ final class WorkspaceSession {
         () ->
             "[references:plan] %s planned modules=%d open=%d disk=%d maxModule=%d ready %dms"
                 .formatted(
-                    openFile.uri(),
+                    uri,
                     searchInputs.size(),
                     openCount,
                     diskCount,
@@ -2575,7 +2834,12 @@ final class WorkspaceSession {
 
   private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {}
 
-  private WorkspaceSearchInputs planSearchInputs(
+  // A module's search as planned from session state: its open documents, and the files on disk
+  // that may reference the target, not read yet.
+  private record ModuleSearchPlan(
+      CompilationWorker worker, List<OpenDocument> openDocuments, List<String> candidateUris) {}
+
+  private ModuleSearchPlan planModuleSearch(
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
     // Include the generated-sources root so a module's annotation-processor output (a record's
     // @Builder) is in scope; it references the record by simple name and never lives under a
@@ -2594,13 +2858,12 @@ final class WorkspaceSession {
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
     final var planner = new ReferenceCandidatePlanner(candidateIndex, typeIndex);
-    final List<DiskCandidate> diskCandidates =
+    final List<String> candidateUris =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
             .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, packageRel))
-            .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
-    return new WorkspaceSearchInputs(openForConfig, diskCandidates);
+    return new ModuleSearchPlan(workspace.workerFor(config), openForConfig, candidateUris);
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
@@ -2767,14 +3030,27 @@ final class WorkspaceSession {
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, WorkspaceSession::unionNames));
-    return candidatesByFile.entrySet().stream()
-        .map(entry -> methodImplementationFuture(entry.getKey(), entry.getValue(), target))
-        .reduce(
-            CompletableFuture.completedFuture(List.of()),
-            (left, right) ->
-                left.thenCombine(
-                    right,
-                    (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
+    return concatAll(
+        candidatesByFile.entrySet().stream()
+            .map(
+                entry ->
+                    fileQueryFuture(
+                        entry.getKey(),
+                        analysis ->
+                            MethodImplementationLocator.locate(
+                                analysis,
+                                target,
+                                entry.getValue(),
+                                entry.getKey().toUri().toString()))));
+  }
+
+  private static <T> CompletableFuture<List<T>> concatAll(
+      final Stream<CompletableFuture<List<T>>> futures) {
+    return futures.reduce(
+        CompletableFuture.completedFuture(List.of()),
+        (left, right) ->
+            left.thenCombine(
+                right, (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
   }
 
   private Stream<Map.Entry<Path, Set<String>>> subtypeImplementationFiles(
@@ -2839,8 +3115,10 @@ final class WorkspaceSession {
     return Stream.concat(left.stream(), right.stream()).collect(Collectors.toUnmodifiableSet());
   }
 
-  private CompletableFuture<List<Location>> methodImplementationFuture(
-      final Path sourceFile, final Set<String> candidateBinaryNames, final ReferenceTarget target) {
+  // A query over a source file's analysis in its own module: the open document's, or else the
+  // file on disk attributed once.
+  private <T> CompletableFuture<List<T>> fileQueryFuture(
+      final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
     final var config = workspace.moduleSourceFor(sourceFile);
     if (config.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
@@ -2858,10 +3136,10 @@ final class WorkspaceSession {
     final var worker = workspace.workerFor(config.get());
     if (openFile != null) {
       touchAnalysisCache(openFile.uri());
-      return worker.methodImplementations(uri, content, version, target, candidateBinaryNames);
+      return worker.queryFile(uri, content, version, query);
     }
 
-    return worker.methodImplementationsTransient(uri, content, target, candidateBinaryNames);
+    return worker.queryFileTransient(uri, content, query);
   }
 
   CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
@@ -2985,8 +3263,9 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final var worker = workspace.workerFor(config);
-    final var inputs = planSearchInputs(config, target, packageRel);
+    final ModuleSearchInputs planned = readCandidates(planModuleSearch(config, target, packageRel));
+    final var worker = planned.worker();
+    final var inputs = planned.inputs();
     return Stream.concat(
         inputs.openDocuments().stream()
             .map(

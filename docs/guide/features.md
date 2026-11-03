@@ -13,7 +13,7 @@ See the [editor guides](../../README.md#editors) for each client.
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace; on a functional interface's method, also the lambdas and method references that implement it | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
-| Rename                       | renames a symbol and every reference **across every module of the build** — as one atomic edit (locals, fields, methods incl. the override family, record components, constructors) | `textDocument/rename` · `textDocument/prepareRename` |
+| Rename                       | renames a symbol and every reference **across every module of the build** — as one atomic edit (locals, fields, methods incl. the override family, record components, constructors); refuses, naming the place, a rename that would change what a name means (a shadowed field, a call captured by the renamed overload) | `textDocument/rename` · `textDocument/prepareRename` |
 | Instantiation sites          | where a type is instantiated (`new AppServer(...)`), from the type under the cursor               | `workspace/executeCommand` · `lathe.instantiations` |
 | Hover                        | AST-resolved Javadoc, rendered as Markdown                                                        | `textDocument/hover`                              |
 | Signature help               | parameter lists for methods and constructors                                                      | `textDocument/signatureHelp`                      |
@@ -60,6 +60,7 @@ Adapter Protocol for debugging), not standard LSP methods. The Neovim commands (
 | Feature  | What it does                                                                                                      | Command                                                   |
 |----------|------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------|
 | New type | scaffolds a `class` / `interface` / `record` / `enum` / `annotation` / `test`, plus `package-info` and `module-info` — pick the kind, fuzzy-pick the destination package, and name it; the server resolves placement, writes the file, and opens it | Neovim `:LatheNew` |
+| Go to test | from a class to its test (`FooTest`, `FooIT`, … in any module; several picked from), from a test back to its class; no test offers to create one | Neovim `:LatheGoToTest` · `lathe.testCounterparts` |
 
 `:LatheNew <kind>` adds a type in the current package; bare `:LatheNew` runs a guided module/package
 picker. The server owns placement — module, source root, package, and skeleton.

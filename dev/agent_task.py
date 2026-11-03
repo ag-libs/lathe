@@ -35,7 +35,7 @@ def ask(client, step, tool, args, lines=14):
     return text
 
 
-client = mcp.McpClient(mcp._default_launcher(), ws)
+client = mcp.McpClient(mcp.launcher_for(ws), ws)
 originals = {p: p.read_text() for p in (DURATION, CALLER, TEST)}
 try:
     client.initialize()

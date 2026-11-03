@@ -829,6 +829,39 @@ class ReferenceLocatorTest {
   }
 
   @Test
+  void localScope_lambdaCatchAndResourceInTwoMethods_eachScopedToItsDeclaration()
+      throws IOException {
+    final var source =
+        """
+        import java.io.StringReader;
+        import java.util.function.IntUnaryOperator;
+        class Kinds {
+            int first() throws Exception {
+                IntUnaryOperator f = n -> n + n;
+                try (var r = new StringReader("a")) { r.read(); r.close(); }
+                try { return f.applyAsInt(1); } catch (RuntimeException e) { throw e; }
+            }
+            int second() throws Exception {
+                IntUnaryOperator f = n -> n;
+                try (var r = new StringReader("b")) { r.read(); }
+                try { return f.applyAsInt(2); } catch (RuntimeException e) { throw e; }
+            }
+        }
+        """;
+    final var analysis = compile(source);
+
+    assertThat(refs(analysis, targetAt(analysis, "n -> n + n", "n"), true))
+        .hasSize(3)
+        .noneMatch(m -> m.range().getStart().equals(posOf(source, "n -> n;", "n")));
+    assertThat(refs(analysis, targetAt(analysis, "r = new StringReader(\"a\")", "r"), true))
+        .hasSize(3)
+        .noneMatch(
+            m -> m.range().getStart().equals(posOf(source, "r = new StringReader(\"b\")", "r")));
+    assertThat(refs(analysis, targetAt(analysis, "e) { throw e; }", "e"), true)).hasSize(2);
+    assertThat(refs(analysis, targetAt(analysis, "n -> n;", "n"), true)).hasSize(2);
+  }
+
+  @Test
   void typeParameter_declarationAndUses_scopedToDeclaringMethod() throws IOException {
     final var source =
         """

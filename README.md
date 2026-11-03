@@ -78,12 +78,12 @@ More options, including setup without the extension and Gradle's personal init s
 
 ## Editors
 
-| Editor           | Support                                                                                                                  | Guide                                                                     |
-|------------------|--------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------|
-| Neovim           | Full client: LSP plus run, test, debug and new-type scaffolding                                                          | [Neovim](docs/guide/editors/neovim.md) · [example config](examples/nvim/) |
-| VS Code / Cursor | "Lathe for Java" extension ([`.vsix` on each release](https://github.com/ag-libs/lathe/releases), preview, standard LSP) | [VS Code](docs/guide/editors/vscode.md)                                   |
-| Emacs            | Built-in [Eglot](https://www.gnu.org/software/emacs/manual/html_mono/eglot.html), no plugin needed                       | [Emacs](docs/guide/editors/emacs.md)                                      |
-| Zed              | The [Java extension](https://github.com/zed-extensions/java), plus one settings file                                     | [Zed](docs/guide/editors/zed.md)                                          |
+| Editor           | Support                                                                                                                  | Guide                                                                             |
+|------------------|--------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| Neovim           | Full client: LSP plus run, test, debug and new-type scaffolding                                                          | [Neovim](docs/guide/editors/neovim.md#install) · [example config](examples/nvim/) |
+| VS Code / Cursor | "Lathe for Java" extension ([`.vsix` on each release](https://github.com/ag-libs/lathe/releases), preview, standard LSP) | [VS Code](docs/guide/editors/vscode.md)                                           |
+| Emacs            | Built-in [Eglot](https://www.gnu.org/software/emacs/manual/html_mono/eglot.html), no plugin needed                       | [Emacs](docs/guide/editors/emacs.md)                                              |
+| Zed              | The [Java extension](https://github.com/zed-extensions/java), plus one settings file                                     | [Zed](docs/guide/editors/zed.md)                                                  |
 
 Lathe is a standard language server, so other LSP clients can use it too.
 

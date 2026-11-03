@@ -538,9 +538,75 @@ do -- a Ctrl-C at a picker cancels cleanly instead of surfacing the LSP-callback
 	spec.check("a real picker error still propagates", pcall(new.create), false)
 end
 
-do -- setup registers :LatheNew
+do -- :LatheGoToTest: one test opens, several are picked from, none offers to create one
+	-- Real path: macOS's temp dir is a symlink, and a buffer is named by the file's real path.
+	local dir = vim.fn.tempname()
+	vim.fn.mkdir(dir, "p")
+	dir = vim.uv.fs_realpath(dir)
+	local foo_test = dir .. "/FooTest.java"
+	local foo_it = dir .. "/FooIT.java"
+	vim.fn.writefile({ "class FooTest {}" }, foo_test)
+	vim.fn.writefile({ "class FooIT {}" }, foo_it)
+	local function target(path, name)
+		return { uri = vim.uri_from_fname(path), qualifiedName = name }
+	end
+
+	vim.cmd.edit(dir .. "/Foo.java")
+	stub_server({ ["lathe.testCounterparts"] = { fromTest = false, targets = { target(foo_test, "com.x.FooTest") } } })
+	new.go_to_test()
+	spec.check("one test opens", vim.api.nvim_buf_get_name(0), foo_test)
+
+	vim.cmd.edit(dir .. "/Foo.java")
+	stub_server({
+		["lathe.testCounterparts"] = {
+			fromTest = false,
+			targets = { target(foo_test, "com.x.FooTest"), target(foo_it, "com.x.FooIT") },
+		},
+	})
+	local shown
+	pick.pick = function(opts)
+		shown = { title = opts.title, labels = vim.tbl_map(opts.format, opts.items) }
+		opts.on_choice(opts.items[2])
+	end
+	new.go_to_test()
+	spec.check("several: picked under Test:", shown.title, "Test:")
+	spec.check("several: labelled by qualified name", table.concat(shown.labels, ","), "com.x.FooTest,com.x.FooIT")
+	spec.check("several: the pick opens", vim.api.nvim_buf_get_name(0), foo_it)
+
+	vim.cmd.edit(dir .. "/Foo.java")
+	local requests = stub_server({
+		["lathe.testCounterparts"] = { fromTest = false, targets = {} },
+		["lathe.resolveContext"] = { moduleRel = "app", scope = "main", pkg = "com.x" },
+		["lathe.createType"] = result(dir .. "/created/FooTest.java"),
+	})
+	local offered
+	stub_ui({})
+	pick.pick = function(opts)
+		offered = opts.title .. " " .. opts.items[1]
+		opts.on_choice(opts.items[1])
+	end
+	new.go_to_test()
+	local created = request_for(requests, "lathe.createType")
+	spec.check("none: offers to create the test", offered, "No test found: Create test FooTest")
+	spec.check(
+		"none: creates it in the buffer's module and package, test scope",
+		created and (created.moduleRel .. "/" .. created.kind .. "/" .. created.pkg .. "/" .. created.name),
+		"app/test/com.x/FooTest"
+	)
+
+	vim.cmd.edit(dir .. "/BarTest.java")
+	requests = stub_server({ ["lathe.testCounterparts"] = { fromTest = true, targets = {} } })
+	pick.pick = function(_)
+		error("no pick expected")
+	end
+	spec.check("none from a test: no pick, no create", pcall(new.go_to_test), true)
+	spec.check("none from a test: nothing created", request_for(requests, "lathe.createType"), nil)
+end
+
+do -- setup registers :LatheNew and :LatheGoToTest
 	new.setup()
 	spec.check("LatheNew registered", vim.fn.exists(":LatheNew"), 2)
+	spec.check("LatheGoToTest registered", vim.fn.exists(":LatheGoToTest"), 2)
 end
 
 spec.finish("new_spec")

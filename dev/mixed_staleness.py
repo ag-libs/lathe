@@ -113,7 +113,7 @@ if dirty:
     raise SystemExit("workspace not clean: %s" % dirty[:5])
 
 editor = Editor()
-agent = mcp.McpClient(mcp._default_launcher(), ws)
+agent = mcp.McpClient(mcp.launcher_for(ws), ws)
 agent.initialize()
 try:
     editor.open(OPEN)

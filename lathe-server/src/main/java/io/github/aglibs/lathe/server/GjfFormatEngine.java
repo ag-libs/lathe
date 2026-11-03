@@ -78,8 +78,10 @@ final class GjfFormatEngine implements FormatEngine {
     final ClassLoader loader = FormatterLoader.isolated(classpath);
     final Class<?> optionsType = type(loader, "JavaFormatterOptions");
     final Class<?> builderType = type(loader, "JavaFormatterOptions$Builder");
+    // Style is an enum before google-java-format 2.0 and a record with GOOGLE / AOSP constants
+    // since; both have a static valueOf(String).
     final Class<?> styleType = type(loader, "JavaFormatterOptions$Style");
-    final Object styleValue = enumConstant(styleType, style);
+    final Object styleValue = styleType.getMethod("valueOf", String.class).invoke(null, style);
     final Object builder = optionsType.getMethod("builder").invoke(null);
     builderType.getMethod("style", styleType).invoke(builder, styleValue);
     // Set only when it differs from the builder's own default: palantir before 2.36 has no
@@ -173,11 +175,6 @@ final class GjfFormatEngine implements FormatEngine {
 
   private boolean enabled(final String option, final boolean defaultValue) {
     return Boolean.parseBoolean(options.getOrDefault(option, String.valueOf(defaultValue)));
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private static Object enumConstant(final Class<?> type, final String name) {
-    return Enum.valueOf((Class) type, name);
   }
 
   // The formatters sharing google-java-format's API, with the javadoc formatting their options

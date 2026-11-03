@@ -117,6 +117,7 @@ freely.
 | Find references | `vim.lsp.buf.references()` | `grr` | `grr` |
 | Highlight uses of the symbol in the buffer | `vim.lsp.buf.document_highlight()` / `clear_references()` | — | `<leader>lh`, or automatic (below) |
 | Instantiation sites of a type (`new XXX(...)`) | `:LatheInstances` | — | `grN` |
+| Go to the test of the file's class, or from a test to its class | `:LatheGoToTest` | — | `grT` |
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-s>` (normal too) |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
@@ -146,6 +147,17 @@ suggested mapping sits in the references family (capital `N` for i**N**stantiati
 
 ```lua
 vim.keymap.set('n', 'grN', '<cmd>LatheInstances<cr>', { desc = 'Lathe: instantiation sites of the type' })
+```
+
+`:LatheGoToTest` goes from a class to **its test**, and from a test back to **the class it tests** (IntelliJ's
+Navigate → Test). It works on the file's top-level class and finds tests by the names the build's test runs
+pick up by default (`FooTest`, `FooTests`, `FooTestCase`, `FooIT`, `FooITCase`, `TestFoo`, `ITFoo`), in any
+module, so a test in a separate test module is found too. One match opens; several open a picker, same
+package and module first. With no test it offers **Create test `FooTest`**, the `:LatheNew test` step in the
+file's package. Suggested mapping (`grt` is Neovim's go to type definition, so capital `T`):
+
+```lua
+vim.keymap.set('n', 'grT', '<cmd>LatheGoToTest<cr>', { desc = 'Lathe: go to test / tested class' })
 ```
 
 `:LatheTypeHierarchy` shows the **whole inheritance neighbourhood of the type under the cursor** — all

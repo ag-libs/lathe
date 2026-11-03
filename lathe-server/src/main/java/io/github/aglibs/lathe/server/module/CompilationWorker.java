@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
 import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
@@ -11,6 +12,7 @@ import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -261,6 +263,16 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.renameConflict(request, newName));
   }
 
+  public CompletableFuture<Optional<String>> renameBindingConflict(
+      final RenameBindingCheck.RenameCheck check,
+      final List<RenameBindingCheck.CheckedFile> visibleEdits,
+      final List<RenameBindingCheck.CheckedFile> checked,
+      final CancelChecker cancelChecker) {
+    return submit(
+        ctx -> ctx.renameBindingConflict(check, visibleEdits, checked, cancelChecker),
+        cancelChecker);
+  }
+
   public CompletableFuture<List<ReferenceTarget>> instantiationTargets(
       final SourceFeatureRequest request, final CancelChecker cancelChecker) {
     return submit(ctx -> ctx.instantiationTargets(request), cancelChecker);
@@ -318,23 +330,19 @@ public final class CompilationWorker {
         cancelChecker);
   }
 
-  public CompletableFuture<List<Location>> methodImplementations(
+  public <T> CompletableFuture<List<T>> queryFile(
       final String uri,
       final String content,
       final int version,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
-    return submit(
-        ctx -> ctx.methodImplementations(uri, content, version, target, candidateBinaryNames));
+      final Function<AttributedFileAnalysis, List<T>> query) {
+    return submit(ctx -> ctx.queryFile(uri, content, version, query));
   }
 
-  public CompletableFuture<List<Location>> methodImplementationsTransient(
+  public <T> CompletableFuture<List<T>> queryFileTransient(
       final String uri,
       final String content,
-      final ReferenceTarget target,
-      final Set<String> candidateBinaryNames) {
-    return submit(
-        ctx -> ctx.methodImplementationsTransient(uri, content, target, candidateBinaryNames));
+      final Function<AttributedFileAnalysis, List<T>> query) {
+    return submit(ctx -> ctx.queryFileTransient(uri, content, query));
   }
 
   public CompletableFuture<Optional<String>> functionalInterfaceName(

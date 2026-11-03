@@ -23,6 +23,8 @@ public final class LatheLayout {
   // The lock JUL's FileHandler keeps beside its file; a server killed outright leaves it behind.
   public static final String LOG_LOCK_SUFFIX = ".lck";
   public static final String SERVERS_DIR = "servers";
+  // Under a module compiler's temp tree: other modules' sources it attributes with its own files.
+  public static final String FOREIGN_SOURCES_DIR = "foreign-sources";
 
   // Best-effort machine-global copy of the newest installed server's launchers, for the one
   // consumer with no workspace context: a user-global MCP registration. Version-correct clients
