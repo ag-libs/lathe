@@ -108,7 +108,27 @@ public final class SourceLocator {
       }
     }.scan(cu, null);
 
-    return result.get();
+    return enumConstantAt(trees, cu, result.get(), offset);
+  }
+
+  // A constant with a body, `RED { … }`, is a variable initialised by `new Color() { … }`, whose
+  // anonymous class tree javac starts at the constant's name; on the name, before the `new`
+  // itself, the tree meant is the constant.
+  private static TreePath enumConstantAt(
+      final Trees trees, final CompilationUnitTree cu, final TreePath path, final long offset) {
+    final TreePath creation =
+        path != null && path.getLeaf() instanceof ClassTree ? path.getParentPath() : null;
+    if (creation == null
+        || !(creation.getLeaf() instanceof NewClassTree)
+        || !(creation.getParentPath().getLeaf() instanceof VariableTree)
+        || offset >= trees.getSourcePositions().getStartPosition(cu, creation.getLeaf())) {
+      return path;
+    }
+
+    final var element = trees.getElement(creation.getParentPath());
+    return element != null && element.getKind() == ElementKind.ENUM_CONSTANT
+        ? creation.getParentPath()
+        : path;
   }
 
   public static Position offsetToPosition(final String content, final long offset) {

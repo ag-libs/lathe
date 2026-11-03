@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import java.util.List;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;
 import javax.tools.Diagnostic;
@@ -341,6 +342,29 @@ class SourceLocatorTest extends SampleFixture {
       assertFindsName(analysis, "{ Color }", 2, "Color");
       assertFindsName(analysis, "int x)", 4, "x");
       assertFindsName(analysis, "class Other", 6, "Other");
+    }
+  }
+
+  // A constant with a body: javac wraps the body in an anonymous class whose tree starts at the
+  // constant's name, so the name must still resolve to the constant, as a constant without one
+  // does.
+  @Test
+  void elementAt_nameOfEnumConstantWithBody_isTheConstant() {
+    final String source =
+        "enum Color {\n  RED { String label() { return \"r\"; } },\n  GREEN;\n  String label() { return \"g\"; }\n}\n";
+    try (var compiler = new TempSourceCompiler()) {
+      final var analysis =
+          compiler.compile(TempSourceCompiler.TEST_URI, source, CompileMode.OPEN).fileAnalysis();
+
+      for (final String name : List.of("RED", "GREEN")) {
+        final var path =
+            SourceLocator.pathAt(analysis.trees(), analysis.tree(), source.indexOf(name) + 1);
+        final var element = SourceLocator.elementAt(analysis.trees(), path);
+
+        assertThat(element).as(name).isNotNull();
+        assertThat(element.getKind()).as(name).isEqualTo(ElementKind.ENUM_CONSTANT);
+        assertThat(element.getSimpleName().toString()).as(name).isEqualTo(name);
+      }
     }
   }
 

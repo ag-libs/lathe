@@ -7,6 +7,36 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-086 — An enum constant with a body cannot be resolved at its declaration — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools by name or column, likely the editor's hover and definition there.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+At `RED {`, tools answer "no symbol named 'RED'", by name and by column, although `outline` lists it at
+16:9. Constants without a body, and every use site, resolve.
+
+### Resolution
+
+javac's anonymous class tree for a constant's body starts at the constant's name, ahead of the `new Color() { … }` that
+holds it, so the position found there was the anonymous class, whose element is the enum: tools answered "no symbol
+named 'RED'" and hover and definition described the wrong thing. `SourceLocator.pathAt` now returns the constant at its
+name, before the creation itself starts; positions inside the body are unchanged. Hover, definition and every tool that
+finds the symbol at a position resolve the constant, as for a constant without a body.
+
+### Regression targets
+
+`SourceLocatorTest.elementAt_nameOfEnumConstantWithBody_isTheConstant`,
+`LatheEngineTest.describeAndDefinition_enumConstantWithBody_resolveTheConstant`.
+
+---
+
 ## EG-085 — Implementations miss anonymous classes and enum constant bodies — done
 
 **Status: done.**

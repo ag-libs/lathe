@@ -714,32 +714,6 @@ None yet.
 
 ---
 
-## EG-086 — An enum constant with a body cannot be resolved at its declaration
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP tools by name or column, likely the editor's hover and definition there.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-At `RED {`, tools answer "no symbol named 'RED'", by name and by column, although `outline` lists it at
-16:9. Constants without a body, and every use site, resolve.
-
-### Fix direction
-
-Map the constant's name position to its `VariableTree` (javac wraps a bodied constant in an anonymous
-class whose tree overlaps the name).
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
