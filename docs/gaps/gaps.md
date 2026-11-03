@@ -545,32 +545,6 @@ None yet.
 
 ---
 
-## EG-073 — Find references in a 20,000-line file takes more than 90 seconds
-
-**Status: documented**
-
-**Value: low — Size: M**
-
-**Affects: the editor and MCP.**
-
-Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
-
-### Observed behaviour
-
-On a synthetic 20,000-line buffer, find references did not answer within 90 s.
-Real files are rarely this large, but generated sources can be.
-0.1.24 behaves the same.
-
-### Fix direction
-
-Profile the single-file search on a large unit; bound the work per file, or report progress and allow cancellation as reactor-wide searches do.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
 
 **Status: documented**
@@ -2341,7 +2315,7 @@ Every tool call reads the file from disk and passes it to the analysis as a new 
 (`LatheEngine.compileFromDisk`), so the session compiles it again (`[compile:open]`) even when nothing changed.
 Four parallel calls (`find_references` ×3, `describe_symbol`) compiled the same file four times in 50 ms;
 three refused renames compiled it three times. It costs 15–40 ms per compile there (186 ms under load),
-more on very large files (cf. EG-073).
+more on very large files.
 
 ### Fix direction
 

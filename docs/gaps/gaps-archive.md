@@ -175,6 +175,40 @@ For a call that does not attribute yet the active overload is the first whose ar
 
 ---
 
+## EG-073 — Find references on a local in a 20,000-line file takes more than 90 seconds — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor and MCP.**
+
+Found by the pre-release test rounds (2026-10-29/30) on EqualsVerifier (fuzzing).
+
+### Observed behaviour
+
+On a synthetic 20,000-line buffer, find references did not answer within 90 s.
+Reproduced on generated files of 2,000 methods, each with its own local `i`: references on one `i` took
+274 ms at 2,254 lines, 884 ms at 4,504, 3,259 ms at 9,004, and 13,654 ms at 18,004, four times as long for each
+doubling, while a field took under 100 ms and the compile under 0.5 s.
+documentHighlight and rename run the same search, highlight on every cursor move.
+
+### Resolution
+
+Every same-named local in a file matches a local target's structural family, and each match was told apart by its
+declaration offset, which `Trees.getPath(Element)` finds by walking the whole file: one walk per same-named local.
+The target's own element is now found once, by one walk to its declaration offset, and compared by identity; the
+duplicate check on matched ranges is a set instead of a scan of the results.
+References on the local at 18,004 lines now take 14 ms.
+
+### Regression targets
+
+`ReferenceLocatorTest.localScope_lambdaCatchAndResourceInTwoMethods_eachScopedToItsDeclaration`,
+`ReferenceLocatorTest.localScope_sameNameInAnotherMethod_notMerged`,
+`ReferenceLocatorTest.localScope_blockScopeShadowing_distinctDeclarationsNotMerged`.
+
+---
+
 ## EG-079 — Outgoing calls include calls from the class's field and enum initializers — done
 
 **Status: done.**
