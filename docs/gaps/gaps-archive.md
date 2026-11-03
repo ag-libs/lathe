@@ -7,6 +7,71 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-085 — Implementations miss anonymous classes and enum constant bodies — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_implementations` and `analyze_change`, likely the editor's go to implementation.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `HttpClientBuilder:284`,
+`MessageQueueFactory:41`) and an enum constant body's override (`RED { label() }`) are absent, so
+`analyze_change` reports an override family of 7 where there are 10.
+`rename_symbol` and `find_references` include them.
+
+### Resolution
+
+Go to implementation, which MCP `find_implementations` shares, now searches the type index's unnamed subtypes too
+(`Outer$1` maps to `Outer`'s file), and `MethodImplementationLocator` recognises an anonymous class from the attributed
+tree, a subtype of the target's owner, not by javac's numbering; an enum constant's body is the same case. On a method
+the result is the overriding method in the body; on a type, the `new Handler() {` site.
+Dropwizard's `Managed.stop` now answers 10 implementations, the three anonymous classes included (7 before).
+MCP `analyze_change` builds its override family from the same search, so it now lists them too (the downward half of
+MC-67); MC-67's upward half and MC-69 remain open.
+
+### Regression targets
+
+`MethodImplementationTest.methodImplementations_anonymousClassAndEnumConstantBody_foundUnrelatedNot`,
+`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+
+---
+
+## EG-081 — Implementations of an interface omit lambdas that implementations of its method include — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor's go to implementation and MCP `find_implementations`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On Helidon's `Handler` interface, `find_implementations` answers 23 classes and no lambdas;
+on `Handler.handle` it answers 225, lambdas and method references such as `this::handle` included.
+The tool's description says it includes lambdas, but asked on the type it misses the most common kind of
+implementation of a functional interface.
+
+### Resolution
+
+On a type, go to implementation now adds to its named subtypes the anonymous subclasses and, for a functional
+interface, the lambdas and method references the method search finds for its single abstract method; a lambda converted
+to another functional interface is not listed. Helidon's `Handler` now answers 226 (23 before), at the cost of
+attributing the files with lambdas (about 4 s there, as `Handler.handle` already took).
+
+### Regression targets
+
+`MethodImplementationTest.typeImplementations_functionalInterface_anonymousClassesLambdasAndMethodReferences`,
+`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+
+---
+
 ## FR-022 — A rename to a name a use already sees silently rebinds the use — done
 
 **Status: done.**

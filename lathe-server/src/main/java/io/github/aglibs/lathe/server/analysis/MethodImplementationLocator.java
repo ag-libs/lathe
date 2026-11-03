@@ -5,6 +5,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberReferenceTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
@@ -19,8 +20,8 @@ import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import org.eclipse.lsp4j.Location;
@@ -32,10 +33,15 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   private final AttributedFileAnalysis analysis;
   private final ReferenceTarget target;
   private final Set<String> candidateBinaryNames;
+  // The method to find implementations of, or null for a type target, whose anonymous subclasses
+  // are found instead.
   private final ExecutableElement targetMethod;
-  // The functional interface whose single abstract method is the target, or null when the target is
-  // not a SAM; drives lambda / method-reference matching.
-  private final DeclaredType functionalInterface;
+  // The target method's owner, or the target type.
+  private final TypeElement targetType;
+  // The single abstract method a lambda or method reference must implement to count, or null when
+  // the
+  // target is not a functional interface or its method.
+  private final ExecutableElement samMethod;
   private final String uri;
   private final List<Location> results = new ArrayList<>();
 
@@ -44,13 +50,15 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
       final ExecutableElement targetMethod,
-      final DeclaredType functionalInterface,
+      final TypeElement targetType,
+      final ExecutableElement samMethod,
       final String uri) {
     this.analysis = analysis;
     this.target = target;
     this.candidateBinaryNames = candidateBinaryNames;
     this.targetMethod = targetMethod;
-    this.functionalInterface = functionalInterface;
+    this.targetType = targetType;
+    this.samMethod = samMethod;
     this.uri = uri;
   }
 
@@ -59,13 +67,18 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames,
       final String uri) {
-    if (target.kind() != ElementKind.METHOD) {
+    final boolean typeTarget = target.kind().isClass() || target.kind().isInterface();
+    if (target.kind() != ElementKind.METHOD && !typeTarget) {
       return List.of();
     }
 
     final ExecutableElement targetMethod =
-        target.resolveMethodElement(analysis.elements(), analysis.types());
-    if (targetMethod == null) {
+        typeTarget ? null : target.resolveMethodElement(analysis.elements(), analysis.types());
+    final TypeElement targetType =
+        typeTarget
+            ? analysis.elements().getTypeElement(target.qualifiedName().replace('$', '.'))
+            : targetMethod == null ? null : (TypeElement) targetMethod.getEnclosingElement();
+    if (targetType == null) {
       return List.of();
     }
 
@@ -75,7 +88,8 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
             target,
             candidateBinaryNames,
             targetMethod,
-            functionalInterfaceOf(targetMethod, analysis),
+            targetType,
+            samMethod(targetType, targetMethod, analysis),
             uri);
     locator.scan(analysis.tree(), null);
     return List.copyOf(locator.results);
@@ -125,36 +139,77 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
         .findFirst();
   }
 
-  private static DeclaredType functionalInterfaceOf(
-      final ExecutableElement targetMethod, final AttributedFileAnalysis analysis) {
-    if (!(targetMethod.getEnclosingElement() instanceof final TypeElement owner)
-        || owner.getKind() != ElementKind.INTERFACE) {
+  // The target type's single abstract method, when the target is a functional interface or that
+  // method; null otherwise.
+  private static ExecutableElement samMethod(
+      final TypeElement targetType,
+      final ExecutableElement targetMethod,
+      final AttributedFileAnalysis analysis) {
+    if (targetType.getKind() != ElementKind.INTERFACE) {
       return null;
     }
 
-    final var sam = FunctionalInterfaces.singleAbstractMethod(owner, analysis.elements());
-    return sam != null && sam.equals(targetMethod) ? (DeclaredType) owner.asType() : null;
+    final var sam = FunctionalInterfaces.singleAbstractMethod(targetType, analysis.elements());
+    return targetMethod == null || targetMethod.equals(sam) ? sam : null;
   }
 
   @Override
   public Void visitClass(final ClassTree classTree, final Void unused) {
     final var classPath = getCurrentPath();
-    final var element = analysis.trees().getElement(classPath);
-    if (element instanceof final TypeElement candidateType
-        && candidateBinaryNames.contains(
-            analysis.elements().getBinaryName(candidateType).toString())) {
-      candidateType.getEnclosedElements().stream()
-          .filter(ExecutableElement.class::isInstance)
-          .map(ExecutableElement.class::cast)
-          .filter(method -> method.getKind() == ElementKind.METHOD)
-          .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
-          .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
-          .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
-          .flatMap(method -> location(method, classTree, classPath).stream())
-          .forEach(results::add);
+    if (analysis.trees().getElement(classPath) instanceof final TypeElement candidateType) {
+      addImplementation(candidateType, classTree, classPath);
     }
 
     return super.visitClass(classTree, unused);
+  }
+
+  // An anonymous class is recognised from the attributed tree, not by binary name: javac numbers
+  // anonymous classes, and the compiled classes' numbers need not match the edited source's. An
+  // enum
+  // constant's body is an anonymous subclass of its enum.
+  private void addImplementation(
+      final TypeElement candidateType, final ClassTree classTree, final TreePath classPath) {
+    final boolean anonymous = isAnonymousSubtype(candidateType);
+    if (targetMethod == null) {
+      if (anonymous) {
+        anonymousClassLocation(classPath).ifPresent(results::add);
+      }
+
+      return;
+    }
+
+    if (!anonymous
+        && !candidateBinaryNames.contains(
+            analysis.elements().getBinaryName(candidateType).toString())) {
+      return;
+    }
+
+    candidateType.getEnclosedElements().stream()
+        .filter(ExecutableElement.class::isInstance)
+        .map(ExecutableElement.class::cast)
+        .filter(method -> method.getKind() == ElementKind.METHOD)
+        .filter(method -> !method.getModifiers().contains(Modifier.ABSTRACT))
+        .filter(method -> method.getSimpleName().contentEquals(target.simpleName()))
+        .filter(method -> analysis.elements().overrides(method, targetMethod, candidateType))
+        .flatMap(method -> location(method, classTree, classPath).stream())
+        .forEach(results::add);
+  }
+
+  private boolean isAnonymousSubtype(final TypeElement candidateType) {
+    final var types = analysis.types();
+    return candidateType.getNestingKind() == NestingKind.ANONYMOUS
+        && types.isSubtype(
+            types.erasure(candidateType.asType()), types.erasure(targetType.asType()));
+  }
+
+  // Where an anonymous class is created: its `new Handler() {`, or an enum constant with a body.
+  private Optional<Location> anonymousClassLocation(final TreePath classPath) {
+    if (!(classPath.getParentPath().getLeaf() instanceof final NewClassTree creation)) {
+      return Optional.empty();
+    }
+
+    final var start = SourceLocator.range(analysis.trees(), analysis.tree(), creation).getStart();
+    return Optional.of(new Location(uri, new Range(start, start)));
   }
 
   @Override
@@ -170,7 +225,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   }
 
   private void addFunctionalImplementation(final ExpressionTree node) {
-    if (functionalInterface == null) {
+    if (samMethod == null) {
       return;
     }
 
@@ -192,8 +247,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   }
 
   private boolean implementsTarget(final ExecutableElement sam, final TypeElement convertedType) {
-    return sam.equals(targetMethod)
-        || analysis.elements().overrides(sam, targetMethod, convertedType);
+    return sam.equals(samMethod) || analysis.elements().overrides(sam, samMethod, convertedType);
   }
 
   private Optional<Location> location(

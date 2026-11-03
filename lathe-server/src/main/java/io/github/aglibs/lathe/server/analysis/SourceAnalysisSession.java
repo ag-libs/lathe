@@ -756,11 +756,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return analysis != null ? query.apply(analysis) : List.of();
   }
 
-  /**
-   * The simple name of the functional interface whose single abstract method is under the cursor,
-   * or empty when the cursor is not on such a SAM. Lets the workspace decide whether to widen the
-   * implementation search to lambda / method-reference sites that spell that interface.
-   */
+  // The simple name of the functional interface under the cursor, or whose single abstract method
+  // is; empty otherwise. Lets the workspace widen an implementation search to the lambdas and
+  // method references that implement it.
   public Optional<String> functionalInterfaceName(final SourceFeatureRequest request) {
     final var cur = resolve(request);
     if (cur == null) {
@@ -768,16 +766,20 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final ExecutableElement method)
-        || method.getKind() != ElementKind.METHOD
-        || !(method.getEnclosingElement() instanceof final TypeElement owner)
-        || owner.getKind() != ElementKind.INTERFACE) {
+    if (element == null) {
       return Optional.empty();
     }
 
-    final var sam = FunctionalInterfaces.singleAbstractMethod(owner, cur.analysis().elements());
-    return sam != null && sam.equals(method)
-        ? Optional.of(owner.getSimpleName().toString())
+    final var owner =
+        element instanceof final TypeElement type ? type : element.getEnclosingElement();
+    if (!(owner instanceof final TypeElement ownerType)
+        || ownerType.getKind() != ElementKind.INTERFACE) {
+      return Optional.empty();
+    }
+
+    final var sam = FunctionalInterfaces.singleAbstractMethod(ownerType, cur.analysis().elements());
+    return sam != null && (element == ownerType || sam.equals(element))
+        ? Optional.of(ownerType.getSimpleName().toString())
         : Optional.empty();
   }
 
