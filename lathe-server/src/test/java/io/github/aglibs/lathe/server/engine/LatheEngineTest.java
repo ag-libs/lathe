@@ -250,6 +250,29 @@ class LatheEngineTest {
     assertThat(found.apply("Handler", "Handler")).containsExactly("Echo.java:2", "Routes.java:3");
   }
 
+  // At the name of a constant with a body, hover describes the constant and definition goes to it,
+  // as at a constant without one.
+  @Test
+  void describeAndDefinition_enumConstantWithBody_resolveTheConstant() throws Exception {
+    final String source =
+        "package com.example;\nenum Color {\n  RED { String label() { return \"r\"; } },\n  GREEN;\n  String label() { return \"g\"; }\n}\n";
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Color.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    for (final String name : List.of("RED", "GREEN")) {
+      final var pos = offsetToPosition(source, source.indexOf(name) + 1);
+
+      assertThat(engine.describe(file, pos.getLine(), pos.getCharacter())).as(name).contains(name);
+      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()))
+          .as(name)
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.range().getStart().getLine()).isEqualTo(pos.getLine()));
+    }
+  }
+
   @Test
   void describe_method_returnsSignatureMarkdown() throws Exception {
     final GreetFixture fx = greetFixture();
