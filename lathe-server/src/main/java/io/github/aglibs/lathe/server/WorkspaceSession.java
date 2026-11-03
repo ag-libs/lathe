@@ -4914,19 +4914,33 @@ final class WorkspaceSession {
   // A write that produced classes may supply what earlier failures here or downstream were missing,
   // so they get another try; the files that failed in this very write (failedFirst) keep their
   // record. A retry that failed too wrote nothing, so it must not reopen them -- or every pass
-  // would retry them and fail again.
+  // would retry them and fail again. Unchanged since they failed, they count as settled and the
+  // next pass, run right after this one, writes them: waiting for them to settle again kept an
+  // open file's stale error for two more scans.
   private void retryFailuresDownstream(
       final ModuleSourceConfig config, final Set<Path> failedFirst) {
     final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
-    failedCompiles
-        .keySet()
-        .removeIf(
-            failed ->
-                !failedFirst.contains(failed)
-                    && workspace
-                        .moduleSourceFor(failed)
-                        .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
-                        .orElse(true));
+    final Map<Path, Long> retried =
+        failedCompiles.entrySet().stream()
+            .filter(
+                failed ->
+                    !failedFirst.contains(failed.getKey())
+                        && workspace
+                            .moduleSourceFor(failed.getKey())
+                            .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
+                            .orElse(true))
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, failed -> failed.getValue().mtime()));
+    if (retried.isEmpty()) {
+      return;
+    }
+
+    failedCompiles.keySet().removeAll(retried.keySet());
+    final var settled = new HashMap<>(pendingStale);
+    settled.putAll(retried);
+    pendingStale = Map.copyOf(settled);
+    requestPass(false);
   }
 
   // Only prune + stamp a source the compile actually emitted a class for. A source that failed to

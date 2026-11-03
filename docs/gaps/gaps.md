@@ -974,34 +974,6 @@ None yet.
 
 ---
 
-## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
-
-**Status: accepted**
-
-**Value: medium — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
-
-### Observed behaviour
-
-After an agent or `git` adds a class in an upstream module, an open downstream file that uses it shows
-`cannot find symbol` for about 8 s before the server republishes clean diagnostics.
-The scan runs every 2 s, and the other outside-change scenarios settle in 2–4 s.
-Adding a class and using it straight away is the common agent pattern this delay hits.
-
-### Fix direction
-
-Measure where the 8 s goes (scan, write pass, type-index refresh, re-check of open files) and bring it
-in line with the other outside changes.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-21 — A rename racing a build can leave the tree broken
 
 **Status: documented**

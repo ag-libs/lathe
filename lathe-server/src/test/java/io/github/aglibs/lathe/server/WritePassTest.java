@@ -199,6 +199,44 @@ class WritePassTest extends ServiceTestBase {
   }
 
   @Test
+  void reconcileNow_upstreamAddsWhatADependentFailedOn_dependentWrittenWithoutSettlingAgain()
+      throws Exception {
+    final Path core =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "core",
+                Map.of("com/example/A.java", "package com.example; public class A {}"),
+                List.of(),
+                1_000L)
+            .get(0)
+            .getParent();
+    final Path user =
+        TestCompiler.writeMirroredModule(
+                tmp,
+                "app",
+                Map.of("com/example/app/C.java", "package com.example.app; class C {}"),
+                List.of("core"),
+                1_000L)
+            .get(0);
+    service.initialize(tmp);
+    awaitStartup();
+    // An agent writes the use first: C fails, D does not exist yet.
+    TestCompiler.writeAt(user, "package com.example.app; class C { com.example.D d; }", 5_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
+        .containsEntry(Path.of("com/example/app/C.java"), 1_000L);
+
+    TestCompiler.writeAt(core.resolve("D.java"), "package com.example; public class D {}", 6_000L);
+    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    // Not eager: only a settled source is written, as by the change scan.
+    service.reconcileNow(false).get(10, TimeUnit.SECONDS);
+
+    assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
+        .as("C sat unchanged since it failed, so it is written as soon as D lands")
+        .containsEntry(Path.of("com/example/app/C.java"), 5_000L);
+  }
+
+  @Test
   void writeReported_generatedSource_neverWritten() throws Exception {
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     TestCompiler.writeMirroredModule(
