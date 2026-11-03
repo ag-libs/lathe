@@ -2908,48 +2908,44 @@ final class WorkspaceSession {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    LOG.info(
-        () ->
-            "[definition] %s line=%d character=%d"
-                .formatted(uri, pos.getLine(), pos.getCharacter()));
-    return openDocFeature(
-        uri,
-        Either.forLeft(List.of()),
-        (worker, doc) -> {
-          final var request = featureRequest(doc, pos);
-          return worker
-              .definition(request)
-              .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
-              .exceptionally(
-                  ex ->
-                      logAndReturn(
-                          ex,
-                          "[definition] failed for %s".formatted(uri),
-                          Either.forLeft(List.of())));
-        });
+    return locationFuture("definition", uri, pos, CompilationWorker::definition);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declarationFuture(final String uri, final Position pos) {
+    return locationFuture("declaration", uri, pos, CompilationWorker::declaration);
+  }
+
+  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      typeDefinitionFuture(final String uri, final Position pos) {
+    return locationFuture("typeDefinition", uri, pos, CompilationWorker::typeDefinition);
+  }
+
+  // One location for the open document's position, found by the document's module worker.
+  private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      locationFuture(
+          final String operation,
+          final String uri,
+          final Position pos,
+          final BiFunction<
+                  CompilationWorker, SourceFeatureRequest, CompletableFuture<Optional<Location>>>
+              find) {
     LOG.info(
         () ->
-            "[declaration] %s line=%d character=%d"
-                .formatted(uri, pos.getLine(), pos.getCharacter()));
+            "[%s] %s line=%d character=%d"
+                .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
     return openDocFeature(
         uri,
         Either.forLeft(List.of()),
-        (worker, doc) -> {
-          final var request = featureRequest(doc, pos);
-          return worker
-              .declaration(request)
-              .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
-              .exceptionally(
-                  ex ->
-                      logAndReturn(
-                          ex,
-                          "[declaration] failed for %s".formatted(uri),
-                          Either.forLeft(List.of())));
-        });
+        (worker, doc) ->
+            find.apply(worker, featureRequest(doc, pos))
+                .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
+                .exceptionally(
+                    ex ->
+                        logAndReturn(
+                            ex,
+                            "[%s] failed for %s".formatted(operation, uri),
+                            Either.forLeft(List.of()))));
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>

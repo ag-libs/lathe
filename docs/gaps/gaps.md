@@ -451,39 +451,6 @@ None yet.
 
 ---
 
-## EG-070 — `typeDefinition` is missing
-
-**Status: accepted**
-
-**Value: medium — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
-
-### Observed behaviour
-
-`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
-A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
-and an INFO line in the log.
-
-### Fix direction
-
-Implement `typeDefinition` (the declared type of the symbol at the cursor); definition already resolves types.
-
-### Resolved part
-
-Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
-lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
-`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
-Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)

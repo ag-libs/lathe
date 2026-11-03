@@ -7,6 +7,46 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-070 — `typeDefinition` is missing — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
+A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
+and an INFO line in the log.
+
+### Resolution
+
+`textDocument/typeDefinition` is advertised and answers the declaration of the type of the symbol at the cursor: a
+variable's or field's type, a method's return type (at its call or declaration), a constructor's class, a type itself;
+an array's element type and a generic's declared type; nothing for a primitive or `void`. Sources are found as go to
+definition finds them, so a dependency or JDK type opens its extracted source. Neovim 0.12's default `grt` and VS Code's
+Go to Type Definition work with no client change. Definition, declaration, type definition and implementation now share
+one request path in the services instead of four copies.
+
+### Resolved part
+
+Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
+lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
+`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
+Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
+
+### Regression targets
+
+`LatheTextDocumentServiceTest.typeDefinition_symbolsOfEachKind_goToTheirTypeDeclaration`,
+`LatheLanguageServerTest.createCapabilities_includesTypeDefinitionProvider`,
+`LatheServerTest.run_unsupportedRequest_answersMethodNotFound` (the unsupported-request part).
+
+---
+
 ## EG-086 — An enum constant with a body cannot be resolved at its declaration — done
 
 **Status: done.**

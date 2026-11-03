@@ -113,6 +113,7 @@ freely.
 |---|---|---|---|
 | Go to definition (local, dependency, and JDK sources) | `vim.lsp.buf.definition()` | `<C-]>` (`tagfunc`) | `gd` |
 | Go to declaration (overridden contract) | `vim.lsp.buf.declaration()` | — | `gD` |
+| Go to type definition (the symbol's type, a method's return type) | `vim.lsp.buf.type_definition()` | `grt` | `grt` |
 | Go to implementation / subtypes | `vim.lsp.buf.implementation()` | `gri` | `gri` |
 | Find references | `vim.lsp.buf.references()` | `grr` | `grr` |
 | Highlight uses of the symbol in the buffer | `vim.lsp.buf.document_highlight()` / `clear_references()` | — | `<leader>lh`, or automatic (below) |
