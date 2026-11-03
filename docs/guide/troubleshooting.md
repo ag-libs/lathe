@@ -7,15 +7,17 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   first build at the root of the build, which sets up Lathe without running the tests:
   `mvn clean test -Dlathe.capture.only=true` on Maven, `./gradlew latheSync -Plathe.capture.only=true` on Gradle.
   If it still isn't working, confirm Lathe is set up in the build ([Maven](maven.md), [Gradle](gradle.md)).
-  A build log with no `[lathe]` lines means Lathe didn't load: on Maven, check `mvn -v` (or the project's
+  On Maven, a build log with no `[lathe]` lines means Lathe didn't load: check `mvn -v` (or the project's
   `.mvn/wrapper`) for Maven 3.6.3 or newer.
+  On Gradle, the build prints `[lathe]` lines only for warnings; `./gradlew help --task latheSync` shows whether
+  the plugin is applied.
 - **The build stops with `[lathe] This build is older than Lathe supports`** — Lathe needs Maven 3.6.3+
   with `maven-compiler-plugin` 3.6.2+, or Gradle 8.8+. The message lists each problem with its fix: upgrade
   the build tool (or the project's wrapper), or on Maven pin a newer compiler plugin in
   `<pluginManagement>`. To build without Lathe, add the switch the message names (`-Dlathe.disabled=true`
   on Maven, `-Plathe.disabled=true` on Gradle).
-- **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and the build's
-  `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
+- **The server runs on the wrong JDK** — the server's `[startup]` log line, the MCP server's, and on Maven the
+  build's `[lathe]` lines name the JVM they run on (`java=… java.home=…`); compare it with the JDK your project
   targets, and see [choosing the server JDK](installation.md#choosing-the-server-jdk-lathe_java_home).
 - **The server won't attach, or crashes** — set `LATHE_DEBUG=1` before launching your editor and check
   its LSP log (Neovim: [cheatsheet](editors/neovim.md#verbose-logging)). An unexpected exit
@@ -34,7 +36,7 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
 - **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
   javac. Sync carries the build's own module grants into `.lathe/jvm.args` automatically (on Maven, forked
   `-J--add-exports`/`--add-opens`, `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`; on Gradle,
-  those in `org.gradle.jvmargs`);
+  those in `org.gradle.jvmargs` and in a forked compile's `options.forkOptions.jvmArgs`);
   restart the server after it changes. Add anything else (or tune heap/GC) with
   `LATHE_JVM_OPTS`; see
   [installation.md](installation.md#tuning-the-server-jvm-lathe_jvm_opts).

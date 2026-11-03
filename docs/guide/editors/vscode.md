@@ -50,7 +50,7 @@ Resolved from your real build, through VS Code's standard LSP UI:
 | Code actions (import, extract variable / method, stubs, …) | `Ctrl`+`.`                                |
 | Rename (project-wide)            | `F2`                                      |
 | Live diagnostics                 | Problems panel · squiggles                |
-| Formatting (the project's Spotless formatter) | `Shift`+`Alt`+`F` · `editor.formatOnSave` |
+| Formatting (the project's Spotless formatter on Maven, or the formatter command it names) | `Shift`+`Alt`+`F` · `editor.formatOnSave` |
 
 ## Read-only dependency sources
 

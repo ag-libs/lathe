@@ -83,13 +83,14 @@ See [Formatting & indentation](#formatting--indentation) below.
 
 The server and the client update separately:
 
-1. **Server**: bump the `lathe-maven-extension` version in your POM and build again.
+1. **Server**: bump the Lathe version in your build (the `lathe-maven-extension` version on Maven, the
+   `io.github.ag-libs.lathe` plugin version on Gradle) and build again.
    Re-running the build without a new version reinstalls the same server.
 2. **Client**: update `lathe.nvim` through your plugin manager (`:Lazy update lathe.nvim` or `vim.pack.update({ "lathe.nvim" })`).
 
 Close versions work together.
 When the two can no longer talk, Lathe warns on start which half is behind: `server is older than this client` (do step 1) or `client is older than this server` (do step 2).
-To keep the client in step with your POM, pin it to the matching release tag: `version = "vX.Y.Z"` in the lazy.nvim spec, or `{ src = "https://github.com/ag-libs/lathe.nvim", version = "vX.Y.Z" }` in `vim.pack.add`.
+To keep the client in step with your build, pin it to the matching release tag: `version = "vX.Y.Z"` in the lazy.nvim spec, or `{ src = "https://github.com/ag-libs/lathe.nvim", version = "vX.Y.Z" }` in `vim.pack.add`.
 
 ### Upgrading from Lathe 0.1.15 or earlier
 
@@ -121,7 +122,7 @@ freely.
 | Hover (AST-resolved Javadoc) | `vim.lsp.buf.hover()` | `K` | `K` |
 | Signature help | `vim.lsp.buf.signature_help()` | `<C-s>` (insert) | `<C-s>` (normal too) |
 | Completion (with auto-import) | `vim.lsp.completion` / omnifunc | `<C-x><C-o>` | auto |
-| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
+| Code action (import type · add `throws` · wrap `try/catch` · declare local · replace `var` / convert to `var` · stub missing method · extract variable / constant / field / method · add a `final` field as a constructor parameter · surround with try-with-resources) | `vim.lsp.buf.code_action()` | `gra` | `gra` |
 | Add missing imports (whole file, one pass) | `:LatheMissingImports` | — | `<leader>li` |
 | Format document (when the workspace resolves a formatter); a visual selection through `require('lathe').format()` mapped in visual mode | `require('lathe').format()` / `:LatheFormat` (whole buffer) | — | `<leader>cf` |
 | Refresh the workspace: run `.lathe/lathe-sync.sh` (the toast names it; `:LatheSyncOutput` shows the full build command) | `:LatheSync` / `:LatheSyncCaptureTest` (also re-captures test launches, without running the tests) | — | — |
@@ -578,6 +579,7 @@ Each command takes a **single object** passed as the sole element of the request
 |---|---|---|
 | `:LatheTypeHierarchy` | `lathe.typeHierarchy` | position params |
 | `:LatheInstances` | `lathe.instantiations` | position params |
+| `:LatheGoToTest` | `lathe.testCounterparts` | `{ uri }` |
 | `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.missingImports` | `{ uri }` |
 | `:LatheMissingImports` — the edits for the chosen imports, placed by the server | `lathe.importEdits` | `{ uri, imports }` (the chosen candidates) |
 | `:LatheRun` / neotest / `:LatheDebug` — runnables of a file | `lathe.runnables.list` | `{ uri }` |

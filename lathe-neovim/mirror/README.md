@@ -2,7 +2,7 @@
 
 **A Java language server that works from your build — no project import, no classpath setup.**
 
-[![Lathe demo — a zero-config Java IDE from your Maven build](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#readme)
+[![Lathe demo — a zero-config Java IDE from your build](https://raw.githubusercontent.com/ag-libs/lathe/main/docs/demo-038eec79.gif)](https://github.com/ag-libs/lathe#readme)
 
 The Neovim client for [Lathe](https://github.com/ag-libs/lathe). This repository is a **generated,
 one-way mirror** of the client that lives in the Lathe monorepo
@@ -19,13 +19,14 @@ generated from.
 
 - Neovim 0.12+, on Linux or macOS (on Windows, Lathe supports VS Code, Cursor, and Zed instead)
 - The Java Treesitter parser: `:TSInstall java`
-- A Maven project whose build enables the Lathe Maven extension, built at least once with
-  `mvn clean test -Dlathe.capture.only=true` — this installs the language server and creates the
-  `.lathe/` workspace, test runs included, without running the tests.
+- A Maven or Gradle project whose build enables Lathe, built at least once with
+  `mvn clean test -Dlathe.capture.only=true` (Maven) or `./gradlew latheSync -Plathe.capture.only=true`
+  (Gradle) — this installs the language server and creates the `.lathe/` workspace, test runs included,
+  without running the tests.
   See the [installation guide](https://github.com/ag-libs/lathe/blob/main/docs/guide/installation.md).
 
-The client is editor-side only; the **server is resolved and installed by your Maven build**, so
-installing this plugin is not enough on its own — the build must run too.
+The client is editor-side only; the **server is resolved and installed by your build**, so installing this
+plugin is not enough on its own — the build must run too.
 
 ## Install
 
@@ -55,8 +56,9 @@ never registered.
 
 ## Updating
 
-Update this plugin through your plugin manager; the server updates when you bump the
-`lathe-maven-extension` version in your POM and build again. See
+Update this plugin through your plugin manager; the server updates when you bump the Lathe version in
+your build (the `lathe-maven-extension` on Maven, the `io.github.ag-libs.lathe` plugin on Gradle) and build
+again. See
 [Updating](https://github.com/ag-libs/lathe/blob/main/docs/guide/editors/neovim.md#updating).
 
 ## Configuration & keymaps

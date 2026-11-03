@@ -58,7 +58,7 @@ project's setup without running the tests:
 
 Open any Java source in your editor's Lathe client.
 After this, every normal build keeps Lathe up to date (see [What the build keeps current](#what-the-build-keeps-current)),
-and the editor's sync runs the same command on a fresh clone (see [Syncing](#syncing)).
+and the editor's sync can re-run it for you (see [Syncing](#syncing)).
 
 Lathe resolves its server from your build's repositories, and adds Maven Central to the root project only when
 the build declares no repository of its own.
@@ -74,23 +74,30 @@ As on Maven, the build itself keeps `.lathe/` current; there is no separate step
 | A test run (`test`, `check`, `build`) | each project's test launch, captured inside the test JVM while the tests run |
 
 A task served from the build cache or up to date does no work, and Lathe keeps what it captured from the run
-that produced it; `--rerun` or a sync captures again.
+that produced it.
+To capture the test launches again, run the tests with `--rerun` (`./gradlew test --rerun`), or a capture-only
+build (`-Plathe.capture.only=true`, or the editor's sync with tests), which always starts the test task.
 
 Lathe never changes the inputs of your build's own tasks, so a build cache shared with CI keeps working:
 a Lathe-enabled build takes the same cache entries as one without Lathe.
 
 ## Syncing
 
-The editor's sync covers a fresh clone, a wiped `.lathe/`, and a change of test setup.
-It runs, through the `.lathe/lathe-sync` script the build writes:
+The editor's sync runs `.lathe/lathe-sync.sh` (`.cmd` on Windows), a script each build writes, so it needs one
+build first: after a fresh clone or a wiped `.lathe/`, run the first build above from the command line.
+The script re-runs the Gradle distribution and the JDK that ran that build, with the `--init-script` arguments you
+passed, and one of:
 
 ```sh
-./gradlew latheSync -Plathe.capture.only=true   # every project, tests captured without running them
-./gradlew latheSync --module app                # one project (its directory), and what it depends on
+latheSync                                # a plain sync
+latheSync -Plathe.capture.only=true      # a sync with tests, which also captures the test launches
+latheSync --module app                   # one project (its directory), and what it depends on
 ```
 
 `latheSync` compiles what is out of date and writes the workspace files; with `-Plathe.capture.only=true` it also
 starts each test task with every test skipped, which is all capture needs.
+It does not replay the `-P` or `-D` properties you passed on the command line: put a property every build needs
+in `gradle.properties`.
 
 ## Turning it off
 
@@ -108,7 +115,8 @@ starts each test task with every test skipped, which is all capture needs.
   sets other than `main` and `test` are not, so their tests can't be run from the editor; see
   [Test capture](test-capture.md#requirements-and-current-limits).
 - **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
-  captured, so they can't be run or debugged from the editor; the editor's sync names each such test task.
+  captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests)
+names each such test task.
 - **A notice on every test run.**
   Lathe loads its capture listener into the test JVM through the `JDK_JAVA_OPTIONS` environment variable, which
   leaves the test task's cache key alone; the JVM announces it with

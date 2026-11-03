@@ -111,7 +111,7 @@ Answers are text only, with any notes after the result, so every MCP client show
 | `get_definition` | `file, line, symbol or column` | resolve a symbol to its definition, including into dependencies, the JDK, and generated sources |
 | `find_references` | `file, line, symbol or column` | every real use of a symbol across the project — resolves overloads/inheritance, unlike `grep` |
 | `find_implementations` | `file, line, symbol or column` | the implementers of an interface, or the overrides of a method |
-| `call_hierarchy` | `file, line, symbol or column, direction`, `scope` (optional) | callers (`incoming`, the default) or callees (`outgoing`, at each call site in source order) of a method, across modules; `scope: all` adds calls into the JDK and dependencies |
+| `call_hierarchy` | `file, line, symbol or column`, `direction` and `scope` (optional) | callers (`incoming`, the default) or callees (`outgoing`, at each call site in source order) of a method, across modules; `scope: all` adds calls into the JDK and dependencies |
 | `search_symbols` | `query`, `scope` (optional) | find a type by name prefix, simple or qualified (`java.util.Map.Entry`, `util.Duration`), across the project, dependencies, and JDK, the project's types first and JDK-internal (non-exported) types last; `scope: reactor` keeps only the project's; reactor types also match by CamelHumps (`ASF` finds `AbstractServerFactory`); a leading or trailing `*` is ignored; types only |
 | `outline` | `file` | a file's types, fields, constructors and methods in source order, indented by nesting, each with its name's line:column and declaration — the structure without reading the file |
 | `describe_symbol` | `file, line, symbol or column` | a symbol's rendered signature, type, and javadoc, without opening the file |
@@ -189,7 +189,7 @@ It refuses a rename that would change what a name means, in any module that sees
 a use the new name would capture (a field a renamed parameter would shadow, another call that would pick the renamed overload,
 a subclass method that would override it) or a renamed use that would then refer to something else (another overload, an inherited method);
 the error names the file and line.
-Uses only reflection, strings or configuration make are not checked.
+Uses that only reflection, strings or configuration make are not checked.
 Renaming a public top-level type also renames its file.
 The changed files are compiled into the mirror before the tool returns, however many there are, so follow-up queries see the new names.
 

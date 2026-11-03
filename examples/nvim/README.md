@@ -12,8 +12,8 @@ per-action keymap guide see [docs/guide/editors/neovim.md](../../docs/guide/edit
 
 ## Try it
 
-Requires **Neovim 0.12+**, the Java Treesitter parser (`:TSInstall java`), and a Maven project Lathe
-has built (so its `.lathe/lathe-launcher.sh` exists). The config installs the client from the
+Requires **Neovim 0.12+**, the Java Treesitter parser (`:TSInstall java`), and a Maven or Gradle project
+Lathe has built (so its `.lathe/lathe-launcher.sh` exists). The config installs the client from the
 standalone `ag-libs/lathe.nvim` repo; set `LATHE_NVIM_DIR` to a working-tree checkout to load that
 instead. To try it in isolation without touching your own config:
 
@@ -22,7 +22,7 @@ XDG_CONFIG_HOME=/path/to/lathe/examples nvim SomeFile.java
 ```
 
 On first launch Neovim bootstraps `lazy.nvim` and downloads the plugins, including `lathe.nvim`. The
-server still comes from your Maven build; until a project is built, Lathe nudges you to run it.
+server still comes from your build; until a project is built, Lathe nudges you to run it.
 
 ## Keymaps
 
@@ -32,6 +32,7 @@ Leader is Space. The Lathe-relevant bindings:
 |---|---|
 | `gd` / `grr` / `gri` | Go to definition / references / implementations (via Telescope) |
 | `grN` / `grh` | Instantiation sites of the type / full type hierarchy |
+| `grT` | Go to the class's test, or from a test to its class |
 | `gO` | Document symbols |
 | `<leader>ws` | Workspace symbols (reactor-wide, server-ranked) |
 | `K` / `<C-s>` | Hover / signature help (`<C-k>` in insert mode) |

@@ -81,7 +81,8 @@ The module grants your build gives its javac plugins (Error Prone, NullAway, ...
 server: the build copies them into `.lathe/jvm.args`, which the launcher passes to the server JVM.
 On Maven those are every `--add-exports`/`--add-opens` from forked `-J` options and from
 `.mvn/jvm.config`, and the `jdk.compiler` grants in `MAVEN_OPTS` (the same under `mvn` and `mvnd`);
-on Gradle, the ones in `org.gradle.jvmargs`, which reach a compile running in the Gradle daemon.
+on Gradle, the ones in `org.gradle.jvmargs`, which reach a compile running in the Gradle daemon, and in a forked
+compile's JVM arguments (`options.forkOptions.jvmArgs` of `compileJava` and `compileTestJava`).
 Sync also adds the grants the project's pinned google-java-format or palantir-java-format needs, even when the build
 declares none (see [formatting](#choosing-overriding-or-opting-out-of-the-formatter)).
 Other Maven `-J` flags (such as `-J-Xmx…`, sized for a short-lived compiler) are not carried over.
@@ -206,9 +207,10 @@ Engines you can select there:
 - `command` pipes the buffer through the command (10 s timeout).
 - `command-file` writes the buffer to a hidden temporary file beside the edited one (so Spotless's
   includes still match it), runs the command, and reads the result back (60 s timeout).
-  Its tokens: `%MVN%` → on Maven, the Maven that ran your last build (`mvnd`, the wrapper's Maven or `mvn`); `%MODULE%` → the edited
-  file's module directory; `%FILE%` → the temporary file.
-  Running Maven per save takes seconds; with `mvnd` it is well under a second.
+  Its tokens: `%MVN%` → the build tool that ran your last build: on Maven, `mvnd`, the wrapper's Maven or `mvn`;
+  on Gradle, the Gradle distribution's `gradle`; `%MODULE%` → the edited file's module directory; `%FILE%` → the
+  temporary file.
+  Running the build per save takes seconds; with `mvnd`, or a running Gradle daemon, it is far less.
 - Both run from the workspace root, format whole files only, and pay process startup on every format.
 
 `google`, `aosp`, `palantir`, and `eclipse` need the jars sync resolves, so they come from the

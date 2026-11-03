@@ -45,8 +45,8 @@ no error.
 
 ## Test capture and replay
 
-Lathe captures the exact JVM launch of your build's tests (Maven's Surefire fork, or each Gradle test
-task's JVM) from inside that JVM, by live introspection, then replays a fresh JVM from that template against `.lathe/`, with no recompilation.
+Lathe captures the exact JVM launch of your build's tests (Maven's Surefire fork, or the JVM of each Gradle
+project's `test` task) from inside that JVM, by live introspection, then replays a fresh JVM from that template against `.lathe/`, with no recompilation.
 Requirements, and the limits of what can be captured, are in [test-capture.md](test-capture.md).
 
 ## Running and debugging
@@ -81,7 +81,7 @@ A buffer that does not parse at the moment (an unclosed brace mid-edit) is left 
 Plugins such as Error Prone reach into `javac` internals, so the JVM running them needs extra
 `--add-exports`/`--add-opens` grants.
 Your build already declares these: on Maven as `-J` flags for a forked compiler, in `.mvn/jvm.config`, or in
-`MAVEN_OPTS`; on Gradle in `org.gradle.jvmargs`.
+`MAVEN_OPTS`; on Gradle in `org.gradle.jvmargs`, or in a forked compile's `options.forkOptions.jvmArgs`.
 The build copies them into `.lathe/jvm.args`, and the server starts with them; after you change them, re-sync and restart the server.
 
 ## Lombok
@@ -134,5 +134,5 @@ On Gradle, a build of some projects refreshes `workspace.json` with the other pr
 
 A full build or sync also removes from `.lathe/` what the build no longer has: a module dropped from the
 build, a module's test tree once its tests are gone, and annotation-processor output a removed processor left
-behind. A partial build (Maven's `-pl`, Gradle's `latheSync --module`) never removes anything, since it sees
-only part of the build.
+behind. A partial Maven build (`-pl`) never removes anything, since it sees only part of the build; on Gradle
+every build does, `latheSync --module` included, since Gradle always knows every project in the settings.
