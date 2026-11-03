@@ -801,6 +801,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.testSources(moduleRel, classNames));
   }
 
+  CompletableFuture<TestCounterparts> testCounterpartsFuture(final String uri) {
+    return worker.submit(() -> session.testCounterparts(uri));
+  }
+
   CompletableFuture<List<ResourceEntry>> resourcesFuture() {
     return worker.submit(() -> session.resources());
   }

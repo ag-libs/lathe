@@ -31,6 +31,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   static final String LIST_RUNNABLES_COMMAND = "lathe.runnables.list";
   static final String DIR_RUNNABLES_COMMAND = "lathe.runnables.dir";
   static final String TEST_SOURCES_COMMAND = "lathe.testSources";
+  static final String TEST_COUNTERPARTS_COMMAND = "lathe.testCounterparts";
   static final String TEST_MODULES_COMMAND = "lathe.tests.modules";
   static final String DISCOVER_TESTS_COMMAND = "lathe.tests.discover";
   static final String RESOURCES_COMMAND = "lathe.resources";
@@ -86,6 +87,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case LIST_RUNNABLES_COMMAND -> listRunnables(params);
       case DIR_RUNNABLES_COMMAND -> dirRunnables(params);
       case TEST_SOURCES_COMMAND -> testSources(params);
+      case TEST_COUNTERPARTS_COMMAND -> testCounterparts(params);
       case TEST_MODULES_COMMAND -> textDocumentService.testModulesFuture().thenApply(m -> m);
       case DISCOVER_TESTS_COMMAND -> discoverTests(params);
       case RESOURCES_COMMAND -> textDocumentService.resourcesFuture().thenApply(r -> r);
@@ -283,6 +285,13 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .testSourcesFuture(json.get("moduleRel").getAsString(), classNames)
         .thenApply(sources -> sources);
+  }
+
+  private CompletableFuture<Object> testCounterparts(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    return textDocumentService
+        .testCounterpartsFuture(uriArgument(json))
+        .thenApply(counterparts -> counterparts);
   }
 
   private CompletableFuture<Object> resourceOpen(final ExecuteCommandParams params) {

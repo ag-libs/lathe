@@ -600,7 +600,7 @@ None yet.
 
 ## EG-077 — No "go to test": jump from a class to its test, or create one, and back
 
-**Status: documented**
+**Status: accepted (server and Neovim shipped; VS Code pending).**
 
 **Value: high — Size: M**
 
@@ -634,9 +634,26 @@ when the module has one), then, as a fallback, test classes that reference the t
 The reverse direction strips the same suffixes and looks in the main roots.
 Then a Neovim mapping and command over it, and the same in VS Code.
 
+### Delivered — server and Neovim
+
+`lathe.testCounterparts { uri }` answers the counterparts of the file's top-level type, best first: from a main file
+its tests, from a test file the type it tests. They are found by Surefire's and Failsafe's default test names
+(`FooTest`, `FooTests`, `FooTestCase`, `FooIT`, `FooITCase`, `TestFoo`, `ITFoo`) through the type index, so a test in
+a separate test module is found too, ranked same package, then same module, then name convention.
+The module's `test-filter.json` is not used: its patterns say what the build runs, not what a class is named after,
+and a reference-index fallback was left out until the names miss real tests.
+Neovim's `:LatheGoToTest` (suggested `grT`) opens one, picks among several, and with none offers the `:LatheNew test`
+step in the file's package.
+
+### Remaining — VS Code
+
+A VS Code command over the same server command.
+
 ### Regression targets
 
-None yet.
+`WorkspaceSessionTest.testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject`,
+`WorkspaceSessionTest.testCounterpartNames_conventions_testNamesAndTheSubjectTheyStripTo`,
+`new_spec.lua` (`:LatheGoToTest`).
 
 ---
 

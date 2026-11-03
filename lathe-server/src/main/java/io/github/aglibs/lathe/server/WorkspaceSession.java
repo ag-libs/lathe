@@ -794,6 +794,18 @@ final class WorkspaceSession {
     return resolveContext(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
   }
 
+  // The tests of the file's type, or from a test the type it tests.
+  TestCounterparts testCounterparts(final String uri) {
+    final Path file = LatheUri.toPath(uri);
+    final ContextInfo context = resolveContext(uri);
+    return TestCounterparts.find(
+        file,
+        context == null ? "" : context.pkg(),
+        workspace::moduleSourceFor,
+        typeIndex,
+        workspace.allSourceRoots());
+  }
+
   DirRun dirRun(final String uri) {
     return dirRun(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
   }
