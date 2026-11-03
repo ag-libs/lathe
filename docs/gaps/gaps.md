@@ -290,7 +290,7 @@ None: the behaviour is unchanged; only the docs and the tool description were co
 
 ## EG-063 — A dependency without a sources jar has no source to navigate to
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -316,7 +316,7 @@ None yet.
 
 ## EG-064 — No code lens: reference counts and run/debug actions above declarations
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: L**
 
@@ -453,7 +453,7 @@ None yet.
 
 ## EG-070 — `typeDefinition` is missing
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -486,7 +486,7 @@ None yet.
 
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -512,7 +512,7 @@ None yet.
 
 ## EG-072 — Malformed requests and unusual URIs get internal errors or are accepted silently
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -547,7 +547,7 @@ None yet.
 
 ## EG-074 — Log noise: a per-module INFO line, and a JDK warning on the MCP server's stderr
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -663,7 +663,7 @@ None yet.
 
 ## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -703,7 +703,7 @@ None yet.
 
 ## EG-083 — The outline of `module-info.java` shows only the module line
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -756,7 +756,7 @@ None yet.
 
 ## EG-085 — Implementations miss anonymous classes and enum constant bodies
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -807,7 +807,7 @@ None yet.
 
 ## EG-086 — An enum constant with a body cannot be resolved at its declaration
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: S**
 
@@ -833,7 +833,7 @@ None yet.
 
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -865,7 +865,7 @@ Resolved FR entries are in [gaps-archive.md](gaps-archive.md).
 
 ## FR-019 — Renaming one member of a statically imported shared name is refused rather than done
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: M**
 
@@ -1067,7 +1067,7 @@ None yet.
 
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1150,7 +1150,7 @@ None yet.
 
 ## WS-24 — An unreadable `workspace.json` is not reported to the editor and is never re-read
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
@@ -1266,7 +1266,7 @@ None yet.
 
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
-**Status: documented**
+**Status: accepted**
 
 **Value: medium — Size: M**
 
@@ -1464,7 +1464,7 @@ Resolved entries are in [gaps-archive.md](gaps-archive.md).
 
 ## NV-9 — `:LatheNew` → Test from a main-source file lists the main location first
 
-**Status: documented**
+**Status: deferred** (triaged 2026-11-03: low severity for the editor)
 
 **Value: low — Size: S**
 
