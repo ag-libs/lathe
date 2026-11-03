@@ -9503,6 +9503,42 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
+
+### Observed behaviour
+
+After an agent or `git` adds a class in an upstream module, an open downstream file that uses it shows
+`cannot find symbol` for about 8 s before the server republishes clean diagnostics.
+The scan runs every 2 s, and the other outside-change scenarios settle in 2–4 s.
+Adding a class and using it straight away is the common agent pattern this delay hits.
+
+### Resolution
+
+The 8 s case is an open file that an agent edits on disk to use a class it adds next.
+The use is written first and fails, and the failed write's `cannot find symbol` stays on the open file
+while its content is the written one.
+Once the class was written, the failure was only cleared, so the next scan took the file for a fresh
+change and waited one more tick to settle before writing it again: two scans past the class.
+A write now hands the downstream failures it may fix to a pass run right after it, as settled sources
+(they sat unchanged since they failed), so the open file goes clean one write after the class.
+EqualsVerifier, file open and edited on disk, then the class added: 8.5 s before, 5.0 s after;
+the rest is the settle every outside change pays (P3 takes 3.0–4.5 s).
+`dev/lsp_staleness.py` passes on EqualsVerifier and Dropwizard.
+
+### Regression targets
+
+`WritePassTest.reconcileNow_upstreamAddsWhatADependentFailedOn_dependentWrittenWithoutSettlingAgain`
+
+---
+
 ## WS-25 — A first sync downloads dependency sources one at a time — done
 
 **Status: done.**
