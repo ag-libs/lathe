@@ -66,6 +66,7 @@ public record ReferenceTarget(
         || kind == ElementKind.PARAMETER
         || kind == ElementKind.EXCEPTION_PARAMETER
         || kind == ElementKind.RESOURCE_VARIABLE
+        || kind == ElementKind.BINDING_VARIABLE
         || kind == ElementKind.TYPE_PARAMETER;
   }
 

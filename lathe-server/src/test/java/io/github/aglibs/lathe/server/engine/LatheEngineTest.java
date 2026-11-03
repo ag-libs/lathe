@@ -1340,6 +1340,30 @@ class LatheEngineTest {
         .contains("a.bar();");
   }
 
+  // A pattern variable is a local: renaming one `s` leaves a same-named pattern variable in another
+  // method alone, as for any local.
+  @Test
+  void rename_patternVariable_renamesOnlyItsOwnUses() throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Patterns {
+          int first(Object o) { return o instanceof String s ? s.length() : 0; }
+          int second(Object o) { return o instanceof String s ? s.length() : 1; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Patterns.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    renameAt(file, source, "s ?", "text");
+
+    assertThat(file)
+        .content()
+        .contains("int first(Object o) { return o instanceof String text ? text.length() : 0; }")
+        .contains("int second(Object o) { return o instanceof String s ? s.length() : 1; }");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }
