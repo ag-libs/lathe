@@ -38,9 +38,8 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   private final ExecutableElement targetMethod;
   // The target method's owner, or the target type.
   private final TypeElement targetType;
-  // The single abstract method a lambda or method reference must implement to count, or null when
-  // the
-  // target is not a functional interface or its method.
+  // The single abstract method a lambda or method reference must implement to count, or null
+  // when the target is not a functional interface or its method.
   private final ExecutableElement samMethod;
   private final String uri;
   private final List<Location> results = new ArrayList<>();
@@ -164,9 +163,8 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
   }
 
   // An anonymous class is recognised from the attributed tree, not by binary name: javac numbers
-  // anonymous classes, and the compiled classes' numbers need not match the edited source's. An
-  // enum
-  // constant's body is an anonymous subclass of its enum.
+  // anonymous classes, and the compiled classes' numbers need not match the edited source's.
+  // An enum constant's body is an anonymous subclass of its enum.
   private void addImplementation(
       final TypeElement candidateType, final ClassTree classTree, final TreePath classPath) {
     final boolean anonymous = isAnonymousSubtype(candidateType);
