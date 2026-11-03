@@ -987,10 +987,10 @@ removes unused imports and reorders them as the project's Spotless does.
 
 ## CA-18 — Extract method's compile check runs no javac plugins, so it can offer a refactor that fails Error Prone
 
-**Status: documented**
+**Status: deferred.**
 
-**Value: low — Size: M**
-
+Decision (2026-11-03): Error Prone is too heavy for the analysis compile, so it runs only in the full compile on save,
+where the editor shows the warning; a refactor's compile check is not expected to run it.
 **Affects: Neovim, VS Code, any client, on builds that run Error Prone (or another javac plugin) with `-Werror`.**
 
 Found by the pre-release test round (2026-11-01) on EqualsVerifier.
