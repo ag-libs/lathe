@@ -2545,21 +2545,55 @@ final class WorkspaceSession {
               });
     }
 
+    // Planning reads session state, so it runs on the event loop; reading the candidate files does
+    // not, so it runs off it, where a search over thousands of files cannot stall the loop.
+    final var planningTimer = Stopwatch.start();
+    return worker
+        .submit(() -> planSearch(cursorConfig, target))
+        .thenApplyAsync(plans -> plans.stream().map(WorkspaceSession::readCandidates).toList())
+        .thenCompose(
+            searchInputs ->
+                runSearch(
+                    searchInputs,
+                    openFile.uri(),
+                    planningTimer,
+                    target,
+                    includeDeclaration,
+                    cancelChecker,
+                    progress,
+                    progressTitle));
+  }
+
+  private List<ModuleSearchPlan> planSearch(
+      final ModuleSourceConfig cursorConfig, final ReferenceTarget target) {
     final Path packageRel =
         target.scope() == ReferenceTarget.SearchScope.DECLARING_MODULE
             ? ReferenceCandidatePlanner.packageRelForQualifiedName(target.qualifiedName())
             : null;
+    return planSearchScope(target, declaringConfigFor(target, cursorConfig)).stream()
+        .map(config -> planModuleSearch(config, target, packageRel))
+        .toList();
+  }
 
-    final ModuleSourceConfig searchConfig = declaringConfigFor(target, cursorConfig);
-    final List<ModuleSourceConfig> configs = planSearchScope(target, searchConfig);
-    final var planningTimer = Stopwatch.start();
-    final List<ModuleSearchInputs> searchInputs =
-        configs.stream()
-            .map(
-                config ->
-                    new ModuleSearchInputs(
-                        workspace.workerFor(config), planSearchInputs(config, target, packageRel)))
-            .toList();
+  private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
+    return new ModuleSearchInputs(
+        plan.worker(),
+        new WorkspaceSearchInputs(
+            plan.openDocuments(),
+            plan.candidateUris().stream()
+                .flatMap(uri -> readDiskCandidate(uri).stream())
+                .toList()));
+  }
+
+  private CompletableFuture<List<ReferenceMatch>> runSearch(
+      final List<ModuleSearchInputs> searchInputs,
+      final String uri,
+      final Stopwatch planningTimer,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress,
+      final String progressTitle) {
     final int openCount =
         searchInputs.stream()
             .map(ModuleSearchInputs::inputs)
@@ -2580,7 +2614,7 @@ final class WorkspaceSession {
         () ->
             "[references:plan] %s planned modules=%d open=%d disk=%d maxModule=%d ready %dms"
                 .formatted(
-                    openFile.uri(),
+                    uri,
                     searchInputs.size(),
                     openCount,
                     diskCount,
@@ -2800,7 +2834,12 @@ final class WorkspaceSession {
 
   private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {}
 
-  private WorkspaceSearchInputs planSearchInputs(
+  // A module's search as planned from session state: its open documents, and the files on disk
+  // that may reference the target, not read yet.
+  private record ModuleSearchPlan(
+      CompilationWorker worker, List<OpenDocument> openDocuments, List<String> candidateUris) {}
+
+  private ModuleSearchPlan planModuleSearch(
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
     // Include the generated-sources root so a module's annotation-processor output (a record's
     // @Builder) is in scope; it references the record by simple name and never lives under a
@@ -2819,13 +2858,12 @@ final class WorkspaceSession {
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
     final var planner = new ReferenceCandidatePlanner(candidateIndex, typeIndex);
-    final List<DiskCandidate> diskCandidates =
+    final List<String> candidateUris =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
             .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, packageRel))
-            .flatMap(uri -> readDiskCandidate(uri).stream())
             .toList();
-    return new WorkspaceSearchInputs(openForConfig, diskCandidates);
+    return new ModuleSearchPlan(workspace.workerFor(config), openForConfig, candidateUris);
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
@@ -3225,8 +3263,9 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final var worker = workspace.workerFor(config);
-    final var inputs = planSearchInputs(config, target, packageRel);
+    final ModuleSearchInputs planned = readCandidates(planModuleSearch(config, target, packageRel));
+    final var worker = planned.worker();
+    final var inputs = planned.inputs();
     return Stream.concat(
         inputs.openDocuments().stream()
             .map(
