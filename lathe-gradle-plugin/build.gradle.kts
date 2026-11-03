@@ -3,6 +3,8 @@ import org.gradle.plugin.compatibility.compatibility
 plugins {
   // Publishes to the Gradle Plugin Portal; brings in java-gradle-plugin and maven-publish.
   id("com.gradle.plugin-publish") version "2.2.1"
+  // Applied, it makes plugin-publish sign every artifact it publishes.
+  signing
 }
 
 // Inside a Maven module: the build output goes under target/, so `mvn clean` removes it too.
@@ -73,6 +75,16 @@ gradlePlugin {
 val fixturesRepo = layout.buildDirectory.dir("fixtures-repo")
 
 publishing { repositories { maven { name = "fixtures"; url = uri(fixturesRepo) } } }
+
+// Signed with the release's own GPG key, the one Maven Central's artifacts are signed with; a build
+// without the key (a local or CI test build) signs nothing.
+signing {
+  val key = providers.environmentVariable("GPG_PRIVATE_KEY")
+  isRequired = key.isPresent
+  if (key.isPresent) {
+    useInMemoryPgpKeys(key.get(), providers.environmentVariable("GPG_PASSPHRASE").orNull)
+  }
+}
 
 fun flag(name: String) = providers.gradleProperty(name).map(String::toBoolean).getOrElse(false)
 

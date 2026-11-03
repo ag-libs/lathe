@@ -72,7 +72,8 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
   the `central-publishing-maven-plugin` (`autoPublish=true`).
 - After the deploy, the workflow runs the Gradle plugin's `publishPlugins` at the same version
   (`-Dlathe.gradle.task=publishPlugins`), so the Portal gets the plugin only once Maven Central has the
-  Lathe jars it depends on.
+  Lathe jars it depends on. Its artifacts are signed with the same GPG key (`GPG_PRIVATE_KEY`,
+  `GPG_PASSPHRASE`); a build without that key signs nothing.
 - The **Maven Central badge** in the README tracks the latest published version automatically; only the
   copy-paste `<version>` snippets are bumped, by `release.sh`, in the tagged commit.
 
