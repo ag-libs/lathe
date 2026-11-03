@@ -1,6 +1,8 @@
+import org.gradle.plugin.compatibility.compatibility
+
 plugins {
-  `java-gradle-plugin`
-  `maven-publish`
+  // Publishes to the Gradle Plugin Portal; brings in java-gradle-plugin and maven-publish.
+  id("com.gradle.plugin-publish") version "2.2.1"
 }
 
 // Inside a Maven module: the build output goes under target/, so `mvn clean` removes it too.
@@ -43,10 +45,24 @@ dependencies {
 }
 
 gradlePlugin {
+  website = "https://github.com/ag-libs/lathe/blob/main/docs/guide/gradle.md"
+  vcsUrl = "https://github.com/ag-libs/lathe"
   plugins {
     create("lathe") {
       id = "io.github.ag-libs.lathe"
       implementationClass = "io.github.aglibs.lathe.gradle.LatheSettingsPlugin"
+      displayName = "Lathe"
+      description =
+          "Sets a Gradle build up for Lathe, a Java language server and MCP server for AI agents " +
+              "that gets its project setup from the build: no project import, no classpath " +
+              "configuration."
+      tags = listOf("java", "language-server", "lsp", "ide", "neovim", "mcp")
+      compatibility {
+        features {
+          configurationCache = true
+          isolatedProjects = false
+        }
+      }
     }
   }
   testSourceSets(functionalTest)

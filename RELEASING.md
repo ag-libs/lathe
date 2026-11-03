@@ -19,6 +19,11 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
 - The `io.github.ag-libs` namespace is verified on the [Central Portal](https://central.sonatype.com/).
 - Org secrets are set: `MAVEN_USERNAME`, `MAVEN_PASSWORD` (a Central Portal user token),
   `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`.
+- For the Gradle plugin: a [Gradle Plugin Portal](https://plugins.gradle.org/) account, signed in with a
+  GitHub account that belongs to `ag-libs` (the plugin ID `io.github.ag-libs.lathe` must trace back to
+  it), and its API key stored as the secrets `GRADLE_PUBLISH_KEY` and `GRADLE_PUBLISH_SECRET`.
+  The Portal reviews the first version a plugin publishes by hand and emails the account when it is
+  accepted; until then the plugin does not resolve.
 - Optional: give the GitHub `release` environment required reviewers, so a tag push waits for your
   approval before publishing.
 - The standalone Neovim client mirror `github.com/ag-libs/lathe.nvim` exists (created empty), and you
@@ -65,6 +70,9 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
   and the `${revision}` partial-build pitfalls.
 - The `release` profile attaches source and Javadoc JARs, signs artifacts with GPG, and publishes via
   the `central-publishing-maven-plugin` (`autoPublish=true`).
+- After the deploy, the workflow runs the Gradle plugin's `publishPlugins` at the same version
+  (`-Dlathe.gradle.task=publishPlugins`), so the Portal gets the plugin only once Maven Central has the
+  Lathe jars it depends on.
 - The **Maven Central badge** in the README tracks the latest published version automatically; only the
   copy-paste `<version>` snippets are bumped, by `release.sh`, in the tagged commit.
 
