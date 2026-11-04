@@ -140,7 +140,7 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
     util.notify("Debugging " .. label, vim.log.levels.INFO)
     debug_futures[token] = result_future
     spec.context.debug = true
-    spec.strategy = require("lathe.dap")._attach_config(module_rel, selections, label, token)
+    spec.strategy = require("lathe.dap").attach_config(module_rel, selections, label, token)
     return spec
   end
 

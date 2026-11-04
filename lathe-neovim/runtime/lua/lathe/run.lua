@@ -57,7 +57,7 @@ end
 --- several with the cursor on none). Always returns a MAIN target -- a MAIN_CLASS hit resolves to
 --- its class's method (id == the method's parentId) so the launch path is unchanged. Pure over the
 --- raw lathe.runnables.list targets, so it is unit-testable without a live client.
-function M._main_target_for(targets, cursor_line)
+function M.main_target_for(targets, cursor_line)
   local mains = {}
   local main_by_class = {}
   for _, t in ipairs(targets) do
@@ -246,7 +246,7 @@ function M.run(bufnr)
     command = "lathe.runnables.list",
     arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
   }, function(err, targets)
-    local target = not err and targets and M._main_target_for(targets, cursor_line) or nil
+    local target = not err and targets and M.main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       if not target then
         -- Main-only surface: no main means the user wants tests, which stay with neotest. Delegate
@@ -317,7 +317,7 @@ function M._save_target_for(targets, cursor_line)
     end
   end
 
-  local main = M._main_target_for(targets, cursor_line)
+  local main = M.main_target_for(targets, cursor_line)
   return main and save_request(targets, main) or nil
 end
 

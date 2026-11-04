@@ -69,7 +69,7 @@ end
 --- correlated with the session. Shared by :LatheDebug's cursor path (M._test_config_for) and
 --- lathe.neotest's dap-strategy specs, so the config shape lives in one place. The DAP hostName/port
 --- are injected later by enrich_config, once the server has allocated the JDWP port.
-function M._attach_config(module_rel, selections, label, token)
+function M.attach_config(module_rel, selections, label, token)
   return {
     type = "lathe",
     request = "attach",
@@ -82,7 +82,7 @@ end
 
 --- The attach config for a resolved TEST target under the cursor, minting its own run token.
 function M._test_config_for(target)
-  return M._attach_config(target.moduleRel, {
+  return M.attach_config(target.moduleRel, {
     { selectorKind = SELECTOR_KIND[target.kind], selectorValue = target.id },
   }, target.label, output.next_token())
 end
@@ -217,7 +217,7 @@ function M.debug(bufnr)
   }, function(err, targets)
     targets = (not err and targets) or {}
     local test = M._test_target_for(targets, cursor_line)
-    local main = not test and require("lathe.run")._main_target_for(targets, cursor_line) or nil
+    local main = not test and require("lathe.run").main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       local route = M._debug_route(test ~= nil, main ~= nil, neotest_available())
       if route == "neotest" then
