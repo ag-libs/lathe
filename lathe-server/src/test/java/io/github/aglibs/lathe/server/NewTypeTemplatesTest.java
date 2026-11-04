@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -115,5 +116,21 @@ class NewTypeTemplatesTest {
 
   private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
     return NewTypeTemplates.render(sourceRoot, pkg, type, name);
+  }
+
+  @Test
+  void enums_fromWireAndSourceTree_mapKnownTokensRejectUnknownWireAndTakeExtraTreesAsMain() {
+    assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
+    assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
+    assertThat(TypeKind.fromWire("package-info")).isEqualTo(TypeKind.PACKAGE_INFO);
+    assertThat(TypeKind.fromWire("module-info")).isEqualTo(TypeKind.MODULE_INFO);
+    assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
+    assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
+    assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);
+    assertThatThrownBy(() -> TypeKind.fromWire("annotation"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> SourceScope.fromWire("prod"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(SourceScope.ofSourceTree("21")).isEqualTo(SourceScope.MAIN);
   }
 }

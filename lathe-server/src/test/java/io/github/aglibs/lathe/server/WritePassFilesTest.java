@@ -1,28 +1,18 @@
 package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
-import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.tools.ToolProvider;
@@ -30,7 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class WorkspaceSessionTest {
+class WritePassFilesTest {
 
   @TempDir private Path tmp;
 
@@ -56,7 +46,7 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Foobar.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    final int deleted = WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of());
+    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of());
 
     assertThat(deleted).isEqualTo(3);
     assertThat(outputDir.resolve("Foo.class")).doesNotExist();
@@ -76,10 +66,10 @@ class WorkspaceSessionTest {
     final Path classesRoot = config.latheClassesDir();
     Files.writeString(classesRoot.resolve("module-info.class"), "");
 
-    assertThat(WorkspaceSession.deleteClassOutputs(config, moduleInfo, Set.of("module-info")))
+    assertThat(WritePass.deleteClassOutputs(config, moduleInfo, Set.of("module-info")))
         .as("kept: the write produced it")
         .isZero();
-    assertThat(WorkspaceSession.deleteClassOutputs(config, moduleInfo, Set.of())).isEqualTo(1);
+    assertThat(WritePass.deleteClassOutputs(config, moduleInfo, Set.of())).isEqualTo(1);
     assertThat(classesRoot.resolve("com")).isDirectory();
   }
 
@@ -88,7 +78,7 @@ class WorkspaceSessionTest {
     final var txtFile = tmp.resolve("module/src/main/java/com/example/Foo.txt");
     Files.writeString(outputDir.resolve("Foo.class"), "");
 
-    final int deleted = WorkspaceSession.deleteClassOutputs(config, txtFile, Set.of());
+    final int deleted = WritePass.deleteClassOutputs(config, txtFile, Set.of());
 
     assertThat(deleted).isZero();
     assertThat(outputDir.resolve("Foo.class")).exists();
@@ -104,7 +94,7 @@ class WorkspaceSessionTest {
         Map.of(
             Path.of("com/example/Live.java"), 2_000L, Path.of("com/example/Ghost.java"), 1_000L));
 
-    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(TreeState.read(config));
+    final int removed = WritePass.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isEqualTo(2);
     assertThat(outputDir.resolve("Ghost.class")).doesNotExist();
@@ -120,7 +110,7 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Live.class"), "");
     writeStamps(Map.of(Path.of("com/example/Live.java"), 2_000L));
 
-    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(TreeState.read(config));
+    final int removed = WritePass.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isZero();
     assertThat(outputDir.resolve("Live.class")).exists();
@@ -136,8 +126,7 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Foo$1.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    final int deleted =
-        WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(2);
     assertThat(outputDir.resolve("Foo$Inner.class")).doesNotExist();
@@ -154,8 +143,7 @@ class WorkspaceSessionTest {
         Map.of(
             "Foo.java", "class Foo {} class Helper {}", "Bar.java", "class Bar {} class Other {}"));
 
-    final int deleted =
-        WorkspaceSession.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
     assertThat(outputDir.resolve("Helper.class")).doesNotExist();
@@ -172,12 +160,10 @@ class WorkspaceSessionTest {
         Map.of(
             "Foo.java", "class Alpha {} class Beta {}", "Bar.java", "class Bar {} class Other {}"));
 
-    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of("com.example.Alpha")))
-        .isTrue();
+    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of("com.example.Alpha"))).isTrue();
     // A failed compile writes nothing; another source's classes do not count either.
-    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of())).isFalse();
-    assertThat(WorkspaceSession.wroteClassOf(config, sourceFile, Set.of("com.example.Other")))
-        .isFalse();
+    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of())).isFalse();
+    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of("com.example.Other"))).isFalse();
   }
 
   @Test
@@ -186,15 +172,14 @@ class WorkspaceSessionTest {
     final var edited = sourceRoot.resolve("com/example/Edited.java");
     final var fresh = sourceRoot.resolve("com/example/Fresh.java");
     final Map<Path, Long> stale = Map.of(broken, 100L, edited, 200L, fresh, 300L);
-    final Map<Path, WorkspaceSession.FailedWrite> failed =
+    final Map<Path, WritePass.FailedWrite> failed =
         Map.of(
             broken,
-            new WorkspaceSession.FailedWrite(100L, "1: error"),
+            new WritePass.FailedWrite(100L, "1: error"),
             edited,
-            new WorkspaceSession.FailedWrite(150L, "1: error"));
+            new WritePass.FailedWrite(150L, "1: error"));
 
-    assertThat(WorkspaceSession.withoutFailedCompiles(stale, failed))
-        .containsOnlyKeys(edited, fresh);
+    assertThat(WritePass.withoutFailedCompiles(stale, failed)).containsOnlyKeys(edited, fresh);
   }
 
   @Test
@@ -207,15 +192,13 @@ class WorkspaceSessionTest {
 
     // Moving has not settled across two ticks; Renamed waits for its open rename's commit; Failed
     // failed unchanged since and rides along, as this write may bring what it was missing.
-    assertThat(
-            WorkspaceSession.treeBatch(
-                tree, Set.of(settled, renamed), Set.of(failed), Set.of(renamed)))
+    assertThat(WritePass.treeBatch(tree, Set.of(settled, renamed), Set.of(failed), Set.of(renamed)))
         .as("ready and not held, plus failed-unchanged, in the tree's order")
         .containsExactly(settled, failed);
-    assertThat(WorkspaceSession.treeBatch(tree, Set.of(renamed), Set.of(failed), Set.of(renamed)))
+    assertThat(WritePass.treeBatch(tree, Set.of(renamed), Set.of(failed), Set.of(renamed)))
         .as("only a held file is ready: nothing writes, so the failed one does not ride alone")
         .isEmpty();
-    assertThat(WorkspaceSession.treeBatch(tree, Set.of(), Set.of(failed), Set.of()))
+    assertThat(WritePass.treeBatch(tree, Set.of(), Set.of(failed), Set.of()))
         .as("nothing ready")
         .isEmpty();
   }
@@ -229,7 +212,7 @@ class WorkspaceSessionTest {
     final Map<Path, Long> current = Map.of(settled, 100L, moving, 200L, fresh, 300L);
 
     // settled held its mtime across both ticks; moving changed since last tick; fresh is brand new.
-    assertThat(WorkspaceSession.stableSources(current, previous)).containsExactly(settled);
+    assertThat(WritePass.stableSources(current, previous)).containsExactly(settled);
   }
 
   @Test
@@ -311,10 +294,10 @@ class WorkspaceSessionTest {
     // mtime is identical either way, so the scan dedupes by path rather than crashing on a dup key.
     final var shared = tmp.resolve("make/jdk/src/classes/build/tools/depend/Depend.java");
     final var scan =
-        new WorkspaceSession.StaleScan(
+        new WritePass.StaleScan(
             Map.of(config, List.of(shared), config(tmp.resolve("other/src")), List.of(shared)));
 
-    assertThat(WorkspaceSession.staleMtimes(scan)).containsOnlyKeys(shared);
+    assertThat(WritePass.staleMtimes(scan)).containsOnlyKeys(shared);
   }
 
   private Path writeJava(final String typeName, final long mtime) throws IOException {
@@ -332,125 +315,8 @@ class WorkspaceSessionTest {
         Map.of());
   }
 
-  @Test
-  void enums_fromWireAndSourceTree_mapKnownTokensRejectUnknownWireAndTakeExtraTreesAsMain() {
-    assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
-    assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
-    assertThat(TypeKind.fromWire("package-info")).isEqualTo(TypeKind.PACKAGE_INFO);
-    assertThat(TypeKind.fromWire("module-info")).isEqualTo(TypeKind.MODULE_INFO);
-    assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
-    assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
-    assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);
-    assertThatThrownBy(() -> TypeKind.fromWire("annotation"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> SourceScope.fromWire("prod"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(SourceScope.ofSourceTree("21")).isEqualTo(SourceScope.MAIN);
-  }
-
-  @Test
-  void moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists() {
-    final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
-    final var otherCfg =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/other"),
-            tmp.resolve("other/target/classes"),
-            tmp.resolve("other/src/main/java"));
-    final List<ModuleSourceConfig> configs = List.of(config, testCfg, otherCfg);
-
-    assertThat(WorkspaceSession.moduleSummaries(configs, tmp, WorkspaceModuleGraph.build(configs)))
-        .extracting(LatheModuleSummary::module, LatheModuleSummary::hasTests)
-        .containsExactly(tuple("module", true), tuple("other", false));
-  }
-
-  // Go to test: a main type's tests by the build's default test names, in its own module and in a
-  // separate test module, same package first; a main-tree class named like a test is not one.
-  // From a test, the type it tests, not a nested type of that name; a type without tests has none.
-  @Test
-  void testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject() throws Exception {
-    final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
-    final var itCfg = TestCompiler.testTreeConfig(tmp, "it", "src/test/java");
-    final var itMain =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/it"),
-            tmp.resolve("it/target/classes"),
-            tmp.resolve("it/src/main/java"));
-    final List<ModuleSourceConfig> configs = List.of(config, testCfg, itCfg, itMain);
-    final Map<String, Path> files =
-        Map.of(
-            "com.example.Foo", sourceFile,
-            "com.example.Bar", sourceRoot.resolve("com/example/Bar.java"),
-            "com.example.util.FooTest", sourceRoot.resolve("com/example/util/FooTest.java"),
-            "com.example.FooTest", tmp.resolve("module/src/test/java/com/example/FooTest.java"),
-            "com.example.FooIT", tmp.resolve("module/src/test/java/com/example/FooIT.java"),
-            "com.example.FooTests", tmp.resolve("it/src/test/java/com/example/FooTests.java"),
-            "com.other.TestFoo", tmp.resolve("it/src/test/java/com/other/TestFoo.java"),
-            "com.other.Outer$Foo", tmp.resolve("it/src/main/java/com/other/Outer.java"));
-    for (final Path file : files.values()) {
-      Files.createDirectories(file.getParent());
-      Files.writeString(file, "");
-    }
-
-    final WorkspaceTypeIndex index =
-        TempSourceCompiler.typeIndex(
-            tmp.resolve("index.json"),
-            List.of(),
-            files.keySet().stream()
-                .map(
-                    name ->
-                        new TypeIndexEntry(
-                            name.substring(
-                                Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1),
-                            name,
-                            name.substring(0, name.lastIndexOf('.')),
-                            io.github.aglibs.lathe.core.typeindex.TypeKind.CLASS,
-                            true,
-                            List.of()))
-                .toList());
-    final Function<Path, Optional<ModuleSourceConfig>> configOf =
-        path ->
-            configs.stream()
-                .filter(candidate -> candidate.sourceRoots().stream().anyMatch(path::startsWith))
-                .findFirst();
-    final List<Path> roots = configs.stream().flatMap(c -> c.searchRoots().stream()).toList();
-    final Function<String, TestCounterparts> counterparts =
-        name ->
-            TestCounterparts.find(
-                files.get(name), name.substring(0, name.lastIndexOf('.')), configOf, index, roots);
-
-    assertThat(counterparts.apply("com.example.Foo").fromTest()).isFalse();
-    assertThat(counterparts.apply("com.example.Foo").targets())
-        .extracting(TestCounterparts.Target::qualifiedName)
-        .containsExactly(
-            "com.example.FooTest",
-            "com.example.FooIT",
-            "com.example.FooTests",
-            "com.other.TestFoo");
-    assertThat(counterparts.apply("com.example.Foo").targets().get(0).uri())
-        .isEqualTo(LatheUri.canonical(files.get("com.example.FooTest").toUri().toString()));
-    assertThat(counterparts.apply("com.example.FooIT").fromTest()).isTrue();
-    assertThat(counterparts.apply("com.example.FooIT").targets())
-        .extracting(TestCounterparts.Target::qualifiedName)
-        .containsExactly("com.example.Foo");
-    assertThat(counterparts.apply("com.other.TestFoo").targets())
-        .extracting(TestCounterparts.Target::qualifiedName)
-        .containsExactly("com.example.Foo");
-    assertThat(counterparts.apply("com.example.Bar").targets()).isEmpty();
-  }
-
-  @Test
-  void testCounterpartNames_conventions_testNamesAndTheSubjectTheyStripTo() {
-    assertThat(TestCounterparts.testNames("Foo"))
-        .containsExactly(
-            "FooTest", "FooTests", "FooTestCase", "FooIT", "FooITCase", "TestFoo", "ITFoo");
-    assertThat(TestCounterparts.subjectNames("FooTestCase")).containsExactly("Foo");
-    assertThat(TestCounterparts.subjectNames("ITFoo")).containsExactly("Foo");
-    assertThat(TestCounterparts.subjectNames("Testing")).isEmpty();
-    assertThat(TestCounterparts.subjectNames("Test")).isEmpty();
-  }
-
-  private static WorkspaceSession.StaleScan staleModules(final ModuleSourceConfig... configs) {
-    return WorkspaceSession.staleModules(Arrays.stream(configs).map(TreeState::read).toList());
+  private static WritePass.StaleScan staleModules(final ModuleSourceConfig... configs) {
+    return WritePass.staleModules(Arrays.stream(configs).map(TreeState::read).toList());
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {
