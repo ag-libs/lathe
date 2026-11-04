@@ -99,6 +99,33 @@ function M.setup()
   vim.api.nvim_create_user_command("LatheResourceFind", function(opts)
     M.find(opts.args ~= "" and opts.args or nil)
   end, { nargs = "?", desc = "Lathe: find a resource by name (reactor + dependencies)" })
+
+  local augroup = vim.api.nvim_create_augroup("LatheResources", { clear = true })
+  local cache = require("lathe.workspace").cache_root()
+  -- Resource refresh: copy a saved resource into .lathe/ so the next test replay picks it up without
+  -- a rebuild. The server maps the file against the real resource roots lathe:sync captured (a save
+  -- that maps to no resource root is a no-op there), so forward any non-Java save inside a Lathe
+  -- workspace. Skips .java (handled by the LSP) and cache files. The editor-agnostic path
+  -- (workspace/didChangeWatchedFiles) can drive the same server command later; this autocmd is
+  -- Neovim's uniform, dependency-free trigger.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    callback = function(ev)
+      local name = vim.api.nvim_buf_get_name(ev.buf)
+      if name == "" or name:match("%.java$") or vim.startswith(name, cache) then
+        return
+      end
+      for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
+        if client.root_dir and vim.startswith(name, client.root_dir) then
+          client:request("workspace/executeCommand", {
+            command = "lathe.resource.refresh",
+            arguments = { { uri = vim.uri_from_fname(name) } },
+          })
+          return
+        end
+      end
+    end,
+  })
 end
 
 return M

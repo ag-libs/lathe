@@ -41,6 +41,9 @@ M.ROOT_MARKER = workspace.ROOT_MARKER
 M.get_root = workspace.get_root
 M.cache_root = workspace.cache_root
 
+-- On-demand formatting that keeps a closed imports fold shut; see lathe.format.
+M.format = require("lathe.format").format
+
 --- Notify the user when the language server process exits unexpectedly. A clean
 --- shutdown (exit code 0) or Neovim itself quitting stays silent; any other exit
 --- surfaces an error pointing at `:LspLog`, since a dead server cannot report for
@@ -91,20 +94,6 @@ function M.start(bufnr)
 
   local config = vim.tbl_extend("force", vim.lsp.config["lathe"] or {}, { root_dir = root })
   vim.lsp.start(config, { bufnr = bufnr })
-end
-
--- On-demand formatting that keeps a closed imports fold from springing open (NV-3). Map a format
--- key to this instead of raw vim.lsp.buf.format, which reopens the fold on the buffer rewrite.
--- A pom.xml has no server formatter, so it routes client-side through xmllint; every other buffer
--- goes through the fold-preserving google-java-format path.
-function M.format(bufnr, opts)
-  bufnr = bufnr or vim.api.nvim_get_current_buf()
-  if vim.fs.basename(vim.api.nvim_buf_get_name(bufnr)) == "pom.xml" then
-    require("lathe.pom").format_buffer(bufnr)
-    return
-  end
-
-  require("lathe.fold").format(bufnr, opts)
 end
 
 -- Nudge for the silent failure modes: a Java buffer is open but Lathe can't serve it because the
@@ -200,7 +189,6 @@ function M.setup(opts)
   M._configured = true
   not_ready_notified = false
   M.warn_if_double_loaded()
-  local root = workspace.cache_root()
 
   require("lathe.indent").setup({ indent = opts.style and opts.style.indent })
 
@@ -276,124 +264,12 @@ function M.setup(opts)
     M.start(vim.api.nvim_get_current_buf())
   end, { desc = "Lathe: start the language server for the current directory" })
 
-  -- Format-on-save follows the server's advertised formatting capability (enabled by a workspace
-  -- style file or the client option), checked per attach, rather than a static setup() flag -- so a
-  -- project whose formatter comes from .lathe/style.json gets it without a global formatter option.
-  if opts.format_on_save == true then
-    local fold = require("lathe.fold")
-    vim.api.nvim_create_autocmd("LspAttach", {
-      group = augroup,
-      callback = function(args)
-        local client = vim.lsp.get_client_by_id(args.data.client_id)
-        if not (client and client.name == "lathe") then
-          return
-        end
+  -- Formatting: :LatheFormat, and format-on-save when the server advertises formatting.
+  require("lathe.format").setup(opts.format_on_save)
 
-        if not client.server_capabilities.documentFormattingProvider then
-          return
-        end
-
-        -- Format-on-save rewrites the buffer, which reopens ufo's imports fold on every save
-        -- (NV-3). Snapshot the fold's state before the format, then restore it after ufo settles.
-        local imports_were_closed = false
-        vim.api.nvim_create_autocmd("BufWritePre", {
-          group = augroup,
-          buffer = args.buf,
-          callback = function()
-            imports_were_closed = fold.imports_closed(args.buf)
-            vim.lsp.buf.format({ bufnr = args.buf, id = args.data.client_id, async = false })
-          end,
-        })
-        vim.api.nvim_create_autocmd("BufWritePost", {
-          group = augroup,
-          buffer = args.buf,
-          callback = function()
-            fold.reclose_imports(args.buf, imports_were_closed)
-          end,
-        })
-      end,
-    })
-  end
-
-  -- Manual formatting is a no-op unless the server advertises it, so :LatheFormat is always
-  -- registered; it routes through M.format so the imports fold survives the whole-document rewrite.
-  vim.api.nvim_create_user_command("LatheFormat", function()
-    M.format(vim.api.nvim_get_current_buf())
-  end, { desc = "Lathe: format the current buffer (preserving the imports fold)" })
-
-  -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
-  -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
-  -- main-only path (RunnableKind.MAIN, which neotest excludes). Signs refresh when the server
-  -- attaches and after each save, since an edit can add or remove a main.
-  local run = require("lathe.run")
-  vim.api.nvim_create_autocmd("LspAttach", {
-    group = augroup,
-    callback = function(args)
-      local client = vim.lsp.get_client_by_id(args.data.client_id)
-      if client and client.name == "lathe" then
-        run.refresh_signs(args.buf)
-        run.refresh_configs()
-      end
-    end,
-  })
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    group = augroup,
-    pattern = "*.java",
-    callback = function(ev)
-      if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) > 0 then
-        run.refresh_signs(ev.buf)
-      end
-    end,
-  })
-  -- A hand-edited run config (either layer) refreshes the completion/picker cache without a
-  -- re-attach. The `run.json` pattern is a basename match (fires for any run.json), so the callback
-  -- narrows it to Lathe's own files: the reactor-root lathe-run.json or a `.lathe/run.json`. Absent
-  -- configs (or no attached client) make refresh_configs a harmless no-op.
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    group = augroup,
-    pattern = { "lathe-run.json", "run.json" },
-    callback = function(ev)
-      local name = ev.file or ""
-      if name:match("/%.lathe/run%.json$") or vim.fs.basename(name) == "lathe-run.json" then
-        run.refresh_configs()
-      end
-    end,
-  })
-  vim.api.nvim_create_user_command("LatheRun", function(cmd)
-    if cmd.args ~= "" then
-      run.run_named(cmd.args)
-    else
-      run.run(vim.api.nvim_get_current_buf())
-    end
-  end, {
-    nargs = "?",
-    complete = function(arglead)
-      return run.complete_config(arglead)
-    end,
-    desc = "Lathe: run the buffer main, or a saved config by name",
-  })
-  vim.api.nvim_create_user_command("LatheRunStop", function()
-    -- Stop a debug session if one is live (cancels its replay JVM directly); otherwise the run.
-    if not require("lathe.dap").stop() then
-      run.stop()
-    end
-  end, { desc = "Lathe: stop the active run or debug session" })
-  vim.api.nvim_create_user_command("LatheRunLast", function()
-    run.run_last()
-  end, { desc = "Lathe: re-run the last run config" })
-  vim.api.nvim_create_user_command("LatheRunSave", function(cmd)
-    run.save(cmd.args ~= "" and cmd.args or nil, cmd.bang)
-  end, {
-    nargs = "?",
-    bang = true,
-    complete = function(arglead)
-      return run.complete_config(arglead)
-    end,
-    desc = "Lathe: save the runnable under the cursor as a named config (! overwrites)",
-  })
-  vim.api.nvim_create_user_command("LatheRunOutput", function()
-    require("lathe.output").open()
-  end, { desc = "Lathe: toggle the run output console" })
+  -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main class
+  -- from .lathe/ bytecode; tests go through the neotest adapter.
+  require("lathe.run").setup()
 
   -- New-type surface: :LatheNew scaffolds a class/interface/record/enum through the server (which
   -- owns placement, skeleton, and caret) and opens the returned file.
@@ -430,52 +306,10 @@ function M.setup(opts)
   -- default; pass `pom = { validate = false }` to disable, `pom = { format = true }` for `gq`.
   require("lathe.pom").setup(opts.pom)
 
-  -- Debug surface: :LatheDebug attaches nvim-dap to the test or main class under the cursor,
-  -- replayed under a suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main).
-  -- Optional -- the command is only wired when nvim-dap is present, so a runtime without it loads
-  -- unaffected.
-  if require("lathe.dap").setup() then
-    vim.api.nvim_create_user_command("LatheDebug", function(cmd)
-      if cmd.args ~= "" then
-        require("lathe.dap").debug_named(cmd.args)
-      else
-        require("lathe.dap").debug(vim.api.nvim_get_current_buf())
-      end
-    end, {
-      nargs = "?",
-      complete = function(arglead)
-        return run.complete_config(arglead)
-      end,
-      desc = "Lathe: debug the cursor target, or a saved config by name",
-    })
-  end
+  -- Debug surface: :LatheDebug through nvim-dap, wired only when nvim-dap is present.
+  require("lathe.dap").setup()
 
   workspace.setup()
-
-  -- Resource refresh: copy a saved resource into .lathe/ so the next test replay picks it up without
-  -- a rebuild. The server maps the file against the real resource roots lathe:sync captured (a save
-  -- that maps to no resource root is a no-op there), so forward any non-Java save inside a Lathe
-  -- workspace. Skips .java (handled by the LSP) and cache files. The editor-agnostic path
-  -- (workspace/didChangeWatchedFiles) can drive the same server command later; this autocmd is
-  -- Neovim's uniform, dependency-free trigger.
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    group = augroup,
-    callback = function(ev)
-      local name = vim.api.nvim_buf_get_name(ev.buf)
-      if name == "" or name:match("%.java$") or vim.startswith(name, root) then
-        return
-      end
-      for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
-        if client.root_dir and vim.startswith(name, client.root_dir) then
-          client:request("workspace/executeCommand", {
-            command = "lathe.resource.refresh",
-            arguments = { { uri = vim.uri_from_fname(name) } },
-          })
-          return
-        end
-      end
-    end,
-  })
 end
 
 return M

@@ -315,6 +315,22 @@ function M.setup()
   dap.adapters.lathe = start_adapter
   dap.listeners.after.event_terminated.lathe_decorate = M._decorate_on_session_end
   dap.listeners.after.event_exited.lathe_decorate = M._decorate_on_session_end
+  -- :LatheDebug attaches nvim-dap to the test or main class under the cursor, replayed under a
+  -- suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main). Wired only when nvim-dap
+  -- is present, so a runtime without it loads unaffected.
+  vim.api.nvim_create_user_command("LatheDebug", function(cmd)
+    if cmd.args ~= "" then
+      M.debug_named(cmd.args)
+    else
+      M.debug(vim.api.nvim_get_current_buf())
+    end
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return require("lathe.run").complete_config(arglead)
+    end,
+    desc = "Lathe: debug the cursor target, or a saved config by name",
+  })
   return true
 end
 

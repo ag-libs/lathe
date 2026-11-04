@@ -425,4 +425,81 @@ function M.stop()
   })
 end
 
+--- Registers the run commands and keeps the gutter signs and the run configs current.
+function M.setup()
+  local augroup = vim.api.nvim_create_augroup("LatheRun", { clear = true })
+  -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
+  -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
+  -- main-only path (RunnableKind.MAIN, which neotest excludes). Signs refresh when the server
+  -- attaches and after each save, since an edit can add or remove a main.
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = augroup,
+    callback = function(args)
+      local client = vim.lsp.get_client_by_id(args.data.client_id)
+      if client and client.name == "lathe" then
+        M.refresh_signs(args.buf)
+        M.refresh_configs()
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    pattern = "*.java",
+    callback = function(ev)
+      if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) > 0 then
+        M.refresh_signs(ev.buf)
+      end
+    end,
+  })
+  -- A hand-edited run config (either layer) refreshes the completion/picker cache without a
+  -- re-attach. The `run.json` pattern is a basename match (fires for any run.json), so the callback
+  -- narrows it to Lathe's own files: the reactor-root lathe-run.json or a `.lathe/run.json`. Absent
+  -- configs (or no attached client) make refresh_configs a harmless no-op.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    pattern = { "lathe-run.json", "run.json" },
+    callback = function(ev)
+      local name = ev.file or ""
+      if name:match("/%.lathe/run%.json$") or vim.fs.basename(name) == "lathe-run.json" then
+        M.refresh_configs()
+      end
+    end,
+  })
+  vim.api.nvim_create_user_command("LatheRun", function(cmd)
+    if cmd.args ~= "" then
+      M.run_named(cmd.args)
+    else
+      M.run(vim.api.nvim_get_current_buf())
+    end
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return M.complete_config(arglead)
+    end,
+    desc = "Lathe: run the buffer main, or a saved config by name",
+  })
+  vim.api.nvim_create_user_command("LatheRunStop", function()
+    -- Stop a debug session if one is live (cancels its replay JVM directly); otherwise the M.
+    if not require("lathe.dap").stop() then
+      M.stop()
+    end
+  end, { desc = "Lathe: stop the active run or debug session" })
+  vim.api.nvim_create_user_command("LatheRunLast", function()
+    M.run_last()
+  end, { desc = "Lathe: re-run the last run config" })
+  vim.api.nvim_create_user_command("LatheRunSave", function(cmd)
+    M.save(cmd.args ~= "" and cmd.args or nil, cmd.bang)
+  end, {
+    nargs = "?",
+    bang = true,
+    complete = function(arglead)
+      return M.complete_config(arglead)
+    end,
+    desc = "Lathe: save the runnable under the cursor as a named config (! overwrites)",
+  })
+  vim.api.nvim_create_user_command("LatheRunOutput", function()
+    require("lathe.output").open()
+  end, { desc = "Lathe: toggle the run output console" })
+end
+
 return M
