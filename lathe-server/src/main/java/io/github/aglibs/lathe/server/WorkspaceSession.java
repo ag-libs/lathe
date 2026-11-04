@@ -176,7 +176,7 @@ final class WorkspaceSession {
 
   private final LanguageClient client;
   private final ProgressReporter progressReporter;
-  private final ServerEventLoop worker;
+  private final ServerEventLoop eventLoop;
   private final long debounceMs;
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
@@ -272,13 +272,13 @@ final class WorkspaceSession {
   private final DiagnosticPublisher publisher;
 
   // In-flight replays keyed by run token, so a cancel can reach the right LaunchSession. A plain
-  // map, not a concurrent one: it is mutated only on the worker thread. The run and exit threads
-  // marshal put/remove via worker.execute (see runTestFuture) rather than touching it directly,
+  // map, not a concurrent one: it is mutated only on the event loop. The run and exit threads
+  // marshal put/remove via eventLoop.execute (see runTestFuture) rather than touching it directly,
   // keeping the single-threaded discipline of every other field here.
   private final Map<String, LaunchSession> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
   // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
-  // last one queued: discovery JVMs run one at a time. Both touched on the worker thread only.
+  // last one queued: discovery JVMs run one at a time. Both touched on the event loop only.
   private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
   private CompletableFuture<TestDiscovery> lastDiscovery =
       CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
@@ -287,18 +287,18 @@ final class WorkspaceSession {
   WorkspaceSession(
       final LanguageClient client,
       final ProgressReporter progressReporter,
-      final ServerEventLoop worker,
+      final ServerEventLoop eventLoop,
       final long debounceMs) {
     this.client = client;
     this.progressReporter = progressReporter;
-    this.worker = worker;
+    this.eventLoop = eventLoop;
     this.debounceMs = debounceMs;
     this.publisher = new DiagnosticPublisher(client, docs);
   }
 
   void initialize(final Path root) {
     this.workspaceRoot = root;
-    memoryPressure = new MemoryPressure(worker::execute, this::releaseUnderPressure);
+    memoryPressure = new MemoryPressure(eventLoop::execute, this::releaseUnderPressure);
     final var progress = progressReporter.open(null, new CompletableFuture<>());
     progress.begin(WORKSPACE_PROGRESS_TITLE, 1);
     final var t = Stopwatch.start();
@@ -322,7 +322,7 @@ final class WorkspaceSession {
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
     watcher.updateBuildFiles(manifest.buildFiles(), manifest.buildFileFingerprints());
-    worker.scheduleAtFixedRate(scanIntervalMs(), this::checkForChanges);
+    eventLoop.scheduleAtFixedRate(scanIntervalMs(), this::checkForChanges);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
     } else {
@@ -405,12 +405,13 @@ final class WorkspaceSession {
     final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
-    // Register/deregister the run by token so a cancel can reach it. Marshaled onto the worker so
+    // Register/deregister the run by token so a cancel can reach it. Marshaled onto the event loop
+    // so
     // activeRuns keeps the single-threaded discipline of every other field. Removal covers the
     // blocked/error paths too (removing an unregistered token is a no-op).
-    result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
+    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
     final Consumer<LaunchSession> onStart =
-        session -> worker.execute(() -> activeRuns.put(token, session));
+        session -> eventLoop.execute(() -> activeRuns.put(token, session));
 
     final var thread =
         new Thread(
@@ -447,8 +448,8 @@ final class WorkspaceSession {
   /**
    * Launches the selected test suspended under a JDWP agent and opens an in-process DAP host wired
    * to the module's source model, returning the ports the editor's debug client attaches to. Runs
-   * on the session worker; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills
-   * it, and the DAP host is closed when the debuggee exits.
+   * on the event loop; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills it,
+   * and the DAP host is closed when the debuggee exits.
    */
   DebugStartResult debugTest(
       final String moduleRel, final List<TestSelection> selections, final String token) {
@@ -630,7 +631,7 @@ final class WorkspaceSession {
         .onExit()
         .whenComplete(
             (outcome, error) ->
-                worker.execute(
+                eventLoop.execute(
                     () -> {
                       publishTestFinished(token, outcome, error);
                       endDebugSession(token);
@@ -674,7 +675,7 @@ final class WorkspaceSession {
     final var host =
         DapHost.start(
             new LatheProviderContext(this::debugWorkerFor, debugSourceRoots, typeIndex),
-            () -> worker.execute(() -> cancelRun(token)));
+            () -> eventLoop.execute(() -> cancelRun(token)));
     activeDebugHosts.put(token, host);
     LOG.info(
         () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
@@ -685,7 +686,7 @@ final class WorkspaceSession {
   // access, and always the current registry, since a sync replaces it mid-session. Cancelled (so
   // the debugger request fails) once the session has closed.
   private Optional<CompilationWorker> debugWorkerFor(final Path file) {
-    return worker.submit(() -> workspace.moduleSourceFor(file).map(workspace::workerFor)).join();
+    return eventLoop.submit(() -> workspace.moduleSourceFor(file).map(workspace::workerFor)).join();
   }
 
   private static void assertLaunchComplete(final CompletenessResult gate) {
@@ -966,7 +967,7 @@ final class WorkspaceSession {
     final CompletableFuture<TestDiscovery> result =
         lastDiscovery
             .handle((previous, error) -> moduleRel)
-            .thenComposeAsync(this::launchDiscovery, worker::execute)
+            .thenComposeAsync(this::launchDiscovery, eventLoop::execute)
             .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
     lastDiscovery = result;
     discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
@@ -990,7 +991,7 @@ final class WorkspaceSession {
         baselineOverlay(moduleRel, RunKind.TEST)
             .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
     return startTestRun(moduleRel, selections, "", overlay)
-        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), worker::execute);
+        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), eventLoop::execute);
   }
 
   private TestDiscovery discovery(final String moduleRel, final LaunchOutcome outcome) {
@@ -1358,9 +1359,9 @@ final class WorkspaceSession {
 
   /**
    * Streams each drained transcript line to the client over the run token so the client can render
-   * it live. Fired from {@code LaunchSession}'s drain threads, not the worker: the payload is
+   * it live. Fired from {@code LaunchSession}'s drain threads, not the event loop: the payload is
    * immutable and carries no session state, and lsp4j serializes the writes, so publishing off the
-   * worker is safe here. A blank token (no live surface listening) yields a no-op.
+   * event loop is safe here. A blank token (no live surface listening) yields a no-op.
    */
   private Consumer<TranscriptLine> streamConsumer(final String token) {
     if (token.isBlank()) {
@@ -1391,7 +1392,7 @@ final class WorkspaceSession {
 
   /**
    * Streams each per-test result the sink tailer sees to the client over the run token, so it can
-   * mark that position live mid-run. Same off-worker publication rationale as {@link
+   * mark that position live mid-run. Same off-loop publication rationale as {@link
    * #streamConsumer}; a blank token yields a no-op.
    */
   private Consumer<TestResult> resultConsumer(final String token) {
@@ -1546,9 +1547,9 @@ final class WorkspaceSession {
     final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
-    result.whenComplete((outcome, error) -> worker.execute(() -> activeRuns.remove(token)));
+    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
     final Consumer<LaunchSession> onStart =
-        session -> worker.execute(() -> activeRuns.put(token, session));
+        session -> eventLoop.execute(() -> activeRuns.put(token, session));
 
     final var thread =
         new Thread(
@@ -1811,14 +1812,14 @@ final class WorkspaceSession {
     unsaved.add(uri);
     LOG.fine(() -> "[change] %s".formatted(uri));
     candidateIndex.update(uri, content);
-    worker.cancel(uri);
+    eventLoop.cancel(uri);
     if (trackRename(renameTransaction.onContent(uri, content))
         == RenameTransaction.Action.SUPPRESS) {
       return;
     }
 
     publisher.publishEmpty(uri);
-    worker.schedule(
+    eventLoop.schedule(
         uri,
         debounceMs,
         () -> {
@@ -1833,7 +1834,7 @@ final class WorkspaceSession {
     docs.remove(uri);
     unsaved.remove(uri);
     LOG.info(() -> "[close] %s".formatted(uri));
-    worker.cancel(uri);
+    eventLoop.cancel(uri);
     renameTransaction.onClose(uri);
 
     analysisLru.remove(uri);
@@ -1846,7 +1847,7 @@ final class WorkspaceSession {
   void onSave(final String uri, final String savedContent) {
     LOG.info(() -> "[save] %s".formatted(uri));
     unsaved.remove(uri);
-    worker.cancel(uri);
+    eventLoop.cancel(uri);
 
     final var snapshot = snapshotForSave(uri, savedContent);
     if (snapshot == null) {
@@ -2004,7 +2005,7 @@ final class WorkspaceSession {
                   : Either3.<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>forFirst(
                       range);
             },
-            worker::execute)
+            eventLoop::execute)
         .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
@@ -2080,7 +2081,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(target);
     }
 
-    return worker
+    return eventLoop
         .submit(
             () ->
                 typeIndex
@@ -2118,7 +2119,7 @@ final class WorkspaceSession {
       final String cursorUri,
       final ModuleSourceConfig cursorConfig,
       final CancelChecker cancelChecker) {
-    return worker
+    return eventLoop
         .submit(
             () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
         .thenCompose(conflict -> conflict)
@@ -2368,7 +2369,7 @@ final class WorkspaceSession {
                                     requireNothingLeftBehind(searchTarget, matches);
                                     return matches;
                                   },
-                                  worker::execute)
+                                  eventLoop::execute)
                               .thenCompose(
                                   matches ->
                                       requireMeaningKept(
@@ -2385,9 +2386,9 @@ final class WorkspaceSession {
                                                       toLocations(matches),
                                                       newName,
                                                       fileRenameSupported),
-                                              worker::execute)));
+                                              eventLoop::execute)));
             },
-            worker::execute)
+            eventLoop::execute)
         .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
   }
 
@@ -2559,7 +2560,7 @@ final class WorkspaceSession {
     // Planning reads session state, so it runs on the event loop; reading the candidate files does
     // not, so it runs off it, where a search over thousands of files cannot stall the loop.
     final var planningTimer = Stopwatch.start();
-    return worker
+    return eventLoop
         .submit(() -> planSearch(cursorConfig, target))
         .thenApplyAsync(plans -> plans.stream().map(WorkspaceSession::readCandidates).toList())
         .thenCompose(
@@ -2981,7 +2982,7 @@ final class WorkspaceSession {
         .resolveTarget(request)
         .thenCompose(
             target ->
-                worker
+                eventLoop
                     .submit(
                         () ->
                             implementationForTarget(
@@ -3024,7 +3025,7 @@ final class WorkspaceSession {
                     target, request, cursorWorker, sam, indexSnapshot, lambdaSnapshot)
                 : implementationsIn(
                     target, sam, indexSnapshot, lambdaSnapshot, entry -> true, uri -> true),
-        worker::execute);
+        eventLoop::execute);
   }
 
   // A type's named subtypes come from the type index alone; its local and anonymous subclasses, and
@@ -3566,7 +3567,7 @@ final class WorkspaceSession {
         action,
         docs::get,
         (uri, content) ->
-            worker.submit(() -> diagnosticsTransientFuture(uri, content)).thenCompose(f -> f));
+            eventLoop.submit(() -> diagnosticsTransientFuture(uri, content)).thenCompose(f -> f));
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
@@ -3819,7 +3820,7 @@ final class WorkspaceSession {
     CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
         .whenComplete(
             (index, error) ->
-                worker.execute(
+                eventLoop.execute(
                     () -> {
                       if (error != null) {
                         LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
@@ -3950,14 +3951,15 @@ final class WorkspaceSession {
   }
 
   // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
-  // worker thread. eager mirrors the startup pass (no two-tick wait).
+  // event loop. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow(final boolean eager) {
     return requestPass(eager).thenAccept(stale -> {});
   }
 
   // Asks for a write pass; completes with the stale sources it considered once its writes finish.
   // eager treats every stale source as ready (startup, an MCP query) instead of waiting a tick for
-  // a file that may still be being written. Runs on the worker, which owns all pass state; the pass
+  // a file that may still be being written. Runs on the event loop, which owns all pass state; the
+  // pass
   // is registered as running before any of its work, so one that finishes at once still ends
   // cleanly.
   private CompletableFuture<List<Path>> requestPass(final boolean eager) {
@@ -3989,7 +3991,7 @@ final class WorkspaceSession {
       // as the change scan keeps an editor's idle server from waking more while it waits.
       if (lock.isEmpty()) {
         waitingForWriteLock = true;
-        worker.schedule(WRITE_LOCK_KEY, scanIntervalMs(), () -> runLocked(eager, pass));
+        eventLoop.schedule(WRITE_LOCK_KEY, scanIntervalMs(), () -> runLocked(eager, pass));
         return;
       }
 
@@ -4212,7 +4214,7 @@ final class WorkspaceSession {
         });
     moves.forEach(tx::addMovedAway);
     LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));
-    worker.schedule(RENAME_UNAPPLIED_KEY, RENAME_UNAPPLIED_MS, this::dropUnappliedRename);
+    eventLoop.schedule(RENAME_UNAPPLIED_KEY, RENAME_UNAPPLIED_MS, this::dropUnappliedRename);
   }
 
   // An edit the editor never applied (a cancelled refactor preview) was dormant all along, so its
@@ -4237,7 +4239,7 @@ final class WorkspaceSession {
     }
 
     if (action != RenameTransaction.Action.NORMAL && renameTransaction.anySaved()) {
-      worker.schedule(RENAME_COMMIT_KEY, RENAME_IDLE_MS, this::commitRenameTransaction);
+      eventLoop.schedule(RENAME_COMMIT_KEY, RENAME_IDLE_MS, this::commitRenameTransaction);
     }
 
     return action;
@@ -4252,8 +4254,8 @@ final class WorkspaceSession {
     }
 
     renameTransaction = new RenameTransaction();
-    worker.cancel(RENAME_COMMIT_KEY);
-    worker.cancel(RENAME_UNAPPLIED_KEY);
+    eventLoop.cancel(RENAME_COMMIT_KEY);
+    eventLoop.cancel(RENAME_UNAPPLIED_KEY);
     final Set<Path> saved = tx.savedPaths();
     final Set<String> unsaved = tx.unsavedUris();
     LOG.info(
@@ -4331,7 +4333,7 @@ final class WorkspaceSession {
   // pass. If its result can't be trusted (a build-file sync pending, or a running build) it
   // carries a DeferReason so verify_change falls back to the build. The outcome lists every stale
   // source, including one that failed unchanged since and so was not recompiled. Runs on the
-  // worker.
+  // event loop.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     checkForChanges();
     if (reactorBuildInProgress()) {
@@ -4343,16 +4345,17 @@ final class WorkspaceSession {
         buildFilesNotificationPending
             ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
             : ReconcileOutcome.DeferReason.NONE;
-    // On the worker after the pass's own completion chain, which starts the index rebuild.
+    // On the event loop after the pass's own completion chain, which starts the index rebuild.
     final CompletableFuture<ReconcileOutcome> outcome =
         requestPass(true)
             .thenComposeAsync(
                 stale ->
                     reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
-                worker::execute);
+                eventLoop::execute);
     // Another server's pass holding the write lock may run for minutes: past a grace, the query
     // answers from the mirror as it is, and this pass still runs once the lock is free.
-    CompletableFuture.delayedExecutor(OTHER_SERVER_GRACE_MS, TimeUnit.MILLISECONDS, worker::execute)
+    CompletableFuture.delayedExecutor(
+            OTHER_SERVER_GRACE_MS, TimeUnit.MILLISECONDS, eventLoop::execute)
         .execute(
             () -> {
               if (waitingForWriteLock) {
@@ -4845,7 +4848,7 @@ final class WorkspaceSession {
 
               return afterChangedBatch(config, Map.copyOf(stamps), written, error, failedFirst);
             },
-            worker::execute)
+            eventLoop::execute)
         .thenCompose(next -> next);
   }
 
@@ -5390,7 +5393,7 @@ final class WorkspaceSession {
     request.setType(MessageType.Warning);
     client
         .showMessageRequest(request)
-        .thenAccept(action -> worker.execute(() -> onSyncPromptResponse(action)));
+        .thenAccept(action -> eventLoop.execute(() -> onSyncPromptResponse(action)));
   }
 
   // Sync / Sync + capture ask the client to run Maven (the server never does); Later just
@@ -5528,10 +5531,10 @@ final class WorkspaceSession {
     final CompletableFuture<CompileResponse> compiled =
         moduleWorker.compile(requestFor(snapshot, mode), siblings);
     compiled
-        .thenAccept(result -> worker.execute(() -> afterCompile.accept(snapshot, result)))
+        .thenAccept(result -> eventLoop.execute(() -> afterCompile.accept(snapshot, result)))
         .exceptionally(
             ex -> {
-              worker.execute(() -> publisher.publishError(snapshot, mode, ex));
+              eventLoop.execute(() -> publisher.publishError(snapshot, mode, ex));
               return null;
             });
     return compiled;
@@ -5712,7 +5715,7 @@ final class WorkspaceSession {
 
     final var requests = new ArrayList<CompileRequest>(snapshots.size());
     for (final OpenDocument snapshot : snapshots) {
-      worker.cancel(snapshot.uri());
+      eventLoop.cancel(snapshot.uri());
       touchAnalysisCache(snapshot.uri());
       requests.add(requestFor(snapshot, CompileMode.OPEN));
     }
@@ -5724,11 +5727,11 @@ final class WorkspaceSession {
     workspace
         .workerFor(config)
         .compileOpenBatch(requests)
-        .thenAccept(responses -> worker.execute(() -> publishBatch(snapshots, responses)))
+        .thenAccept(responses -> eventLoop.execute(() -> publishBatch(snapshots, responses)))
         .exceptionally(
             ex -> {
               LOG.log(Level.FINE, ex, () -> "[dependents] batch failed, compiling one by one");
-              worker.execute(() -> snapshots.forEach(s -> scheduleDependent(s.uri())));
+              eventLoop.execute(() -> snapshots.forEach(s -> scheduleDependent(s.uri())));
               return null;
             });
   }
@@ -5778,7 +5781,7 @@ final class WorkspaceSession {
   }
 
   private void scheduleOpenFile(final String uri) {
-    worker.schedule(
+    eventLoop.schedule(
         uri,
         0L,
         () -> {
@@ -5790,7 +5793,7 @@ final class WorkspaceSession {
   }
 
   private void scheduleAstRefresh(final String uri) {
-    worker.schedule(
+    eventLoop.schedule(
         uri,
         0L,
         () -> {
