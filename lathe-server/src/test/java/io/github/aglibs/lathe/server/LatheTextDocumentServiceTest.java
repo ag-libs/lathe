@@ -17,11 +17,13 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CancellationException;
@@ -62,6 +64,7 @@ import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchySubtypesParams;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
@@ -733,5 +736,73 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         source, "package com.example; class Foo { private void target() { target(); } }");
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
     return source;
+  }
+
+  // Go to type definition: the declared type of the symbol at the cursor, an array's element type,
+  // a generic's own type, a constructor's class, a method's return type, a type itself; nothing for
+  // a
+  // primitive.
+  @Test
+  void typeDefinition_symbolsOfEachKind_goToTheirTypeDeclaration() throws Exception {
+    final String use =
+        """
+        package com.example;
+        class Use {
+          Foo field;
+          Bar make() { return new Bar(); }
+          void m(Foo param, Foo[] array, Box<Foo> box, int count) {
+            Foo local = param;
+            make();
+            new Foo();
+          }
+        }
+        """;
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(
+            tmp,
+            "module",
+            Map.of(
+                "com/example/Use.java", use,
+                "com/example/Foo.java", "package com.example;\nclass Foo {}\n",
+                "com/example/Bar.java", "package com.example;\nclass Bar {}\n",
+                "com/example/Box.java", "package com.example;\nclass Box<T> {}\n"),
+            List.of(),
+            1_000L);
+    final Path useFile =
+        files.stream().filter(file -> file.endsWith("Use.java")).findFirst().orElseThrow();
+    service.initialize(tmp);
+    awaitStartup();
+    openDoc(useFile, use);
+    awaitWorkerIdle();
+
+    final Map<String, String> expected = new LinkedHashMap<>();
+    expected.put("field;", "Foo.java");
+    expected.put("Foo field", "Foo.java");
+    expected.put("make() {", "Bar.java");
+    expected.put("make();", "Bar.java");
+    expected.put("param,", "Foo.java");
+    expected.put("array,", "Foo.java");
+    expected.put("box,", "Box.java");
+    expected.put("local =", "Foo.java");
+    expected.put("Foo();", "Foo.java");
+    expected.put("count)", "none");
+    final Map<String, String> actual = new LinkedHashMap<>();
+    for (final String token : expected.keySet()) {
+      final var result =
+          service
+              .typeDefinition(
+                  new TypeDefinitionParams(
+                      new TextDocumentIdentifier(useFile.toUri().toString()),
+                      SourceLocator.offsetToPosition(use, use.indexOf(token))))
+              .get(10, TimeUnit.SECONDS)
+              .getLeft();
+      actual.put(
+          token,
+          result.isEmpty()
+              ? "none"
+              : Path.of(java.net.URI.create(result.get(0).getUri())).getFileName().toString());
+    }
+
+    assertThat(actual).isEqualTo(expected);
   }
 }

@@ -109,6 +109,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
     capabilities.setDefinitionProvider(true);
     capabilities.setDeclarationProvider(true);
+    capabilities.setTypeDefinitionProvider(true);
     capabilities.setImplementationProvider(true);
     capabilities.setTypeHierarchyProvider(true);
     capabilities.setCallHierarchyProvider(true);

@@ -35,8 +35,10 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -837,10 +839,55 @@ public final class SourceAnalysisSession implements AutoCloseable {
                 .formatted(
                     t.elapsedMs(),
                     element,
-                    result
-                        .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
-                        .orElse("not found")));
+                    result.map(SourceAnalysisSession::where).orElse("not found")));
     return result;
+  }
+
+  // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
+  // method's return type, a constructor's class, a type itself; an array's element type, a
+  // generic's
+  // declared type. Nothing for a primitive or void.
+  public Optional<Location> typeDefinition(final SourceFeatureRequest request) {
+    final var t = Stopwatch.start();
+    final var cur = resolve(request);
+    if (cur == null) {
+      return Optional.empty();
+    }
+
+    final var element = elementOrJavadocReference(cur);
+    final Optional<Location> result =
+        typeOf(element, cur.analysis().types())
+            .flatMap(type -> findDefinitionLocation(request, cur, type));
+    LOG.fine(
+        () ->
+            "[typeDefinition] %dms element=%s → %s"
+                .formatted(
+                    t.elapsedMs(),
+                    element,
+                    result.map(SourceAnalysisSession::where).orElse("not found")));
+    return result;
+  }
+
+  private static Optional<Element> typeOf(final Element element, final Types types) {
+    if (element == null || element instanceof TypeElement) {
+      return Optional.ofNullable(element);
+    }
+
+    TypeMirror type =
+        element instanceof final ExecutableElement method
+            ? method.getKind() == ElementKind.CONSTRUCTOR
+                ? method.getEnclosingElement().asType()
+                : method.getReturnType()
+            : element.asType();
+    while (type instanceof final ArrayType array) {
+      type = array.getComponentType();
+    }
+
+    return Optional.ofNullable(types.asElement(type));
+  }
+
+  private static String where(final Location location) {
+    return "%s:%d".formatted(location.getUri(), location.getRange().getStart().getLine());
   }
 
   public Optional<Location> declaration(final SourceFeatureRequest request) {
@@ -866,12 +913,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                         t.elapsedMs(),
                         element,
                         contract,
-                        result
-                            .map(
-                                l ->
-                                    "%s:%d"
-                                        .formatted(l.getUri(), l.getRange().getStart().getLine()))
-                            .orElse("not found")));
+                        result.map(SourceAnalysisSession::where).orElse("not found")));
         return result;
       }
     }
@@ -884,9 +926,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
                 .formatted(
                     t.elapsedMs(),
                     element,
-                    fallback
-                        .map(l -> "%s:%d".formatted(l.getUri(), l.getRange().getStart().getLine()))
-                        .orElse("not found")));
+                    fallback.map(SourceAnalysisSession::where).orElse("not found")));
     return fallback;
   }
 

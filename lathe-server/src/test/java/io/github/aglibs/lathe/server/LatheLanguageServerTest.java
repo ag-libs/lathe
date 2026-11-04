@@ -78,6 +78,13 @@ class LatheLanguageServerTest {
   }
 
   @Test
+  void createCapabilities_includesTypeDefinitionProvider() {
+    final var capabilities = LatheLanguageServer.createCapabilities(null);
+
+    assertThat(capabilities.getTypeDefinitionProvider().getLeft()).isTrue();
+  }
+
+  @Test
   void createCapabilities_includesCallHierarchyProvider() {
     final var capabilities = LatheLanguageServer.createCapabilities(null);
 

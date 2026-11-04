@@ -10,6 +10,7 @@ See the [editor guides](../../README.md#editors) for each client.
 |------------------------------|---------------------------------------------------------------------------------------------------|---------------------------------------------------|
 | Go to definition             | jumps to local sources, unpacked dependency JAR sources, and JDK sources                          | `textDocument/definition`                         |
 | Go to declaration            | navigates to the overridden interface or abstract-method contract                                 | `textDocument/declaration`                        |
+| Go to type definition        | jumps to the type of the symbol under the cursor: a variable's type, a method's return type, an array's element type | `textDocument/typeDefinition`                     |
 | Implementation / subtypes    | concrete implementations of a method, or all subtypes of a type across the workspace; on a functional interface's method, also the lambdas and method references that implement it | `textDocument/implementation`                     |
 | Find references              | usages across the workspace                                                                       | `textDocument/references`                         |
 | Highlight uses               | read/write uses of the symbol under the cursor, within the current file                          | `textDocument/documentHighlight`                  |
