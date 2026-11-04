@@ -181,7 +181,9 @@ final class ServerEventLoop {
     }
   }
 
-  private void runLogged(final Runnable task) {
+  // Runs the task here, logging a failure that would otherwise vanish (in a future's callback,
+  // which no one reads).
+  void runLogged(final Runnable task) {
     try {
       task.run();
     } catch (final Throwable t) {

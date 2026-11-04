@@ -376,6 +376,14 @@ final class RunCoordinator {
                     failure);
               }
 
+              // The debuggee may have exited, or been cancelled, while this waited for the loop:
+              // a host opened now would never be closed.
+              if (!activeRuns.containsKey(token)) {
+                throw new IllegalStateException(
+                    "the debuggee exited before the debugger attached on port %d"
+                        .formatted(jdwpPort));
+              }
+
               return openDebugHost(moduleRel, token, jdwpPort, label);
             });
   }

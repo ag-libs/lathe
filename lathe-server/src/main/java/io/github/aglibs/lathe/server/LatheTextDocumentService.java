@@ -124,15 +124,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return eventLoop.submitCompose(() -> session.reconcileNow(eager));
   }
 
-  /**
-   * Freshen the mirror for a verify_change call, reporting what recompiled or why it was refused.
-   */
-  public CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+  // Test/tool seam: the freshen step the engine runs before each tool, reporting what recompiled or
+  // why it was deferred.
+  CompletableFuture<ReconcileOutcome> reconcileForVerify() {
     return eventLoop.submitCompose(() -> session.reconcileForVerify());
   }
 
-  /** Write files the caller changed on disk itself, completing once the mirror has them. */
-  public CompletableFuture<Void> writeReported(final Set<Path> changed) {
+  // Test seam: write files the caller changed on disk itself, completing once the mirror has them.
+  CompletableFuture<Void> writeReported(final Set<Path> changed) {
     return eventLoop.submitCompose(() -> session.writeReported(changed));
   }
 
@@ -637,13 +636,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return CompletableFuture.completedFuture(List.of());
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnosticsFuture(
+  // Test/tool seam: a document's diagnostics at the given content.
+  CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     return eventLoop.submitCompose(() -> session.diagnosticsFuture(uri, content, version));
   }
 
-  /** What an answer about {@code files} cannot vouch for, after the last write pass. */
-  public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
+  // Test seam: what an answer about the files cannot vouch for, after the last write pass.
+  CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
     return eventLoop.submit(() -> session.notes(files));
   }
 

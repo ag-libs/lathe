@@ -1358,7 +1358,7 @@ final class LatheMcpTools {
   }
 
   // Agents read and give 1-based lines and columns; the server's positions are 0-based. These two
-  // are the only conversions between them.
+  // are this layer's only conversions (LatheFormat arrives 1-based already).
   private static int fromWire(final int oneBased) {
     return oneBased - 1;
   }

@@ -46,6 +46,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
@@ -1579,15 +1580,21 @@ final class WorkspaceSession {
             : List.of();
     final CompletableFuture<CompileResponse> compiled =
         moduleWorker.compile(requestFor(snapshot, mode), siblings);
-    // Already on the loop; queued as its own task so a failure in the callback is logged (and an
-    // Error ends the server) instead of vanishing into a future nobody reads.
-    compiled
-        .thenAccept(result -> eventLoop.execute(() -> afterCompile.accept(snapshot, result)))
-        .exceptionally(
-            ex -> {
-              eventLoop.execute(() -> publisher.publishError(snapshot, mode, ex));
-              return null;
-            });
+    // Delivered on the loop; runLogged keeps a failure in the callback from vanishing into the
+    // future this returns, which no one reads.
+    compiled.whenComplete(
+        (result, failure) -> {
+          if (failure == null) {
+            eventLoop.runLogged(() -> afterCompile.accept(snapshot, result));
+          } else {
+            publisher.publishError(
+                snapshot,
+                mode,
+                failure instanceof CompletionException
+                    ? failure
+                    : new CompletionException(failure));
+          }
+        });
     return compiled;
   }
 
@@ -1688,13 +1695,15 @@ final class WorkspaceSession {
         .registry()
         .workerFor(config)
         .compileOpenBatch(requests)
-        // Queued as its own task for the same reason as in submitTo.
-        .thenAccept(responses -> eventLoop.execute(() -> publishBatch(snapshots, responses)))
-        .exceptionally(
-            ex -> {
-              LOG.log(Level.FINE, ex, () -> "[dependents] batch failed, compiling one by one");
-              eventLoop.execute(() -> snapshots.forEach(s -> scheduleDependent(s.uri())));
-              return null;
+        .whenComplete(
+            (responses, failure) -> {
+              if (failure == null) {
+                eventLoop.runLogged(() -> publishBatch(snapshots, responses));
+              } else {
+                LOG.log(
+                    Level.FINE, failure, () -> "[dependents] batch failed, compiling one by one");
+                snapshots.forEach(s -> scheduleDependent(s.uri()));
+              }
             });
   }
 

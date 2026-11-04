@@ -71,6 +71,7 @@ import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -83,7 +84,9 @@ public final class LatheEngine {
 
   private static final Logger LOG = Logger.getLogger(LatheEngine.class.getName());
 
-  private static final long REQUEST_TIMEOUT_SECONDS = 30;
+  // A request now chains what took several waits of 30 s each (freshen, compile, the tool's own
+  // work): the bound only stops a request that hangs.
+  private static final long REQUEST_TIMEOUT_SECONDS = 120;
   private static final int TEST_CLASS_CANDIDATES = 20;
   private static final int LISTED_MENTIONS = 20;
   private static final Set<String> JDK_PACKAGES =
@@ -192,15 +195,12 @@ public final class LatheEngine {
    * with a source snippet and where it resolved.
    */
   public List<LatheLocation> definition(final Path file, final int line, final int column) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     final var either =
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(onName -> session.definitionFuture(uri, pos)));
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) -> session.definitionFuture(uri, pos));
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     return locations.stream().map(this::toLatheLocation).toList();
   }
@@ -211,16 +211,13 @@ public final class LatheEngine {
    */
   public LatheReferences references(
       final Path file, final int line, final int column, final int maxResults) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     return capReferences(
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(
-                        onName -> session.referencesFuture(uri, pos, true, cancel, progress))),
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) ->
+                session.referencesFuture(uri, pos, true, cancel, progress)),
         maxResults);
   }
 
@@ -237,15 +234,12 @@ public final class LatheEngine {
    */
   public LatheImplementations findImplementations(
       final Path file, final int line, final int column, final int maxResults) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     return capImplementations(
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(onName -> session.implementationFuture(uri, pos))),
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) -> session.implementationFuture(uri, pos)),
         maxResults);
   }
 
@@ -264,6 +258,31 @@ public final class LatheEngine {
   // (cheap, no compile, here), then one javac's tree has a name at, not a word of a comment or a
   // literal (atName). The tool goes on with the analysis that compiles, so the file is compiled
   // once.
+  // A position tool's own work, run once the name check passed, on the analysis it compiled.
+  @FunctionalInterface
+  private interface PositionWork<T> {
+    CompletableFuture<T> start(
+        WorkspaceSession session,
+        String uri,
+        Position pos,
+        CancelChecker cancel,
+        ProgressReporter.Task progress);
+  }
+
+  // One request for a position tool: the name check (a word here, then a name in javac's tree on
+  // the loop), then the tool's work, chained.
+  private <T> T positionRequest(
+      final Path file, final int line, final int column, final PositionWork<T> work) {
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    return request(
+        (session, cancel, progress) ->
+            atName(session, uri, content, pos)
+                .thenCompose(onName -> work.start(session, uri, pos, cancel, progress)));
+  }
+
   private void requireWord(final Path file, final int line, final int column) {
     if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
@@ -332,15 +351,12 @@ public final class LatheEngine {
    * and javadoc — or empty when there is nothing to describe.
    */
   public String describe(final Path file, final int line, final int column) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     return hoverText(
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(onName -> session.hoverFuture(uri, pos))));
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) -> session.hoverFuture(uri, pos)));
   }
 
   private static String hoverText(final Hover hover) {
@@ -466,19 +482,15 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
-    requireWord(file, line, column);
-    final String oldName = wordAt(file, line, column).orElseThrow();
-    final String fileUri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     // The engine moves files itself, so a type's rename may move its file.
     final WorkspaceEdit edit =
-        request(
-            (session, cancel, progress) ->
-                atName(session, fileUri, content, pos)
-                    .thenCompose(
-                        onName ->
-                            session.renameFuture(fileUri, pos, newName, true, cancel, progress)));
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) ->
+                session.renameFuture(uri, pos, newName, true, cancel, progress));
+    final String oldName = wordAt(file, line, column).orElseThrow();
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
       return new LatheRename(newName, 0, List.of(), List.of(), 0);
@@ -630,7 +642,8 @@ public final class LatheEngine {
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.
-  // LatheFormat reports the lines it changed as an agent reads them, 1-based.
+  // LatheFormat reports the lines it changed as an agent reads them, 1-based: the one place the
+  // server converts, since the record is all the MCP layer sees of the edit.
   private static int firstLine(final TextEdit edit) {
     return edit.getRange().getStart().getLine() + 1;
   }
@@ -756,15 +769,12 @@ public final class LatheEngine {
       final CallDirection direction,
       final SymbolScope scope,
       final int maxResults) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     final List<CallHierarchyItem> items =
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(onName -> session.prepareCallHierarchyFuture(uri, pos)));
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) -> session.prepareCallHierarchyFuture(uri, pos));
     final boolean incoming = direction == CallDirection.INCOMING;
     if (items.isEmpty()) {
       return new LatheCallHierarchy(incoming, 0, false, List.of());
@@ -837,7 +847,9 @@ public final class LatheEngine {
         targets.values().stream()
             .flatMap(List::stream)
             .distinct()
-            .collect(Collectors.toUnmodifiableMap(LatheUri::fromPath, LatheEngine::read));
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    LatheUri::fromPath, LatheEngine::read, (first, sameFile) -> first));
     // Every check starts before any is awaited, so the modules compile side by side, each on its
     // own worker; one at a time, a change with callers across a large reactor took seconds. A check
     // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
@@ -919,19 +931,20 @@ public final class LatheEngine {
   // once all are done.
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
       final WorkspaceSession session, final Map<String, String> contents) {
-    final Map<String, CompletableFuture<List<Diagnostic>>> checks =
-        contents.entrySet().stream()
-            .collect(
-                Collectors.toUnmodifiableMap(
-                    Map.Entry::getKey,
-                    entry -> session.diagnosticsTransientFuture(entry.getKey(), entry.getValue())));
-    return CompletableFuture.allOf(checks.values().toArray(CompletableFuture[]::new))
+    return contents.entrySet().stream()
+        .map(
+            entry ->
+                session
+                    .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
+                    .thenApply(diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics))))
+        .reduce(
+            CompletableFuture.completedFuture(List.<Map.Entry<String, List<Diagnostic>>>of()),
+            (left, right) ->
+                left.thenCombine(right, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()))
         .thenApply(
-            done ->
-                checks.entrySet().stream()
-                    .collect(
-                        Collectors.toUnmodifiableMap(
-                            Map.Entry::getKey, entry -> entry.getValue().join())));
+            entries ->
+                entries.stream()
+                    .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
@@ -982,15 +995,14 @@ public final class LatheEngine {
    * test classes. Read-only — composes definition/reference analysis, no compile of the change.
    */
   public LatheChangeImpact analyzeChange(final Path file, final int line, final int column) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
     final ChangeFacts facts =
-        request(
-            (session, cancel, progress) ->
-                atName(session, uri, content, pos)
-                    .thenCompose(onName -> session.hoverFuture(uri, pos))
+        positionRequest(
+            file,
+            line,
+            column,
+            (session, uri, pos, cancel, progress) ->
+                session
+                    .hoverFuture(uri, pos)
                     .thenCompose(
                         hover ->
                             session
