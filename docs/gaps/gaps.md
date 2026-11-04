@@ -983,6 +983,32 @@ None yet.
 
 ---
 
+## FR-029 — References to a widely used method take 12–27 s on a very large codebase
+
+**Status: documented**
+
+**Value: low — Size: M**
+
+**Affects: the editor's references and MCP `find_references` on large workspaces.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+On Hibernate ORM, references to `StringHelper.isEmpty` (`hibernate-core/.../internal/util/StringHelper.java:487`) take 27 s on the first query and 12 s on the next in the same session, through MCP; an editor request with a 15 s timeout gave up.
+The answer is right: 202 references in `hibernate-core`, `hibernate-envers`, `hibernate-jcache`, `hibernate-community-dialects` and `tooling`.
+Helidon's `Config.create()` took about 13 s warm in an earlier round, so this is the size of the codebase, not Gradle.
+
+### Fix direction
+
+Profile a warm search on Hibernate ORM: candidate filtering against attribution, and how many files are attributed for a name this common.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in
@@ -1275,6 +1301,35 @@ None yet.
 
 ---
 
+## WS-28 — On Gradle, a first sync whose test tasks fail leaves the workspace empty or stale
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor and MCP on a Gradle build whose capture-only test run fails.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+On Caffeine, the guide's first-run command fails: Caffeine's build rejects a test run in which tests are skipped ("Do not skip tests"), and capture-only mode reports every test skipped, so the `test` task of `caffeine`, `guava`, `jcache` and `simulator` fails.
+Each module's `latheFacts` depends on that test task, so Gradle skips it; `latheWorkspace`, a finalizer, still runs and merges whatever `lathe-facts.json` files are already there.
+On a first sync there are none: `workspace.json` lists no modules, no libraries and no test runner, so Lathe does nothing for that project, and only the failed build hints at why.
+On a workspace synced before, the old facts are merged instead: here a `runnerClasspath` naming a `0.1.0-SNAPSHOT` runner jar from a deleted build, so every test run failed with `ClassNotFoundException: io.github.aglibs.lathe.runner.LatheTestRunner`.
+A plain `./gradlew latheSync` works (all four modules, the 0.3.0 runner, 13 s) but captures no test launch.
+
+### Fix direction
+
+A failed test task must not keep a module out of the workspace: `latheFacts` should not depend on the test task succeeding, or `latheWorkspace` should refuse to merge facts that are missing or older than this build and say so.
+The Gradle guide should mention builds that reject skipped tests, as the Maven guide does for `failIfNoTests`, with plain `latheSync` as the first step there.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
@@ -1439,6 +1494,59 @@ Maven has no counterpart: Failsafe tests are their own limit there.
 ### Fix direction
 
 Capture every `Test` task, and model each extra source set as a source tree of its project.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-13 — On Gradle, test runs in JUnit's own repository fail to load opentest4j
+
+**Status: documented**
+
+**Value: medium — Size: M (investigate first)**
+
+**Affects: editor test runs and MCP `run_test` on JUnit's own repository; possibly any JUnit 6 build with parallel execution.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+In junit-framework, `documentation` is captured (its `test-launch.json` lists `opentest4j-1.3.0.jar` on its class path), yet a run of `example.MyFirstJUnitJupiterRecordTests`, from the editor or MCP, fails before any test: `NoClassDefFoundError: org/opentest4j/TestAbortedException`, thrown in a JUnit 6 parallel-execution worker (`WorkerThreadPoolHierarchicalTestExecutorService`) while initializing `OpenTest4JAndJUnit4AwareThrowableCollector`.
+JUnit tests the platform it builds, so the replay rewrites the platform's own jars to their `.lathe/` mirrors; whether that or JUnit 6's worker threads is the cause is open.
+Test runs in Micronaut, Hibernate ORM, Caffeine and a JUnit 5 fixture pass.
+
+### Fix direction
+
+Reproduce on a small JUnit 6 project with parallel execution enabled; if it passes there, it is specific to a build that tests the JUnit Platform itself.
+Then compare the replay's class path and class-loader setup with Gradle's test worker for the failing run.
+
+### Regression targets
+
+None yet.
+
+---
+
+## TE-14 — On Gradle, JUnit's own repository captures one test module of five, silently
+
+**Status: documented**
+
+**Value: low — Size: S (investigate first)**
+
+**Affects: editor test runs and MCP `run_test` on JUnit's own repository.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+The capture-only sync of junit-framework runs the `test` task of all five test modules (`documentation`, `jupiter-tests`, `platform-tests`, `junit-vintage-engine`, `platform-tooling-support-tests`), but only `documentation` writes a `test-launch.json`; the build succeeds and nothing says why the other four wrote none.
+A run in one of them answers that no test launch was captured.
+Micronaut (64 of its test modules) and Hibernate ORM (17) capture as expected.
+
+### Fix direction
+
+Find what keeps the capture listener from recording in those forks (JUnit tests its own platform, which may shadow the listener's), and report a test task that ran without a capture.
 
 ### Regression targets
 
