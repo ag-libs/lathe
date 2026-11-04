@@ -1,0 +1,143 @@
+# Lathe — Server Restructuring
+
+**Status: approved direction (2026-11-04); Phase 0 awaits its design approval.**
+Starts on `main` after the Gradle merge (#44, 2026-11-04), which did not touch `lathe-server` or `lathe-mcp-server`.
+
+## 1. Why
+
+The server's model is sound, but its shape has made it hard to read, hard to change safely, and hard to test.
+
+- `WorkspaceSession` is 5,863 lines: about 15 responsibilities over about 50 fields.
+  The M1 refactoring split it at 1,365 lines; it grew back 4×, because every new behaviour had nowhere else to go.
+- The threading contract ("only the event loop touches session state") lives in a comment.
+  Whether a `thenCompose` body runs on the loop depends on which thread completed the previous future,
+  and nothing in the code shows it.
+  It is already broken in several places (§5, Phase 0).
+- MCP reaches the core through the LSP adapter: `LatheEngine` builds lsp4j params for `LatheTextDocumentService`,
+  which grew about 25 MCP-only methods and about 60 one-line pass-throughs.
+  One MCP tool call makes 6–8 sequential blocking round trips, each with a 30 s timeout that does not cancel the work.
+  "Build files pending" survives in MCP only because `NoopLanguageClient.showMessageRequest` never completes.
+- Freshness ("is this answer current?") is owned by no one: the write pass and the verify support,
+  about 1,400 lines and 18 fields, with recursive future chains.
+  About 15 archived gaps and the open WS-21/23/26 and MC-72/73/80–82 sit there.
+  The `dev/` probes find them; nothing smaller than the whole session can unit-test them.
+- Tests: 119 server test classes sum to 137 s and run in 47 s on CI.
+  Classes run in parallel, tests within a class in order, so the largest classes
+  (`CodeActionTest` 18 s, `LatheEngineTest` 15 s) set the floor.
+  Every gap fix adds tests at the most expensive level, the full session or engine.
+
+## 2. What stays (the model)
+
+- One event loop (`ServerEventLoop`) owns all mutable workspace state.
+- One thread per module source tree (`CompilationWorker`) owns javac state; `SourceAnalysisSession` stays thread-confined.
+- Only immutable data crosses between them.
+- No new concurrency model, no locks, no concurrent collections (see the `session-state-on-event-loop` rule).
+- Behaviour is unchanged by every step except Phase 0's fixes; the existing tests are the safety net and stay green on each commit.
+
+## 3. Principles, in priority order
+
+1. **DRY first.** One home for each piece of knowledge:
+   one URI canonicalisation, one position conversion, one way to resume on the loop,
+   one enclosing-path walk, one edit applier, one rename commit path.
+   A move that leaves two copies behind is not done.
+2. **KISS second.** Prefer moving code into a plain class over adding a layer;
+   no frameworks, no factories, no event buses.
+3. **A new abstraction when it earns its place**: it removes duplication, or it states a boundary
+   the code otherwise breaks (the threading contract, the analysis module's view of the manifest).
+   Each one is named in its step's design summary and approved there,
+   including any exception to the `CLAUDE.md` single-implementation interface rule.
+
+## 4. The threading contract, made explicit
+
+These rules go into `CLAUDE.md` with Phase 0, so every agent sees them.
+
+1. A loop component's methods either return a plain value (called on the loop) or a future that **completes on the loop**.
+2. Every continuation that touches loop state resumes through `eventLoop.resume(future)`;
+   a bare `thenApplyAsync(fn)` (common pool) or a `thenCompose` after a module-worker future never touches loop state.
+3. Loop components check `eventLoop.checkOnLoop()` at their entry points: fail-fast (`IllegalStateException`), not `assert`.
+   Tests then trip over a violation instead of a production race.
+4. Nothing blocks the loop: no `get`/`join`, no process start, no directory walk over the reactor.
+5. Field names say the thread: `eventLoop` for `ServerEventLoop`, `moduleWorker` for a `CompilationWorker`
+   (today both are called `worker`).
+
+## 5. Phases
+
+One PR per phase, one commit per step, review between steps.
+Each step moves code without changing behaviour unless it says otherwise.
+
+### Phase 0 — threading guardrails and the violations they expose (behaviour fixes)
+
+- Add `ServerEventLoop.checkOnLoop()` and `ServerEventLoop.resume(CompletableFuture)`;
+  replace the `eventLoop.submit(() -> future).thenCompose(f -> f)` idiom with one helper.
+- Rename `worker` → `eventLoop` where it is the `ServerEventLoop`.
+- Fix the verified violations:
+  - references search touches the analysis LRU and the registry caches from the common pool
+    (`searchReferencesForTarget` → `runSearch` → `searchOpenDocument` → `touchAnalysisCache`);
+  - the type-hierarchy explorer reads `typeIndex` and routes a compile on a module-worker thread;
+  - code actions read `reactorShards` on a module-worker thread;
+  - `LatheTextDocumentService.definition/declaration/implementation/typeDefinition` pass `session::x` method references;
+  - `debugTest`/`debugMain`/`debugNamed` block the loop up to 15 s on `jdwpReady`;
+  - incoming calls read candidate files on the loop.
+- Add the §4 rules to `CLAUDE.md`.
+
+### Phase 1 — split `WorkspaceSession` into loop components
+
+In order, easiest first:
+
+1. Pure statics and records out: `TreeState`, `StaleScan` and the stale helpers; the launch helpers;
+   the layout queries (`modules`, `packages`, `resolveContext`, `createType`, resources) into `WorkspaceLayout`.
+2. `RunCoordinator`: run, debug, test discovery, run configs (about 830 lines; owns `activeRuns`, `activeDebugHosts`, `discoveries`).
+3. `ReactorTypeIndex`: the `reactor*` fields and `typeIndex`.
+4. `WorkspaceState`: manifest, module registry, module graph, candidate index, type index; replaced as a whole on reload.
+   Components read it on each use and never cache its parts, so reload stays correct.
+5. `ReferenceSearch`: references, highlights, call hierarchy, implementations.
+6. `WritePass`: the stale scan, compiling into `.lathe`, stamps, resources;
+   it exposes an immutable freshness snapshot that verify and the MCP notes read.
+7. `RenameService`: rename checks and the rename transaction.
+
+What remains in `WorkspaceSession`: open documents, compile scheduling and diagnostics publishing, and wiring.
+Target: under 1,000 lines.
+
+### Phase 2 — straighten the front ends
+
+- `LatheTextDocumentService` becomes the LSP adapter only.
+- `LatheEngine` calls the session's API directly, without lsp4j params;
+  each MCP tool is one composed call with one timeout that cancels the work.
+- "Build files pending" becomes session state; `NoopLanguageClient` no longer carries it.
+- One place each for URI canonicalisation, 0/1-based positions, and applying edits to files.
+
+### Phase 3 — Maven modules and `analysis` tidy-ups
+
+- New module `lathe-analysis`: today's `analysis` and `analysis/completion` packages.
+  First cut its four wrong-way edges:
+  `SourceAnalysisSession` moves next to `CompilationWorker`;
+  `SourceFeatureRequest` takes a small interface instead of `WorkspaceManifest`;
+  `RunTarget`/`RunnableKind` move down;
+  `WorkspaceManifest` stops calling `DefinitionLocator.topLevelClass`.
+  The compiler then enforces the layering agents keep crossing.
+- Optional, decided then: `lathe-server-debug`, isolating JDI, java-debug and rxjava.
+- Split `SourceLocator` (six concerns) and `TypeResolver` (three); one helper for the enclosing-path walks
+  that about ten classes repeat.
+
+Each new module is listed with its pom changes for approval before it is added.
+
+## 6. Tests
+
+- Split `CodeActionTest` by provider family and `LatheEngineTest` by tool; files get clearer and the slowest classes shorter
+  (estimated 47 s → about 35 s on CI's 4 cores; the 137 s total is the real limit).
+- Once `WritePass` and `ReferenceSearch` exist, new gap fixes are tested against them, not through the full engine.
+- `WorkspaceSessionTest`'s direct calls into about 25 package-private statics move with the code they test.
+
+## 7. Keeping it from growing back
+
+- `CLAUDE.md` names the components and says new behaviour goes into the owning component;
+  `WorkspaceSession` takes wiring only.
+- Module boundaries (Phase 3) are enforced by the compiler, not by convention.
+
+## 8. Process
+
+- Branch per phase from `main` after the Gradle merge, in a worktree.
+- Build with `mvnd verify -pl lathe-server,lathe-mcp-server -am`; no `install` without asking
+  (other worktrees share the `0.1.0-SNAPSHOT` in `~/.m2`).
+- `mvnd spotless:apply` after every Java change; invoker tests (`mvnd verify` on the reactor) before each PR.
+- Run `dev/mcp_staleness.py` and `dev/mcp_battery.py` before and after Phases 1.6 and 2 to show no behaviour change.
