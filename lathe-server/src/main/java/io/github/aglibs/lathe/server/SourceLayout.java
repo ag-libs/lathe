@@ -17,16 +17,14 @@ import java.util.stream.Stream;
 
 // Where the workspace's modules keep their sources, packages and tests, read from the module
 // configs and the disk alone: no javac and no session state, so it is covered without a loaded
-// workspace.
+// workspace. Before the workspace loads there are no configs and no root, and every query answers
+// empty.
 record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
 
   private static final Logger LOG = Logger.getLogger(SourceLayout.class.getName());
 
   SourceLayout {
-    ValidCheck.check()
-        .notNull(configs, "configs")
-        .notNull(workspaceRoot, "workspaceRoot")
-        .validate();
+    ValidCheck.check().notNull(configs, "configs").validate();
     configs = List.copyOf(configs);
   }
 

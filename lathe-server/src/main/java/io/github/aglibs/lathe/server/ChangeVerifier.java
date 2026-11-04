@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -31,8 +30,6 @@ import java.util.stream.Stream;
 // to compile, and which a sync would add. Reads the write pass's state and the module graph; it
 // changes nothing but what WritePass's own methods change.
 final class ChangeVerifier {
-
-  private static final Logger LOG = Logger.getLogger(ChangeVerifier.class.getName());
 
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;

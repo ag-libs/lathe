@@ -97,7 +97,6 @@ final class WorkspaceSession {
 
   // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
   // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
-  private static final int REFERENCE_BATCH_SIZE = 8;
 
   // Upper bound on transitive subtypes returned by the type-hierarchy explorer, so a near-Object or
   // huge marker-interface anchor cannot flood the picker or the source-locating pass. Beyond it the

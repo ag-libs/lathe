@@ -266,6 +266,12 @@ final class RunCoordinator {
    * their own way.
    */
   private record MainLaunchPlan(ResolvedLaunch launch, List<String> blockedReasons) {
+
+    // A null launch is the blocked plan.
+    MainLaunchPlan {
+      blockedReasons = List.copyOf(blockedReasons);
+    }
+
     static MainLaunchPlan ready(final ResolvedLaunch launch) {
       return new MainLaunchPlan(launch, List.of());
     }

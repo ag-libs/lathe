@@ -19,6 +19,7 @@ final class WorkspaceState {
   private WorkspaceModuleRegistry registry;
   private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
   private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
+  private SourceLayout layout = new SourceLayout(List.of(), null);
 
   WorkspaceState(final ServerEventLoop eventLoop) {
     this.eventLoop = eventLoop;
@@ -26,22 +27,28 @@ final class WorkspaceState {
   }
 
   // Reads the workspace at root from its .lathe/ and returns the registry it replaces, which the
-  // caller closes once nothing routes through it.
+  // caller closes once nothing routes through it. Built aside and swapped at once, so a load that
+  // fails leaves the previous workspace whole.
   WorkspaceModuleRegistry load(final Path root) {
     eventLoop.checkOnLoop();
+    final var newManifest = WorkspaceManifest.load(root);
+    final var newRegistry = WorkspaceModuleRegistry.scan(root, newManifest, eventLoop::deliver);
+    final var newGraph = WorkspaceModuleGraph.build(newRegistry.allConfigs());
+    final var newCandidates = ReferenceCandidateIndex.build(newRegistry.allConfigs());
     final var replaced = registry;
     this.root = root;
-    manifest = WorkspaceManifest.load(root);
-    registry = WorkspaceModuleRegistry.scan(root, manifest, eventLoop::deliver);
-    moduleGraph = WorkspaceModuleGraph.build(registry.allConfigs());
-    candidateIndex = ReferenceCandidateIndex.build(registry.allConfigs());
+    manifest = newManifest;
+    registry = newRegistry;
+    moduleGraph = newGraph;
+    candidateIndex = newCandidates;
+    layout = new SourceLayout(newRegistry.allConfigs(), root);
     return replaced;
   }
 
   // The current workspace's source layout: its modules, packages and test roots.
   SourceLayout layout() {
     eventLoop.checkOnLoop();
-    return new SourceLayout(registry.allConfigs(), root);
+    return layout;
   }
 
   // Where a type's source may live: the reactor's source roots, then the extracted JDK and

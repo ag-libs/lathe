@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -584,22 +585,44 @@ final class ReferenceSearch {
     }
   }
 
-  private record DiskCandidate(String uri, String content) {}
+  private record DiskCandidate(String uri, String content) {
+
+    DiskCandidate {
+      ValidCheck.check().notNull(uri, "uri").notNull(content, "content").validate();
+    }
+  }
 
   private record WorkspaceSearchInputs(
       List<OpenDocument> openDocuments, List<DiskCandidate> diskCandidates) {
+
+    WorkspaceSearchInputs {
+      openDocuments = List.copyOf(openDocuments);
+      diskCandidates = List.copyOf(diskCandidates);
+    }
 
     private int size() {
       return openDocuments.size() + diskCandidates.size();
     }
   }
 
-  private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {}
+  private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {
+
+    ModuleSearchInputs {
+      ValidCheck.check().notNull(worker, "worker").notNull(inputs, "inputs").validate();
+    }
+  }
 
   // A module's search as planned from session state: its open documents, and the files on disk
   // that may reference the target, not read yet.
   private record ModuleSearchPlan(
-      CompilationWorker worker, List<OpenDocument> openDocuments, List<String> candidateUris) {}
+      CompilationWorker worker, List<OpenDocument> openDocuments, List<String> candidateUris) {
+
+    ModuleSearchPlan {
+      ValidCheck.check().notNull(worker, "worker").validate();
+      openDocuments = List.copyOf(openDocuments);
+      candidateUris = List.copyOf(candidateUris);
+    }
+  }
 
   private ModuleSearchPlan planModuleSearch(
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {

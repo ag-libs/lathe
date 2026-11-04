@@ -170,7 +170,7 @@ final class WritePass {
   // The sources whose last write failed, with the mtime compiled and the first error.
   Map<Path, FailedWrite> failedCompiles() {
     eventLoop.checkOnLoop();
-    return Map.copyOf(failedCompiles);
+    return Collections.unmodifiableMap(failedCompiles);
   }
 
   // Whether a lombok.config over the source changed since the build.

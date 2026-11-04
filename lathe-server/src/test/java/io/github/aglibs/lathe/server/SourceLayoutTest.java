@@ -189,4 +189,17 @@ class SourceLayoutTest {
             // a class with no source file on disk resolves to an empty path
             new TestSource("com.verify.GoneTest", ""));
   }
+
+  @Test
+  void queries_beforeTheWorkspaceLoads_answerEmpty() {
+    final var unloaded = new SourceLayout(List.of(), null);
+
+    assertThat(unloaded.modules()).isEmpty();
+    assertThat(unloaded.testModules()).isEmpty();
+    assertThat(unloaded.packages("module")).isEmpty();
+    assertThat(unloaded.resolveContext(sourceFile)).isNull();
+    assertThat(unloaded.dirRun(sourceRoot).selections()).isEmpty();
+    assertThat(unloaded.testSources("module", List.of("com.example.FooTest")))
+        .containsExactly(new TestSource("com.example.FooTest", ""));
+  }
 }
