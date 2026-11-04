@@ -2121,6 +2121,15 @@ class LatheEngineTest {
 
     TestCompiler.writeAt(api, API_SOURCE, 20_000L);
     assertThat(engine.verifyChange(List.of()).perModule()).as("reverted").isEmpty();
+
+    // A deleted type the build compiled: its callers stay broken, check after check.
+    Files.delete(api);
+    final Predicate<LatheVerifyChange> appBroken =
+        verify -> verify.perModule().stream().anyMatch(module -> module.module().equals("app"));
+    assertThat(engine.verifyChange(List.of())).matches(appBroken, "deleted: first check");
+    assertThat(engine.verifyChange(List.of())).matches(appBroken, "deleted: second check");
+    TestCompiler.writeAt(api, API_SOURCE, 30_000L);
+    assertThat(engine.verifyChange(List.of()).perModule()).as("restored").isEmpty();
   }
 
   @Test

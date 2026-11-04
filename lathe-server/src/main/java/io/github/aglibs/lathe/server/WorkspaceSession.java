@@ -4405,15 +4405,17 @@ final class WorkspaceSession {
   List<Path> changedSinceBuild() {
     return Stream.concat(
             failedCompiles.keySet().stream(),
-            workspace.allConfigs().stream().flatMap(config -> changedSinceBuild(config).stream()))
+            workspace.allConfigs().stream().flatMap(config -> unbuiltSources(config).stream()))
         .distinct()
         .toList();
   }
 
-  private static List<Path> changedSinceBuild(final ModuleSourceConfig config) {
+  private static List<Path> unbuiltSources(final ModuleSourceConfig config) {
     final Map<Path, ContentFingerprint> built =
         CompiledStamps.loadBuilt(config.moduleDir(), config.sourceTree());
-    if (built.isEmpty() || config.sourceRoots().isEmpty()) {
+    final List<Path> roots =
+        config.sourceRoots().stream().filter(root -> !config.isGenerated(root)).toList();
+    if (built.isEmpty() || roots.isEmpty()) {
       return List.of();
     }
 
@@ -4423,23 +4425,21 @@ final class WorkspaceSession {
                 stamp ->
                     stamp.getValue().content() != null
                         && !stamp.getValue().content().equals(built.get(stamp.getKey())))
-            .map(Map.Entry::getKey);
+            .map(stamp -> sourceIn(roots, stamp.getKey()));
     final Stream<Path> deleted =
-        built.keySet().stream().filter(rel -> existingSource(config, rel).isEmpty());
-    return Stream.concat(rewritten, deleted)
-        .map(
-            rel ->
-                existingSource(config, rel)
-                    .orElseGet(() -> config.sourceRoots().get(0).resolve(rel)))
-        .filter(source -> !config.isGenerated(source))
-        .toList();
+        built.keySet().stream()
+            .map(rel -> sourceIn(roots, rel))
+            .filter(source -> !Files.exists(source));
+    return Stream.concat(rewritten, deleted).toList();
   }
 
-  private static Optional<Path> existingSource(final ModuleSourceConfig config, final Path rel) {
-    return config.sourceRoots().stream()
+  // The root holding the source, or the first root when none does (the source was deleted).
+  private static Path sourceIn(final List<Path> roots, final Path rel) {
+    return roots.stream()
         .map(root -> root.resolve(rel))
         .filter(Files::exists)
-        .findFirst();
+        .findFirst()
+        .orElseGet(() -> roots.get(0).resolve(rel));
   }
 
   // A deleted file is back to the build only if the build never compiled it either (one created and
