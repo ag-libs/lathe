@@ -32,13 +32,9 @@ local PRECEDENCE = { TEST_METHOD, TEST_CLASS, TEST_PACKAGE }
 -- Run tokens of in-flight Lathe debug sessions, so :LatheRunStop can cancel their replay JVMs.
 local active_tokens = {}
 
-local function lathe_client()
-  return vim.lsp.get_clients({ name = "lathe" })[1]
-end
+local lathe_client = require("lathe.util").client
 
-local function notify(msg, level)
-  vim.notify(msg, level, { title = "Lathe" })
-end
+local notify = require("lathe.util").notify
 
 --- True when neotest is installed and set up (its run API is present), so :LatheDebug can route a test
 --- through neotest's dap strategy -- gutters/summary, the shared console, and a pass/fail outcome.

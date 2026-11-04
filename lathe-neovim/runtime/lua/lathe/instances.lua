@@ -5,14 +5,12 @@
 
 local M = {}
 
-local function notify(message, level)
-  vim.notify("Lathe: " .. message, level, { title = "Lathe" })
-end
+local notify = require("lathe.util").notify
 
 --- Request the instantiation sites of the type at the cursor and open them in the quickfix.
 function M.find(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  local client = require("lathe.util").client(bufnr)
   if not client then
     notify("server not attached", vim.log.levels.WARN)
     return

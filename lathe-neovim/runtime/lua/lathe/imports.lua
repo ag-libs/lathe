@@ -6,9 +6,7 @@
 
 local M = {}
 
-local function notify(message, level)
-  vim.notify('Lathe: ' .. message, level, { title = 'Lathe' })
-end
+local notify = require("lathe.util").notify
 
 -- Apply the chosen imports with the edits the server places (each at its sorted spot in its group),
 -- then call on_added. A server without lathe.importEdits answers nothing: warn, add nothing.
@@ -101,7 +99,7 @@ end
 --- Add imports for every unresolved type in the buffer.
 function M.run(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = 'lathe', bufnr = bufnr })[1]
+  local client = require("lathe.util").client(bufnr)
   if not client then
     notify('server not attached', vim.log.levels.WARN)
     return

@@ -7,9 +7,7 @@ local M = {}
 
 local GLYPH = { supertype = "▲", ["self"] = "●", subtype = "▼" }
 
-local function notify(message, level)
-  vim.notify("Lathe: " .. message, level, { title = "Lathe" })
-end
+local notify = require("lathe.util").notify
 
 -- A server TypeHierarchyItem + its relation -> a picker entry. Fuzzy-matched on the fully-qualified
 -- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive both
@@ -82,7 +80,7 @@ end
 --- Request the full hierarchy of the type at the cursor and open it in a picker.
 function M.show(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  local client = require("lathe.util").client(bufnr)
   if not client then
     notify("server not attached", vim.log.levels.WARN)
     return

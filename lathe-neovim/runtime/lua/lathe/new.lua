@@ -43,18 +43,14 @@ end, KINDS)
 -- synchronously, so it reads this rather than issuing an LSP request per keystroke).
 local cache = { packages = {} }
 
-local function notify(message, level)
-	vim.notify("Lathe: " .. message, level, { title = "Lathe" })
-end
+local notify = require("lathe.util").notify
 
 local function warn(message)
 	notify(message, vim.log.levels.WARN)
 end
 
 -- The Lathe LSP client attached to a buffer, or nil.
-local function lathe_client(bufnr)
-	return vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
-end
+local lathe_client = require("lathe.util").client
 
 -- Dispatch a workspace/executeCommand to the Lathe client; cb receives the decoded result.
 local function execute(client, bufnr, command, argument, cb)
