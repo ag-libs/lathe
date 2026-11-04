@@ -1,6 +1,6 @@
 # Lathe — Server Restructuring
 
-**Status: Phase 0 and Phase 1 done (2026-11-04, branch `refactor/server-threading`); Phase 2 next.**
+**Status: Phases 0–2 done (2026-11-04, branch `refactor/server-threading`); tests next, then Phase 3.**
 Starts on `main` after the Gradle merge (#44, 2026-11-04), which did not touch `lathe-server` or `lathe-mcp-server`.
 
 ## 1. Why
@@ -113,13 +113,20 @@ publishing, the rename transaction (it hooks into open, change, save, close and 
 pass), the per-document features, and one-line delegates for the components' entry points.
 It went from 5,863 lines to 1,779; the delegates go when Phase 2 lets the front ends call the components.
 
-### Phase 2 — straighten the front ends
+### Phase 2 — straighten the front ends (done)
 
-- `LatheTextDocumentService` becomes the LSP adapter only.
-- `LatheEngine` calls the session's API directly, without lsp4j params;
-  each MCP tool is one composed call with one timeout that cancels the work.
-- "Build files pending" becomes session state; `NoopLanguageClient` no longer carries it.
-- One place each for URI canonicalisation, 0/1-based positions, and applying edits to files.
+- `LatheEngine` lives in the root package beside the session (its result records stay in `engine/`) and drives the
+  session through `LatheTextDocumentService.onLoopCompose`: the work runs on the loop as one composed chain, gets a
+  cancel checker tied to the request and a progress task, and the engine's single await cancels it on timeout.
+- Each tool is one request, or as few as its file reads and writes allow:
+  rename three (the edit, reporting what it wrote, the mentions) and verify_change two (plan, then every check side
+  by side), where they blocked six and about eight times plus one wait per file.
+- The thirteen pass-throughs `LatheTextDocumentService` kept only for the engine are gone; it keeps what the editor,
+  the workspace commands, the engine's configuration and the service-level tests use.
+- A due sync is session state (`buildFilesChanged`); the engine runs the session non-interactive, so a build-file change
+  is recorded without a prompt, and `NoopLanguageClient` answers prompts as dismissed.
+- One home each: the agent's 1-based positions convert only through `fromWire`/`toWire`, files are named by
+  `LatheUri.fromPath`, and edits are applied by `SourceLocator.applyEdits`.
 
 ### Phase 3 — Maven modules and `analysis` tidy-ups
 
