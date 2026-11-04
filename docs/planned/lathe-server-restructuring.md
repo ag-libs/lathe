@@ -37,7 +37,7 @@ The server's model is sound, but its shape has made it hard to read, hard to cha
 ## 3. Principles, in priority order
 
 1. **DRY first.** One home for each piece of knowledge:
-   one URI canonicalisation, one position conversion, one way to resume on the loop,
+   one URI canonicalisation, one position conversion, one way to rejoin the loop,
    one enclosing-path walk, one edit applier, one rename commit path.
    A move that leaves two copies behind is not done.
 2. **KISS second.** Prefer moving code into a plain class over adding a layer;
@@ -49,11 +49,13 @@ The server's model is sound, but its shape has made it hard to read, hard to cha
 
 ## 4. The threading contract, made explicit
 
-These rules go into `CLAUDE.md` with Phase 0, so every agent sees them.
+These rules are in `AGENTS.md` (`CLAUDE.md` links to it), so every agent sees them.
 
 1. A loop component's methods either return a plain value (called on the loop) or a future that **completes on the loop**.
-2. Every continuation that touches loop state resumes through `eventLoop.resume(future)`;
-   a `thenApply`/`thenCompose` runs on whichever thread completed the future, so it never touches loop state.
+2. A `thenApply`/`thenCompose` runs on whichever thread completed the future.
+   Module workers deliver every result on the loop, so session code chains on them directly;
+   any other future (the common pool, a process) rejoins the loop with `eventLoop.rejoin(future)` before touching loop state.
+   A value in a session field counts as loop state even when the value is immutable.
 3. Loop components check `eventLoop.checkOnLoop()` at their entry points: fail-fast (`IllegalStateException`), not `assert`.
    Tests then trip over a violation instead of a production race.
 4. Nothing waits on the loop: no `get`/`join`, no waiting on a process or another thread.
@@ -67,8 +69,12 @@ Each step moves code without changing behaviour unless it says otherwise.
 
 ### Phase 0 — threading guardrails and the violations they expose (behaviour fixes)
 
-- Add `ServerEventLoop.checkOnLoop()` and `ServerEventLoop.resume(CompletableFuture)`;
-  replace the `eventLoop.submit(() -> future).thenCompose(f -> f)` idiom with one helper.
+- Add `ServerEventLoop.checkOnLoop()` and `ServerEventLoop.rejoin(CompletableFuture)`;
+  replace the `eventLoop.submit(() -> future).thenCompose(f -> f)` idiom with one helper (`submitCompose`).
+- Module workers deliver their results on the loop (`CompilationWorker` completes through `eventLoop::deliver`),
+  so no feature code has to remember to rejoin after a worker call.
+  Measured A/B on Dropwizard and Helidon (3 alternating rounds each, hover and completion while idle and while typing):
+  no difference in p50 or p90, and p99 differences in both directions within noise.
 - Rename `worker` → `eventLoop` where it is the `ServerEventLoop`.
 - Fix the verified violations:
   - references search touches the analysis LRU and the registry caches from the common pool
@@ -78,7 +84,7 @@ Each step moves code without changing behaviour unless it says otherwise.
   - `LatheTextDocumentService.definition/declaration/implementation/typeDefinition` pass `session::x` method references;
   - `debugTest`/`debugMain`/`debugNamed` block the loop up to 15 s on `jdwpReady`;
   - incoming calls read candidate files on the loop.
-- Add the §4 rules to `CLAUDE.md`.
+- Add the §4 rules to `AGENTS.md`.
 
 ### Phase 1 — split `WorkspaceSession` into loop components
 

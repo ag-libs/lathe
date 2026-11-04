@@ -60,7 +60,7 @@ final class ServerEventLoop {
   }
 
   // Runs a task that starts asynchronous work on the loop and completes with that work's result, on
-  // whichever thread finishes it: continue with resume before touching loop state.
+  // whichever thread finishes it: continue with rejoin before touching loop state.
   <T> CompletableFuture<T> submitCompose(final Callable<CompletableFuture<T>> task) {
     return submit(task).thenCompose(future -> future);
   }
@@ -68,22 +68,32 @@ final class ServerEventLoop {
   // Completes on the loop once the future completes, so what follows may touch loop state. A
   // failure hops too: thenApplyAsync(fn, loop) would propagate it on the completing thread. It is
   // wrapped as thenApplyAsync wraps it, so handlers downstream see the same exception.
-  <T> CompletableFuture<T> resume(final CompletableFuture<T> future) {
-    final var resumed = new CompletableFuture<T>();
+  <T> CompletableFuture<T> rejoin(final CompletableFuture<T> future) {
+    final var rejoined = new CompletableFuture<T>();
     future.whenComplete(
         (value, failure) ->
-            execute(
+            deliver(
                 () -> {
                   if (failure == null) {
-                    resumed.complete(value);
+                    rejoined.complete(value);
                   } else {
-                    resumed.completeExceptionally(
+                    rejoined.completeExceptionally(
                         failure instanceof CompletionException
                             ? failure
                             : new CompletionException(failure));
                   }
                 }));
-    return resumed;
+    return rejoined;
+  }
+
+  // Completes a result on the loop, so whatever the receiver chains runs there. Once the loop has
+  // shut down it completes in place instead, so no caller waits for a result that cannot arrive.
+  void deliver(final Runnable completion) {
+    try {
+      executor.execute(() -> runLogged(completion));
+    } catch (final RejectedExecutionException ignored) {
+      completion.run();
+    }
   }
 
   // Loop-confined state reached from another thread fails here, where a test sees it, instead of

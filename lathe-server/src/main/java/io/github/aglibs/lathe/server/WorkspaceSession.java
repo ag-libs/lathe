@@ -179,7 +179,7 @@ final class WorkspaceSession {
   private final long debounceMs;
   private Path workspaceRoot;
   private WorkspaceManifest manifest = WorkspaceManifest.empty();
-  private WorkspaceModuleRegistry workspace = WorkspaceModuleRegistry.empty();
+  private WorkspaceModuleRegistry workspace;
   private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
   private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
@@ -293,6 +293,7 @@ final class WorkspaceSession {
     this.eventLoop = eventLoop;
     this.debounceMs = debounceMs;
     this.publisher = new DiagnosticPublisher(client, docs);
+    this.workspace = WorkspaceModuleRegistry.empty(eventLoop::deliver);
   }
 
   void initialize(final Path root) {
@@ -312,7 +313,7 @@ final class WorkspaceSession {
   private void loadWorkspace(final Path root) {
     final boolean configured = Files.isDirectory(root.resolve(LatheLayout.LATHE_DIR));
     manifest = WorkspaceManifest.load(root);
-    workspace = WorkspaceModuleRegistry.scan(root, manifest);
+    workspace = WorkspaceModuleRegistry.scan(root, manifest, eventLoop::deliver);
     moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
     candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     scanReactorShards();
@@ -642,9 +643,9 @@ final class WorkspaceSession {
     // throwaway TCP connect, which the agent reports as a failed debugger handshake. The DapHost's
     // java-debug connection is then the only connection the agent ever sees, so the editor's attach
     // (once, no retry) never races a probe. suspend=y guarantees the banner prints shortly, then
-    // parks. The wait resumes on the loop instead of blocking it while the JVM starts.
+    // parks. The wait rejoins the loop instead of blocking it while the JVM starts.
     return eventLoop
-        .resume(jdwpReady.orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        .rejoin(jdwpReady.orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         .handle(
             (ready, failure) -> {
               if (failure != null) {
@@ -2592,10 +2593,10 @@ final class WorkspaceSession {
 
   // Planning reads session state, so it runs on the event loop; reading the candidate files does
   // not, so it runs off it, where a search over thousands of files cannot stall the loop. The
-  // search then routes open documents, which is loop state again, so it resumes on the loop.
+  // search then routes open documents, which is loop state again, so it rejoins the loop.
   private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
       final Callable<List<ModuleSearchPlan>> plan) {
-    return eventLoop.resume(
+    return eventLoop.rejoin(
         eventLoop
             .submit(plan)
             .thenApplyAsync(
@@ -3466,8 +3467,7 @@ final class WorkspaceSession {
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
       final String uri, final Position pos) {
     final var t = Stopwatch.start();
-    return eventLoop
-        .resume(prepareTypeHierarchyFuture(uri, pos))
+    return prepareTypeHierarchyFuture(uri, pos)
         .thenCompose(
             items -> {
               if (items.isEmpty()) {
@@ -5463,7 +5463,8 @@ final class WorkspaceSession {
       buildFilesNotificationPending = false;
     }
 
-    final var newWorkspace = WorkspaceModuleRegistry.scan(workspaceRoot, newManifest);
+    final var newWorkspace =
+        WorkspaceModuleRegistry.scan(workspaceRoot, newManifest, eventLoop::deliver);
     final var old = workspace;
     passGeneration++; // the configs and workers a running pass writes through are being replaced
     workspace = newWorkspace;

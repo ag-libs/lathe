@@ -139,18 +139,18 @@ class ServerEventLoopTest {
   }
 
   @Test
-  void resume_futureCompletedOffLoop_continuesOnLoopForValueAndFailure() {
+  void rejoin_futureCompletedOffLoop_continuesOnLoopForValueAndFailure() {
     final var value = new CompletableFuture<String>();
     final var failure = new CompletableFuture<String>();
     final var valueOn = new AtomicReference<String>();
     final var failureOn = new AtomicReference<Throwable>();
     final var failureThread = new AtomicReference<String>();
 
-    final CompletableFuture<String> resumedValue =
-        worker.resume(value).whenComplete((v, t) -> valueOn.set(Thread.currentThread().getName()));
-    final CompletableFuture<String> resumedFailure =
+    final CompletableFuture<String> rejoinedValue =
+        worker.rejoin(value).whenComplete((v, t) -> valueOn.set(Thread.currentThread().getName()));
+    final CompletableFuture<String> rejoinedFailure =
         worker
-            .resume(failure)
+            .rejoin(failure)
             .whenComplete(
                 (v, t) -> {
                   failureThread.set(Thread.currentThread().getName());
@@ -159,8 +159,8 @@ class ServerEventLoopTest {
     value.complete("v");
     failure.completeExceptionally(new IllegalArgumentException("boom"));
 
-    assertThat(resumedValue).succeedsWithin(Duration.ofMillis(AWAIT_MS)).isEqualTo("v");
-    assertThat(resumedFailure).failsWithin(Duration.ofMillis(AWAIT_MS));
+    assertThat(rejoinedValue).succeedsWithin(Duration.ofMillis(AWAIT_MS)).isEqualTo("v");
+    assertThat(rejoinedFailure).failsWithin(Duration.ofMillis(AWAIT_MS));
     assertThat(valueOn.get()).isEqualTo(LOOP_THREAD);
     assertThat(failureThread.get()).isEqualTo(LOOP_THREAD);
     assertThat(failureOn.get())

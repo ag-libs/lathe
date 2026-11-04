@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -66,6 +67,9 @@ public final class CompilationWorker {
   private static final int FATAL_EXIT_STATUS = 1;
 
   private final ExecutorService executor;
+  // Where results are completed: the server's event loop, so what a caller chains on a result runs
+  // there and may touch session state.
+  private final Executor delivery;
   private final Supplier<SourceAnalysisSession> contextFactory;
   private final IntConsumer processTerminator;
   private SourceAnalysisSession context;
@@ -77,28 +81,39 @@ public final class CompilationWorker {
   private Stopwatch lastRequest = Stopwatch.start();
 
   static CompilationWorker module(
-      final ModuleSourceConfig config, final CompilationAdmission compilationAdmission) {
+      final ModuleSourceConfig config,
+      final CompilationAdmission compilationAdmission,
+      final Executor delivery) {
     return new CompilationWorker(
         "lathe-module-%s-%s".formatted(config.moduleDir().getFileName(), config.sourceTree()),
-        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config, compilationAdmission)));
+        () -> new SourceAnalysisSession(new ModuleSourceCompiler(config, compilationAdmission)),
+        delivery);
   }
 
   static CompilationWorker external(
-      final WorkspaceManifest manifest, final CompilationAdmission compilationAdmission) {
+      final WorkspaceManifest manifest,
+      final CompilationAdmission compilationAdmission,
+      final Executor delivery) {
     return new CompilationWorker(
         "lathe-external",
-        () -> new SourceAnalysisSession(new ExternalCompiler(manifest, compilationAdmission)));
-  }
-
-  CompilationWorker(final String name, final Supplier<SourceAnalysisSession> contextFactory) {
-    this(name, contextFactory, status -> Runtime.getRuntime().halt(status));
+        () -> new SourceAnalysisSession(new ExternalCompiler(manifest, compilationAdmission)),
+        delivery);
   }
 
   CompilationWorker(
       final String name,
       final Supplier<SourceAnalysisSession> contextFactory,
+      final Executor delivery) {
+    this(name, contextFactory, delivery, status -> Runtime.getRuntime().halt(status));
+  }
+
+  CompilationWorker(
+      final String name,
+      final Supplier<SourceAnalysisSession> contextFactory,
+      final Executor delivery,
       final IntConsumer processTerminator) {
     this.contextFactory = contextFactory;
+    this.delivery = delivery;
     this.processTerminator = processTerminator;
     this.executor =
         Executors.newSingleThreadExecutor(
@@ -535,7 +550,8 @@ public final class CompilationWorker {
                 context = contextFactory.get();
               }
 
-              future.complete(fn.apply(context));
+              final T result = fn.apply(context);
+              delivery.execute(() -> future.complete(result));
             } catch (final Throwable t) {
               final Error fatal = JavaSourceCompiler.fatalErrorCause(t);
               if (fatal != null) {
@@ -549,7 +565,7 @@ public final class CompilationWorker {
                   processTerminator.accept(FATAL_EXIT_STATUS);
                 }
               }
-              future.completeExceptionally(t);
+              delivery.execute(() -> future.completeExceptionally(t));
               IOUtil.rethrowIfError(t);
             }
           });
