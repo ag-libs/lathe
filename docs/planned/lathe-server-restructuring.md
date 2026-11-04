@@ -53,10 +53,10 @@ These rules go into `CLAUDE.md` with Phase 0, so every agent sees them.
 
 1. A loop component's methods either return a plain value (called on the loop) or a future that **completes on the loop**.
 2. Every continuation that touches loop state resumes through `eventLoop.resume(future)`;
-   a bare `thenApplyAsync(fn)` (common pool) or a `thenCompose` after a module-worker future never touches loop state.
+   a `thenApply`/`thenCompose` runs on whichever thread completed the future, so it never touches loop state.
 3. Loop components check `eventLoop.checkOnLoop()` at their entry points: fail-fast (`IllegalStateException`), not `assert`.
    Tests then trip over a violation instead of a production race.
-4. Nothing blocks the loop: no `get`/`join`, no process start, no directory walk over the reactor.
+4. Nothing waits on the loop: no `get`/`join`, no waiting on a process or another thread.
 5. Field names say the thread: `eventLoop` for `ServerEventLoop`, `moduleWorker` for a `CompilationWorker`
    (today both are called `worker`).
 

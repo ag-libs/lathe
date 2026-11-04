@@ -96,12 +96,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
@@ -451,12 +450,12 @@ final class WorkspaceSession {
    * on the event loop; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills it,
    * and the DAP host is closed when the debuggee exits.
    */
-  DebugStartResult debugTest(
+  CompletableFuture<DebugStartResult> debugTest(
       final String moduleRel, final List<TestSelection> selections, final String token) {
     return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
-  private DebugStartResult startDebugTest(
+  private CompletableFuture<DebugStartResult> startDebugTest(
       final String moduleRel,
       final List<TestSelection> selections,
       final String token,
@@ -512,11 +511,12 @@ final class WorkspaceSession {
    * main-class twin of {@link #debugTest}. A main run has no JUnit result stream, so it spawns with
    * a null sink and a no-op result consumer.
    */
-  DebugStartResult debugMain(final String moduleRel, final String mainClass, final String token) {
+  CompletableFuture<DebugStartResult> debugMain(
+      final String moduleRel, final String mainClass, final String token) {
     return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
-  private DebugStartResult startDebugMain(
+  private CompletableFuture<DebugStartResult> startDebugMain(
       final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
     try {
       final int jdwpPort = PortUtil.free();
@@ -618,14 +618,13 @@ final class WorkspaceSession {
    * listening, open the DAP host wired to the workspace's source routing, and return the ports. The
    * host is closed when the debuggee exits.
    */
-  private DebugStartResult attachDebugHost(
+  private CompletableFuture<DebugStartResult> attachDebugHost(
       final String moduleRel,
       final String token,
       final LaunchSession session,
       final int jdwpPort,
       final CompletableFuture<Void> jdwpReady,
-      final String label)
-      throws IOException {
+      final String label) {
     activeRuns.put(token, session);
     session
         .onExit()
@@ -638,25 +637,29 @@ final class WorkspaceSession {
                     }));
 
     // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening. Gate on
-    // the
-    // agent's own "Listening for transport ... at address:" banner (surfaced through the drain and
-    // completed onto jdwpReady by jdwpReadyConsumer) rather than probing the port with a throwaway
-    // TCP connect, which the agent reports as a failed debugger handshake. The DapHost's java-debug
-    // connection is then the only connection the agent ever sees, so the editor's attach (once, no
-    // retry) never races a probe. suspend=y guarantees the banner prints shortly, then parks.
-    try {
-      jdwpReady.get(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException(
-          "interrupted while waiting for the jdwp agent on port %d".formatted(jdwpPort), e);
-    } catch (final ExecutionException | TimeoutException e) {
-      throw new IllegalStateException(
-          "jdwp agent did not start listening on port %d within %dms"
-              .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS),
-          e);
-    }
+    // the agent's own "Listening for transport ... at address:" banner (surfaced through the drain
+    // and completed onto jdwpReady by jdwpReadyConsumer) rather than probing the port with a
+    // throwaway TCP connect, which the agent reports as a failed debugger handshake. The DapHost's
+    // java-debug connection is then the only connection the agent ever sees, so the editor's attach
+    // (once, no retry) never races a probe. suspend=y guarantees the banner prints shortly, then
+    // parks. The wait resumes on the loop instead of blocking it while the JVM starts.
+    return eventLoop
+        .resume(jdwpReady.orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        .handle(
+            (ready, failure) -> {
+              if (failure != null) {
+                throw new IllegalStateException(
+                    "jdwp agent did not start listening on port %d within %dms"
+                        .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS),
+                    failure);
+              }
 
+              return openDebugHost(moduleRel, token, jdwpPort, label);
+            });
+  }
+
+  private DebugStartResult openDebugHost(
+      final String moduleRel, final String token, final int jdwpPort, final String label) {
     // The debuggee is a replay Lathe owns, so a client disconnect terminates it (launch semantics)
     // rather than leaving it running as a plain attach would -- otherwise a long-running debuggee
     // would be orphaned when the user stops debugging.
@@ -672,10 +675,16 @@ final class WorkspaceSession {
                 manifest.jdkModuleSourceDirs())
             .flatMap(List::stream)
             .toList();
-    final var host =
-        DapHost.start(
-            new LatheProviderContext(this::debugWorkerFor, debugSourceRoots, typeIndex),
-            () -> eventLoop.execute(() -> cancelRun(token)));
+    final DapHost host;
+    try {
+      host =
+          DapHost.start(
+              new LatheProviderContext(this::debugWorkerFor, debugSourceRoots, typeIndex),
+              () -> eventLoop.execute(() -> cancelRun(token)));
+    } catch (final IOException e) {
+      throw new UncheckedIOException(e);
+    }
+
     activeDebugHosts.put(token, host);
     LOG.info(
         () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
@@ -1631,7 +1640,7 @@ final class WorkspaceSession {
     };
   }
 
-  DebugStartResult debugNamed(final String name, final String token) {
+  CompletableFuture<DebugStartResult> debugNamed(final String name, final String token) {
     final RunItem config = resolveConfig(name);
     return switch (config.kind()) {
       case MAIN -> startDebugMain(config.module(), config.mainClass(), token, config);
@@ -2555,12 +2564,8 @@ final class WorkspaceSession {
               });
     }
 
-    // Planning reads session state, so it runs on the event loop; reading the candidate files does
-    // not, so it runs off it, where a search over thousands of files cannot stall the loop.
     final var planningTimer = Stopwatch.start();
-    return eventLoop
-        .submit(() -> planSearch(cursorConfig, target))
-        .thenApplyAsync(plans -> plans.stream().map(WorkspaceSession::readCandidates).toList())
+    return readSearchInputs(() -> planSearch(cursorConfig, target))
         .thenCompose(
             searchInputs ->
                 runSearch(
@@ -2583,6 +2588,18 @@ final class WorkspaceSession {
     return planSearchScope(target, declaringConfigFor(target, cursorConfig)).stream()
         .map(config -> planModuleSearch(config, target, packageRel))
         .toList();
+  }
+
+  // Planning reads session state, so it runs on the event loop; reading the candidate files does
+  // not, so it runs off it, where a search over thousands of files cannot stall the loop. The
+  // search then routes open documents, which is loop state again, so it resumes on the loop.
+  private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
+      final Callable<List<ModuleSearchPlan>> plan) {
+    return eventLoop.resume(
+        eventLoop
+            .submit(plan)
+            .thenApplyAsync(
+                plans -> plans.stream().map(WorkspaceSession::readCandidates).toList()));
   }
 
   private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
@@ -2719,6 +2736,7 @@ final class WorkspaceSession {
 
   private ModuleSourceConfig declaringConfigFor(
       final ReferenceTarget target, final ModuleSourceConfig fallback) {
+    eventLoop.checkOnLoop();
     return reactorShards.entrySet().stream()
         .filter(
             entry ->
@@ -3292,13 +3310,21 @@ final class WorkspaceSession {
     final List<ModuleSourceConfig> configs = planSearchScope(target, declaringConfig.orElse(null));
 
     final var t = Stopwatch.start();
-    final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
-        configs.stream()
-            .flatMap(
-                config -> incomingCallFutures(config, target, packageRel, cancelChecker, progress))
-            .toList();
-    progress.begin(progressTitle, searches.size());
-    return joinCandidateResults(searches, cancelChecker)
+    return readSearchInputs(
+            () ->
+                configs.stream()
+                    .map(config -> planModuleSearch(config, target, packageRel))
+                    .toList())
+        .thenCompose(
+            searchInputs -> {
+              final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
+                  searchInputs.stream()
+                      .flatMap(
+                          inputs -> incomingCallFutures(inputs, target, cancelChecker, progress))
+                      .toList();
+              progress.begin(progressTitle, searches.size());
+              return joinCandidateResults(searches, cancelChecker);
+            })
         .thenApply(
             calls -> {
               LOG.fine(
@@ -3310,13 +3336,11 @@ final class WorkspaceSession {
   }
 
   private Stream<CompletableFuture<List<CallHierarchyIncomingCall>>> incomingCallFutures(
-      final ModuleSourceConfig config,
+      final ModuleSearchInputs planned,
       final ReferenceTarget target,
-      final Path packageRel,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final ModuleSearchInputs planned = readCandidates(planModuleSearch(config, target, packageRel));
     final var worker = planned.worker();
     final var inputs = planned.inputs();
     return Stream.concat(
@@ -3442,7 +3466,8 @@ final class WorkspaceSession {
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
       final String uri, final Position pos) {
     final var t = Stopwatch.start();
-    return prepareTypeHierarchyFuture(uri, pos)
+    return eventLoop
+        .resume(prepareTypeHierarchyFuture(uri, pos))
         .thenCompose(
             items -> {
               if (items.isEmpty()) {
@@ -3528,6 +3553,7 @@ final class WorkspaceSession {
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = typeIndex;
+    final List<List<TypeIndexEntry>> reactorEntries = List.copyOf(reactorShards.values());
     final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
@@ -3536,7 +3562,8 @@ final class WorkspaceSession {
                 .cachedTypeEntries(neededTypeNames)
                 .thenCompose(
                     openEntries -> {
-                      final var enriched = buildEnrichedIndex(baseIndex, openEntries);
+                      final var enriched =
+                          buildEnrichedIndex(baseIndex, reactorEntries, openEntries);
                       return moduleWorker.codeAction(
                           uri,
                           openFile.content(),
@@ -3588,14 +3615,16 @@ final class WorkspaceSession {
         MissingImportsResult.empty());
   }
 
-  private WorkspaceTypeIndex buildEnrichedIndex(
-      final WorkspaceTypeIndex base, final List<TypeIndexEntry> openFileEntries) {
+  private static WorkspaceTypeIndex buildEnrichedIndex(
+      final WorkspaceTypeIndex base,
+      final List<List<TypeIndexEntry>> reactorEntries,
+      final List<TypeIndexEntry> openFileEntries) {
     if (openFileEntries.isEmpty()) {
       return base;
     }
 
     final List<List<TypeIndexEntry>> allReactor =
-        Stream.concat(reactorShards.values().stream(), Stream.of(openFileEntries)).toList();
+        Stream.concat(reactorEntries.stream(), Stream.of(openFileEntries)).toList();
     return base.withReactorEntries(allReactor);
   }
 
@@ -3752,6 +3781,7 @@ final class WorkspaceSession {
   }
 
   private List<Path> typeSourceDirs() {
+    eventLoop.checkOnLoop();
     return Stream.of(
             workspace.allSourceRoots().stream(),
             manifest.jdkModuleSourceDirs().stream(),
@@ -3785,6 +3815,7 @@ final class WorkspaceSession {
   }
 
   private void refreshReactorShard(final ModuleSourceConfig config) {
+    eventLoop.checkOnLoop();
     // Incremental save. External output reuses the cached base (build changes only on make+sync)
     // and re-derives the delta; Maven rescans the freshly recompiled mirror.
     final List<TypeIndexEntry> base;
@@ -5554,6 +5585,7 @@ final class WorkspaceSession {
   }
 
   private CompilerRoute routeCompiler(final String uri) {
+    eventLoop.checkOnLoop();
     final var path = LatheUri.toPath(uri);
     return workspace
         .moduleSourceFor(path)
@@ -5573,6 +5605,7 @@ final class WorkspaceSession {
   // The static imports the file's own scope declares: test files learn from test files, main files
   // from main files, and a file outside any module from nothing.
   private LearnedStaticImports learnedStaticImports(final CompilerRoute route) {
+    eventLoop.checkOnLoop();
     return route instanceof final CompilerRoute.Module module
         ? candidateIndex.staticImports(module.config().isTestTree())
         : LearnedStaticImports.empty();
@@ -5594,6 +5627,7 @@ final class WorkspaceSession {
       final String uri,
       final T fallback,
       final BiFunction<CompilationWorker, OpenDocument, CompletableFuture<T>> op) {
+    eventLoop.checkOnLoop();
     final OpenDocument doc = docs.get(uri);
     if (doc == null) {
       return CompletableFuture.completedFuture(fallback);
@@ -5603,6 +5637,7 @@ final class WorkspaceSession {
   }
 
   private void touchAnalysisCache(final String uri) {
+    eventLoop.checkOnLoop();
     analysisLru
         .touch(uri)
         .ifPresent(

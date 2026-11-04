@@ -469,25 +469,27 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definition(final DefinitionParams params) {
-    return locations("definition", params, session::definitionFuture);
+    return locations("definition", params, (uri, pos) -> session.definitionFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declaration(final DeclarationParams params) {
-    return locations("declaration", params, session::declarationFuture);
+    return locations("declaration", params, (uri, pos) -> session.declarationFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementation(final ImplementationParams params) {
-    return locations("implementation", params, session::implementationFuture);
+    return locations(
+        "implementation", params, (uri, pos) -> session.implementationFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       typeDefinition(final TypeDefinitionParams params) {
-    return locations("typeDefinition", params, session::typeDefinitionFuture);
+    return locations(
+        "typeDefinition", params, (uri, pos) -> session.typeDefinitionFuture(uri, pos));
   }
 
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -689,12 +691,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   CompletableFuture<DebugStartResult> debugTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
-    return eventLoop.submit(() -> session.debugTest(moduleRel, selections, token));
+    return eventLoop.submitCompose(() -> session.debugTest(moduleRel, selections, token));
   }
 
   CompletableFuture<DebugStartResult> debugMainFuture(
       final String moduleRel, final String mainClass, final String token) {
-    return eventLoop.submit(() -> session.debugMain(moduleRel, mainClass, token));
+    return eventLoop.submitCompose(() -> session.debugMain(moduleRel, mainClass, token));
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
@@ -702,7 +704,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
-    return eventLoop.submit(() -> session.debugNamed(name, token));
+    return eventLoop.submitCompose(() -> session.debugNamed(name, token));
   }
 
   CompletableFuture<List<RunConfigInfo>> runConfigsFuture() {
