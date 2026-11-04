@@ -48,9 +48,9 @@ tag is out — see [The Neovim client mirror](#the-neovim-client-mirror).
    ```bash
    git push --atomic origin HEAD v0.1.1
    ```
-   The **Release to Maven Central** workflow runs: it stamps the version, builds, signs, and publishes
-   all modules, then creates the tag's GitHub release with generated notes and the VS Code extension's
-   `.vsix` attached. If the `release` environment requires approval, approve the run.
+   The **Release** workflow runs: it stamps the version, builds, signs, and publishes all modules to
+   Maven Central and the Gradle plugin to the Gradle Plugin Portal, then creates the tag's GitHub release
+   with generated notes and the VS Code extension's `.vsix` attached. If the `release` environment requires approval, approve the run.
 4. **Publish the Neovim client mirror — on every release.** Once the tag is on origin:
    ```bash
    ./publish-nvim.sh 0.1.1          # or just ./publish-nvim.sh for the latest tag

@@ -1,4 +1,4 @@
-name: Release to Maven Central
+name: Release
 
 on:
   push:
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   release:
-    name: Deploy to Maven Central
+    name: Publish to Maven Central and the Gradle Plugin Portal
     runs-on: ubuntu-latest
     environment: release
     steps:
