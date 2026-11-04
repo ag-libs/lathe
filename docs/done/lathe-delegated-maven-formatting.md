@@ -140,7 +140,7 @@ path, since the request is synchronous and a progress spinner could only paint a
   delegated path proves fast and robust enough.
 - **Gradle** — the engine is build-agnostic (`command` + placeholders); a Gradle sync would emit
   `["./gradlew", ":%MODULE%:spotlessApply", "-PspotlessFiles=…%FILE%…"]`. Gradle's always-on daemon
-  removes the mvnd prerequisite. See [Gradle support](../planned/lathe-gradle-support.md).
+  removes the mvnd prerequisite. See [Gradle support](lathe-gradle-support.md).
 - **Range-scoped formatting** — google-java-format's `getFormatReplacements(String, ranges)` formats
   only changed line ranges; a later speed optimization for the in-process path (not tree-based — there
   is no API to pass a compiled tree; see Non-goals).

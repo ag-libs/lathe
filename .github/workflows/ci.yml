@@ -81,24 +81,42 @@ jobs:
         #
         # The JDK 17 row runs every test and the invoker fixture builds on JDK 17, and switches off
         # the multi-release test layering, which is for JDK 21+ test runs.
+        #
+        # The Gradle plugin is built and tested by the gradle jobs, in parallel with this one.
+        env:
+          GRADLE: -Dlathe.gradle.skip=true
         run: |
           if [ "${{ matrix.java }}" = "17" ]; then
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
               -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
-              -P '!multi-release-jdk21'
+              -P '!multi-release-jdk21' $GRADLE
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install
+            env -u CI mvn -B --no-transfer-progress clean install $GRADLE
           elif [ "${{ runner.os }}" = "Windows" ]; then
             # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
             # since Cursor on Windows is a target.
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
           else
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode'
+            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
+
+      - name: Save the Maven repository
+        # From the row per OS that builds the most of the reactor, so the cache holds what every
+        # job needs; a job building part of it would save a partial repository first.
+        if: success() && ((matrix.java == '21' && runner.os == 'Linux') || runner.os != 'Linux')
+        uses: actions/cache/save@v6
+        with:
+          # Lathe's own SNAPSHOTs, which the build installs, stay out: each run builds them afresh.
+          path: |
+            ~/.m2/repository
+            !~/.m2/repository/io/github/ag-libs
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
 
       - name: Verify javadoc and sources generate
         # Catch javadoc/source-jar breakage here rather than mid-release, since
-        # the release profile requires both for Maven Central.
+        # the release profile requires both for Maven Central. They don't depend on the OS or the
+        # test JDK, so the release baseline row checks them.
+        if: matrix.java == '21' && runner.os == 'Linux'
         run: mvn -B --no-transfer-progress -DskipTests javadoc:jar source:jar-no-fork
 
       - name: Upload test reports
@@ -148,12 +166,89 @@ jobs:
         run: |
           env -u CI mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
             -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
-            -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64"
+            -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64" -Dlathe.gradle.skip=true
 
       - name: Upload invoker logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: invoker-logs-maven${{ matrix.maven }}-jdk${{ matrix.java }}
-          path: 'lathe-maven-plugin/target/it/**/build.log'
+          path: lathe-maven-plugin/target/it/**/build.log
+          retention-days: 7
+
+  gradle:
+    # The Gradle plugin in its own jobs, so its build runs beside the Maven rows instead of after the
+    # rest of a sequential reactor. Each job builds only what the plugin needs, without those modules'
+    # tests (the build rows run them), then the plugin's build: unit tests where the plugin builds on
+    # the latest Gradle, and the TestKit fixtures on the Gradle in the row. Windows, where paths and
+    # processes differ most, runs the latest Gradle and the 8.8 floor on JDK 17.
+    name: Gradle ${{ matrix.gradle }} (JDK ${{ matrix.java }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gradle: '9.8.2'
+            os: windows-latest
+            java: '25'
+            unit: true
+          - gradle: '9.8.2'
+            os: ubuntu-latest
+            java: '21'
+            unit: true
+          - gradle: '8.8'
+            os: windows-latest
+            java: '17'
+            unit: false
+          - gradle: '8.14.6'
+            os: ubuntu-latest
+            java: '21'
+            unit: false
+          - gradle: '9.0.0'
+            os: ubuntu-latest
+            java: '21'
+            unit: false
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Enable long paths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up build tools
+        uses: ./.github/actions/build-tools
+        with:
+          java: ${{ matrix.java }}
+
+      - name: Download Gradle ${{ matrix.gradle }} for the fixture builds
+        # The plugin itself builds on the Gradle the build tools set up; only the fixtures use this one.
+        if: matrix.gradle != '9.8.2'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+
+      - name: Build and test the Gradle plugin
+        # maven.test.skip leaves out the dependencies' tests; lathe.gradle.skipUnitTests says whether
+        # the plugin's own run. lathe-junit is named because the fixtures get it as an extra
+        # artifact, which -am does not follow. Formatting is checked by the build rows. `env -u CI` keeps Lathe
+        # enabled in the fixtures. An older Gradle's fixtures run on the row's JDK (17 for the floor).
+        env:
+          FIXTURES: ${{ matrix.gradle != '9.8.2' && format('-Dlathe.gradle.fixturesHome={0}/gradle-{1}', runner.temp, matrix.gradle) || '' }}
+        run: |
+          env -u CI mvn -B --no-transfer-progress verify -pl lathe-junit,lathe-gradle-plugin -am \
+            -Dmaven.test.skip=true -Dspotless.check.skip=true \
+            -Dlathe.gradle.skipUnitTests=${{ !matrix.unit }} $FIXTURES \
+            -Dlathe.gradle.fixturesJavaHome="$JAVA_HOME_${{ matrix.java }}_X64"
+
+      - name: Upload test reports
+        if: always() && !success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gradle-reports-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ matrix.os }}
+          path: lathe-gradle-plugin/target/gradle/reports/tests/
           retention-days: 7

@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.zip.ZipException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,14 +33,14 @@ public final class DependencyTypeIndexSync {
     try {
       final Map<Boolean, Long> counts =
           artifacts.stream()
-              .map(artifact -> IOUtil.unchecked(() -> index(artifact)))
+              .map(artifact -> IOUtil.unchecked(() -> indexReadable(artifact)))
               .collect(Collectors.partitioningBy(b -> b, Collectors.counting()));
       LOG.info(
           "[sync] built %d dependency type indexes, %d already cached in %dms"
               .formatted(
                   counts.getOrDefault(true, 0L), counts.getOrDefault(false, 0L), t.elapsedMs()));
     } catch (final UncheckedIOException e) {
-      throw new SyncException("lathe:sync failed to index dependency artifacts", e);
+      throw new SyncException("failed to index dependency artifacts", e);
     }
   }
 
@@ -57,6 +58,17 @@ public final class DependencyTypeIndexSync {
     }
 
     return versionDir.resolve(artifact.classifier()).resolve(LatheLayout.TYPE_INDEX_FILENAME);
+  }
+
+  // An artifact that is no readable archive (a POM-only module's .pom on a Gradle classpath, a
+  // corrupt download) has no types to index: it is skipped, so one bad file never stops a sync.
+  private static boolean indexReadable(final ResolvedJar artifact) throws IOException {
+    try {
+      return index(artifact);
+    } catch (final ZipException e) {
+      LOG.warn("[type-index] skipped %s: not a readable archive".formatted(artifact.jar()), e);
+      return false;
+    }
   }
 
   private static boolean index(final ResolvedJar artifact) throws IOException {

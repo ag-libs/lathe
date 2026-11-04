@@ -7,7 +7,7 @@ Prefer it over text search where the compiler knows better; plain `grep` is fine
 
 - **Renaming** a Java symbol: `rename_symbol`. Never search-and-replace a Java name.
 - **Checking an edit**: after changing Java files, run `verify_change` (no arguments) before you finish.
-  It compiles what you changed plus its callers in every module, without a Maven build.
+  It compiles what you changed plus its callers in every module, without a build.
 - **Imports**: `fix_imports` after adding code that uses new types.
 - **Formatting**: `format_file` on a file you edited, so it passes the build's formatting check.
 - **Before changing a method's signature or behaviour**: `analyze_change`, for its overrides, users and relevant tests.

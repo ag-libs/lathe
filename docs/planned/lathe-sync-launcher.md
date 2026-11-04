@@ -3,7 +3,7 @@
 ## Status
 
 **In progress.** Slices 1–3 are done for Maven: sync writes the script, the Neovim client runs it, and server and MCP texts name it. OpenJDK writes its own script (slice 4, done with the [build-agnostic step](../done/lathe-build-agnostic-core.md)); only Gradle's remains, as part of the Gradle work.
-Prepares Lathe for [Gradle support](lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
+Prepares Lathe for [Gradle support](../done/lathe-gradle-support.md) by removing the last place outside the build integration that knows how to run the build.
 
 ## Problem
 
@@ -132,7 +132,7 @@ A build-file change, the case that alters dependents' classpaths, always runs a 
 
 ### Other build front-ends
 
-- **Gradle** (`latheSync`, see [Gradle support](lathe-gradle-support.md)) writes a script running `./gradlew --no-build-cache latheSync`; `--tests` and modules map to whatever that design settles on.
+- **Gradle** (`latheSync`, see [Gradle support](../done/lathe-gradle-support.md)) writes a script running `./gradlew --no-build-cache latheSync`; `--tests` and modules map to whatever that design settles on.
   `--no-build-cache` is the Gradle side of the cache rule: without it, a build-cache hit on `compileJava` or `test` skips the task and its capture.
 - **OpenJDK** (`lathe-openjdk-maven-plugin:sync`) writes a script that re-runs its own sync goal, pinned: `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:<version>:sync -Dlathe.buildDir=<build dir>`, with the version and build directory recorded when the script is written, so a re-sync never switches Lathe versions or JDK configurations.
   - It **never runs `make`**: building the JDK is the user's call and can take hours, so the script refreshes `.lathe/` from the latest build only.

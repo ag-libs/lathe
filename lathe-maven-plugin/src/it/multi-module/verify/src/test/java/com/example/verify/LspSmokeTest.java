@@ -14,6 +14,7 @@ import java.util.Map;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -224,15 +225,15 @@ class LspSmokeTest {
   @Test
   void references_fromCachedJdkSource_findsReactorUsages() throws Exception {
     // FR-001: cursorConfig is empty for external sources → configs = List.of() → no search
+    // The workspace's own JDK sources: the shared cache can also hold other JDKs' from earlier runs.
     final Path stringJava =
-        Files.find(
-                Path.of(System.getProperty("lathe.cache")).resolve("jdks"),
-                6,
-                (p, a) ->
-                    p.getParent().endsWith(Path.of("java.base", "java", "lang"))
-                        && p.getFileName().toString().equals("String.java"))
-            .findFirst()
-            .orElseThrow();
+        Path.of(
+                JsonParser.parseString(Files.readString(MANIFEST))
+                    .getAsJsonObject()
+                    .getAsJsonObject("jdk")
+                    .get("sourceDir")
+                    .getAsString())
+            .resolve(Path.of("java.base", "java", "lang", "String.java"));
 
     final String stringUri = stringJava.toUri().toString();
     final String stringContent = Files.readString(stringJava);

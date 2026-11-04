@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.core;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -56,6 +57,10 @@ public final class FileUtil {
 
   public static boolean isClassFile(final Path path) {
     return path.getFileName().toString().endsWith(".class");
+  }
+
+  public static boolean isJarFile(final Path path) {
+    return path.getFileName().toString().endsWith(".jar");
   }
 
   // A class file's binary name: its path below the class-output root, dotted, without .class.
@@ -372,15 +377,30 @@ public final class FileUtil {
     }
   }
 
+  // Another caller deleting the same tree (see deleteRetrying) can remove the root or a child
+  // while the walk lists it, which fails the walk on a path already gone: the delete then starts
+  // over, and ends once nothing is left.
   public static void deleteDir(final Path dir) throws IOException {
-    if (!Files.exists(dir)) {
-      return;
-    }
+    for (int attempt = 1; ; attempt++) {
+      if (!Files.exists(dir)) {
+        return;
+      }
 
-    try (final var walk = Files.walk(dir)) {
-      final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
-      for (final var path : sorted) {
-        deleteRetrying(path);
+      try (final var walk = Files.walk(dir)) {
+        final List<Path> sorted = walk.sorted(Comparator.reverseOrder()).toList();
+        for (final var path : sorted) {
+          deleteRetrying(path);
+        }
+
+        return;
+      } catch (final NoSuchFileException e) {
+        pauseBeforeRetry(attempt, e);
+      } catch (final UncheckedIOException e) {
+        if (!(e.getCause() instanceof NoSuchFileException gone)) {
+          throw e;
+        }
+
+        pauseBeforeRetry(attempt, gone);
       }
     }
   }
@@ -406,7 +426,7 @@ public final class FileUtil {
   }
 
   // Rethrows the last attempt's failure; before any other, waits a little longer than last time.
-  private static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
+  static void pauseBeforeRetry(final int attempt, final FileSystemException failure)
       throws IOException {
     if (attempt == RETRY_ATTEMPTS) {
       throw failure;

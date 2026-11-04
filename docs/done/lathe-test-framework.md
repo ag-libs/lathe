@@ -191,7 +191,7 @@ Resolving third-party artifacts from `~/.m2` while Lathe's own come from the rea
 
 ### 8. Gradle
 
-[Gradle support](../planned/lathe-gradle-support.md) (Gradle 8.8+) adds a TestKit suite, cross-tool contract tests, and a Gradle version matrix.
+[Gradle support](lathe-gradle-support.md) (Gradle 8.8+) adds a TestKit suite, cross-tool contract tests, and a Gradle version matrix.
 `lathe-server`'s unit tests are unaffected — `.lathe/` is the seam — so sections 1–6 apply as they are;
 the cost that grows is end-to-end, where every test is a real build and the matrix multiplies them.
 

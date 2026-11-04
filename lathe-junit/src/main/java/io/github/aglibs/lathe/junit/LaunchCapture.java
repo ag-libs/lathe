@@ -22,6 +22,7 @@ import java.util.stream.Stream;
 final class LaunchCapture {
 
   private static final String KIND = "junit-platform";
+  private static final String AGENT_OPTION = "-javaagent:";
 
   private LaunchCapture() {}
 
@@ -76,14 +77,14 @@ final class LaunchCapture {
       final String arg = inputArguments.get(i);
       final OptionValue modulePathOption = optionValue(arg, inputArguments, i, "--module-path");
       if (modulePathOption.present()) {
-        modulePath.addAll(splitPath(modulePathOption.value()));
+        modulePath.addAll(launchEntries(modulePathOption.value()));
         i += modulePathOption.consumedNext() ? 1 : 0;
         continue;
       }
 
       final OptionValue shortModulePath = optionValue(arg, inputArguments, i, "-p");
       if (shortModulePath.present()) {
-        modulePath.addAll(splitPath(shortModulePath.value()));
+        modulePath.addAll(launchEntries(shortModulePath.value()));
         i += shortModulePath.consumedNext() ? 1 : 0;
         continue;
       }
@@ -123,7 +124,9 @@ final class LaunchCapture {
         continue;
       }
 
-      jvmArgs.add(arg);
+      if (!isBuildToolArgument(arg, ownJarLocation)) {
+        jvmArgs.add(arg);
+      }
     }
 
     final LaunchMode mode = patchModules.isEmpty() ? LaunchMode.CLASSPATH : LaunchMode.MODULE;
@@ -169,13 +172,45 @@ final class LaunchCapture {
   }
 
   private static List<String> capturedClassPath(final String classPath, final Path ownJarLocation) {
-    return splitPath(classPath).stream().filter(entry -> !samePath(entry, ownJarLocation)).toList();
+    return launchEntries(classPath).stream()
+        .filter(entry -> !samePath(entry, ownJarLocation))
+        .toList();
+  }
+
+  // A class or module path without the build tool's own worker jar: replay starts its own runner.
+  private static List<String> launchEntries(final String path) {
+    return splitPath(path).stream()
+        .filter(entry -> !LatheLayout.Gradle.TEST_WORKER_JAR.equals(fileName(entry)))
+        .toList();
+  }
+
+  // An argument the build tool adds, not the build: Gradle's worker properties and main module,
+  // and this jar when the build loads it as an agent.
+  private static boolean isBuildToolArgument(final String arg, final Path ownJarLocation) {
+    return arg.startsWith(LatheLayout.Gradle.TEST_WORKER_PROPERTY_PREFIX)
+        || arg.equals(LatheLayout.Gradle.TEST_WORKER_MAIN_MODULE)
+        || (arg.startsWith(AGENT_OPTION) && samePath(agentJar(arg), ownJarLocation));
+  }
+
+  // -javaagent:<jar>[=<options>]
+  private static String agentJar(final String arg) {
+    final String value = arg.substring(AGENT_OPTION.length());
+    final int options = value.indexOf('=');
+    return options < 0 ? value : value.substring(0, options);
+  }
+
+  private static String fileName(final String entry) {
+    final Path name = Path.of(entry).getFileName();
+    return name != null ? name.toString() : "";
   }
 
   private static boolean samePath(final String entry, final Path ownJarLocation) {
     return ownJarLocation != null && Path.of(entry).normalize().equals(ownJarLocation.normalize());
   }
 
+  // Each entry through Path, which collapses repeated separators: on Windows, Gradle passes the
+  // worker's class path in an argfile with its backslashes escaped but unquoted, and the launcher
+  // unescapes only inside quotes, so they arrive doubled.
   private static List<String> splitPath(final String value) {
     if (value == null || value.isBlank()) {
       return List.of();
@@ -183,6 +218,7 @@ final class LaunchCapture {
 
     return Stream.of(value.split(java.util.regex.Pattern.quote(File.pathSeparator)))
         .filter(entry -> !entry.isBlank())
+        .map(entry -> Path.of(entry).toString())
         .toList();
   }
 

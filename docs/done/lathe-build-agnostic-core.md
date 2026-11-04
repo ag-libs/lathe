@@ -3,7 +3,7 @@
 ## Status
 
 **Done (2026-10-11).** All seven slices shipped (see [Slicing](#slicing)); the Maven unit and invoker tests pass unchanged.
-It was the prerequisite for [Gradle Support](../planned/lathe-gradle-support.md), done as its own step before any Gradle code,
+It was the prerequisite for [Gradle Support](lathe-gradle-support.md), done as its own step before any Gradle code,
 and [OpenJDK Support](lathe-openjdk-support.md) now conforms to the same contract (slice 6).
 
 ## Why

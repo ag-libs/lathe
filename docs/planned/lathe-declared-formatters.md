@@ -3,7 +3,7 @@
 ## Status
 
 Proposed (2026-10-24), not implemented.
-Scheduled after the [Gradle plugin](lathe-gradle-support.md) is done; the plugin ships without formatter support.
+Scheduled after the [Gradle plugin](../done/lathe-gradle-support.md) is done; the plugin ships without formatter support.
 Builds on [Pinned Formatters In-Process](../done/lathe-pinned-formatters.md), which runs the formatter, and
 [Workspace-Scoped Style](../done/lathe-workspace-style.md), which defines `lathe-style.json` and `.lathe/style.json`.
 
