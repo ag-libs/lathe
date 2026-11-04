@@ -1,6 +1,6 @@
 # Lathe — Server Restructuring
 
-**Status: approved direction (2026-11-04); Phase 0 awaits its design approval.**
+**Status: Phase 0 and Phase 1 done (2026-11-04, branch `refactor/server-threading`); Phase 2 next.**
 Starts on `main` after the Gradle merge (#44, 2026-11-04), which did not touch `lathe-server` or `lathe-mcp-server`.
 
 ## 1. Why
@@ -89,23 +89,29 @@ Each step moves code without changing behaviour unless it says otherwise.
   - incoming calls read candidate files on the loop.
 - Add the §4 rules to `AGENTS.md`.
 
-### Phase 1 — split `WorkspaceSession` into loop components
+### Phase 1 — split `WorkspaceSession` into loop components (done)
 
-In order, easiest first:
+As built, in this order (the foundations first, so no component took its inputs as lambdas only to be rewired):
 
-1. Pure statics and records out: `TreeState`, `StaleScan` and the stale helpers; the launch helpers;
-   the layout queries (`modules`, `packages`, `resolveContext`, `createType`, resources) into `WorkspaceLayout`.
-2. `RunCoordinator`: run, debug, test discovery, run configs (about 830 lines; owns `activeRuns`, `activeDebugHosts`, `discoveries`).
-3. `ReactorTypeIndex`: the `reactor*` fields and `typeIndex`.
-4. `WorkspaceState`: manifest, module registry, module graph, candidate index, type index; replaced as a whole on reload.
-   Components read it on each use and never cache its parts, so reload stays correct.
-5. `ReferenceSearch`: references, highlights, call hierarchy, implementations.
-6. `WritePass`: the stale scan, compiling into `.lathe`, stamps, resources;
-   it exposes an immutable freshness snapshot that verify and the MCP notes read.
-7. `RenameService`: rename checks and the rename transaction.
+1. `SourceLayout` (module, package, context, dir-run and test-source queries over `(configs, root)`),
+   `NewTypeTemplates`, `ResourceFinder`.
+2. `WorkspaceState`: root, manifest, module registry, module graph and candidate index, replaced together by `load`;
+   every accessor loop-checked, so reading the workspace off the loop fails in tests even when the value is immutable.
+3. `ReactorTypeIndex`: the type index and its reactor shards; `TreeState` became its own record and the source-root
+   lookup `ModuleSourceConfig.sourceRootOf`.
+4. `RunCoordinator`: run, debug, test discovery, run configs.
+5. `FeatureRouter` (routing a file to its worker and the analysis LRU, the seam every component needs), then
+   `ReferenceSearch`: references, instantiations, highlights, implementations, call hierarchy.
+6. `WritePass` (the stale scan, writes into `.lathe`, stamps, failed writes, resources, lombok.config), reaching the
+   session only through `WritePass.Hooks`, a record of five functions; then `ChangeVerifier`, the read-only view
+   verify_change and the MCP notes are built from.
+7. `RenameService`: the rename checks and the edit.
 
-What remains in `WorkspaceSession`: open documents, compile scheduling and diagnostics publishing, and wiring.
-Target: under 1,000 lines.
+Kept in `WorkspaceSession` on purpose: the open documents and their lifecycle, compile scheduling and diagnostics
+publishing, the rename transaction (it hooks into open, change, save, close and format), the tick and reload,
+`reconcileForVerify` (the freshen step before every MCP query, which drives the tick, the build-file flag and the
+pass), the per-document features, and one-line delegates for the components' entry points.
+It went from 5,863 lines to 1,779; the delegates go when Phase 2 lets the front ends call the components.
 
 ### Phase 2 — straighten the front ends
 
