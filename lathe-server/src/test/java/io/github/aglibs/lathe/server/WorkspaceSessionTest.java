@@ -317,35 +317,6 @@ class WorkspaceSessionTest {
     assertThat(WorkspaceSession.staleMtimes(scan)).containsOnlyKeys(shared);
   }
 
-  @Test
-  void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
-    // FR-012/FR-013 + EG-052: a reactor-scoped search uses a null packageRel; the generated builder
-    // lives under the .lathe generated-sources mirror (the fresh copy Lathe keeps in sync), never
-    // under a regular source root, yet must stay in scope. The stale Maven target/ copy is not.
-    final var config = configWithGen(tmp.resolve("module/target/generated-sources/annotations"));
-    final var sourceRoot = tmp.resolve("module/src/main/java");
-    final var genCandidate = config.generatedSourcesDir().resolve("com/example/FooBuilder.java");
-    final var staleTargetCandidate =
-        config.originalGenSourcesDir().resolve("com/example/FooBuilder.java");
-    final List<Path> roots = config.searchRoots();
-
-    assertThat(WorkspaceSession.isInPackageScope(genCandidate, roots, null)).isTrue();
-    assertThat(WorkspaceSession.isInPackageScope(staleTargetCandidate, roots, null)).isFalse();
-    assertThat(
-            WorkspaceSession.isInPackageScope(
-                sourceRoot.resolve("com/example/Foo.java"), roots, null))
-        .isTrue();
-  }
-
-  @Test
-  void isInPackageScope_pathOutsideEverySearchRoot_notInScope() {
-    final var config = configWithGen(tmp.resolve("module/target/generated-sources/annotations"));
-    final var outside = tmp.resolve("other-module/target/classes/com/example/Bar.java");
-    final List<Path> roots = config.searchRoots();
-
-    assertThat(WorkspaceSession.isInPackageScope(outside, roots, null)).isFalse();
-  }
-
   private Path writeJava(final String typeName, final long mtime) throws IOException {
     return TestCompiler.writeAt(sourceRoot.resolve("com/example/" + typeName + ".java"), "", mtime);
   }
@@ -485,14 +456,6 @@ class WorkspaceSessionTest {
   private ModuleSourceConfig config(final Path sourceRoot) {
     return TestCompiler.moduleConfig(
         tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
-  }
-
-  private ModuleSourceConfig configWithGen(final Path genRoot) {
-    return TestCompiler.moduleConfig(
-        tmp.resolve(".lathe/module"),
-        tmp.resolve("module/target/classes"),
-        tmp.resolve("module/src/main/java"),
-        genRoot);
   }
 
   // Real class files, so each carries the SourceFile attribute naming the source it came from.

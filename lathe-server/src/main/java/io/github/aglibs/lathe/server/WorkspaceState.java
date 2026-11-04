@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Stream;
 
 // The workspace as a load replaces it: the root, the manifest, the module registry, the module
 // graph and the reference-candidate index, swapped together. Event-loop state: every accessor
@@ -41,6 +42,18 @@ final class WorkspaceState {
   SourceLayout layout() {
     eventLoop.checkOnLoop();
     return new SourceLayout(registry.allConfigs(), root);
+  }
+
+  // Where a type's source may live: the reactor's source roots, then the extracted JDK and
+  // dependency sources.
+  List<Path> typeSourceDirs() {
+    eventLoop.checkOnLoop();
+    return Stream.of(
+            registry.allSourceRoots().stream(),
+            manifest.jdkModuleSourceDirs().stream(),
+            manifest.depSourceDirs().stream())
+        .flatMap(stream -> stream)
+        .toList();
   }
 
   Path root() {
