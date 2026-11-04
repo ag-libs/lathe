@@ -63,7 +63,6 @@ import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentSymbol;
-import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
@@ -282,9 +281,7 @@ public final class LatheEngine {
   // compile the file as it is on disk, and require a name at the position.
   private static CompletableFuture<Void> atName(
       final WorkspaceSession session, final String uri, final String content, final Position pos) {
-    return session
-        .reconcileForVerify()
-        .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION))
+    return compiled(session, uri, content)
         .thenCompose(diagnostics -> session.onNameFuture(uri, pos))
         .thenAccept(
             onName -> {
@@ -363,12 +360,15 @@ public final class LatheEngine {
 
   // The file's types and their members in source order, each at its nesting depth.
   public List<LatheOutlineItem> outline(final Path file) {
-    compileFromDisk(file); // register the file and warm its analysis before scanning
     final String uri = LatheUri.fromPath(file);
-    final var params = new DocumentSymbolParams(new TextDocumentIdentifier(uri));
-    return await(service.documentSymbol(params)).stream()
-        .filter(Either::isRight)
-        .flatMap(symbol -> outlineItems(uri, symbol.getRight(), 0))
+    final String content = read(file);
+    // The file is registered and its analysis warmed before it is scanned.
+    return request(
+            (session, cancel, progress) ->
+                compiled(session, uri, content)
+                    .thenCompose(diagnostics -> session.documentSymbolFuture(uri)))
+        .stream()
+        .flatMap(symbol -> outlineItems(uri, symbol, 0))
         .toList();
   }
 
@@ -399,9 +399,14 @@ public final class LatheEngine {
       return List.of();
     }
 
-    await(service.reconcileForVerify()); // so types the agent just wrote are found
-    final List<? extends SymbolInformation> symbols =
-        await(service.workspaceSymbolFuture(name, scope == SymbolScope.REACTOR));
+    final boolean reactorOnly = scope == SymbolScope.REACTOR;
+    // Freshened first, so types the agent just wrote are found.
+    final List<SymbolInformation> symbols =
+        request(
+            (session, cancel, progress) ->
+                session
+                    .reconcileForVerify()
+                    .thenApply(outcome -> session.workspaceSymbol(name, reactorOnly)));
     return symbols.stream()
         .sorted(Comparator.comparingInt(this::rank))
         .limit(maxResults)
@@ -573,6 +578,7 @@ public final class LatheEngine {
     requireReactorFile(file);
     compileFromDisk(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
+    // Through the LSP service, which holds the formatter the workspace resolved.
     final List<TextEdit> edits = await(service.formatFuture(uri));
     if (edits.isEmpty()) {
       return Optional.empty();
@@ -589,9 +595,14 @@ public final class LatheEngine {
   // fix (unknown names).
   public LatheImports fixImports(final Path file) {
     requireReactorFile(file);
-    compileFromDisk(file); // missing imports are read from the file's document, so register it
     final String uri = LatheUri.fromPath(file);
-    final MissingImportsResult missing = await(service.missingImportsFuture(uri));
+    final String content = read(file);
+    // Missing imports are read from the file's document, so it is registered first.
+    final MissingImportsResult missing =
+        request(
+            (session, cancel, progress) ->
+                compiled(session, uri, content)
+                    .thenCompose(diagnostics -> session.missingImportsFuture(uri)));
     final Map<Boolean, List<MissingImport>> byUnambiguous =
         missing.items().stream()
             .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
@@ -633,7 +644,8 @@ public final class LatheEngine {
    * what only a sync can fix, and a running build. Read after the tool's own write pass.
    */
   public LatheNotes notes(final List<Path> files) {
-    return await(service.notesFuture(files));
+    return request(
+        (session, cancel, progress) -> CompletableFuture.completedFuture(session.notes(files)));
   }
 
   /**
@@ -642,17 +654,29 @@ public final class LatheEngine {
    * so it reuses the editor's selection mapping.
    */
   public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
-    compileFromDisk(file);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final TestFacts facts =
+        request(
+            (session, cancel, progress) ->
+                compiled(session, uri, content)
+                    .thenCompose(
+                        diagnostics -> {
+                          final Optional<String> failing = session.failingUnder(file);
+                          return session
+                              .runnablesFuture(uri)
+                              .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
+                        }));
     // Replaying the last good classes would answer for code that is no longer there.
-    await(service.failingUnderFuture(file))
+    facts
+        .failing()
         .ifPresent(
             error -> {
               throw new Refused(
                   "%s was not run: code it runs does not compile: %s"
                       .formatted(file.getFileName(), error));
             });
-    final var uri = file.toUri().toString();
-    final List<RunTarget> targets = await(service.runnablesFuture(uri));
+    final List<RunTarget> targets = facts.targets();
     if (targets.isEmpty()) {
       throw new Refused(noTests(file));
     }
@@ -663,8 +687,9 @@ public final class LatheEngine {
             .map(target -> new TestSelection(scope.selectionKind(), target.id()))
             .toList();
     final String token = "mcp-run-%d".formatted(runToken.incrementAndGet());
+    final String moduleRel = selected.get(0).moduleRel();
     return LatheTestRun.from(
-        await(service.runTestFuture(selected.get(0).moduleRel(), selections, token)),
+        request((session, cancel, progress) -> session.runTestFuture(moduleRel, selections, token)),
         selected.stream().map(RunTarget::id).toList());
   }
 
@@ -776,7 +801,9 @@ public final class LatheEngine {
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
   public List<LatheModuleSummary> modules() {
-    return await(service.moduleSummariesFuture());
+    return request(
+        (session, cancel, progress) ->
+            CompletableFuture.completedFuture(session.moduleSummaries()));
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
@@ -971,8 +998,32 @@ public final class LatheEngine {
   // answers see those edits. What the pass could not write (code that does not compile, a pending
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
-    await(service.reconcileForVerify());
-    return await(analyze(file));
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    return request((session, cancel, progress) -> compiled(session, uri, content));
+  }
+
+  // Freshens the workspace (what the agent wrote outside the editor), then compiles the file as it
+  // is on disk: the first step of every tool that reads a file.
+  private static CompletableFuture<List<Diagnostic>> compiled(
+      final WorkspaceSession session, final String uri, final String content) {
+    return session
+        .reconcileForVerify()
+        .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION));
+  }
+
+  // What run_test reads before it picks the tests: whether code the file runs fails to compile,
+  // and the file's runnable targets.
+  private record TestFacts(String failure, List<RunTarget> targets) {
+
+    TestFacts {
+      targets = List.copyOf(targets);
+    }
+
+    // The first error in code the file runs, when it does not compile.
+    Optional<String> failing() {
+      return Optional.ofNullable(failure);
+    }
   }
 
   private CompletableFuture<List<Diagnostic>> analyze(final Path file) {
