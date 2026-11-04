@@ -101,11 +101,11 @@ jobs:
           fi
 
       - name: Keep the invoker fixtures' downloads
-        # The fixtures resolve into lathe-maven-plugin/target/local-repo, which the cache never sees,
-        # so every run downloaded what only they use (formatters, Lombok, JUnit 5). Copied into
-        # ~/.m2, the next run's fixtures copy them from there through src/it/settings.xml's file://
-        # repository. -n keeps every file ~/.m2 has, its _remote.repositories records included; a
-        # skipped file is no error worth failing the job over.
+        # The fixtures resolve into lathe-maven-plugin/target/local-repo, which the cache never
+        # sees, so every run downloaded what only they use (formatters, Lombok, JUnit 5). Copied
+        # into ~/.m2, the next run's fixtures copy them from there through src/it/settings.xml's
+        # file:// repository. -n keeps every file ~/.m2 has, its _remote.repositories records
+        # included; a skipped file is no error worth failing the job over.
         if: success() && ((matrix.java == '21' && runner.os == 'Linux') || runner.os != 'Linux')
         run: |
           if [ -d lathe-maven-plugin/target/local-repo ]; then
@@ -175,7 +175,8 @@ jobs:
       - name: Invoker suite
         # Builds the reactor without running unit tests (maven.test.skip.exec; skipTests would also skip
         # the invoker), so every extraArtifact comes from this build, then runs the fixture builds with
-        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}, which run Lathe enabled (lathe.disabled=false).
+        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}, which run Lathe enabled
+        # (lathe.disabled=false).
         run: |
           mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
             -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
@@ -248,9 +249,10 @@ jobs:
       - name: Build and test the Gradle plugin
         # maven.test.skip leaves out the dependencies' tests; lathe.gradle.skipUnitTests says whether
         # the plugin's own run. lathe-junit is named because the fixtures get it as an extra
-        # artifact, which -am does not follow. Formatting is checked by the build rows. As in the build
-        # rows, CI stays set and keeps Lathe out of this build; the fixtures run without it (GradleFixture),
-        # so Lathe is enabled in them. An older Gradle's fixtures run on the row's JDK (17 for the floor).
+        # artifact, which -am does not follow. Formatting is checked by the build rows. As in the
+        # build rows, CI stays set and keeps Lathe out of this build; the fixtures run without it
+        # (GradleFixture), so Lathe is enabled in them. An older Gradle's fixtures run on the row's
+        # JDK (17 for the floor).
         env:
           FIXTURES: ${{ matrix.gradle != '9.8.2' && format('-Dlathe.gradle.fixturesHome={0}/gradle-{1}', runner.temp, matrix.gradle) || '' }}
         run: |

@@ -67,8 +67,8 @@ function M.path_to_qualified(path)
   return (rel:gsub("%.java$", ""):gsub("/", "."))
 end
 
--- Any Java file under a test source root: which of them hold tests is the server's discovery to say,
--- with the build's own test filter, so no class-name pattern is guessed here.
+-- Any Java file under a test source root: which of them hold tests is the server's discovery to
+-- say, with the build's own test filter, so no class-name pattern is guessed here.
 function M.is_test_file(file_path)
   return file_path:match("%.java$") ~= nil and file_path:match("/src/test/") ~= nil
 end
