@@ -5,11 +5,9 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
-import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
@@ -17,7 +15,6 @@ import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -132,44 +129,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
   /** Write files the caller changed on disk itself, completing once the mirror has them. */
   public CompletableFuture<Void> writeReported(final Set<Path> changed) {
     return eventLoop.submitCompose(() -> session.writeReported(changed));
-  }
-
-  /** The files written on report since the last call, for a verify_change given no files. */
-  public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
-    return eventLoop.submit(() -> session.takeWrittenSinceVerify());
-  }
-
-  /** Every source not as the last build compiled it, for a verify_change given no files. */
-  public CompletableFuture<List<Path>> changedSinceBuild() {
-    return eventLoop.submit(() -> session.changedSinceBuild());
-  }
-
-  public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
-    return eventLoop.submit(() -> session.moduleSummaries());
-  }
-
-  /** The changed files plus their same-module candidate callers, grouped by module rel. */
-  public CompletableFuture<Map<String, List<Path>>> verifyTargetsByModule(
-      final List<Path> changed) {
-    return eventLoop.submit(() -> session.verifyTargetsByModule(changed));
-  }
-
-  /** Module rels that transitively depend on the changed files' modules (excluding them). */
-  public CompletableFuture<List<String>> downstreamModuleRels(final List<Path> changed) {
-    return eventLoop.submit(() -> session.downstreamModuleRels(changed));
-  }
-
-  public CompletableFuture<List<Path>> differingFromBuild(final List<Path> changed) {
-    return eventLoop.submit(() -> session.differingFromBuild(changed));
-  }
-
-  public CompletableFuture<Integer> reactorModuleCount() {
-    return eventLoop.submit(() -> session.reactorModuleCount());
-  }
-
-  /** Reactor placement (module rel + test/production) for each path that maps to a module. */
-  public CompletableFuture<Map<Path, ModulePlacement>> classifyPaths(final List<Path> paths) {
-    return eventLoop.submit(() -> session.classifyPaths(paths));
   }
 
   public void close() {
@@ -409,12 +368,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
                     }));
   }
 
-  public CompletableFuture<TextMentions.Sources> textMentionSourcesFuture(final String name) {
-    return eventLoop.submit(() -> session.textMentionSources(name));
-  }
-
-  /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */
-  public CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
+  // The rename's edit, before the transaction that applies it opens.
+  private CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
     final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final var newName = params.getNewName();
@@ -682,15 +637,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return eventLoop.submitCompose(() -> session.diagnosticsFuture(uri, content, version));
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
-      final String uri, final String content) {
-    return eventLoop.submitCompose(() -> session.diagnosticsTransientFuture(uri, content));
-  }
-
-  public CompletableFuture<Optional<String>> failingUnderFuture(final Path file) {
-    return eventLoop.submit(() -> session.failingUnder(file));
-  }
-
   /** What an answer about {@code files} cannot vouch for, after the last write pass. */
   public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
     return eventLoop.submit(() -> session.notes(files));
@@ -775,10 +721,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   public CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     return eventLoop.submitCompose(() -> session.missingImportsFuture(uri));
-  }
-
-  public CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
-    return eventLoop.submitCompose(() -> session.onNameFuture(uri, pos));
   }
 
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {

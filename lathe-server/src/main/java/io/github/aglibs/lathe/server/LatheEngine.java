@@ -1006,7 +1006,10 @@ public final class LatheEngine {
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
-    final Map<Path, ModulePlacement> placements = await(service.classifyPaths(paths));
+    final Map<Path, ModulePlacement> placements =
+        request(
+            (session, cancel, progress) ->
+                CompletableFuture.completedFuture(session.classifyPaths(paths)));
 
     int production = 0;
     int test = 0;
