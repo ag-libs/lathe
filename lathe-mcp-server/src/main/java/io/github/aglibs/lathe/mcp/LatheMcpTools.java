@@ -754,15 +754,15 @@ final class LatheMcpTools {
         tool,
         file,
         () ->
-            candidateColumns(engine, file, line - 1, column, symbol).stream()
-                .map(candidate -> answerAt(handler, file, line - 1, candidate))
+            candidateColumns(engine, file, fromWire(line), column, symbol).stream()
+                .map(candidate -> answerAt(handler, file, fromWire(line), candidate))
                 .flatMap(Optional::stream)
                 .findFirst()
                 .orElseGet(
                     () ->
                         error(
                             engine
-                                .sourceLine(file, line - 1)
+                                .sourceLine(file, fromWire(line))
                                 .map(text -> notOnName(line, column, symbol, text))
                                 .orElse(
                                     "No symbol at line %d: the file is shorter."
@@ -778,13 +778,15 @@ final class LatheMcpTools {
       final Integer column,
       final String symbol) {
     if (symbol == null) {
-      return List.of(column - 1);
+      return List.of(fromWire(column));
     }
 
     final List<Integer> named = engine.nameColumns(file, line, symbol);
     return column == null
         ? named
-        : named.stream().sorted(Comparator.comparingInt(c -> Math.abs(c - (column - 1)))).toList();
+        : named.stream()
+            .sorted(Comparator.comparingInt(c -> Math.abs(c - fromWire(column))))
+            .toList();
   }
 
   // Empty when the position is not on a name, so the next candidate is tried.
@@ -957,7 +959,7 @@ final class LatheMcpTools {
             item.kind(),
             item.name(),
             line(item.location()),
-            item.location().range().getStart().getCharacter() + 1,
+            toWire(item.location().range().getStart().getCharacter()),
             item.location().snippet());
   }
 
@@ -1241,8 +1243,8 @@ final class LatheMcpTools {
     return "%s:%d:%d: %s: %s"
         .formatted(
             located.path(),
-            d.getRange().getStart().getLine() + 1,
-            d.getRange().getStart().getCharacter() + 1,
+            toWire(d.getRange().getStart().getLine()),
+            toWire(d.getRange().getStart().getCharacter()),
             d.getSeverity(),
             messageText(d));
   }
@@ -1303,7 +1305,7 @@ final class LatheMcpTools {
   }
 
   private static int line(final LatheLocation location) {
-    return location.range().getStart().getLine() + 1;
+    return toWire(location.range().getStart().getLine());
   }
 
   // Most answers are reactor code, so only the exceptions are tagged.
@@ -1350,9 +1352,19 @@ final class LatheMcpTools {
     return "  %s [%d:%d] %s"
         .formatted(
             d.getSeverity(),
-            d.getRange().getStart().getLine() + 1,
-            d.getRange().getStart().getCharacter() + 1,
+            toWire(d.getRange().getStart().getLine()),
+            toWire(d.getRange().getStart().getCharacter()),
             messageText(d));
+  }
+
+  // Agents read and give 1-based lines and columns; the server's positions are 0-based. These two
+  // are the only conversions between them.
+  private static int fromWire(final int oneBased) {
+    return oneBased - 1;
+  }
+
+  private static int toWire(final int zeroBased) {
+    return zeroBased + 1;
   }
 
   private static String messageText(final Diagnostic d) {

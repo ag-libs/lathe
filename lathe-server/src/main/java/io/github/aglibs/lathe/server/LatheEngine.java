@@ -630,6 +630,7 @@ public final class LatheEngine {
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.
+  // LatheFormat reports the lines it changed as an agent reads them, 1-based.
   private static int firstLine(final TextEdit edit) {
     return edit.getRange().getStart().getLine() + 1;
   }
@@ -963,7 +964,7 @@ public final class LatheEngine {
 
   private Stream<LatheDiagnostic> reportedIn(
       final Path file, final boolean changedFile, final List<Diagnostic> diagnostics) {
-    final String path = displayPath(file, file.toUri().toString());
+    final String path = displayPath(file, LatheUri.fromPath(file));
     return diagnostics.stream()
         .filter(diagnostic -> reported(diagnostic, changedFile))
         .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
