@@ -59,6 +59,9 @@ These rules are in `AGENTS.md` (`CLAUDE.md` links to it), so every agent sees th
 3. Loop components check `eventLoop.checkOnLoop()` at their entry points: fail-fast (`IllegalStateException`), not `assert`.
    Tests then trip over a violation instead of a production race.
 4. Nothing waits on the loop: no `get`/`join`, no waiting on a process or another thread.
+   Known exception, kept for now (KISS): a workspace reload closes the old registry on the loop, waiting for its
+   workers to drain. Reloads are rare; make the close asynchronous (with one admission shared across registries)
+   only if a measurement shows a noticeable stall.
 5. Field names say the thread: `eventLoop` for `ServerEventLoop`, `moduleWorker` for a `CompilationWorker`
    (today both are called `worker`).
 

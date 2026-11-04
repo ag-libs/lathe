@@ -975,9 +975,10 @@ final class WorkspaceSession {
     }
 
     final CompletableFuture<TestDiscovery> result =
-        lastDiscovery
+        eventLoop
+            .rejoin(lastDiscovery)
             .handle((previous, error) -> moduleRel)
-            .thenComposeAsync(this::launchDiscovery, eventLoop::execute)
+            .thenCompose(this::launchDiscovery)
             .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
     lastDiscovery = result;
     discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
@@ -1000,8 +1001,9 @@ final class WorkspaceSession {
     final RunItem overlay =
         baselineOverlay(moduleRel, RunKind.TEST)
             .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
-    return startTestRun(moduleRel, selections, "", overlay)
-        .thenApplyAsync(outcome -> discovery(moduleRel, outcome), eventLoop::execute);
+    return eventLoop
+        .rejoin(startTestRun(moduleRel, selections, "", overlay))
+        .thenApply(outcome -> discovery(moduleRel, outcome));
   }
 
   private TestDiscovery discovery(final String moduleRel, final LaunchOutcome outcome) {
@@ -1995,7 +1997,7 @@ final class WorkspaceSession {
     return module
         .worker()
         .resolveRenameTarget(request)
-        .thenApplyAsync(
+        .thenApply(
             target -> {
               if (target == null) {
                 return null;
@@ -2014,8 +2016,7 @@ final class WorkspaceSession {
                   ? null
                   : Either3.<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>forFirst(
                       range);
-            },
-            eventLoop::execute)
+            })
         .whenComplete((range, failure) -> logRefusal("prepareRename", uri, t, failure));
   }
 
@@ -2343,7 +2344,7 @@ final class WorkspaceSession {
               refuseIfPresent(conflict);
               return cursorWorker.resolveRenameTarget(request);
             })
-        .thenComposeAsync(
+        .thenCompose(
             target -> {
               cancelChecker.checkCanceled();
               if (target == null) {
@@ -2364,7 +2365,7 @@ final class WorkspaceSession {
                                   cancelChecker,
                                   progress,
                                   "Renaming %s".formatted(searchTarget.simpleName()))
-                              .thenApplyAsync(
+                              .thenApply(
                                   matches -> {
                                     LOG.info(
                                         () ->
@@ -2376,8 +2377,7 @@ final class WorkspaceSession {
                                                     matches.size()));
                                     requireNothingLeftBehind(searchTarget, matches);
                                     return matches;
-                                  },
-                                  eventLoop::execute)
+                                  })
                               .thenCompose(
                                   matches ->
                                       requireMeaningKept(
@@ -2387,16 +2387,14 @@ final class WorkspaceSession {
                                               uri,
                                               cursorConfig.orElse(null),
                                               cancelChecker)
-                                          .thenApplyAsync(
+                                          .thenApply(
                                               kept ->
                                                   renameEdit(
                                                       searchTarget,
                                                       toLocations(matches),
                                                       newName,
-                                                      fileRenameSupported),
-                                              eventLoop::execute)));
-            },
-            eventLoop::execute)
+                                                      fileRenameSupported))));
+            })
         .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));
   }
 
@@ -3032,15 +3030,14 @@ final class WorkspaceSession {
         target.kind().isInterface() || target.kind() == ElementKind.METHOD
             ? cursorWorker.functionalInterfaceName(request)
             : CompletableFuture.completedFuture(Optional.empty());
-    // Reading the workspace to plan the search runs on the event loop.
-    return samInterface.thenComposeAsync(
+    // Reading the workspace to plan the search runs on the event loop: the worker delivers there.
+    return samInterface.thenCompose(
         sam ->
             target.isType()
                 ? implementationsOfType(
                     target, request, cursorWorker, sam, indexSnapshot, lambdaSnapshot)
                 : implementationsIn(
-                    target, sam, indexSnapshot, lambdaSnapshot, entry -> true, uri -> true),
-        eventLoop::execute);
+                    target, sam, indexSnapshot, lambdaSnapshot, entry -> true, uri -> true));
   }
 
   // A type's named subtypes come from the type index alone; its local and anonymous subclasses, and
@@ -4371,13 +4368,15 @@ final class WorkspaceSession {
         buildFilesNotificationPending
             ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
             : ReconcileOutcome.DeferReason.NONE;
-    // On the event loop after the pass's own completion chain, which starts the index rebuild.
+    // Rejoined, so it runs in a later loop task, after the pass's own completion handlers: one of
+    // them starts the index rebuild this waits for, and a plain thenCompose would run first.
     final CompletableFuture<ReconcileOutcome> outcome =
-        requestPass(true)
-            .thenComposeAsync(
+        eventLoop
+            .rejoin(requestPass(true))
+            .thenCompose(
                 stale ->
-                    reactorIndexRebuilt.thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)),
-                eventLoop::execute);
+                    reactorIndexRebuilt.thenApply(
+                        rebuilt -> new ReconcileOutcome(stale, deferral)));
     // Another server's pass holding the write lock may run for minutes: past a grace, the query
     // answers from the mirror as it is, and this pass still runs once the lock is free.
     CompletableFuture.delayedExecutor(
@@ -4865,7 +4864,7 @@ final class WorkspaceSession {
     return workspace
         .workerFor(config)
         .compileBatch(List.copyOf(transientSources))
-        .handleAsync(
+        .handle(
             (written, error) -> {
               reports.forEach(reported::remove);
               if (written != null) {
@@ -4873,8 +4872,7 @@ final class WorkspaceSession {
               }
 
               return afterChangedBatch(config, Map.copyOf(stamps), written, error, failedFirst);
-            },
-            eventLoop::execute)
+            })
         .thenCompose(next -> next);
   }
 
@@ -5557,6 +5555,8 @@ final class WorkspaceSession {
             : List.of();
     final CompletableFuture<CompileResponse> compiled =
         moduleWorker.compile(requestFor(snapshot, mode), siblings);
+    // Already on the loop; queued as its own task so a failure in the callback is logged (and an
+    // Error ends the server) instead of vanishing into a future nobody reads.
     compiled
         .thenAccept(result -> eventLoop.execute(() -> afterCompile.accept(snapshot, result)))
         .exceptionally(
@@ -5758,6 +5758,7 @@ final class WorkspaceSession {
     workspace
         .workerFor(config)
         .compileOpenBatch(requests)
+        // Queued as its own task for the same reason as in submitTo.
         .thenAccept(responses -> eventLoop.execute(() -> publishBatch(snapshots, responses)))
         .exceptionally(
             ex -> {
