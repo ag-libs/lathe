@@ -119,6 +119,33 @@ final class CompletenessGateTest {
     assertThat(open.complete()).isTrue();
   }
 
+  // A build that tests a copy of its classes (a multi-release overlay in classes-jdk21): no mirror
+  // stands for the copy, so the run says it takes it from the last build instead of running it
+  // silently; mirrored outputs and directories outside any build directory say nothing.
+  @Test
+  void verify_copyOfClassesInABuildDir_openWithNote_mirroredAndOutsideDirsNot() throws IOException {
+    seedModule("dep", LatheLayout.CLASSES_DIR);
+    seedModule("app", LatheLayout.TEST_CLASSES_DIR);
+    mavenBuilt("dep/target/classes-jdk21");
+    mavenBuilt("tools/lib");
+    final var data =
+        testLaunch(
+            List.of(workspaceRoot.resolve("dep/target/classes-jdk21").toString()),
+            List.of(
+                workspaceRoot.resolve("app/target/test-classes").toString(),
+                workspaceRoot.resolve("tools/lib").toString(),
+                "/m2/junit.jar"));
+
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
+
+    assertThat(result.complete()).isTrue();
+    assertThat(result.notes())
+        .singleElement()
+        .asString()
+        .startsWith("dep/target/classes-jdk21 runs as the last build left it");
+    assertThat(CompletenessGate.verify(testLaunch(), workspaceRoot, rewrite()).notes()).isEmpty();
+  }
+
   private void mavenBuilt(final String outputDir) throws IOException {
     Files.createDirectories(workspaceRoot.resolve(outputDir));
   }

@@ -1850,9 +1850,14 @@ class LatheEngineTest {
                     List.of(),
                     null)));
 
-    final LatheTestRun run = LatheTestRun.from(outcome, List.of("com.example.FooTest"));
+    final LatheTestRun run =
+        LatheTestRun.from(
+            outcome.withNotes(List.of("dep/target/classes-jdk21 runs as the last build left it")),
+            List.of("com.example.FooTest"));
 
     assertThat(run.launched()).isTrue();
+    assertThat(run.notes())
+        .containsExactly("dep/target/classes-jdk21 runs as the last build left it");
     assertThat(run.ran()).containsExactly("com.example.FooTest");
     assertThat(run.total()).isEqualTo(4);
     assertThat(run.passed()).isEqualTo(1);

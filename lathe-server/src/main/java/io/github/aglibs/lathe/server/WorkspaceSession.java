@@ -1461,6 +1461,8 @@ final class WorkspaceSession {
         return;
       }
 
+      gate.notes()
+          .forEach(note -> onLine.accept(new TranscriptLine(TranscriptLine.Stream.STDERR, note)));
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
@@ -1487,7 +1489,14 @@ final class WorkspaceSession {
           .onExit()
           .whenComplete(
               (outcome, error) ->
-                  completeRun(moduleRel, label, overlay.configLabel(), t, result, outcome, error));
+                  completeRun(
+                      moduleRel,
+                      label,
+                      overlay.configLabel(),
+                      t,
+                      result,
+                      outcome == null ? null : outcome.withNotes(gate.notes()),
+                      error));
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,

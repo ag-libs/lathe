@@ -35,7 +35,7 @@ final class LaunchOutcomeTest {
 
   @Test
   void constructor_nullTestResults_isRejected() {
-    assertThatThrownBy(() -> new LaunchOutcome(true, List.of(), 0, List.of(), null))
+    assertThatThrownBy(() -> new LaunchOutcome(true, List.of(), 0, List.of(), null, List.of()))
         .isInstanceOf(ValidationException.class);
   }
 }
