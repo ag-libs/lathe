@@ -23,7 +23,6 @@ import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
-import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -176,19 +175,7 @@ final class WorkspaceSession {
   private final ServerEventLoop eventLoop;
   private final long debounceMs;
   private final WorkspaceState state;
-  private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
-  private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
-  // MODULE_SYSTEM only: the bytecode base scanned once (modules/ changes just on make+sync), kept
-  // apart from reactorShards so per-save delta refresh never rescans it. Empty for CLASSPATH.
-  private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorBaseShards =
-      new LinkedHashMap<>();
-  // Reactor type-usage document frequency, aggregated on a full scan; feeds completion ranking.
-  private Map<String, Integer> reactorUsageCounts = Map.of();
-  // Per-config lambda/method-ref target index (functional interface → implementing classes) and its
-  // merged view; lets go-to-implementation find lambdas whose source never names the interface.
-  private final Map<ModuleSourceConfig, Map<String, List<String>>> reactorLambdaShards =
-      new LinkedHashMap<>();
-  private Map<String, List<String>> reactorLambdaImplementors = Map.of();
+  private final ReactorTypeIndex reactorIndex;
   private WorkspaceWatcher watcher;
   private boolean buildFilesNotificationPending;
   // Stale sources and their mtimes seen on the previous tick. An outside change is written only
@@ -221,11 +208,6 @@ final class WorkspaceSession {
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
   // analyzes each open file once and rebuilds the index (~200ms on a large reactor) once.
   private final Set<Path> refreshScope = new HashSet<>();
-  private boolean reactorIndexStale;
-  private long reactorIndexBuilds;
-  // Done once the last rebuild is applied (or superseded): MCP answers wait for it, so a type the
-  // pass just wrote is already searchable.
-  private CompletableFuture<Void> reactorIndexRebuilt = CompletableFuture.completedFuture(null);
   // The resource files the last pass found, so the next one can drop the copies of deleted ones.
   private Set<Path> scannedResources = Set.of();
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
@@ -288,6 +270,7 @@ final class WorkspaceSession {
     this.debounceMs = debounceMs;
     this.publisher = new DiagnosticPublisher(client, docs);
     this.state = new WorkspaceState(eventLoop);
+    this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
   }
 
   void initialize(final Path root) {
@@ -306,10 +289,7 @@ final class WorkspaceSession {
   private void loadWorkspace(final Path root) {
     final boolean configured = Files.isDirectory(root.resolve(LatheLayout.LATHE_DIR));
     state.load(root).close();
-    scanReactorShards();
-    typeIndex =
-        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
-            .withUsageCounts(reactorUsageCounts);
+    reactorIndex.load();
     watcher = new WorkspaceWatcher(root);
     watcher.updateBuildFiles(
         state.manifest().buildFiles(), state.manifest().buildFileFingerprints());
@@ -674,7 +654,8 @@ final class WorkspaceSession {
     try {
       host =
           DapHost.start(
-              new LatheProviderContext(this::debugWorkerFor, debugSourceRoots, typeIndex),
+              new LatheProviderContext(
+                  this::debugWorkerFor, debugSourceRoots, reactorIndex.current()),
               () -> eventLoop.execute(() -> cancelRun(token)));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
@@ -803,7 +784,7 @@ final class WorkspaceSession {
         file,
         context == null ? "" : context.pkg(),
         state.registry()::moduleSourceFor,
-        typeIndex,
+        reactorIndex.current(),
         state.registry().allSourceRoots());
   }
 
@@ -1693,7 +1674,7 @@ final class WorkspaceSession {
         .anyMatch(
             declaration ->
                 declaration.getValue().isEmpty()
-                    && !typeIndex.isReactorType(declaration.getKey()))) {
+                    && !reactorIndex.current().isReactorType(declaration.getKey()))) {
       throw renameRefused(
           "`%s` is declared, or overrides a method declared, outside the project (JDK or a dependency), so it cannot be renamed"
               .formatted(target.simpleName()));
@@ -1751,7 +1732,8 @@ final class WorkspaceSession {
     return eventLoop
         .submitCompose(
             () ->
-                typeIndex
+                reactorIndex
+                        .current()
                         .findType(target.qualifiedName())
                         .filter(
                             type ->
@@ -1761,7 +1743,9 @@ final class WorkspaceSession {
                     ? CompletableFuture.completedFuture(List.<String>of())
                     : concatAll(
                         subtypeImplementationFiles(
-                                target, typeIndex, TypeSourceLocator::isNamedDeclaration)
+                                target,
+                                reactorIndex.current(),
+                                TypeSourceLocator::isNamedDeclaration)
                             .map(
                                 entry ->
                                     fileQueryFuture(
@@ -2401,15 +2385,7 @@ final class WorkspaceSession {
 
   private ModuleSourceConfig declaringConfigFor(
       final ReferenceTarget target, final ModuleSourceConfig fallback) {
-    eventLoop.checkOnLoop();
-    return reactorShards.entrySet().stream()
-        .filter(
-            entry ->
-                entry.getValue().stream()
-                    .anyMatch(type -> type.binaryName().equals(target.qualifiedName())))
-        .map(Map.Entry::getKey)
-        .findFirst()
-        .orElse(fallback);
+    return reactorIndex.declaringConfig(target.qualifiedName()).orElse(fallback);
   }
 
   private static <T> CompletableFuture<List<T>> joinCandidateResults(
@@ -2551,7 +2527,8 @@ final class WorkspaceSession {
             .toList();
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final var planner = new ReferenceCandidatePlanner(state.candidateIndex(), typeIndex);
+    final var planner =
+        new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());
     final List<String> candidateUris =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
@@ -2648,8 +2625,8 @@ final class WorkspaceSession {
     }
 
     final var request = featureRequest(openFile, pos);
-    final var indexSnapshot = typeIndex;
-    final var lambdaSnapshot = reactorLambdaImplementors;
+    final var indexSnapshot = reactorIndex.current();
+    final var lambdaSnapshot = reactorIndex.lambdaImplementors();
     final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
@@ -3062,7 +3039,7 @@ final class WorkspaceSession {
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
       final String uri, final Position pos) {
-    final var indexSnapshot = typeIndex;
+    final var indexSnapshot = reactorIndex.current();
     final var t = Stopwatch.start();
     return openDocFeature(
             uri,
@@ -3088,7 +3065,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var indexSnapshot = typeIndex;
+    final var indexSnapshot = reactorIndex.current();
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
     return routeFeature(
@@ -3112,7 +3089,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var indexSnapshot = typeIndex;
+    final var indexSnapshot = reactorIndex.current();
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
     return routeFeature(
@@ -3141,7 +3118,7 @@ final class WorkspaceSession {
 
               final var self = items.get(0);
               final var data = TypeHierarchyItemDataCodec.decode(self.getData());
-              final var indexSnapshot = typeIndex;
+              final var indexSnapshot = reactorIndex.current();
               final List<Path> sourceDirs = typeSourceDirs();
               return routeFeature(
                   data.routingUri(),
@@ -3167,7 +3144,7 @@ final class WorkspaceSession {
 
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
-    final var indexSnapshot = typeIndex;
+    final var indexSnapshot = reactorIndex.current();
     final var route = routeCompiler(uri);
     final LearnedStaticImports staticImports = learnedStaticImports(route);
     return openDocFeature(
@@ -3217,8 +3194,8 @@ final class WorkspaceSession {
             .filter(r -> r.payload().kind().offersTypeImport())
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
-    final var baseIndex = typeIndex;
-    final List<List<TypeIndexEntry>> reactorEntries = List.copyOf(reactorShards.values());
+    final var baseIndex = reactorIndex.current();
+    final List<List<TypeIndexEntry>> reactorEntries = reactorIndex.shards();
     final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
@@ -3263,7 +3240,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(MissingImportsResult.empty());
     }
 
-    final var indexSnapshot = typeIndex;
+    final var indexSnapshot = reactorIndex.current();
     final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
     return routeFeature(
         uri,
@@ -3437,9 +3414,9 @@ final class WorkspaceSession {
     final List<SymbolInformation> results =
         WorkspaceSymbolResolver.resolve(
             query,
-            typeIndex,
+            reactorIndex.current(),
             sourceDirs,
-            entry -> !reactorOnly || typeIndex.isReactorType(entry.binaryName()));
+            entry -> !reactorOnly || reactorIndex.current().isReactorType(entry.binaryName()));
     LOG.info(
         () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
     return results;
@@ -3453,116 +3430,6 @@ final class WorkspaceSession {
             state.manifest().depSourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
-  }
-
-  private void scanReactorShards() {
-    final var counts = new HashMap<String, Integer>();
-    for (final var config : state.registry().allConfigs()) {
-      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
-      reactorBaseShards.put(config, scan.entries());
-      reactorShards.put(config, withSourceDelta(config, scan.entries()));
-      reactorLambdaShards.put(config, scan.lambdaImplementors());
-      scan.referenceCounts().forEach((name, count) -> counts.merge(name, count, Integer::sum));
-    }
-
-    reactorUsageCounts = Map.copyOf(counts);
-    reactorLambdaImplementors = mergeLambdaShards();
-  }
-
-  private Map<String, List<String>> mergeLambdaShards() {
-    return reactorLambdaShards.values().stream()
-        .flatMap(shard -> shard.entrySet().stream())
-        .collect(
-            Collectors.toMap(
-                Map.Entry::getKey,
-                Map.Entry::getValue,
-                (left, right) -> Stream.concat(left.stream(), right.stream()).toList()));
-  }
-
-  private void refreshReactorShard(final ModuleSourceConfig config) {
-    eventLoop.checkOnLoop();
-    // Incremental save. External output reuses the cached base (build changes only on make+sync)
-    // and re-derives the delta; Maven rescans the freshly recompiled mirror.
-    final List<TypeIndexEntry> base;
-    if (config.externalOutput()) {
-      base = reactorBaseShards.getOrDefault(config, List.of());
-    } else {
-      final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
-      base = scan.entries();
-      reactorLambdaShards.put(config, scan.lambdaImplementors());
-    }
-
-    reactorBaseShards.put(config, base);
-    reactorShards.put(config, withSourceDelta(config, base));
-    reactorIndexStale = true;
-  }
-
-  // Built off the session thread, as a rebuild takes 100-200ms on a large reactor and would hold
-  // back the publishes queued behind it; applied only if the index is still the one it was built
-  // from and no newer build started.
-  private void rebuildReactorIndex() {
-    reactorIndexStale = false;
-    reactorLambdaImplementors = mergeLambdaShards();
-    final WorkspaceTypeIndex base = typeIndex;
-    final List<List<TypeIndexEntry>> shards = List.copyOf(reactorShards.values());
-    final long build = ++reactorIndexBuilds;
-    final var rebuilt = new CompletableFuture<Void>();
-    reactorIndexRebuilt = rebuilt;
-    CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
-        .whenComplete(
-            (index, error) ->
-                eventLoop.execute(
-                    () -> {
-                      if (error != null) {
-                        LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
-                      } else if (typeIndex == base && build == reactorIndexBuilds) {
-                        typeIndex = index;
-                      }
-
-                      rebuilt.complete(null);
-                    }));
-  }
-
-  // Index types from dirty/open sources not yet built, so they show in symbols before their class
-  // exists: for external output until the next make+sync, and for the Maven mirror whenever a
-  // compile has not caught up (a write still pending, or a file that does not compile). Keyed on
-  // disk staleness, not open buffers (so they survive closing); the bytecode
-  // entry, with its real kind, wins once the class is built.
-  private List<TypeIndexEntry> withSourceDelta(
-      final ModuleSourceConfig config, final List<TypeIndexEntry> base) {
-    final Set<String> known =
-        base.stream().map(TypeIndexEntry::binaryName).collect(Collectors.toUnmodifiableSet());
-    final List<TypeIndexEntry> delta =
-        deltaSourceFiles(config).stream()
-            .map(file -> SourceTypeScanner.deriveEntry(sourceRootFor(config, file), file))
-            .flatMap(Optional::stream)
-            .filter(entry -> !known.contains(entry.binaryName()))
-            .toList();
-    return delta.isEmpty() ? base : Stream.concat(base.stream(), delta.stream()).toList();
-  }
-
-  // Files the bytecode base may not cover: on-disk sources stale vs their compile stamp, plus open
-  // buffers, restricted to this module's source roots.
-  private List<Path> deltaSourceFiles(final ModuleSourceConfig config) {
-    return Stream.concat(TreeState.read(config).stale().stream(), openSourcePaths().stream())
-        .filter(path -> sourceRootFor(config, path) != null)
-        .distinct()
-        .toList();
-  }
-
-  private static ClassFileTypeScanner.ReactorScan scanReactorDir(final ModuleSourceConfig config) {
-    final Path scanRoot = reactorScanRoot(config);
-    try {
-      return ClassFileTypeScanner.scanReactorDirectory(scanRoot);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[type-index] reactor scan failed: %s".formatted(scanRoot));
-      return new ClassFileTypeScanner.ReactorScan(List.of(), Map.of(), Map.of());
-    }
-  }
-
-  // External-output configs scan the build output dir directly; Maven scans the .lathe mirror.
-  private static Path reactorScanRoot(final ModuleSourceConfig config) {
-    return config.externalOutput() ? config.outputDir() : config.latheClassesDir();
   }
 
   // Deletes the source's class outputs except those the latest compile wrote (keptBinaryNames):
@@ -3827,9 +3694,7 @@ final class WorkspaceSession {
       refreshOpenFiles(scope);
     }
 
-    if (reactorIndexStale) {
-      rebuildReactorIndex();
-    }
+    reactorIndex.rebuildIfStale();
   }
 
   // The stale sources ready to write, by source tree in write order. Ready: reported, or -- unless
@@ -4047,8 +3912,9 @@ final class WorkspaceSession {
             .rejoin(requestPass(true))
             .thenCompose(
                 stale ->
-                    reactorIndexRebuilt.thenApply(
-                        rebuilt -> new ReconcileOutcome(stale, deferral)));
+                    reactorIndex
+                        .rebuilt()
+                        .thenApply(rebuilt -> new ReconcileOutcome(stale, deferral)));
     // Another server's pass holding the write lock may run for minutes: past a grace, the query
     // answers from the mirror as it is, and this pass still runs once the lock is free.
     CompletableFuture.delayedExecutor(
@@ -4148,7 +4014,7 @@ final class WorkspaceSession {
   private boolean backToBuilt(
       final Path file, final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree) {
     final Optional<ModuleSourceConfig> config = state.registry().moduleSourceFor(file);
-    final Path root = config.map(tree -> sourceRootFor(tree, file)).orElse(null);
+    final Path root = config.flatMap(tree -> tree.sourceRootOf(file)).orElse(null);
     if (root == null) {
       return false;
     }
@@ -4308,7 +4174,7 @@ final class WorkspaceSession {
     // So verify_change checks what used the deleted types.
     final Path root = config.sourceRoots().get(0);
     tree.orphans().forEach(rel -> writtenSinceVerify.add(root.resolve(rel)));
-    refreshReactorShard(config);
+    reactorIndex.refreshShard(config);
     refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
@@ -4665,7 +4531,7 @@ final class WorkspaceSession {
         });
     writtenSinceVerify.addAll(stamps.keySet());
     refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
-    refreshReactorShard(config);
+    reactorIndex.refreshShard(config);
     LOG.fine(
         () ->
             "[react] recompiled %d file(s) in %s"
@@ -4728,9 +4594,11 @@ final class WorkspaceSession {
   // declaring no type named after itself still freshens.
   static boolean wroteClassOf(
       final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
-    final var root = sourceRootFor(config, source);
     // No type to key on (package-info/module-info or no source root) -- do not block.
-    if (root == null || SourceTypeScanner.deriveEntry(root, source).isEmpty()) {
+    if (config
+        .sourceRootOf(source)
+        .flatMap(root -> SourceTypeScanner.deriveEntry(root, source))
+        .isEmpty()) {
       return true;
     }
 
@@ -4743,12 +4611,12 @@ final class WorkspaceSession {
 
   // The mirror directory holding the source's package classes; null outside the config's roots.
   private static Path classDirOf(final ModuleSourceConfig config, final Path source) {
-    final var sourceRoot = sourceRootFor(config, source);
-    if (sourceRoot == null) {
+    final Optional<Path> sourceRoot = config.sourceRootOf(source);
+    if (sourceRoot.isEmpty()) {
       return null;
     }
 
-    final var packageRel = sourceRoot.relativize(source).getParent();
+    final var packageRel = sourceRoot.get().relativize(source).getParent();
     return packageRel != null
         ? config.latheClassesDir().resolve(packageRel)
         : config.latheClassesDir();
@@ -4889,127 +4757,12 @@ final class WorkspaceSession {
             .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
   }
 
-  // A source tree as one pass sees it: each hand-written source with its mtime, from one walk per
-  // root, and the tree's stamps -- so its stale and orphaned sources follow without a further
-  // file-system call (a scan repeated every few seconds; such calls are costly on macOS). Only a
-  // source whose mtime moved is read, to tell a touch from a change.
-  record TreeState(
-      ModuleSourceConfig config,
-      Map<Path, Map<Path, Long>> sourcesByRoot,
-      Map<Path, SourceStamp> stamps,
-      Map<Path, SourceStamp> touched) {
-    TreeState {
-      ValidCheck.check()
-          .notNull(config, "config")
-          .notNull(sourcesByRoot, "sourcesByRoot")
-          .notNull(stamps, "stamps")
-          .notNull(touched, "touched")
-          .validate();
-      sourcesByRoot = Map.copyOf(sourcesByRoot);
-      stamps = Map.copyOf(stamps);
-      touched = Map.copyOf(touched);
-    }
-
-    static TreeState read(final ModuleSourceConfig config) {
-      final Map<Path, Map<Path, Long>> sourcesByRoot =
-          config.sourceRoots().stream()
-              .collect(
-                  Collectors.toMap(
-                      root -> root, WorkspaceSession::javaSourceMtimes, (first, ignored) -> first));
-      final Map<Path, SourceStamp> stamps =
-          CompiledStamps.load(config.moduleDir(), config.sourceTree());
-      return new TreeState(config, sourcesByRoot, stamps, touched(sourcesByRoot, stamps));
-    }
-
-    // No stamp (never built) or an mtime other than the one compiled -- older too, as a restore
-    // that keeps file times (rsync -a, cp -p, tar) brings back older content -- unless only
-    // touched. Open files count like any other: an unsaved buffer is not on disk.
-    List<Path> stale() {
-      return moved(sourcesByRoot, stamps)
-          .filter(source -> !touched.containsKey(source.rel()))
-          .map(ScannedSource::file)
-          .toList();
-    }
-
-    // Moved sources whose content is still what their class was compiled from (a touch, a branch
-    // switch and back, a build that compiled nothing), re-stamped at their new mtime.
-    private static Map<Path, SourceStamp> touched(
-        final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
-      return moved(sourcesByRoot, stamps)
-          .filter(ScannedSource::touched)
-          .collect(Collectors.toUnmodifiableMap(ScannedSource::rel, ScannedSource::restamped));
-    }
-
-    private static Stream<ScannedSource> moved(
-        final Map<Path, Map<Path, Long>> sourcesByRoot, final Map<Path, SourceStamp> stamps) {
-      return sourcesByRoot.entrySet().stream()
-          .flatMap(
-              root ->
-                  root.getValue().entrySet().stream()
-                      .map(source -> ScannedSource.of(root.getKey(), source, stamps)))
-          .filter(ScannedSource::moved);
-    }
-
-    // A source on disk with its stamp, null when it was never compiled.
-    private record ScannedSource(Path file, Path rel, long mtime, SourceStamp stamp) {
-      ScannedSource {
-        ValidCheck.check().notNull(file, "file").notNull(rel, "rel").validate();
-      }
-
-      static ScannedSource of(
-          final Path root,
-          final Map.Entry<Path, Long> source,
-          final Map<Path, SourceStamp> stamps) {
-        final Path rel = root.relativize(source.getKey());
-        return new ScannedSource(source.getKey(), rel, source.getValue(), stamps.get(rel));
-      }
-
-      boolean moved() {
-        return stamp == null || stamp.mtime() != mtime;
-      }
-
-      boolean touched() {
-        return stamp != null && FileUtil.hasContent(file, stamp.content());
-      }
-
-      SourceStamp restamped() {
-        return new SourceStamp(mtime, stamp.content());
-      }
-    }
-
-    // Stamped sources no longer on disk: their classes are left in the mirror.
-    Set<Path> orphans() {
-      return stamps.keySet().stream()
-          .filter(
-              rel ->
-                  sourcesByRoot.entrySet().stream()
-                      .noneMatch(root -> root.getValue().containsKey(root.getKey().resolve(rel))))
-          .collect(Collectors.toUnmodifiableSet());
-    }
-  }
-
-  private static Map<Path, Long> javaSourceMtimes(final Path root) {
-    try {
-      return FileUtil.fileMtimes(root, FileUtil::isJavaFile);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[watcher] source scan failed under %s".formatted(root));
-      return Map.of();
-    }
-  }
-
   private static long mtimeMillis(final Path path) {
     try {
       return Files.getLastModifiedTime(path).toMillis();
     } catch (final IOException e) {
       return 0L;
     }
-  }
-
-  private static Path sourceRootFor(final ModuleSourceConfig config, final Path file) {
-    return config.sourceRoots().stream()
-        .filter(file::startsWith)
-        .max(Comparator.comparingInt(Path::getNameCount))
-        .orElse(null);
   }
 
   // Foo.java's outputs are Foo.class, Foo$*.class, and any package-private sibling top-level type
@@ -5175,12 +4928,7 @@ final class WorkspaceSession {
   // candidate-index rebuild, no open-document refresh, no reload message).
   private void refreshReactorTypeIndex() {
     final var t = Stopwatch.start();
-    reactorShards.clear();
-    reactorBaseShards.clear();
-    scanReactorShards();
-    typeIndex =
-        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
-            .withUsageCounts(reactorUsageCounts);
+    reactorIndex.load();
     LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
   }
 
@@ -5351,10 +5099,9 @@ final class WorkspaceSession {
 
   private void recordCompileStamp(
       final ModuleSourceConfig config, final Path savedSource, final SourceStamp stamp) {
-    final var root = sourceRootFor(config, savedSource);
-    if (root != null) {
-      recordStamps(config, Map.of(root.relativize(savedSource), stamp));
-    }
+    config
+        .sourceRootOf(savedSource)
+        .ifPresent(root -> recordStamps(config, Map.of(root.relativize(savedSource), stamp)));
   }
 
   private void recordStamps(final ModuleSourceConfig config, final Map<Path, SourceStamp> stamps) {

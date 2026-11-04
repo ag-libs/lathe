@@ -115,8 +115,7 @@ class WorkspaceSessionTest {
         Map.of(
             Path.of("com/example/Live.java"), 2_000L, Path.of("com/example/Ghost.java"), 1_000L));
 
-    final int removed =
-        WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
+    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isEqualTo(2);
     assertThat(outputDir.resolve("Ghost.class")).doesNotExist();
@@ -132,8 +131,7 @@ class WorkspaceSessionTest {
     Files.writeString(outputDir.resolve("Live.class"), "");
     writeStamps(Map.of(Path.of("com/example/Live.java"), 2_000L));
 
-    final int removed =
-        WorkspaceSession.deleteOrphanedClassOutputs(WorkspaceSession.TreeState.read(config));
+    final int removed = WorkspaceSession.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isZero();
     assertThat(outputDir.resolve("Live.class")).exists();
@@ -646,8 +644,7 @@ class WorkspaceSessionTest {
   }
 
   private static WorkspaceSession.StaleScan staleModules(final ModuleSourceConfig... configs) {
-    return WorkspaceSession.staleModules(
-        Arrays.stream(configs).map(WorkspaceSession.TreeState::read).toList());
+    return WorkspaceSession.staleModules(Arrays.stream(configs).map(TreeState::read).toList());
   }
 
   private ModuleSourceConfig config(final Path sourceRoot) {

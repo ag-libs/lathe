@@ -7,7 +7,9 @@ import io.github.aglibs.lathe.core.schema.AnalysisMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 public record ModuleSourceConfig(
@@ -57,6 +59,13 @@ public record ModuleSourceConfig(
 
   public Path generatedSourcesDir() {
     return moduleDir.resolve(LatheLayout.generatedSourcesDir(sourceTree));
+  }
+
+  // The source root holding the file: the deepest when roots nest, empty for a file under none.
+  public Optional<Path> sourceRootOf(final Path file) {
+    return sourceRoots.stream()
+        .filter(file::startsWith)
+        .max(Comparator.comparingInt(Path::getNameCount));
   }
 
   // The build's annotation-processor output, or Lathe's mirror of it: sources the processors
