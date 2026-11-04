@@ -4397,6 +4397,51 @@ final class WorkspaceSession {
     return List.copyOf(differing);
   }
 
+  // Every source whose content is not what the last build compiled, however long ago it changed:
+  // one the session wrote (its stamp holds other content than the build's), one the build compiled
+  // that is gone, and one whose write failed (it keeps its old stamp). verify_change checks them
+  // all, so a broken change stays reported until it is fixed or built, not only by the check after
+  // it. A tree with no built record (OpenJDK) cannot tell and adds nothing.
+  List<Path> changedSinceBuild() {
+    return Stream.concat(
+            failedCompiles.keySet().stream(),
+            workspace.allConfigs().stream().flatMap(config -> changedSinceBuild(config).stream()))
+        .distinct()
+        .toList();
+  }
+
+  private static List<Path> changedSinceBuild(final ModuleSourceConfig config) {
+    final Map<Path, ContentFingerprint> built =
+        CompiledStamps.loadBuilt(config.moduleDir(), config.sourceTree());
+    if (built.isEmpty() || config.sourceRoots().isEmpty()) {
+      return List.of();
+    }
+
+    final Stream<Path> rewritten =
+        CompiledStamps.load(config.moduleDir(), config.sourceTree()).entrySet().stream()
+            .filter(
+                stamp ->
+                    stamp.getValue().content() != null
+                        && !stamp.getValue().content().equals(built.get(stamp.getKey())))
+            .map(Map.Entry::getKey);
+    final Stream<Path> deleted =
+        built.keySet().stream().filter(rel -> existingSource(config, rel).isEmpty());
+    return Stream.concat(rewritten, deleted)
+        .map(
+            rel ->
+                existingSource(config, rel)
+                    .orElseGet(() -> config.sourceRoots().get(0).resolve(rel)))
+        .filter(source -> !config.isGenerated(source))
+        .toList();
+  }
+
+  private static Optional<Path> existingSource(final ModuleSourceConfig config, final Path rel) {
+    return config.sourceRoots().stream()
+        .map(root -> root.resolve(rel))
+        .filter(Files::exists)
+        .findFirst();
+  }
+
   // A deleted file is back to the build only if the build never compiled it either (one created and
   // deleted since); a tree with no built record (OpenJDK, or stamps from before) cannot tell.
   private boolean backToBuilt(

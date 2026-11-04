@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
@@ -2088,6 +2089,38 @@ class LatheEngineTest {
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()
         .satisfies(module -> assertThat(module.module()).isEqualTo("app"));
+  }
+
+  // The first check writes the change into the mirror; a later one, in this session or the next,
+  // must still see it as unbuilt, or it would call a broken tree clean.
+  @Test
+  void verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted()
+      throws Exception {
+    final Path api = apiReactor(List.of("app"), List.of());
+    engine = new LatheEngine(tmp);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    final Predicate<LatheVerifyChange> breaksApp =
+        verify ->
+            verify.perModule().stream()
+                .anyMatch(
+                    module ->
+                        module.module().equals("app")
+                            && module.diagnostics().stream()
+                                .anyMatch(
+                                    d ->
+                                        d.diagnostic()
+                                            .getMessage()
+                                            .getLeft()
+                                            .contains("cannot find symbol")));
+
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "first check");
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "second check");
+    engine.close();
+    engine = new LatheEngine(tmp);
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "a new session");
+
+    TestCompiler.writeAt(api, API_SOURCE, 20_000L);
+    assertThat(engine.verifyChange(List.of()).perModule()).as("reverted").isEmpty();
   }
 
   @Test

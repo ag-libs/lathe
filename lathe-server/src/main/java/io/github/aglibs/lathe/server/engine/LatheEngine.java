@@ -733,7 +733,7 @@ public final class LatheEngine {
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
-  // sync that would. No files: what changed on disk plus what the tools wrote since the last check.
+  // sync that would. No files: every change not yet built, on disk or by the tools.
   // A pending build-file sync or a running build defers the check to a full sync.
   public LatheVerifyChange verifyChange(final List<Path> files) {
     final ReconcileOutcome outcome = await(service.reconcileForVerify());
@@ -746,11 +746,15 @@ public final class LatheEngine {
       return new LatheVerifyChange(outcome.deferral().name(), List.of(), List.of(), sync);
     }
 
-    // With no files: what changed on disk, and what the tools wrote themselves (already stamped).
+    // With no files: what changed on disk, what the tools wrote themselves (already stamped), and
+    // every earlier change not yet built, so a break stays reported until it is fixed.
     final List<Path> touched =
         files.isEmpty()
-            ? Stream.concat(
-                    outcome.reacted().stream(), await(service.takeWrittenSinceVerify()).stream())
+            ? Stream.of(
+                    outcome.reacted(),
+                    await(service.takeWrittenSinceVerify()),
+                    await(service.changedSinceBuild()))
+                .flatMap(List::stream)
                 .distinct()
                 .toList()
             : files;

@@ -2572,37 +2572,6 @@ None yet. The battery's reference round trip no longer catches this: since it ac
 
 ---
 
-## MC-79 — `verify_change` reports a broken change once; the next call says the callers compile
-
-**Status: accepted**
-
-**Value: high — Size: S**
-
-**Affects: MCP `verify_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on Dropwizard.
-
-### Observed behaviour
-
-Change `Duration.java:206` to `toSeconds(int scale)`: the first `verify_change` reports 5 errors; the next one, in the same
-session or a new one, says "No errors — the changed files and their callers compile". `get_diagnostics` on
-`DataSourceFactory` still shows both errors.
-Fixing only `DataSourceFactory` then answers that the callers compile "so a full build is optional", while `JdbiHealthCheck`,
-`SessionFactoryHealthCheck` and the tests are still broken.
-With no files, `verify_change` checks what changed since the last check: the sources the pass just wrote and the tools'
-writes, a set each call drains. The first check wrote the change into the mirror, so the next has nothing to check.
-
-### Fix direction
-
-Check every source whose content still differs from what the last build compiled (its compile stamp against the build's
-fingerprint), plus a source deleted since the build, not only what changed since the last check.
-
-### Regression targets
-
-None yet.
-
----
-
 ## MC-80 — `verify_change` skips callers that reach a changed type without naming it
 
 **Status: documented**
@@ -2712,33 +2681,6 @@ Kotlin test modules that `workspace.json` lists.
 
 At least: when a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
 files that mention the name for review. Reading Kotlin is a separate decision.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-84 — Deleting a class created in the session is not caught by `verify_change`
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `verify_change`.**
-
-Found by the exploratory MCP round (2026-11-04) on Dropwizard.
-
-### Observed behaviour
-
-Create `Zzz.java` in `dropwizard-util`, use it from `JdbiHealthCheck` (qualified or imported), verify, then delete it:
-`verify_change` says "No errors" while `get_diagnostics` shows "cannot find symbol". Deleting an existing class
-(`DirectExecutorService.java`) correctly reports 6 errors.
-A deleted file that the last build never compiled counts as "back to what the build compiled" and is dropped.
-
-### Fix direction
-
-Keep a deleted source that the session wrote (it has a compile stamp) in the change set, whatever the build's fingerprints say.
 
 ### Regression targets
 

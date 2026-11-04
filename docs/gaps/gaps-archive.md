@@ -11705,6 +11705,69 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-79 — `verify_change` reports a broken change once; the next call says the callers compile — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Change `Duration.java:206` to `toSeconds(int scale)`: the first `verify_change` reports 5 errors; the next one, in the same
+session or a new one, says "No errors — the changed files and their callers compile". `get_diagnostics` on
+`DataSourceFactory` still shows both errors.
+Fixing only `DataSourceFactory` then answers that the callers compile "so a full build is optional", while `JdbiHealthCheck`,
+`SessionFactoryHealthCheck` and the tests are still broken.
+With no files, `verify_change` checks what changed since the last check: the sources the pass just wrote and the tools'
+writes, a set each call drains. The first check wrote the change into the mirror, so the next has nothing to check.
+
+### Resolution
+
+With no files, `verify_change` now also checks every source not as the last build compiled it, however long ago it
+changed: one the session wrote (its compile stamp holds other content than the build's fingerprint), one the build
+compiled that is gone, and one whose write failed. A broken change stays reported until it is fixed, reverted or built,
+in this session and the next. A tree with no build fingerprints (OpenJDK) adds nothing, as before.
+Dropwizard, `toSeconds(int scale)`: 5 errors on the first check, the second and in a new session (the second said
+"No errors" before); reverted, none. A check with nothing changed on Helidon: 0.13–0.15 s (0.10–0.14 s before).
+
+### Regression targets
+
+`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted`
+
+---
+
+## MC-84 — Deleting a class created in the session is not caught by `verify_change` — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Create `Zzz.java` in `dropwizard-util`, use it from `JdbiHealthCheck` (qualified or imported), verify, then delete it:
+`verify_change` says "No errors" while `get_diagnostics` shows "cannot find symbol". Deleting an existing class
+(`DirectExecutorService.java`) correctly reports 6 errors.
+A deleted file that the last build never compiled counts as "back to what the build compiled" and is dropped.
+
+### Resolution
+
+Fixed with MC-79: the deleted class and its failed caller are in the set `verify_change` checks while they differ from
+the build. Dropwizard: the deletion now reports 1 error (none before), and removing the use reports none.
+
+### Regression targets
+
+`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted` (the same mechanism).
+
+---
+
 ## MC-32 — Nothing makes an agent run `verify_change` before it reports done — done
 
 **Status: done.**

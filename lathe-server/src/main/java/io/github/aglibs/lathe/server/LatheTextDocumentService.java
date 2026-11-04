@@ -138,6 +138,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return worker.submit(() -> session.takeWrittenSinceVerify());
   }
 
+  /** Every source not as the last build compiled it, for a verify_change given no files. */
+  public CompletableFuture<List<Path>> changedSinceBuild() {
+    return worker.submit(() -> session.changedSinceBuild());
+  }
+
   public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
     return worker.submit(() -> session.moduleSummaries());
   }
