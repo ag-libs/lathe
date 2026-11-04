@@ -626,7 +626,7 @@ final class WritePass {
 
   // "line: message" of the source's first error in the write, for the MCP "Not compiled" note.
   private static String firstError(final BatchWrite written, final Path source) {
-    return written.diagnosticsByUri().getOrDefault(source.toUri().toString(), List.of()).stream()
+    return written.diagnosticsByUri().getOrDefault(LatheUri.fromPath(source), List.of()).stream()
         .filter(diagnostic -> diagnostic.getSeverity() == DiagnosticSeverity.Error)
         .findFirst()
         .map(
@@ -722,7 +722,7 @@ final class WritePass {
         continue;
       }
 
-      transientSources.add(new TransientSource(source.toUri().toString(), content));
+      transientSources.add(new TransientSource(LatheUri.fromPath(source), content));
       // The content compiled, not a later read: a save during a long batch must not stamp it.
       stamps.put(
           source,
@@ -793,7 +793,7 @@ final class WritePass {
           stamps.keySet().stream()
               .collect(
                   Collectors.partitioningBy(
-                      source -> written.failedUris().contains(source.toUri().toString())));
+                      source -> written.failedUris().contains(LatheUri.fromPath(source))));
       byFailure
           .get(true)
           .forEach(

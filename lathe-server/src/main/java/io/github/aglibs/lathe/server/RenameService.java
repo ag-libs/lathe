@@ -255,9 +255,7 @@ final class RenameService {
         renameDeclaringFile(target)
             .map(
                 file ->
-                    Map.of(
-                        LatheUri.canonical(file.toUri().toString()),
-                        LatheUri.canonical(movedFile(file, newName).toUri().toString())))
+                    Map.of(LatheUri.fromPath(file), LatheUri.fromPath(movedFile(file, newName))))
             .orElse(Map.of());
     final Stream<String> usingNewName =
         fileScoped
@@ -388,8 +386,8 @@ final class RenameService {
     }
 
     final var file = declaringFile.get();
-    final var oldUri = file.toUri().toString();
-    final var newUri = movedFile(file, newName).toUri().toString();
+    final var oldUri = LatheUri.fromPath(file);
+    final var newUri = LatheUri.fromPath(movedFile(file, newName));
     return RenameProvider.toWorkspaceEditWithFileRename(editable, newName, oldUri, newUri);
   }
 

@@ -320,7 +320,7 @@ final class ChangeVerifier {
 
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
   private boolean uncheckable(final Path file) {
-    return router.routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing
+    return router.routeCompiler(LatheUri.fromPath(file)) instanceof CompilerRoute.Missing
         || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
   }
 

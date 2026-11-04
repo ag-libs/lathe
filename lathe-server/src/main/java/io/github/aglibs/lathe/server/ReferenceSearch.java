@@ -775,7 +775,7 @@ final class ReferenceSearch {
                                 analysis,
                                 target,
                                 entry.getValue(),
-                                entry.getKey().toUri().toString()))));
+                                LatheUri.fromPath(entry.getKey())))));
   }
 
   // The files of the target's subtypes the filter keeps; an anonymous `Outer$1` maps to Outer's
@@ -855,7 +855,7 @@ final class ReferenceSearch {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var uri = sourceFile.toUri().toString();
+    final var uri = LatheUri.fromPath(sourceFile);
     final OpenDocument openFile = docs.get(uri);
     final var diskFile = openFile == null ? readDiskCandidate(uri).orElse(null) : null;
     if (openFile == null && diskFile == null) {

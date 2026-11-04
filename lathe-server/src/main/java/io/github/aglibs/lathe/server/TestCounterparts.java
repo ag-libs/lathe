@@ -65,9 +65,7 @@ record TestCounterparts(boolean fromTest, List<Target> targets) {
                     .thenComparing(candidate -> candidate.entry().binaryName()))
             .map(
                 candidate ->
-                    new Target(
-                        LatheUri.canonical(candidate.file().toUri().toString()),
-                        candidate.entry().binaryName()))
+                    new Target(LatheUri.fromPath(candidate.file()), candidate.entry().binaryName()))
             .distinct()
             .toList();
     return new TestCounterparts(fromTest, targets);

@@ -603,8 +603,7 @@ public final class LatheEngine {
 
   private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
     final var path = LatheUri.toPath(uri);
-    final String content = IOUtil.unchecked(() -> Files.readString(path));
-    final String updated = SourceLocator.applyEdits(content, edits);
+    final String updated = SourceLocator.applyEdits(read(path), edits);
     IOUtil.unchecked(() -> Files.writeString(path, updated));
   }
 
@@ -1145,10 +1144,8 @@ public final class LatheEngine {
 
   // The target line alone: an agent reads the file when it needs more, and every extra line of a
   // long reference list costs it context.
-  private static String snippet(final Path file, final Range range) {
-    final List<String> lines = IOUtil.unchecked(() -> Files.readAllLines(file));
-    final int target = range.getStart().getLine();
-    return target < lines.size() ? lines.get(target).strip() : "";
+  private String snippet(final Path file, final Range range) {
+    return sourceLine(file, range.getStart().getLine()).map(String::strip).orElse("");
   }
 
   // One request: the work runs on the event loop as a single composed chain.

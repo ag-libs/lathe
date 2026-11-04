@@ -488,22 +488,18 @@ final class WorkspaceSession {
     return SourceLayout.moduleRel(state.root(), config.moduleDir());
   }
 
-  // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
-  // root module.
   Optional<Path> buildTool() {
     return state.manifest().buildTool();
   }
 
+  // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
+  // root module.
   Optional<String> moduleRelOf(final Path file) {
     return state
         .registry()
         .moduleSourceFor(file)
         .map(this::moduleRel)
         .map(rel -> rel.isEmpty() ? "." : rel);
-  }
-
-  private String moduleRelForDir(final Path moduleDir) {
-    return SourceLayout.moduleRel(state.root(), moduleDir);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -1628,9 +1624,7 @@ final class WorkspaceSession {
     }
 
     LOG.fine(
-        () ->
-            "[dependents] batch %d file(s) in %s"
-                .formatted(snapshots.size(), moduleRelForDir(config.moduleDir())));
+        () -> "[dependents] batch %d file(s) in %s".formatted(snapshots.size(), moduleRel(config)));
     state
         .registry()
         .workerFor(config)
