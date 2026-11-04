@@ -241,8 +241,7 @@ def consistency_checks(b, ws, cfg, f, pos):
     method = ws / cfg["method"][0]
     type_pos = {"file": str(iface), "line": locate(iface, cfg["iface"][1])[0], "symbol": cfg["iface"][2]}
     method_pos = {"file": str(method), "line": locate(method, cfg["method"][1])[0], "symbol": cfg["method"][2]}
-    mc.implementations_agree(b, type_pos, method_pos, "impls(%s) cover impls(%s)" % (cfg["iface"][2], cfg["method"][2]),
-                             known="implementations of an interface omit lambdas that implementations of its method include")
+    mc.implementations_agree(b, type_pos, method_pos, "impls(%s) cover impls(%s)" % (cfg["iface"][2], cfg["method"][2]))
     mc.override_family_present(b, method_pos, "override family of %s" % cfg["method"][2])
     mc.analyze_modules_cover(b, ws, method_pos, "analyze_change modules cover its locations",
                              known="analyze_change names too few affected modules")
@@ -284,8 +283,7 @@ def inherited_rename(b, ws, cfg):
     refused = result.get("isError") or not text.startswith("Renamed")
     verified = "" if refused else b.raw("verify_change", {})[0]
     b.check("rename refuses a dependency-implemented method", refused or verified.startswith(VERIFY_CLEAN),
-            first(text) if refused else first(verified),
-            known="renaming an interface method misses implementations inherited from a dependency")
+            first(text) if refused else first(verified))
     restore_java(ws)
 
 

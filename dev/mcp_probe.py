@@ -90,8 +90,7 @@ def run(b, ws: Path, probe: Probe):
 
 
 def consistency_checks(b, probe):
-    mc.outline_resolves(b, probe.file, known_names={
-        "RED": "an enum constant with a body cannot be resolved at its declaration"})
+    mc.outline_resolves(b, probe.file)
     mc.override_family_present(b, probe.pos("return side * side", "area", offset=-1),
                                "probe: override family of Square.area",
                                known="analyze_change reports no override family for a method that overrides one")
@@ -115,18 +114,15 @@ def outline_checks(b, probe):
 def implementation_checks(b, probe):
     shape = b.raw("find_implementations", probe.pos("interface Shape {", "Shape"))[0]
     b.check("probe impls(Shape): named class", has_line(shape, probe.line("static final class Square")), first(shape))
-    b.check("probe impls(Shape): anonymous class", has_line(shape, probe.line("return new Shape() {")), first(shape),
-            known="implementations miss anonymous classes")
-    b.check("probe impls(Shape): lambda", has_line(shape, probe.line("return () -> Math.PI")), first(shape),
-            known="implementations of an interface omit lambdas")
+    b.check("probe impls(Shape): anonymous class", has_line(shape, probe.line("return new Shape() {")), first(shape))
+    b.check("probe impls(Shape): lambda", has_line(shape, probe.line("return () -> Math.PI")), first(shape))
     area = b.raw("find_implementations", probe.pos("double area();", "area"))[0]
     b.check("probe impls(area): lambda", has_line(area, probe.line("return () -> Math.PI")), first(area))
     node = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
     b.check("probe impls(Node): records", has_line(node, probe.line("record Leaf(")) and has_line(node, probe.line("record Pair(")),
             first(node))
     label = b.raw("find_implementations", probe.pos("return name();", "label", offset=-1))[0]
-    b.check("probe impls(Color.label): enum constant body", has_line(label, probe.line('return "red";') - 1), first(label),
-            known="implementations miss enum constant bodies")
+    b.check("probe impls(Color.label): enum constant body", has_line(label, probe.line('return "red";') - 1), first(label))
 
 
 def navigation_checks(b, probe):
@@ -150,37 +146,31 @@ def reference_counts(b, probe, watched):
     return counts
 
 
-# Before 0.2.2 these renames went through and changed what a use means; the rename binding check
-# refuses them after 0.2.2, with a reason that says the use "would then" refer elsewhere.
-REFUSED_AFTER_0_2_2 = "a rename can change which declaration a use binds to (refused after 0.2.2)"
-
 # Each rename: the line and name renamed (a word for a column where the name is too short to find
 # by name), the new name, and the declarations whose reference counts must not move.
 RENAMES = [
     ("parameter to a field's name", ("public int compute(int x)", "x"), "value",
-     [("private int value;", "value"), ("void setValue(int v)", "setValue")],
-     "a rename to a name a use already sees silently rebinds the use"),
+     [("private int value;", "value"), ("void setValue(int v)", "setValue")]),
     ("method to an overload's name", ("long twice(long n)", "twice"), "setValue",
-     [("void setValue(int v)", "setValue"), ("public int compute(", "compute")],
-     "a method rename can capture another overload's calls"),
+     [("void setValue(int v)", "setValue"), ("public int compute(", "compute")]),
     ("lambda parameter to a field's name", ("IntUnaryOperator op = n ->", "n ->"), "limit",
-     [("private int limit;", "limit")], REFUSED_AFTER_0_2_2),
+     [("private int limit;", "limit")]),
     ("local to a field's name", ("int count = 1;", "count"), "total",
-     [("private int total;", "total")], REFUSED_AFTER_0_2_2),
+     [("private int total;", "total")]),
     ("field to a local's name", ("private int width;", "width"), "size",
-     [("int size = 2;", "size")], REFUSED_AFTER_0_2_2),
+     [("int size = 2;", "size")]),
     ("inherited method to an enclosing method's name", ("void pong() {}", "pong"), "ping",
-     [("public void ping() {}", "ping")], REFUSED_AFTER_0_2_2),
+     [("public void ping() {}", "ping")]),
     ("method to a subclass method's name", ("void speak() {}", "speak"), "bark",
-     [("public void bark() {}", "bark")], REFUSED_AFTER_0_2_2),
+     [("public void bark() {}", "bark")]),
     ("type to a wildcard-imported name", ("static final class Dice {}", "Dice"), "Random",
-     [("Random rng()", "Random")], REFUSED_AFTER_0_2_2),
+     [("Random rng()", "Random")]),
     ("method capturing another file's call", ("static int gauge(int v)", "gauge"), "measure",
-     [("static long measure(long v)", "measure")], REFUSED_AFTER_0_2_2),
+     [("static long measure(long v)", "measure")]),
 ]
 
 
-def rename_keeps_meaning(b, probe, label, target, new, watched, known):
+def rename_keeps_meaning(b, probe, label, target, new, watched):
     files = (probe.file, probe.caller_file)
     originals = [f.read_bytes() for f in files]
     before = reference_counts(b, probe, watched)
@@ -192,22 +182,22 @@ def rename_keeps_meaning(b, probe, label, target, new, watched, known):
     elif result.get("isError") or not text.startswith("Renamed"):
         # Only a refusal that names the rebinding keeps the meaning; any other refusal is a failure.
         if "would then" in text:
-            b.check(label, True, "refused: %s" % first(text), known=known)
+            b.check(label, True, "refused: %s" % first(text))
         else:
             b.check(label, False, "refused for another reason: %s" % first(text))
     else:
         after = reference_counts(b, probe, watched)
         moved = {n: (before[n], after[n]) for n in after if before[n] != after[n]}
-        b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses", known=known)
+        b.check(label, not moved, "reference counts moved: %s" % moved if moved else "every name keeps its uses")
     for f, original in zip(files, originals):
         f.write_bytes(original)
     b.raw("get_diagnostics", {"file": str(probe.file)})
 
 
 def rename_checks(b, probe):
-    for label, target, new, watched, known in RENAMES:
+    for label, target, new, watched in RENAMES:
         b.section("probe rename: %s" % label, rename_keeps_meaning, b, probe, "probe rename: %s" % label,
-                  target, new, watched, known)
+                  target, new, watched)
 
 
 def stale_answer_check(b, probe):
