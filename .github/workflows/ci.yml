@@ -100,6 +100,18 @@ jobs:
             env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
+      - name: Keep the invoker fixtures' downloads
+        # The fixtures resolve into lathe-maven-plugin/target/local-repo, which the cache never sees,
+        # so every run downloaded what only they use (formatters, Lombok, JUnit 5). Copied into
+        # ~/.m2, the next run's fixtures copy them from there through src/it/settings.xml's file://
+        # repository. -n keeps every file ~/.m2 has, its _remote.repositories records included; a
+        # skipped file is no error worth failing the job over.
+        if: success() && ((matrix.java == '21' && runner.os == 'Linux') || runner.os != 'Linux')
+        run: |
+          if [ -d lathe-maven-plugin/target/local-repo ]; then
+            cp -Rn lathe-maven-plugin/target/local-repo/. ~/.m2/repository/ || true
+          fi
+
       - name: Save the Maven repository
         # From the row per OS that builds the most of the reactor, so the cache holds what every
         # job needs; a job building part of it would save a partial repository first.
