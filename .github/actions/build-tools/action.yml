@@ -16,14 +16,16 @@ runs:
         distribution: 'temurin'
 
     - name: Restore the Maven repository
-      # Keyed by every POM, falling back to the OS's newest entry, so a POM change downloads only
-      # what is new. Only the build rows that build the whole reactor save it (see ci.yml).
+      # Keyed by every checked-in POM, falling back to the OS's newest entry, so a POM change
+      # downloads only what is new. Only the build rows that build the whole reactor save it (see
+      # ci.yml), under the same key: target/ is left out, since a build fills it with POMs (the
+      # invoker's fixtures and their downloads) that would make the saved key differ from this one.
       uses: actions/cache/restore@v6
       with:
         path: |
           ~/.m2/repository
           !~/.m2/repository/io/github/ag-libs
-        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml', '!**/target/**') }}
         restore-keys: maven-${{ runner.os }}-
 
     - name: Set up JDK 21 to build (JDK 17 row)
