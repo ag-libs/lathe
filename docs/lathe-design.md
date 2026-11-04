@@ -1201,65 +1201,22 @@ Fast — milliseconds per test.
 
 ### Layer 2 — Integration (maven-invoker)
 
-`lathe-maven-plugin` owns Maven integration tests.
-Invoker runs `lathe:init` and `mvn process-test-classes` against real test projects under `src/it/`.
-The main fixture is a multi-module reactor with a verifier JUnit submodule:
-
-```
-lathe-maven-plugin/src/it/
-└── multi-module/
-    ├── app/
-    ├── core/
-    ├── jpms/
-    └── verify/
-```
-
-The verifier submodule runs as part of the normal invoker build.
-It checks `.lathe/` creation,
-params files,
-class copies,
-workspace manifest contents,
-server launcher installation,
-type-index shards,
-and LSP smoke behavior.
-Neovim headless tests are outside this testing strategy;
-the distributable Neovim plugin is exercised through normal development and manual smoke testing.
+`lathe-maven-plugin` owns the Maven integration tests: the invoker builds real projects under `src/it/` with Lathe enabled, and JUnit tests inside each fixture check the result (no verify scripts).
+[`lathe-maven-plugin/src/it/README.md`](../lathe-maven-plugin/src/it/README.md) lists the fixtures and what each covers.
+The main one, `multi-module`, is a reactor whose `verify` module checks the sync output and drives the real LSP and MCP servers.
+The Neovim client has headless specs and an end-to-end run over the built `multi-module` fixture (`lathe-neovim/test`);
+the Gradle plugin's fixtures are TestKit tests (`lathe-gradle-plugin/src/functionalTest`).
 
 ### Running locally
 
 ```bash
-mvn install -DskipTests                                          # build and install
-mvn verify -pl lathe-maven-plugin                                # invoker + verifier
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one invoker project
+mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true  # the invoker suite, building the jars it needs
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module             # one fixture, Lathe's jars from ~/.m2
 ```
 
 ### CI — GitHub Actions
 
-```yaml
-jobs:
-  build:
-    steps:
-      - run: mvn install -DskipTests
-      - uses: actions/upload-artifact@v4
-        with:
-          name: maven-repo
-          path: ~/.m2/repository/io/github/ag-libs
-
-  test:
-    needs: build
-    strategy:
-      matrix:
-        include:
-          - invoker-test: multi-module
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: maven-repo
-          path: ~/.m2/repository/io/github/ag-libs
-      - run: |
-          mvn verify -pl lathe-maven-plugin \
-            -Dinvoker.test=${{ matrix.invoker-test }}
-```
+`.github/workflows/ci.yml` runs the invoker suite in every build row (JDK 17 to 27; Linux, macOS and Windows) and in invoker-only rows on Maven 3.6.3, 3.8.8 and 3.10.
 
 ---
 
