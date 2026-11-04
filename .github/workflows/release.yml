@@ -52,10 +52,7 @@ jobs:
 
       - name: Set up Neovim
         # The release build runs the full verify, including the client specs.
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: stable
+        uses: ./.github/actions/neovim
 
       - name: Resolve release version
         id: version
