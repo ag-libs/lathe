@@ -66,6 +66,7 @@ final class ReactorTypeIndex {
     eventLoop.checkOnLoop();
     reactorShards.clear();
     reactorBaseShards.clear();
+    reactorLambdaShards.clear();
     scanReactorShards();
     typeIndex =
         WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
