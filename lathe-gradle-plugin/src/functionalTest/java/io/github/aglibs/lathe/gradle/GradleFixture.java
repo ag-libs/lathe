@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -7,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
@@ -170,6 +172,16 @@ final class GradleFixture {
         .withGradleInstallation(new File(System.getProperty("lathe.gradle.fixturesHome")))
         .withProjectDir(dir.toFile())
         .withPluginClasspath()
+        .withEnvironment(outsideCi())
         .withArguments(Stream.concat(Stream.of(LATHE_CACHE), Stream.of(args)).toList());
+  }
+
+  // The fixture builds run as on a developer's machine, without the CI variable that keeps Lathe
+  // out
+  // of a CI build (Lathe's own CI build keeps it set). A test about CI passes its own environment.
+  private static Map<String, String> outsideCi() {
+    final var env = new HashMap<>(System.getenv());
+    env.remove(LatheFlags.CI_ENV);
+    return Map.copyOf(env);
   }
 }
