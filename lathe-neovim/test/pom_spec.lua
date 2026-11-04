@@ -120,13 +120,23 @@ if vim.fn.executable("xmllint") == 1 then
   -- validate() feeds the buffer contents to xmllint via stdin, so an invalid (unsaved) pom yields a
   -- diagnostic and a valid one yields none -- the live, unsaved-aware path.
   pom.setup({}) -- re-enable validate (a previous case left it off)
-  local function diags_after_validate(buf_lines, expect_any)
+  -- Waits for validate() to publish (DiagnosticChanged fires on an empty set too): waiting for the
+  -- expected count instead passed a valid pom before xmllint had even run.
+  local function diags_after_validate(buf_lines)
     local buf = make_buf(buf_lines)
+    local published = false
+    vim.api.nvim_create_autocmd("DiagnosticChanged", {
+      buffer = buf,
+      once = true,
+      callback = function()
+        published = true
+      end,
+    })
     pom.validate(buf)
     vim.wait(4000, function()
-      return (#vim.diagnostic.get(buf) > 0) == expect_any
-    end, 50)
-    return vim.diagnostic.get(buf)
+      return published
+    end, 20)
+    return vim.diagnostic.get(buf), published
   end
 
   local invalid = diags_after_validate({
@@ -135,10 +145,10 @@ if vim.fn.executable("xmllint") == 1 then
     "  <modelVersion>4.0.0</modelVersion>",
     "  <bogusElement>nope</bogusElement>",
     "</project>",
-  }, true)
+  })
   spec.check("validate flags an invalid pom from buffer contents", #invalid >= 1, true)
 
-  local valid = diags_after_validate({
+  local valid, validated = diags_after_validate({
     '<?xml version="1.0"?>',
     '<project xmlns="http://maven.apache.org/POM/4.0.0">',
     "  <modelVersion>4.0.0</modelVersion>",
@@ -146,7 +156,8 @@ if vim.fn.executable("xmllint") == 1 then
     "  <artifactId>app</artifactId>",
     "  <version>1.0.0</version>",
     "</project>",
-  }, false)
+  })
+  spec.check("validate ran on the valid pom", validated, true)
   spec.check("validate passes a valid pom from buffer contents", #valid, 0)
 else
   spec.pending("xmllint end-to-end (format + validate)", "xmllint not installed")
