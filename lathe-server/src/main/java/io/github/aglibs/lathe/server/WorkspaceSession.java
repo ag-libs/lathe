@@ -107,13 +107,11 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import javax.lang.model.SourceVersion;
 import javax.lang.model.element.ElementKind;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -755,55 +753,47 @@ final class WorkspaceSession {
     }
   }
 
-  private List<ModuleSourceConfig> configsFor(final String moduleRel) {
-    final List<ModuleSourceConfig> configs =
-        workspace.allConfigs().stream()
-            .filter(config -> moduleRel(config).equals(moduleRel))
-            .toList();
-    if (configs.isEmpty()) {
-      throw new IllegalStateException("no module for " + moduleRel);
-    }
-
-    return configs;
-  }
-
   CreateTypeResult createType(final CreateTypeArgs args) {
     // module-info.java always belongs to the main source root, whatever scope the client sent.
     final var scope = args.type() == TypeKind.MODULE_INFO ? SourceScope.MAIN : args.kind();
-    final var sourceRoot = sourceRootFor(args.moduleRel(), scope);
+    final var sourceRoot = sourceLayout().sourceRootFor(args.moduleRel(), scope);
     LOG.info(
         () ->
             "[createType] %s %s.%s kind=%s type=%s"
                 .formatted(args.moduleRel(), args.pkg(), args.name(), args.kind(), args.type()));
-    return renderNewType(sourceRoot, args.pkg(), args.type(), args.name());
+    return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), args.name());
   }
 
-  private Path sourceRootFor(final String moduleRel, final SourceScope scope) {
-    return configsFor(moduleRel).stream()
-        .filter(config -> scope.sourceTree.equals(config.sourceTree()))
-        .flatMap(config -> primarySourceRoot(config).stream())
-        .findFirst()
-        .orElseThrow(
-            () ->
-                new IllegalStateException(
-                    "no %s source root for module '%s'".formatted(scope, moduleRel)));
-  }
-
-  // The real (non-generated) source directory a new file lands in.
-  private static Optional<Path> primarySourceRoot(final ModuleSourceConfig config) {
-    return config.sourceRoots().stream().findFirst();
+  private SourceLayout sourceLayout() {
+    return new SourceLayout(workspace.allConfigs(), workspaceRoot);
   }
 
   List<String> modules() {
-    return modules(workspace.allConfigs(), workspaceRoot);
+    return sourceLayout().modules();
+  }
+
+  List<String> testModules() {
+    return sourceLayout().testModules();
   }
 
   List<PackageEntry> packages(final String moduleRel) {
-    return packages(workspace.allConfigs(), workspaceRoot, moduleRel);
+    return sourceLayout().packages(moduleRel);
   }
 
   ContextInfo resolveContext(final String uri) {
-    return resolveContext(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
+    return sourceLayout().resolveContext(LatheUri.toPath(uri));
+  }
+
+  DirRun dirRun(final String uri) {
+    return sourceLayout().dirRun(LatheUri.toPath(uri));
+  }
+
+  List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
+    return sourceLayout().testSources(moduleRel, classNames);
+  }
+
+  List<ResourceEntry> resources() {
+    return ResourceFinder.list(manifest.resourceDirModules(), manifest.dependencyJarsToGav());
   }
 
   // The tests of the file's type, or from a test the type it tests.
@@ -816,39 +806,6 @@ final class WorkspaceSession {
         workspace::moduleSourceFor,
         typeIndex,
         workspace.allSourceRoots());
-  }
-
-  DirRun dirRun(final String uri) {
-    return dirRun(workspace.allConfigs(), workspaceRoot, LatheUri.toPath(uri));
-  }
-
-  // Static cores below take (configs, workspaceRoot) so they are covered without a loaded
-  // workspace.
-
-  static List<String> modules(final List<ModuleSourceConfig> configs, final Path workspaceRoot) {
-    return configs.stream()
-        .map(config -> moduleRel(workspaceRoot, config.moduleDir()))
-        .distinct()
-        .sorted()
-        .toList();
-  }
-
-  static List<PackageEntry> packages(
-      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
-    return configs.stream()
-        .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
-        .flatMap(WorkspaceSession::packageEntries)
-        .distinct()
-        .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
-        .toList();
-  }
-
-  static ContextInfo resolveContext(
-      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path path) {
-    return configs.stream()
-        .flatMap(config -> contextIn(workspaceRoot, config, path).stream())
-        .findFirst()
-        .orElse(null);
   }
 
   // A package or module run executes the classes the build's own test run would (the module's
@@ -885,53 +842,6 @@ final class WorkspaceSession {
         .toList();
   }
 
-  // Test selectors to run for a directory, from the real reactor layout, not the path string.
-  // A dir inside a module's test tree runs just that package (selectPackage recurses); the
-  // source root, or anything above it (module root, src/), runs every test package in one
-  // launch. A dir enclosing more than one module (the reactor root) resolves to nothing.
-  static DirRun dirRun(
-      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final Path dirPath) {
-    final List<ModuleSourceConfig> testConfigs = testConfigs(configs);
-
-    for (final ModuleSourceConfig config : testConfigs) {
-      final Optional<Path> root = primarySourceRoot(config);
-      if (root.isEmpty() || !dirPath.startsWith(root.get())) {
-        continue;
-      }
-
-      final String pkg = packageOf(root.get(), dirPath);
-      final String moduleRel = moduleRel(workspaceRoot, config.moduleDir());
-      if (pkg.isEmpty()) {
-        return moduleRun(configs, workspaceRoot, moduleRel);
-      }
-
-      return new DirRun(
-          moduleRel, List.of(new DirRun.Selector(TestSelectionKind.PACKAGE.name(), pkg)));
-    }
-
-    // At or above a module's test tree (module root, src/): its real test root is a descendant
-    // of the dir -- deterministic, no path parsing. Only when exactly one module lives under it;
-    // several is a multi-module directory, which is not run.
-    final List<ModuleSourceConfig> enclosed =
-        testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
-    if (enclosed.size() == 1) {
-      return moduleRun(
-          configs, workspaceRoot, moduleRel(workspaceRoot, enclosed.get(0).moduleDir()));
-    }
-
-    return new DirRun("", List.of());
-  }
-
-  private static boolean testRootUnder(final ModuleSourceConfig config, final Path dirPath) {
-    return primarySourceRoot(config).filter(root -> root.startsWith(dirPath)).isPresent();
-  }
-
-  private static List<ModuleSourceConfig> testConfigs(final List<ModuleSourceConfig> configs) {
-    return configs.stream()
-        .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
-        .toList();
-  }
-
   private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
 
     CachedDiscovery {
@@ -946,14 +856,6 @@ final class WorkspaceSession {
     PersistedDiscovery {
       ValidCheck.check().notNull(discovery, "discovery").validate();
     }
-  }
-
-  List<String> testModules() {
-    return testConfigs(workspace.allConfigs()).stream()
-        .map(this::moduleRel)
-        .distinct()
-        .sorted()
-        .toList();
   }
 
   // The tests a run of the module would execute, found by a discover-mode launch that runs none of
@@ -987,7 +889,7 @@ final class WorkspaceSession {
 
   private CompletableFuture<TestDiscovery> launchDiscovery(final String moduleRel) {
     final List<TestSelection> selections =
-        moduleRun(workspace.allConfigs(), workspaceRoot, moduleRel).selections().stream()
+        sourceLayout().moduleRun(moduleRel).selections().stream()
             .map(
                 selector ->
                     new TestSelection(
@@ -1079,28 +981,6 @@ final class WorkspaceSession {
     return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
-  List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
-    return testSources(workspace.allConfigs(), workspaceRoot, moduleRel, classNames);
-  }
-
-  List<ResourceEntry> resources() {
-    return resources(manifest.resourceDirModules(), manifest.dependencyJarsToGav());
-  }
-
-  // Every resource the finder lists: reactor resource roots (real editable files) and each dep
-  // jar's
-  // entries (read from its central directory -- no decompression, no extraction). `.class` is
-  // excluded; origin comes from the owning module / GAV.
-  static List<ResourceEntry> resources(
-      final Map<Path, String> resourceDirs, final Map<Path, String> jarToGav) {
-    return Stream.concat(
-            resourceDirs.entrySet().stream()
-                .flatMap(dir -> resourcesUnder(dir.getKey(), dir.getValue()).stream()),
-            jarToGav.entrySet().stream()
-                .flatMap(dep -> jarResources(dep.getKey(), dep.getValue()).stream()))
-        .toList();
-  }
-
   // Extracts one dependency jar entry to disk (read-only) and returns its path -- the only bytes
   // written, on demand. Reuses the dep's sources cache dir when present, else a temp dir. Reactor
   // resources need no extraction (they carry their real path).
@@ -1110,7 +990,7 @@ final class WorkspaceSession {
         manifest
             .dependencySourceDir(jarPath)
             .map(dir -> dir.resolve(entry))
-            .orElseGet(tempDest(entry));
+            .orElseGet(ResourceFinder.tempDest(entry));
     try {
       FileUtil.extractEntry(jarPath, entry, dest);
     } catch (final IOException e) {
@@ -1118,226 +998,6 @@ final class WorkspaceSession {
     }
 
     return dest.toString();
-  }
-
-  private static List<ResourceEntry> resourcesUnder(final Path dir, final String module) {
-    if (!Files.isDirectory(dir)) {
-      return List.of();
-    }
-
-    try (final var walk = Files.walk(dir)) {
-      return walk.filter(Files::isRegularFile)
-          .filter(WorkspaceSession::isResource)
-          .map(
-              file ->
-                  ResourceEntry.reactor(
-                      FileUtil.slashed(dir.relativize(file)), module, file.toString()))
-          .toList();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resources] walk %s failed".formatted(dir));
-      return List.of();
-    }
-  }
-
-  private static List<ResourceEntry> jarResources(final Path jar, final String gav) {
-    try {
-      return FileUtil.listEntries(jar, WorkspaceSession::isResource).stream()
-          .map(entry -> ResourceEntry.dependency(gav, jar.toString(), entry))
-          .toList();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resources] list %s failed".formatted(jar));
-      return List.of();
-    }
-  }
-
-  // Excluding compiled classes is the whole filter -- a denylist keeps unusual resource extensions.
-  private static boolean isResource(final String name) {
-    return !name.endsWith(".class");
-  }
-
-  private static boolean isResource(final Path file) {
-    return isResource(file.getFileName().toString());
-  }
-
-  private static Supplier<Path> tempDest(final String entry) {
-    return () -> {
-      try {
-        return Files.createTempDirectory("lathe-resource-").resolve(Path.of(entry).getFileName());
-      } catch (final IOException e) {
-        throw new UncheckedIOException("temp dir for %s".formatted(entry), e);
-      }
-    };
-  }
-
-  // Source file for each test class, resolved from the module's real test source roots by path math
-  // (top-level class -> <root>/<pkg>/<Simple>.java, existence-checked). No attribution, so it works
-  // for classes whose files were never opened. Unresolved classes get an empty path.
-  static List<TestSource> testSources(
-      final List<ModuleSourceConfig> configs,
-      final Path workspaceRoot,
-      final String moduleRel,
-      final List<String> classNames) {
-    final List<Path> roots =
-        testConfigs(configs).stream()
-            .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
-            .flatMap(config -> config.sourceRoots().stream())
-            .toList();
-    return classNames.stream()
-        .distinct()
-        .map(name -> new TestSource(name, sourcePath(roots, name)))
-        .toList();
-  }
-
-  private static String sourcePath(final List<Path> roots, final String className) {
-    final int inner = className.indexOf('$');
-    final String topLevel = inner < 0 ? className : className.substring(0, inner);
-    final String rel = topLevel.replace('.', '/') + ".java";
-    for (final Path root : roots) {
-      final Path candidate = root.resolve(rel);
-      if (Files.isRegularFile(candidate)) {
-        return candidate.toString();
-      }
-    }
-    return "";
-  }
-
-  private static DirRun moduleRun(
-      final List<ModuleSourceConfig> configs, final Path workspaceRoot, final String moduleRel) {
-    final List<DirRun.Selector> selectors =
-        packages(configs, workspaceRoot, moduleRel).stream()
-            .filter(entry -> entry.scope().equals(SourceScope.TEST.wire))
-            .map(PackageEntry::pkg)
-            .filter(pkg -> !pkg.isEmpty())
-            .distinct()
-            .map(pkg -> new DirRun.Selector(TestSelectionKind.PACKAGE.name(), pkg))
-            .toList();
-    return new DirRun(moduleRel, selectors);
-  }
-
-  private static Stream<PackageEntry> packageEntries(final ModuleSourceConfig config) {
-    final String scope = scopeWire(config);
-    return primarySourceRoot(config).stream()
-        .flatMap(root -> packagesUnder(root).stream().map(pkg -> new PackageEntry(pkg, scope)));
-  }
-
-  private static String scopeWire(final ModuleSourceConfig config) {
-    return SourceScope.ofSourceTree(config.sourceTree()).wire;
-  }
-
-  // A package is a directory that holds Java sources (the parent of each `.java`).
-  // Intermediate dirs like `com` are not packages and must not be offered.
-  private static List<String> packagesUnder(final Path root) {
-    if (!Files.isDirectory(root)) {
-      return List.of();
-    }
-
-    try (final var walk = Files.walk(root)) {
-      return walk.filter(Files::isRegularFile)
-          .filter(FileUtil::isJavaFile)
-          .map(source -> packageOf(root, source.getParent()))
-          .distinct()
-          .sorted()
-          .toList();
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[packages] scan failed under %s".formatted(root));
-      return List.of();
-    }
-  }
-
-  private static Optional<ContextInfo> contextIn(
-      final Path workspaceRoot, final ModuleSourceConfig config, final Path path) {
-    return primarySourceRoot(config)
-        .filter(path::startsWith)
-        .map(
-            root ->
-                new ContextInfo(
-                    moduleRel(workspaceRoot, config.moduleDir()),
-                    scopeWire(config),
-                    packageOf(root, path.getParent())));
-  }
-
-  private static String packageOf(final Path root, final Path dir) {
-    return root.relativize(dir).toString().replace(root.getFileSystem().getSeparator(), ".");
-  }
-
-  // Pure/static so it is covered without a loaded workspace. The skeleton is left unformatted: an
-  // empty type has nothing to format, and running the formatter would only collapse the body and
-  // remove the caret line — the user's on-save formatter canonicalises it on first save.
-  static CreateTypeResult renderNewType(
-      final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
-    return switch (type) {
-      case CLASS, INTERFACE, ENUM, RECORD, TEST -> renderType(sourceRoot, pkg, type, name);
-      case PACKAGE_INFO -> renderPackageInfo(sourceRoot, pkg);
-      case MODULE_INFO -> renderModuleInfo(sourceRoot, name);
-    };
-  }
-
-  private static CreateTypeResult renderType(
-      final Path sourceRoot, final String pkg, final TypeKind type, final String name) {
-    if (!RenameProvider.isValidTypeName(name)) {
-      throw new IllegalArgumentException("'%s' is not a valid Java type name".formatted(name));
-    }
-
-    final var path = sourceRoot.resolve(pkg.replace('.', '/')).resolve(name + ".java");
-    return new CreateTypeResult(
-        path.toString(), newTypeSource(type, name, pkg), caretFor(type, name, pkg));
-  }
-
-  // The default package cannot carry a package-info, so an empty package is rejected.
-  private static CreateTypeResult renderPackageInfo(final Path sourceRoot, final String pkg) {
-    if (pkg.isEmpty()) {
-      throw new IllegalArgumentException("package-info requires a package");
-    }
-
-    final var path = sourceRoot.resolve(pkg.replace('.', '/')).resolve("package-info.java");
-    final var content = "/**\n * \n */\npackage %s;\n".formatted(pkg);
-    return new CreateTypeResult(path.toString(), content, new Position(1, 3));
-  }
-
-  // The module name is a qualified name, not a simple type identifier, so it is validated with
-  // isName.
-  private static CreateTypeResult renderModuleInfo(final Path sourceRoot, final String name) {
-    if (!SourceVersion.isName(name)) {
-      throw new IllegalArgumentException("'%s' is not a valid module name".formatted(name));
-    }
-
-    final var path = sourceRoot.resolve("module-info.java");
-    return new CreateTypeResult(
-        path.toString(), "module %s {\n\n}\n".formatted(name), new Position(1, 0));
-  }
-
-  private static String newTypeSource(final TypeKind type, final String name, final String pkg) {
-    final var header = pkg.isEmpty() ? "" : "package %s;\n\n".formatted(pkg);
-    return switch (type) {
-      case RECORD -> "%spublic record %s() {\n}\n".formatted(header, name);
-      case CLASS, INTERFACE, ENUM ->
-          "%spublic %s %s {\n\n}\n".formatted(header, type.keyword, name);
-      // A JUnit 5 test class: package-private (the Jupiter idiom, matching the codebase), with one
-      // empty @Test method for the caret to land in. The import follows the package header.
-      case TEST ->
-          "%simport org.junit.jupiter.api.Test;\n\nclass %s {\n\n  @Test\n  void name() {\n\n  }\n}\n"
-              .formatted(header, name);
-      case PACKAGE_INFO, MODULE_INFO ->
-          throw new IllegalStateException("special unit handled by renderNewType: " + type);
-    };
-  }
-
-  // Computed from the template's known shape, not by scanning it: a package header adds two leading
-  // lines; a record's caret is inside the () on the declaration line, the others' on the empty body
-  // line. Mirrors the newTypeSource layout above.
-  private static Position caretFor(final TypeKind type, final String name, final String pkg) {
-    final int declLine = pkg.isEmpty() ? 0 : 2;
-    if (type == TypeKind.RECORD) {
-      return new Position(declLine, "public record %s(".formatted(name).length());
-    }
-
-    // The test skeleton's caret sits on the empty @Test method body line: six lines below the
-    // import (import, blank, class, blank, @Test, void), which itself is at declLine.
-    if (type == TypeKind.TEST) {
-      return new Position(declLine + 6, 0);
-    }
-
-    return new Position(declLine + 1, 0);
   }
 
   // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.
@@ -1724,7 +1384,7 @@ final class WorkspaceSession {
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
-    return moduleRel(workspaceRoot, config.moduleDir());
+    return SourceLayout.moduleRel(workspaceRoot, config.moduleDir());
   }
 
   // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
@@ -1740,13 +1400,8 @@ final class WorkspaceSession {
         .map(rel -> rel.isEmpty() ? "." : rel);
   }
 
-  // A module's .lathe directory as the reactor-relative module path the tools and the sync use.
-  private static String moduleRel(final Path workspaceRoot, final Path moduleDir) {
-    return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
-  }
-
   private String moduleRelForDir(final Path moduleDir) {
-    return moduleRel(workspaceRoot, moduleDir);
+    return SourceLayout.moduleRel(workspaceRoot, moduleDir);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -4577,11 +4232,11 @@ final class WorkspaceSession {
         .stream()
         .map(
             module -> {
-              final String rel = moduleRel(workspaceRoot, module.getKey());
+              final String rel = SourceLayout.moduleRel(workspaceRoot, module.getKey());
               return new LatheModuleSummary(
                   rel,
                   graph.upstreamModuleDirs(module.getKey()).stream()
-                      .map(dir -> moduleRel(workspaceRoot, dir))
+                      .map(dir -> SourceLayout.moduleRel(workspaceRoot, dir))
                       .sorted()
                       .toList(),
                   module.getValue().stream().anyMatch(ModuleSourceConfig::isTestTree),

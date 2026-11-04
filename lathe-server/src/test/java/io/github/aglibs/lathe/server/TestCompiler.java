@@ -97,6 +97,18 @@ public final class TestCompiler {
         sourceRoot);
   }
 
+  // A module's test tree under the workspace root: <root>/<module>/<relRoot>, compiled to
+  // test-classes.
+  public static ModuleSourceConfig testTreeConfig(
+      final Path workspaceRoot, final String module, final String relRoot) {
+    return moduleConfig(
+        workspaceRoot.resolve(".lathe/%s".formatted(module)),
+        workspaceRoot.resolve("%s/target/test-classes".formatted(module)),
+        workspaceRoot.resolve("%s/%s".formatted(module, relRoot)),
+        null,
+        LatheLayout.TEST_CLASSES_DIR);
+  }
+
   public static ModuleSourceConfig moduleConfig(
       final Path moduleDir, final Path outputDir, final Path sourceRoot) {
     return moduleConfig(moduleDir, outputDir, sourceRoot, null);

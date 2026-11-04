@@ -22,7 +22,6 @@ import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -37,8 +36,6 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipOutputStream;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -451,100 +448,6 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void renderNewType_class_skeletonPathAndBodyCaret() {
-    final var result = render(TypeKind.CLASS, "Foo", "com.example");
-
-    assertThat(result.path()).isEqualTo(sourceRoot.resolve("com/example/Foo.java").toString());
-    assertThat(result.content()).isEqualTo("package com.example;\n\npublic class Foo {\n\n}\n");
-    assertThat(result.caret().getLine()).isEqualTo(3); // the empty body line
-    assertThat(result.caret().getCharacter()).isZero();
-  }
-
-  @Test
-  void renderNewType_record_caretInComponentList() {
-    final var result = render(TypeKind.RECORD, "Point", "com.example");
-
-    assertThat(result.content()).isEqualTo("package com.example;\n\npublic record Point() {\n}\n");
-    assertThat(result.caret().getLine()).isEqualTo(2);
-    assertThat(result.caret().getCharacter()).isEqualTo("public record Point(".length());
-  }
-
-  @Test
-  void renderNewType_interfaceEnumAndDefaultPackage_useKeywordAndOmitPackageLine() {
-    assertThat(render(TypeKind.INTERFACE, "Bar", "com.example").content())
-        .isEqualTo("package com.example;\n\npublic interface Bar {\n\n}\n");
-    assertThat(render(TypeKind.ENUM, "Color", "com.example").content())
-        .isEqualTo("package com.example;\n\npublic enum Color {\n\n}\n");
-
-    final var defaultPkg = render(TypeKind.CLASS, "Foo", "");
-    assertThat(defaultPkg.content()).isEqualTo("public class Foo {\n\n}\n");
-    assertThat(defaultPkg.path()).isEqualTo(sourceRoot.resolve("Foo.java").toString());
-    assertThat(defaultPkg.caret().getLine())
-        .isEqualTo(1); // no package header → body line shifts up
-  }
-
-  @Test
-  void renderNewType_test_junitSkeletonWithMethodBodyCaret() {
-    final var result = render(TypeKind.TEST, "FooTest", "com.example");
-
-    assertThat(result.path()).isEqualTo(sourceRoot.resolve("com/example/FooTest.java").toString());
-    assertThat(result.content())
-        .isEqualTo(
-            "package com.example;\n\nimport org.junit.jupiter.api.Test;\n\nclass FooTest {\n\n"
-                + "  @Test\n  void name() {\n\n  }\n}\n");
-    assertThat(result.caret().getLine()).isEqualTo(8); // the empty @Test method body line
-    assertThat(result.caret().getCharacter()).isZero();
-
-    // No package header shifts every line — and the caret — up by the two header lines.
-    assertThat(render(TypeKind.TEST, "FooTest", "").caret().getLine()).isEqualTo(6);
-  }
-
-  @Test
-  void renderNewType_invalidNamesAndPlacement_rejected() {
-    assertThatThrownBy(() -> render(TypeKind.CLASS, "9Foo", "com.example"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> render(TypeKind.CLASS, "class", "com.example"))
-        .isInstanceOf(IllegalArgumentException.class);
-    // A restricted identifier cannot name a type, though a name containing one can.
-    assertThatThrownBy(() -> render(TypeKind.CLASS, "var", "com.example"))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessage("'var' is not a valid Java type name");
-    assertThatThrownBy(() -> render(TypeKind.RECORD, "record", "com.example"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(render(TypeKind.RECORD, "Record", "com.example").path()).endsWith("Record.java");
-    // module-info: a qualified module name — malformed or a keyword segment is rejected.
-    assertThatThrownBy(() -> render(TypeKind.MODULE_INFO, "com.9bad", ""))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThatThrownBy(() -> render(TypeKind.MODULE_INFO, "com.class", ""))
-        .isInstanceOf(IllegalArgumentException.class);
-    // package-info: the default package cannot carry one.
-    assertThatThrownBy(() -> render(TypeKind.PACKAGE_INFO, "ignored", ""))
-        .isInstanceOf(IllegalArgumentException.class);
-  }
-
-  @Test
-  void renderNewType_packageInfo_javadocStubInPackageDir() {
-    final var result = render(TypeKind.PACKAGE_INFO, "ignored", "com.example");
-
-    assertThat(result.path())
-        .isEqualTo(sourceRoot.resolve("com/example/package-info.java").toString());
-    assertThat(result.content()).isEqualTo("/**\n * \n */\npackage com.example;\n");
-    assertThat(result.caret().getLine()).isEqualTo(1); // the javadoc body line
-    assertThat(result.caret().getCharacter()).isEqualTo(3);
-  }
-
-  @Test
-  void renderNewType_moduleInfo_qualifiedNameAtSourceRootIgnoringPackage() {
-    final var result = render(TypeKind.MODULE_INFO, "com.example.app", "any.pkg");
-
-    // module-info.java lands at the source root, never a package dir, whatever the package.
-    assertThat(result.path()).isEqualTo(sourceRoot.resolve("module-info.java").toString());
-    assertThat(result.content()).isEqualTo("module com.example.app {\n\n}\n");
-    assertThat(result.caret().getLine()).isEqualTo(1); // the empty body line
-    assertThat(result.caret().getCharacter()).isZero();
-  }
-
-  @Test
   void enums_fromWireAndSourceTree_mapKnownTokensRejectUnknownWireAndTakeExtraTreesAsMain() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
     assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
@@ -561,51 +464,8 @@ class WorkspaceSessionTest {
   }
 
   @Test
-  void packagesAndDirRun_moduleWithExtraSourceTree_listsItAsMainAndRunsOnlyTests()
-      throws Exception {
-    // A multi-release module's second compile (src/main/java21 into versions/21) is its own tree.
-    final var java21Cfg =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/module"),
-            tmp.resolve("module/target/classes/META-INF/versions/21"),
-            tmp.resolve("module/src/main/java21"),
-            null,
-            "21");
-    Files.createDirectories(tmp.resolve("module/src/main/java21/com/example/jdk21"));
-    Files.writeString(
-        tmp.resolve("module/src/main/java21/com/example/jdk21/Trees.java"),
-        "package com.example.jdk21; class Trees {}");
-    final var testCfg = testConfig("module", "src/test/java");
-    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
-    Files.writeString(
-        tmp.resolve("module/src/test/java/com/verify/VerifyTest.java"),
-        "package com.verify; class VerifyTest {}");
-    final List<ModuleSourceConfig> configs = List.of(config, java21Cfg, testCfg);
-
-    assertThat(WorkspaceSession.packages(configs, tmp, "module"))
-        .contains(
-            new PackageEntry("com.example.jdk21", "main"), new PackageEntry("com.verify", "test"));
-    assertThat(WorkspaceSession.dirRun(configs, tmp, tmp.resolve("module")).selections())
-        .extracting(DirRun.Selector::selectorValue)
-        .containsExactly("com.verify");
-  }
-
-  @Test
-  void modules_distinctSortedModuleRels() {
-    final var testCfg = testConfig("module", "src/test/java");
-    final var otherCfg =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/other"),
-            tmp.resolve("other/target/classes"),
-            tmp.resolve("other/src/main/java"));
-
-    assertThat(WorkspaceSession.modules(List.of(config, testCfg, otherCfg), tmp))
-        .containsExactly("module", "other"); // "module" appears twice (main+test) → distinct
-  }
-
-  @Test
   void moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists() {
-    final var testCfg = testConfig("module", "src/test/java");
+    final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
     final var otherCfg =
         TestCompiler.moduleConfig(
             tmp.resolve(".lathe/other"),
@@ -618,57 +478,13 @@ class WorkspaceSessionTest {
         .containsExactly(tuple("module", true), tuple("other", false));
   }
 
-  @Test
-  void packages_onlyDirectoriesHoldingSourcesTaggedByScope() throws Exception {
-    // real packages are the parent directories of `.java` files; intermediate dirs are not packages
-    Files.createDirectories(sourceRoot.resolve("com/example/sub"));
-    Files.writeString(
-        sourceRoot.resolve("com/example/Foo.java"), "package com.example; class Foo {}");
-    Files.writeString(
-        sourceRoot.resolve("com/example/sub/Deep.java"), "package com.example.sub; class Deep {}");
-    final var testCfg = testConfig("module", "src/test/java");
-    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
-    Files.writeString(
-        tmp.resolve("module/src/test/java/com/verify/VerifyTest.java"),
-        "package com.verify; class VerifyTest {}");
-
-    final List<PackageEntry> pkgs =
-        WorkspaceSession.packages(List.of(config, testCfg), tmp, "module");
-
-    assertThat(pkgs)
-        .contains(
-            new PackageEntry("com.example", "main"),
-            new PackageEntry("com.example.sub", "main"),
-            new PackageEntry("com.verify", "test"));
-    // intermediate directories and the (empty) default package are not offered
-    assertThat(pkgs).extracting(PackageEntry::pkg).doesNotContain("com", "");
-
-    // main-only module has no test-scope entries
-    assertThat(WorkspaceSession.packages(List.of(config), tmp, "module"))
-        .allMatch(entry -> entry.scope().equals("main"));
-  }
-
-  @Test
-  void resolveContext_underMainTestAndOutsideRoot() {
-    assertThat(WorkspaceSession.resolveContext(List.of(config), tmp, sourceFile))
-        .isEqualTo(new ContextInfo("module", "main", "com.example"));
-
-    final var testCfg = testConfig("module", "src/test/java");
-    final var testFile = tmp.resolve("module/src/test/java/com/verify/FooTest.java");
-    assertThat(WorkspaceSession.resolveContext(List.of(testCfg), tmp, testFile))
-        .isEqualTo(new ContextInfo("module", "test", "com.verify"));
-
-    assertThat(WorkspaceSession.resolveContext(List.of(config), tmp, tmp.resolve("loose/Bar.java")))
-        .isNull();
-  }
-
   // Go to test: a main type's tests by the build's default test names, in its own module and in a
   // separate test module, same package first; a main-tree class named like a test is not one.
   // From a test, the type it tests, not a nested type of that name; a type without tests has none.
   @Test
   void testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject() throws Exception {
-    final var testCfg = testConfig("module", "src/test/java");
-    final var itCfg = testConfig("it", "src/test/java");
+    final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
+    final var itCfg = TestCompiler.testTreeConfig(tmp, "it", "src/test/java");
     final var itMain =
         TestCompiler.moduleConfig(
             tmp.resolve(".lathe/it"),
@@ -829,123 +645,6 @@ class WorkspaceSessionTest {
         .containsExactly(pkg, cls);
   }
 
-  @Test
-  void dirRun_packageDirInsideTestTree_singlePackageSelector() {
-    // A package dir resolves by pure path arithmetic (its package relative to the test root), so no
-    // sources on disk are needed -- unlike the module fan-out below, which walks for packages.
-    final var testCfg = testConfig("module", "src/test/java");
-    final var pkgDir = tmp.resolve("module/src/test/java/com/verify");
-
-    final DirRun run = WorkspaceSession.dirRun(List.of(config, testCfg), tmp, pkgDir);
-
-    assertThat(run.moduleRel()).isEqualTo("module");
-    assertThat(run.selections()).containsExactly(new DirRun.Selector("PACKAGE", "com.verify"));
-  }
-
-  @Test
-  void dirRun_moduleRootAndTestSourceRoot_fanOutAllTestPackages() throws Exception {
-    final var testCfg = testConfig("module", "src/test/java");
-    Files.createDirectories(tmp.resolve("module/src/test/java/com/a"));
-    Files.writeString(
-        tmp.resolve("module/src/test/java/com/a/ATest.java"), "package com.a; class ATest {}");
-    Files.createDirectories(tmp.resolve("module/src/test/java/com/b"));
-    Files.writeString(
-        tmp.resolve("module/src/test/java/com/b/BTest.java"), "package com.b; class BTest {}");
-
-    final DirRun fromRoot =
-        WorkspaceSession.dirRun(List.of(config, testCfg), tmp, tmp.resolve("module"));
-    assertThat(fromRoot.moduleRel()).isEqualTo("module");
-    assertThat(fromRoot.selections())
-        .containsExactlyInAnyOrder(
-            new DirRun.Selector("PACKAGE", "com.a"), new DirRun.Selector("PACKAGE", "com.b"));
-
-    // The test source root itself carries the default package, so it runs the whole module too.
-    final DirRun fromTestRoot =
-        WorkspaceSession.dirRun(List.of(config, testCfg), tmp, tmp.resolve("module/src/test/java"));
-    assertThat(fromTestRoot.selections()).isEqualTo(fromRoot.selections());
-  }
-
-  @Test
-  void dirRun_reactorRootOrUnmatchedDir_empty() {
-    // Enclosure is decided from the configured source roots, not from files on disk.
-    final var testCfg = testConfig("module", "src/test/java");
-    final var otherTestCfg = testConfig("other", "src/test/java");
-
-    // The reactor root encloses two modules -- not a single run target.
-    final DirRun reactor = WorkspaceSession.dirRun(List.of(testCfg, otherTestCfg), tmp, tmp);
-    assertThat(reactor.moduleRel()).isEmpty();
-    assertThat(reactor.selections()).isEmpty();
-
-    // A directory under no source root resolves to nothing either.
-    assertThat(WorkspaceSession.dirRun(List.of(testCfg), tmp, tmp.resolve("loose")).selections())
-        .isEmpty();
-  }
-
-  @Test
-  void testSources_resolvesClassesToFilesAndStripsInnerAndLeavesUnknownEmpty() throws Exception {
-    final var testCfg = testConfig("module", "src/test/java");
-    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
-    Files.writeString(
-        tmp.resolve("module/src/test/java/com/verify/FooTest.java"),
-        "package com.verify; class FooTest {}");
-
-    final List<TestSource> sources =
-        WorkspaceSession.testSources(
-            List.of(config, testCfg),
-            tmp,
-            "module",
-            List.of("com.verify.FooTest", "com.verify.FooTest$Nested", "com.verify.GoneTest"));
-
-    final String foo = tmp.resolve("module/src/test/java/com/verify/FooTest.java").toString();
-    assertThat(sources)
-        .containsExactly(
-            new TestSource("com.verify.FooTest", foo),
-            // inner class resolves to its top-level source file
-            new TestSource("com.verify.FooTest$Nested", foo),
-            // a class with no source file on disk resolves to an empty path
-            new TestSource("com.verify.GoneTest", ""));
-  }
-
-  @Test
-  void resources_reactorDirAndDependencyJar_tagsOriginsAndSkipsClasses() throws Exception {
-    final var resourceRoot = tmp.resolve("app/src/main/resources");
-    Files.createDirectories(resourceRoot.resolve("com/x"));
-    Files.writeString(resourceRoot.resolve("com/x/schema.graphqls"), "type Query");
-    final var jar =
-        writeJar(
-            tmp.resolve("lib.jar"),
-            Map.of("com/y/config.xml", "<c/>", "com/y/App.class", "bytecode"));
-
-    final List<ResourceEntry> entries =
-        WorkspaceSession.resources(Map.of(resourceRoot, "app"), Map.of(jar, "g:a:1"));
-
-    assertThat(entries)
-        .containsExactlyInAnyOrder(
-            // reactor file: editable path, origin from the captured module; App.class excluded
-            ResourceEntry.reactor(
-                "com/x/schema.graphqls",
-                "app",
-                resourceRoot.resolve("com/x/schema.graphqls").toString()),
-            ResourceEntry.dependency("g:a:1", jar.toString(), "com/y/config.xml"));
-  }
-
-  private static Path writeJar(final Path path, final Map<String, String> entries)
-      throws IOException {
-    try (final var out = new ZipOutputStream(Files.newOutputStream(path))) {
-      for (final Map.Entry<String, String> entry : entries.entrySet()) {
-        out.putNextEntry(new ZipEntry(entry.getKey()));
-        out.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
-        out.closeEntry();
-      }
-    }
-
-    return path;
-  }
-
-  private CreateTypeResult render(final TypeKind type, final String name, final String pkg) {
-    return WorkspaceSession.renderNewType(sourceRoot, pkg, type, name);
-  }
-
   private static WorkspaceSession.StaleScan staleModules(final ModuleSourceConfig... configs) {
     return WorkspaceSession.staleModules(
         Arrays.stream(configs).map(WorkspaceSession.TreeState::read).toList());
@@ -954,15 +653,6 @@ class WorkspaceSessionTest {
   private ModuleSourceConfig config(final Path sourceRoot) {
     return TestCompiler.moduleConfig(
         tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
-  }
-
-  private ModuleSourceConfig testConfig(final String module, final String relRoot) {
-    return TestCompiler.moduleConfig(
-        tmp.resolve(".lathe/%s".formatted(module)),
-        tmp.resolve("%s/target/test-classes".formatted(module)),
-        tmp.resolve("%s/%s".formatted(module, relRoot)),
-        null,
-        LatheLayout.TEST_CLASSES_DIR);
   }
 
   private ModuleSourceConfig configWithGen(final Path genRoot) {
