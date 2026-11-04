@@ -118,19 +118,19 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<Void> reconcileNow(final boolean eager) {
-    return eventLoop.submit(() -> session.reconcileNow(eager)).thenCompose(done -> done);
+    return eventLoop.submitCompose(() -> session.reconcileNow(eager));
   }
 
   /**
    * Freshen the mirror for a verify_change call, reporting what recompiled or why it was refused.
    */
   public CompletableFuture<ReconcileOutcome> reconcileForVerify() {
-    return eventLoop.submit(() -> session.reconcileForVerify()).thenCompose(done -> done);
+    return eventLoop.submitCompose(() -> session.reconcileForVerify());
   }
 
   /** Write files the caller changed on disk itself, completing once the mirror has them. */
   public CompletableFuture<Void> writeReported(final Set<Path> changed) {
-    return eventLoop.submit(() -> session.writeReported(changed)).thenCompose(done -> done);
+    return eventLoop.submitCompose(() -> session.writeReported(changed));
   }
 
   /** The files written on report since the last call, for a verify_change given no files. */
@@ -260,8 +260,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop
-        .submit(() -> session.completionFuture(uri, pos, context))
-        .thenCompose(f -> f)
+        .submitCompose(() -> session.completionFuture(uri, pos, context))
         .thenApply(
             outcome -> {
               LOG.fine(
@@ -295,17 +294,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop
-        .submit(
-            () ->
-                session.codeActionFuture(
-                    uri, params.getRange(), context, codeActionResolveSupported))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(
+        () ->
+            session.codeActionFuture(uri, params.getRange(), context, codeActionResolveSupported));
   }
 
   @Override
   public CompletableFuture<CodeAction> resolveCodeAction(final CodeAction unresolved) {
-    return eventLoop.submit(() -> session.resolveCodeActionFuture(unresolved)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.resolveCodeActionFuture(unresolved));
   }
 
   @Override
@@ -315,7 +311,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
     }
 
-    return eventLoop.submit(() -> session.semanticTokensFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.semanticTokensFuture(uri));
   }
 
   @Override
@@ -327,8 +323,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop
-        .submit(() -> session.documentSymbolFuture(uri))
-        .thenCompose(f -> f)
+        .submitCompose(() -> session.documentSymbolFuture(uri))
         .thenApply(LatheTextDocumentService::documentSymbolResult);
   }
 
@@ -345,7 +340,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submit(() -> session.foldingRangeFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.foldingRangeFuture(uri));
   }
 
   // Runs a progress-reporting request and always cleans up: opens a progress bound to the response,
@@ -382,9 +377,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         params.getWorkDoneToken(),
         (cancelChecker, progress) ->
-            eventLoop
-                .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.referencesFuture(uri, pos, incl, cancelChecker, progress)));
   }
 
   @Override
@@ -396,9 +390,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return eventLoop
-        .submit(() -> session.prepareRenameFuture(uri, pos, fileRenameSupported))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(
+        () -> session.prepareRenameFuture(uri, pos, fileRenameSupported));
   }
 
   @Override
@@ -431,12 +424,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         null,
         (cancelChecker, progress) ->
-            eventLoop
-                .submit(
-                    () ->
-                        session.renameFuture(
-                            uri, pos, newName, fileRenameSupported, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () ->
+                    session.renameFuture(
+                        uri, pos, newName, fileRenameSupported, cancelChecker, progress)));
   }
 
   @Override
@@ -449,7 +440,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final CompletableFuture<List<DocumentHighlight>> work =
-        eventLoop.submit(() -> session.documentHighlightFuture(uri, pos)).thenCompose(f -> f);
+        eventLoop.submitCompose(() -> session.documentHighlightFuture(uri, pos));
     return work.thenApply(highlights -> highlights);
   }
 
@@ -461,7 +452,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return eventLoop.submit(() -> session.signatureHelpFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.signatureHelpFuture(uri, pos));
   }
 
   @Override
@@ -472,7 +463,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return eventLoop.submit(() -> session.hoverFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.hoverFuture(uri, pos));
   }
 
   @Override
@@ -513,7 +504,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return emptyLocationResult();
     }
 
-    return eventLoop.submit(() -> request.apply(uri, params.getPosition())).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> request.apply(uri, params.getPosition()));
   }
 
   @Override
@@ -525,7 +516,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submit(() -> session.prepareCallHierarchyFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.prepareCallHierarchyFuture(uri, pos));
   }
 
   @Override
@@ -534,18 +525,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         params.getWorkDoneToken(),
         (cancelChecker, progress) ->
-            eventLoop
-                .submit(
-                    () -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress)));
   }
 
   @Override
   public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
       final CallHierarchyOutgoingCallsParams params) {
-    return eventLoop
-        .submit(() -> session.outgoingCallsFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.outgoingCallsFuture(params.getItem()));
   }
 
   @Override
@@ -557,23 +544,19 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submit(() -> session.prepareTypeHierarchyFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.prepareTypeHierarchyFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
       final TypeHierarchySupertypesParams params) {
-    return eventLoop
-        .submit(() -> session.typeHierarchySupertypesFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchySupertypesFuture(params.getItem()));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
       final TypeHierarchySubtypesParams params) {
-    return eventLoop
-        .submit(() -> session.typeHierarchySubtypesFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchySubtypesFuture(params.getItem()));
   }
 
   @Override
@@ -672,16 +655,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   public CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
-    return eventLoop
-        .submit(() -> session.diagnosticsFuture(uri, content, version))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.diagnosticsFuture(uri, content, version));
   }
 
   public CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
       final String uri, final String content) {
-    return eventLoop
-        .submit(() -> session.diagnosticsTransientFuture(uri, content))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.diagnosticsTransientFuture(uri, content));
   }
 
   public CompletableFuture<Optional<String>> failingUnderFuture(final Path file) {
@@ -700,16 +679,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   public CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
-    return eventLoop
-        .submit(() -> session.runTestFuture(moduleRel, selections, token))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runTestFuture(moduleRel, selections, token));
   }
 
   CompletableFuture<LaunchOutcome> runMainFuture(
       final String moduleRel, final String mainClass, final String token) {
-    return eventLoop
-        .submit(() -> session.runMainFuture(moduleRel, mainClass, token))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runMainFuture(moduleRel, mainClass, token));
   }
 
   CompletableFuture<DebugStartResult> debugTestFuture(
@@ -723,7 +698,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
-    return eventLoop.submit(() -> session.runNamedFuture(name, token)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runNamedFuture(name, token));
   }
 
   CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
@@ -746,7 +721,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   public CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
-    return eventLoop.submit(() -> session.runnablesFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runnablesFuture(uri));
   }
 
   CompletableFuture<Object> cancelRunFuture(final String token) {
@@ -765,24 +740,21 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         null,
         (cancelChecker, progress) ->
-            eventLoop
-                .submit(() -> session.instantiationsFuture(uri, pos, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.instantiationsFuture(uri, pos, cancelChecker, progress)));
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
       final String uri, final Position pos) {
-    return eventLoop
-        .submit(() -> session.typeHierarchyExplorerFuture(uri, pos))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchyExplorerFuture(uri, pos));
   }
 
   public CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
-    return eventLoop.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.missingImportsFuture(uri));
   }
 
   public CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
-    return eventLoop.submit(() -> session.onNameFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.onNameFuture(uri, pos));
   }
 
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {
@@ -810,7 +782,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
-    return eventLoop.submit(() -> session.discoverTests(moduleRel)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.discoverTests(moduleRel));
   }
 
   CompletableFuture<List<TestSource>> testSourcesFuture(

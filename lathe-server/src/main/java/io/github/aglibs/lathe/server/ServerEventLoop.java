@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -56,6 +57,42 @@ final class ServerEventLoop {
       future.cancel(false);
     }
     return future;
+  }
+
+  // Runs a task that starts asynchronous work on the loop and completes with that work's result, on
+  // whichever thread finishes it: continue with resume before touching loop state.
+  <T> CompletableFuture<T> submitCompose(final Callable<CompletableFuture<T>> task) {
+    return submit(task).thenCompose(future -> future);
+  }
+
+  // Completes on the loop once the future completes, so what follows may touch loop state. A
+  // failure hops too: thenApplyAsync(fn, loop) would propagate it on the completing thread. It is
+  // wrapped as thenApplyAsync wraps it, so handlers downstream see the same exception.
+  <T> CompletableFuture<T> resume(final CompletableFuture<T> future) {
+    final var resumed = new CompletableFuture<T>();
+    future.whenComplete(
+        (value, failure) ->
+            execute(
+                () -> {
+                  if (failure == null) {
+                    resumed.complete(value);
+                  } else {
+                    resumed.completeExceptionally(
+                        failure instanceof CompletionException
+                            ? failure
+                            : new CompletionException(failure));
+                  }
+                }));
+    return resumed;
+  }
+
+  // Loop-confined state reached from another thread fails here, where a test sees it, instead of
+  // racing in production.
+  void checkOnLoop() {
+    if (!isWorkerThread()) {
+      throw new IllegalStateException(
+          "[worker] loop state touched on %s".formatted(Thread.currentThread().getName()));
+    }
   }
 
   void schedule(final String key, final long delayMs, final Runnable task) {

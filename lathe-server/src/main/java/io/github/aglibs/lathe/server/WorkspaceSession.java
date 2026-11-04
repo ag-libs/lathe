@@ -2082,7 +2082,7 @@ final class WorkspaceSession {
     }
 
     return eventLoop
-        .submit(
+        .submitCompose(
             () ->
                 typeIndex
                         .findType(target.qualifiedName())
@@ -2102,7 +2102,6 @@ final class WorkspaceSession {
                                         analysis ->
                                             MethodImplementationLocator.inheritedOutsideFamily(
                                                 analysis, target, entry.getValue())))))
-        .thenCompose(future -> future)
         .thenApply(
             reasons -> {
               refuseIfPresent(reasons.stream().findFirst());
@@ -2120,9 +2119,8 @@ final class WorkspaceSession {
       final ModuleSourceConfig cursorConfig,
       final CancelChecker cancelChecker) {
     return eventLoop
-        .submit(
+        .submitCompose(
             () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
-        .thenCompose(conflict -> conflict)
         .thenAccept(WorkspaceSession::refuseIfPresent);
   }
 
@@ -2982,12 +2980,10 @@ final class WorkspaceSession {
         .resolveTarget(request)
         .thenCompose(
             target ->
-                eventLoop
-                    .submit(
-                        () ->
-                            implementationForTarget(
-                                target, request, cursorWorker, indexSnapshot, lambdaSnapshot))
-                    .thenCompose(future -> future))
+                eventLoop.submitCompose(
+                    () ->
+                        implementationForTarget(
+                            target, request, cursorWorker, indexSnapshot, lambdaSnapshot)))
         .thenApply(
             locations -> {
               LOG.fine(
@@ -3566,8 +3562,7 @@ final class WorkspaceSession {
     return CompileCheckedActions.resolve(
         action,
         docs::get,
-        (uri, content) ->
-            eventLoop.submit(() -> diagnosticsTransientFuture(uri, content)).thenCompose(f -> f));
+        (uri, content) -> eventLoop.submitCompose(() -> diagnosticsTransientFuture(uri, content)));
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
