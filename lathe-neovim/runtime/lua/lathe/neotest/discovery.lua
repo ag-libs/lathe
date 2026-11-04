@@ -28,9 +28,9 @@ end
 
 --- Nudges neotest to (re)discover `buf`'s file. neotest re-discovers a file on BufAdd, but does not
 --- fire that discovery on the real open when its initial scan happened before the server was ready;
---- re-emitting BufAdd for the buffer runs neotest's own _update_positions -> discover_positions with
---- the server now able to answer. BufAdd (not BufWritePost) so there are no write/format semantics,
---- and it is scoped to the single buffer.
+--- re-emitting BufAdd for the buffer runs neotest's own _update_positions -> discover_positions
+--- with the server now able to answer. BufAdd (not BufWritePost) so there are no write/format
+--- semantics, and it is scoped to the single buffer.
 local function nudge_discovery(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return
@@ -281,8 +281,8 @@ local function request_targets(file_path, bufnr)
   -- The file the user actually opened is a loaded buffer whose didOpen may still be in flight; the
   -- server answers runnables only for an open doc, so wait for its server-confirmed open before
   -- pulling -- otherwise this single discovery races didOpen and neotest caches "no tests" until an
-  -- edit. An unopened file (neotest's project sweep) is not loaded here, so it skips the wait and is
-  -- discovered against the server as-is (empty until it too is opened).
+  -- edit. An unopened file (neotest's project sweep) is not loaded here, so it skips the wait and
+  -- is discovered against the server as-is (empty until it too is opened).
   if vim.api.nvim_buf_is_loaded(bufnr) then
     readiness.await_open_confirmed(bufnr)
     common.debug_log(
