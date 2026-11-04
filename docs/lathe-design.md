@@ -1211,7 +1211,7 @@ the Gradle plugin's fixtures are TestKit tests (`lathe-gradle-plugin/src/functio
 
 ```bash
 mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true  # the invoker suite, building the jars it needs
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module             # one fixture, Lathe's jars from ~/.m2
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module             # one fixture, Lathe's jars from ~/.m2
 ```
 
 ### CI — GitHub Actions

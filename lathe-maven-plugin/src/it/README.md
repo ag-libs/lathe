@@ -20,7 +20,7 @@ Its first build seeds stale captures from `stale-captures/` (profile `seed-stale
 
 ```bash
 mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true    # every fixture, building the Lathe jars they need
-mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=multi-module    # one fixture
+mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=setup-support,multi-module    # one fixture
 ```
 
 Each build's log is `lathe-maven-plugin/target/it/<fixture>/build.log`.

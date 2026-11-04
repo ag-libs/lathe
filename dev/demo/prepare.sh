@@ -26,7 +26,7 @@ echo "[demo] building + installing Lathe…"
 (cd "$repo" && mvn -q install -DskipTests)
 
 echo "[demo] building the multi-module invoker fixture…"
-(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=multi-module)
+(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module)
 [ -x "$fixture/.lathe/lathe-launcher.sh" ] \
   || { echo "[demo] server launcher missing at $fixture/.lathe — invoker build failed?" >&2; exit 1; }
 [ -d "$fixture/.lathe" ] \

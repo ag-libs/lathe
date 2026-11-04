@@ -3,7 +3,7 @@
 # real replays over the built multi-module invoker fixture (driver.lua holds the checks). Bound to
 # lathe-neovim's integration-test phase after the headless specs; runnable by hand once the fixture
 # is built:
-#   mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=multi-module
+#   mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=setup-support,multi-module
 #
 # neotest, nvim-nio and plenary are cloned at the commits plugins.txt pins, into target/. In GitHub
 # Actions a missing nvim, plugin or fixture fails the build; elsewhere it skips with a message.
