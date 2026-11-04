@@ -1121,7 +1121,7 @@ None yet.
 
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
-**Status: accepted**
+**Status: deferred** (2026-11-04: the silent part fixed; replaying the copy from `.lathe/` deferred)
 
 **Value: medium — Size: M**
 
@@ -1155,9 +1155,24 @@ Where Lathe cannot tell what a copied directory holds, the completeness gate sho
 from the last build, as it does for other stale inputs.
 For this repo alone, the build could test against the compile output plus the `versions/21` overlay without a copy.
 
+### Partial resolution
+
+The run no longer uses the copy silently.
+The completeness gate notes each directory a launch takes from a reactor module's build directory that no
+`.lathe/` mirror stands for: the editor's test output shows it, and `run_test` ends with
+"Note: lathe-server/target/classes-jdk21 runs as the last build left it, not from .lathe: it may not hold your
+latest edits".
+Checked on this repo: `run_test` on `TestIdTest` (`lathe-server`) passes with the note, and on `BuildLockTest`
+(`lathe-core`, which tests its compile output) without one.
+
+Replaying the copy from the mirrors (the `classes` mirror with the `21` tree's in front: on the module path through
+`--patch-module`) is deferred.
+It is mostly this repository's own setup, Surefire tests `target/classes` by default, and the module-path patching
+would touch every replayed launch; reconsider if a project asks for it.
+
 ### Regression targets
 
-None yet.
+`CompletenessGateTest.verify_copyOfClassesInABuildDir_openWithNote_mirroredAndOutsideDirsNot`
 
 ---
 

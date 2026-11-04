@@ -14,6 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -57,7 +58,33 @@ public final class CompletenessGate {
               () -> checkModule(moduleDir, moduleRel, sourceTrees)));
     }
 
-    return reasons.isEmpty() ? CompletenessResult.open() : CompletenessResult.blocked(reasons);
+    return reasons.isEmpty()
+        ? CompletenessResult.open(lastBuildNotes(paths, workspaceRoot, reactorRewrite))
+        : CompletenessResult.blocked(reasons);
+  }
+
+  // A directory in a reactor module's build directory that no mirror stands for, such as a copy of
+  // the classes the build tests instead of its compile output: the launch runs it as the last build
+  // left it, so it may not hold the latest edits.
+  private static List<String> lastBuildNotes(
+      final List<String> paths, final Path workspaceRoot, final ReactorRewrite reactorRewrite) {
+    final Set<Path> buildDirs =
+        reactorRewrite.mirrors().keySet().stream()
+            .map(Path::getParent)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toUnmodifiableSet());
+    final Path root = workspaceRoot.normalize();
+    return paths.stream()
+        .map(path -> Path.of(path).normalize())
+        .filter(path -> !reactorRewrite.mirrors().containsKey(path))
+        .filter(path -> buildDirs.stream().anyMatch(path::startsWith))
+        .filter(Files::isDirectory)
+        .distinct()
+        .map(
+            path ->
+                "%s runs as the last build left it, not from .lathe: it may not hold your latest edits"
+                    .formatted(FileUtil.slashed(root.relativize(path))))
+        .toList();
   }
 
   // A tree is incomplete when its compile was never captured (no params) or its classes never

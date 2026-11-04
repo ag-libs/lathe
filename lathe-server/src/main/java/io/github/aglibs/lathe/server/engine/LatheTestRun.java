@@ -10,7 +10,8 @@ import java.util.function.Predicate;
 
 /**
  * A replayed test run: whether it launched (else why not), what it ran, the pass/fail/skip counts,
- * the failures, and, when no test ran, the JVM's exit code and its last output lines.
+ * the failures, and, when no test ran, the JVM's exit code and its last output lines. notes: what
+ * it ran from the last build rather than from .lathe/.
  */
 public record LatheTestRun(
     boolean launched,
@@ -22,7 +23,8 @@ public record LatheTestRun(
     int skipped,
     List<LatheTestFailure> failures,
     int exitCode,
-    List<String> output) {
+    List<String> output,
+    List<String> notes) {
 
   // The runner's status wire values (ResultsListener); aborted is reported as skipped.
   private static final String PASSED = "passed";
@@ -37,11 +39,13 @@ public record LatheTestRun(
         .notNull(ran, "ran")
         .notNull(failures, "failures")
         .notNull(output, "output")
+        .notNull(notes, "notes")
         .validate();
     blockedReasons = List.copyOf(blockedReasons);
     ran = List.copyOf(ran);
     failures = List.copyOf(failures);
     output = List.copyOf(output);
+    notes = List.copyOf(notes);
   }
 
   // ran: the selected classes, methods or package, so a result names what it covers.
@@ -62,7 +66,8 @@ public record LatheTestRun(
         (int) results.stream().filter(r -> SKIPPED.equals(r.status())).count(),
         failures,
         outcome.exitCode(),
-        results.isEmpty() ? lastLines(outcome.output(), line -> true) : List.of());
+        results.isEmpty() ? lastLines(outcome.output(), line -> true) : List.of(),
+        outcome.notes());
   }
 
   // A class's own failure (its @BeforeAll broke) has no method, so it is named by the class alone.

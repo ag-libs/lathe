@@ -1116,7 +1116,8 @@ final class LatheMcpTools {
         header
             + run.failures().stream()
                 .map(LatheMcpTools::testFailureLines)
-                .collect(Collectors.joining()),
+                .collect(Collectors.joining())
+            + run.notes().stream().map("%nNote: %s"::formatted).collect(Collectors.joining()),
         notes);
   }
 
