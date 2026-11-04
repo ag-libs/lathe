@@ -16,7 +16,7 @@ end
 
 local function buffer_root(bufnr)
   local ok, root = pcall(function()
-    return require("lathe").get_root(bufnr)
+    return require("lathe.workspace").get_root(bufnr)
   end)
   return ok and root or nil
 end

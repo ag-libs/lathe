@@ -230,7 +230,7 @@ function M.run(root, capture_tests, modules)
 end
 
 local function sync_current(capture_tests)
-  local root = require("lathe").get_root(vim.api.nvim_get_current_buf())
+  local root = require("lathe.workspace").get_root(vim.api.nvim_get_current_buf())
   M.run(root, capture_tests)
 end
 

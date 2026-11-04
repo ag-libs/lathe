@@ -32,76 +32,14 @@
 
 local M = {}
 
---- Marker file identifying a workspace root, exported so other plugins that
---- need to detect a Lathe workspace (e.g. project pickers) can reference the
---- same name instead of hard-coding it separately.
-M.ROOT_MARKER = ".lathe"
+local workspace = require("lathe.workspace")
 
-local function cache_root()
-  local root = vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand("~") .. "/.cache/lathe"))
-  -- Buffer names are symlink-resolved, so prefix checks against them need the resolved cache dir.
-  return vim.uv.fs_realpath(root) or root
-end
-
---- Absolute path to the server launcher this client execs. Honors the
---- LATHE_SERVER_DIR dev override (a built server version directory, e.g. a
---- SNAPSHOT under the cache) so a working-tree server can be run without a
---- build; otherwise resolves the per-workspace launcher that `lathe:sync` links
---- at <root>/.lathe/, pinned to the server version this project uses. Mirrors
---- LATHE_NVIM_DIR for the Lua client.
----@param root string? workspace root; required unless LATHE_SERVER_DIR is set
-local function launcher_path(root)
-  local override = vim.env.LATHE_SERVER_DIR
-  if override then
-    return vim.fs.normalize(override) .. "/lathe-launcher.sh"
-  end
-  return vim.fs.normalize(root) .. "/" .. M.ROOT_MARKER .. "/lathe-launcher.sh"
-end
-
---- Resolve the workspace root for a buffer, for any code (this plugin's own
---- root_dir included) that needs to know which project a buffer belongs to.
----
---- Walks up from the buffer's path looking for `M.ROOT_MARKER`. If the buffer
---- lives inside the Lathe cache instead (decompiled/dependency sources have no
---- marker of their own), falls back to the last resolved root, then to
---- scanning other open buffers for one that does resolve. Memoizes the result
---- in `M.last_root` so repeated lookups from cache-only buffers stay stable.
----@param bufnr integer? defaults to the current buffer
----@return string? root
-function M.get_root(bufnr)
-  local fname = vim.api.nvim_buf_get_name(bufnr or 0)
-  local root = vim.fs.root(fname, M.ROOT_MARKER)
-  if root then
-    M.last_root = root
-    return root
-  end
-
-  if not vim.startswith(fname, cache_root()) then
-    return nil
-  end
-
-  if M.last_root then
-    return M.last_root
-  end
-
-  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    local bname = vim.api.nvim_buf_get_name(buf)
-    if bname ~= "" then
-      root = vim.fs.root(bname, M.ROOT_MARKER)
-      if root then
-        M.last_root = root
-        return root
-      end
-    end
-  end
-
-  return nil
-end
-
--- Exported so other Neovim config code (e.g. a Telescope keymap scoping a
--- picker to the project, or a config that lazy-loads this plugin's own `dir`)
--- can resolve the same cache location instead of hard-coding it separately.
-M.cache_root = cache_root
+-- The workspace API other Neovim config code can use (a project picker, a keymap scoping a picker
+-- to the project): the root marker, a buffer's workspace root, and the source cache. See
+-- lathe.workspace.
+M.ROOT_MARKER = workspace.ROOT_MARKER
+M.get_root = workspace.get_root
+M.cache_root = workspace.cache_root
 
 --- Notify the user when the language server process exits unexpectedly. A clean
 --- shutdown (exit code 0) or Neovim itself quitting stays silent; any other exit
@@ -138,7 +76,7 @@ function M.start(bufnr)
     return
   end
 
-  local launcher = launcher_path(root)
+  local launcher = workspace.launcher_path(root)
   if vim.fn.executable(launcher) ~= 1 then
     vim.notify(
       "Lathe: launcher not found at "
@@ -182,7 +120,7 @@ function M.warn_if_not_ready(bufnr)
     return
   end
   local root = M._configured and M.get_root(bufnr) or nil
-  if root ~= nil and vim.fn.executable(launcher_path(root)) == 1 then
+  if root ~= nil and vim.fn.executable(workspace.launcher_path(root)) == 1 then
     return
   end
 
@@ -262,7 +200,7 @@ function M.setup(opts)
   M._configured = true
   not_ready_notified = false
   M.warn_if_double_loaded()
-  local root = cache_root()
+  local root = workspace.cache_root()
 
   require("lathe.indent").setup({ indent = opts.style and opts.style.indent })
 
@@ -274,7 +212,7 @@ function M.setup(opts)
     -- it. Covers both auto-start and M.start.
     cmd = function(dispatchers, config)
       return vim.lsp.rpc.start(
-        { launcher_path(config.root_dir) },
+        { workspace.launcher_path(config.root_dir) },
         dispatchers,
         { cwd = config.root_dir }
       )
@@ -289,7 +227,7 @@ function M.setup(opts)
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)
-      if r and vim.fn.executable(launcher_path(r)) == 1 then
+      if r and vim.fn.executable(workspace.launcher_path(r)) == 1 then
         on_dir(r)
       end
     end,
@@ -322,7 +260,7 @@ function M.setup(opts)
         end
 
         local r = M.get_root(ev.buf)
-        if not r or vim.fn.executable(launcher_path(r)) ~= 1 then
+        if not r or vim.fn.executable(workspace.launcher_path(r)) ~= 1 then
           return
         end
 
@@ -512,22 +450,7 @@ function M.setup(opts)
     })
   end
 
-  local cache_pattern = root .. "/**"
-  vim.api.nvim_create_autocmd("BufReadPre", {
-    group = augroup,
-    pattern = cache_pattern,
-    callback = function(ev)
-      vim.bo[ev.buf].swapfile = false
-    end,
-  })
-  vim.api.nvim_create_autocmd("BufReadPost", {
-    group = augroup,
-    pattern = cache_pattern,
-    callback = function(ev)
-      vim.bo[ev.buf].readonly = true
-      vim.bo[ev.buf].modifiable = false
-    end,
-  })
+  workspace.setup()
 
   -- Resource refresh: copy a saved resource into .lathe/ so the next test replay picks it up without
   -- a rebuild. The server maps the file against the real resource roots lathe:sync captured (a save
