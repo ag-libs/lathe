@@ -16,9 +16,11 @@ import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntConsumer;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DocumentSymbol;
@@ -29,9 +31,11 @@ import org.junit.jupiter.api.Test;
 
 class CompilationWorkerTest {
 
+  private static final String DELIVERY_THREAD = "delivery-thread";
+
   private final SourceAnalysisSession context = mock(SourceAnalysisSession.class);
   private final CompilationWorker worker =
-      new CompilationWorker("lathe-module-test", () -> context);
+      new CompilationWorker("lathe-module-test", () -> context, Runnable::run);
 
   @AfterEach
   void close() {
@@ -51,6 +55,56 @@ class CompilationWorkerTest {
     assertThat(result.uri()).isEqualTo(request.uri());
     assertThat(result.generation()).isEqualTo(request.generation());
     assertThat(result.diagnostics()).containsExactly(diagnostic);
+  }
+
+  @Test
+  void compile_valueAndFailure_completeOnTheDeliveryExecutor() throws InterruptedException {
+    // Deliveries are queued and run only once both callbacks are attached, as on the event loop,
+    // where the task that asks attaches its callbacks before the delivery can run.
+    final var deliveries = new LinkedBlockingQueue<Runnable>();
+    final var delivering =
+        new CompilationWorker("lathe-module-delivery", () -> context, deliveries::add);
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
+    final var failing = new CompileRequest("file:///B.java", "class B {}", 1, 2L, CompileMode.OPEN);
+    when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
+        .thenReturn(List.of());
+    when(context.compile(failing.uri(), failing.content(), failing.version(), failing.mode()))
+        .thenThrow(new IllegalStateException("boom"));
+    final var valueOn = new AtomicReference<String>();
+    final var failureOn = new AtomicReference<String>();
+    try {
+      final CompletableFuture<CompileResponse> value =
+          delivering
+              .compile(request)
+              .whenComplete((r, t) -> valueOn.set(Thread.currentThread().getName()));
+      final CompletableFuture<CompileResponse> failure =
+          delivering
+              .compile(failing)
+              .whenComplete((r, t) -> failureOn.set(Thread.currentThread().getName()));
+
+      final var deliverer =
+          new Thread(
+              () -> {
+                for (int i = 0; i < 2; i++) {
+                  try {
+                    deliveries.take().run();
+                  } catch (final InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                  }
+                }
+              },
+              DELIVERY_THREAD);
+      deliverer.start();
+      deliverer.join(5_000);
+
+      assertThat(value).isDone().isNotCompletedExceptionally();
+      assertThat(failure).isCompletedExceptionally();
+      assertThat(valueOn.get()).isEqualTo(DELIVERY_THREAD);
+      assertThat(failureOn.get()).isEqualTo(DELIVERY_THREAD);
+    } finally {
+      delivering.close();
+    }
   }
 
   @Test
@@ -118,6 +172,7 @@ class CompilationWorkerTest {
         new CompilationWorker(
             "lathe-module-release",
             () -> sessions.incrementAndGet() == 1 ? first : second,
+            Runnable::run,
             status -> {});
     try {
       assertThat(releasing.idleFor(0)).as("no session before a request").isFalse();
@@ -219,7 +274,8 @@ class CompilationWorkerTest {
     final var status = new AtomicInteger();
     final SourceAnalysisSession failingContext = mock(SourceAnalysisSession.class);
     final var failingWorker =
-        new CompilationWorker("lathe-module-fatal-test", () -> failingContext, status::set);
+        new CompilationWorker(
+            "lathe-module-fatal-test", () -> failingContext, Runnable::run, status::set);
     final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
     when(failingContext.compile(
             request.uri(), request.content(), request.version(), request.mode()))

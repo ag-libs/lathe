@@ -26,7 +26,8 @@ final class LatheSourceLookUpProviderTest {
     Files.createDirectories(coreFile.getParent());
     Files.writeString(coreFile, "package com.example.core;\npublic final class StringUtils {}\n");
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
     final Function<Path, Optional<CompilationWorker>> workerFor =
         file -> registry.moduleSourceFor(file).map(registry::workerFor);
 

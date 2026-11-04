@@ -724,8 +724,14 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     service.initialize(tmp);
     awaitStartup();
 
-    assertThat(service.moduleRelOf(api)).contains("platform/api");
-    assertThat(service.moduleRelOf(tmp.resolve("scripts/Tool.java"))).isEmpty();
+    // On the loop, where the format engine that asks for it runs.
+    assertThat(service.onLoop(session -> session.moduleRelOf(api)).get(5, TimeUnit.SECONDS))
+        .contains("platform/api");
+    assertThat(
+            service
+                .onLoop(session -> session.moduleRelOf(tmp.resolve("scripts/Tool.java")))
+                .get(5, TimeUnit.SECONDS))
+        .isEmpty();
   }
 
   private Path writeWorkspaceSource() throws Exception {

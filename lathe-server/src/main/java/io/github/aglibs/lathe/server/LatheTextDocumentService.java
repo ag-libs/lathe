@@ -5,11 +5,9 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
-import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
@@ -17,12 +15,12 @@ import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.Position;
@@ -49,16 +47,16 @@ public final class LatheTextDocumentService implements TextDocumentService {
   private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
   private static final long DEFAULT_DEBOUNCE_MS = 500;
 
-  private final ServerEventLoop worker = new ServerEventLoop();
+  private final ServerEventLoop eventLoop = new ServerEventLoop();
   private final AtomicBoolean closed = new AtomicBoolean();
   private final long debounceMs;
   private ProgressReporter progressReporter;
   // Created, read and written only on the event loop: reach it through a lambda the loop runs
-  // (worker.submit(() -> session.x())), never a method reference (session::x), which reads the
+  // (eventLoop.submit(() -> session.x())), never a method reference (session::x), which reads the
   // field on the caller's thread, where it may still be null.
   private WorkspaceSession session;
   // Written in initialize, read in formatting; volatile publishes it safely across lsp4j's
-  // request-handling thread(s). The engine runs on the worker, not here. Null = formatting
+  // request-handling thread(s). The engine runs on the event loop, not here. Null = formatting
   // disabled.
   private volatile FormatEngine formatEngine;
   private volatile boolean formatterPinned;
@@ -79,8 +77,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   public void connect(final LanguageClient client) {
     progressReporter = new ProgressReporter(client);
-    worker.execute(
-        () -> session = new WorkspaceSession(client, progressReporter, worker, debounceMs));
+    eventLoop.execute(
+        () -> session = new WorkspaceSession(client, progressReporter, eventLoop, debounceMs));
   }
 
   void setWorkDoneProgressSupported(final boolean supported) {
@@ -99,9 +97,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     codeActionResolveSupported = supported;
   }
 
-  // On the worker like all session state; queued after connect, so it is set before initialize.
+  // On the event loop like all session state; queued after connect, so it is set before initialize.
   public void setDocumentsFollowDisk(final boolean follow) {
-    worker.execute(() -> session.setDocumentsFollowDisk(follow));
+    eventLoop.execute(() -> session.setDocumentsFollowDisk(follow));
+  }
+
+  // Whether a user answers prompts; without one, a due sync is only reported.
+  public void setInteractive(final boolean interactive) {
+    eventLoop.execute(() -> session.setInteractive(interactive));
   }
 
   void cancelProgress(final WorkDoneProgressCancelParams params) {
@@ -109,7 +112,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   public void initialize(final Path workspaceRoot) {
-    worker.execute(() -> session.initialize(workspaceRoot));
+    eventLoop.execute(() -> session.initialize(workspaceRoot));
   }
 
   // Test/tool seam: run one reconcile pass and complete once its in-process recompiles finish.
@@ -118,57 +121,18 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<Void> reconcileNow(final boolean eager) {
-    return worker.submit(() -> session.reconcileNow(eager)).thenCompose(done -> done);
+    return eventLoop.submitCompose(() -> session.reconcileNow(eager));
   }
 
-  /**
-   * Freshen the mirror for a verify_change call, reporting what recompiled or why it was refused.
-   */
-  public CompletableFuture<ReconcileOutcome> reconcileForVerify() {
-    return worker.submit(() -> session.reconcileForVerify()).thenCompose(done -> done);
+  // Test/tool seam: the freshen step the engine runs before each tool, reporting what recompiled or
+  // why it was deferred.
+  CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    return eventLoop.submitCompose(() -> session.reconcileForVerify());
   }
 
-  /** Write files the caller changed on disk itself, completing once the mirror has them. */
-  public CompletableFuture<Void> writeReported(final Set<Path> changed) {
-    return worker.submit(() -> session.writeReported(changed)).thenCompose(done -> done);
-  }
-
-  /** The files written on report since the last call, for a verify_change given no files. */
-  public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
-    return worker.submit(() -> session.takeWrittenSinceVerify());
-  }
-
-  /** Every source not as the last build compiled it, for a verify_change given no files. */
-  public CompletableFuture<List<Path>> changedSinceBuild() {
-    return worker.submit(() -> session.changedSinceBuild());
-  }
-
-  public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
-    return worker.submit(() -> session.moduleSummaries());
-  }
-
-  /** The changed files plus their same-module candidate callers, grouped by module rel. */
-  public CompletableFuture<Map<String, List<Path>>> verifyTargetsByModule(
-      final List<Path> changed) {
-    return worker.submit(() -> session.verifyTargetsByModule(changed));
-  }
-
-  /** Module rels that transitively depend on the changed files' modules (excluding them). */
-  public CompletableFuture<List<String>> downstreamModuleRels(final List<Path> changed) {
-    return worker.submit(() -> session.downstreamModuleRels(changed));
-  }
-
-  public CompletableFuture<List<Path>> differingFromBuild(final List<Path> changed) {
-    return worker.submit(() -> session.differingFromBuild(changed));
-  }
-
-  public CompletableFuture<Integer> reactorModuleCount() {
-    return worker.submit(() -> session.reactorModuleCount());
-  }
-
-  /** Reactor placement (module rel + test/production) for each path that maps to a module. */
-  public CompletableFuture<Map<Path, ModulePlacement>> classifyPaths(final List<Path> paths) {
-    return worker.submit(() -> session.classifyPaths(paths));
+  // Test seam: write files the caller changed on disk itself, completing once the mirror has them.
+  CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    return eventLoop.submitCompose(() -> session.writeReported(changed));
   }
 
   public void close() {
@@ -177,7 +141,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     // On the loop, as the last thing it runs: connect() assigns the session there.
-    worker.close(
+    eventLoop.close(
         () -> {
           if (session != null) {
             session.close();
@@ -195,7 +159,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
     final var content = doc.getText();
     final var version = doc.getVersion();
-    worker.execute(() -> session.onOpen(uri, content, version));
+    eventLoop.execute(() -> session.onOpen(uri, content, version));
   }
 
   @Override
@@ -208,7 +172,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
     final var content = params.getContentChanges().get(0).getText();
     final var version = doc.getVersion();
-    worker.execute(() -> session.onChange(uri, content, version));
+    eventLoop.execute(() -> session.onChange(uri, content, version));
   }
 
   @Override
@@ -218,7 +182,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return;
     }
 
-    worker.execute(() -> session.onClose(uri));
+    eventLoop.execute(() -> session.onClose(uri));
   }
 
   @Override
@@ -229,7 +193,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final var content = params.getText();
-    worker.execute(() -> session.onSave(uri, content));
+    eventLoop.execute(() -> session.onSave(uri, content));
   }
 
   // A non-file document -- an unnamed editor buffer (file://) or a non-file scheme -- has no source
@@ -259,9 +223,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    return worker
-        .submit(() -> session.completionFuture(uri, pos, context))
-        .thenCompose(f -> f)
+    return eventLoop
+        .submitCompose(() -> session.completionFuture(uri, pos, context))
         .thenApply(
             outcome -> {
               LOG.fine(
@@ -295,17 +258,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker
-        .submit(
-            () ->
-                session.codeActionFuture(
-                    uri, params.getRange(), context, codeActionResolveSupported))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(
+        () ->
+            session.codeActionFuture(uri, params.getRange(), context, codeActionResolveSupported));
   }
 
   @Override
   public CompletableFuture<CodeAction> resolveCodeAction(final CodeAction unresolved) {
-    return worker.submit(() -> session.resolveCodeActionFuture(unresolved)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.resolveCodeActionFuture(unresolved));
   }
 
   @Override
@@ -315,7 +275,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
     }
 
-    return worker.submit(() -> session.semanticTokensFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.semanticTokensFuture(uri));
   }
 
   @Override
@@ -326,9 +286,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker
-        .submit(() -> session.documentSymbolFuture(uri))
-        .thenCompose(f -> f)
+    return eventLoop
+        .submitCompose(() -> session.documentSymbolFuture(uri))
         .thenApply(LatheTextDocumentService::documentSymbolResult);
   }
 
@@ -345,7 +304,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.foldingRangeFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.foldingRangeFuture(uri));
   }
 
   // Runs a progress-reporting request and always cleans up: opens a progress bound to the response,
@@ -382,9 +341,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         params.getWorkDoneToken(),
         (cancelChecker, progress) ->
-            worker
-                .submit(() -> session.referencesFuture(uri, pos, incl, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.referencesFuture(uri, pos, incl, cancelChecker, progress)));
   }
 
   @Override
@@ -396,9 +354,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return worker
-        .submit(() -> session.prepareRenameFuture(uri, pos, fileRenameSupported))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(
+        () -> session.prepareRenameFuture(uri, pos, fileRenameSupported));
   }
 
   @Override
@@ -408,19 +365,15 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return renameEdit(params)
         .thenCompose(
             edit ->
-                worker.submit(
+                eventLoop.submit(
                     () -> {
                       session.beginRenameTransaction(edit);
                       return edit;
                     }));
   }
 
-  public CompletableFuture<TextMentions.Sources> textMentionSourcesFuture(final String name) {
-    return worker.submit(() -> session.textMentionSources(name));
-  }
-
-  /** The rename's edit alone, for a caller that applies and commits it itself (the engine). */
-  public CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
+  // The rename's edit, before the transaction that applies it opens.
+  private CompletableFuture<WorkspaceEdit> renameEdit(final RenameParams params) {
     final String uri = LatheUri.canonical(params.getTextDocument().getUri());
     final var pos = params.getPosition();
     final var newName = params.getNewName();
@@ -431,12 +384,10 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         null,
         (cancelChecker, progress) ->
-            worker
-                .submit(
-                    () ->
-                        session.renameFuture(
-                            uri, pos, newName, fileRenameSupported, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () ->
+                    session.renameFuture(
+                        uri, pos, newName, fileRenameSupported, cancelChecker, progress)));
   }
 
   @Override
@@ -449,7 +400,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final CompletableFuture<List<DocumentHighlight>> work =
-        worker.submit(() -> session.documentHighlightFuture(uri, pos)).thenCompose(f -> f);
+        eventLoop.submitCompose(() -> session.documentHighlightFuture(uri, pos));
     return work.thenApply(highlights -> highlights);
   }
 
@@ -461,7 +412,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return worker.submit(() -> session.signatureHelpFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.signatureHelpFuture(uri, pos));
   }
 
   @Override
@@ -472,31 +423,33 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return worker.submit(() -> session.hoverFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.hoverFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definition(final DefinitionParams params) {
-    return locations("definition", params, session::definitionFuture);
+    return locations("definition", params, (uri, pos) -> session.definitionFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declaration(final DeclarationParams params) {
-    return locations("declaration", params, session::declarationFuture);
+    return locations("declaration", params, (uri, pos) -> session.declarationFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementation(final ImplementationParams params) {
-    return locations("implementation", params, session::implementationFuture);
+    return locations(
+        "implementation", params, (uri, pos) -> session.implementationFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       typeDefinition(final TypeDefinitionParams params) {
-    return locations("typeDefinition", params, session::typeDefinitionFuture);
+    return locations(
+        "typeDefinition", params, (uri, pos) -> session.typeDefinitionFuture(uri, pos));
   }
 
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -513,7 +466,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return emptyLocationResult();
     }
 
-    return worker.submit(() -> request.apply(uri, params.getPosition())).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> request.apply(uri, params.getPosition()));
   }
 
   @Override
@@ -525,7 +478,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.prepareCallHierarchyFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.prepareCallHierarchyFuture(uri, pos));
   }
 
   @Override
@@ -534,16 +487,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return withProgress(
         params.getWorkDoneToken(),
         (cancelChecker, progress) ->
-            worker
-                .submit(
-                    () -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.incomingCallsFuture(params.getItem(), cancelChecker, progress)));
   }
 
   @Override
   public CompletableFuture<List<CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
       final CallHierarchyOutgoingCallsParams params) {
-    return worker.submit(() -> session.outgoingCallsFuture(params.getItem())).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.outgoingCallsFuture(params.getItem()));
   }
 
   @Override
@@ -555,23 +506,19 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.prepareTypeHierarchyFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.prepareTypeHierarchyFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
       final TypeHierarchySupertypesParams params) {
-    return worker
-        .submit(() -> session.typeHierarchySupertypesFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchySupertypesFuture(params.getItem()));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
       final TypeHierarchySubtypesParams params) {
-    return worker
-        .submit(() -> session.typeHierarchySubtypesFuture(params.getItem()))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchySubtypesFuture(params.getItem()));
   }
 
   @Override
@@ -587,7 +534,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.format(uri, engine));
+    return eventLoop.submit(() -> session.format(uri, engine));
   }
 
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
@@ -614,7 +561,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final String canonical = LatheUri.canonical(uri);
-    return worker.submit(() -> session.formatOrRefuse(canonical, engine));
+    return eventLoop.submit(() -> session.formatOrRefuse(canonical, engine));
   }
 
   @Override
@@ -632,14 +579,35 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
   // stray request gets no edits.
-  // A format engine calls this while the worker runs session.format, so it reads the session
-  // directly rather than through the worker.
+  // A format engine calls this while the event loop runs session.format, so it reads the session
+  // directly rather than through the event loop.
   Optional<String> moduleRelOf(final Path file) {
     return session.moduleRelOf(file);
   }
 
   Optional<Path> buildTool() {
     return session.buildTool();
+  }
+
+  // Reads session state on the event loop, for a caller outside it such as a test.
+  <T> CompletableFuture<T> onLoop(final Function<WorkspaceSession, T> read) {
+    return eventLoop.submit(() -> read.apply(session));
+  }
+
+  // Session work a caller outside the loop starts as one request, the in-process engine above all:
+  // it runs on the loop, and so does what it chains on worker results. The cancel checker is tied
+  // to the returned future, so cancelling the request stops a search at its next check.
+  @FunctionalInterface
+  interface LoopWork<T> {
+    CompletableFuture<T> start(
+        WorkspaceSession session, CancelChecker cancelChecker, ProgressReporter.Task progress);
+  }
+
+  <T> CompletableFuture<T> onLoopCompose(final LoopWork<T> work) {
+    return withProgress(
+        null,
+        (cancelChecker, progress) ->
+            eventLoop.submitCompose(() -> work.start(session, cancelChecker, progress)));
   }
 
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
@@ -649,7 +617,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return worker.submit(() -> session.formatRanges(uri, ranges, engine));
+    return eventLoop.submit(() -> session.formatRanges(uri, ranges, engine));
   }
 
   @Override
@@ -668,68 +636,52 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return CompletableFuture.completedFuture(List.of());
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnosticsFuture(
+  // Test/tool seam: a document's diagnostics at the given content.
+  CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
-    return worker
-        .submit(() -> session.diagnosticsFuture(uri, content, version))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.diagnosticsFuture(uri, content, version));
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
-      final String uri, final String content) {
-    return worker
-        .submit(() -> session.diagnosticsTransientFuture(uri, content))
-        .thenCompose(f -> f);
-  }
-
-  public CompletableFuture<Optional<String>> failingUnderFuture(final Path file) {
-    return worker.submit(() -> session.failingUnder(file));
-  }
-
-  /** What an answer about {@code files} cannot vouch for, after the last write pass. */
-  public CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
-    return worker.submit(() -> session.notes(files));
+  // Test seam: what an answer about the files cannot vouch for, after the last write pass.
+  CompletableFuture<LatheNotes> notesFuture(final List<Path> files) {
+    return eventLoop.submit(() -> session.notes(files));
   }
 
   public CompletableFuture<List<? extends SymbolInformation>> workspaceSymbolFuture(
       final String query, final boolean reactorOnly) {
-    return worker.submit(() -> session.workspaceSymbol(query, reactorOnly));
+    return eventLoop.submit(() -> session.workspaceSymbol(query, reactorOnly));
   }
 
   public CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
-    return worker
-        .submit(() -> session.runTestFuture(moduleRel, selections, token))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runTestFuture(moduleRel, selections, token));
   }
 
   CompletableFuture<LaunchOutcome> runMainFuture(
       final String moduleRel, final String mainClass, final String token) {
-    return worker
-        .submit(() -> session.runMainFuture(moduleRel, mainClass, token))
-        .thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runMainFuture(moduleRel, mainClass, token));
   }
 
   CompletableFuture<DebugStartResult> debugTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
-    return worker.submit(() -> session.debugTest(moduleRel, selections, token));
+    return eventLoop.submitCompose(() -> session.debugTest(moduleRel, selections, token));
   }
 
   CompletableFuture<DebugStartResult> debugMainFuture(
       final String moduleRel, final String mainClass, final String token) {
-    return worker.submit(() -> session.debugMain(moduleRel, mainClass, token));
+    return eventLoop.submitCompose(() -> session.debugMain(moduleRel, mainClass, token));
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
-    return worker.submit(() -> session.runNamedFuture(name, token)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runNamedFuture(name, token));
   }
 
   CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
-    return worker.submit(() -> session.debugNamed(name, token));
+    return eventLoop.submitCompose(() -> session.debugNamed(name, token));
   }
 
   CompletableFuture<List<RunConfigInfo>> runConfigsFuture() {
-    return worker.submit(() -> session.listRunConfigs());
+    return eventLoop.submit(() -> session.listRunConfigs());
   }
 
   CompletableFuture<RunConfigWriter.Saved> saveRunConfigFuture(
@@ -739,16 +691,16 @@ public final class LatheTextDocumentService implements TextDocumentService {
       final String mainClass,
       final List<TestSelection> selectors,
       final boolean overwrite) {
-    return worker.submit(
+    return eventLoop.submit(
         () -> session.saveRunConfig(name, moduleRel, kind, mainClass, selectors, overwrite));
   }
 
   public CompletableFuture<List<RunTarget>> runnablesFuture(final String uri) {
-    return worker.submit(() -> session.runnablesFuture(uri)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.runnablesFuture(uri));
   }
 
   CompletableFuture<Object> cancelRunFuture(final String token) {
-    return worker.submit(
+    return eventLoop.submit(
         () -> {
           session.cancelRun(token);
           return null;
@@ -756,73 +708,68 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   CompletableFuture<String> refreshResourceFuture(final String uri) {
-    return worker.submit(() -> session.refreshResource(uri).map(Path::toString).orElse(null));
+    return eventLoop.submit(() -> session.refreshResource(uri).map(Path::toString).orElse(null));
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(final String uri, final Position pos) {
     return withProgress(
         null,
         (cancelChecker, progress) ->
-            worker
-                .submit(() -> session.instantiationsFuture(uri, pos, cancelChecker, progress))
-                .thenCompose(f -> f));
+            eventLoop.submitCompose(
+                () -> session.instantiationsFuture(uri, pos, cancelChecker, progress)));
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
       final String uri, final Position pos) {
-    return worker.submit(() -> session.typeHierarchyExplorerFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.typeHierarchyExplorerFuture(uri, pos));
   }
 
   public CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
-    return worker.submit(() -> session.missingImportsFuture(uri)).thenCompose(f -> f);
-  }
-
-  public CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
-    return worker.submit(() -> session.onNameFuture(uri, pos)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.missingImportsFuture(uri));
   }
 
   CompletableFuture<CreateTypeResult> createTypeFuture(final CreateTypeArgs args) {
-    return worker.submit(() -> session.createType(args));
+    return eventLoop.submit(() -> session.createType(args));
   }
 
   CompletableFuture<List<String>> modulesFuture() {
-    return worker.submit(() -> session.modules());
+    return eventLoop.submit(() -> session.modules());
   }
 
   CompletableFuture<List<PackageEntry>> packagesFuture(final String moduleRel) {
-    return worker.submit(() -> session.packages(moduleRel));
+    return eventLoop.submit(() -> session.packages(moduleRel));
   }
 
   CompletableFuture<ContextInfo> resolveContextFuture(final String uri) {
-    return worker.submit(() -> session.resolveContext(uri));
+    return eventLoop.submit(() -> session.resolveContext(uri));
   }
 
   CompletableFuture<DirRun> dirRunFuture(final String uri) {
-    return worker.submit(() -> session.dirRun(uri));
+    return eventLoop.submit(() -> session.dirRun(uri));
   }
 
   CompletableFuture<List<String>> testModulesFuture() {
-    return worker.submit(() -> session.testModules());
+    return eventLoop.submit(() -> session.testModules());
   }
 
   CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
-    return worker.submit(() -> session.discoverTests(moduleRel)).thenCompose(f -> f);
+    return eventLoop.submitCompose(() -> session.discoverTests(moduleRel));
   }
 
   CompletableFuture<List<TestSource>> testSourcesFuture(
       final String moduleRel, final List<String> classNames) {
-    return worker.submit(() -> session.testSources(moduleRel, classNames));
+    return eventLoop.submit(() -> session.testSources(moduleRel, classNames));
   }
 
   CompletableFuture<TestCounterparts> testCounterpartsFuture(final String uri) {
-    return worker.submit(() -> session.testCounterparts(uri));
+    return eventLoop.submit(() -> session.testCounterparts(uri));
   }
 
   CompletableFuture<List<ResourceEntry>> resourcesFuture() {
-    return worker.submit(() -> session.resources());
+    return eventLoop.submit(() -> session.resources());
   }
 
   CompletableFuture<String> resourceOpenFuture(final String jar, final String entry) {
-    return worker.submit(() -> session.resourceOpen(jar, entry));
+    return eventLoop.submit(() -> session.resourceOpen(jar, entry));
   }
 }

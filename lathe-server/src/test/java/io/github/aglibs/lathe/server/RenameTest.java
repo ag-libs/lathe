@@ -140,7 +140,7 @@ class RenameTest extends ServiceTestBase {
           @Override
           public void close() {}
         };
-    final var log = Logger.getLogger(WorkspaceSession.class.getName());
+    final var log = Logger.getLogger(RenameService.class.getName());
     log.addHandler(handler);
     try {
       Map.of("v()", "a.b", "Dep {", "User0")

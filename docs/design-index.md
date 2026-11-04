@@ -36,6 +36,9 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Releasing Module Sessions Under Memory Pressure](done/lathe-memory-pressure.md) — **shipped.** Release idle module
   sessions (their jar indexes) when the JVM reports the old generation above 70% after a collection, and after 5
   idle minutes; resolves EG-058 and the `verify_change` out-of-memory on Helidon at 2–3 GB. ✓
+- [Server Restructuring](planned/lathe-server-restructuring.md) — **approved direction (2026-11-04).**
+  Split `WorkspaceSession` into event-loop components, make the threading contract executable, let MCP reach the core
+  without the LSP adapter, then a `lathe-analysis` module. Same model; existing tests stay green.
 - [Interactive Request Priority & Reaction Coalescing](planned/lathe-interactive-request-priority.md) —
   server-wide: stop multi-second background recompiles (the in-process-sync reaction) from blocking
   millisecond interactive requests on the single serial worker; prioritize/cancel, coalesce the reaction,

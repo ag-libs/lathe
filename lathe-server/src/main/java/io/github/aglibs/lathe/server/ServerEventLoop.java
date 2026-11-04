@@ -1,16 +1,17 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.IOUtil;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -19,11 +20,21 @@ final class ServerEventLoop {
   private static final Logger LOG = Logger.getLogger(ServerEventLoop.class.getName());
 
   private static final long SHUTDOWN_TIMEOUT_SECONDS = 5;
+  private static final int FATAL_EXIT_STATUS = 1;
 
   private final AtomicReference<Thread> workerThread = new AtomicReference<>();
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(this::newWorkerThread);
   private final Map<String, ScheduledFuture<?>> pending = new HashMap<>();
+  private final IntConsumer processTerminator;
+
+  ServerEventLoop() {
+    this(status -> Runtime.getRuntime().halt(status));
+  }
+
+  ServerEventLoop(final IntConsumer processTerminator) {
+    this.processTerminator = processTerminator;
+  }
 
   private Thread newWorkerThread(final Runnable r) {
     final var t = new Thread(r, "lathe-worker");
@@ -49,13 +60,59 @@ final class ServerEventLoop {
               future.complete(task.call());
             } catch (final Throwable t) {
               future.completeExceptionally(t);
-              IOUtil.rethrowIfError(t);
+              failFastOnError(t);
             }
           });
     } catch (final RejectedExecutionException ignored) {
       future.cancel(false);
     }
     return future;
+  }
+
+  // Runs a task that starts asynchronous work on the loop and completes with that work's result, on
+  // whichever thread finishes it: continue with rejoin before touching loop state.
+  <T> CompletableFuture<T> submitCompose(final Callable<CompletableFuture<T>> task) {
+    return submit(task).thenCompose(future -> future);
+  }
+
+  // Completes on the loop once the future completes, so what follows may touch loop state. A
+  // failure hops too: thenApplyAsync(fn, loop) would propagate it on the completing thread. It is
+  // wrapped as thenApplyAsync wraps it, so handlers downstream see the same exception.
+  <T> CompletableFuture<T> rejoin(final CompletableFuture<T> future) {
+    final var rejoined = new CompletableFuture<T>();
+    future.whenComplete(
+        (value, failure) ->
+            deliver(
+                () -> {
+                  if (failure == null) {
+                    rejoined.complete(value);
+                  } else {
+                    rejoined.completeExceptionally(
+                        failure instanceof CompletionException
+                            ? failure
+                            : new CompletionException(failure));
+                  }
+                }));
+    return rejoined;
+  }
+
+  // Completes a result on the loop, so whatever the receiver chains runs there. Once the loop has
+  // shut down it completes in place instead, so no caller waits for a result that cannot arrive.
+  void deliver(final Runnable completion) {
+    try {
+      executor.execute(() -> runLogged(completion));
+    } catch (final RejectedExecutionException ignored) {
+      completion.run();
+    }
+  }
+
+  // Loop-confined state reached from another thread fails here, where a test sees it, instead of
+  // racing in production.
+  void checkOnLoop() {
+    if (!isWorkerThread()) {
+      throw new IllegalStateException(
+          "[worker] loop state touched on %s".formatted(Thread.currentThread().getName()));
+    }
   }
 
   void schedule(final String key, final long delayMs, final Runnable task) {
@@ -134,12 +191,26 @@ final class ServerEventLoop {
     }
   }
 
-  private void runLogged(final Runnable task) {
+  // Runs the task here, logging a failure that would otherwise vanish (in a future's callback,
+  // which no one reads).
+  void runLogged(final Runnable task) {
     try {
       task.run();
     } catch (final Throwable t) {
-      LOG.log(Level.SEVERE, t, () -> "[worker] task failed");
-      IOUtil.rethrowIfError(t);
+      if (!(t instanceof Error)) {
+        LOG.log(Level.SEVERE, t, () -> "[worker] task failed");
+      }
+
+      failFastOnError(t);
+    }
+  }
+
+  // An Error on the loop ends the server, as one in javac does: the executor running the loop's
+  // tasks would otherwise catch it, and the server would go on with its state half-updated.
+  private void failFastOnError(final Throwable t) {
+    if (t instanceof final Error error) {
+      LOG.log(Level.SEVERE, error, () -> "[worker] process fatal-error on the event loop");
+      processTerminator.accept(FATAL_EXIT_STATUS);
     }
   }
 }

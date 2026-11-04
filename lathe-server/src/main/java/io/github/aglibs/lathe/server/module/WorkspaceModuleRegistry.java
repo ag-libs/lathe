@@ -13,6 +13,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -23,28 +24,33 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
   private static final Logger LOG = Logger.getLogger(WorkspaceModuleRegistry.class.getName());
 
   private final CompilationAdmission compilationAdmission;
+  // Where every worker completes its results: the server's event loop.
+  private final Executor delivery;
   private final List<ModuleSourceConfig> moduleSources;
   private final Map<String, CompilationWorker> workers = new HashMap<>();
   private final CompilationWorker externalWorker;
 
   private WorkspaceModuleRegistry(
-      final List<ModuleSourceConfig> moduleSources, final WorkspaceManifest manifest) {
+      final List<ModuleSourceConfig> moduleSources,
+      final WorkspaceManifest manifest,
+      final Executor delivery) {
     this.compilationAdmission =
         new CompilationAdmission(Runtime.getRuntime().availableProcessors());
+    this.delivery = delivery;
     this.moduleSources = moduleSources;
-    this.externalWorker = CompilationWorker.external(manifest, compilationAdmission);
+    this.externalWorker = CompilationWorker.external(manifest, compilationAdmission, delivery);
   }
 
-  public static WorkspaceModuleRegistry empty() {
-    return new WorkspaceModuleRegistry(List.of(), WorkspaceManifest.empty());
+  public static WorkspaceModuleRegistry empty(final Executor delivery) {
+    return new WorkspaceModuleRegistry(List.of(), WorkspaceManifest.empty(), delivery);
   }
 
   public static WorkspaceModuleRegistry scan(
-      final Path workspaceRoot, final WorkspaceManifest manifest) {
+      final Path workspaceRoot, final WorkspaceManifest manifest, final Executor delivery) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
     if (!Files.isDirectory(latheDir)) {
       LOG.warning(() -> "[workspace] .lathe/ not found at %s".formatted(workspaceRoot));
-      return new WorkspaceModuleRegistry(List.of(), manifest);
+      return new WorkspaceModuleRegistry(List.of(), manifest, delivery);
     }
 
     final var moduleSources = new ArrayList<ModuleSourceConfig>();
@@ -72,7 +78,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
         () ->
             "[workspace] loaded %d module source config(s) from %s"
                 .formatted(moduleSources.size(), workspaceRoot));
-    return new WorkspaceModuleRegistry(List.copyOf(moduleSources), manifest);
+    return new WorkspaceModuleRegistry(List.copyOf(moduleSources), manifest, delivery);
   }
 
   // A module whose source dir sits under a directory that has its own .lathe/ belongs to a nested
@@ -111,7 +117,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {
     return workers.computeIfAbsent(
-        key(config), key -> CompilationWorker.module(config, compilationAdmission));
+        key(config), key -> CompilationWorker.module(config, compilationAdmission, delivery));
   }
 
   public CompilationWorker externalWorker() {

@@ -221,6 +221,24 @@ against the `multi-module` invoker workspace — both use the checkout build dir
     * **No default-charset APIs**: name the charset (UTF-8 unless the format says otherwise).
     * **No process started from a bare tool name** (`mvn`, `mvnw`): use the recorded build tool or a
       full path.
+- **Server threading contract** (`lathe-server`; design:
+  [Server Restructuring](docs/planned/lathe-server-restructuring.md)). The `ServerEventLoop`
+  (`eventLoop`) owns all session state; each `CompilationWorker` (a module worker) owns its javac
+  state; only immutable values cross between them.
+    * **A `thenApply`/`thenCompose` lambda runs on whichever thread completed the future.** Module
+      workers deliver every result on the loop (`eventLoop::deliver`), so session code may chain on a
+      worker future directly. Any other future (the common pool, a process, another thread) is not on
+      the loop: `eventLoop.rejoin(future)` before touching session state.
+    * **A value in a session field is session state, even when the value is immutable**: read it on
+      the loop and hand the snapshot on, as code actions do with the reactor shards.
+    * **Reach the loop from outside** with `eventLoop.submit` or `eventLoop.submitCompose` (a task
+      that starts async work); never a `session::x` method reference, which reads `session` on the
+      caller's thread.
+    * **Loop-confined helpers call `eventLoop.checkOnLoop()`**, which fails fast off the loop; a new
+      helper that reads or writes session state does too.
+    * **Nothing waits on the loop**: no `get`/`join`, no waiting on a process or another thread;
+      return a future instead.
+    * **No locks or concurrent collections for session state**: route the access through the loop.
 
 ## Markdown style
 

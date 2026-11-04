@@ -1,7 +1,5 @@
-package io.github.aglibs.lathe.server.engine;
+package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.server.LatheLanguageClient;
-import io.github.aglibs.lathe.server.LatheSyncParams;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -27,12 +25,11 @@ final class NoopLanguageClient implements LatheLanguageClient {
   @Override
   public void showMessage(final MessageParams messageParams) {}
 
-  // An agent cannot answer a prompt, and an answer would dismiss it: left unanswered, a build-file
-  // change stays in every answer's notes until a sync reloads the workspace.
+  // The session prompts no one in the engine; were it asked, no one would answer (dismissed).
   @Override
   public CompletableFuture<MessageActionItem> showMessageRequest(
       final ShowMessageRequestParams requestParams) {
-    return new CompletableFuture<>();
+    return CompletableFuture.completedFuture(null);
   }
 
   @Override

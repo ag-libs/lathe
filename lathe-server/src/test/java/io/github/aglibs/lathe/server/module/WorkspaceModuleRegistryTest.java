@@ -21,7 +21,8 @@ class WorkspaceModuleRegistryTest {
     final var src = tmp.resolve("module-a/src/main/java");
     TestCompiler.writeModuleParams(tmp, "module-a", src, null);
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
 
     assertThat(registry.allSourceRoots()).containsExactly(src);
   }
@@ -33,7 +34,8 @@ class WorkspaceModuleRegistryTest {
     final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
     final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.allSourceRoots()).contains(src, latheGenerated).doesNotContain(mavenTarget);
@@ -50,7 +52,8 @@ class WorkspaceModuleRegistryTest {
     TestCompiler.writeModuleParams(
         tmp, "module-a", List.of(src, mavenTarget), mavenTarget, List.of(), List.of(), List.of());
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
     final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.allSourceRoots()).containsExactly(src, latheGenerated);
@@ -61,7 +64,8 @@ class WorkspaceModuleRegistryTest {
     final var src = tmp.resolve("module-a/src/main/java");
     TestCompiler.writeModuleParams(tmp, "module-a", src, null);
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
 
     assertThat(registry.moduleSourceFor(src.resolve("com/example/Foo.java"))).isPresent();
   }
@@ -72,7 +76,8 @@ class WorkspaceModuleRegistryTest {
     final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
     final Path latheGenerated = registry.allConfigs().get(0).generatedSourcesDir();
 
     assertThat(registry.moduleSourceFor(latheGenerated.resolve("com/example/FooBuilder.java")))
@@ -97,7 +102,8 @@ class WorkspaceModuleRegistryTest {
     TestCompiler.writeModuleParams(tmp, "module-c", straySrc, null);
     Files.createDirectories(tmp.resolve("module-c").resolve(LatheLayout.LATHE_DIR));
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
 
     assertThat(registry.allSourceRoots()).containsExactlyInAnyOrder(mainSrc, straySrc);
   }
@@ -107,7 +113,8 @@ class WorkspaceModuleRegistryTest {
   void releaseSessions_keepsTheGivenModules_releasesOnlyIdleSessions() throws Exception {
     TestCompiler.writeModuleParams(tmp, "module-a", tmp.resolve("module-a/src/main/java"), null);
     TestCompiler.writeModuleParams(tmp, "module-b", tmp.resolve("module-b/src/main/java"), null);
-    try (var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty())) {
+    try (var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run)) {
       final List<ModuleSourceConfig> configs = registry.allConfigs();
       configs.forEach(
           config ->
@@ -126,7 +133,8 @@ class WorkspaceModuleRegistryTest {
     final var src = tmp.resolve("module-a/src/main/java");
     TestCompiler.writeModuleParams(tmp, "module-a", src, null);
 
-    final var registry = WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty());
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
 
     assertThat(registry.allSourceRoots()).doesNotContainNull();
     assertThat(registry.allSourceRoots()).hasSize(1);
