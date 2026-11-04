@@ -49,7 +49,7 @@ public record LatheTestRun(
   }
 
   // ran: the selected classes, methods or package, so a result names what it covers.
-  static LatheTestRun from(final LaunchOutcome outcome, final List<String> ran) {
+  public static LatheTestRun from(final LaunchOutcome outcome, final List<String> ran) {
     final List<TestResult> results = outcome.testResults();
     final List<LatheTestFailure> failures =
         results.stream()

@@ -635,6 +635,13 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return eventLoop.submit(() -> read.apply(session));
   }
 
+  // Starts session work on the event loop for a caller outside it, the in-process engine above all:
+  // one composed request per tool. What the work chains on worker results runs on the loop too.
+  <T> CompletableFuture<T> onLoopCompose(
+      final Function<WorkspaceSession, CompletableFuture<T>> work) {
+    return eventLoop.submitCompose(() -> work.apply(session));
+  }
+
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
       final String uri, final List<Range> ranges) {
     final FormatEngine engine = formatEngine;
