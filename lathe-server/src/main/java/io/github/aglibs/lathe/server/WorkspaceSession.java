@@ -149,6 +149,7 @@ final class WorkspaceSession {
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
   private final RunCoordinator runs;
+  private final FeatureRouter router;
   private WorkspaceWatcher watcher;
   private boolean buildFilesNotificationPending;
   // Stale sources and their mtimes seen on the previous tick. An outside change is written only
@@ -216,7 +217,6 @@ final class WorkspaceSession {
   // Set by the in-process engine: its documents are copies of the disk, not editor buffers, so a
   // change on disk replaces them.
   private boolean documentsFollowDisk;
-  private final AnalysisLru analysisLru = new AnalysisLru();
   private final DiagnosticPublisher publisher;
 
   private final AtomicBoolean formatFailureReported = new AtomicBoolean();
@@ -234,6 +234,7 @@ final class WorkspaceSession {
     this.state = new WorkspaceState(eventLoop);
     this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
     this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex);
+    this.router = new FeatureRouter(eventLoop, state, docs);
   }
 
   void initialize(final Path root) {
@@ -475,8 +476,8 @@ final class WorkspaceSession {
     }
 
     final var t = Stopwatch.start();
-    if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
-      touchAnalysisCache(uri);
+    if (router.routeCompiler(uri) instanceof final CompilerRoute.Module module) {
+      router.touchAnalysisCache(uri);
       return module
           .worker()
           .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
@@ -546,7 +547,7 @@ final class WorkspaceSession {
   CompletableFuture<List<Diagnostic>> diagnosticsFuture(
       final String uri, final String content, final int version) {
     LOG.fine(() -> "[diagnostics] %s".formatted(uri));
-    final CompilerRoute route = routeCompiler(uri);
+    final CompilerRoute route = router.routeCompiler(uri);
     if (route instanceof CompilerRoute.Missing) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -580,7 +581,7 @@ final class WorkspaceSession {
   // checks a change's files and their callers this way, many at once.
   CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
       final String uri, final String content) {
-    return routeCompiler(uri) instanceof final CompilerRoute.Module module
+    return router.routeCompiler(uri) instanceof final CompilerRoute.Module module
         ? module.worker().diagnosticsTransient(uri, content)
         : CompletableFuture.completedFuture(List.of());
   }
@@ -615,7 +616,7 @@ final class WorkspaceSession {
     eventLoop.cancel(uri);
     renameTransaction.onClose(uri);
 
-    analysisLru.remove(uri);
+    router.forget(uri);
     writeDiagnostics.remove(uri);
     state.registry().dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
@@ -643,7 +644,7 @@ final class WorkspaceSession {
     }
 
     // A reactor file is written by a pass, whose refresh then publishes it with its dependents.
-    final var route = routeCompiler(uri);
+    final var route = router.routeCompiler(uri);
     if (route instanceof CompilerRoute.Module) {
       writeReported(Set.of(LatheUri.toPath(uri)));
       return;
@@ -668,16 +669,16 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request = featureRequest(openFile, pos);
+    final var request = router.featureRequest(openFile, pos);
 
-    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
     final CompilationWorker cursorWorker = routedWorker.get();
 
-    touchAnalysisCache(openFile.uri());
+    router.touchAnalysisCache(openFile.uri());
 
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
     final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
@@ -754,11 +755,12 @@ final class WorkspaceSession {
   CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
       prepareRenameFuture(final String uri, final Position pos, final boolean fileRenameSupported) {
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
+    if (openFile == null
+        || !(router.routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
       return CompletableFuture.completedFuture(null);
     }
 
-    final var request = featureRequest(openFile, pos);
+    final var request = router.featureRequest(openFile, pos);
     final var t = Stopwatch.start();
     return module
         .worker()
@@ -1101,12 +1103,13 @@ final class WorkspaceSession {
     }
 
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null || !(routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
+    if (openFile == null
+        || !(router.routeCompiler(uri) instanceof final CompilerRoute.Module module)) {
       return CompletableFuture.completedFuture(null);
     }
 
     final var cursorWorker = module.worker();
-    final var request = featureRequest(openFile, pos);
+    final var request = router.featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
         state.registry().moduleSourceFor(LatheUri.toPath(uri));
     return cursorWorker
@@ -1183,17 +1186,6 @@ final class WorkspaceSession {
     }
   }
 
-  // The request a position feature sends to the module's worker, for the open document.
-  private SourceFeatureRequest featureRequest(final OpenDocument doc, final Position pos) {
-    return new SourceFeatureRequest(
-        doc.uri(),
-        doc.content(),
-        doc.version(),
-        pos,
-        state.registry().allSourceRoots(),
-        state.manifest());
-  }
-
   CompletableFuture<List<Location>> instantiationsFuture(
       final String uri,
       final Position pos,
@@ -1205,16 +1197,16 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final var request = featureRequest(openFile, pos);
+    final var request = router.featureRequest(openFile, pos);
 
-    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
     final CompilationWorker cursorWorker = routedWorker.get();
 
-    touchAnalysisCache(openFile.uri());
+    router.touchAnalysisCache(openFile.uri());
     final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
 
@@ -1471,7 +1463,7 @@ final class WorkspaceSession {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    touchAnalysisCache(doc.uri());
+    router.touchAnalysisCache(doc.uri());
     return worker
         .searchReferences(
             doc.uri(), doc.content(), doc.version(), target, includeDeclaration, cancelChecker)
@@ -1540,11 +1532,11 @@ final class WorkspaceSession {
   // so it stays cheap even for fields and methods.
   CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
       final String uri, final Position pos) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         List.of(),
         (worker, doc) -> {
-          final var request = featureRequest(doc, pos);
+          final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
               .resolveTarget(request)
@@ -1667,11 +1659,11 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         null,
         (worker, doc) -> {
-          final var request = featureRequest(doc, pos);
+          final var request = router.featureRequest(doc, pos);
           return worker
               .hover(request)
               .exceptionally(ex -> logAndReturn(ex, "[hover] failed for %s".formatted(uri), null));
@@ -1681,22 +1673,22 @@ final class WorkspaceSession {
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         true,
         (worker, doc) ->
             worker
-                .onName(featureRequest(doc, pos))
+                .onName(router.featureRequest(doc, pos))
                 .exceptionally(
                     ex -> logAndReturn(ex, "[onName] failed for %s".formatted(uri), true)));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         null,
         (worker, doc) -> {
-          final var request = featureRequest(doc, pos);
+          final var request = router.featureRequest(doc, pos);
           return worker
               .signatureHelp(request)
               .exceptionally(
@@ -1732,11 +1724,11 @@ final class WorkspaceSession {
         () ->
             "[%s] %s line=%d character=%d"
                 .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         Either.forLeft(List.of()),
         (worker, doc) ->
-            find.apply(worker, featureRequest(doc, pos))
+            find.apply(worker, router.featureRequest(doc, pos))
                 .thenApply(location -> definitionResult(location.map(List::of).orElseGet(List::of)))
                 .exceptionally(
                     ex ->
@@ -1753,17 +1745,17 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    final var request = featureRequest(openFile, pos);
+    final var request = router.featureRequest(openFile, pos);
     final var indexSnapshot = reactorIndex.current();
     final var lambdaSnapshot = reactorIndex.lambdaImplementors();
-    final Optional<CompilationWorker> routedWorker = routeCompiler(uri).analysisWorker();
+    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
     if (routedWorker.isEmpty()) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
     final CompilationWorker cursorWorker = routedWorker.get();
 
-    touchAnalysisCache(openFile.uri());
+    router.touchAnalysisCache(openFile.uri());
 
     final var t = Stopwatch.start();
     return cursorWorker
@@ -1978,7 +1970,7 @@ final class WorkspaceSession {
     final int version = openFile != null ? openFile.version() : 0;
     final var worker = state.registry().workerFor(config.get());
     if (openFile != null) {
-      touchAnalysisCache(openFile.uri());
+      router.touchAnalysisCache(openFile.uri());
       return worker.queryFile(uri, content, version, query);
     }
 
@@ -1993,7 +1985,8 @@ final class WorkspaceSession {
     }
 
     final var t = Stopwatch.start();
-    return openDocFeature(
+    return router
+        .openDocFeature(
             data.routingUri(),
             List.of(),
             (worker, doc) ->
@@ -2036,7 +2029,7 @@ final class WorkspaceSession {
 
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       final Optional<CompilationWorker> routedWorker =
-          routeCompiler(data.routingUri()).analysisWorker();
+          router.routeCompiler(data.routingUri()).analysisWorker();
       if (routedWorker.isEmpty()) {
         return CompletableFuture.completedFuture(List.of());
       }
@@ -2045,7 +2038,7 @@ final class WorkspaceSession {
       progress.begin(progressTitle, 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       if (declaringDoc != null) {
-        touchAnalysisCache(declaringDoc.uri());
+        router.touchAnalysisCache(declaringDoc.uri());
         return worker
             .searchIncomingCalls(
                 declaringDoc.uri(),
@@ -2120,7 +2113,7 @@ final class WorkspaceSession {
             .map(
                 doc -> {
                   cancelChecker.checkCanceled();
-                  touchAnalysisCache(doc.uri());
+                  router.touchAnalysisCache(doc.uri());
                   return worker
                       .searchIncomingCalls(
                           doc.uri(), doc.content(), doc.version(), target, cancelChecker)
@@ -2149,11 +2142,12 @@ final class WorkspaceSession {
   CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
       final String uri, final Position pos) {
     final var t = Stopwatch.start();
-    return openDocFeature(
+    return router
+        .openDocFeature(
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request = featureRequest(doc, pos);
+              final var request = router.featureRequest(doc, pos);
               return worker.prepareCallHierarchy(request);
             })
         .thenApply(
@@ -2170,11 +2164,12 @@ final class WorkspaceSession {
       final String uri, final Position pos) {
     final var indexSnapshot = reactorIndex.current();
     final var t = Stopwatch.start();
-    return openDocFeature(
+    return router
+        .openDocFeature(
             uri,
             List.of(),
             (worker, doc) -> {
-              final var request = featureRequest(doc, pos);
+              final var request = router.featureRequest(doc, pos);
               return worker.prepareTypeHierarchy(request, indexSnapshot);
             })
         .thenApply(
@@ -2197,7 +2192,8 @@ final class WorkspaceSession {
     final var indexSnapshot = reactorIndex.current();
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return routeFeature(
+    return router
+        .routeFeature(
             data.routingUri(),
             worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
             List.of())
@@ -2221,7 +2217,8 @@ final class WorkspaceSession {
     final var indexSnapshot = reactorIndex.current();
     final List<Path> sourceDirs = typeSourceDirs();
     final var t = Stopwatch.start();
-    return routeFeature(
+    return router
+        .routeFeature(
             data.routingUri(),
             worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
             List.of())
@@ -2249,7 +2246,7 @@ final class WorkspaceSession {
               final var data = TypeHierarchyItemDataCodec.decode(self.getData());
               final var indexSnapshot = reactorIndex.current();
               final List<Path> sourceDirs = typeSourceDirs();
-              return routeFeature(
+              return router.routeFeature(
                   data.routingUri(),
                   worker ->
                       worker.typeHierarchyExplore(
@@ -2274,9 +2271,9 @@ final class WorkspaceSession {
   CompletableFuture<CompletionOutcome> completionFuture(
       final String uri, final Position pos, final CompletionContext context) {
     final var indexSnapshot = reactorIndex.current();
-    final var route = routeCompiler(uri);
-    final LearnedStaticImports staticImports = learnedStaticImports(route);
-    return openDocFeature(
+    final var route = router.routeCompiler(uri);
+    final LearnedStaticImports staticImports = router.learnedStaticImports(route);
+    return router.openDocFeature(
         uri,
         CompletionOutcome.of(List.of()),
         (worker, doc) ->
@@ -2308,7 +2305,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    if (routeCompiler(uri) instanceof CompilerRoute.External) {
+    if (router.routeCompiler(uri) instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(List.of());
     }
 
@@ -2325,8 +2322,9 @@ final class WorkspaceSession {
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = reactorIndex.current();
     final List<List<TypeIndexEntry>> reactorEntries = reactorIndex.shards();
-    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
-    return routeFeature(
+    final LearnedStaticImports staticImports =
+        router.learnedStaticImports(router.routeCompiler(uri));
+    return router.routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
@@ -2365,13 +2363,14 @@ final class WorkspaceSession {
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null || routeCompiler(uri) instanceof CompilerRoute.External) {
+    if (openFile == null || router.routeCompiler(uri) instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(MissingImportsResult.empty());
     }
 
     final var indexSnapshot = reactorIndex.current();
-    final LearnedStaticImports staticImports = learnedStaticImports(routeCompiler(uri));
-    return routeFeature(
+    final LearnedStaticImports staticImports =
+        router.learnedStaticImports(router.routeCompiler(uri));
+    return router.routeFeature(
         uri,
         moduleWorker ->
             moduleWorker
@@ -2405,7 +2404,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         null,
         (worker, doc) ->
@@ -2417,7 +2416,7 @@ final class WorkspaceSession {
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
-    return openDocFeature(
+    return router.openDocFeature(
         uri,
         List.of(),
         (worker, doc) ->
@@ -2436,7 +2435,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final Optional<CompilationWorker> worker = routeCompiler(uri).analysisWorker();
+    final Optional<CompilationWorker> worker = router.routeCompiler(uri).analysisWorker();
     if (worker.isEmpty()) {
       LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
       return CompletableFuture.completedFuture(List.of());
@@ -2447,7 +2446,7 @@ final class WorkspaceSession {
 
   private CompletableFuture<List<FoldingRange>> foldWith(
       final CompilationWorker worker, final String uri, final OpenDocument doc) {
-    touchAnalysisCache(uri);
+    router.touchAnalysisCache(uri);
     return worker
         .foldingRange(uri, doc.content())
         .exceptionally(
@@ -3401,7 +3400,7 @@ final class WorkspaceSession {
 
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
   private boolean uncheckable(final Path file) {
-    return routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing
+    return router.routeCompiler(file.toUri().toString()) instanceof CompilerRoute.Missing
         || (Files.notExists(file) && backToBuilt(file, new HashMap<>()));
   }
 
@@ -4069,7 +4068,7 @@ final class WorkspaceSession {
   }
 
   private void compileAndPublish(final OpenDocument snapshot, final CompileMode mode) {
-    final var route = routeCompiler(snapshot.uri());
+    final var route = router.routeCompiler(snapshot.uri());
     submitCompile(route, snapshot, mode, (snap, result) -> publishDiagnostics(route, snap, result));
   }
 
@@ -4087,7 +4086,7 @@ final class WorkspaceSession {
   }
 
   private void submitCompile(final OpenDocument snapshot, final AfterCompile afterCompile) {
-    submitCompile(routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
+    submitCompile(router.routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
   }
 
   // The compile, which completes exceptionally if it threw; its error is published either way.
@@ -4110,7 +4109,7 @@ final class WorkspaceSession {
       final OpenDocument snapshot,
       final CompileMode mode,
       final AfterCompile afterCompile) {
-    touchAnalysisCache(snapshot.uri());
+    router.touchAnalysisCache(snapshot.uri());
     final List<CompileRequest> siblings =
         route instanceof final CompilerRoute.Module module
             ? unsavedSiblings(module.config(), snapshot)
@@ -4147,35 +4146,6 @@ final class WorkspaceSession {
     return state.registry().moduleSourceFor(LatheUri.toPath(uri)).map(config::equals).orElse(false);
   }
 
-  private CompilerRoute routeCompiler(final String uri) {
-    eventLoop.checkOnLoop();
-    final var path = LatheUri.toPath(uri);
-    return state
-        .registry()
-        .moduleSourceFor(path)
-        .<CompilerRoute>map(
-            module -> new CompilerRoute.Module(state.registry().workerFor(module), module))
-        .orElseGet(
-            () -> {
-              if (state.manifest().containsFile(path)) {
-                return new CompilerRoute.External(state.registry().externalWorker());
-              }
-
-              return new CompilerRoute.Missing(
-                  uri,
-                  "This file is not under any Lathe module source root, so Lathe cannot analyze it.");
-            });
-  }
-
-  // The static imports the file's own scope declares: test files learn from test files, main files
-  // from main files, and a file outside any module from nothing.
-  private LearnedStaticImports learnedStaticImports(final CompilerRoute route) {
-    eventLoop.checkOnLoop();
-    return route instanceof final CompilerRoute.Module module
-        ? state.candidateIndex().staticImports(module.config().isTestTree())
-        : LearnedStaticImports.empty();
-  }
-
   private static List<String> completionModuleNames(final CompilerRoute route, final String uri) {
     if (!LatheLayout.MODULE_INFO_JAVA.equals(LatheUri.toPath(uri).getFileName().toString())) {
       return List.of();
@@ -4186,44 +4156,6 @@ final class WorkspaceSession {
     }
 
     return List.of();
-  }
-
-  private <T> CompletableFuture<T> openDocFeature(
-      final String uri,
-      final T fallback,
-      final BiFunction<CompilationWorker, OpenDocument, CompletableFuture<T>> op) {
-    eventLoop.checkOnLoop();
-    final OpenDocument doc = docs.get(uri);
-    if (doc == null) {
-      return CompletableFuture.completedFuture(fallback);
-    }
-
-    return routeFeature(uri, worker -> op.apply(worker, doc), fallback);
-  }
-
-  private void touchAnalysisCache(final String uri) {
-    eventLoop.checkOnLoop();
-    analysisLru
-        .touch(uri)
-        .ifPresent(
-            evictedUri -> {
-              LOG.fine(
-                  () -> "[evict] %s selected open=%d".formatted(evictedUri, analysisLru.size()));
-              state.registry().dropFromAllCaches(evictedUri);
-            });
-  }
-
-  private <T> CompletableFuture<T> routeFeature(
-      final String uri,
-      final Function<CompilationWorker, CompletableFuture<T>> operation,
-      final T missingFallback) {
-    final Optional<CompilationWorker> worker = routeCompiler(uri).analysisWorker();
-    if (worker.isEmpty()) {
-      return CompletableFuture.completedFuture(missingFallback);
-    }
-
-    touchAnalysisCache(uri);
-    return operation.apply(worker.get());
   }
 
   private void recordCompileStamp(
@@ -4281,7 +4213,7 @@ final class WorkspaceSession {
     // A module's dependents are analyzed one task per source tree, not one compile per file.
     final var byTree = new LinkedHashMap<ModuleSourceConfig, List<String>>();
     for (final String uri : dependents) {
-      if (routeCompiler(uri) instanceof final CompilerRoute.Module module) {
+      if (router.routeCompiler(uri) instanceof final CompilerRoute.Module module) {
         byTree.computeIfAbsent(module.config(), config -> new ArrayList<>()).add(uri);
       } else {
         scheduleDependent(uri);
@@ -4310,7 +4242,7 @@ final class WorkspaceSession {
     final var requests = new ArrayList<CompileRequest>(snapshots.size());
     for (final OpenDocument snapshot : snapshots) {
       eventLoop.cancel(snapshot.uri());
-      touchAnalysisCache(snapshot.uri());
+      router.touchAnalysisCache(snapshot.uri());
       requests.add(requestFor(snapshot, CompileMode.OPEN));
     }
 
@@ -4427,33 +4359,6 @@ final class WorkspaceSession {
 
     final int[] encoded = TokenScanner.encode(tokens);
     return new SemanticTokens(IntStream.of(encoded).boxed().toList());
-  }
-
-  private sealed interface CompilerRoute {
-    // The worker that analyzes the file; abstract, so a new kind of route must say whether it has
-    // one.
-    Optional<CompilationWorker> analysisWorker();
-
-    record Module(CompilationWorker worker, ModuleSourceConfig config) implements CompilerRoute {
-      @Override
-      public Optional<CompilationWorker> analysisWorker() {
-        return Optional.of(worker);
-      }
-    }
-
-    record External(CompilationWorker worker) implements CompilerRoute {
-      @Override
-      public Optional<CompilationWorker> analysisWorker() {
-        return Optional.of(worker);
-      }
-    }
-
-    record Missing(String uri, String message) implements CompilerRoute {
-      @Override
-      public Optional<CompilationWorker> analysisWorker() {
-        return Optional.empty();
-      }
-    }
   }
 
   @FunctionalInterface
