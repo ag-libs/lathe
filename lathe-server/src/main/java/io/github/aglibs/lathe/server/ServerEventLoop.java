@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.IOUtil;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -12,6 +11,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -20,11 +20,21 @@ final class ServerEventLoop {
   private static final Logger LOG = Logger.getLogger(ServerEventLoop.class.getName());
 
   private static final long SHUTDOWN_TIMEOUT_SECONDS = 5;
+  private static final int FATAL_EXIT_STATUS = 1;
 
   private final AtomicReference<Thread> workerThread = new AtomicReference<>();
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(this::newWorkerThread);
   private final Map<String, ScheduledFuture<?>> pending = new HashMap<>();
+  private final IntConsumer processTerminator;
+
+  ServerEventLoop() {
+    this(status -> Runtime.getRuntime().halt(status));
+  }
+
+  ServerEventLoop(final IntConsumer processTerminator) {
+    this.processTerminator = processTerminator;
+  }
 
   private Thread newWorkerThread(final Runnable r) {
     final var t = new Thread(r, "lathe-worker");
@@ -50,7 +60,7 @@ final class ServerEventLoop {
               future.complete(task.call());
             } catch (final Throwable t) {
               future.completeExceptionally(t);
-              IOUtil.rethrowIfError(t);
+              failFastOnError(t);
             }
           });
     } catch (final RejectedExecutionException ignored) {
@@ -187,8 +197,20 @@ final class ServerEventLoop {
     try {
       task.run();
     } catch (final Throwable t) {
-      LOG.log(Level.SEVERE, t, () -> "[worker] task failed");
-      IOUtil.rethrowIfError(t);
+      if (!(t instanceof Error)) {
+        LOG.log(Level.SEVERE, t, () -> "[worker] task failed");
+      }
+
+      failFastOnError(t);
+    }
+  }
+
+  // An Error on the loop ends the server, as one in javac does: the executor running the loop's
+  // tasks would otherwise catch it, and the server would go on with its state half-updated.
+  private void failFastOnError(final Throwable t) {
+    if (t instanceof final Error error) {
+      LOG.log(Level.SEVERE, error, () -> "[worker] process fatal-error on the event loop");
+      processTerminator.accept(FATAL_EXIT_STATUS);
     }
   }
 }

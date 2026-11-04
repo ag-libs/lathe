@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -200,5 +201,34 @@ class ServerEventLoopTest {
     assertThat(ranOn.get()).isEqualTo(LOOP_THREAD);
     assertThat(late.get()).isZero();
     assertThat(loop.submit(() -> 1)).isCancelled();
+  }
+
+  @Test
+  void errorOnTheLoop_executedOrSubmitted_endsTheProcess_aFailureDoesNot() {
+    final var statuses = new LinkedBlockingQueue<Integer>();
+    final var loop = new ServerEventLoop(statuses::add);
+    try {
+      loop.execute(
+          () -> {
+            throw new IllegalStateException("an ordinary failure");
+          });
+      loop.execute(
+          () -> {
+            throw new AssertionError("executed");
+          });
+      final CompletableFuture<Object> submitted =
+          loop.submit(
+              () -> {
+                throw new AssertionError("submitted");
+              });
+
+      assertThat(submitted).failsWithin(Duration.ofMillis(AWAIT_MS));
+      assertThat(loop.submit(() -> statuses.size()))
+          .succeedsWithin(Duration.ofMillis(AWAIT_MS))
+          .isEqualTo(2);
+      assertThat(statuses).containsExactly(1, 1);
+    } finally {
+      loop.close(() -> {});
+    }
   }
 }
