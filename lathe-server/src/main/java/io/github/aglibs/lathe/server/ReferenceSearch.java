@@ -525,18 +525,8 @@ final class ReferenceSearch {
           return worker
               .resolveTarget(request)
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
-              .thenApply(
-                  highlights -> {
-                    LOG.fine(
-                        () ->
-                            "[documentHighlight] %s %dms hits=%d"
-                                .formatted(uri, t.elapsedMs(), highlights.size()));
-                    return highlights;
-                  })
-              .exceptionally(
-                  ex ->
-                      FeatureAnswers.logAndReturn(
-                          ex, "[documentHighlight] failed for %s".formatted(uri), List.of()));
+              .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"))
+              .exceptionally(FeatureAnswers.failedFor("documentHighlight", uri, List.of()));
         });
   }
 
@@ -899,13 +889,7 @@ final class ReferenceSearch {
                 worker.outgoingCalls(
                     item, doc.uri(), doc.content(), doc.version(), state.typeSourceDirs()))
         .thenApply(
-            calls -> {
-              LOG.fine(
-                  () ->
-                      "[callHierarchy:outgoing] %s %dms calls=%d"
-                          .formatted(data.routingUri(), t.elapsedMs(), calls.size()));
-              return calls;
-            });
+            FeatureAnswers.logged(LOG, "callHierarchy:outgoing", data.routingUri(), t, "calls"));
   }
 
   CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
@@ -997,13 +981,7 @@ final class ReferenceSearch {
               return joinCandidateResults(searches, cancelChecker);
             })
         .thenApply(
-            calls -> {
-              LOG.fine(
-                  () ->
-                      "[callHierarchy:incoming] %s %dms calls=%d"
-                          .formatted(data.routingUri(), t.elapsedMs(), calls.size()));
-              return calls;
-            });
+            FeatureAnswers.logged(LOG, "callHierarchy:incoming", data.routingUri(), t, "calls"));
   }
 
   private Stream<CompletableFuture<List<CallHierarchyIncomingCall>>> incomingCallFutures(
@@ -1056,13 +1034,6 @@ final class ReferenceSearch {
               final var request = router.featureRequest(doc, pos);
               return worker.prepareCallHierarchy(request);
             })
-        .thenApply(
-            items -> {
-              LOG.fine(
-                  () ->
-                      "[callHierarchy:prepare] %s %dms items=%d"
-                          .formatted(uri, t.elapsedMs(), items.size()));
-              return items;
-            });
+        .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }
 }

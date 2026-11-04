@@ -478,14 +478,7 @@ final class WorkspaceSession {
       return module
           .worker()
           .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
-          .thenApply(
-              targets -> {
-                LOG.fine(
-                    () ->
-                        "[runnables] %s %dms targets=%d"
-                            .formatted(uri, t.elapsedMs(), targets.size()));
-                return targets;
-              });
+          .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
     return CompletableFuture.completedFuture(List.of());
@@ -719,12 +712,7 @@ final class WorkspaceSession {
         null,
         (worker, doc) -> {
           final var request = router.featureRequest(doc, pos);
-          return worker
-              .hover(request)
-              .exceptionally(
-                  ex ->
-                      FeatureAnswers.logAndReturn(
-                          ex, "[hover] failed for %s".formatted(uri), null));
+          return worker.hover(request).exceptionally(FeatureAnswers.failedFor("hover", uri, null));
         });
   }
 
@@ -737,10 +725,7 @@ final class WorkspaceSession {
         (worker, doc) ->
             worker
                 .onName(router.featureRequest(doc, pos))
-                .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex, "[onName] failed for %s".formatted(uri), true)));
+                .exceptionally(FeatureAnswers.failedFor("onName", uri, true)));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
@@ -751,10 +736,7 @@ final class WorkspaceSession {
           final var request = router.featureRequest(doc, pos);
           return worker
               .signatureHelp(request)
-              .exceptionally(
-                  ex ->
-                      FeatureAnswers.logAndReturn(
-                          ex, "[signatureHelp] failed for %s".formatted(uri), null));
+              .exceptionally(FeatureAnswers.failedFor("signatureHelp", uri, null));
         });
   }
 
@@ -795,11 +777,7 @@ final class WorkspaceSession {
                     location ->
                         FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)))
                 .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex,
-                            "[%s] failed for %s".formatted(operation, uri),
-                            Either.forLeft(List.of()))));
+                    FeatureAnswers.failedFor(operation, uri, Either.forLeft(List.of()))));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
@@ -814,14 +792,7 @@ final class WorkspaceSession {
               final var request = router.featureRequest(doc, pos);
               return worker.prepareTypeHierarchy(request, indexSnapshot);
             })
-        .thenApply(
-            items -> {
-              LOG.fine(
-                  () ->
-                      "[typeHierarchy:prepare] %s %dms items=%d"
-                          .formatted(uri, t.elapsedMs(), items.size()));
-              return items;
-            });
+        .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
@@ -840,13 +811,7 @@ final class WorkspaceSession {
             worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
             List.of())
         .thenApply(
-            items -> {
-              LOG.fine(
-                  () ->
-                      "[typeHierarchy:supertypes] %s %dms items=%d"
-                          .formatted(data.binaryName(), t.elapsedMs(), items.size()));
-              return items;
-            });
+            FeatureAnswers.logged(LOG, "typeHierarchy:supertypes", data.binaryName(), t, "items"));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
@@ -865,13 +830,7 @@ final class WorkspaceSession {
             worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
             List.of())
         .thenApply(
-            items -> {
-              LOG.fine(
-                  () ->
-                      "[typeHierarchy:subtypes] %s %dms items=%d"
-                          .formatted(data.binaryName(), t.elapsedMs(), items.size()));
-              return items;
-            });
+            FeatureAnswers.logged(LOG, "typeHierarchy:subtypes", data.binaryName(), t, "items"));
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
@@ -930,11 +889,7 @@ final class WorkspaceSession {
                     completionModuleNames(route, uri),
                     staticImports)
                 .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex,
-                            "[completion] failed for %s".formatted(uri),
-                            CompletionOutcome.of(List.of()))));
+                    FeatureAnswers.failedFor("completion", uri, CompletionOutcome.of(List.of()))));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -989,10 +944,7 @@ final class WorkspaceSession {
                         resolveSupported
                             ? CompileCheckedActions.defer(uri, openFile.version(), actions)
                             : actions)
-                .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex, "[codeAction] failed for %s".formatted(uri), List.of())),
+                .exceptionally(FeatureAnswers.failedFor("codeAction", uri, List.of())),
         List.of());
   }
 
@@ -1021,11 +973,7 @@ final class WorkspaceSession {
                 .missingImports(
                     uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
                 .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex,
-                            "[missingImports] failed for %s".formatted(uri),
-                            MissingImportsResult.empty())),
+                    FeatureAnswers.failedFor("missingImports", uri, MissingImportsResult.empty())),
         MissingImportsResult.empty());
   }
 
@@ -1055,10 +1003,7 @@ final class WorkspaceSession {
             worker
                 .semanticTokens(uri, doc.content(), doc.version())
                 .thenApply(WorkspaceSession::encodeTokensOrNull)
-                .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex, "[semanticTokens] failed for %s".formatted(uri), null)));
+                .exceptionally(FeatureAnswers.failedFor("semanticTokens", uri, null)));
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
@@ -1068,10 +1013,7 @@ final class WorkspaceSession {
         (worker, doc) ->
             worker
                 .documentSymbol(uri, doc.content())
-                .exceptionally(
-                    ex ->
-                        FeatureAnswers.logAndReturn(
-                            ex, "[documentSymbol] failed for %s".formatted(uri), List.of())));
+                .exceptionally(FeatureAnswers.failedFor("documentSymbol", uri, List.of())));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
@@ -1095,10 +1037,7 @@ final class WorkspaceSession {
     router.touchAnalysisCache(uri);
     return worker
         .foldingRange(uri, doc.content())
-        .exceptionally(
-            ex ->
-                FeatureAnswers.logAndReturn(
-                    ex, "[foldingRange] failed for %s".formatted(uri), List.of()));
+        .exceptionally(FeatureAnswers.failedFor("foldingRange", uri, List.of()));
   }
 
   List<? extends TextEdit> format(final String uri, final FormatEngine engine) {

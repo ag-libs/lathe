@@ -2,8 +2,11 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.core.Stopwatch;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
@@ -22,6 +25,30 @@ final class FeatureAnswers {
   static <T> T logAndReturn(final Throwable ex, final String msg, final T fallback) {
     LOG.log(SEVERE, ex, () -> msg);
     return fallback;
+  }
+
+  // The same, as the exceptionally step of a feature on a file: the log names the feature and file.
+  static <T> Function<Throwable, T> failedFor(
+      final String operation, final String uri, final T fallback) {
+    return ex -> logAndReturn(ex, "[%s] failed for %s".formatted(operation, uri), fallback);
+  }
+
+  // A feature's answer passed on unchanged, logged with how many items it holds and how long it
+  // took;
+  // the caller's logger names the line.
+  static <C extends Collection<?>> Function<C, C> logged(
+      final Logger log,
+      final String operation,
+      final String subject,
+      final Stopwatch t,
+      final String noun) {
+    return items -> {
+      log.fine(
+          () ->
+              "[%s] %s %dms %s=%d"
+                  .formatted(operation, subject, t.elapsedMs(), noun, items.size()));
+      return items;
+    };
   }
 
   static Either<List<? extends Location>, List<? extends LocationLink>> definitionResult(
