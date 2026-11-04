@@ -4,7 +4,8 @@
 # overwrite, and run it by name (a real replay), asserting the console surfaces the active config.
 # Local dev tooling; not shipped, not wired into CI.
 #
-# Build the fixture first (produces .lathe and the `target/it home` launcher for the working-tree server):
+# Build the fixture first (produces .lathe and the `target/it home` launcher for the working-tree
+# server):
 #   mvn verify -pl lathe-maven-plugin -am -Dinvoker.test=setup-support,multi-module -Dmaven.test.skip.exec=true
 set -euo pipefail
 

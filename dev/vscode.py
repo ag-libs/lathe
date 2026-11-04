@@ -11,7 +11,8 @@ The one detail that matters: the server is launched with its working directory s
 folder. Lathe's launcher resolves `.lathe/java-home` *relative to cwd*, so VscodeClient sets
 `cwd = workspace root` -- the same path a VS Code user hits.
 
-    # default: the multi-module invoker fixture (run `mvn verify -Dinvoker.test=setup-support,multi-module` first)
+    # default: the multi-module invoker fixture; build it first with
+    #   mvn verify -Dinvoker.test=setup-support,multi-module
     dev/vscode.py
 
     # any synced workspace; --java-home sets the JDK override (LATHE_JAVA_HOME)

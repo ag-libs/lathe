@@ -34,9 +34,9 @@ local M = {}
 
 local workspace = require("lathe.workspace")
 
--- The workspace API other Neovim config code can use (a project picker, a keymap scoping a picker
--- to the project): the root marker, a buffer's workspace root, and the source cache. See
--- lathe.workspace.
+-- The workspace API other Neovim config code can use (a project picker, a keymap scoping a
+-- picker to the project): the root marker, a buffer's workspace root, and the source cache;
+-- see lathe.workspace.
 M.ROOT_MARKER = workspace.ROOT_MARKER
 M.get_root = workspace.get_root
 M.cache_root = workspace.cache_root

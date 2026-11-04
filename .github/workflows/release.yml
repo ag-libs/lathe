@@ -78,10 +78,10 @@ jobs:
 
       - name: Build, sign, and deploy
         # Formatting is verified in CI; skip spotless here so the transient
-        # versions:set edit cannot fail the release. `env -u CI` runs the build
-        # with Lathe enabled, as it ran before CI moved to lathe.disabled=false for
-        # the tests alone (root pom.xml); kept until a release runs without it.
-        run: env -u CI mvn -B --no-transfer-progress -Prelease -Dspotless.check.skip=true deploy
+        # versions:set edit cannot fail the release. As in CI, the CI variable keeps
+        # Lathe out of the build while its tests run it enabled (lathe.disabled=false
+        # in the root pom.xml and the invoker fixtures).
+        run: mvn -B --no-transfer-progress -Prelease -Dspotless.check.skip=true deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
@@ -92,7 +92,7 @@ jobs:
         # Portal serves its users. The module reruns its Gradle build with the same version and the
         # Lathe jars the deploy installed; tests already ran in the deploy.
         run: >
-          env -u CI mvn -B --no-transfer-progress -pl lathe-gradle-plugin -Dspotless.check.skip=true
+          mvn -B --no-transfer-progress -pl lathe-gradle-plugin -Dspotless.check.skip=true
           -DskipTests -Dlathe.gradle.task=publishPlugins verify
         env:
           GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
