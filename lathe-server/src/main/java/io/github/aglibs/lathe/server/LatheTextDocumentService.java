@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
 import org.eclipse.lsp4j.Position;
@@ -627,6 +628,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   Optional<Path> buildTool() {
     return session.buildTool();
+  }
+
+  // Reads session state on the event loop, for a caller outside it such as a test.
+  <T> CompletableFuture<T> onLoop(final Function<WorkspaceSession, T> read) {
+    return eventLoop.submit(() -> read.apply(session));
   }
 
   private CompletableFuture<List<? extends TextEdit>> formatRanges(

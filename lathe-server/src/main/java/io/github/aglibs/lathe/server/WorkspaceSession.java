@@ -175,11 +175,7 @@ final class WorkspaceSession {
   private final ProgressReporter progressReporter;
   private final ServerEventLoop eventLoop;
   private final long debounceMs;
-  private Path workspaceRoot;
-  private WorkspaceManifest manifest = WorkspaceManifest.empty();
-  private WorkspaceModuleRegistry workspace;
-  private WorkspaceModuleGraph moduleGraph = WorkspaceModuleGraph.build(List.of());
-  private ReferenceCandidateIndex candidateIndex = ReferenceCandidateIndex.build(List.of());
+  private final WorkspaceState state;
   private WorkspaceTypeIndex typeIndex = WorkspaceTypeIndex.empty();
   private final Map<ModuleSourceConfig, List<TypeIndexEntry>> reactorShards = new LinkedHashMap<>();
   // MODULE_SYSTEM only: the bytecode base scanned once (modules/ changes just on make+sync), kept
@@ -291,11 +287,10 @@ final class WorkspaceSession {
     this.eventLoop = eventLoop;
     this.debounceMs = debounceMs;
     this.publisher = new DiagnosticPublisher(client, docs);
-    this.workspace = WorkspaceModuleRegistry.empty(eventLoop::deliver);
+    this.state = new WorkspaceState(eventLoop);
   }
 
   void initialize(final Path root) {
-    this.workspaceRoot = root;
     memoryPressure = new MemoryPressure(eventLoop::execute, this::releaseUnderPressure);
     final var progress = progressReporter.open(null, new CompletableFuture<>());
     progress.begin(WORKSPACE_PROGRESS_TITLE, 1);
@@ -310,16 +305,14 @@ final class WorkspaceSession {
 
   private void loadWorkspace(final Path root) {
     final boolean configured = Files.isDirectory(root.resolve(LatheLayout.LATHE_DIR));
-    manifest = WorkspaceManifest.load(root);
-    workspace = WorkspaceModuleRegistry.scan(root, manifest, eventLoop::deliver);
-    moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
-    candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
+    state.load(root).close();
     scanReactorShards();
     typeIndex =
-        WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
+        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
             .withUsageCounts(reactorUsageCounts);
     watcher = new WorkspaceWatcher(root);
-    watcher.updateBuildFiles(manifest.buildFiles(), manifest.buildFileFingerprints());
+    watcher.updateBuildFiles(
+        state.manifest().buildFiles(), state.manifest().buildFileFingerprints());
     eventLoop.scheduleAtFixedRate(scanIntervalMs(), this::checkForChanges);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
@@ -337,13 +330,14 @@ final class WorkspaceSession {
       memoryPressure.close();
     }
 
-    workspace.close();
+    state.registry().close();
   }
 
   // The heap is still mostly full after a collection: the sessions of modules with no open document
   // go first; the next tick lets the rest go too if that was not enough.
   private void releaseUnderPressure() {
-    logRelease("pressure", workspace.releaseSessions(modulesWithOpenDocuments(), PRESSURE_IDLE_MS));
+    logRelease(
+        "pressure", state.registry().releaseSessions(modulesWithOpenDocuments(), PRESSURE_IDLE_MS));
     pressureFollowUp = true;
   }
 
@@ -351,12 +345,14 @@ final class WorkspaceSession {
   // the threshold, the sessions of modules with open files go too; and any session long unused.
   private void releaseSessionsOnTick() {
     if (pressureFollowUp && memoryPressure.exceeded()) {
-      logRelease("pressure, files open", workspace.releaseSessions(Set.of(), PRESSURE_IDLE_MS));
+      logRelease(
+          "pressure, files open", state.registry().releaseSessions(Set.of(), PRESSURE_IDLE_MS));
     }
 
     pressureFollowUp = false;
-    if (workspace.hasSessionIdleFor(IDLE_SESSION_MS)) {
-      logRelease("idle", workspace.releaseSessions(modulesWithOpenDocuments(), IDLE_SESSION_MS));
+    if (state.registry().hasSessionIdleFor(IDLE_SESSION_MS)) {
+      logRelease(
+          "idle", state.registry().releaseSessions(modulesWithOpenDocuments(), IDLE_SESSION_MS));
     }
   }
 
@@ -372,7 +368,7 @@ final class WorkspaceSession {
 
   private Set<ModuleSourceConfig> modulesWithOpenDocuments() {
     return docs.uris().stream()
-        .map(uri -> workspace.moduleSourceFor(LatheUri.toPath(uri)))
+        .map(uri -> state.registry().moduleSourceFor(LatheUri.toPath(uri)))
         .flatMap(Optional::stream)
         .collect(Collectors.toUnmodifiableSet());
   }
@@ -387,7 +383,7 @@ final class WorkspaceSession {
       final List<TestSelection> selections,
       final String token,
       final RunItem overlay) {
-    final List<Path> runnerClasspath = manifest.runnerClasspath();
+    final List<Path> runnerClasspath = state.manifest().runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       LOG.warning(
           () ->
@@ -399,8 +395,8 @@ final class WorkspaceSession {
 
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
     final Consumer<TestResult> onResult = resultConsumer(token);
-    final Path root = workspaceRoot;
-    final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
+    final Path root = state.root();
+    final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
     // Register/deregister the run by token so a cancel can reach it. Marshaled onto the event loop
@@ -459,21 +455,21 @@ final class WorkspaceSession {
       final List<TestSelection> selections,
       final String token,
       final RunItem overlay) {
-    final List<Path> runnerClasspath = manifest.runnerClasspath();
+    final List<Path> runnerClasspath = state.manifest().runnerClasspath();
     if (runnerClasspath.isEmpty()) {
       throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
     }
 
     try {
       final TestLaunchData template =
-          new LaunchReader(workspaceRoot)
+          new LaunchReader(state.root())
               .test(moduleRel)
               .orElseThrow(
                   () ->
                       new IllegalStateException(
-                          noCapturedLaunch(workspaceRoot, moduleRel, selections)));
+                          noCapturedLaunch(state.root(), moduleRel, selections)));
       assertLaunchComplete(
-          CompletenessGate.verify(template, workspaceRoot, manifest.reactorRewrite()));
+          CompletenessGate.verify(template, state.root(), state.manifest().reactorRewrite()));
 
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
@@ -482,10 +478,10 @@ final class WorkspaceSession {
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
               template,
-              workspaceRoot,
-              manifest.reactorRewrite(),
+              state.root(),
+              state.manifest().reactorRewrite(),
               runnerClasspath,
-              withTestFilter(workspaceRoot, moduleRel, selections),
+              withTestFilter(state.root(), moduleRel, selections),
               resultsSink,
               overlay,
               jdwp);
@@ -522,7 +518,7 @@ final class WorkspaceSession {
       final var jdwp = new JdwpOptions(jdwpPort);
       final MainLaunchPlan plan =
           resolveMainLaunch(
-              workspaceRoot, manifest.reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
+              state.root(), state.manifest().reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
       if (plan.blocked()) {
         throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
       }
@@ -669,9 +665,9 @@ final class WorkspaceSession {
     // by-name lookup can search.
     final List<Path> debugSourceRoots =
         Stream.of(
-                workspace.allSourceRoots(),
-                manifest.depSourceDirs(),
-                manifest.jdkModuleSourceDirs())
+                state.registry().allSourceRoots(),
+                state.manifest().depSourceDirs(),
+                state.manifest().jdkModuleSourceDirs())
             .flatMap(List::stream)
             .toList();
     final DapHost host;
@@ -694,7 +690,9 @@ final class WorkspaceSession {
   // access, and always the current registry, since a sync replaces it mid-session. Cancelled (so
   // the debugger request fails) once the session has closed.
   private Optional<CompilationWorker> debugWorkerFor(final Path file) {
-    return eventLoop.submit(() -> workspace.moduleSourceFor(file).map(workspace::workerFor)).join();
+    return eventLoop
+        .submit(() -> state.registry().moduleSourceFor(file).map(state.registry()::workerFor))
+        .join();
   }
 
   private static void assertLaunchComplete(final CompletenessResult gate) {
@@ -765,7 +763,7 @@ final class WorkspaceSession {
   }
 
   private SourceLayout sourceLayout() {
-    return new SourceLayout(workspace.allConfigs(), workspaceRoot);
+    return new SourceLayout(state.registry().allConfigs(), state.root());
   }
 
   List<String> modules() {
@@ -793,7 +791,8 @@ final class WorkspaceSession {
   }
 
   List<ResourceEntry> resources() {
-    return ResourceFinder.list(manifest.resourceDirModules(), manifest.dependencyJarsToGav());
+    return ResourceFinder.list(
+        state.manifest().resourceDirModules(), state.manifest().dependencyJarsToGav());
   }
 
   // The tests of the file's type, or from a test the type it tests.
@@ -803,9 +802,9 @@ final class WorkspaceSession {
     return TestCounterparts.find(
         file,
         context == null ? "" : context.pkg(),
-        workspace::moduleSourceFor,
+        state.registry()::moduleSourceFor,
         typeIndex,
-        workspace.allSourceRoots());
+        state.registry().allSourceRoots());
   }
 
   // A package or module run executes the classes the build's own test run would (the module's
@@ -938,7 +937,7 @@ final class WorkspaceSession {
   }
 
   private Path moduleLatheDir(final String moduleRel) {
-    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+    return state.root().resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
   }
 
   // The stored discovery, when it was found for the module's current test classes.
@@ -987,7 +986,8 @@ final class WorkspaceSession {
   String resourceOpen(final String jar, final String entry) {
     final var jarPath = Path.of(jar);
     final Path dest =
-        manifest
+        state
+            .manifest()
             .dependencySourceDir(jarPath)
             .map(dir -> dir.resolve(entry))
             .orElseGet(ResourceFinder.tempDest(entry));
@@ -1005,7 +1005,7 @@ final class WorkspaceSession {
   // copy failed.
   Optional<Path> refreshResource(final String uri) {
     final var file = LatheUri.toPath(uri);
-    final Optional<Path> dest = manifest.resourceDestination(file);
+    final Optional<Path> dest = state.manifest().resourceDestination(file);
     if (dest.isEmpty()) {
       LOG.fine(() -> "[resource] %s not a tracked resource → ignored".formatted(uri));
       return Optional.empty();
@@ -1215,8 +1215,8 @@ final class WorkspaceSession {
   private CompletableFuture<LaunchOutcome> startMainRun(
       final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
     final Consumer<TranscriptLine> onLine = streamConsumer(token);
-    final Path root = workspaceRoot;
-    final ReactorRewrite reactorRewrite = manifest.reactorRewrite();
+    final Path root = state.root();
+    final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
     result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
@@ -1323,13 +1323,13 @@ final class WorkspaceSession {
       final List<TestSelection> selectors,
       final boolean overwrite)
       throws IOException {
-    return new RunConfigWriter(workspaceRoot)
+    return new RunConfigWriter(state.root())
         .save(name, moduleRel, kind, mainClass, selectors, overwrite);
   }
 
   // Read fresh every call so an edited config file takes effect on the next run without a reload.
   private RunOverlaySet readRunConfig() {
-    return new RunConfigReader(workspaceRoot).read();
+    return new RunConfigReader(state.root()).read();
   }
 
   private RunItem baselineOverlay(final String moduleRel, final RunKind kind) {
@@ -1384,24 +1384,25 @@ final class WorkspaceSession {
   }
 
   private String moduleRel(final ModuleSourceConfig config) {
-    return SourceLayout.moduleRel(workspaceRoot, config.moduleDir());
+    return SourceLayout.moduleRel(state.root(), config.moduleDir());
   }
 
   // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
   // root module.
   Optional<Path> buildTool() {
-    return manifest.buildTool();
+    return state.manifest().buildTool();
   }
 
   Optional<String> moduleRelOf(final Path file) {
-    return workspace
+    return state
+        .registry()
         .moduleSourceFor(file)
         .map(this::moduleRel)
         .map(rel -> rel.isEmpty() ? "." : rel);
   }
 
   private String moduleRelForDir(final Path moduleDir) {
-    return SourceLayout.moduleRel(workspaceRoot, moduleDir);
+    return SourceLayout.moduleRel(state.root(), moduleDir);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -1411,7 +1412,7 @@ final class WorkspaceSession {
   void onOpen(final String uri, final String content, final int version) {
     final var snapshot = docs.put(uri, content, version);
     LOG.info(() -> "[open] %s".formatted(uri));
-    candidateIndex.update(uri, content);
+    state.candidateIndex().update(uri, content);
     // An editor may open a buffer restored with unsaved changes.
     if (LatheUri.isFileUri(uri) && content.equals(readSource(LatheUri.toPath(uri)))) {
       unsaved.remove(uri);
@@ -1446,7 +1447,7 @@ final class WorkspaceSession {
     final var snapshot = docs.put(uri, content, version);
     if (reactor) {
       // The engine read this content from disk: indexed as a disk file, the pass keeps it current.
-      candidateIndex.indexFromDisk(LatheUri.toPath(uri));
+      state.candidateIndex().indexFromDisk(LatheUri.toPath(uri));
     }
 
     final var result = new CompletableFuture<List<Diagnostic>>();
@@ -1478,7 +1479,7 @@ final class WorkspaceSession {
     docs.put(uri, content, version);
     unsaved.add(uri);
     LOG.fine(() -> "[change] %s".formatted(uri));
-    candidateIndex.update(uri, content);
+    state.candidateIndex().update(uri, content);
     eventLoop.cancel(uri);
     if (trackRename(renameTransaction.onContent(uri, content))
         == RenameTransaction.Action.SUPPRESS) {
@@ -1506,9 +1507,9 @@ final class WorkspaceSession {
 
     analysisLru.remove(uri);
     writeDiagnostics.remove(uri);
-    workspace.dropFromAllCaches(uri);
+    state.registry().dropFromAllCaches(uri);
     publisher.publishEmpty(uri);
-    candidateIndex.indexFromDisk(LatheUri.toPath(uri));
+    state.candidateIndex().indexFromDisk(LatheUri.toPath(uri));
   }
 
   void onSave(final String uri, final String savedContent) {
@@ -1569,7 +1570,7 @@ final class WorkspaceSession {
     touchAnalysisCache(openFile.uri());
 
     // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
-    final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
+    final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
 
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
@@ -1678,7 +1679,7 @@ final class WorkspaceSession {
   // Renaming the uses of a declaration the rename cannot edit breaks every one of them: one outside
   // the reactor (JDK or a dependency), one a processor regenerates, or a method overriding either.
   private void requireRenameable(final ReferenceTarget target) {
-    final List<Path> roots = workspace.allSourceRoots();
+    final List<Path> roots = state.registry().allSourceRoots();
     final Map<String, Optional<Path>> declarations =
         Stream.concat(Stream.of(target.qualifiedName()), target.overriddenDeclarers().stream())
             .distinct()
@@ -1833,7 +1834,7 @@ final class WorkspaceSession {
     final Stream<String> usingNewName =
         fileScoped
             ? Stream.empty()
-            : candidateIndex.candidateUris(newName).stream()
+            : state.candidateIndex().candidateUris(newName).stream()
                 .filter(uri -> !moved.containsValue(uri));
     final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig =
         Stream.concat(renamed.keySet().stream(), usingNewName)
@@ -1869,7 +1870,8 @@ final class WorkspaceSession {
             byConfig.entrySet().stream()
                 .map(
                     entry ->
-                        workspace
+                        state
+                            .registry()
                             .workerFor(entry.getKey())
                             .renameBindingConflict(
                                 check,
@@ -1890,7 +1892,8 @@ final class WorkspaceSession {
             entry ->
                 entry.getKey().equals(config)
                     || !entry.getKey().isTestTree()
-                        && moduleGraph
+                        && state
+                            .moduleGraph()
                             .downstreamModuleDirs(entry.getKey().moduleDir())
                             .contains(config.moduleDir()))
         .flatMap(entry -> entry.getValue().stream())
@@ -1901,7 +1904,7 @@ final class WorkspaceSession {
   // The module source config that compiles the file, unless it is generated.
   private Optional<ModuleSourceConfig> compilingConfig(final String uri) {
     final Path file = LatheUri.toPath(uri);
-    return isGeneratedSource(file) ? Optional.empty() : workspace.moduleSourceFor(file);
+    return isGeneratedSource(file) ? Optional.empty() : state.registry().moduleSourceFor(file);
   }
 
   private static void refuseIfPresent(final Optional<String> reason) {
@@ -1923,7 +1926,8 @@ final class WorkspaceSession {
       return Optional.empty();
     }
 
-    return TypeSourceLocator.findSourceFile(target.qualifiedName(), workspace.allSourceRoots())
+    return TypeSourceLocator.findSourceFile(
+            target.qualifiedName(), state.registry().allSourceRoots())
         .filter(file -> file.getFileName().toString().equals(target.simpleName() + ".java"));
   }
 
@@ -1962,7 +1966,7 @@ final class WorkspaceSession {
   }
 
   private boolean isGeneratedSource(final Path file) {
-    return workspace.allConfigs().stream().anyMatch(config -> config.isGenerated(file));
+    return state.registry().allConfigs().stream().anyMatch(config -> config.isGenerated(file));
   }
 
   CompletableFuture<WorkspaceEdit> renameFuture(
@@ -1991,7 +1995,7 @@ final class WorkspaceSession {
     final var cursorWorker = module.worker();
     final var request = featureRequest(openFile, pos);
     final Optional<ModuleSourceConfig> cursorConfig =
-        workspace.moduleSourceFor(LatheUri.toPath(uri));
+        state.registry().moduleSourceFor(LatheUri.toPath(uri));
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
@@ -2069,7 +2073,12 @@ final class WorkspaceSession {
   // The request a position feature sends to the module's worker, for the open document.
   private SourceFeatureRequest featureRequest(final OpenDocument doc, final Position pos) {
     return new SourceFeatureRequest(
-        doc.uri(), doc.content(), doc.version(), pos, workspace.allSourceRoots(), manifest);
+        doc.uri(),
+        doc.content(),
+        doc.version(),
+        pos,
+        state.registry().allSourceRoots(),
+        state.manifest());
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(
@@ -2093,7 +2102,7 @@ final class WorkspaceSession {
     final CompilationWorker cursorWorker = routedWorker.get();
 
     touchAnalysisCache(openFile.uri());
-    final var cursorConfig = workspace.moduleSourceFor(LatheUri.toPath(uri));
+    final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
 
     return cursorWorker
@@ -2380,11 +2389,13 @@ final class WorkspaceSession {
     return switch (target.scope()) {
       case DECLARING_FILE -> List.of();
       case DECLARING_MODULE ->
-          cursorConfig != null ? moduleGraph.configsForModule(cursorConfig.moduleDir()) : List.of();
+          cursorConfig != null
+              ? state.moduleGraph().configsForModule(cursorConfig.moduleDir())
+              : List.of();
       case REACTOR_MODULES ->
           cursorConfig != null
-              ? moduleGraph.referenceSearchScope(cursorConfig)
-              : workspace.allConfigs();
+              ? state.moduleGraph().referenceSearchScope(cursorConfig)
+              : state.registry().allConfigs();
     };
   }
 
@@ -2531,7 +2542,8 @@ final class WorkspaceSession {
         docs.all().stream()
             .filter(
                 doc ->
-                    workspace
+                    state
+                        .registry()
                         .moduleSourceFor(LatheUri.toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
@@ -2539,13 +2551,13 @@ final class WorkspaceSession {
             .toList();
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final var planner = new ReferenceCandidatePlanner(candidateIndex, typeIndex);
+    final var planner = new ReferenceCandidatePlanner(state.candidateIndex(), typeIndex);
     final List<String> candidateUris =
         planner.planCandidates(config, target).stream()
             .filter(uri -> !openUris.contains(uri))
             .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, packageRel))
             .toList();
-    return new ModuleSearchPlan(workspace.workerFor(config), openForConfig, candidateUris);
+    return new ModuleSearchPlan(state.registry().workerFor(config), openForConfig, candidateUris);
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
@@ -2782,7 +2794,7 @@ final class WorkspaceSession {
         .filter(subtypes)
         .flatMap(
             entry ->
-                TypeSourceLocator.findSourceFile(entry, workspace.allSourceRoots()).stream()
+                TypeSourceLocator.findSourceFile(entry, state.registry().allSourceRoots()).stream()
                     .map(path -> Map.entry(path, Set.of(entry.binaryName()))));
   }
 
@@ -2793,7 +2805,7 @@ final class WorkspaceSession {
   private Stream<Map.Entry<Path, Set<String>>> lambdaImplementationFiles(
       final Optional<String> samInterface, final Predicate<String> namingFiles) {
     return samInterface.stream()
-        .flatMap(name -> candidateIndex.candidateUris(name).stream())
+        .flatMap(name -> state.candidateIndex().candidateUris(name).stream())
         .filter(namingFiles)
         .map(LatheUri::toPath)
         .map(path -> Map.entry(path, Set.<String>of()));
@@ -2817,7 +2829,8 @@ final class WorkspaceSession {
         .distinct()
         .flatMap(
             binaryName ->
-                TypeSourceLocator.findSourceFile(binaryName, workspace.allSourceRoots()).stream())
+                TypeSourceLocator.findSourceFile(binaryName, state.registry().allSourceRoots())
+                    .stream())
         .map(path -> Map.entry(path, Set.<String>of()));
   }
 
@@ -2843,7 +2856,7 @@ final class WorkspaceSession {
   // file on disk attributed once.
   private <T> CompletableFuture<List<T>> fileQueryFuture(
       final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
-    final var config = workspace.moduleSourceFor(sourceFile);
+    final var config = state.registry().moduleSourceFor(sourceFile);
     if (config.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
@@ -2857,7 +2870,7 @@ final class WorkspaceSession {
 
     final String content = openFile != null ? openFile.content() : diskFile.content();
     final int version = openFile != null ? openFile.version() : 0;
-    final var worker = workspace.workerFor(config.get());
+    final var worker = state.registry().workerFor(config.get());
     if (openFile != null) {
       touchAnalysisCache(openFile.uri());
       return worker.queryFile(uri, content, version, query);
@@ -2913,7 +2926,7 @@ final class WorkspaceSession {
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
     final var declaringPath = LatheUri.toPath(data.routingUri());
-    final var declaringConfig = workspace.moduleSourceFor(declaringPath);
+    final var declaringConfig = state.registry().moduleSourceFor(declaringPath);
 
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       final Optional<CompilationWorker> routedWorker =
@@ -3435,16 +3448,16 @@ final class WorkspaceSession {
   private List<Path> typeSourceDirs() {
     eventLoop.checkOnLoop();
     return Stream.of(
-            workspace.allSourceRoots().stream(),
-            manifest.jdkModuleSourceDirs().stream(),
-            manifest.depSourceDirs().stream())
+            state.registry().allSourceRoots().stream(),
+            state.manifest().jdkModuleSourceDirs().stream(),
+            state.manifest().depSourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
   }
 
   private void scanReactorShards() {
     final var counts = new HashMap<String, Integer>();
-    for (final var config : workspace.allConfigs()) {
+    for (final var config : state.registry().allConfigs()) {
       final ClassFileTypeScanner.ReactorScan scan = scanReactorDir(config);
       reactorBaseShards.put(config, scan.entries());
       reactorShards.put(config, withSourceDelta(config, scan.entries()));
@@ -3664,7 +3677,7 @@ final class WorkspaceSession {
     try {
       final Optional<Closeable> lock =
           LatheLock.tryExclusive(
-              LatheLayout.writeLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
+              LatheLayout.writeLockFile(state.root().resolve(LatheLayout.LATHE_DIR)));
       // The other server's pass can run for minutes (a branch switch); trying again only as often
       // as the change scan keeps an editor's idle server from waking more while it waits.
       if (lock.isEmpty()) {
@@ -3691,7 +3704,8 @@ final class WorkspaceSession {
   private void runPass(final boolean eager, final CompletableFuture<List<Path>> done) {
     final boolean building = reactorBuildInProgress();
     final var scanned = Stopwatch.start();
-    final List<TreeState> trees = workspace.allConfigs().stream().map(TreeState::read).toList();
+    final List<TreeState> trees =
+        state.registry().allConfigs().stream().map(TreeState::read).toList();
     final Map<Path, Long> sourceMtimes =
         trees.stream()
             .flatMap(tree -> tree.sourcesByRoot().values().stream())
@@ -3716,8 +3730,9 @@ final class WorkspaceSession {
     // By mtime, not stamp: the MCP engine stamps the files it writes, so an editor's server on the
     // same workspace never finds them stale.
     final List<Path> reread =
-        candidateIndex.syncFromDisk(
-            sourceMtimes, uri -> !documentsFollowDisk && docs.get(uri) != null);
+        state
+            .candidateIndex()
+            .syncFromDisk(sourceMtimes, uri -> !documentsFollowDisk && docs.get(uri) != null);
     if (documentsFollowDisk) {
       reread.forEach(this::reloadFromDisk);
     }
@@ -3762,7 +3777,8 @@ final class WorkspaceSession {
         reported.keySet().stream()
             .flatMap(
                 source ->
-                    workspace
+                    state
+                        .registry()
                         .moduleSourceFor(source)
                         // A generated source is the processors' to rewrite, never an input.
                         .filter(config -> !config.isGenerated(source))
@@ -3942,8 +3958,9 @@ final class WorkspaceSession {
     // The commit's dependents refresh recompiles open files downstream of what it compiled.
     final Set<Path> refreshed =
         saved.stream()
-            .flatMap(path -> workspace.moduleSourceFor(path).stream())
-            .flatMap(config -> moduleGraph.downstreamModuleDirs(config.moduleDir()).stream())
+            .flatMap(path -> state.registry().moduleSourceFor(path).stream())
+            .flatMap(
+                config -> state.moduleGraph().downstreamModuleDirs(config.moduleDir()).stream())
             .collect(Collectors.toUnmodifiableSet());
     unsaved.stream()
         .filter(uri -> docs.get(uri) != null && !inDownstreamScope(uri, refreshed))
@@ -4002,7 +4019,7 @@ final class WorkspaceSession {
 
   private Stream<Path> lombokConfigCandidates(final Path sourceRoot) {
     return Stream.iterate(
-            sourceRoot, dir -> dir != null && dir.startsWith(workspaceRoot), Path::getParent)
+            sourceRoot, dir -> dir != null && dir.startsWith(state.root()), Path::getParent)
         .map(dir -> dir.resolve(LatheLayout.LOMBOK_CONFIG_FILE));
   }
 
@@ -4055,8 +4072,8 @@ final class WorkspaceSession {
   // Where a name may survive as text: the sources whose tokens include it, and the resource roots.
   TextMentions.Sources textMentionSources(final String name) {
     return new TextMentions.Sources(
-        candidateIndex.candidateUris(name).stream().map(LatheUri::toPath).toList(),
-        manifest.resourceSourceDirs());
+        state.candidateIndex().candidateUris(name).stream().map(LatheUri::toPath).toList(),
+        state.manifest().resourceSourceDirs());
   }
 
   List<Path> takeWrittenSinceVerify() {
@@ -4088,7 +4105,8 @@ final class WorkspaceSession {
   List<Path> changedSinceBuild() {
     return Stream.concat(
             failedCompiles.keySet().stream(),
-            workspace.allConfigs().stream().flatMap(config -> unbuiltSources(config).stream()))
+            state.registry().allConfigs().stream()
+                .flatMap(config -> unbuiltSources(config).stream()))
         .distinct()
         .toList();
   }
@@ -4129,7 +4147,7 @@ final class WorkspaceSession {
   // deleted since); a tree with no built record (OpenJDK, or stamps from before) cannot tell.
   private boolean backToBuilt(
       final Path file, final Map<ModuleSourceConfig, Map<Path, ContentFingerprint>> builtByTree) {
-    final Optional<ModuleSourceConfig> config = workspace.moduleSourceFor(file);
+    final Optional<ModuleSourceConfig> config = state.registry().moduleSourceFor(file);
     final Path root = config.map(tree -> sourceRootFor(tree, file)).orElse(null);
     if (root == null) {
       return false;
@@ -4180,8 +4198,8 @@ final class WorkspaceSession {
   // misses a direct caller; an extra candidate just compiles clean.
   private List<Path> referrers(final Path file) {
     final Set<Path> reach =
-        moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of());
-    return candidateIndex.candidateUris(FileUtil.javaTypeName(file)).stream()
+        moduleDirOf(file).map(state.moduleGraph()::downstreamModuleDirs).orElse(Set.of());
+    return state.candidateIndex().candidateUris(FileUtil.javaTypeName(file)).stream()
         .map(LatheUri::toPath)
         .filter(path -> !path.equals(file))
         .filter(path -> moduleDirOf(path).filter(reach::contains).isPresent())
@@ -4189,7 +4207,7 @@ final class WorkspaceSession {
   }
 
   private Optional<Path> moduleDirOf(final Path file) {
-    return workspace.moduleSourceFor(file).map(ModuleSourceConfig::moduleDir);
+    return state.registry().moduleSourceFor(file).map(ModuleSourceConfig::moduleDir);
   }
 
   // Placement (module rel + test/production) for each path that maps to a reactor module. Lets
@@ -4197,7 +4215,8 @@ final class WorkspaceSession {
   Map<Path, ModulePlacement> classifyPaths(final List<Path> paths) {
     final Map<Path, ModulePlacement> placements = new LinkedHashMap<>();
     for (final Path path : paths) {
-      workspace
+      state
+          .registry()
           .moduleSourceFor(path)
           .ifPresent(
               config ->
@@ -4214,11 +4233,14 @@ final class WorkspaceSession {
   // changed ones. verify_change hands these to `mvn`, not recompile (codegen/AP are Maven's job).
   int reactorModuleCount() {
     return (int)
-        workspace.allConfigs().stream().map(ModuleSourceConfig::moduleDir).distinct().count();
+        state.registry().allConfigs().stream()
+            .map(ModuleSourceConfig::moduleDir)
+            .distinct()
+            .count();
   }
 
   List<LatheModuleSummary> moduleSummaries() {
-    return moduleSummaries(workspace.allConfigs(), workspaceRoot, moduleGraph);
+    return moduleSummaries(state.registry().allConfigs(), state.root(), state.moduleGraph());
   }
 
   static List<LatheModuleSummary> moduleSummaries(
@@ -4267,7 +4289,10 @@ final class WorkspaceSession {
   private Stream<Path> reachedModuleDirs(final Path file) {
     final String name = file.getFileName().toString();
     if (name.equals(LatheLayout.MODULE_INFO_JAVA) || name.equals(LatheLayout.PACKAGE_INFO_JAVA)) {
-      return moduleDirOf(file).map(moduleGraph::downstreamModuleDirs).orElse(Set.of()).stream();
+      return moduleDirOf(file)
+          .map(state.moduleGraph()::downstreamModuleDirs)
+          .orElse(Set.of())
+          .stream();
     }
 
     return referrers(file).stream().map(this::moduleDirOf).flatMap(Optional::stream);
@@ -4284,7 +4309,7 @@ final class WorkspaceSession {
     final Path root = config.sourceRoots().get(0);
     tree.orphans().forEach(rel -> writtenSinceVerify.add(root.resolve(rel)));
     refreshReactorShard(config);
-    refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
+    refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
     LOG.fine(() -> "[delete] %s removed=%d".formatted(config.moduleDir().getFileName(), removed));
   }
 
@@ -4347,7 +4372,7 @@ final class WorkspaceSession {
         files.stream().filter(this::uncheckable).map(this::notCheckedReason).toList();
     return new LatheNotes(
         notCompiled,
-        Stream.concat(pendingBuildFiles, manifest.loadProblem().stream()).toList(),
+        Stream.concat(pendingBuildFiles, state.manifest().loadProblem().stream()).toList(),
         notChecked,
         reactorBuildInProgress());
   }
@@ -4357,7 +4382,10 @@ final class WorkspaceSession {
   Optional<String> failingUnder(final Path file) {
     final Set<Path> reach =
         moduleDirOf(file)
-            .map(dir -> Stream.concat(Stream.of(dir), moduleGraph.upstreamModuleDirs(dir).stream()))
+            .map(
+                dir ->
+                    Stream.concat(
+                        Stream.of(dir), state.moduleGraph().upstreamModuleDirs(dir).stream()))
             .orElse(Stream.empty())
             .collect(Collectors.toUnmodifiableSet());
     return stillFailing()
@@ -4373,7 +4401,7 @@ final class WorkspaceSession {
   }
 
   private String failedLine(final Map.Entry<Path, FailedWrite> entry) {
-    return "%s:%s".formatted(workspaceRoot.relativize(entry.getKey()), entry.getValue().error());
+    return "%s:%s".formatted(state.root().relativize(entry.getKey()), entry.getValue().error());
   }
 
   // No module compiles it, or it names a file the build never had: a mistyped path, not a deletion.
@@ -4386,14 +4414,15 @@ final class WorkspaceSession {
   // module (a sync writes each module it built a .lathe directory, one without sources too) the
   // file is outside its source roots, and outside the built modules the build left it out.
   private String notCheckedReason(final Path file) {
-    final Path relative = workspaceRoot.relativize(file);
+    final Path relative = state.root().relativize(file);
     if (Files.notExists(file)) {
       return "%s does not exist, and the last build did not compile it".formatted(relative);
     }
 
-    return manifest
+    return state
+        .manifest()
         .builtModuleDirOf(file)
-        .map(moduleDir -> FileUtil.slashed(workspaceRoot.relativize(moduleDir)))
+        .map(moduleDir -> FileUtil.slashed(state.root().relativize(moduleDir)))
         .map(
             moduleRel ->
                 Files.isDirectory(moduleLatheDir(moduleRel))
@@ -4459,7 +4488,7 @@ final class WorkspaceSession {
   private List<ModuleSourceConfig> compileOrder(final Set<ModuleSourceConfig> configs) {
     final Map<Path, List<ModuleSourceConfig>> byModule =
         configs.stream().collect(Collectors.groupingBy(ModuleSourceConfig::moduleDir));
-    return moduleGraph.upstreamFirst(byModule.keySet()).stream()
+    return state.moduleGraph().upstreamFirst(byModule.keySet()).stream()
         .flatMap(dir -> byModule.get(dir).stream().sorted(mainTreeFirst()))
         .toList();
   }
@@ -4516,7 +4545,8 @@ final class WorkspaceSession {
         stamps.keySet().stream()
             .filter(reported::containsKey)
             .collect(Collectors.toUnmodifiableMap(source -> source, reported::get));
-    return workspace
+    return state
+        .registry()
         .workerFor(config)
         .compileBatch(List.copyOf(transientSources))
         .handle(
@@ -4634,7 +4664,7 @@ final class WorkspaceSession {
           }
         });
     writtenSinceVerify.addAll(stamps.keySet());
-    refreshScope.addAll(moduleGraph.downstreamModuleDirs(config.moduleDir()));
+    refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(config.moduleDir()));
     refreshReactorShard(config);
     LOG.fine(
         () ->
@@ -4651,13 +4681,14 @@ final class WorkspaceSession {
   // open file's stale error for two more scans.
   private void retryFailuresDownstream(
       final ModuleSourceConfig config, final Set<Path> failedFirst) {
-    final Set<Path> downstream = moduleGraph.downstreamModuleDirs(config.moduleDir());
+    final Set<Path> downstream = state.moduleGraph().downstreamModuleDirs(config.moduleDir());
     final Map<Path, Long> retried =
         failedCompiles.entrySet().stream()
             .filter(
                 failed ->
                     !failedFirst.contains(failed.getKey())
-                        && workspace
+                        && state
+                            .registry()
                             .moduleSourceFor(failed.getKey())
                             .map(failedConfig -> downstream.contains(failedConfig.moduleDir()))
                             .orElse(true))
@@ -4737,7 +4768,7 @@ final class WorkspaceSession {
   // many resources were checked.
   private int reconcileResources() {
     final Map<Path, Long> resources =
-        manifest.resourceSourceDirs().stream()
+        state.manifest().resourceSourceDirs().stream()
             .flatMap(sourceDir -> resourceMtimesUnder(sourceDir).entrySet().stream())
             .collect(
                 Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
@@ -4748,7 +4779,11 @@ final class WorkspaceSession {
             .filter(file -> !resources.containsKey(file) && Files.notExists(file))
             .collect(Collectors.toUnmodifiableSet());
     deleted.forEach(
-        file -> manifest.resourceDestination(file).ifPresent(dest -> deleteResource(file, dest)));
+        file ->
+            state
+                .manifest()
+                .resourceDestination(file)
+                .ifPresent(dest -> deleteResource(file, dest)));
     scannedResources = resources.keySet();
     return resources.size();
   }
@@ -4773,7 +4808,7 @@ final class WorkspaceSession {
 
   // A missing copy reads as mtime 0, so it is copied too.
   private void copyIfStale(final Path file, final long mtime) {
-    final Optional<Path> dest = manifest.resourceDestination(file);
+    final Optional<Path> dest = state.manifest().resourceDestination(file);
     if (dest.isEmpty()) {
       return;
     }
@@ -4789,7 +4824,7 @@ final class WorkspaceSession {
   // half-written mirror. A crashed build is reclaimed by the lock's staleness TTL.
   private boolean reactorBuildInProgress() {
     return LatheLock.isBuilding(
-        LatheLayout.reactorLockFile(workspaceRoot.resolve(LatheLayout.LATHE_DIR)));
+        LatheLayout.reactorLockFile(state.root().resolve(LatheLayout.LATHE_DIR)));
   }
 
   private Set<Path> openSourcePaths() {
@@ -4842,7 +4877,7 @@ final class WorkspaceSession {
     final Map<Path, SourceStamp> seen = stampsSeen.put(tree.config(), current);
     if (seen != null && !seen.equals(current)) {
       refreshScope.add(tree.config().moduleDir());
-      refreshScope.addAll(moduleGraph.downstreamModuleDirs(tree.config().moduleDir()));
+      refreshScope.addAll(state.moduleGraph().downstreamModuleDirs(tree.config().moduleDir()));
     }
   }
 
@@ -5093,7 +5128,7 @@ final class WorkspaceSession {
     final Object scope = pendingSyncModules.isEmpty() ? "full" : pendingSyncModules;
     LOG.info(() -> "[sync] requested scope=%s capture=%b".formatted(scope, captureTests));
     ((LatheLanguageClient) client)
-        .sync(new LatheSyncParams(workspaceRoot.toString(), captureTests, pendingSyncModules));
+        .sync(new LatheSyncParams(state.root().toString(), captureTests, pendingSyncModules));
   }
 
   private void reload() {
@@ -5110,20 +5145,14 @@ final class WorkspaceSession {
   private void reloadWorkspace() {
     lombokChangedSources.clear();
     lombokConfigMtimes = null;
-    final var newManifest = WorkspaceManifest.load(workspaceRoot);
+    passGeneration++; // the configs and workers a running pass writes through are being replaced
+    final WorkspaceModuleRegistry old = state.load(state.root());
     if (watcher != null) {
+      final WorkspaceManifest newManifest = state.manifest();
       watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());
       buildFilesNotificationPending = false;
     }
 
-    final var newWorkspace =
-        WorkspaceModuleRegistry.scan(workspaceRoot, newManifest, eventLoop::deliver);
-    final var old = workspace;
-    passGeneration++; // the configs and workers a running pass writes through are being replaced
-    workspace = newWorkspace;
-    manifest = newManifest;
-    moduleGraph = WorkspaceModuleGraph.build(workspace.allConfigs());
-    candidateIndex = ReferenceCandidateIndex.build(workspace.allConfigs());
     refreshReactorTypeIndex();
     refreshOpenDocuments();
     old.close();
@@ -5135,7 +5164,8 @@ final class WorkspaceSession {
   // instead of "ready". The problem text is shared with the agent's notes, which carry no prefix.
   private void showWorkspaceStatus(final String okText) {
     client.showMessage(
-        manifest
+        state
+            .manifest()
             .loadProblem()
             .map(text -> new MessageParams(MessageType.Warning, "Lathe: %s".formatted(text)))
             .orElseGet(() -> new MessageParams(MessageType.Info, okText)));
@@ -5149,7 +5179,7 @@ final class WorkspaceSession {
     reactorBaseShards.clear();
     scanReactorShards();
     typeIndex =
-        WorkspaceTypeIndex.build(manifest.typeIndexShardPaths(), reactorShards.values())
+        WorkspaceTypeIndex.build(state.manifest().typeIndexShardPaths(), reactorShards.values())
             .withUsageCounts(reactorUsageCounts);
     LOG.info(() -> "[refresh] reactor type index %dms".formatted(t.elapsedMs()));
   }
@@ -5237,19 +5267,21 @@ final class WorkspaceSession {
   }
 
   private boolean inSourceTree(final String uri, final ModuleSourceConfig config) {
-    return workspace.moduleSourceFor(LatheUri.toPath(uri)).map(config::equals).orElse(false);
+    return state.registry().moduleSourceFor(LatheUri.toPath(uri)).map(config::equals).orElse(false);
   }
 
   private CompilerRoute routeCompiler(final String uri) {
     eventLoop.checkOnLoop();
     final var path = LatheUri.toPath(uri);
-    return workspace
+    return state
+        .registry()
         .moduleSourceFor(path)
-        .<CompilerRoute>map(module -> new CompilerRoute.Module(workspace.workerFor(module), module))
+        .<CompilerRoute>map(
+            module -> new CompilerRoute.Module(state.registry().workerFor(module), module))
         .orElseGet(
             () -> {
-              if (manifest.containsFile(path)) {
-                return new CompilerRoute.External(workspace.externalWorker());
+              if (state.manifest().containsFile(path)) {
+                return new CompilerRoute.External(state.registry().externalWorker());
               }
 
               return new CompilerRoute.Missing(
@@ -5263,7 +5295,7 @@ final class WorkspaceSession {
   private LearnedStaticImports learnedStaticImports(final CompilerRoute route) {
     eventLoop.checkOnLoop();
     return route instanceof final CompilerRoute.Module module
-        ? candidateIndex.staticImports(module.config().isTestTree())
+        ? state.candidateIndex().staticImports(module.config().isTestTree())
         : LearnedStaticImports.empty();
   }
 
@@ -5300,7 +5332,7 @@ final class WorkspaceSession {
             evictedUri -> {
               LOG.fine(
                   () -> "[evict] %s selected open=%d".formatted(evictedUri, analysisLru.size()));
-              workspace.dropFromAllCaches(evictedUri);
+              state.registry().dropFromAllCaches(evictedUri);
             });
   }
 
@@ -5410,7 +5442,8 @@ final class WorkspaceSession {
         () ->
             "[dependents] batch %d file(s) in %s"
                 .formatted(snapshots.size(), moduleRelForDir(config.moduleDir())));
-    workspace
+    state
+        .registry()
         .workerFor(config)
         .compileOpenBatch(requests)
         // Queued as its own task for the same reason as in submitTo.
@@ -5457,7 +5490,8 @@ final class WorkspaceSession {
   }
 
   private boolean inDownstreamScope(final String uri, final Set<Path> scope) {
-    return workspace
+    return state
+        .registry()
         .moduleSourceFor(LatheUri.toPath(uri))
         .map(m -> scope.contains(m.moduleDir()))
         .orElse(false);
