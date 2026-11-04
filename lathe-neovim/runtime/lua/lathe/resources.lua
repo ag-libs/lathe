@@ -11,7 +11,8 @@ local M = {}
 local ICON_REACTOR = "\u{25A3}" -- ▣ white square with black centre
 local ICON_DEPENDENCY = "\u{25C6}" -- ◆ black diamond
 
-local notify = require("lathe.util").notify
+local util = require("lathe.util")
+local notify = util.notify
 
 -- "<icon>  <coordinate>" for the origin column, matching the find_files look: the GAV for a
 -- dependency, the module for a reactor resource (bare icon when the module is unknown -- a workspace
@@ -72,19 +73,19 @@ end
 --- Lists every resource in the workspace (reactor + dependencies) and opens the picked one. `query`
 --- prefills the Telescope prompt (the prefill-last-query preference); the fallback starts empty.
 function M.find(query)
-  local client = require("lathe.util").client()
+  local client = util.client()
   if not client then
     notify("server not attached (open a Java file first)", vim.log.levels.WARN)
     return
   end
 
-  require("lathe.util").exec(client, nil, "lathe.resources", {}, function(result)
+  util.exec(client, nil, "lathe.resources", {}, function(result)
     if not result or #result == 0 then
       notify("no resources found", vim.log.levels.INFO)
       return
     end
 
-    require("lathe.util").pick(M._entries(result), {
+    util.pick(M._entries(result), {
       title = "Lathe: resources",
       default_text = query,
       on_choice = function(entry)

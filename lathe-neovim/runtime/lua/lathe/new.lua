@@ -43,25 +43,19 @@ end, KINDS)
 -- synchronously, so it reads this rather than issuing an LSP request per keystroke).
 local cache = { packages = {} }
 
-local notify = require("lathe.util").notify
+local util = require("lathe.util")
+local notify = util.notify
 
 local function warn(message)
   notify(message, vim.log.levels.WARN)
 end
 
 -- The Lathe LSP client attached to a buffer, or nil.
-local lathe_client = require("lathe.util").client
+local lathe_client = util.client
 
 -- Run a server command with its one argument; a failure is a warning, as a creation flow aborts.
 local function execute(client, bufnr, command, argument, cb)
-  require("lathe.util").exec(
-    client,
-    bufnr,
-    command,
-    { argument },
-    cb,
-    { level = vim.log.levels.WARN }
-  )
+  util.exec(client, bufnr, command, { argument }, cb, { level = vim.log.levels.WARN })
 end
 
 -- ── file IO ──────────────────────────────────────────────────────────────────

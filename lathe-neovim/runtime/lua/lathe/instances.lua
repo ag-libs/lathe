@@ -5,19 +5,20 @@
 
 local M = {}
 
-local notify = require("lathe.util").notify
+local util = require("lathe.util")
+local notify = util.notify
 
 --- Request the instantiation sites of the type at the cursor and open them in the quickfix.
 function M.find(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = require("lathe.util").client(bufnr)
+  local client = util.client(bufnr)
   if not client then
     notify("server not attached", vim.log.levels.WARN)
     return
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  require("lathe.util").exec(client, bufnr, "lathe.instantiations", { params }, function(locations)
+  util.exec(client, bufnr, "lathe.instantiations", { params }, function(locations)
     if not locations or vim.tbl_isempty(locations) then
       notify("no instantiation sites found", vim.log.levels.INFO)
       return

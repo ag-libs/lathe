@@ -7,7 +7,8 @@ local M = {}
 
 local GLYPH = { supertype = "▲", ["self"] = "●", subtype = "▼" }
 
-local notify = require("lathe.util").notify
+local util = require("lathe.util")
+local notify = util.notify
 
 -- A server TypeHierarchyItem + its relation -> a picker entry. Fuzzy-matched on the fully-qualified
 -- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive
@@ -44,14 +45,14 @@ end
 --- Request the full hierarchy of the type at the cursor and open it in a picker.
 function M.show(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = require("lathe.util").client(bufnr)
+  local client = util.client(bufnr)
   if not client then
     notify("server not attached", vim.log.levels.WARN)
     return
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  require("lathe.util").exec(client, bufnr, "lathe.typeHierarchy", { params }, function(result)
+  util.exec(client, bufnr, "lathe.typeHierarchy", { params }, function(result)
     if not result or not result.self then
       notify("no type under the cursor", vim.log.levels.INFO)
       return
@@ -61,7 +62,7 @@ function M.show(bufnr)
     end
 
     local entries = build_entries(result)
-    require("lathe.util").pick(entries, {
+    util.pick(entries, {
       title = "Lathe: type hierarchy -- " .. result.self.name,
       preview_locations = true,
       on_choice = function(entry)

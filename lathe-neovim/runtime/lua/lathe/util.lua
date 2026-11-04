@@ -31,7 +31,7 @@ function M.exec(client, bufnr, command, arguments, on_result, opts)
     -- that interrupt; a genuine error still surfaces.
     local ok, failure = pcall(on_result, result)
     if not ok and not tostring(failure):match("[Ii]nterrupt") then
-      error(failure)
+      error(failure, 0) -- rethrown as raised, not as raised here
     end
   end, bufnr)
 end

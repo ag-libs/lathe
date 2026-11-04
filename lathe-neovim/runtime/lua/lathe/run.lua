@@ -44,7 +44,8 @@ local SIGN_TEXT = "▶"
 -- run overwrites it, matching the shared single-buffer output surface.
 local active_token
 
-local lathe_client = require("lathe.util").client
+local util = require("lathe.util")
+local lathe_client = util.client
 
 local function in_range(range, line)
   return range ~= nil and line >= range.start.line and line <= range["end"].line
@@ -128,7 +129,7 @@ function M.refresh_signs(bufnr)
   end, bufnr)
 end
 
-local notify = require("lathe.util").notify
+local notify = util.notify
 
 local function on_finished(label, err, outcome)
   active_token = nil
