@@ -23,7 +23,9 @@ function M.new()
     if actual == expected then
       reporter.ok(string.format("%s => %s", name, tostring(actual)))
     else
-      reporter.fail(string.format("%s: expected %s, got %s", name, tostring(expected), tostring(actual)))
+      reporter.fail(
+        string.format("%s: expected %s, got %s", name, tostring(expected), tostring(actual))
+      )
     end
   end
 
@@ -64,7 +66,8 @@ function M.fake_client(answer, opts)
         name = "lathe",
         offset_encoding = "utf-16",
         request = function(client, method, params, callback, bufnr)
-          requests[#requests + 1] = { method = method, command = params.command, arguments = params.arguments }
+          requests[#requests + 1] =
+            { method = method, command = params.command, arguments = params.arguments }
           return respond(client, method, params, callback, bufnr)
         end,
       },

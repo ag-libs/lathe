@@ -15,13 +15,14 @@ local function insert_imports(bufnr, client, fqns, on_added)
     on_added()
     return
   end
-  client:request('workspace/executeCommand', {
-    command = 'lathe.importEdits',
+  client:request("workspace/executeCommand", {
+    command = "lathe.importEdits",
     arguments = { { uri = vim.uri_from_bufnr(bufnr), imports = fqns } },
   }, function(err, edits)
     if err or edits == nil or edits == vim.NIL then
       notify(
-        err and err.message or 'this server cannot add imports -- update the Lathe build plugin and sync again',
+        err and err.message
+          or "this server cannot add imports -- update the Lathe build plugin and sync again",
         vim.log.levels.WARN
       )
       return
@@ -36,7 +37,7 @@ end
 local function resolve(bufnr, client, result)
   local items = result and result.items or {}
   if #items == 0 then
-    notify('no missing imports', vim.log.levels.INFO)
+    notify("no missing imports", vim.log.levels.INFO)
     return
   end
 
@@ -57,14 +58,14 @@ local function resolve(bufnr, client, result)
   local function report()
     local message
     if #chosen == 0 then
-      message = 'no imports added'
+      message = "no imports added"
     elseif picked > 0 then
-      message = string.format('added %d imports (%d auto, %d chosen)', #chosen, auto, picked)
+      message = string.format("added %d imports (%d auto, %d chosen)", #chosen, auto, picked)
     else
-      message = string.format('added %d imports', #chosen)
+      message = string.format("added %d imports", #chosen)
     end
     if #unresolved > 0 then
-      message = message .. "; couldn't resolve: " .. table.concat(unresolved, ', ')
+      message = message .. "; couldn't resolve: " .. table.concat(unresolved, ", ")
     end
     notify(message, vim.log.levels.INFO)
   end
@@ -81,11 +82,11 @@ local function resolve(bufnr, client, result)
       return
     end
     local item = ambiguous[index]
-    local choices = vim.list_extend({ unpack(item.candidates) }, { 'Skip' })
+    local choices = vim.list_extend({ unpack(item.candidates) }, { "Skip" })
     vim.ui.select(choices, {
-      prompt = string.format('Import %s  (%d/%d)', item.name, index, #ambiguous),
+      prompt = string.format("Import %s  (%d/%d)", item.name, index, #ambiguous),
     }, function(choice)
-      if choice and choice ~= 'Skip' then
+      if choice and choice ~= "Skip" then
         chosen[#chosen + 1] = choice
         picked = picked + 1
       end
@@ -101,12 +102,12 @@ function M.run(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local client = require("lathe.util").client(bufnr)
   if not client then
-    notify('server not attached', vim.log.levels.WARN)
+    notify("server not attached", vim.log.levels.WARN)
     return
   end
 
-  client:request('workspace/executeCommand', {
-    command = 'lathe.missingImports',
+  client:request("workspace/executeCommand", {
+    command = "lathe.missingImports",
     arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
   }, function(err, result)
     if err then
@@ -118,13 +119,13 @@ function M.run(bufnr)
 end
 
 function M.setup()
-  vim.api.nvim_create_user_command('LatheMissingImports', function()
+  vim.api.nvim_create_user_command("LatheMissingImports", function()
     M.run(vim.api.nvim_get_current_buf())
-  end, { desc = 'Lathe: add imports for every unresolved type in the buffer' })
+  end, { desc = "Lathe: add imports for every unresolved type in the buffer" })
 
   -- The "Add missing imports…" code action carries this command; intercept it client-side so the
   -- selection wizard runs instead of a bare server round-trip.
-  vim.lsp.commands['lathe.missingImports'] = function(_, ctx)
+  vim.lsp.commands["lathe.missingImports"] = function(_, ctx)
     M.run(ctx.bufnr)
   end
 end

@@ -78,7 +78,8 @@ spec.check(
 )
 spec.check(
   "configured, no workspace: message names each front-end's first command",
-  notes[2] and notes[2]:find("mvn clean test -Dlathe.capture.only=true", 1, true) ~= nil
+  notes[2]
+    and notes[2]:find("mvn clean test -Dlathe.capture.only=true", 1, true) ~= nil
     and notes[2]:find("lathe-openjdk-maven-plugin:sync", 1, true) ~= nil,
   true
 )
@@ -94,7 +95,8 @@ lathe.warn_if_not_ready(vim.fn.bufadd(legacy .. "/src/main/java/E.java"))
 spec.check("legacy sync: notify", #notes, 3)
 spec.check(
   "legacy sync: message names the older Lathe and the fix",
-  notes[3] and notes[3]:find("older Lathe", 1, true) ~= nil
+  notes[3]
+    and notes[3]:find("older Lathe", 1, true) ~= nil
     and notes[3]:find("0.1.16", 1, true) ~= nil,
   true
 )

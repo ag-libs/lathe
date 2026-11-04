@@ -96,7 +96,11 @@ do
   local target_class = target(TEST_CLASS, "com.example.AppTest", 8, 20)
   local config = dap._test_config_for(target_class)
   spec.check("test config selectorKind", config.lathe_selections[1].selectorKind, "CLASS")
-  spec.check("test config selectorValue", config.lathe_selections[1].selectorValue, "com.example.AppTest")
+  spec.check(
+    "test config selectorValue",
+    config.lathe_selections[1].selectorValue,
+    "com.example.AppTest"
+  )
   spec.check("test config moduleRel", config.lathe_module_rel, "app")
   spec.check("test config request", config.request, "attach")
 end
@@ -137,8 +141,16 @@ end
 -- available (gutters/console/outcome), else falls back to a direct dap.run; a main always uses a
 -- direct dap.run (no neotest surface); nothing resolved is "none".
 do
-  spec.check("test + neotest -> neotest dap strategy", dap._debug_route(true, false, true), "neotest")
-  spec.check("test, neotest absent -> direct dap.run fallback", dap._debug_route(true, false, false), "dap_test")
+  spec.check(
+    "test + neotest -> neotest dap strategy",
+    dap._debug_route(true, false, true),
+    "neotest"
+  )
+  spec.check(
+    "test, neotest absent -> direct dap.run fallback",
+    dap._debug_route(true, false, false),
+    "dap_test"
+  )
   spec.check("main -> direct dap.run", dap._debug_route(false, true, true), "dap_main")
   spec.check("main is unaffected by neotest", dap._debug_route(false, true, false), "dap_main")
   spec.check("nothing under cursor -> none", dap._debug_route(false, false, false), "none")

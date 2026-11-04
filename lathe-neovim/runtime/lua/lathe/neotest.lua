@@ -132,13 +132,9 @@ local function await_ready()
     return
   end
 
-  wait_until(
-    function()
-      return #nio().lsp.get_clients({ name = "lathe" }) > 0
-    end,
-    READY_TIMEOUT_MS,
-    READY_POLL_MS
-  )
+  wait_until(function()
+    return #nio().lsp.get_clients({ name = "lathe" }) > 0
+  end, READY_TIMEOUT_MS, READY_POLL_MS)
 end
 
 -- Per-buffer "the Lathe server has this file open" gate + one-shot re-discovery nudge. Two problems
@@ -295,7 +291,9 @@ function M._value_diff(expected, actual)
   if #lines > DIFF_MAX_LINES then
     local more = #lines - DIFF_MAX_LINES
     lines = vim.list_slice(lines, 1, DIFF_MAX_LINES)
-    lines[#lines + 1] = ("… %d more lines: require('lathe.neotest').open_diff() shows both values"):format(more)
+    lines[#lines + 1] = ("… %d more lines: require('lathe.neotest').open_diff() shows both values"):format(
+      more
+    )
   end
 
   return table.concat(lines, "\n")
@@ -341,7 +339,10 @@ vim.lsp.handlers["lathe/testEvent"] = function(_err, result)
 
   local queue = event_queues[result.token]
   if queue then
-    queue.put_nowait({ position_id = result.result.positionId, result = test_result(result.result, nil) })
+    queue.put_nowait({
+      position_id = result.result.positionId,
+      result = test_result(result.result, nil),
+    })
   end
 end
 
@@ -413,7 +414,8 @@ local function read_build_dirs(root)
   local dirs = {}
   for _, output in ipairs(manifest and manifest.outputs or {}) do
     local prefix = (output.module or "") == "" and "" or (output.module .. "/")
-    local build_dir = vim.startswith(output.path, prefix) and output.path:sub(#prefix + 1):match("^[^/]+")
+    local build_dir = vim.startswith(output.path, prefix)
+      and output.path:sub(#prefix + 1):match("^[^/]+")
     if build_dir then
       dirs[prefix .. build_dir] = true
     end
@@ -546,8 +548,14 @@ function M._targets_from_discovery(tests, file_path, module_rel)
   for _, test in ipairs(tests or {}) do
     if test.uri ~= "" and vim.fs.normalize(vim.uri_to_fname(test.uri)) == file then
       local class = class_of(test.id)
-      targets[#targets + 1] =
-        { id = test.id, parentId = class, kind = TEST_METHOD_KIND, label = test.label, moduleRel = module_rel, range = TOP_OF_FILE }
+      targets[#targets + 1] = {
+        id = test.id,
+        parentId = class,
+        kind = TEST_METHOD_KIND,
+        label = test.label,
+        moduleRel = module_rel,
+        range = TOP_OF_FILE,
+      }
       while class and not classes[class] do
         classes[class] = true
         local outer = enclosing_class(class)
@@ -603,7 +611,9 @@ local function request_targets(file_path, bufnr)
   -- discovered against the server as-is (empty until it too is opened).
   if vim.api.nvim_buf_is_loaded(bufnr) then
     await_open_confirmed(bufnr)
-    debug_log("[discover] " .. file_path .. " open-confirmed=" .. tostring(open_confirmed[bufnr] == true))
+    debug_log(
+      "[discover] " .. file_path .. " open-confirmed=" .. tostring(open_confirmed[bufnr] == true)
+    )
   end
 
   local tick = vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or nil
@@ -716,11 +726,13 @@ local function run_spec(position_id, module_rel, selections, client, label, stra
   nio().run(function()
     local err, outcome = client.request.workspace_executeCommand({
       command = "lathe.run.test",
-      arguments = { {
-        moduleRel = module_rel,
-        selections = selections,
-        token = token,
-      } },
+      arguments = {
+        {
+          moduleRel = module_rel,
+          selections = selections,
+          token = token,
+        },
+      },
     }, 0)
     -- Every testEvent for this run has already been handled (they precede the run.test response
     -- on the wire), so the queue holds them all before this close sentinel.
@@ -844,7 +856,11 @@ function M.build_spec(args)
     -- message explaining why nothing ran.
     return {
       command = { "true" },
-      context = { position_id = pos.id, skip_reason = "no tests found in this file", label = pos.name },
+      context = {
+        position_id = pos.id,
+        skip_reason = "no tests found in this file",
+        label = pos.name,
+      },
     }
   end
   return run_spec(pos.id, module_rel, selections, client, pos.name, strategy)
@@ -918,7 +934,8 @@ local function class_failure(id, real, output, diagnosed)
   while class do
     local failure = real[class]
     if failure and failure.status == "failed" then
-      local res = { status = "failed", short = "class failed: " .. (failure.short or ""), output = output }
+      local res =
+        { status = "failed", short = "class failed: " .. (failure.short or ""), output = output }
       if not diagnosed[class] then
         diagnosed[class] = true
         res.errors = failure.errors
@@ -1051,7 +1068,13 @@ function M._run_summary(ctx, real, elapsed_ms)
   local warn = failed > 0 or (outcome ~= nil and outcome.exitCode ~= 0)
   return {
     warn = warn,
-    text = ("%s — %d passed, %d failed, %d skipped%s"):format(label, passed, failed, skipped, suffix),
+    text = ("%s — %d passed, %d failed, %d skipped%s"):format(
+      label,
+      passed,
+      failed,
+      skipped,
+      suffix
+    ),
   }
 end
 
@@ -1225,7 +1248,11 @@ function M.results(spec, result, tree)
   -- results()). ctx.started is unset on the no-tests skip spec, so the duration is simply omitted.
   local elapsed_ms = ctx.started and (vim.uv.hrtime() - ctx.started) / 1e6 or nil
   local summary = M._run_summary(ctx, real, elapsed_ms)
-  vim.notify(summary.text, summary.warn and vim.log.levels.WARN or vim.log.levels.INFO, { title = "Lathe" })
+  vim.notify(
+    summary.text,
+    summary.warn and vim.log.levels.WARN or vim.log.levels.INFO,
+    { title = "Lathe" }
+  )
 
   require("lathe.stackdecorate").decorate_live_output()
   return results
@@ -1266,7 +1293,8 @@ function M._results_qf_items(results, paths)
     local failed = tr.status == "failed"
     local message = failed and tr.failureMessage and tr.failureMessage ~= "" and tr.failureMessage
       or nil
-    local text = message and (id .. " — " .. message:gsub("%s+", " ")) or (id .. " — " .. tr.status)
+    local text = message and (id .. " — " .. message:gsub("%s+", " "))
+      or (id .. " — " .. tr.status)
     if tr.durationMs and tr.durationMs >= 0 then
       text = ("%s (%d ms)"):format(text, tr.durationMs)
     end
@@ -1312,7 +1340,12 @@ local function cursor_test_id()
   local cached = discovery_cache[vim.api.nvim_buf_get_name(0)]
   local line = vim.api.nvim_win_get_cursor(0)[1] - 1
   for _, t in ipairs(cached and cached.targets or {}) do
-    if t.kind == TEST_METHOD_KIND and t.range and t.range.start.line <= line and line <= t.range["end"].line then
+    if
+      t.kind == TEST_METHOD_KIND
+      and t.range
+      and t.range.start.line <= line
+      and line <= t.range["end"].line
+    then
       return t.id
     end
   end
@@ -1359,7 +1392,8 @@ function M.open_diff()
   vim.ui.select(candidates, {
     prompt = "Compare",
     format_item = function(tr)
-      return tr.displayName ~= "" and ("%s %s"):format(tr.positionId, tr.displayName) or tr.positionId
+      return tr.displayName ~= "" and ("%s %s"):format(tr.positionId, tr.displayName)
+        or tr.positionId
     end,
   }, function(choice)
     if choice then

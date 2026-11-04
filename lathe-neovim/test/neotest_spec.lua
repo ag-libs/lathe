@@ -136,15 +136,31 @@ do
   local by_id = flatten(forest)
 
   spec.check("nested case: forest has file root + one top-level entry", #forest, 2)
-  spec.check("nested class reachable despite untracked enclosing class", by_id["demo.Outer$Inner"] ~= nil, true)
+  spec.check(
+    "nested class reachable despite untracked enclosing class",
+    by_id["demo.Outer$Inner"] ~= nil,
+    true
+  )
 end
 
 -- is_test_file takes any Java file under a test source root; the server's discovery, with the
 -- build's own test filter, says which hold tests, so a class needs no test-like name.
 do
-  spec.check("any test-root .java matches", adapter.is_test_file("/p/src/test/java/demo/Foo.java"), true)
-  spec.check("non-.java file does not match", adapter.is_test_file("/p/src/test/java/demo/FooTest.txt"), false)
-  spec.check("src/main class does not match", adapter.is_test_file("/p/src/main/java/demo/TestData.java"), false)
+  spec.check(
+    "any test-root .java matches",
+    adapter.is_test_file("/p/src/test/java/demo/Foo.java"),
+    true
+  )
+  spec.check(
+    "non-.java file does not match",
+    adapter.is_test_file("/p/src/test/java/demo/FooTest.txt"),
+    false
+  )
+  spec.check(
+    "src/main class does not match",
+    adapter.is_test_file("/p/src/main/java/demo/TestData.java"),
+    false
+  )
 end
 
 -- _targets_from_discovery: a never-opened file's tree from its module's discovery. Only the tests
@@ -164,15 +180,35 @@ do
   end
 
   spec.check("discovery: this file's tests and classes only", #targets, 4)
-  spec.check("discovery: method under its class", by_id["demo.FooTest$Inner#b(int)"].parentId, "demo.FooTest$Inner")
+  spec.check(
+    "discovery: method under its class",
+    by_id["demo.FooTest$Inner#b(int)"].parentId,
+    "demo.FooTest$Inner"
+  )
   spec.check("discovery: method is a test target", by_id["demo.FooTest#a()"].kind, 1)
-  spec.check("discovery: nested class under its outer class", by_id["demo.FooTest$Inner"].parentId, "demo.FooTest")
-  spec.check("discovery: nested class labelled by simple name", by_id["demo.FooTest$Inner"].label, "Inner")
+  spec.check(
+    "discovery: nested class under its outer class",
+    by_id["demo.FooTest$Inner"].parentId,
+    "demo.FooTest"
+  )
+  spec.check(
+    "discovery: nested class labelled by simple name",
+    by_id["demo.FooTest$Inner"].label,
+    "Inner"
+  )
   spec.check("discovery: top class under its package", by_id["demo.FooTest"].parentId, "demo")
   spec.check("discovery: class is a class target", by_id["demo.FooTest"].kind, 2)
   spec.check("discovery: carries the module", by_id["demo.FooTest"].moduleRel, "app")
-  spec.check("discovery: positioned at the top of the file", by_id["demo.FooTest#a()"].range.start.line, 0)
-  spec.check("discovery: no tests, no targets", #adapter._targets_from_discovery(nil, FILE, "app"), 0)
+  spec.check(
+    "discovery: positioned at the top of the file",
+    by_id["demo.FooTest#a()"].range.start.line,
+    0
+  )
+  spec.check(
+    "discovery: no tests, no targets",
+    #adapter._targets_from_discovery(nil, FILE, "app"),
+    0
+  )
 end
 
 local function read_file(path)
@@ -244,7 +280,11 @@ do
     outcome = { launched = false, blockedReasons = { "no runner jar" } },
   })
   spec.check("blocked result status", blocked.status, "failed")
-  spec.check("blocked result output file content", read_file(blocked.output), "BLOCKED: no runner jar")
+  spec.check(
+    "blocked result output file content",
+    read_file(blocked.output),
+    "BLOCKED: no runner jar"
+  )
 
   local errored = result_for({ position_id = POS_ID, err = { message = "timeout" } })
   spec.check("errored result status", errored.status, "failed")
@@ -267,7 +307,10 @@ end
 -- sibling classes' methods with the wrong class's result.
 do
   local nodes = {
-    ["demo.FooTest"] = { id = "demo.FooTest", children = { "demo.FooTest#a()", "demo.FooTest#b()" } },
+    ["demo.FooTest"] = {
+      id = "demo.FooTest",
+      children = { "demo.FooTest#a()", "demo.FooTest#b()" },
+    },
     ["demo.FooTest#a()"] = { id = "demo.FooTest#a()", children = {} },
     ["demo.FooTest#b()"] = { id = "demo.FooTest#b()", children = {} },
     ["demo.OtherTest"] = { id = "demo.OtherTest", children = { "demo.OtherTest#c()" } },
@@ -285,9 +328,17 @@ do
   local method_a = results["demo.FooTest#a()"]
   spec.check("class result present", results["demo.FooTest"] ~= nil, true)
   spec.check("sibling method a resolved, not stuck running", method_a ~= nil, true)
-  spec.check("sibling method b resolved, not stuck running", results["demo.FooTest#b()"] ~= nil, true)
+  spec.check(
+    "sibling method b resolved, not stuck running",
+    results["demo.FooTest#b()"] ~= nil,
+    true
+  )
   spec.check("method a inherits class status", method_a and method_a.status, "passed")
-  spec.check("unrelated class in the same outer tree left untouched", results["demo.OtherTest"], nil)
+  spec.check(
+    "unrelated class in the same outer tree left untouched",
+    results["demo.OtherTest"],
+    nil
+  )
   spec.check("unrelated class's method left untouched", results["demo.OtherTest#c()"], nil)
 end
 
@@ -320,9 +371,24 @@ do
         exitCode = 1,
         output = transcript("transcript"),
         testResults = {
-          { positionId = "demo.FooTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
-          { positionId = "demo.FooTest#b()", status = "failed", failureMessage = "expected true", failureLine = 12 },
-          { positionId = "demo.FooTest#c(java.lang.String,int)", status = "passed", failureMessage = "", failureLine = -1 },
+          {
+            positionId = "demo.FooTest#a()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
+          {
+            positionId = "demo.FooTest#b()",
+            status = "failed",
+            failureMessage = "expected true",
+            failureLine = 12,
+          },
+          {
+            positionId = "demo.FooTest#c(java.lang.String,int)",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
         },
       },
     },
@@ -331,13 +397,25 @@ do
   local method_a = results["demo.FooTest#a()"]
   local method_b = results["demo.FooTest#b()"]
   local method_c = results["demo.FooTest#c(java.lang.String,int)"]
-  spec.check("passing method marked passed, not the aggregate failure", method_a and method_a.status, "passed")
+  spec.check(
+    "passing method marked passed, not the aggregate failure",
+    method_a and method_a.status,
+    "passed"
+  )
   spec.check("failing method marked failed", method_b and method_b.status, "failed")
-  spec.check("failing method carries its failure message", method_b and method_b.short, "expected true")
+  spec.check(
+    "failing method carries its failure message",
+    method_b and method_b.short,
+    "expected true"
+  )
   -- F1: a failing method exposes a neotest.Result.error so neotest's diagnostic consumer sets a
   -- vim.diagnostic on the failing line. failureLine is a 1-based Java source line; neotest wants
   -- 0-based, so 12 -> 11. Passing methods (failureLine -1, empty message) expose no diagnostic.
-  spec.check("failing method exposes one diagnostic error", method_b and method_b.errors and #method_b.errors, 1)
+  spec.check(
+    "failing method exposes one diagnostic error",
+    method_b and method_b.errors and #method_b.errors,
+    1
+  )
   spec.check(
     "diagnostic message is the failure message",
     method_b and method_b.errors and method_b.errors[1].message,
@@ -351,7 +429,11 @@ do
   spec.check("passing method exposes no diagnostics", method_a and method_a.errors, nil)
   spec.check("param method keyed by its server positionId", method_c and method_c.status, "passed")
   spec.check("per-test result reuses the run transcript", read_file(method_a.output), "transcript")
-  spec.check("class namespace node still gets the aggregate status", results["demo.FooTest"].status, "failed")
+  spec.check(
+    "class namespace node still gets the aggregate status",
+    results["demo.FooTest"].status,
+    "failed"
+  )
 end
 
 -- A @ParameterizedTest emits one record per invocation, all collapsing onto
@@ -363,7 +445,12 @@ do
     return adapter.results({
       context = {
         position_id = "demo.FooTest#p(java.lang.String)",
-        outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = invocations },
+        outcome = {
+          launched = true,
+          exitCode = 1,
+          output = transcript("t"),
+          testResults = invocations,
+        },
       },
     })["demo.FooTest#p(java.lang.String)"]
   end
@@ -380,7 +467,11 @@ do
   local pass_then_fail = run({ invocation("passed"), invocation("failed", "second blew up") })
   local fail_then_pass = run({ invocation("failed", "first blew up"), invocation("passed") })
   spec.check("passed invocation does not mask a later failure", pass_then_fail.status, "failed")
-  spec.check("a later passing invocation does not clear an earlier failure", fail_then_pass.status, "failed")
+  spec.check(
+    "a later passing invocation does not clear an earlier failure",
+    fail_then_pass.status,
+    "failed"
+  )
   spec.check("rolled-up failure keeps a failure message", fail_then_pass.short, "first blew up")
 end
 
@@ -398,10 +489,18 @@ do
   local nodes = {
     [dir] = { id = dir, type = "dir", children = { pass_file, fail_file } },
     [pass_file] = { id = pass_file, type = "file", children = { "demo.AlphaTest" } },
-    ["demo.AlphaTest"] = { id = "demo.AlphaTest", type = "namespace", children = { "demo.AlphaTest#ok()" } },
+    ["demo.AlphaTest"] = {
+      id = "demo.AlphaTest",
+      type = "namespace",
+      children = { "demo.AlphaTest#ok()" },
+    },
     ["demo.AlphaTest#ok()"] = { id = "demo.AlphaTest#ok()", type = "test", children = {} },
     [fail_file] = { id = fail_file, type = "file", children = { "demo.BetaTest" } },
-    ["demo.BetaTest"] = { id = "demo.BetaTest", type = "namespace", children = { "demo.BetaTest#bad()" } },
+    ["demo.BetaTest"] = {
+      id = "demo.BetaTest",
+      type = "namespace",
+      children = { "demo.BetaTest#bad()" },
+    },
     ["demo.BetaTest#bad()"] = { id = "demo.BetaTest#bad()", type = "test", children = {} },
   }
   local tree = fake_tree(nodes)
@@ -414,15 +513,29 @@ do
         exitCode = 1,
         output = transcript("transcript"),
         testResults = {
-          { positionId = "demo.AlphaTest#ok()", status = "passed", failureMessage = "", failureLine = -1 },
-          { positionId = "demo.BetaTest#bad()", status = "failed", failureMessage = "boom", failureLine = 7 },
+          {
+            positionId = "demo.AlphaTest#ok()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
+          {
+            positionId = "demo.BetaTest#bad()",
+            status = "failed",
+            failureMessage = "boom",
+            failureLine = 7,
+          },
         },
       },
     },
   }, nil, tree)
 
   spec.check("dir run position shows the aggregate failure", results[dir].status, "failed")
-  spec.check("passing file rolls up to passed, not the aggregate", results[pass_file].status, "passed")
+  spec.check(
+    "passing file rolls up to passed, not the aggregate",
+    results[pass_file].status,
+    "passed"
+  )
   spec.check("passing class rolls up to passed", results["demo.AlphaTest"].status, "passed")
   spec.check("passing method stays passed", results["demo.AlphaTest#ok()"].status, "passed")
   spec.check("failing file rolls up to failed", results[fail_file].status, "failed")
@@ -460,20 +573,52 @@ do
         exitCode = 1,
         output = transcript("transcript"),
         testResults = {
-          { positionId = "com.x.AlphaTest#ok()", status = "passed", failureMessage = "", failureLine = -1 },
-          { positionId = "com.x.AlphaTest#ok2()", status = "passed", failureMessage = "", failureLine = -1 },
-          { positionId = "com.x.BetaTest#bad()", status = "failed", failureMessage = "boom", failureLine = 3 },
-          { positionId = "com.x.sub.GammaTest#g()", status = "passed", failureMessage = "", failureLine = -1 },
+          {
+            positionId = "com.x.AlphaTest#ok()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
+          {
+            positionId = "com.x.AlphaTest#ok2()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
+          {
+            positionId = "com.x.BetaTest#bad()",
+            status = "failed",
+            failureMessage = "boom",
+            failureLine = 3,
+          },
+          {
+            positionId = "com.x.sub.GammaTest#g()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
         },
       },
     },
   }, nil, tree)
 
   spec.check("dir run position shows the aggregate failure", results[base].status, "failed")
-  spec.check("never-opened passing file matched by name -> passed", results[pass_file].status, "passed")
-  spec.check("never-opened failing file matched by name -> failed", results[fail_file].status, "failed")
+  spec.check(
+    "never-opened passing file matched by name -> passed",
+    results[pass_file].status,
+    "passed"
+  )
+  spec.check(
+    "never-opened failing file matched by name -> failed",
+    results[fail_file].status,
+    "failed"
+  )
   spec.check("nested package dir matched by prefix -> passed", results[sub].status, "passed")
-  spec.check("file in a nested package matched by name -> passed", results[sub_file].status, "passed")
+  spec.check(
+    "file in a nested package matched by name -> passed",
+    results[sub_file].status,
+    "passed"
+  )
 end
 
 -- NV-5: results() records individually-runnable failures into an ordered, self-shrinking list, and
@@ -501,15 +646,30 @@ do
     adapter.results({
       context = {
         position_id = position_id,
-        outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = test_results },
+        outcome = {
+          launched = true,
+          exitCode = 1,
+          output = transcript("t"),
+          testResults = test_results,
+        },
       },
     }, nil, tree)
   end
 
   run("demo.FooTest", {
     { positionId = "demo.FooTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
-    { positionId = "demo.FooTest#b()", status = "failed", failureMessage = "boom", failureLine = 3 },
-    { positionId = "demo.FooTest#c()", status = "failed", failureMessage = "bang", failureLine = 5 },
+    {
+      positionId = "demo.FooTest#b()",
+      status = "failed",
+      failureMessage = "boom",
+      failureLine = 3,
+    },
+    {
+      positionId = "demo.FooTest#c()",
+      status = "failed",
+      failureMessage = "bang",
+      failureLine = 5,
+    },
   })
   spec.check(
     "failures captured in execution order, passes excluded",
@@ -528,7 +688,11 @@ do
   run("demo.FooTest#b()", {
     { positionId = "demo.FooTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
   })
-  spec.check("a passing re-run drops its test", table.concat(adapter._failing, ","), "demo.FooTest#c()")
+  spec.check(
+    "a passing re-run drops its test",
+    table.concat(adapter._failing, ","),
+    "demo.FooTest#c()"
+  )
 
   ran = nil
   adapter.run_first_failed()
@@ -536,7 +700,8 @@ do
 
   -- An undiscovered failure (no tree node) is not listed -- it can't be targeted individually, so the
   -- list is unchanged.
-  local orphan_tree = fake_tree({ ["demo.FooTest"] = { id = "demo.FooTest", type = "namespace", children = {} } })
+  local orphan_tree =
+    fake_tree({ ["demo.FooTest"] = { id = "demo.FooTest", type = "namespace", children = {} } })
   adapter.results({
     context = {
       position_id = "demo.FooTest",
@@ -545,12 +710,21 @@ do
         exitCode = 1,
         output = transcript("t"),
         testResults = {
-          { positionId = "demo.Never#opened()", status = "failed", failureMessage = "x", failureLine = 1 },
+          {
+            positionId = "demo.Never#opened()",
+            status = "failed",
+            failureMessage = "x",
+            failureLine = 1,
+          },
         },
       },
     },
   }, nil, orphan_tree)
-  spec.check("undiscovered failure is not listed", table.concat(adapter._failing, ","), "demo.FooTest#c()")
+  spec.check(
+    "undiscovered failure is not listed",
+    table.concat(adapter._failing, ","),
+    "demo.FooTest#c()"
+  )
 
   -- c passes -> list empty -> run_first_failed runs nothing and warns.
   run("demo.FooTest#c()", {
@@ -599,9 +773,21 @@ do
   local bare = vim.fn.tempname()
   vim.fn.mkdir(bare, "p")
 
-  spec.check("filter_dir prunes a Maven build dir", adapter.filter_dir("target", "app/target", root), false)
-  spec.check("filter_dir prunes a root module's custom build dir", adapter.filter_dir("out", "out", root), false)
-  spec.check("filter_dir prunes a Gradle build dir", adapter.filter_dir("build", "lib/build", root), false)
+  spec.check(
+    "filter_dir prunes a Maven build dir",
+    adapter.filter_dir("target", "app/target", root),
+    false
+  )
+  spec.check(
+    "filter_dir prunes a root module's custom build dir",
+    adapter.filter_dir("out", "out", root),
+    false
+  )
+  spec.check(
+    "filter_dir prunes a Gradle build dir",
+    adapter.filter_dir("build", "lib/build", root),
+    false
+  )
   spec.check(
     "filter_dir keeps a source package named target",
     adapter.filter_dir("target", "app/src/main/java/com/x/target", root),
@@ -610,7 +796,11 @@ do
   spec.check("filter_dir keeps src", adapter.filter_dir("src", "app/src", root), true)
   spec.check("filter_dir excludes .lathe", adapter.filter_dir(".lathe", ".lathe", root), false)
   spec.check("filter_dir excludes .git", adapter.filter_dir(".git", ".git", root), false)
-  spec.check("filter_dir without a manifest keeps target", adapter.filter_dir("target", "app/target", bare), true)
+  spec.check(
+    "filter_dir without a manifest keeps target",
+    adapter.filter_dir("target", "app/target", bare),
+    true
+  )
 
   vim.fn.delete(root, "rf")
   vim.fn.delete(bare, "rf")
@@ -636,9 +826,13 @@ do
     lsp = {
       get_clients = function()
         return {
-          { request = { workspace_executeCommand = function(arg)
-            executed[#executed + 1] = arg
-          end } },
+          {
+            request = {
+              workspace_executeCommand = function(arg)
+                executed[#executed + 1] = arg
+              end,
+            },
+          },
         }
       end,
     },
@@ -664,7 +858,11 @@ do
 
   local built = adapter.build_spec({ tree = tree, strategy = "dap" })
 
-  spec.check("dap build_spec carries a lathe strategy config", built.strategy and built.strategy.type, "lathe")
+  spec.check(
+    "dap build_spec carries a lathe strategy config",
+    built.strategy and built.strategy.type,
+    "lathe"
+  )
   spec.check("dap strategy carries a run token", type(built.strategy.lathe_token), "string")
   spec.check(
     "dap strategy carries the selection",
@@ -702,10 +900,14 @@ do
       lsp = {
         get_clients = function()
           return {
-            { request = { workspace_executeCommand = function(arg)
-              executed[#executed + 1] = arg
-              return nil, replies[arg.command]
-            end } },
+            {
+              request = {
+                workspace_executeCommand = function(arg)
+                  executed[#executed + 1] = arg
+                  return nil, replies[arg.command]
+                end,
+              },
+            },
           }
         end,
       },
@@ -739,7 +941,11 @@ do
     },
   })
   local built = adapter.build_spec({ tree = tree })
-  spec.check("dir run resolves via lathe.runnables.dir", command_arg("lathe.runnables.dir") ~= nil, true)
+  spec.check(
+    "dir run resolves via lathe.runnables.dir",
+    command_arg("lathe.runnables.dir") ~= nil,
+    true
+  )
   spec.check(
     "dir run asks about the directory uri",
     command_arg("lathe.runnables.dir").arguments[1].uri,
@@ -773,7 +979,11 @@ do
   install_nio({ ["lathe.resolveContext"] = { moduleRel = "demo", scope = "test", pkg = "demo" } })
   adapter.build_spec({ tree = file_tree })
   local class_run = command_arg("lathe.run.test")
-  spec.check("undiscovered file runs in its module", class_run and class_run.arguments[1].moduleRel, "demo")
+  spec.check(
+    "undiscovered file runs in its module",
+    class_run and class_run.arguments[1].moduleRel,
+    "demo"
+  )
   spec.check(
     "undiscovered file runs the class its path names",
     class_run and class_run.arguments[1].selections[1].selectorValue,
@@ -782,7 +992,11 @@ do
 
   install_nio({ ["lathe.resolveContext"] = vim.NIL })
   local no_module = adapter.build_spec({ tree = file_tree })
-  spec.check("file in no module yields a skip spec", no_module.context.skip_reason, "no tests found in this file")
+  spec.check(
+    "file in no module yields a skip spec",
+    no_module.context.skip_reason,
+    "no tests found in this file"
+  )
   spec.check("file in no module fires no lathe.run.test", command_arg("lathe.run.test"), nil)
 
   package.loaded["nio"] = nil
@@ -797,8 +1011,16 @@ do
   spec.check("synthesized outcome takes exit code 0", zero.exitCode, 0)
   spec.check("synthesized outcome has no per-test results", #zero.testResults, 0)
 
-  spec.check("synthesized outcome takes a non-zero exit code", adapter._synthesized_outcome({ code = 1 }).exitCode, 1)
-  spec.check("synthesized outcome defaults a missing code to -1", adapter._synthesized_outcome(nil).exitCode, -1)
+  spec.check(
+    "synthesized outcome takes a non-zero exit code",
+    adapter._synthesized_outcome({ code = 1 }).exitCode,
+    1
+  )
+  spec.check(
+    "synthesized outcome defaults a missing code to -1",
+    adapter._synthesized_outcome(nil).exitCode,
+    -1
+  )
 end
 
 -- NV-2: the one-line run-completion toast (_run_summary) over the run context + per-test map. Counts
@@ -806,7 +1028,11 @@ end
 -- elapsed ms renders as one-decimal seconds and is omitted when untimed.
 do
   local real_pass = { ["C#a()"] = { status = "passed" }, ["C#b()"] = { status = "passed" } }
-  local pass = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 0 } }, real_pass, 1800)
+  local pass = adapter._run_summary(
+    { label = "C", outcome = { launched = true, exitCode = 0 } },
+    real_pass,
+    1800
+  )
   spec.check("all-pass summary text", pass.text, "C — 2 passed, 0 failed, 0 skipped (1.8s)")
   spec.check("all-pass summary is INFO", pass.warn, false)
 
@@ -815,7 +1041,11 @@ do
     ["C#b()"] = { status = "failed" },
     ["C#c()"] = { status = "skipped" },
   }
-  local mixed = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 1 } }, real_mixed, 2300)
+  local mixed = adapter._run_summary(
+    { label = "C", outcome = { launched = true, exitCode = 1 } },
+    real_mixed,
+    2300
+  )
   spec.check("mixed summary text", mixed.text, "C — 1 passed, 1 failed, 1 skipped (2.3s)")
   spec.check("mixed summary is WARN", mixed.warn, true)
 
@@ -831,12 +1061,24 @@ do
   spec.check("errored summary text", errored.text, "C — errored (0.5s)")
   spec.check("errored summary is WARN", errored.warn, true)
 
-  local skipped = adapter._run_summary({ label = "Foo.java", skip_reason = "no tests found in this file" }, {}, nil)
+  local skipped = adapter._run_summary(
+    { label = "Foo.java", skip_reason = "no tests found in this file" },
+    {},
+    nil
+  )
   spec.check("skip summary text", skipped.text, "Foo.java — no tests found in this file")
   spec.check("skip summary is WARN", skipped.warn, true)
 
-  local untimed = adapter._run_summary({ label = "C", outcome = { launched = true, exitCode = 0 } }, real_pass, nil)
-  spec.check("untimed summary omits the seconds suffix", untimed.text, "C — 2 passed, 0 failed, 0 skipped")
+  local untimed = adapter._run_summary(
+    { label = "C", outcome = { launched = true, exitCode = 0 } },
+    real_pass,
+    nil
+  )
+  spec.check(
+    "untimed summary omits the seconds suffix",
+    untimed.text,
+    "C — 2 passed, 0 failed, 0 skipped"
+  )
 end
 
 -- The richer results (durations, display names, expected/actual, stack frames) and a class's own
@@ -850,7 +1092,10 @@ do
       children = { "demo.BrokenTest#neverRuns()", "demo.BrokenTest$Inner#alsoNever()" },
     },
     ["demo.BrokenTest#neverRuns()"] = { id = "demo.BrokenTest#neverRuns()", children = {} },
-    ["demo.BrokenTest$Inner#alsoNever()"] = { id = "demo.BrokenTest$Inner#alsoNever()", children = {} },
+    ["demo.BrokenTest$Inner#alsoNever()"] = {
+      id = "demo.BrokenTest$Inner#alsoNever()",
+      children = {},
+    },
   }
   local class_failure = {
     className = "demo.BrokenTest",
@@ -874,7 +1119,9 @@ do
     displayName = "m()",
     expected = "a",
     actual = "b",
-    stackTrace = { { className = "demo.OtherTest", methodName = "m", fileName = "OtherTest.java", line = 3 } },
+    stackTrace = {
+      { className = "demo.OtherTest", methodName = "m", fileName = "OtherTest.java", line = 3 },
+    },
   }
 
   local results = adapter.results({
@@ -890,20 +1137,32 @@ do
   }, nil, fake_tree(nodes))
   local items = adapter._results_qf_items({ class_failure, rich_failure }, {})
 
-  spec.check("class failure marks the class node failed", results["demo.BrokenTest"].status, "failed")
+  spec.check(
+    "class failure marks the class node failed",
+    results["demo.BrokenTest"].status,
+    "failed"
+  )
   spec.check(
     "class failure carries its real message",
     results["demo.BrokenTest"].short,
     "java.lang.IllegalStateException: setup exploded"
   )
-  spec.check("rich failure still maps to its method", results["demo.OtherTest#m()"].status, "failed")
+  spec.check(
+    "rich failure still maps to its method",
+    results["demo.OtherTest#m()"].status,
+    "failed"
+  )
   spec.check(
     "rich failure's text carries the diff of its values",
     results["demo.OtherTest#m()"].short,
     "expected: <a> but was: <b>\n-a\n+b"
   )
   -- The class's methods never ran: they report the class's error, not the run's "exit=1".
-  spec.check("method of a failed class is failed", results["demo.BrokenTest#neverRuns()"].status, "failed")
+  spec.check(
+    "method of a failed class is failed",
+    results["demo.BrokenTest#neverRuns()"].status,
+    "failed"
+  )
   spec.check(
     "method of a failed class names the class's error",
     results["demo.BrokenTest#neverRuns()"].short,
@@ -928,7 +1187,12 @@ do
   local method_run = adapter.results({
     context = {
       position_id = "demo.BrokenTest#neverRuns()",
-      outcome = { launched = true, exitCode = 1, output = transcript("t"), testResults = { class_failure } },
+      outcome = {
+        launched = true,
+        exitCode = 1,
+        output = transcript("t"),
+        testResults = { class_failure },
+      },
     },
   }, nil, fake_tree(nodes))
   spec.check(
@@ -938,7 +1202,8 @@ do
   )
   spec.check(
     "…and carries the class's diagnostic",
-    method_run["demo.BrokenTest#neverRuns()"].errors and method_run["demo.BrokenTest#neverRuns()"].errors[1].line,
+    method_run["demo.BrokenTest#neverRuns()"].errors
+      and method_run["demo.BrokenTest#neverRuns()"].errors[1].line,
     8
   )
   spec.check(
@@ -963,14 +1228,28 @@ do
           { stream = 1, text = "also from a", positionId = "demo.OutTest#a()" },
         },
         testResults = {
-          { positionId = "demo.OutTest#a()", status = "passed", failureMessage = "", failureLine = -1 },
-          { positionId = "demo.OutTest#b()", status = "passed", failureMessage = "", failureLine = -1 },
+          {
+            positionId = "demo.OutTest#a()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
+          {
+            positionId = "demo.OutTest#b()",
+            status = "passed",
+            failureMessage = "",
+            failureLine = -1,
+          },
         },
       },
     },
   }, nil, nil)
 
-  spec.check("a test's output holds only its own lines", read_file(results["demo.OutTest#a()"].output), "from a\nalso from a")
+  spec.check(
+    "a test's output holds only its own lines",
+    read_file(results["demo.OutTest#a()"].output),
+    "from a\nalso from a"
+  )
   spec.check(
     "a test without lines of its own shows the whole transcript",
     read_file(results["demo.OutTest#b()"].output),
@@ -980,7 +1259,11 @@ end
 
 -- The inline diff in a failure's text: line by line, without hunk headers, capped for huge values.
 do
-  spec.check("single-line values diff as one removed and one added line", adapter._value_diff("Alice", "alice"), "-Alice\n+alice")
+  spec.check(
+    "single-line values diff as one removed and one added line",
+    adapter._value_diff("Alice", "alice"),
+    "-Alice\n+alice"
+  )
   spec.check(
     "multi-line values keep their unchanged lines as context",
     adapter._value_diff("one\ntwo\nthree", "one\nTWO\nthree"),
@@ -992,9 +1275,16 @@ do
     long_expected[i] = "line " .. i
     long_actual[i] = "LINE " .. i
   end
-  local capped = vim.split(adapter._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")), "\n")
+  local capped = vim.split(
+    adapter._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")),
+    "\n"
+  )
   spec.check("a huge diff is capped at 40 lines plus a hint", #capped, 41)
-  spec.check("the hint says how much is left", capped[41]:match("^… (%d+) more lines") ~= nil, true)
+  spec.check(
+    "the hint says how much is left",
+    capped[41]:match("^… (%d+) more lines") ~= nil,
+    true
+  )
 end
 
 -- open_diff's choice of failure, and the side-by-side tab it opens.
@@ -1005,7 +1295,11 @@ do
   local passed = { positionId = "demo.T#d()", status = "passed" }
 
   spec.check("the failure under the cursor wins", adapter._diff_target({ a, b }, "demo.T#b()"), b)
-  spec.check("the only failure with values is taken", adapter._diff_target({ a, no_values, passed }, nil), a)
+  spec.check(
+    "the only failure with values is taken",
+    adapter._diff_target({ a, no_values, passed }, nil),
+    a
+  )
   local none, several = adapter._diff_target({ a, b }, "demo.T#d()")
   spec.check("several failures leave the choice to the user", none, nil)
   spec.check("…offering each of them", #several, 2)
@@ -1018,7 +1312,10 @@ do
   spec.check("the diff opens in a new tab", #vim.api.nvim_list_tabpages(), tabs + 1)
   spec.check("with two windows", #windows, 2)
   local function window_text(win)
-    return table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), "\n")
+    return table.concat(
+      vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false),
+      "\n"
+    )
   end
   spec.check("expected on the left", window_text(windows[1]), "one\ntwo")
   spec.check("actual on the right", window_text(windows[2]), "one\nTWO")
@@ -1062,7 +1359,6 @@ do
   spec.check("skipped typed as warning", items[3].type, "W")
 end
 
-
 -- The open nudge: a test buffer's first diagnostics re-fire BufAdd so neotest discovers it, unless
 -- its discovery already returned tests -- re-firing BufAdd would make neotest rescan the file's
 -- whole directory, once per file a rename opens.
@@ -1102,7 +1398,6 @@ do
 
   vim.lsp.get_clients = real_get_clients
 end
-
 
 -- Discovery cache: neotest rescans a directory per buffer added there, so a loaded, unchanged test
 -- buffer is answered from its last discovery; an edit asks again, and an unloaded file (nothing to

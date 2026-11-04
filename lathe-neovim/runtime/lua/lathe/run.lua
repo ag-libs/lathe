@@ -138,7 +138,10 @@ local function on_finished(label, err, outcome)
   end
 
   if outcome and not outcome.launched then
-    notify("run blocked -- " .. table.concat(outcome.blockedReasons or {}, "; "), vim.log.levels.WARN)
+    notify(
+      "run blocked -- " .. table.concat(outcome.blockedReasons or {}, "; "),
+      vim.log.levels.WARN
+    )
     return
   end
 
@@ -297,13 +300,18 @@ end
 --- the raw lathe.runnables.list targets, so it is unit-testable without a live client.
 function M._save_target_for(targets, cursor_line)
   for _, t in ipairs(targets) do
-    if (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line) then
+    if
+      (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line)
+    then
       return save_request(targets, t)
     end
   end
 
   for _, t in ipairs(targets) do
-    if (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS) and in_range(t.range, cursor_line) then
+    if
+      (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS)
+      and in_range(t.range, cursor_line)
+    then
       return save_request(targets, t)
     end
   end

@@ -26,13 +26,17 @@ end
 
 -- What a server places for the chosen imports; the client applies it verbatim.
 local SERVER_EDITS = {
-  { range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } }, newText = "placed by the server" },
+  {
+    range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } },
+    newText = "placed by the server",
+  },
 }
 
 -- Answers lathe.missingImports with result and lathe.importEdits with edits, recording each request.
 local requests
 local function stub_client(result, edits)
-  requests = helper.fake_client({ ["lathe.missingImports"] = result, ["lathe.importEdits"] = edits })
+  requests =
+    helper.fake_client({ ["lathe.missingImports"] = result, ["lathe.importEdits"] = edits })
 end
 
 -- Auto-select the given candidate index for every ambiguous prompt (nil = pick "Skip").
@@ -107,7 +111,11 @@ do -- a server without lathe.importEdits answers nothing: warn, apply nothing, c
 
   spec.check("older server: no edit applied", applied, nil)
   spec.check("older server: warns", seen.level, vim.log.levels.WARN)
-  spec.check("older server: names the remedy", seen.message:find("update the Lathe build plugin") ~= nil, true)
+  spec.check(
+    "older server: names the remedy",
+    seen.message:find("update the Lathe build plugin") ~= nil,
+    true
+  )
 end
 
 do -- no missing imports -> notify, no edits requested or applied
@@ -139,7 +147,11 @@ end
 do -- setup registers the command and the client-side code-action handler
   imports.setup()
   spec.check("LatheMissingImports registered", vim.fn.exists(":LatheMissingImports"), 2)
-  spec.check("code-action handler registered", type(vim.lsp.commands["lathe.missingImports"]), "function")
+  spec.check(
+    "code-action handler registered",
+    type(vim.lsp.commands["lathe.missingImports"]),
+    "function"
+  )
 end
 
 spec.finish("imports_spec")

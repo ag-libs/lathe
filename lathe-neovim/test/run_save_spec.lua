@@ -47,7 +47,11 @@ do
   local req = run._save_target_for(targets, 9)
   spec.check("test method -> kind", req and req.kind, "TEST")
   spec.check("test method -> selectorKind", req and req.selectors[1].selectorKind, "METHOD")
-  spec.check("test method -> selectorValue", req and req.selectors[1].selectorValue, "com.example.AppTest#test()")
+  spec.check(
+    "test method -> selectorValue",
+    req and req.selectors[1].selectorValue,
+    "com.example.AppTest#test()"
+  )
 end
 
 -- Case 3: cursor on a test class (not a method) -> a TEST save with a CLASS selector.
@@ -58,7 +62,11 @@ do
   }
   local req = run._save_target_for(targets, 6)
   spec.check("test class -> selectorKind", req and req.selectors[1].selectorKind, "CLASS")
-  spec.check("test class -> selectorValue", req and req.selectors[1].selectorValue, "com.example.AppTest")
+  spec.check(
+    "test class -> selectorValue",
+    req and req.selectors[1].selectorValue,
+    "com.example.AppTest"
+  )
 end
 
 -- Case 4: cursor on the main class declaration resolves to that class's main.

@@ -54,7 +54,11 @@ end
 do
   local targets = { target(MAIN, "com.example.App", 10, 14) }
   local picked = run._main_target_for(targets, 0)
-  spec.check("single main, cursor outside -> fallback", picked and picked.parentId, "com.example.App")
+  spec.check(
+    "single main, cursor outside -> fallback",
+    picked and picked.parentId,
+    "com.example.App"
+  )
 end
 
 -- Case 3: no main targets (a test-only file) selects nothing -- :LatheRun defers to neotest.

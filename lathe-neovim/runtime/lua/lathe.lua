@@ -35,10 +35,10 @@ local M = {}
 --- Marker file identifying a workspace root, exported so other plugins that
 --- need to detect a Lathe workspace (e.g. project pickers) can reference the
 --- same name instead of hard-coding it separately.
-M.ROOT_MARKER = '.lathe'
+M.ROOT_MARKER = ".lathe"
 
 local function cache_root()
-  local root = vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand('~') .. '/.cache/lathe'))
+  local root = vim.fs.normalize(vim.env.LATHE_CACHE or (vim.fn.expand("~") .. "/.cache/lathe"))
   -- Buffer names are symlink-resolved, so prefix checks against them need the resolved cache dir.
   return vim.uv.fs_realpath(root) or root
 end
@@ -53,9 +53,9 @@ end
 local function launcher_path(root)
   local override = vim.env.LATHE_SERVER_DIR
   if override then
-    return vim.fs.normalize(override) .. '/lathe-launcher.sh'
+    return vim.fs.normalize(override) .. "/lathe-launcher.sh"
   end
-  return vim.fs.normalize(root) .. '/' .. M.ROOT_MARKER .. '/lathe-launcher.sh'
+  return vim.fs.normalize(root) .. "/" .. M.ROOT_MARKER .. "/lathe-launcher.sh"
 end
 
 --- Resolve the workspace root for a buffer, for any code (this plugin's own
@@ -86,7 +86,7 @@ function M.get_root(bufnr)
 
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     local bname = vim.api.nvim_buf_get_name(buf)
-    if bname ~= '' then
+    if bname ~= "" then
       root = vim.fs.root(bname, M.ROOT_MARKER)
       if root then
         M.last_root = root
@@ -115,9 +115,9 @@ function M.on_server_exit(code)
   end
 
   vim.notify(
-    ('Lathe: language server exited unexpectedly (code %d); see :LspLog.'):format(code),
+    ("Lathe: language server exited unexpectedly (code %d); see :LspLog."):format(code),
     vim.log.levels.ERROR,
-    { title = 'Lathe' }
+    { title = "Lathe" }
   )
 end
 
@@ -131,9 +131,9 @@ function M.start(bufnr)
   local root = M.get_root(bufnr) or vim.fs.root(vim.fn.getcwd(), M.ROOT_MARKER)
   if not root then
     vim.notify(
-      'Lathe: no ' .. M.ROOT_MARKER .. ' workspace found from the current directory.',
+      "Lathe: no " .. M.ROOT_MARKER .. " workspace found from the current directory.",
       vim.log.levels.WARN,
-      { title = 'Lathe' }
+      { title = "Lathe" }
     )
     return
   end
@@ -141,15 +141,17 @@ function M.start(bufnr)
   local launcher = launcher_path(root)
   if vim.fn.executable(launcher) ~= 1 then
     vim.notify(
-      'Lathe: launcher not found at ' .. launcher .. '; sync the workspace: '
-        .. require('lathe.sync').SETUP_HINT,
+      "Lathe: launcher not found at "
+        .. launcher
+        .. "; sync the workspace: "
+        .. require("lathe.sync").SETUP_HINT,
       vim.log.levels.ERROR,
-      { title = 'Lathe' }
+      { title = "Lathe" }
     )
     return
   end
 
-  local config = vim.tbl_extend('force', vim.lsp.config['lathe'] or {}, { root_dir = root })
+  local config = vim.tbl_extend("force", vim.lsp.config["lathe"] or {}, { root_dir = root })
   vim.lsp.start(config, { bufnr = bufnr })
 end
 
@@ -159,12 +161,12 @@ end
 -- goes through the fold-preserving google-java-format path.
 function M.format(bufnr, opts)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  if vim.fs.basename(vim.api.nvim_buf_get_name(bufnr)) == 'pom.xml' then
-    require('lathe.pom').format_buffer(bufnr)
+  if vim.fs.basename(vim.api.nvim_buf_get_name(bufnr)) == "pom.xml" then
+    require("lathe.pom").format_buffer(bufnr)
     return
   end
 
-  require('lathe.fold').format(bufnr, opts)
+  require("lathe.fold").format(bufnr, opts)
 end
 
 -- Nudge for the silent failure modes: a Java buffer is open but Lathe can't serve it because the
@@ -189,16 +191,18 @@ function M.warn_if_not_ready(bufnr)
   if not M._configured then
     msg = 'Lathe: plugin installed but not configured -- call `require("lathe").setup()`.'
   elseif root == nil then
-    msg = 'Lathe: no `.lathe/` workspace -- Lathe is not set up for this project, or it is not '
-      .. 'synced yet: ' .. require('lathe.sync').SETUP_HINT .. ' Then `:LatheSync` refreshes it.'
-      .. ' If a build already ran, its log says why: Lathe needs Maven 3.6.3+.'
+    msg = "Lathe: no `.lathe/` workspace -- Lathe is not set up for this project, or it is not "
+      .. "synced yet: "
+      .. require("lathe.sync").SETUP_HINT
+      .. " Then `:LatheSync` refreshes it."
+      .. " If a build already ran, its log says why: Lathe needs Maven 3.6.3+."
   else
-    msg = 'Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. '
-      .. 'Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: '
-      .. require('lathe.sync').SETUP_HINT
+    msg = "Lathe: `.lathe/` has no server launcher -- the workspace was synced by an older Lathe. "
+      .. "Update the Lathe build plugin (Maven: lathe-maven-extension 0.1.16 or later) and sync again: "
+      .. require("lathe.sync").SETUP_HINT
   end
 
-  vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
+  vim.notify(msg, vim.log.levels.WARN, { title = "Lathe" })
 end
 
 -- Warn when the client is loaded from more than one location -- e.g. two plugin-manager installs, or
@@ -212,17 +216,17 @@ function M.warn_if_double_loaded()
     return
   end
 
-  local found = vim.api.nvim_get_runtime_file('lua/lathe/version.lua', true)
+  local found = vim.api.nvim_get_runtime_file("lua/lathe/version.lua", true)
   if #found < 2 then
     return
   end
 
   double_load_notified = true
   vim.notify(
-    'Lathe: loaded from multiple locations; keep only one (standalone plugin OR the cache dir):\n'
-      .. table.concat(found, '\n'),
+    "Lathe: loaded from multiple locations; keep only one (standalone plugin OR the cache dir):\n"
+      .. table.concat(found, "\n"),
     vim.log.levels.WARN,
-    { title = 'Lathe' }
+    { title = "Lathe" }
   )
 end
 
@@ -234,20 +238,21 @@ end
 -- be bumped (re-running the sync alone reinstalls the same version); a newer server means the client
 -- must be updated. Called from on_init, so it runs once per server (re)start.
 function M.check_protocol(server_protocol)
-  local client_protocol = require('lathe.version').PROTOCOL
+  local client_protocol = require("lathe.version").PROTOCOL
   if server_protocol == client_protocol then
     return
   end
 
   local msg
-  if type(server_protocol) ~= 'number' or server_protocol < client_protocol then
-    msg = 'Lathe: server is older than this client -- update the Lathe build plugin in your build '
-      .. '(Maven: the `lathe-maven-extension` version) and sync again.'
+  if type(server_protocol) ~= "number" or server_protocol < client_protocol then
+    msg = "Lathe: server is older than this client -- update the Lathe build plugin in your build "
+      .. "(Maven: the `lathe-maven-extension` version) and sync again."
   else
-    msg = 'Lathe: client is older than this server -- update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull).'
+    msg =
+      "Lathe: client is older than this server -- update lathe.nvim (`:Lazy update` / `vim.pack.update` / git pull)."
   end
 
-  vim.notify(msg, vim.log.levels.WARN, { title = 'Lathe' })
+  vim.notify(msg, vim.log.levels.WARN, { title = "Lathe" })
 end
 
 function M.setup(opts)
@@ -259,11 +264,11 @@ function M.setup(opts)
   M.warn_if_double_loaded()
   local root = cache_root()
 
-  require('lathe.indent').setup({ indent = opts.style and opts.style.indent })
+  require("lathe.indent").setup({ indent = opts.style and opts.style.indent })
 
-  local augroup = vim.api.nvim_create_augroup('LathePlugin', { clear = true })
+  local augroup = vim.api.nvim_create_augroup("LathePlugin", { clear = true })
 
-  vim.lsp.config('lathe', {
+  vim.lsp.config("lathe", {
     -- A function cmd is the only hook that sees the per-buffer root_dir: resolve that workspace's
     -- launcher (<root>/.lathe/) and spawn with cwd = root so it reads `.lathe/java-home` relative to
     -- it. Covers both auto-start and M.start.
@@ -274,13 +279,13 @@ function M.setup(opts)
         { cwd = config.root_dir }
       )
     end,
-    filetypes = { 'java' },
+    filetypes = { "java" },
     single_file_support = false,
     on_exit = function(code)
       M.on_server_exit(code)
     end,
     on_init = function(client)
-      M.check_protocol(vim.tbl_get(client, 'server_capabilities', 'experimental', 'latheProtocol'))
+      M.check_protocol(vim.tbl_get(client, "server_capabilities", "experimental", "latheProtocol"))
     end,
     root_dir = function(bufnr, on_dir)
       local r = M.get_root(bufnr)
@@ -293,7 +298,7 @@ function M.setup(opts)
     -- The server reads style.formatter; indent is consumed client-side by lathe.indent.
     init_options = { lathe = { style = opts.style } },
   })
-  vim.lsp.enable('lathe')
+  vim.lsp.enable("lathe")
 
   -- Safety net for vim.lsp.enable's async root_dir gate. Native LSP attaches only when the
   -- root_dir resolver calls on_dir, and it never retries: if get_root returns nil at FileType
@@ -303,16 +308,16 @@ function M.setup(opts)
   -- get_clients short-circuit then skips the fs walk, and vim.lsp.start reuses the client already
   -- running for that root, so a redundant call is a no-op. buftype guard skips artificial/diff
   -- buffers, which native enable also refuses to attach.
-  vim.api.nvim_create_autocmd('BufEnter', {
+  vim.api.nvim_create_autocmd("BufEnter", {
     group = augroup,
-    pattern = '*.java',
+    pattern = "*.java",
     callback = function(ev)
       vim.schedule(function()
-        if not vim.api.nvim_buf_is_valid(ev.buf) or vim.bo[ev.buf].buftype ~= '' then
+        if not vim.api.nvim_buf_is_valid(ev.buf) or vim.bo[ev.buf].buftype ~= "" then
           return
         end
 
-        if #vim.lsp.get_clients({ name = 'lathe', bufnr = ev.buf }) > 0 then
+        if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) > 0 then
           return
         end
 
@@ -329,20 +334,20 @@ function M.setup(opts)
   -- Start the server for the current directory without a Java buffer open, so
   -- workspace navigation works from any buffer (e.g. a dashboard). The filetype
   -- auto-start above still covers the normal case of opening a .java file.
-  vim.api.nvim_create_user_command('LatheStart', function()
+  vim.api.nvim_create_user_command("LatheStart", function()
     M.start(vim.api.nvim_get_current_buf())
-  end, { desc = 'Lathe: start the language server for the current directory' })
+  end, { desc = "Lathe: start the language server for the current directory" })
 
   -- Format-on-save follows the server's advertised formatting capability (enabled by a workspace
   -- style file or the client option), checked per attach, rather than a static setup() flag -- so a
   -- project whose formatter comes from .lathe/style.json gets it without a global formatter option.
   if opts.format_on_save == true then
-    local fold = require('lathe.fold')
-    vim.api.nvim_create_autocmd('LspAttach', {
+    local fold = require("lathe.fold")
+    vim.api.nvim_create_autocmd("LspAttach", {
       group = augroup,
       callback = function(args)
         local client = vim.lsp.get_client_by_id(args.data.client_id)
-        if not (client and client.name == 'lathe') then
+        if not (client and client.name == "lathe") then
           return
         end
 
@@ -353,7 +358,7 @@ function M.setup(opts)
         -- Format-on-save rewrites the buffer, which reopens ufo's imports fold on every save
         -- (NV-3). Snapshot the fold's state before the format, then restore it after ufo settles.
         local imports_were_closed = false
-        vim.api.nvim_create_autocmd('BufWritePre', {
+        vim.api.nvim_create_autocmd("BufWritePre", {
           group = augroup,
           buffer = args.buf,
           callback = function()
@@ -361,7 +366,7 @@ function M.setup(opts)
             vim.lsp.buf.format({ bufnr = args.buf, id = args.data.client_id, async = false })
           end,
         })
-        vim.api.nvim_create_autocmd('BufWritePost', {
+        vim.api.nvim_create_autocmd("BufWritePost", {
           group = augroup,
           buffer = args.buf,
           callback = function()
@@ -374,30 +379,30 @@ function M.setup(opts)
 
   -- Manual formatting is a no-op unless the server advertises it, so :LatheFormat is always
   -- registered; it routes through M.format so the imports fold survives the whole-document rewrite.
-  vim.api.nvim_create_user_command('LatheFormat', function()
+  vim.api.nvim_create_user_command("LatheFormat", function()
     M.format(vim.api.nvim_get_current_buf())
-  end, { desc = 'Lathe: format the current buffer (preserving the imports fold)' })
+  end, { desc = "Lathe: format the current buffer (preserving the imports fold)" })
 
   -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
   -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
   -- main-only path (RunnableKind.MAIN, which neotest excludes). Signs refresh when the server
   -- attaches and after each save, since an edit can add or remove a main.
-  local run = require('lathe.run')
-  vim.api.nvim_create_autocmd('LspAttach', {
+  local run = require("lathe.run")
+  vim.api.nvim_create_autocmd("LspAttach", {
     group = augroup,
     callback = function(args)
       local client = vim.lsp.get_client_by_id(args.data.client_id)
-      if client and client.name == 'lathe' then
+      if client and client.name == "lathe" then
         run.refresh_signs(args.buf)
         run.refresh_configs()
       end
     end,
   })
-  vim.api.nvim_create_autocmd('BufWritePost', {
+  vim.api.nvim_create_autocmd("BufWritePost", {
     group = augroup,
-    pattern = '*.java',
+    pattern = "*.java",
     callback = function(ev)
-      if #vim.lsp.get_clients({ name = 'lathe', bufnr = ev.buf }) > 0 then
+      if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) > 0 then
         run.refresh_signs(ev.buf)
       end
     end,
@@ -406,116 +411,116 @@ function M.setup(opts)
   -- re-attach. The `run.json` pattern is a basename match (fires for any run.json), so the callback
   -- narrows it to Lathe's own files: the reactor-root lathe-run.json or a `.lathe/run.json`. Absent
   -- configs (or no attached client) make refresh_configs a harmless no-op.
-  vim.api.nvim_create_autocmd('BufWritePost', {
+  vim.api.nvim_create_autocmd("BufWritePost", {
     group = augroup,
-    pattern = { 'lathe-run.json', 'run.json' },
+    pattern = { "lathe-run.json", "run.json" },
     callback = function(ev)
-      local name = ev.file or ''
-      if name:match('/%.lathe/run%.json$') or vim.fs.basename(name) == 'lathe-run.json' then
+      local name = ev.file or ""
+      if name:match("/%.lathe/run%.json$") or vim.fs.basename(name) == "lathe-run.json" then
         run.refresh_configs()
       end
     end,
   })
-  vim.api.nvim_create_user_command('LatheRun', function(cmd)
-    if cmd.args ~= '' then
+  vim.api.nvim_create_user_command("LatheRun", function(cmd)
+    if cmd.args ~= "" then
       run.run_named(cmd.args)
     else
       run.run(vim.api.nvim_get_current_buf())
     end
   end, {
-    nargs = '?',
+    nargs = "?",
     complete = function(arglead)
       return run.complete_config(arglead)
     end,
-    desc = 'Lathe: run the buffer main, or a saved config by name',
+    desc = "Lathe: run the buffer main, or a saved config by name",
   })
-  vim.api.nvim_create_user_command('LatheRunStop', function()
+  vim.api.nvim_create_user_command("LatheRunStop", function()
     -- Stop a debug session if one is live (cancels its replay JVM directly); otherwise the run.
-    if not require('lathe.dap').stop() then
+    if not require("lathe.dap").stop() then
       run.stop()
     end
-  end, { desc = 'Lathe: stop the active run or debug session' })
-  vim.api.nvim_create_user_command('LatheRunLast', function()
+  end, { desc = "Lathe: stop the active run or debug session" })
+  vim.api.nvim_create_user_command("LatheRunLast", function()
     run.run_last()
-  end, { desc = 'Lathe: re-run the last run config' })
-  vim.api.nvim_create_user_command('LatheRunSave', function(cmd)
-    run.save(cmd.args ~= '' and cmd.args or nil, cmd.bang)
+  end, { desc = "Lathe: re-run the last run config" })
+  vim.api.nvim_create_user_command("LatheRunSave", function(cmd)
+    run.save(cmd.args ~= "" and cmd.args or nil, cmd.bang)
   end, {
-    nargs = '?',
+    nargs = "?",
     bang = true,
     complete = function(arglead)
       return run.complete_config(arglead)
     end,
-    desc = 'Lathe: save the runnable under the cursor as a named config (! overwrites)',
+    desc = "Lathe: save the runnable under the cursor as a named config (! overwrites)",
   })
-  vim.api.nvim_create_user_command('LatheRunOutput', function()
-    require('lathe.output').open()
-  end, { desc = 'Lathe: toggle the run output console' })
+  vim.api.nvim_create_user_command("LatheRunOutput", function()
+    require("lathe.output").open()
+  end, { desc = "Lathe: toggle the run output console" })
 
   -- New-type surface: :LatheNew scaffolds a class/interface/record/enum through the server (which
   -- owns placement, skeleton, and caret) and opens the returned file.
-  require('lathe.new').setup()
+  require("lathe.new").setup()
 
   -- Instantiations surface: :LatheInstances lists where the type under the cursor is `new`-ed up
   -- (via the server's lathe.instantiations command) in the quickfix. Suggested mapping: grN.
-  require('lathe.instances').setup()
+  require("lathe.instances").setup()
 
   -- Type-hierarchy surface: :LatheTypeHierarchy shows the full both-directions transitive hierarchy
   -- of the type under the cursor (via the server's lathe.typeHierarchy command) in Telescope, or the
   -- built-in fuzzy picker when Telescope is absent. Suggested mapping: grh.
-  require('lathe.typehierarchy').setup()
+  require("lathe.typehierarchy").setup()
 
   -- Resource finder: :LatheResourceFind [name] finds a resource by name across this workspace's
   -- reactor + dependency resources (lathe.resources), tagged by origin. A reactor hit opens its
   -- editable source; a dependency hit is extracted read-only on open. Telescope when installed,
   -- else the built-in fuzzy picker. Suggested mapping: <leader>lr.
-  require('lathe.resources').setup()
+  require("lathe.resources").setup()
 
   -- Missing-imports surface: :LatheMissingImports adds an import for every unresolved type in the
   -- buffer (server's lathe.missingImports command). Unambiguous names are added automatically; a name
   -- with several candidates is offered one at a time. Also surfaced as the "Add missing imports…"
   -- code action. Suggested mapping: <leader>li.
-  require('lathe.imports').setup()
+  require("lathe.imports").setup()
 
   -- Sync surface: the server's lathe/sync notification and :LatheSync run Maven
   -- (process-test-classes, or `mvn test` with !) to refresh the .lathe/ mirror after POM/structural
   -- changes. The server never runs Maven itself.
-  require('lathe.sync').setup()
+  require("lathe.sync").setup()
 
   -- pom.xml surface: client-side XSD validation (diagnostics on open/save) and optional formatting,
   -- both via `xmllint`. No language server involvement -- Lathe is never attached to pom.xml. On by
   -- default; pass `pom = { validate = false }` to disable, `pom = { format = true }` for `gq`.
-  require('lathe.pom').setup(opts.pom)
+  require("lathe.pom").setup(opts.pom)
 
   -- Debug surface: :LatheDebug attaches nvim-dap to the test or main class under the cursor,
   -- replayed under a suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main).
   -- Optional -- the command is only wired when nvim-dap is present, so a runtime without it loads
   -- unaffected.
-  if require('lathe.dap').setup() then
-    vim.api.nvim_create_user_command('LatheDebug', function(cmd)
-      if cmd.args ~= '' then
-        require('lathe.dap').debug_named(cmd.args)
+  if require("lathe.dap").setup() then
+    vim.api.nvim_create_user_command("LatheDebug", function(cmd)
+      if cmd.args ~= "" then
+        require("lathe.dap").debug_named(cmd.args)
       else
-        require('lathe.dap').debug(vim.api.nvim_get_current_buf())
+        require("lathe.dap").debug(vim.api.nvim_get_current_buf())
       end
     end, {
-      nargs = '?',
+      nargs = "?",
       complete = function(arglead)
         return run.complete_config(arglead)
       end,
-      desc = 'Lathe: debug the cursor target, or a saved config by name',
+      desc = "Lathe: debug the cursor target, or a saved config by name",
     })
   end
 
-  local cache_pattern = root .. '/**'
-  vim.api.nvim_create_autocmd('BufReadPre', {
+  local cache_pattern = root .. "/**"
+  vim.api.nvim_create_autocmd("BufReadPre", {
     group = augroup,
     pattern = cache_pattern,
     callback = function(ev)
       vim.bo[ev.buf].swapfile = false
     end,
   })
-  vim.api.nvim_create_autocmd('BufReadPost', {
+  vim.api.nvim_create_autocmd("BufReadPost", {
     group = augroup,
     pattern = cache_pattern,
     callback = function(ev)
@@ -530,17 +535,17 @@ function M.setup(opts)
   -- workspace. Skips .java (handled by the LSP) and cache files. The editor-agnostic path
   -- (workspace/didChangeWatchedFiles) can drive the same server command later; this autocmd is
   -- Neovim's uniform, dependency-free trigger.
-  vim.api.nvim_create_autocmd('BufWritePost', {
+  vim.api.nvim_create_autocmd("BufWritePost", {
     group = augroup,
     callback = function(ev)
       local name = vim.api.nvim_buf_get_name(ev.buf)
-      if name == '' or name:match('%.java$') or vim.startswith(name, root) then
+      if name == "" or name:match("%.java$") or vim.startswith(name, root) then
         return
       end
-      for _, client in ipairs(vim.lsp.get_clients({ name = 'lathe' })) do
+      for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
         if client.root_dir and vim.startswith(name, client.root_dir) then
-          client:request('workspace/executeCommand', {
-            command = 'lathe.resource.refresh',
+          client:request("workspace/executeCommand", {
+            command = "lathe.resource.refresh",
             arguments = { { uri = vim.uri_from_fname(name) } },
           })
           return

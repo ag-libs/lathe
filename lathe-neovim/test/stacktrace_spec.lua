@@ -26,25 +26,37 @@ end
 
 -- parse_frame: a normal, top-level-class frame.
 do
-  check_frame_fields("plain frame", stacktrace.parse_frame("\tat com.example.FooTest.fails(FooTest.java:42)"), {
-    { "fqcn", "com.example.FooTest" },
-    { "simple_name", "FooTest" },
-    { "package", "com.example" },
-    { "file", "FooTest.java" },
-    { "line", 42 },
-  })
+  check_frame_fields(
+    "plain frame",
+    stacktrace.parse_frame("\tat com.example.FooTest.fails(FooTest.java:42)"),
+    {
+      { "fqcn", "com.example.FooTest" },
+      { "simple_name", "FooTest" },
+      { "package", "com.example" },
+      { "file", "FooTest.java" },
+      { "line", 42 },
+    }
+  )
 end
 
 -- parse_frame: nested/anonymous class frames resolve to the enclosing
 -- top-level class, since that is what actually has a source file.
 do
-  check_frame_fields("nested frame", stacktrace.parse_frame("\tat com.example.Outer$Inner.fails(Outer.java:10)"), {
-    { "simple_name", "Outer" },
-    { "package", "com.example" },
-  })
-  check_frame_fields("anonymous class frame", stacktrace.parse_frame("\tat com.example.FooTest$1.run(FooTest.java:20)"), {
-    { "simple_name", "FooTest" },
-  })
+  check_frame_fields(
+    "nested frame",
+    stacktrace.parse_frame("\tat com.example.Outer$Inner.fails(Outer.java:10)"),
+    {
+      { "simple_name", "Outer" },
+      { "package", "com.example" },
+    }
+  )
+  check_frame_fields(
+    "anonymous class frame",
+    stacktrace.parse_frame("\tat com.example.FooTest$1.run(FooTest.java:20)"),
+    {
+      { "simple_name", "FooTest" },
+    }
+  )
   check_frame_fields(
     "lambda frame",
     stacktrace.parse_frame("\tat com.example.FooTest.lambda$test$0(FooTest.java:15)"),
@@ -55,10 +67,14 @@ end
 -- parse_frame: default package (no dot before the method name still splits
 -- correctly since fqcn only requires one or more characters, not a dot).
 do
-  check_frame_fields("default package frame", stacktrace.parse_frame("\tat FooTest.fails(FooTest.java:5)"), {
-    { "simple_name", "FooTest" },
-    { "package", "" },
-  })
+  check_frame_fields(
+    "default package frame",
+    stacktrace.parse_frame("\tat FooTest.fails(FooTest.java:5)"),
+    {
+      { "simple_name", "FooTest" },
+      { "package", "" },
+    }
+  )
 end
 
 -- parse_frame: JPMS module-qualified frames have the leading "<module>/"
@@ -96,7 +112,8 @@ end
 -- parse_frame: trailing " ~[...]" JVM location info does not break the match
 -- (pattern is not anchored to end-of-line).
 do
-  local frame = stacktrace.parse_frame("\tat com.example.FooTest.fails(FooTest.java:42) ~[test-classes/:?]")
+  local frame =
+    stacktrace.parse_frame("\tat com.example.FooTest.fails(FooTest.java:42) ~[test-classes/:?]")
   spec.check("frame with trailing jar info still parses", frame and frame.line, 42)
 end
 
@@ -109,7 +126,11 @@ do
   )
   spec.check("'... N more' line does not parse", stacktrace.parse_frame("\t... 3 more"), nil)
   spec.check("blank line does not parse", stacktrace.parse_frame(""), nil)
-  spec.check("plain message line does not parse", stacktrace.parse_frame("expected: <1> but was: <2>"), nil)
+  spec.check(
+    "plain message line does not parse",
+    stacktrace.parse_frame("expected: <1> but was: <2>"),
+    nil
+  )
 end
 
 -- Shared pick_candidate fixtures: the same frame and "wrong package"

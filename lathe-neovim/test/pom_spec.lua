@@ -26,7 +26,8 @@ spec.check(
 -- source line, the caret line, and the trailing "fails to validate" summary are ignored.
 local file = "/tmp/proj/pom.xml"
 local stderr = {
-  file .. ":14: element dependencyy: Schemas validity error : Element '{...}dependencyy': This element is not expected.",
+  file
+    .. ":14: element dependencyy: Schemas validity error : Element '{...}dependencyy': This element is not expected.",
   "    <dependencyy>",
   "     ^",
   file .. " fails to validate",
@@ -34,7 +35,11 @@ local stderr = {
 local diags = pom.parse_diagnostics(stderr, file)
 spec.check("one diagnostic parsed from the triple", #diags, 1)
 spec.check("diagnostic line is 0-based (14 -> 13)", diags[1] and diags[1].lnum, 13)
-spec.check("diagnostic severity is ERROR", diags[1] and diags[1].severity, vim.diagnostic.severity.ERROR)
+spec.check(
+  "diagnostic severity is ERROR",
+  diags[1] and diags[1].severity,
+  vim.diagnostic.severity.ERROR
+)
 spec.check("diagnostic source is xmllint", diags[1] and diags[1].source, "xmllint")
 spec.check(
   "diagnostic message preserved",
@@ -54,7 +59,11 @@ spec.check(
 
 -- Stdin validation labels errors with a "-:<line>:" prefix (no file on disk), which is the default
 -- validate() path, so it must parse against the "-" filename.
-spec.check("stdin '-' prefix parses to a diagnostic", #pom.parse_diagnostics({ "-:7: bad element" }, "-"), 1)
+spec.check(
+  "stdin '-' prefix parses to a diagnostic",
+  #pom.parse_diagnostics({ "-:7: bad element" }, "-"),
+  1
+)
 
 -- setup() wiring: validate on by default registers open (BufReadPost) + live (TextChanged/TextChangedI)
 -- autocmds, and no longer the save-only BufWritePost; format off by default.
@@ -93,7 +102,11 @@ if vim.fn.executable("xmllint") == 1 then
     '<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion></project>',
   })
   pom.format_buffer(ok_buf)
-  spec.check("format_buffer expands a valid pom", #vim.api.nvim_buf_get_lines(ok_buf, 0, -1, false) > 2, true)
+  spec.check(
+    "format_buffer expands a valid pom",
+    #vim.api.nvim_buf_get_lines(ok_buf, 0, -1, false) > 2,
+    true
+  )
 
   local bad = { "<project><modelVersion>4.0.0</modelVersion>" } -- unclosed <project>
   local bad_buf = make_buf(bad)
