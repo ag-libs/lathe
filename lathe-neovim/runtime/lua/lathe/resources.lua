@@ -69,54 +69,6 @@ local function open_entry(entry, client)
   end)
 end
 
-local function open_telescope(entries, query, client)
-  local pickers = require("telescope.pickers")
-  local finders = require("telescope.finders")
-  local conf = require("telescope.config").values
-  local actions = require("telescope.actions")
-  local action_state = require("telescope.actions.state")
-
-  pickers
-    .new({}, {
-      prompt_title = "Lathe: resources",
-      default_text = query,
-      finder = finders.new_table({
-        results = entries,
-        entry_maker = function(entry)
-          entry.value = entry
-          return entry
-        end,
-      }),
-      sorter = conf.generic_sorter({}),
-      attach_mappings = function(prompt_bufnr)
-        actions.select_default:replace(function()
-          local selected = action_state.get_selected_entry()
-          actions.close(prompt_bufnr)
-          if selected then
-            open_entry(selected, client)
-          end
-        end)
-        return true
-      end,
-    })
-    :find()
-end
-
-local function open_fallback(entries, client)
-  require("lathe.pick").pick({
-    items = entries,
-    format = function(entry)
-      return entry.display
-    end,
-    title = "Lathe: resources",
-    on_choice = function(entry)
-      if entry then
-        open_entry(entry, client)
-      end
-    end,
-  })
-end
-
 --- Lists every resource in the workspace (reactor + dependencies) and opens the picked one. `query`
 --- prefills the Telescope prompt (the prefill-last-query preference); the fallback starts empty.
 function M.find(query)
@@ -132,12 +84,13 @@ function M.find(query)
       return
     end
 
-    local entries = M._entries(result)
-    if pcall(require, "telescope.pickers") then
-      open_telescope(entries, query, client)
-    else
-      open_fallback(entries, client)
-    end
+    require("lathe.util").pick(M._entries(result), {
+      title = "Lathe: resources",
+      default_text = query,
+      on_choice = function(entry)
+        open_entry(entry, client)
+      end,
+    })
   end)
 end
 

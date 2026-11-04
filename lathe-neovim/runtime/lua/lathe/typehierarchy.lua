@@ -10,8 +10,8 @@ local GLYPH = { supertype = "▲", ["self"] = "●", subtype = "▼" }
 local notify = require("lathe.util").notify
 
 -- A server TypeHierarchyItem + its relation -> a picker entry. Fuzzy-matched on the fully-qualified
--- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive both
--- Telescope's preview + default-select and the fallback jump.
+-- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive
+-- Telescope's preview, `location` the jump on a pick.
 local function make_entry(item, relation)
   local pkg = item.detail or ""
   local fqn = pkg ~= "" and (pkg .. "." .. item.name) or item.name
@@ -41,42 +41,6 @@ local function build_entries(result)
   return entries
 end
 
-local function open_telescope(entries, title)
-  local pickers = require("telescope.pickers")
-  local finders = require("telescope.finders")
-  local conf = require("telescope.config").values
-
-  pickers
-    .new({}, {
-      prompt_title = title,
-      finder = finders.new_table({
-        results = entries,
-        entry_maker = function(entry)
-          entry.value = entry
-          return entry
-        end,
-      }),
-      sorter = conf.generic_sorter({}),
-      previewer = conf.qflist_previewer({}),
-    })
-    :find()
-end
-
-local function open_fallback(entries, title, offset_encoding)
-  require("lathe.pick").pick({
-    items = entries,
-    format = function(entry)
-      return entry.display
-    end,
-    title = title,
-    on_choice = function(entry)
-      if entry and entry.location then
-        vim.lsp.util.show_document(entry.location, offset_encoding, { focus = true })
-      end
-    end,
-  })
-end
-
 --- Request the full hierarchy of the type at the cursor and open it in a picker.
 function M.show(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
@@ -97,12 +61,15 @@ function M.show(bufnr)
     end
 
     local entries = build_entries(result)
-    local title = "Lathe: type hierarchy -- " .. result.self.name
-    if pcall(require, "telescope.pickers") then
-      open_telescope(entries, title)
-    else
-      open_fallback(entries, title, client.offset_encoding)
-    end
+    require("lathe.util").pick(entries, {
+      title = "Lathe: type hierarchy -- " .. result.self.name,
+      preview_locations = true,
+      on_choice = function(entry)
+        if entry.location then
+          vim.lsp.util.show_document(entry.location, client.offset_encoding, { focus = true })
+        end
+      end,
+    })
   end)
 end
 

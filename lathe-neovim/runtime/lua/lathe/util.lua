@@ -36,4 +36,56 @@ function M.exec(client, bufnr, command, arguments, on_result, opts)
   end, bufnr)
 end
 
+--- Let the user pick one of `entries` (each with a `display`, and an `ordinal` to match): in
+--- Telescope when it is installed, else lathe.pick. opts: `title`, `on_choice(entry)`,
+--- `default_text` (Telescope's prefilled prompt) and `preview_locations` (Telescope previews each
+--- entry's filename and lnum).
+function M.pick(entries, opts)
+  if not pcall(require, "telescope.pickers") then
+    require("lathe.pick").pick({
+      items = entries,
+      format = function(entry)
+        return entry.display
+      end,
+      title = opts.title,
+      on_choice = function(entry)
+        if entry then
+          opts.on_choice(entry)
+        end
+      end,
+    })
+    return
+  end
+
+  local conf = require("telescope.config").values
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  require("telescope.pickers")
+    .new({}, {
+      prompt_title = opts.title,
+      default_text = opts.default_text,
+      finder = require("telescope.finders").new_table({
+        results = entries,
+        entry_maker = function(entry)
+          entry.value = entry
+          return entry
+        end,
+      }),
+      sorter = conf.generic_sorter({}),
+      previewer = opts.preview_locations and conf.qflist_previewer({}) or nil,
+      -- Only <CR> is replaced: Telescope's split and tab selections keep working.
+      attach_mappings = function(prompt_bufnr)
+        actions.select_default:replace(function()
+          local selected = action_state.get_selected_entry()
+          actions.close(prompt_bufnr)
+          if selected then
+            opts.on_choice(selected)
+          end
+        end)
+        return true
+      end,
+    })
+    :find()
+end
+
 return M
