@@ -102,6 +102,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
     eventLoop.execute(() -> session.setDocumentsFollowDisk(follow));
   }
 
+  // Whether a user answers prompts; without one, a due sync is only reported.
+  public void setInteractive(final boolean interactive) {
+    eventLoop.execute(() -> session.setInteractive(interactive));
+  }
+
   void cancelProgress(final WorkDoneProgressCancelParams params) {
     progressReporter.cancel(params.getToken());
   }

@@ -121,7 +121,12 @@ final class WorkspaceSession {
   private final ChangeVerifier verifier;
   private final RenameService renames;
   private WorkspaceWatcher watcher;
-  private boolean buildFilesNotificationPending;
+  // Build files changed and the change is not dealt with: until a reload, or until the user answers
+  // the sync prompt. An agent has no prompt to answer, so for it this lasts until the reload; its
+  // answers say a sync is due meanwhile.
+  private boolean buildFilesChanged;
+  // A user answers prompts (an editor); the in-process engine's agent does not.
+  private boolean interactive = true;
   private MemoryPressure memoryPressure;
   // A pressure round released the sessions of modules without open files; the next tick checks
   // whether that was enough.
@@ -366,7 +371,7 @@ final class WorkspaceSession {
   }
 
   LatheNotes notes(final List<Path> files) {
-    return verifier.notes(files, buildFilesNotificationPending);
+    return verifier.notes(files, buildFilesChanged);
   }
 
   CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
@@ -509,6 +514,10 @@ final class WorkspaceSession {
 
   void setDocumentsFollowDisk(final boolean follow) {
     documentsFollowDisk = follow;
+  }
+
+  void setInteractive(final boolean interactive) {
+    this.interactive = interactive;
   }
 
   void onOpen(final String uri, final String content, final int version) {
@@ -1287,7 +1296,7 @@ final class WorkspaceSession {
     }
 
     final ReconcileOutcome.DeferReason deferral =
-        buildFilesNotificationPending
+        buildFilesChanged
             ? ReconcileOutcome.DeferReason.BUILD_FILES_PENDING
             : ReconcileOutcome.DeferReason.NONE;
     // Rejoined, so it runs in a later loop task, after the pass's own completion handlers: one of
@@ -1412,7 +1421,7 @@ final class WorkspaceSession {
       // A prompt already shown stays (answering it still syncs), but MCP stops asking for a sync
       // and the next change prompts again.
       case BUILD_FILES_RESTORED -> {
-        buildFilesNotificationPending = false;
+        buildFilesChanged = false;
         pendingSyncModules = List.of();
         writePass.requestPass(false);
       }
@@ -1422,13 +1431,18 @@ final class WorkspaceSession {
   }
 
   private void promptForSync(final String message, final List<String> scope) {
-    if (buildFilesNotificationPending) {
+    if (buildFilesChanged) {
       LOG.fine(() -> "[sync] prompt suppressed — already pending");
       return;
     }
 
     pendingSyncModules = scope;
-    buildFilesNotificationPending = true;
+    buildFilesChanged = true;
+    if (!interactive) {
+      LOG.info(() -> "[sync] due, no prompt: nobody to answer it");
+      return;
+    }
+
     final var request =
         new ShowMessageRequestParams(
             List.of(
@@ -1446,7 +1460,7 @@ final class WorkspaceSession {
   // dismisses. The watcher reports each build-file change once, so either way it stays quiet until
   // the files change again.
   private void onSyncPromptResponse(final MessageActionItem action) {
-    buildFilesNotificationPending = false;
+    buildFilesChanged = false;
     final String title = action == null ? null : action.getTitle();
     LOG.info(() -> "[sync] answered action=%s".formatted(title));
     if (SYNC_ACTION.equals(title)) {
@@ -1480,7 +1494,7 @@ final class WorkspaceSession {
     if (watcher != null) {
       final WorkspaceManifest newManifest = state.manifest();
       watcher.updateBuildFiles(newManifest.buildFiles(), newManifest.buildFileFingerprints());
-      buildFilesNotificationPending = false;
+      buildFilesChanged = false;
     }
 
     refreshReactorTypeIndex();

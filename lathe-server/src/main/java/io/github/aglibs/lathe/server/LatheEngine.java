@@ -176,6 +176,8 @@ public final class LatheEngine {
     service.setFileRenameSupported(true);
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
     service.setDocumentsFollowDisk(true);
+    // An agent cannot answer a prompt: a due sync stays in every answer's notes until a reload.
+    service.setInteractive(false);
     service.useWorkspaceFormatter(workspaceRoot);
     service.initialize(workspaceRoot);
   }
