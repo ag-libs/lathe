@@ -256,10 +256,10 @@ spec.check("transcript entries carry text", entries_well_formed, true)
 -- Streamed lines are appended via vim.schedule, so wait for the stdout line before asserting.
 local adapter = require("lathe.neotest")
 vim.wait(3000, function()
-  local lines = adapter._live_output_lines()
+  local lines = require("lathe.output").lines()
   return lines ~= nil and vim.tbl_contains(lines, "hello on stdout")
 end, 25)
-local live_lines = adapter._live_output_lines() or {}
+local live_lines = require("lathe.output").lines() or {}
 spec.check(
   "O1 stdout line streamed to live buffer",
   vim.tbl_contains(live_lines, "hello on stdout"),
@@ -270,12 +270,12 @@ spec.check(
   vim.tbl_contains(live_lines, "warning on stderr"),
   true
 )
-spec.check("O3 stderr line is highlighted", #adapter._live_output_stderr_rows() > 0, true)
+spec.check("O3 stderr line is highlighted", #require("lathe.output").stderr_rows() > 0, true)
 
 -- O8: the run's header -- the run configuration label, then the replay launch command -- opens the
 -- buffer, both highlighted as command lines, so the user can see (and copy) what ran the tests.
 -- It is emitted before any process output.
-local command_rows = adapter._live_output_command_rows()
+local command_rows = require("lathe.output").command_rows()
 spec.check("O8 header lines are highlighted", vim.deep_equal(command_rows, { 0, 1 }), true)
 spec.check(
   "O8 first line names the run configuration",

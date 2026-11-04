@@ -21,6 +21,11 @@
 
 local spec = require("spec_helper").new()
 local adapter = require("lathe.neotest")
+local discovery = require("lathe.neotest.discovery")
+local outcome = require("lathe.neotest.outcome")
+local results = require("lathe.neotest.results")
+local runs = require("lathe.neotest.spec")
+local ui = require("lathe.neotest.ui")
 
 local FILE = "/workspace/demo/src/test/java/demo/FooTest.java"
 
@@ -90,7 +95,7 @@ do
     },
   }
 
-  local forest = adapter._build_position_forest(FILE, targets)
+  local forest = discovery._build_position_forest(FILE, targets)
   local by_id = flatten(forest)
 
   spec.check("root is the file", forest[1].type, "file")
@@ -132,7 +137,7 @@ do
     },
   }
 
-  local forest = adapter._build_position_forest(FILE, targets)
+  local forest = discovery._build_position_forest(FILE, targets)
   local by_id = flatten(forest)
 
   spec.check("nested case: forest has file root + one top-level entry", #forest, 2)
@@ -168,7 +173,7 @@ end
 -- parented on its outer class or package, all at the top of the file until it is opened.
 do
   local uri = vim.uri_from_fname(FILE)
-  local targets = adapter._targets_from_discovery({
+  local targets = discovery._targets_from_discovery({
     { id = "demo.FooTest#a()", label = "a()", uri = uri },
     { id = "demo.FooTest$Inner#b(int)", label = "b(int)", uri = uri },
     { id = "demo.OtherTest#c()", label = "c()", uri = vim.uri_from_fname("/w/OtherTest.java") },
@@ -206,7 +211,7 @@ do
   )
   spec.check(
     "discovery: no tests, no targets",
-    #adapter._targets_from_discovery(nil, FILE, "app"),
+    #discovery._targets_from_discovery(nil, FILE, "app"),
     0
   )
 end
@@ -626,8 +631,8 @@ end
 -- failures one at a time; only discovered positions (tree:get_key finds them) are listed.
 do
   -- Clear any failures accumulated by earlier results() calls in this spec.
-  while #adapter._failing > 0 do
-    table.remove(adapter._failing)
+  while #results._failing > 0 do
+    table.remove(results._failing)
   end
 
   local nodes = {
@@ -673,12 +678,12 @@ do
   })
   spec.check(
     "failures captured in execution order, passes excluded",
-    table.concat(adapter._failing, ","),
+    table.concat(results._failing, ","),
     "demo.FooTest#b(),demo.FooTest#c()"
   )
 
   local ran
-  adapter._run_position = function(id)
+  ui._run_position = function(id)
     ran = id
   end
   adapter.run_first_failed()
@@ -690,7 +695,7 @@ do
   })
   spec.check(
     "a passing re-run drops its test",
-    table.concat(adapter._failing, ","),
+    table.concat(results._failing, ","),
     "demo.FooTest#c()"
   )
 
@@ -722,7 +727,7 @@ do
   }, nil, orphan_tree)
   spec.check(
     "undiscovered failure is not listed",
-    table.concat(adapter._failing, ","),
+    table.concat(results._failing, ","),
     "demo.FooTest#c()"
   )
 
@@ -730,7 +735,7 @@ do
   run("demo.FooTest#c()", {
     { positionId = "demo.FooTest#c()", status = "passed", failureMessage = "", failureLine = -1 },
   })
-  spec.check("list empty once every failure passes", #adapter._failing, 0)
+  spec.check("list empty once every failure passes", #results._failing, 0)
   ran = nil
   adapter.run_first_failed()
   spec.check("run_first_failed runs nothing with no failures", ran, nil)
@@ -1006,19 +1011,19 @@ end
 -- neotest's dap-strategy exit code rather than hang, so _synthesized_outcome maps that code into a
 -- launched, result-less outcome.
 do
-  local zero = adapter._synthesized_outcome({ code = 0 })
+  local zero = runs._synthesized_outcome({ code = 0 })
   spec.check("synthesized outcome is launched", zero.launched, true)
   spec.check("synthesized outcome takes exit code 0", zero.exitCode, 0)
   spec.check("synthesized outcome has no per-test results", #zero.testResults, 0)
 
   spec.check(
     "synthesized outcome takes a non-zero exit code",
-    adapter._synthesized_outcome({ code = 1 }).exitCode,
+    runs._synthesized_outcome({ code = 1 }).exitCode,
     1
   )
   spec.check(
     "synthesized outcome defaults a missing code to -1",
-    adapter._synthesized_outcome(nil).exitCode,
+    runs._synthesized_outcome(nil).exitCode,
     -1
   )
 end
@@ -1028,7 +1033,7 @@ end
 -- elapsed ms renders as one-decimal seconds and is omitted when untimed.
 do
   local real_pass = { ["C#a()"] = { status = "passed" }, ["C#b()"] = { status = "passed" } }
-  local pass = adapter._run_summary(
+  local pass = results._run_summary(
     { label = "C", outcome = { launched = true, exitCode = 0 } },
     real_pass,
     1800
@@ -1041,7 +1046,7 @@ do
     ["C#b()"] = { status = "failed" },
     ["C#c()"] = { status = "skipped" },
   }
-  local mixed = adapter._run_summary(
+  local mixed = results._run_summary(
     { label = "C", outcome = { launched = true, exitCode = 1 } },
     real_mixed,
     2300
@@ -1049,7 +1054,7 @@ do
   spec.check("mixed summary text", mixed.text, "C — 1 passed, 1 failed, 1 skipped (2.3s)")
   spec.check("mixed summary is WARN", mixed.warn, true)
 
-  local blocked = adapter._run_summary(
+  local blocked = results._run_summary(
     { label = "C", outcome = { launched = false, blockedReasons = { "no launch template" } } },
     {},
     nil
@@ -1057,11 +1062,11 @@ do
   spec.check("blocked summary text", blocked.text, "C — blocked: no launch template")
   spec.check("blocked summary is WARN", blocked.warn, true)
 
-  local errored = adapter._run_summary({ label = "C", err = "boom" }, {}, 500)
+  local errored = results._run_summary({ label = "C", err = "boom" }, {}, 500)
   spec.check("errored summary text", errored.text, "C — errored (0.5s)")
   spec.check("errored summary is WARN", errored.warn, true)
 
-  local skipped = adapter._run_summary(
+  local skipped = results._run_summary(
     { label = "Foo.java", skip_reason = "no tests found in this file" },
     {},
     nil
@@ -1069,7 +1074,7 @@ do
   spec.check("skip summary text", skipped.text, "Foo.java — no tests found in this file")
   spec.check("skip summary is WARN", skipped.warn, true)
 
-  local untimed = adapter._run_summary(
+  local untimed = results._run_summary(
     { label = "C", outcome = { launched = true, exitCode = 0 } },
     real_pass,
     nil
@@ -1135,7 +1140,7 @@ do
       },
     },
   }, nil, fake_tree(nodes))
-  local items = adapter._results_qf_items({ class_failure, rich_failure }, {})
+  local items = ui._results_qf_items({ class_failure, rich_failure }, {})
 
   spec.check(
     "class failure marks the class node failed",
@@ -1261,22 +1266,22 @@ end
 do
   spec.check(
     "single-line values diff as one removed and one added line",
-    adapter._value_diff("Alice", "alice"),
+    outcome._value_diff("Alice", "alice"),
     "-Alice\n+alice"
   )
   spec.check(
     "multi-line values keep their unchanged lines as context",
-    adapter._value_diff("one\ntwo\nthree", "one\nTWO\nthree"),
+    outcome._value_diff("one\ntwo\nthree", "one\nTWO\nthree"),
     " one\n-two\n+TWO\n three"
   )
-  spec.check("equal values give no diff", adapter._value_diff("same", "same"), nil)
+  spec.check("equal values give no diff", outcome._value_diff("same", "same"), nil)
   local long_expected, long_actual = {}, {}
   for i = 1, 60 do
     long_expected[i] = "line " .. i
     long_actual[i] = "LINE " .. i
   end
   local capped = vim.split(
-    adapter._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")),
+    outcome._value_diff(table.concat(long_expected, "\n"), table.concat(long_actual, "\n")),
     "\n"
   )
   spec.check("a huge diff is capped at 40 lines plus a hint", #capped, 41)
@@ -1294,20 +1299,20 @@ do
   local no_values = { positionId = "demo.T#c()", status = "failed" }
   local passed = { positionId = "demo.T#d()", status = "passed" }
 
-  spec.check("the failure under the cursor wins", adapter._diff_target({ a, b }, "demo.T#b()"), b)
+  spec.check("the failure under the cursor wins", ui._diff_target({ a, b }, "demo.T#b()"), b)
   spec.check(
     "the only failure with values is taken",
-    adapter._diff_target({ a, no_values, passed }, nil),
+    ui._diff_target({ a, no_values, passed }, nil),
     a
   )
-  local none, several = adapter._diff_target({ a, b }, "demo.T#d()")
+  local none, several = ui._diff_target({ a, b }, "demo.T#d()")
   spec.check("several failures leave the choice to the user", none, nil)
   spec.check("…offering each of them", #several, 2)
-  local _, nothing = adapter._diff_target({ no_values, passed }, nil)
+  local _, nothing = ui._diff_target({ no_values, passed }, nil)
   spec.check("no failure with values offers nothing", #nothing, 0)
 
   local tabs = #vim.api.nvim_list_tabpages()
-  adapter._show_diff({ positionId = "demo.T#a()", expected = "one\ntwo", actual = "one\nTWO" })
+  ui._show_diff({ positionId = "demo.T#a()", expected = "one\ntwo", actual = "one\nTWO" })
   local windows = vim.api.nvim_tabpage_list_wins(0)
   spec.check("the diff opens in a new tab", #vim.api.nvim_list_tabpages(), tabs + 1)
   spec.check("with two windows", #windows, 2)
@@ -1340,7 +1345,7 @@ do
   }
   local paths = { ["com.x.AT"] = "/w/AT.java", ["com.x.BT"] = "/w/BT.java" } -- CT unresolved
 
-  local items = adapter._results_qf_items(results, paths)
+  local items = ui._results_qf_items(results, paths)
 
   spec.check("one row per executed test", #items, 3)
   -- failure first, jumping to its failure line, tagged as an error, message flattened onto one line
@@ -1389,7 +1394,7 @@ do
   local fresh = open_test_buffer("FreshTest.java")
   local known = open_test_buffer("KnownTest.java")
   nudged = {}
-  adapter._record_discovered(known)
+  discovery._record_discovered(known)
   first_diagnostics(fresh)
   first_diagnostics(known)
 
