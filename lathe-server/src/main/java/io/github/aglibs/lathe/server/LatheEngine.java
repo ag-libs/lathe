@@ -33,6 +33,7 @@ import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.run.RunnableKind;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.io.Serial;
 import java.lang.module.ModuleDescriptor;
 import java.lang.module.ModuleFinder;
@@ -58,23 +59,16 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.SourceVersion;
-import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams;
 import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams;
-import org.eclipse.lsp4j.CallHierarchyPrepareParams;
-import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.DocumentSymbolParams;
 import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.HoverParams;
-import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.ReferenceContext;
-import org.eclipse.lsp4j.ReferenceParams;
 import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
@@ -199,11 +193,15 @@ public final class LatheEngine {
    * with a source snippet and where it resolved.
    */
   public List<LatheLocation> definition(final Path file, final int line, final int column) {
-    compileAtName(file, line, column);
-    final var params =
-        new DefinitionParams(
-            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
-    final var either = await(service.definition(params));
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    final var either =
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(onName -> session.definitionFuture(uri, pos)));
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     return locations.stream().map(this::toLatheLocation).toList();
   }
@@ -214,17 +212,21 @@ public final class LatheEngine {
    */
   public LatheReferences references(
       final Path file, final int line, final int column, final int maxResults) {
-    compileAtName(file, line, column);
-    return referencesAt(file, line, column, maxResults);
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    return capReferences(
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(
+                        onName -> session.referencesFuture(uri, pos, true, cancel, progress))),
+        maxResults);
   }
 
-  private LatheReferences referencesAt(
-      final Path file, final int line, final int column, final int maxResults) {
-    final var params = new ReferenceParams();
-    params.setTextDocument(new TextDocumentIdentifier(file.toUri().toString()));
-    params.setPosition(new Position(line, column));
-    params.setContext(new ReferenceContext(true));
-    final List<? extends Location> locations = await(service.references(params));
+  private LatheReferences capReferences(
+      final List<? extends Location> locations, final int maxResults) {
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
     return new LatheReferences(locations.size(), locations.size() > maxResults, capped);
@@ -236,16 +238,21 @@ public final class LatheEngine {
    */
   public LatheImplementations findImplementations(
       final Path file, final int line, final int column, final int maxResults) {
-    compileAtName(file, line, column);
-    return implementationsAt(file, line, column, maxResults);
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    return capImplementations(
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(onName -> session.implementationFuture(uri, pos))),
+        maxResults);
   }
 
-  private LatheImplementations implementationsAt(
-      final Path file, final int line, final int column, final int maxResults) {
-    final var params =
-        new ImplementationParams(
-            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
-    final var either = await(service.implementation(params));
+  private LatheImplementations capImplementations(
+      final Either<List<? extends Location>, List<? extends LocationLink>> either,
+      final int maxResults) {
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     final List<LatheLocation> capped =
         locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
@@ -258,14 +265,33 @@ public final class LatheEngine {
   // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
   // The tool goes on with the analysis this compiles, so the file is compiled once.
   private void compileAtName(final Path file, final int line, final int column) {
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    request((session, cancel, progress) -> atName(session, uri, content, pos));
+  }
+
+  private void requireWord(final Path file, final int line, final int column) {
     if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
     }
+  }
 
-    compileFromDisk(file);
-    if (!await(service.onNameFuture(LatheUri.fromPath(file), new Position(line, column)))) {
-      throw new NotOnName();
-    }
+  // The rest of the check, as the first steps of the tool's own request: freshen the workspace,
+  // compile the file as it is on disk, and require a name at the position.
+  private static CompletableFuture<Void> atName(
+      final WorkspaceSession session, final String uri, final String content, final Position pos) {
+    return session
+        .reconcileForVerify()
+        .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION))
+        .thenCompose(diagnostics -> session.onNameFuture(uri, pos))
+        .thenAccept(
+            onName -> {
+              if (!onName) {
+                throw new NotOnName();
+              }
+            });
   }
 
   // An expected answer, not a failure: the tool cannot do this here, and the message says why.
@@ -316,15 +342,18 @@ public final class LatheEngine {
    * and javadoc — or empty when there is nothing to describe.
    */
   public String describe(final Path file, final int line, final int column) {
-    compileAtName(file, line, column);
-    return hoverAt(file, line, column);
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    return hoverText(
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(onName -> session.hoverFuture(uri, pos))));
   }
 
-  private String hoverAt(final Path file, final int line, final int column) {
-    final var params =
-        new HoverParams(
-            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
-    final Hover hover = await(service.hover(params));
+  private static String hoverText(final Hover hover) {
     if (hover == null || hover.getContents() == null || !hover.getContents().isRight()) {
       return "";
     }
@@ -699,11 +728,15 @@ public final class LatheEngine {
       final CallDirection direction,
       final SymbolScope scope,
       final int maxResults) {
-    compileAtName(file, line, column);
-    final var prepare =
-        new CallHierarchyPrepareParams(
-            new TextDocumentIdentifier(file.toUri().toString()), new Position(line, column));
-    final List<CallHierarchyItem> items = await(service.prepareCallHierarchy(prepare));
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    final List<CallHierarchyItem> items =
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(onName -> session.prepareCallHierarchyFuture(uri, pos)));
     final boolean incoming = direction == CallDirection.INCOMING;
     if (items.isEmpty()) {
       return new LatheCallHierarchy(incoming, 0, false, List.of());
@@ -717,7 +750,8 @@ public final class LatheEngine {
 
   // One LatheCall per call site (a caller may invoke the symbol at several ranges).
   private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
-    return await(service.callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(item)))
+    return request(
+            (session, cancel, progress) -> session.incomingCallsFuture(item, cancel, progress))
         .stream()
         .flatMap(
             call ->
@@ -727,8 +761,7 @@ public final class LatheEngine {
 
   // Where the method calls each callee, in source order, so the answer reads as the method does.
   private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
-    return await(service.callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(item)))
-        .stream()
+    return request((session, cancel, progress) -> session.outgoingCallsFuture(item)).stream()
         .filter(call -> scope.includes(origin(call.getTo().getUri())))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
         .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
@@ -860,11 +893,31 @@ public final class LatheEngine {
    * test classes. Read-only — composes definition/reference analysis, no compile of the change.
    */
   public LatheChangeImpact analyzeChange(final Path file, final int line, final int column) {
-    compileAtName(file, line, column);
-    final String signature = hoverAt(file, line, column);
+    requireWord(file, line, column);
+    final String uri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    final ChangeFacts facts =
+        request(
+            (session, cancel, progress) ->
+                atName(session, uri, content, pos)
+                    .thenCompose(onName -> session.hoverFuture(uri, pos))
+                    .thenCompose(
+                        hover ->
+                            session
+                                .implementationFuture(uri, pos)
+                                .thenCompose(
+                                    implementations ->
+                                        session
+                                            .referencesFuture(uri, pos, true, cancel, progress)
+                                            .thenApply(
+                                                references ->
+                                                    new ChangeFacts(
+                                                        hover, implementations, references)))));
+    final String signature = hoverText(facts.hover());
     final List<LatheLocation> overrideFamily =
-        implementationsAt(file, line, column, IMPACT_MAX_RESULTS).implementations();
-    final LatheReferences refs = referencesAt(file, line, column, IMPACT_MAX_RESULTS);
+        capImplementations(facts.implementations(), IMPACT_MAX_RESULTS).implementations();
+    final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
     final Map<Path, ModulePlacement> placements = await(service.classifyPaths(paths));
@@ -896,6 +949,21 @@ public final class LatheEngine {
         refs.truncated(),
         List.copyOf(affectedModules),
         List.copyOf(relevantTests));
+  }
+
+  // What analyze_change reads about the symbol, in one request: its hover, its override family and
+  // its references. The hover may be absent.
+  private record ChangeFacts(
+      Hover hover,
+      Either<List<? extends Location>, List<? extends LocationLink>> implementations,
+      List<? extends Location> references) {
+
+    ChangeFacts {
+      ValidCheck.check()
+          .notNull(implementations, "implementations")
+          .notNull(references, "references")
+          .validate();
+    }
   }
 
   // An agent edits files with its own tools, outside the editor's change events, and queries right
@@ -960,20 +1028,38 @@ public final class LatheEngine {
     return target < lines.size() ? lines.get(target).strip() : "";
   }
 
+  // One request: the work runs on the event loop as a single composed chain.
+  private <T> T request(final LatheTextDocumentService.LoopWork<T> work) {
+    return await(service.onLoopCompose(work));
+  }
+
   private static <T> T await(final CompletableFuture<T> future) {
     try {
       return future.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     } catch (final InterruptedException e) {
       Thread.currentThread().interrupt();
+      future.cancel(true);
       throw new IllegalStateException("the request was interrupted", e);
     } catch (final TimeoutException e) {
+      // Cancelled, so a search that checks for it stops instead of running on unseen.
+      future.cancel(true);
       throw new IllegalStateException(
           "the request timed out after %ds; see the server log".formatted(REQUEST_TIMEOUT_SECONDS),
           e);
     } catch (final ExecutionException e) {
-      // A request the server refused carries its reason, which the caller must see.
-      if (ExceptionUtil.rootCause(e) instanceof final ResponseErrorException refused) {
+      // A request the server refused carries its reason, which the caller must see; the engine's
+      // own answers thrown inside a request reach the caller as they were thrown.
+      final Throwable cause = ExceptionUtil.rootCause(e);
+      if (cause instanceof final ResponseErrorException refused) {
         throw new Refused(refused.getMessage());
+      }
+
+      if (cause instanceof final NotOnName notOnName) {
+        throw notOnName;
+      }
+
+      if (cause instanceof final Refused refused) {
+        throw refused;
       }
 
       throw new IllegalStateException("the request failed; see the server log", e);

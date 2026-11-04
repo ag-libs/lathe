@@ -635,11 +635,20 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return eventLoop.submit(() -> read.apply(session));
   }
 
-  // Starts session work on the event loop for a caller outside it, the in-process engine above all:
-  // one composed request per tool. What the work chains on worker results runs on the loop too.
-  <T> CompletableFuture<T> onLoopCompose(
-      final Function<WorkspaceSession, CompletableFuture<T>> work) {
-    return eventLoop.submitCompose(() -> work.apply(session));
+  // Session work a caller outside the loop starts as one request, the in-process engine above all:
+  // it runs on the loop, and so does what it chains on worker results. The cancel checker is tied
+  // to the returned future, so cancelling the request stops a search at its next check.
+  @FunctionalInterface
+  interface LoopWork<T> {
+    CompletableFuture<T> start(
+        WorkspaceSession session, CancelChecker cancelChecker, ProgressReporter.Task progress);
+  }
+
+  <T> CompletableFuture<T> onLoopCompose(final LoopWork<T> work) {
+    return withProgress(
+        null,
+        (cancelChecker, progress) ->
+            eventLoop.submitCompose(() -> work.start(session, cancelChecker, progress)));
   }
 
   private CompletableFuture<List<? extends TextEdit>> formatRanges(
