@@ -258,7 +258,8 @@ public final class LatheEngine {
   // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
   // method for a word in a comment. So the position tools answer only on a name: first a word
   // (cheap, no compile, here), then one javac's tree has a name at, not a word of a comment or a
-  // literal (atName). The tool goes on with the analysis that compiles, so the file is compiled
+  // literal (positionRequest). The tool goes on with the analysis that compiles, so the file is
+  // compiled
   // once.
   // A position tool's own work, run once the name check passed, on the analysis it compiled.
   @FunctionalInterface
@@ -276,33 +277,57 @@ public final class LatheEngine {
   private <T> T positionRequest(
       final Path file, final int line, final int column, final PositionWork<T> work) {
     requireWord(file, line, column);
+    final var pos = new Position(line, column);
+    return fileRequest(
+        file,
+        (session, uri, diagnostics, cancel, progress) ->
+            session
+                .onNameFuture(uri, pos)
+                .thenCompose(
+                    onName -> {
+                      if (!onName) {
+                        throw new NotOnName();
+                      }
+
+                      return work.start(session, uri, pos, cancel, progress);
+                    }));
+  }
+
+  // A file tool's own work, run once the file is compiled as it is on disk.
+  @FunctionalInterface
+  private interface FileWork<T> {
+    CompletableFuture<T> start(
+        WorkspaceSession session,
+        String uri,
+        List<Diagnostic> diagnostics,
+        CancelChecker cancel,
+        ProgressReporter.Task progress);
+  }
+
+  // One request for a file tool: freshen the workspace (what the agent wrote outside the editor),
+  // compile the file as it is on disk, then the tool's work, chained.
+  private <T> T fileRequest(final Path file, final FileWork<T> work) {
     final String uri = LatheUri.fromPath(file);
     final String content = read(file);
-    final var pos = new Position(line, column);
     return request(
         (session, cancel, progress) ->
-            atName(session, uri, content, pos)
-                .thenCompose(onName -> work.start(session, uri, pos, cancel, progress)));
+            session
+                .reconcileForVerify()
+                .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION))
+                .thenCompose(
+                    diagnostics -> work.start(session, uri, diagnostics, cancel, progress)));
+  }
+
+  // A read of session state as one request.
+  private <T> T query(final Function<WorkspaceSession, T> read) {
+    return request(
+        (session, cancel, progress) -> CompletableFuture.completedFuture(read.apply(session)));
   }
 
   private void requireWord(final Path file, final int line, final int column) {
     if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
     }
-  }
-
-  // The rest of the check, as the first steps of the tool's own request: freshen the workspace,
-  // compile the file as it is on disk, and require a name at the position.
-  private static CompletableFuture<Void> atName(
-      final WorkspaceSession session, final String uri, final String content, final Position pos) {
-    return compiled(session, uri, content)
-        .thenCompose(diagnostics -> session.onNameFuture(uri, pos))
-        .thenAccept(
-            onName -> {
-              if (!onName) {
-                throw new NotOnName();
-              }
-            });
   }
 
   // An expected answer, not a failure: the tool cannot do this here, and the message says why.
@@ -372,12 +397,11 @@ public final class LatheEngine {
   // The file's types and their members in source order, each at its nesting depth.
   public List<LatheOutlineItem> outline(final Path file) {
     final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
     // The file is registered and its analysis warmed before it is scanned.
-    return request(
-            (session, cancel, progress) ->
-                compiled(session, uri, content)
-                    .thenCompose(diagnostics -> session.documentSymbolFuture(uri)))
+    return fileRequest(
+            file,
+            (session, fileUri, diagnostics, cancel, progress) ->
+                session.documentSymbolFuture(fileUri))
         .stream()
         .flatMap(symbol -> outlineItems(uri, symbol, 0))
         .toList();
@@ -541,11 +565,7 @@ public final class LatheEngine {
   // other request meanwhile.
   private List<Location> textMentions(final String name) {
     try {
-      return TextMentions.find(
-          request(
-              (session, cancel, progress) ->
-                  CompletableFuture.completedFuture(session.textMentionSources(name))),
-          name);
+      return TextMentions.find(query(session -> session.textMentionSources(name)), name);
     } catch (final RuntimeException e) {
       LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
       return List.of();
@@ -612,13 +632,12 @@ public final class LatheEngine {
   public LatheImports fixImports(final Path file) {
     requireReactorFile(file);
     final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
     // Missing imports are read from the file's document, so it is registered first.
     final MissingImportsResult missing =
-        request(
-            (session, cancel, progress) ->
-                compiled(session, uri, content)
-                    .thenCompose(diagnostics -> session.missingImportsFuture(uri)));
+        fileRequest(
+            file,
+            (session, fileUri, diagnostics, cancel, progress) ->
+                session.missingImportsFuture(fileUri));
     final Map<Boolean, List<MissingImport>> byUnambiguous =
         missing.items().stream()
             .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
@@ -662,8 +681,7 @@ public final class LatheEngine {
    * what only a sync can fix, and a running build. Read after the tool's own write pass.
    */
   public LatheNotes notes(final List<Path> files) {
-    return request(
-        (session, cancel, progress) -> CompletableFuture.completedFuture(session.notes(files)));
+    return query(session -> session.notes(files));
   }
 
   /**
@@ -672,19 +690,15 @@ public final class LatheEngine {
    * so it reuses the editor's selection mapping.
    */
   public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
     final TestFacts facts =
-        request(
-            (session, cancel, progress) ->
-                compiled(session, uri, content)
-                    .thenCompose(
-                        diagnostics -> {
-                          final Optional<String> failing = session.failingUnder(file);
-                          return session
-                              .runnablesFuture(uri)
-                              .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
-                        }));
+        fileRequest(
+            file,
+            (session, uri, diagnostics, cancel, progress) -> {
+              final Optional<String> failing = session.failingUnder(file);
+              return session
+                  .runnablesFuture(uri)
+                  .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
+            });
     // Replaying the last good classes would answer for code that is no longer there.
     facts
         .failing()
@@ -816,9 +830,7 @@ public final class LatheEngine {
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
   public List<LatheModuleSummary> modules() {
-    return request(
-        (session, cancel, progress) ->
-            CompletableFuture.completedFuture(session.moduleSummaries()));
+    return query(WorkspaceSession::moduleSummaries);
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
@@ -935,16 +947,14 @@ public final class LatheEngine {
   // once all are done.
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
       final WorkspaceSession session, final Map<String, String> contents) {
-    return contents.entrySet().stream()
-        .map(
-            entry ->
-                session
-                    .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
-                    .thenApply(diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics))))
-        .reduce(
-            CompletableFuture.completedFuture(List.<Map.Entry<String, List<Diagnostic>>>of()),
-            (left, right) ->
-                left.thenCombine(right, (a, b) -> Stream.concat(a.stream(), b.stream()).toList()))
+    return FeatureAnswers.concatAll(
+            contents.entrySet().stream()
+                .map(
+                    entry ->
+                        session
+                            .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
+                            .thenApply(
+                                diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics)))))
         .thenApply(
             entries ->
                 entries.stream()
@@ -1025,10 +1035,7 @@ public final class LatheEngine {
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
-    final Map<Path, ModulePlacement> placements =
-        request(
-            (session, cancel, progress) ->
-                CompletableFuture.completedFuture(session.classifyPaths(paths)));
+    final Map<Path, ModulePlacement> placements = query(session -> session.classifyPaths(paths));
 
     int production = 0;
     int test = 0;
@@ -1079,18 +1086,10 @@ public final class LatheEngine {
   // answers see those edits. What the pass could not write (code that does not compile, a pending
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
   private List<Diagnostic> compileFromDisk(final Path file) {
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    return request((session, cancel, progress) -> compiled(session, uri, content));
-  }
-
-  // Freshens the workspace (what the agent wrote outside the editor), then compiles the file as it
-  // is on disk: the first step of every tool that reads a file.
-  private static CompletableFuture<List<Diagnostic>> compiled(
-      final WorkspaceSession session, final String uri, final String content) {
-    return session
-        .reconcileForVerify()
-        .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION));
+    return fileRequest(
+        file,
+        (session, uri, diagnostics, cancel, progress) ->
+            CompletableFuture.completedFuture(diagnostics));
   }
 
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,

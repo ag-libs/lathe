@@ -493,18 +493,18 @@ final class ReferenceSearch {
     return reactorIndex.declaringConfig(target.qualifiedName()).orElse(fallback);
   }
 
+  // The candidates' answers in one list; a cancelled search stops as each one arrives.
   private static <T> CompletableFuture<List<T>> joinCandidateResults(
       final List<CompletableFuture<List<T>>> futures, final CancelChecker cancelChecker) {
-    return futures.stream()
-        .reduce(
-            CompletableFuture.completedFuture(List.of()),
-            (f1, f2) ->
-                f1.thenCombine(
-                    f2,
-                    (a, b) -> {
-                      cancelChecker.checkCanceled();
-                      return Stream.concat(a.stream(), b.stream()).toList();
-                    }));
+    return FeatureAnswers.concatAll(
+        futures.stream()
+            .map(
+                future ->
+                    future.thenApply(
+                        results -> {
+                          cancelChecker.checkCanceled();
+                          return results;
+                        })));
   }
 
   static List<Location> toLocations(final List<ReferenceMatch> matches) {
@@ -731,7 +731,7 @@ final class ReferenceSearch {
       final Optional<String> samInterface,
       final WorkspaceTypeIndex indexSnapshot,
       final Map<String, List<String>> lambdaSnapshot) {
-    return concatAll(
+    return FeatureAnswers.concatAll(
         Stream.of(
             cursorWorker.typeImplementations(request, indexSnapshot),
             implementationsIn(
@@ -774,7 +774,7 @@ final class ReferenceSearch {
             .collect(
                 Collectors.toMap(
                     Map.Entry::getKey, Map.Entry::getValue, ReferenceSearch::unionNames));
-    return concatAll(
+    return FeatureAnswers.concatAll(
         candidatesByFile.entrySet().stream()
             .map(
                 entry ->
@@ -786,15 +786,6 @@ final class ReferenceSearch {
                                 target,
                                 entry.getValue(),
                                 entry.getKey().toUri().toString()))));
-  }
-
-  static <T> CompletableFuture<List<T>> concatAll(
-      final Stream<CompletableFuture<List<T>>> futures) {
-    return futures.reduce(
-        CompletableFuture.completedFuture(List.of()),
-        (left, right) ->
-            left.thenCombine(
-                right, (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
   }
 
   // The files of the target's subtypes the filter keeps; an anonymous `Outer$1` maps to Outer's

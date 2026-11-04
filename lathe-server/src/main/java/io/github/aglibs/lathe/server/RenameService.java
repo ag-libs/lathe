@@ -184,7 +184,7 @@ final class RenameService {
                                     == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
                         .isEmpty()
                     ? CompletableFuture.completedFuture(List.<String>of())
-                    : ReferenceSearch.concatAll(
+                    : FeatureAnswers.concatAll(
                         search
                             .subtypeImplementationFiles(
                                 target,
@@ -294,7 +294,7 @@ final class RenameService {
                 .map(file -> docs.get(file.uri()))
                 .filter(Objects::nonNull)
                 .collect(Collectors.toUnmodifiableMap(OpenDocument::uri, OpenDocument::content)));
-    return ReferenceSearch.concatAll(
+    return FeatureAnswers.concatAll(
             byConfig.entrySet().stream()
                 .map(
                     entry ->
