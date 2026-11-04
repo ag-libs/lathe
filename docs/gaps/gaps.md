@@ -1000,6 +1000,37 @@ None yet.
 
 ---
 
+## WS-26 — A second agent session can answer from stale state while the first one writes
+
+**Status: documented**
+
+**Value: low — Size: S–M**
+
+**Affects: MCP, two sessions on one workspace.**
+
+Found by the pre-release check (2026-11-04) on Helidon, with `dev/mcp_staleness.py` (scenario I4): 1 failure in 13 runs.
+
+### Observed behaviour
+
+Session A fixes an upstream file on disk; session B, asked about the downstream file straight after, still reports
+the `cannot find symbol` the fix removed, while A reports it clean.
+B's two queries (I3, I4) each took 2.05 s instead of the usual 0.3–0.5 s: B waited for the workspace write lock, held
+by A's write pass, then stopped waiting and answered from its own state, as a query does after one lock wait.
+Only A and B ran on the workspace then.
+It did not reproduce in 9 runs of the scenario alone and 3 runs of the whole Helidon probe, all with `LATHE_DEBUG=1`.
+
+### Fix direction
+
+Find what held the lock for about 4 s: A's write of the fix, perhaps followed by the immediate retry of the downstream
+file that failed before (the WS-20 change). Then either let a query wait out a short pass by its peer, or have the
+answer say it may be stale while another server writes (as "A build is running" does for a build).
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
