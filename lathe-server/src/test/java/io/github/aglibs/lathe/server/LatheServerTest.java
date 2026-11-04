@@ -22,7 +22,7 @@ class LatheServerTest {
   @Test
   void run_unsupportedRequest_answersMethodNotFound() throws Exception {
     final String request =
-        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"textDocument/typeDefinition\",\"params\":"
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"textDocument/linkedEditingRange\",\"params\":"
             + "{\"textDocument\":{\"uri\":\"file:///A.java\"},\"position\":{\"line\":0,\"character\":0}}}";
     final byte[] body = request.getBytes(StandardCharsets.UTF_8);
     final var in =

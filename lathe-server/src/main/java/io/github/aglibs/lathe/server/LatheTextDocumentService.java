@@ -25,6 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import org.eclipse.lsp4j.*;
+import org.eclipse.lsp4j.Position;
+import org.eclipse.lsp4j.TextDocumentPositionParams;
+import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
@@ -133,6 +136,11 @@ public final class LatheTextDocumentService implements TextDocumentService {
   /** The files written on report since the last call, for a verify_change given no files. */
   public CompletableFuture<List<Path>> takeWrittenSinceVerify() {
     return worker.submit(() -> session.takeWrittenSinceVerify());
+  }
+
+  /** Every source not as the last build compiled it, for a verify_change given no files. */
+  public CompletableFuture<List<Path>> changedSinceBuild() {
+    return worker.submit(() -> session.changedSinceBuild());
   }
 
   public CompletableFuture<List<LatheModuleSummary>> moduleSummariesFuture() {
@@ -470,37 +478,42 @@ public final class LatheTextDocumentService implements TextDocumentService {
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definition(final DefinitionParams params) {
-    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
-    final var pos = params.getPosition();
-    if (ignoreNonFile(uri, "definition")) {
-      return emptyLocationResult();
-    }
-
-    return worker.submit(() -> session.definitionFuture(uri, pos)).thenCompose(f -> f);
+    return locations("definition", params, session::definitionFuture);
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declaration(final DeclarationParams params) {
-    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
-    final var pos = params.getPosition();
-    if (ignoreNonFile(uri, "declaration")) {
-      return emptyLocationResult();
-    }
-
-    return worker.submit(() -> session.declarationFuture(uri, pos)).thenCompose(f -> f);
+    return locations("declaration", params, session::declarationFuture);
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementation(final ImplementationParams params) {
+    return locations("implementation", params, session::implementationFuture);
+  }
+
+  @Override
+  public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      typeDefinition(final TypeDefinitionParams params) {
+    return locations("typeDefinition", params, session::typeDefinitionFuture);
+  }
+
+  private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
+      locations(
+          final String operation,
+          final TextDocumentPositionParams params,
+          final BiFunction<
+                  String,
+                  Position,
+                  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>>
+              request) {
     final String uri = LatheUri.canonical(params.getTextDocument().getUri());
-    final var pos = params.getPosition();
-    if (ignoreNonFile(uri, "implementation")) {
+    if (ignoreNonFile(uri, operation)) {
       return emptyLocationResult();
     }
 
-    return worker.submit(() -> session.implementationFuture(uri, pos)).thenCompose(f -> f);
+    return worker.submit(() -> request.apply(uri, params.getPosition())).thenCompose(f -> f);
   }
 
   @Override

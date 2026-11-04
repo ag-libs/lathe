@@ -48,7 +48,7 @@ Maven: put this in `.mvn/extensions.xml` at the root of your project (or under `
   <extension>
     <groupId>io.github.ag-libs</groupId>
     <artifactId>lathe-maven-extension</artifactId>
-    <version>0.2.2</version>
+    <version>0.2.3</version>
   </extension>
 </extensions>
 ```

@@ -39,7 +39,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
@@ -192,6 +194,84 @@ class LatheEngineTest {
 
     assertThat(impls.implementations())
         .anySatisfy(loc -> assertThat(loc.uri()).endsWith("EnGreeter.java"));
+  }
+
+  // Go to implementation finds anonymous classes and enum constant bodies, which the type index
+  // knows only as Outer$1, and on a functional interface its lambdas beside its classes.
+  @Test
+  void findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType() throws Exception {
+    final Map<String, String> sources =
+        Map.of(
+            "Managed",
+                "package com.example;\ninterface Managed {\n  void start();\n  void stop();\n}\n",
+            "Impl",
+                "package com.example;\nclass Impl implements Managed {\n  public void start() {}\n  public void stop() {}\n}\n",
+            "Holder",
+                "package com.example;\nclass Holder {\n  Managed managed = new Managed() {\n    public void start() {}\n    public void stop() {}\n  };\n}\n",
+            "Color",
+                "package com.example;\nenum Color {\n  RED {\n    String label() { return \"r\"; }\n  };\n  abstract String label();\n}\n",
+            "Handler",
+                "package com.example;\ninterface Handler {\n  void handle(String request);\n}\n",
+            "Echo",
+                "package com.example;\nclass Echo implements Handler {\n  public void handle(String request) {}\n}\n",
+            "Routes",
+                "package com.example;\nclass Routes {\n  Handler handler = request -> {};\n  Runnable other = () -> {};\n}\n");
+    final Map<String, Path> files = new HashMap<>();
+    for (final var source : sources.entrySet()) {
+      files.put(
+          source.getKey(),
+          TestCompiler.writeModuleSource(
+              tmp, "com/example/%s.java".formatted(source.getKey()), source.getValue()));
+    }
+
+    TestCompiler.compileToDir(
+        tmp.resolve(".lathe/module/classes"), files.values().toArray(Path[]::new));
+    engine = new LatheEngine(tmp);
+    final BiFunction<String, String, List<String>> found =
+        (type, token) -> {
+          final var pos = offsetToPosition(sources.get(type), sources.get(type).indexOf(token));
+          return engine
+              .findImplementations(files.get(type), pos.getLine(), pos.getCharacter(), 50)
+              .implementations()
+              .stream()
+              .map(
+                  location ->
+                      "%s:%d"
+                          .formatted(
+                              Path.of(location.path()).getFileName(),
+                              location.range().getStart().getLine() + 1))
+              .sorted()
+              .toList();
+        };
+
+    assertThat(found.apply("Managed", "stop")).containsExactly("Holder.java:5", "Impl.java:4");
+    assertThat(found.apply("Managed", "Managed")).containsExactly("Holder.java:3", "Impl.java:2");
+    assertThat(found.apply("Color", "label();")).containsExactly("Color.java:4");
+    assertThat(found.apply("Color", "Color {")).containsExactly("Color.java:3");
+    assertThat(found.apply("Handler", "Handler")).containsExactly("Echo.java:2", "Routes.java:3");
+  }
+
+  // At the name of a constant with a body, hover describes the constant and definition goes to it,
+  // as at a constant without one.
+  @Test
+  void describeAndDefinition_enumConstantWithBody_resolveTheConstant() throws Exception {
+    final String source =
+        "package com.example;\nenum Color {\n  RED { String label() { return \"r\"; } },\n  GREEN;\n  String label() { return \"g\"; }\n}\n";
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Color.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    for (final String name : List.of("RED", "GREEN")) {
+      final var pos = offsetToPosition(source, source.indexOf(name) + 1);
+
+      assertThat(engine.describe(file, pos.getLine(), pos.getCharacter())).as(name).contains(name);
+      assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()))
+          .as(name)
+          .singleElement()
+          .satisfies(
+              location ->
+                  assertThat(location.range().getStart().getLine()).isEqualTo(pos.getLine()));
+    }
   }
 
   @Test
@@ -1284,6 +1364,30 @@ class LatheEngineTest {
         .contains("a.bar();");
   }
 
+  // A pattern variable is a local: renaming one `s` leaves a same-named pattern variable in another
+  // method alone, as for any local.
+  @Test
+  void rename_patternVariable_renamesOnlyItsOwnUses() throws Exception {
+    final String source =
+        """
+        package com.example;
+        class Patterns {
+          int first(Object o) { return o instanceof String s ? s.length() : 0; }
+          int second(Object o) { return o instanceof String s ? s.length() : 1; }
+        }
+        """;
+    final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Patterns.java", source);
+    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    engine = new LatheEngine(tmp);
+
+    renameAt(file, source, "s ?", "text");
+
+    assertThat(file)
+        .content()
+        .contains("int first(Object o) { return o instanceof String text ? text.length() : 0; }")
+        .contains("int second(Object o) { return o instanceof String s ? s.length() : 1; }");
+  }
+
   private Path exampleFile(final String type) {
     return tmp.resolve("module/src/main/java/com/example/%s.java".formatted(type));
   }
@@ -1747,9 +1851,14 @@ class LatheEngineTest {
                     List.of(),
                     null)));
 
-    final LatheTestRun run = LatheTestRun.from(outcome, List.of("com.example.FooTest"));
+    final LatheTestRun run =
+        LatheTestRun.from(
+            outcome.withNotes(List.of("dep/target/classes-jdk21 runs as the last build left it")),
+            List.of("com.example.FooTest"));
 
     assertThat(run.launched()).isTrue();
+    assertThat(run.notes())
+        .containsExactly("dep/target/classes-jdk21 runs as the last build left it");
     assertThat(run.ran()).containsExactly("com.example.FooTest");
     assertThat(run.total()).isEqualTo(4);
     assertThat(run.passed()).isEqualTo(1);
@@ -1980,6 +2089,47 @@ class LatheEngineTest {
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()
         .satisfies(module -> assertThat(module.module()).isEqualTo("app"));
+  }
+
+  // The first check writes the change into the mirror; a later one, in this session or the next,
+  // must still see it as unbuilt, or it would call a broken tree clean.
+  @Test
+  void verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted()
+      throws Exception {
+    final Path api = apiReactor(List.of("app"), List.of());
+    engine = new LatheEngine(tmp);
+    TestCompiler.writeAt(api, API_SOURCE.replace("a()", "b()"), 10_000L);
+    final Predicate<LatheVerifyChange> breaksApp =
+        verify ->
+            verify.perModule().stream()
+                .anyMatch(
+                    module ->
+                        module.module().equals("app")
+                            && module.diagnostics().stream()
+                                .anyMatch(
+                                    d ->
+                                        d.diagnostic()
+                                            .getMessage()
+                                            .getLeft()
+                                            .contains("cannot find symbol")));
+
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "first check");
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "second check");
+    engine.close();
+    engine = new LatheEngine(tmp);
+    assertThat(engine.verifyChange(List.of())).matches(breaksApp, "a new session");
+
+    TestCompiler.writeAt(api, API_SOURCE, 20_000L);
+    assertThat(engine.verifyChange(List.of()).perModule()).as("reverted").isEmpty();
+
+    // A deleted type the build compiled: its callers stay broken, check after check.
+    Files.delete(api);
+    final Predicate<LatheVerifyChange> appBroken =
+        verify -> verify.perModule().stream().anyMatch(module -> module.module().equals("app"));
+    assertThat(engine.verifyChange(List.of())).matches(appBroken, "deleted: first check");
+    assertThat(engine.verifyChange(List.of())).matches(appBroken, "deleted: second check");
+    TestCompiler.writeAt(api, API_SOURCE, 30_000L);
+    assertThat(engine.verifyChange(List.of()).perModule()).as("restored").isEmpty();
   }
 
   @Test

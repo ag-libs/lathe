@@ -358,6 +358,10 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.declaration(request));
   }
 
+  public CompletableFuture<Optional<Location>> typeDefinition(final SourceFeatureRequest request) {
+    return submit(ctx -> ctx.typeDefinition(request));
+  }
+
   public CompletableFuture<List<Location>> typeImplementations(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
     return submit(ctx -> ctx.typeImplementations(request, typeIndex));

@@ -451,39 +451,6 @@ None yet.
 
 ---
 
-## EG-070 — `typeDefinition` is missing
-
-**Status: accepted**
-
-**Value: medium — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
-
-### Observed behaviour
-
-`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
-A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
-and an INFO line in the log.
-
-### Fix direction
-
-Implement `typeDefinition` (the declared type of the symbol at the cursor); definition already resolves types.
-
-### Resolved part
-
-Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
-lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
-`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
-Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-071 — Highlighting a package name in `module-info.java` highlights every segment, elsewhere too
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
@@ -503,6 +470,8 @@ also inside another package's `exports` (a `…type.spi` beside `…type`) and i
 ### Fix direction
 
 Highlight a qualified package name as one unit, and only where the same package is named.
+
+Also (exploratory round, 2026-11-04): `find_references` on a package segment in `exports` returns every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`); the rename form is FR-027.
 
 ### Regression targets
 
@@ -682,45 +651,7 @@ Keep a parent-method caller only when its receiver's static type is a supertype 
 (or the override's class or a subtype), as find references already reasons about receivers;
 a method reference's qualifier type counts as the receiver.
 
-### Regression targets
-
-None yet.
-
----
-
-## EG-081 — Implementations of an interface omit lambdas that implementations of its method include
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: the editor's go to implementation and MCP `find_implementations`.**
-
-Found by an agent's review of the MCP tools on Helidon (2026-11-01).
-
-### Observed behaviour
-
-On Helidon's `Handler` interface, `find_implementations` answers 23 classes and no lambdas;
-on `Handler.handle` it answers 225, lambdas and method references such as `this::handle` included.
-The tool's description says it includes lambdas, but asked on the type it misses the most common kind of
-implementation of a functional interface.
-
-### Fix direction
-
-Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
-
-Why: for a type, `implementationForTarget` calls `typeImplementations`, which lists named subtypes only; the lambda
-and method-reference search runs only when the target is the method.
-
-The fix: when the target type is a functional interface, also run the existing method search for its single
-abstract method (`lambdaImplementationFiles`, `bytecodeLambdaImplementationFiles`) and add its lambdas and method
-references, so `Handler` answers the classes and the lambdas, as `Handler.handle` already does.
-Anonymous classes implement the type too, so the type query lists them as well, at their `new Handler() {` line,
-through EG-085's change.
-
-Tests: the type query on a functional interface returns its classes and lambdas; a lambda converted to a different
-functional interface is not listed.
+Also (exploratory round, 2026-11-04): incoming calls on EqualsVerifier's core stub `get()` include a call through the abstract base class.
 
 ### Regression targets
 
@@ -781,83 +712,6 @@ None yet.
 
 ---
 
-## EG-085 — Implementations miss anonymous classes and enum constant bodies
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `find_implementations` and `analyze_change`, likely the editor's go to implementation.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `HttpClientBuilder:284`,
-`MessageQueueFactory:41`) and an enum constant body's override (`RED { label() }`) are absent, so
-`analyze_change` reports an override family of 7 where there are 10.
-`rename_symbol` and `find_references` include them.
-
-### Fix direction
-
-Fixed together with [EG-081](#eg-081--implementations-of-an-interface-omit-lambdas-that-implementations-of-its-method-include),
-[MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one) and
-[MC-69](#mc-69--analyze_change-names-too-few-affected-modules): go to implementation, `find_implementations` and
-`analyze_change`'s override family all run one search (`WorkspaceSession.implementationFuture`).
-
-Why they are missed: the method search starts from the type index's subtypes and drops every unnamed one
-(`TypeSourceLocator::isNamedDeclaration` in `subtypeImplementationFiles`), a filter from the first implementation
-that suits jumping to a type's declaration, which needs a name, but not method implementations.
-The index does know `JerseyClientBuilder$1` and `Color$1` (javac compiles an enum constant's body as an anonymous
-subclass of the enum); `MethodImplementationLocator.visitClass` then matches only the filtered binary names.
-
-The fix:
-
-- `subtypeImplementationFiles` keeps the unnamed subtypes for the method search, mapping `Outer$1` to `Outer`'s
-  source file (`findSourceFile` already resolves nested names to their top-level file).
-- `MethodImplementationLocator.visitClass` recognises an anonymous class from the attributed tree, not by binary
-  name: it qualifies when its type is a subtype of the target method's owner, and the usual `Elements.overrides`
-  check picks the method. This does not rely on javac's `$1`, `$2` numbering agreeing between the compiled
-  classes and the source; an enum constant body is the same case.
-- The result points at the overriding method inside the body, as for a named class.
-
-Tests beside the existing implementation tests: anonymous classes and an enum constant body overriding an abstract
-enum method are found; an anonymous class of an unrelated interface with a method of the same name is not.
-It touches `WorkspaceSession`, `MethodImplementationLocator`, the worker's type-implementation path and
-`LatheEngine`, so the set starts with a design summary.
-
-### Regression targets
-
-None yet.
-
----
-
-## EG-086 — An enum constant with a body cannot be resolved at its declaration
-
-**Status: accepted**
-
-**Value: medium — Size: S**
-
-**Affects: MCP tools by name or column, likely the editor's hover and definition there.**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-At `RED {`, tools answer "no symbol named 'RED'", by name and by column, although `outline` lists it at
-16:9. Constants without a body, and every use site, resolve.
-
-### Fix direction
-
-Map the constant's name position to its `VariableTree` (javac wraps a bodied constant in an anonymous
-class whose tree overlaps the name).
-
-### Regression targets
-
-None yet.
-
----
-
 ## EG-087 — `Type::new` and `var` are not navigable, and outgoing calls drop constructor references
 
 **Status: deferred** (triaged 2026-11-03: low severity for the editor)
@@ -878,6 +732,68 @@ The `new` of `::new` and the `var` keyword resolve to nothing.
 
 Record `Type::new` as a constructor call; resolve `new` in `::new` to the constructor and `var` to the
 inferred type.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-089 — Definition and hover on an interface call land on a nested implementation in the same file
+
+**Status: documented**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's definition and hover, MCP `get_definition` and `describe_symbol`.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+At `SocketTransportBinding.java:192` (`listenerConfig.backlog()`), definition goes to `ListenerConfig.java:3455`, a method of
+the nested `ListenerConfigImpl`, not to the interface method at `:403` the call binds to (`invokeinterface
+ListenerConfig.backlog`), and hover shows no javadoc ("Accept backlog." is on `:403`).
+Every generated Helidon `*Config` has this shape; hand-written code too (`builder/codegen Utils.java:139 packageName` →
+`TypeName.java:1475` in `TypeNameImpl`, not `:265`).
+It needs the call resolved through compiled classes and the source file holding a nested class that implements the method;
+the same layout compiled from source in one file resolves right. References and implementations from those sites are right.
+
+### Fix direction
+
+When mapping a binary method to its source, match the declaring class's binary name (`ListenerConfig`, not
+`ListenerConfig$ListenerConfigImpl`) before the method name and signature.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module
+
+**Status: documented**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Incoming calls answer "No callers found" for `App1.java:22 initialize`, `HelloWorldApplication:82 run`,
+`MyConfiguredBundle:15 initialize` and the anonymous `getDataSourceFactory` overrides at `HelloWorldApplication:44/68`.
+Their callers dispatch through the base method in an upstream module (`Application.java:88`, `EnvironmentCommand:66`,
+`Bootstrap.java:150`, `HibernateBundle:72`, `AbstractLiquibaseCommand:78`); asked on the base method, they are found.
+`HibernateBundle:47` lists only its own module's tests.
+EG-044 (done) made an override's incoming calls include calls through its base method; across modules they are missing.
+The opposite of EG-080, which lists too many.
+
+### Fix direction
+
+Search the base method's callers in the modules upstream of the override's, not only in the override's module and its
+dependents.
 
 ### Regression targets
 
@@ -935,6 +851,131 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 ### Fix direction
 
 Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+
+Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-025 — A constructor's uses through `super(...)`, `this(...)` and anonymous subclasses are not found
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor's references and call hierarchy, MCP `find_references`, `call_hierarchy` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+`find_references` on `HibernateBundle.java:31` (`protected HibernateBundle(Class<?> entity, Class<?>... entities)`) answers
+only the declaration. It misses `super(...)` at `dual/HibernateBundle.java:21` and the anonymous `new HibernateBundle<X>(Person.class) { … }`
+at `HelloWorldApplication:42`, `MultipleUnitOfWorkTest:105/117`, `SubResourcesTest:132` and more; incoming calls say
+"No callers found" and `analyze_change` "1 production, 0 test; relevant tests: none".
+`JdbiHealthCheck:19` misses the `this(...)` at line 27.
+Changing the constructor's signature, `verify_change` reports 8 errors at exactly those sites.
+Definition and hover on the `this`/`super` keyword answer that the position is not on a name.
+
+### Fix direction
+
+Count a `super(...)`/`this(...)` call and the implicit superclass constructor call of an anonymous class body as uses of the
+constructor they resolve to, and resolve `this`/`super` in an explicit constructor call to that constructor.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: references, implementations, definition, rename, MCP `search_symbols` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-core` has a stub `nl.jqno.equalsverifier.internal.versionspecific.SequencedCollectionsValueSupplier`;
+`equalsverifier-21` has the real class under the same name and depends on core (a multi-release overlay).
+`search_symbols` lists only the `-21` one; definition from `equalsverifier-core/.../BuiltinVersionSpecificValueProvider.java:24`
+lands in `-21`; `find_references` from the core declaration answers the two `-21` lines and misses core's own uses (lines 8
+and 24), still saying "no need to re-verify with grep"; `find_implementations` of `GenericValueSupplier.get()` finds 8 of 10
+(not the two core stubs).
+`rename_symbol` on the core stub renamed and moved the `-21` file, left core untouched, and `verify_change` said "No errors".
+The log shows `[type-index] duplicate type … skipped`: the index keeps one entry per binary name.
+
+### Fix direction
+
+Key the reactor's type index by module and binary name, and resolve a name from the module asking (its own copy first, then
+its dependencies'), so each module sees the copy javac would.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-027 — `module-info.java` `provides … with` is missed by references and rename, and listed once per package segment
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: references, rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+In a fresh session, `find_references` on `HstsFeatureProvider` (`webserver/hsts/.../HstsFeatureProvider.java:29`) answers 2
+references, not the `with io.helidon.webserver.hsts.HstsFeatureProvider;` at `module-info.java:42`; renaming it reports
+"2 edit(s) across 1 file(s)", moves the file and leaves `module-info.java` on the old name (`verify_change` then reports
+`cannot find symbol` there). The same for `ServerFeatureProvider`: 79 references, none in a `module-info.java`.
+Once `module-info.java` has been analyzed in the session, the line is found, but four times (once per package segment), and
+renaming from that line writes `with io.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider;`.
+Related to EG-071 (per-segment matching of package names in `module-info.java`).
+
+### Fix direction
+
+Include the module's `module-info.java` among the files searched for a type's uses, and match a qualified name in a
+directive by its last segment's element only.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-028 — Renaming a parameter or record component leaves its `@param` tag
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+Renaming `handler` to `task` at `Handler.java:37` leaves `@param handler` at line 34; `ProxyProtocolV2Data.java:186`
+`hostName` to `host` leaves `@param hostName` at line 184.
+The "Not renamed — review" list names 12 `"handler"` string literals in unrelated modules (messaging tests, JwtProvider,
+declarative codegen) for a method-local parameter, and not the `@param` tag.
+Not EG-050, which covers `{@link}` and `{@code}`.
+
+### Fix direction
+
+Rename the `@param` name of the method (or record) that declares the parameter, and leave string literals outside the
+declaring scope off the review list for a local symbol.
 
 ### Regression targets
 
@@ -1092,34 +1133,6 @@ None yet.
 
 ---
 
-## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file
-
-**Status: accepted**
-
-**Value: medium — Size: M**
-
-**Affects: the editor.**
-
-Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
-
-### Observed behaviour
-
-After an agent or `git` adds a class in an upstream module, an open downstream file that uses it shows
-`cannot find symbol` for about 8 s before the server republishes clean diagnostics.
-The scan runs every 2 s, and the other outside-change scenarios settle in 2–4 s.
-Adding a class and using it straight away is the common agent pattern this delay hits.
-
-### Fix direction
-
-Measure where the 8 s goes (scan, write pass, type-index refresh, re-check of open files) and bring it
-in line with the other outside changes.
-
-### Regression targets
-
-None yet.
-
----
-
 ## WS-21 — A rename racing a build can leave the tree broken
 
 **Status: documented**
@@ -1205,7 +1218,38 @@ None yet.
 
 ---
 
-## WS-26 — On Gradle, included builds are not covered
+## WS-26 — A second agent session can answer from stale state while the first one writes
+
+**Status: documented**
+
+**Value: low — Size: S–M**
+
+**Affects: MCP, two sessions on one workspace.**
+
+Found by the pre-release check (2026-11-04) on Helidon, with `dev/mcp_staleness.py` (scenario I4): 1 failure in 13 runs.
+
+### Observed behaviour
+
+Session A fixes an upstream file on disk; session B, asked about the downstream file straight after, still reports
+the `cannot find symbol` the fix removed, while A reports it clean.
+B's two queries (I3, I4) each took 2.05 s instead of the usual 0.3–0.5 s: B waited for the workspace write lock, held
+by A's write pass, then stopped waiting and answered from its own state, as a query does after one lock wait.
+Only A and B ran on the workspace then.
+It did not reproduce in 9 runs of the scenario alone and 3 runs of the whole Helidon probe, all with `LATHE_DEBUG=1`.
+
+### Fix direction
+
+Find what held the lock for about 4 s: A's write of the fix, perhaps followed by the immediate retry of the downstream
+file that failed before (the WS-20 change). Then either let a query wait out a short pass by its peer, or have the
+answer say it may be stale while another server writes (as "A build is running" does for a build).
+
+### Regression targets
+
+None yet.
+
+---
+
+## WS-27 — On Gradle, included builds are not covered
 
 **Status: documented**
 
@@ -1319,7 +1363,7 @@ None yet.
 
 ## TE-11 — A test run whose Surefire tests a copy of the classes replays the last build's classes
 
-**Status: accepted**
+**Status: deferred** (2026-11-04: the silent part fixed; replaying the copy from `.lathe/` deferred)
 
 **Value: medium — Size: M**
 
@@ -1353,9 +1397,24 @@ Where Lathe cannot tell what a copied directory holds, the completeness gate sho
 from the last build, as it does for other stale inputs.
 For this repo alone, the build could test against the compile output plus the `versions/21` overlay without a copy.
 
+### Partial resolution
+
+The run no longer uses the copy silently.
+The completeness gate notes each directory a launch takes from a reactor module's build directory that no
+`.lathe/` mirror stands for: the editor's test output shows it, and `run_test` ends with
+"Note: lathe-server/target/classes-jdk21 runs as the last build left it, not from .lathe: it may not hold your
+latest edits".
+Checked on this repo: `run_test` on `TestIdTest` (`lathe-server`) passes with the note, and on `BuildLockTest`
+(`lathe-core`, which tests its compile output) without one.
+
+Replaying the copy from the mirrors (the `classes` mirror with the `21` tree's in front: on the module path through
+`--patch-module`) is deferred.
+It is mostly this repository's own setup, Surefire tests `target/classes` by default, and the module-path patching
+would touch every replayed launch; reconsider if a project asks for it.
+
 ### Regression targets
 
-None yet.
+`CompletenessGateTest.verify_copyOfClassesInABuildDir_openWithNote_mirroredAndOutsideDirsNot`
 
 ---
 
@@ -1753,6 +1812,8 @@ instead.
 Order hand-written sources before generated ones (and production before tests, as `analyze_change`
 counts them), so a capped answer shows what an agent edits.
 When refusing a generated symbol, name its blueprint declaration when the generator links one.
+
+Also (exploratory round, 2026-11-04): `search_symbols` lists the generated `ListenerConfig` and `ListenerConfigImpl` before the hand-written `ListenerConfigBlueprint`.
 
 ### Regression targets
 
@@ -2252,7 +2313,7 @@ so the two halves of the answer contradict each other.
 ### Fix direction
 
 Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done).
 
 Why: `LatheEngine.analyzeChange` takes the family from the implementation search (`implementationsAt`), which looks
 only down the hierarchy; the methods the target overrides never appear.
@@ -2313,7 +2374,7 @@ On `Handler.handle` it names 5 affected modules, while the 225 implementations i
 ### Fix direction
 
 Part of the implementation-search set described under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies).
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done).
 
 Why: `LatheEngine.analyzeChange` counts the modules of reference sites only, never of the override family's members.
 
@@ -2483,6 +2544,8 @@ Records show as `struct`, enum constants as `field`, and an enum constant body's
 Label records `record` and enum constants `enum constant` in the MCP text (LSP has no record kind, so its
 mapping can stay), and list a constant body's members under the constant.
 
+Also (exploratory round, 2026-11-04): `outline` shows a record as "struct" while `search_symbols` calls it "Class" (Dropwizard).
+
 ### Regression targets
 
 None yet.
@@ -2508,6 +2571,8 @@ to tell them apart.
 
 Print the column (`file:line:column`), or merge the hits of one line into one row with both columns.
 
+Also (exploratory round, 2026-11-04): Dropwizard's `KIBIBYTES` gives 46 rows for 34 lines; Helidon's generated `ObserveServices__ServiceDescriptor.java` lines 64 and 66 twice.
+
 ### Regression targets
 
 None yet.
@@ -2531,6 +2596,8 @@ Some modules show no test status at all, while others say `tests: not captured`.
 ### Fix direction
 
 Show a status for every module: captured, not captured (with the command), or no tests.
+
+Also (exploratory round, 2026-11-04): no test status for Dropwizard's docs/source/examples `conscrypt`, `getting-started` and `views`.
 
 ### Regression targets
 
@@ -2571,7 +2638,7 @@ The fix: the locator keeps abstract overriders too and marks each result as an i
 go to implementation and `find_implementations` keep the implementations only; `analyze_change` keeps both and
 labels the redeclarations ("redeclared by").
 It belongs to the one-search set under
-[EG-085](#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies) and
+[EG-085](gaps-archive.md#eg-085--implementations-miss-anonymous-classes-and-enum-constant-bodies--done) and
 [MC-67](#mc-67--analyze_change-reports-no-override-family-for-a-method-that-overrides-one): MC-67 adds the methods
 the target overrides, this completes the ones that override it.
 A second search only for `analyze_change` would walk the same candidates twice.
@@ -2583,3 +2650,181 @@ Test: `analyze_change` on an interface method that a subinterface redeclares lis
 
 None yet. The battery's reference round trip no longer catches this: since it accepts a definition that
 `find_references` agrees with, it passes on Helidon either way.
+
+---
+
+## MC-80 — `verify_change` skips callers that reach a changed type without naming it
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+With the same `toSeconds(int)` change, `verify_change` misses 5 errors in three `dropwizard-health` test files
+(`ScheduleTest:24`, `HealthCheckConfigurationTest:25/26`, `DefaultHealthFactoryTest:60/61`). They call
+`getSchedule().getDowntimeInterval().toSeconds()` and never name `Duration`; `find_references` lists all 11 uses and
+`get_diagnostics` on `ScheduleTest` shows the error.
+The callers checked are the files that mention the changed file's type.
+
+### Fix direction
+
+Take the callers from the changed members' references (the reference index already answers them), or add the files that
+mention a changed member's name in the modules that can see it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java`
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+Removing `requires static java.sql;` (or `requires org.objenesis;`) from `equalsverifier-core`'s `module-info.java`:
+`verify_change` says "No errors", and the log shows `[verify] 1 file(s)`. `get_diagnostics` on `JavaSqlValueSupplier.java`
+reports "package java.sql is not visible".
+
+### Fix direction
+
+A changed `module-info.java` affects every source of its module (and the modules reading it): check the module's sources.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror`
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: MCP `verify_change`, `run_test` and the notes.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+Renaming `Formatter.of` to `ofX` (`Formatter.java:37`) leaves a `{@link}` at line 20 dangling, an Error Prone `InvalidLink`
+warning that `-Werror` fails. `verify_change` reports no errors: the log shows `[compile:batch] failed=1` then
+`[verify] 37 files diags=0`, the callers checked against the old classes, with no "Not compiled" note.
+With the link fixed too, it reports 103 errors. An unused new parameter, and an unused local in a test, give the same.
+The other tools' note reads only `Formatter.java:1: warnings found and -Werror specified`: line 1, the warning itself
+hidden; `run_test` refuses with the same text.
+Related to EG-084 (the open compile skips the build's plugins) and MC-73 (a file that does not compile answers from stale
+classes); this is their consequence for `verify_change`.
+
+### Fix direction
+
+When a changed file's write fails, report that failure in `verify_change` (its real diagnostics, not the `-Werror` summary)
+and say the callers were checked against the previous classes.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete
+
+**Status: documented**
+
+**Value: high — Size: M (a note) / L (support)**
+
+**Affects: MCP `find_references`, `rename_symbol`, `analyze_change`, `verify_change`, `workspace_summary`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+`find_references` on `withPrefabValuesForField` (`SingleTypeEqualsVerifierApi.java:244`) misses `KotlinWithoutReflectTest.kt:110`
+and `:159` and says "no need to re-verify with grep". Renaming it, or `Warning.ALL_FIELDS_SHOULD_BE_USED`, leaves the Kotlin
+uses broken (`KotlinDelegationTest.kt:169`), the review list silent on `.kt` files, and `verify_change` clean.
+`analyze_change` counts no Kotlin callers (`forClass` has 77); `workspace_summary` reports 8 modules and leaves out the two
+Kotlin test modules that `workspace.json` lists.
+
+### Fix direction
+
+At least: when a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
+files that mention the name for review. Reading Kotlin is a separate decision.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-85 — Rename and `verify_change` say nothing about uses in modules the sync leaves out
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `rename_symbol` and `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+Renaming `ServerFeature.setup` left `webserver/tests/webserver/.../FeaturesOrderingTest.java:268` broken: that module is
+behind the root `tests` profile and not synced. Neither the rename nor `verify_change` mentions it, though
+`get_diagnostics` on the file says it is outside the compiled modules.
+
+### Fix direction
+
+When the reactor has profile-gated modules not synced, say in a rename's and `verify_change`'s answer that they were not
+checked, and list their files that mention the name.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-86 — Smaller answer defects from the exploratory round
+
+**Status: documented**
+
+**Value: low — Size: S each**
+
+**Affects: MCP tools.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier and Helidon.
+
+### Observed behaviour
+
+- `fix_imports` imports `javax.xml.transform.Result` where the inherited `HealthCheck.Result` was meant (Dropwizard
+  `JdbiHealthCheck` with every import removed), and offers `java.awt.List` for `List<String>` (not generic).
+- `verify_change` lists at most javac's 100 errors per compile without saying so: `seconds(long)` to `seconds(long, int)`
+  reports "156 error(s)" of about 221.
+- `analyze_change` counts declarations and overriding declarations as references (`toSeconds`: "5 production" for 4 calls;
+  an unused constructor: "1 production").
+- `describe_symbol`'s `source:` label is the JPMS module name from one caller and the Maven module from another, and the
+  signature drops `final`, `<T>` and `default`.
+- `get_definition` on a `requires` module name answers "No definition found" without saying modules are not navigable.
+- The rename review list cites the line a text block opens on, not the line with the name (`PrefabValuesApi.java:106`
+  for line 108), and lists every `"get"` literal for a short name.
+- `search_symbols` labels an annotation "(Interface)"; `workspace_summary` has no size limit (about 46 KB on Helidon).
+
+### Fix direction
+
+Each is small; take them one by one when touching the tool.
+
+### Regression targets
+
+None yet.

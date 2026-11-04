@@ -96,6 +96,12 @@ On Maven:
   Capture rides Surefire's `test` fork, never Failsafe's (`integration-test` / `verify`), so `*IT` classes
   can't be run from the editor or an agent; run them with the build.
   A run of one says so, rather than naming a sync that would capture nothing.
+- **A copied classes directory runs as the last build left it.**
+  A run replays the module's compile output from `.lathe/`, kept current as you edit.
+  When Surefire tests another directory instead (its `classesDirectory` set to a copy, for example a
+  multi-release overlay in `target/classes-jdk21`), that copy is not kept current: the run uses it
+  as the last build left it, and its result says so in a note.
+  Rebuild the module to refresh it.
 
 On Gradle:
 

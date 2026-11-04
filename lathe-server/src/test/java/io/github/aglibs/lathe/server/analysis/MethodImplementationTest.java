@@ -262,6 +262,122 @@ class MethodImplementationTest {
     }
   }
 
+  private static final String ANONYMOUS_SOURCE =
+      """
+      interface Managed { void stop(); }
+      interface Other { void stop(); }
+      enum Color {
+        RED { String label() { return "r"; } },
+        GREEN;
+        String label() { return "g"; }
+      }
+      class Holder {
+        Managed managed = new Managed() { public void stop() {} };
+        Other other = new Other() { public void stop() {} };
+        Managed lambda = () -> {};
+        Managed reference = this::close;
+        Runnable runnable = () -> {};
+        void close() {}
+      }
+      """;
+
+  // Anonymous classes, an enum constant's body among them, implement a method like named classes
+  // do, found from the tree whatever javac numbered them, beside the lambdas of a functional
+  // interface's method; an anonymous class of another interface with a same-named method does not,
+  // nor a lambda of another functional interface (lines are 0-based).
+  @Test
+  void methodImplementations_anonymousClassAndEnumConstantBody_foundUnrelatedNot() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final var uri = TempSourceCompiler.TEST_URI;
+
+      assertThat(
+              lines(
+                  implementations(
+                      session, uri, ANONYMOUS_SOURCE, targetAt("void stop()"), Set.of())))
+          .containsExactlyInAnyOrder(8, 10, 11);
+      assertThat(
+              lines(
+                  implementations(
+                      session,
+                      uri,
+                      ANONYMOUS_SOURCE,
+                      targetAt("String label() { return \"g"),
+                      Set.of())))
+          .containsExactly(3);
+    }
+  }
+
+  // A type's implementations found from sources: its anonymous classes at their `new`, and for a
+  // functional interface its lambdas and method references, not one converted to another interface.
+  @Test
+  void typeImplementations_functionalInterface_anonymousClassesLambdasAndMethodReferences() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      assertThat(
+              lines(
+                  implementations(
+                      session,
+                      TempSourceCompiler.TEST_URI,
+                      ANONYMOUS_SOURCE,
+                      targetAt("interface Managed"),
+                      Set.of())))
+          .containsExactlyInAnyOrder(8, 10, 11);
+    }
+  }
+
+  private static final String SUBTYPE_SOURCE =
+      """
+      interface Base { void run(); }
+      interface Sub extends Base {}
+      interface Sibling extends Base {}
+      class Uses {
+        Sub sub = () -> {};
+        Base base = () -> {};
+        Sibling sibling = () -> {};
+        void m() {
+          class Local implements Sub { public void run() {} }
+        }
+      }
+      """;
+
+  // On a type, a lambda counts only when it is one of the type: a lambda of its parent or of a
+  // sibling sub-interface implements the same method without being it. A local class counts, at its
+  // name.
+  @Test
+  void typeImplementations_subInterface_ownLambdasAndLocalClassNotParentOrSiblingLambdas() {
+    try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
+      final int at = SUBTYPE_SOURCE.indexOf("Sub extends");
+      final ReferenceTarget target;
+      try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
+        targetSession.compile(TempSourceCompiler.TEST_URI, SUBTYPE_SOURCE, 1, CompileMode.OPEN);
+        target =
+            targetSession.resolveTarget(
+                samRequest(SUBTYPE_SOURCE, SourceLocator.offsetToPosition(SUBTYPE_SOURCE, at)));
+      }
+
+      assertThat(
+              lines(
+                  implementations(
+                      session, TempSourceCompiler.TEST_URI, SUBTYPE_SOURCE, target, Set.of())))
+          .containsExactlyInAnyOrder(4, 8);
+    }
+  }
+
+  private static List<Integer> lines(final List<Location> locations) {
+    return locations.stream().map(location -> location.getRange().getStart().getLine()).toList();
+  }
+
+  // The target at the first `token` of ANONYMOUS_SOURCE, on its name.
+  private ReferenceTarget targetAt(final String token) {
+    final int at = ANONYMOUS_SOURCE.indexOf(token);
+    final int name =
+        at + (token.startsWith("interface ") ? "interface ".length() : token.indexOf(' ') + 1);
+    try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
+      targetSession.compile(TempSourceCompiler.TEST_URI, ANONYMOUS_SOURCE, 1, CompileMode.OPEN);
+      return targetSession.resolveTarget(
+          samRequest(ANONYMOUS_SOURCE, SourceLocator.offsetToPosition(ANONYMOUS_SOURCE, name)));
+    }
+  }
+
   private static List<Location> implementations(
       final SourceAnalysisSession session,
       final String uri,

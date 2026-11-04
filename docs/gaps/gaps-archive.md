@@ -7,6 +7,144 @@ Resolved (`done` / `non-goal`) gap entries, moved out of the active [gaps.md](ga
 
 # Navigation, references, code actions (resolved)
 
+## EG-070 — `typeDefinition` is missing — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release test rounds (2026-10-29/30) on Dropwizard.
+
+### Observed behaviour
+
+`textDocument/typeDefinition` is not advertised, so Neovim's go-to-type-definition is unavailable.
+A client that sends it anyway, or any other request Lathe does not implement, gets the protocol's "method not found"
+and an INFO line in the log.
+
+### Resolution
+
+`textDocument/typeDefinition` is advertised and answers the declaration of the type of the symbol at the cursor: a
+variable's or field's type, a method's return type (at its call or declaration), a constructor's class, a type itself;
+an array's element type and a generic's declared type; nothing for a primitive or `void`. Sources are found as go to
+definition finds them, so a dependency or JDK type opens its extracted source. Neovim 0.12's default `grt` and VS Code's
+Go to Type Definition work with no client change. Definition, declaration, type definition and implementation now share
+one request path in the services instead of four copies.
+
+### Resolved part
+
+Unsupported requests used to answer with an internal error and log a SEVERE line with a stack trace:
+lsp4j's service interfaces implement every method Lathe does not as a default method that throws.
+`LatheServer.responseError`, the launcher's exception handler, answers those with `MethodNotFound`.
+Regression target: `LatheServerTest.run_unsupportedRequest_answersMethodNotFound`.
+
+### Regression targets
+
+`LatheTextDocumentServiceTest.typeDefinition_symbolsOfEachKind_goToTheirTypeDeclaration`,
+`LatheLanguageServerTest.createCapabilities_includesTypeDefinitionProvider`,
+`LatheServerTest.run_unsupportedRequest_answersMethodNotFound` (the unsupported-request part).
+
+---
+
+## EG-086 — An enum constant with a body cannot be resolved at its declaration — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP tools by name or column, likely the editor's hover and definition there.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+At `RED {`, tools answer "no symbol named 'RED'", by name and by column, although `outline` lists it at
+16:9. Constants without a body, and every use site, resolve.
+
+### Resolution
+
+javac's anonymous class tree for a constant's body starts at the constant's name, ahead of the `new Color() { … }` that
+holds it, so the position found there was the anonymous class, whose element is the enum: tools answered "no symbol
+named 'RED'" and hover and definition described the wrong thing. `SourceLocator.pathAt` now returns the constant at its
+name, before the creation itself starts; positions inside the body are unchanged. Hover, definition and every tool that
+finds the symbol at a position resolve the constant, as for a constant without a body.
+
+### Regression targets
+
+`SourceLocatorTest.elementAt_nameOfEnumConstantWithBody_isTheConstant`,
+`LatheEngineTest.describeAndDefinition_enumConstantWithBody_resolveTheConstant`.
+
+---
+
+## EG-085 — Implementations miss anonymous classes and enum constant bodies — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_implementations` and `analyze_change`, likely the editor's go to implementation.**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+Three `new Managed() { … stop() … }` classes (`JerseyClientBuilder:362`, `HttpClientBuilder:284`,
+`MessageQueueFactory:41`) and an enum constant body's override (`RED { label() }`) are absent, so
+`analyze_change` reports an override family of 7 where there are 10.
+`rename_symbol` and `find_references` include them.
+
+### Resolution
+
+Go to implementation, which MCP `find_implementations` shares, now searches the type index's unnamed subtypes too
+(`Outer$1` maps to `Outer`'s file), and `MethodImplementationLocator` recognises an anonymous class from the attributed
+tree, a subtype of the target's owner, not by javac's numbering; an enum constant's body and a local class are the same
+case. On a method the result is the overriding method in the body; on a type, the `new Handler() {` site, or a local
+class's name.
+Dropwizard's `Managed.stop` now answers 10 implementations, the three anonymous classes included (7 before).
+MCP `analyze_change` builds its override family from the same search, so it now lists them too (the downward half of
+MC-67); MC-67's upward half and MC-69 remain open.
+
+### Regression targets
+
+`MethodImplementationTest.methodImplementations_anonymousClassAndEnumConstantBody_foundUnrelatedNot`,
+`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+
+---
+
+## EG-081 — Implementations of an interface omit lambdas that implementations of its method include — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor's go to implementation and MCP `find_implementations`.**
+
+Found by an agent's review of the MCP tools on Helidon (2026-11-01).
+
+### Observed behaviour
+
+On Helidon's `Handler` interface, `find_implementations` answers 23 classes and no lambdas;
+on `Handler.handle` it answers 225, lambdas and method references such as `this::handle` included.
+The tool's description says it includes lambdas, but asked on the type it misses the most common kind of
+implementation of a functional interface.
+
+### Resolution
+
+On a type, go to implementation now adds to its named subtypes the anonymous subclasses and, for a functional
+interface, its lambdas and method references: those of the type itself or a sub-interface, not of its parent or a
+sibling, nor converted to another functional interface. They come from the bytecode lambda index and the open documents,
+not from every file naming the interface. Helidon's `Handler` now answers 226 (23 before) in about 2.7 s, the files with
+lambdas attributed; a failure there still leaves the named subtypes.
+
+### Regression targets
+
+`MethodImplementationTest.typeImplementations_functionalInterface_anonymousClassesLambdasAndMethodReferences`,
+`MethodImplementationTest.typeImplementations_subInterface_ownLambdasAndLocalClassNotParentOrSiblingLambdas`,
+`LatheEngineTest.findImplementations_anonymousEnumBodyAndLambdas_foundForMethodAndType`.
+
+---
+
 ## FR-022 — A rename to a name a use already sees silently rebinds the use — done
 
 **Status: done.**
@@ -9435,6 +9573,42 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file — done
+
+**Status: done.**
+
+**Value: medium — Size: M**
+
+**Affects: the editor.**
+
+Found by the pre-release probes (2026-10-27) on EqualsVerifier, with `dev/lsp_staleness.py` (scenario P1).
+
+### Observed behaviour
+
+After an agent or `git` adds a class in an upstream module, an open downstream file that uses it shows
+`cannot find symbol` for about 8 s before the server republishes clean diagnostics.
+The scan runs every 2 s, and the other outside-change scenarios settle in 2–4 s.
+Adding a class and using it straight away is the common agent pattern this delay hits.
+
+### Resolution
+
+The 8 s case is an open file that an agent edits on disk to use a class it adds next.
+The use is written first and fails, and the failed write's `cannot find symbol` stays on the open file
+while its content is the written one.
+Once the class was written, the failure was only cleared, so the next scan took the file for a fresh
+change and waited one more tick to settle before writing it again: two scans past the class.
+A write now hands the downstream failures it may fix to a pass run right after it, as settled sources
+(they sat unchanged since they failed), so the open file goes clean one write after the class.
+EqualsVerifier, file open and edited on disk, then the class added: 8.5 s before, 5.0 s after;
+the rest is the settle every outside change pays (P3 takes 3.0–4.5 s).
+`dev/lsp_staleness.py` passes on EqualsVerifier and Dropwizard.
+
+### Regression targets
+
+`WritePassTest.reconcileNow_upstreamAddsWhatADependentFailedOn_dependentWrittenWithoutSettlingAgain`
+
+---
+
 ## WS-25 — A first sync downloads dependency sources one at a time — done
 
 **Status: done.**
@@ -11530,6 +11704,69 @@ nothing (WARN) when the list is empty.
 ---
 
 # MCP / Agent Facade (resolved)
+
+## MC-79 — `verify_change` reports a broken change once; the next call says the callers compile — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Change `Duration.java:206` to `toSeconds(int scale)`: the first `verify_change` reports 5 errors; the next one, in the same
+session or a new one, says "No errors — the changed files and their callers compile". `get_diagnostics` on
+`DataSourceFactory` still shows both errors.
+Fixing only `DataSourceFactory` then answers that the callers compile "so a full build is optional", while `JdbiHealthCheck`,
+`SessionFactoryHealthCheck` and the tests are still broken.
+With no files, `verify_change` checks what changed since the last check: the sources the pass just wrote and the tools'
+writes, a set each call drains. The first check wrote the change into the mirror, so the next has nothing to check.
+
+### Resolution
+
+With no files, `verify_change` now also checks every source not as the last build compiled it, however long ago it
+changed: one the session wrote (its compile stamp holds other content than the build's fingerprint), one the build
+compiled that is gone, and one whose write failed. A broken change stays reported until it is fixed, reverted or built,
+in this session and the next. A tree with no build fingerprints (OpenJDK) adds nothing, as before.
+Dropwizard, `toSeconds(int scale)`: 5 errors on the first check, the second and in a new session (the second said
+"No errors" before); reverted, none. A check with nothing changed on Helidon: 0.13–0.15 s (0.10–0.14 s before).
+
+### Regression targets
+
+`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted`
+
+---
+
+## MC-84 — Deleting a class created in the session is not caught by `verify_change` — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Create `Zzz.java` in `dropwizard-util`, use it from `JdbiHealthCheck` (qualified or imported), verify, then delete it:
+`verify_change` says "No errors" while `get_diagnostics` shows "cannot find symbol". Deleting an existing class
+(`DirectExecutorService.java`) correctly reports 6 errors.
+A deleted file that the last build never compiled counts as "back to what the build compiled" and is dropped.
+
+### Resolution
+
+Fixed with MC-79: the deleted class and its failed caller are in the set `verify_change` checks while they differ from
+the build. Dropwizard: the deletion now reports 1 error (none before), and removing the use reports none.
+
+### Regression targets
+
+`LatheEngineTest.verifyChange_breakLeftInPlace_reportedByEveryCheckAndSessionUntilReverted` (the same mechanism).
+
+---
 
 ## MC-32 — Nothing makes an agent run `verify_change` before it reports done — done
 
