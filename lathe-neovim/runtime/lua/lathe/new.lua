@@ -52,26 +52,9 @@ end
 -- The Lathe LSP client attached to a buffer, or nil.
 local lathe_client = require("lathe.util").client
 
--- Dispatch a workspace/executeCommand to the Lathe client; cb receives the decoded result.
+-- Run a server command with its one argument; a failure is a warning, as a creation flow aborts.
 local function execute(client, bufnr, command, argument, cb)
-	client:request("workspace/executeCommand", {
-		command = command,
-		arguments = { argument },
-	}, function(err, result)
-		if err then
-			warn(err.message)
-			return
-		end
-
-		-- The pickers run inside this LSP response callback (a vim.schedule task), so a Ctrl-C at a
-		-- vim.ui prompt raises inputlist's keyboard interrupt here instead of cancelling a command --
-		-- otherwise an unhandled "vim.schedule callback: Keyboard interrupt". Swallow only that
-		-- interrupt; a genuine error in the flow still surfaces.
-		local ok, failure = pcall(cb, result)
-		if not ok and not tostring(failure):match("[Ii]nterrupt") then
-			error(failure)
-		end
-	end, bufnr)
+	require("lathe.util").exec(client, bufnr, command, { argument }, cb, { level = vim.log.levels.WARN })
 end
 
 -- ── file IO ──────────────────────────────────────────────────────────────────

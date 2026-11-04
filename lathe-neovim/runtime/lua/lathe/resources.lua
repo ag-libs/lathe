@@ -126,14 +126,7 @@ function M.find(query)
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.resources",
-    arguments = {},
-  }, function(err, result)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
-    end
+  require("lathe.util").exec(client, nil, "lathe.resources", {}, function(result)
     if not result or #result == 0 then
       notify("no resources found", vim.log.levels.INFO)
       return

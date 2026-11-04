@@ -17,14 +17,7 @@ function M.find(bufnr)
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  client:request("workspace/executeCommand", {
-    command = "lathe.instantiations",
-    arguments = { params },
-  }, function(err, locations)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
-    end
+  require("lathe.util").exec(client, bufnr, "lathe.instantiations", { params }, function(locations)
     if not locations or vim.tbl_isempty(locations) then
       notify("no instantiation sites found", vim.log.levels.INFO)
       return
@@ -34,7 +27,7 @@ function M.find(bufnr)
       items = vim.lsp.util.locations_to_items(locations, client.offset_encoding),
     })
     vim.cmd("botright copen")
-  end, bufnr)
+  end)
 end
 
 function M.setup()

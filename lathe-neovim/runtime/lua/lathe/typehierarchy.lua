@@ -87,14 +87,7 @@ function M.show(bufnr)
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  client:request("workspace/executeCommand", {
-    command = "lathe.typeHierarchy",
-    arguments = { params },
-  }, function(err, result)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
-    end
+  require("lathe.util").exec(client, bufnr, "lathe.typeHierarchy", { params }, function(result)
     if not result or not result.self then
       notify("no type under the cursor", vim.log.levels.INFO)
       return
@@ -110,7 +103,7 @@ function M.show(bufnr)
     else
       open_fallback(entries, title, client.offset_encoding)
     end
-  end, bufnr)
+  end)
 end
 
 function M.setup()
