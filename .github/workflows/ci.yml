@@ -135,6 +135,7 @@ jobs:
     # Lathe itself builds on 3.9. Older and newer Maven releases get one invoker-only row each.
     name: Invoker (Maven ${{ matrix.maven }}, JDK ${{ matrix.java }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

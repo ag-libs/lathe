@@ -3,12 +3,14 @@ package com.example.verify;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.example.itsupport.Await;
 import com.example.itsupport.LspSession;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import com.google.gson.JsonArray;
@@ -706,9 +708,11 @@ class LspSmokeTest {
 
   private static void awaitCompletionLabel(final String uri, final Position pos, final String label)
       throws Exception {
-    while (!completionLabels(uri, pos).contains(label)) {
-      Thread.sleep(100);
-    }
+    Await.until(
+        "completion offering %s at %s".formatted(label, uri),
+        Duration.ofSeconds(30),
+        () -> completionLabels(uri, pos),
+        labels -> labels.contains(label));
   }
 
   private static List<String> completionLabels(final String uri, final Position pos)

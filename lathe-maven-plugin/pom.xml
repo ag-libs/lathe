@@ -206,6 +206,8 @@
           <projectsDirectory>src/it</projectsDirectory>
           <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
           <localRepositoryPath>${project.build.directory}/local-repo</localRepositoryPath>
+          <!-- A fixture build that hangs (a server wait gone wrong) fails as that fixture, not the job. -->
+          <timeoutInSeconds>600</timeoutInSeconds>
           <extraArtifacts>
             <extraArtifact>io.github.ag-libs:lathe-junit:${project.version}:jar</extraArtifact>
             <extraArtifact>io.github.ag-libs:lathe-test-runner:${project.version}:jar</extraArtifact>
