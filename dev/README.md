@@ -72,7 +72,7 @@ the rows that install Neovim. By hand:
 
 ```bash
 # one-time: build the fixture so .lathe/ and the launcher cache exist
-mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=multi-module
+mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true -Dinvoker.test=setup-support,multi-module
 
 lathe-neovim/test/e2e/run-e2e.sh
 ```

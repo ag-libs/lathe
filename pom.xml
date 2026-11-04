@@ -281,6 +281,13 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${surefire.version}</version>
+          <configuration>
+            <systemPropertyVariables>
+              <!-- CI runs Maven with CI set, which keeps Lathe out of the build; Lathe's own tests
+                   exercise it enabled, and an explicit lathe.disabled=false wins over CI. -->
+              <lathe.disabled>false</lathe.disabled>
+            </systemPropertyVariables>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>

@@ -17,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
+cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 default_file="$fixture/jpms/src/test/java/com/example/jpms/HelloTest.java"
 default_line=16
 default_method=greet_returnsExpectedMessage
@@ -54,7 +54,7 @@ refresh_invoker_server() {
 if [ -z "${SKIP_BUILD:-}" ] && [ "$workspace" = "$fixture" ]; then
   echo "[debug-e2e] installing server and rebuilding the multi-module fixture..."
   (cd "$repo" && mvn -q install -DskipTests)
-  [ -d "$fixture/.lathe" ] || (cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=multi-module)
+  [ -d "$fixture/.lathe" ] || (cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module)
   refresh_invoker_server
 fi
 

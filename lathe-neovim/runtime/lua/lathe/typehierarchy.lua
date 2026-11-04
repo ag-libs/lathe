@@ -7,13 +7,12 @@ local M = {}
 
 local GLYPH = { supertype = "▲", ["self"] = "●", subtype = "▼" }
 
-local function notify(message, level)
-  vim.notify("Lathe: " .. message, level, { title = "Lathe" })
-end
+local util = require("lathe.util")
+local notify = util.notify
 
 -- A server TypeHierarchyItem + its relation -> a picker entry. Fuzzy-matched on the fully-qualified
--- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive both
--- Telescope's preview + default-select and the fallback jump.
+-- name (`ordinal`); the tag glyph and package are display-only. `filename`/`lnum`/`col` drive
+-- Telescope's preview, `location` the jump on a pick.
 local function make_entry(item, relation)
   local pkg = item.detail or ""
   local fqn = pkg ~= "" and (pkg .. "." .. item.name) or item.name
@@ -43,60 +42,17 @@ local function build_entries(result)
   return entries
 end
 
-local function open_telescope(entries, title)
-  local pickers = require("telescope.pickers")
-  local finders = require("telescope.finders")
-  local conf = require("telescope.config").values
-
-  pickers
-    .new({}, {
-      prompt_title = title,
-      finder = finders.new_table({
-        results = entries,
-        entry_maker = function(entry)
-          entry.value = entry
-          return entry
-        end,
-      }),
-      sorter = conf.generic_sorter({}),
-      previewer = conf.qflist_previewer({}),
-    })
-    :find()
-end
-
-local function open_fallback(entries, title, offset_encoding)
-  require("lathe.pick").pick({
-    items = entries,
-    format = function(entry)
-      return entry.display
-    end,
-    title = title,
-    on_choice = function(entry)
-      if entry and entry.location then
-        vim.lsp.util.show_document(entry.location, offset_encoding, { focus = true })
-      end
-    end,
-  })
-end
-
 --- Request the full hierarchy of the type at the cursor and open it in a picker.
 function M.show(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  local client = vim.lsp.get_clients({ name = "lathe", bufnr = bufnr })[1]
+  local client = util.client(bufnr)
   if not client then
     notify("server not attached", vim.log.levels.WARN)
     return
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  client:request("workspace/executeCommand", {
-    command = "lathe.typeHierarchy",
-    arguments = { params },
-  }, function(err, result)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
-    end
+  util.exec(client, bufnr, "lathe.typeHierarchy", { params }, function(result)
     if not result or not result.self then
       notify("no type under the cursor", vim.log.levels.INFO)
       return
@@ -106,13 +62,16 @@ function M.show(bufnr)
     end
 
     local entries = build_entries(result)
-    local title = "Lathe: type hierarchy -- " .. result.self.name
-    if pcall(require, "telescope.pickers") then
-      open_telescope(entries, title)
-    else
-      open_fallback(entries, title, client.offset_encoding)
-    end
-  end, bufnr)
+    util.pick(entries, {
+      title = "Lathe: type hierarchy -- " .. result.self.name,
+      preview_locations = true,
+      on_choice = function(entry)
+        if entry.location then
+          vim.lsp.util.show_document(entry.location, client.offset_encoding, { focus = true })
+        end
+      end,
+    })
+  end)
 end
 
 function M.setup()

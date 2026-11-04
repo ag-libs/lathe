@@ -11,9 +11,8 @@ local M = {}
 local ICON_REACTOR = "\u{25A3}" -- ▣ white square with black centre
 local ICON_DEPENDENCY = "\u{25C6}" -- ◆ black diamond
 
-local function notify(message, level)
-  vim.notify("Lathe: " .. message, level, { title = "Lathe" })
-end
+local util = require("lathe.util")
+local notify = util.notify
 
 -- "<icon>  <coordinate>" for the origin column, matching the find_files look: the GAV for a
 -- dependency, the module for a reactor resource (bare icon when the module is unknown -- a workspace
@@ -71,82 +70,28 @@ local function open_entry(entry, client)
   end)
 end
 
-local function open_telescope(entries, query, client)
-  local pickers = require("telescope.pickers")
-  local finders = require("telescope.finders")
-  local conf = require("telescope.config").values
-  local actions = require("telescope.actions")
-  local action_state = require("telescope.actions.state")
-
-  pickers
-    .new({}, {
-      prompt_title = "Lathe: resources",
-      default_text = query,
-      finder = finders.new_table({
-        results = entries,
-        entry_maker = function(entry)
-          entry.value = entry
-          return entry
-        end,
-      }),
-      sorter = conf.generic_sorter({}),
-      attach_mappings = function(prompt_bufnr)
-        actions.select_default:replace(function()
-          local selected = action_state.get_selected_entry()
-          actions.close(prompt_bufnr)
-          if selected then
-            open_entry(selected, client)
-          end
-        end)
-        return true
-      end,
-    })
-    :find()
-end
-
-local function open_fallback(entries, client)
-  require("lathe.pick").pick({
-    items = entries,
-    format = function(entry)
-      return entry.display
-    end,
-    title = "Lathe: resources",
-    on_choice = function(entry)
-      if entry then
-        open_entry(entry, client)
-      end
-    end,
-  })
-end
-
 --- Lists every resource in the workspace (reactor + dependencies) and opens the picked one. `query`
 --- prefills the Telescope prompt (the prefill-last-query preference); the fallback starts empty.
 function M.find(query)
-  local client = vim.lsp.get_clients({ name = "lathe" })[1]
+  local client = util.client()
   if not client then
     notify("server not attached (open a Java file first)", vim.log.levels.WARN)
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.resources",
-    arguments = {},
-  }, function(err, result)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
-    end
+  util.exec(client, nil, "lathe.resources", {}, function(result)
     if not result or #result == 0 then
       notify("no resources found", vim.log.levels.INFO)
       return
     end
 
-    local entries = M._entries(result)
-    if pcall(require, "telescope.pickers") then
-      open_telescope(entries, query, client)
-    else
-      open_fallback(entries, client)
-    end
+    util.pick(M._entries(result), {
+      title = "Lathe: resources",
+      default_text = query,
+      on_choice = function(entry)
+        open_entry(entry, client)
+      end,
+    })
   end)
 end
 
@@ -154,6 +99,33 @@ function M.setup()
   vim.api.nvim_create_user_command("LatheResourceFind", function(opts)
     M.find(opts.args ~= "" and opts.args or nil)
   end, { nargs = "?", desc = "Lathe: find a resource by name (reactor + dependencies)" })
+
+  local augroup = vim.api.nvim_create_augroup("LatheResources", { clear = true })
+  local cache = require("lathe.workspace").cache_root()
+  -- Resource refresh: copy a saved resource into .lathe/ so the next test replay picks it up without
+  -- a rebuild. The server maps the file against the real resource roots lathe:sync captured (a save
+  -- that maps to no resource root is a no-op there), so forward any non-Java save inside a Lathe
+  -- workspace. Skips .java (handled by the LSP) and cache files. The editor-agnostic path
+  -- (workspace/didChangeWatchedFiles) can drive the same server command later; this autocmd is
+  -- Neovim's uniform, dependency-free trigger.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    callback = function(ev)
+      local name = vim.api.nvim_buf_get_name(ev.buf)
+      if name == "" or name:match("%.java$") or vim.startswith(name, cache) then
+        return
+      end
+      for _, client in ipairs(vim.lsp.get_clients({ name = "lathe" })) do
+        if client.root_dir and vim.startswith(name, client.root_dir) then
+          client:request("workspace/executeCommand", {
+            command = "lathe.resource.refresh",
+            arguments = { { uri = vim.uri_from_fname(name) } },
+          })
+          return
+        end
+      end
+    end,
+  })
 end
 
 return M

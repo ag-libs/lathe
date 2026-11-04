@@ -25,7 +25,9 @@ local notes = {}
 vim.notify = function(msg)
   table.insert(notes, msg)
 end
-vim.schedule = function(fn) fn() end
+vim.schedule = function(fn)
+  fn()
+end
 
 -- Capture the reactor-lock pre-touch and release instead of touching a real file, so the path and
 -- lifecycle can be asserted.
@@ -110,9 +112,16 @@ spec.check("nil/empty root does nothing", #calls, n)
 
 -- The lathe/sync notification handler dispatches to run, forwarding capture and modules.
 sync.setup()
-vim.lsp.handlers["lathe/sync"](nil, { workspaceRoot = "/ws/c", captureTests = true, modules = { "m" } })
+vim.lsp.handlers["lathe/sync"](
+  nil,
+  { workspaceRoot = "/ws/c", captureTests = true, modules = { "m" } }
+)
 spec.check("lathe/sync handler runs at the given root", calls[#calls].opts.cwd, "/ws/c")
-spec.check("lathe/sync handler forwards capture and modules", table.concat(last_args(), " "), "--tests m")
+spec.check(
+  "lathe/sync handler forwards capture and modules",
+  table.concat(last_args(), " "),
+  "--tests m"
+)
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)

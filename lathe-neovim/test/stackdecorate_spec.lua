@@ -85,11 +85,19 @@ end
 -- Rows 0 and 3 are the two App frames (0-based); the Unknown frame (row 2) and the log line (row 1)
 -- are absent -- so this single assertion proves both "resolved class underlined at every
 -- occurrence" and "unresolved / non-frame lines skipped".
-spec.check("resolved class underlined at every occurrence, others skipped", table.concat(rows, ","), "0,3")
+spec.check(
+  "resolved class underlined at every occurrence, others skipped",
+  table.concat(rows, ","),
+  "0,3"
+)
 spec.check("underline uses the stack-frame highlight", hl_ok, true)
 -- The mark starts past the frame's leading text: it underlines the File.java:line span only, not
 -- the whole line (highlight_frame_span's substring offset).
-spec.check("underline marks only the File.java:line span", marks[1] and marks[1][3], ("\tat com.example.App.main("):len())
+spec.check(
+  "underline marks only the File.java:line span",
+  marks[1] and marks[1][3],
+  ("\tat com.example.App.main("):len()
+)
 spec.check("one workspace/symbol request per distinct class (resolve cache)", #queried, 2)
 
 local has_jump = false

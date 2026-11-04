@@ -5,7 +5,7 @@
 #   1. build + install Lathe (server + extension);
 #   2. run the multi-module invoker fixture -> a synced copy at
 #      lathe-maven-plugin/target/it/multi-module (with .lathe/) plus an isolated server cache at
-#      lathe-maven-plugin/target/it-home/.cache/lathe;
+#      lathe-maven-plugin/target/it home/.cache/lathe;
 #   3. `git init` that fixture copy -- vanilla Emacs finds a project via the version-control backend,
 #      and Lathe takes the workspace root verbatim, so a git root == the reactor root is exactly the
 #      "git-backed project" the Eglot maintainer recommends trying first.
@@ -16,13 +16,13 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
+cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 
 echo "[demo] building + installing Lathe…"
 (cd "$repo" && mvn -q install -DskipTests)
 
 echo "[demo] building the multi-module invoker fixture…"
-(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=multi-module)
+(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module)
 [ -x "$fixture/.lathe/lathe-launcher.sh" ] \
   || { echo "[demo] server launcher missing at $fixture/.lathe — invoker build failed?" >&2; exit 1; }
 [ -d "$fixture/.lathe" ] \

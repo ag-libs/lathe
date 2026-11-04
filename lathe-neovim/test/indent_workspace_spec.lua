@@ -65,7 +65,11 @@ spec.check("committed style wins over generated", style.read(both).formatter.eng
 local indent_only = assert(io.open(both .. "/lathe-style.json", "w"))
 indent_only:write('{"indent":{"profile":"google","block":4,"continuation":8}}')
 indent_only:close()
-spec.check("committed indent keeps the generated formatter", style.read(both).formatter.engine, "google")
+spec.check(
+  "committed indent keeps the generated formatter",
+  style.read(both).formatter.engine,
+  "google"
+)
 spec.check("committed indent wins", style.read(both).indent.block, 4)
 spec.check("missing root reads as nil", style.read(nil), nil)
 vim.fn.delete(both, "rf")

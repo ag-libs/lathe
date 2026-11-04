@@ -10,7 +10,8 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/resources_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 
 local picked
 package.loaded["lathe.pick"] = {
@@ -22,14 +23,19 @@ package.loaded["lathe.pick"] = {
 local resources = require("lathe.resources")
 
 local function stub_client(handler)
-  vim.lsp.get_clients = function(_)
-    return { { name = "lathe", request = handler } }
-  end
+  helper.fake_client(handler)
 end
 
 do -- _entries maps a resource list into "<icon>  <coordinate>  <path>" picker entries
   local entries = resources._entries({
-    { name = "a.txt", origin = "reactor:core", kind = "FILE", path = "/w/a.txt", jar = "", entry = "" },
+    {
+      name = "a.txt",
+      origin = "reactor:core",
+      kind = "FILE",
+      path = "/w/a.txt",
+      jar = "",
+      entry = "",
+    },
   })
 
   -- display leads with the source icon + module (find_files look); ordinal keeps name + origin
@@ -85,12 +91,22 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
 
   local orig_cmd, orig_schedule = vim.cmd, vim.schedule
   local edited
-  vim.cmd = { edit = function(arg) edited = arg end }
-  vim.schedule = function(fn) fn() end
+  vim.cmd = {
+    edit = function(arg)
+      edited = arg
+    end,
+  }
+  vim.schedule = function(fn)
+    fn()
+  end
 
   -- a reactor FILE opens its editable path directly
   picked.on_choice(picked.items[1])
-  spec.check("file entry opens its editable path", edited, "/w/app/src/main/resources/com/x/schema.graphqls")
+  spec.check(
+    "file entry opens its editable path",
+    edited,
+    "/w/app/src/main/resources/com/x/schema.graphqls"
+  )
 
   -- a dependency JAR extracts on the server (lathe.resourceOpen), then opens the returned path
   picked.on_choice(picked.items[2])
@@ -101,9 +117,7 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
 end
 
 do -- no client -> warns
-  vim.lsp.get_clients = function(_)
-    return {}
-  end
+  helper.no_client()
   local warned = false
   vim.notify = function(_, level, _)
     if level == vim.log.levels.WARN then

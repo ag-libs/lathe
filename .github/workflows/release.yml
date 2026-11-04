@@ -79,7 +79,8 @@ jobs:
       - name: Build, sign, and deploy
         # Formatting is verified in CI; skip spotless here so the transient
         # versions:set edit cannot fail the release. `env -u CI` runs the build
-        # with Lathe enabled (see ci.yml) so the tests in the release build pass.
+        # with Lathe enabled, as it ran before CI moved to lathe.disabled=false for
+        # the tests alone (root pom.xml); kept until a release runs without it.
         run: env -u CI mvn -B --no-transfer-progress -Prelease -Dspotless.check.skip=true deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}

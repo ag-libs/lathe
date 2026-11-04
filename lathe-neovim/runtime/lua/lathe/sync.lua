@@ -12,9 +12,9 @@ local M = {}
 
 -- Before the first sync there is no script to run, so a setup or recovery message names each
 -- build front-end's first command (mirrors the server's SETUP_REMEDIATION).
-M.SETUP_HINT = 'for Maven, add the lathe-maven-extension and run `mvn clean test -Dlathe.capture.only=true`; '
-  .. 'for Gradle, apply the `io.github.ag-libs.lathe` settings plugin and run `./gradlew latheSync -Plathe.capture.only=true`; '
-  .. 'for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`.'
+M.SETUP_HINT = "for Maven, add the lathe-maven-extension and run `mvn clean test -Dlathe.capture.only=true`; "
+  .. "for Gradle, apply the `io.github.ag-libs.lathe` settings plugin and run `./gradlew latheSync -Plathe.capture.only=true`; "
+  .. "for an OpenJDK checkout, run `mvn io.github.ag-libs:lathe-openjdk-maven-plugin:sync`."
 
 -- Guard against overlapping syncs for the same root (a second prompt/command while one is running).
 local running = {}
@@ -36,7 +36,7 @@ end
 -- ignores the opts and just records each line in :messages.
 local function notify(state, msg, level, timeout)
   state.handle =
-    vim.notify(msg, level, { title = 'Lathe', replace = state.handle, timeout = timeout })
+    vim.notify(msg, level, { title = "Lathe", replace = state.handle, timeout = timeout })
 end
 
 -- Refreshes the transient "still syncing" toast until the run completes.
@@ -47,7 +47,7 @@ local function notify_progress(state)
 
   notify(
     state,
-    ('Lathe: syncing… %.0fs — `%s`'):format(elapsed_s(state.started), state.cmd_str),
+    ("Lathe: syncing… %.0fs — `%s`"):format(elapsed_s(state.started), state.cmd_str),
     vim.log.levels.INFO,
     PROGRESS_TIMEOUT_MS
   )
@@ -64,18 +64,18 @@ local function ensure_output_buf()
   end
 
   out_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[out_buf].bufhidden = 'hide'
-  pcall(vim.api.nvim_buf_set_name, out_buf, 'Lathe Sync Output')
-  vim.keymap.set('n', 'r', function()
+  vim.bo[out_buf].bufhidden = "hide"
+  pcall(vim.api.nvim_buf_set_name, out_buf, "Lathe Sync Output")
+  vim.keymap.set("n", "r", function()
     if last_sync then
       M.run(last_sync.root, last_sync.capture_tests, last_sync.modules)
     end
-  end, { buffer = out_buf, desc = 'Lathe: re-run the last sync' })
+  end, { buffer = out_buf, desc = "Lathe: re-run the last sync" })
   vim.keymap.set(
-    'n',
-    'q',
-    '<cmd>close<cr>',
-    { buffer = out_buf, desc = 'Lathe: close the sync output' }
+    "n",
+    "q",
+    "<cmd>close<cr>",
+    { buffer = out_buf, desc = "Lathe: close the sync output" }
   )
 end
 
@@ -94,7 +94,7 @@ local function open_output_window()
   end
 
   if vim.fn.bufwinid(out_buf) == -1 then
-    vim.cmd('botright 15split')
+    vim.cmd("botright 15split")
     vim.api.nvim_win_set_buf(0, out_buf)
   end
 
@@ -107,35 +107,35 @@ end
 
 -- The reproducible command line, so the console shows exactly how to rerun the sync by hand.
 local function command_header(root, cmd_str)
-  return ('$ cd %s && %s'):format(root, cmd_str)
+  return ("$ cd %s && %s"):format(root, cmd_str)
 end
 
 --- Resets the console to a syncing… header, so any open split immediately drops the previous run's
 --- output. Does not open a split — a healthy sync stays quiet.
 local function show_running(cmd_str, root)
-  set_output({ 'Lathe: syncing…', command_header(root, cmd_str) })
+  set_output({ "Lathe: syncing…", command_header(root, cmd_str) })
 end
 
 --- Replaces the console with a one-line success summary, updating an open split in place.
 local function show_success(cmd_str, secs)
-  set_output({ ('Lathe: sync succeeded (%s, %.1fs)'):format(cmd_str, secs) })
+  set_output({ ("Lathe: sync succeeded (%s, %.1fs)"):format(cmd_str, secs) })
 end
 
 --- Fills the console with the full captured Maven output and opens the split. The header prints the
 --- exact command and working directory so the run is reproducible by hand.
 local function show_failure(cmd_str, root, code, output)
   local lines = {
-    ('Lathe: sync FAILED (exit %d) — press r to retry, q to close'):format(code),
+    ("Lathe: sync FAILED (exit %d) — press r to retry, q to close"):format(code),
     command_header(root, cmd_str),
-    '',
+    "",
   }
-  vim.list_extend(lines, vim.split(output, '\n', { plain = true }))
+  vim.list_extend(lines, vim.split(output, "\n", { plain = true }))
   set_output(lines)
   open_output_window()
 end
 
 local function lock_path(root)
-  return vim.fs.joinpath(root, '.lathe', 'lathe.lock')
+  return vim.fs.joinpath(root, ".lathe", "lathe.lock")
 end
 
 -- Write the reactor build lock the instant a sync starts, before Maven has booted far enough to
@@ -157,32 +157,33 @@ end
 
 -- The notification names what the client ran; the script prints the build command it resolves
 -- (`lathe-sync: mvnd …`) as its first stderr line, so that shows in the output console.
-local SCRIPT = '.lathe/lathe-sync.sh'
+local SCRIPT = ".lathe/lathe-sync.sh"
 
 --- Runs `.lathe/lathe-sync.sh [--tests] [module ...]` at `root` as a background job, notifying on
 --- start and completion. `modules` (reactor-relative paths) scope it; empty/nil syncs everything.
 function M.run(root, capture_tests, modules)
-  if not root or root == '' then
+  if not root or root == "" then
     return
   end
   if running[root] then
-    vim.notify('Lathe: a sync is already running for ' .. root, vim.log.levels.INFO)
+    vim.notify("Lathe: a sync is already running for " .. root, vim.log.levels.INFO)
     return
   end
 
   local script = vim.fs.joinpath(root, SCRIPT)
   if vim.fn.executable(script) ~= 1 then
     vim.notify(
-      'Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the '
-        .. 'Lathe build plugin and sync once: ' .. M.SETUP_HINT,
+      "Lathe: `.lathe/` has no sync script -- the workspace was synced by an older Lathe. Update the "
+        .. "Lathe build plugin and sync once: "
+        .. M.SETUP_HINT,
       vim.log.levels.WARN
     )
     return
   end
 
-  local args = vim.list_extend(capture_tests and { '--tests' } or {}, modules or {})
+  local args = vim.list_extend(capture_tests and { "--tests" } or {}, modules or {})
   local cmd = vim.list_extend({ script }, args)
-  local cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), ' ')
+  local cmd_str = table.concat(vim.list_extend({ SCRIPT }, args), " ")
   running[root] = true
   last_sync = { root = root, capture_tests = capture_tests, modules = modules }
 
@@ -209,51 +210,51 @@ function M.run(root, capture_tests, modules)
         show_success(cmd_str, secs)
         notify(
           state,
-          ('Lathe: sync succeeded (`%s`, %.1fs)'):format(cmd_str, secs),
+          ("Lathe: sync succeeded (`%s`, %.1fs)"):format(cmd_str, secs),
           vim.log.levels.INFO,
           SUCCESS_TIMEOUT_MS
         )
       else
         notify(
           state,
-          ('Lathe: sync failed (`%s`, exit %d) — see the Lathe Sync Output split'):format(
+          ("Lathe: sync failed (`%s`, exit %d) — see the Lathe Sync Output split"):format(
             cmd_str,
             res.code
           ),
           vim.log.levels.ERROR
         )
-        show_failure(cmd_str, root, res.code, (res.stdout or '') .. (res.stderr or ''))
+        show_failure(cmd_str, root, res.code, (res.stdout or "") .. (res.stderr or ""))
       end
     end)
   end)
 end
 
 local function sync_current(capture_tests)
-  local root = require('lathe').get_root(vim.api.nvim_get_current_buf())
+  local root = require("lathe.workspace").get_root(vim.api.nvim_get_current_buf())
   M.run(root, capture_tests)
 end
 
 --- Registers the `lathe/sync` handler and the `:LatheSync` / `:LatheSyncCaptureTest` / retry commands.
 function M.setup()
-  vim.lsp.handlers['lathe/sync'] = function(_err, result)
+  vim.lsp.handlers["lathe/sync"] = function(_err, result)
     if result then
       M.run(result.workspaceRoot, result.captureTests, result.modules)
     end
   end
 
-  vim.api.nvim_create_user_command('LatheSync', function()
+  vim.api.nvim_create_user_command("LatheSync", function()
     sync_current(false)
-  end, { desc = 'Lathe: run .lathe/lathe-sync.sh to refresh the workspace' })
+  end, { desc = "Lathe: run .lathe/lathe-sync.sh to refresh the workspace" })
 
-  vim.api.nvim_create_user_command('LatheSyncCaptureTest', function()
+  vim.api.nvim_create_user_command("LatheSyncCaptureTest", function()
     sync_current(true)
-  end, { desc = 'Lathe: run .lathe/lathe-sync.sh --tests to also re-capture test launches' })
+  end, { desc = "Lathe: run .lathe/lathe-sync.sh --tests to also re-capture test launches" })
 
-  vim.api.nvim_create_user_command('LatheSyncOutput', function()
+  vim.api.nvim_create_user_command("LatheSyncOutput", function()
     if not open_output_window() then
-      vim.notify('Lathe: no sync output yet', vim.log.levels.INFO)
+      vim.notify("Lathe: no sync output yet", vim.log.levels.INFO)
     end
-  end, { desc = 'Lathe: reopen the last sync output' })
+  end, { desc = "Lathe: reopen the last sync output" })
 end
 
 return M

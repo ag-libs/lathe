@@ -1,0 +1,7 @@
+# The Lua client's formatting: run `stylua runtime test` from lathe-neovim/.
+column_width = 100
+line_endings = "Unix"
+indent_type = "Spaces"
+indent_width = 2
+quote_style = "AutoPreferDouble"
+call_parentheses = "Always"

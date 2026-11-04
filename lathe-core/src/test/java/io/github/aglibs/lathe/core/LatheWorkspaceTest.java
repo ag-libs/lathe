@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -13,9 +14,22 @@ final class LatheWorkspaceTest {
 
   @TempDir private Path tempDir;
 
+  // The value the run set (false on CI, which the build's CI variable would otherwise turn true),
+  // put back after each test that changes it.
+  private String disabledBefore;
+
+  @BeforeEach
+  void saveProperty() {
+    disabledBefore = System.getProperty(LatheFlags.DISABLED);
+  }
+
   @AfterEach
-  void clearProperty() {
-    System.clearProperty(LatheFlags.DISABLED);
+  void restoreProperty() {
+    if (disabledBefore == null) {
+      System.clearProperty(LatheFlags.DISABLED);
+    } else {
+      System.setProperty(LatheFlags.DISABLED, disabledBefore);
+    }
   }
 
   @Test
