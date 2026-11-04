@@ -35,6 +35,11 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
+  // The module's directory under .lathe/, the inverse of moduleRel.
+  static Path moduleLatheDir(final Path workspaceRoot, final String moduleRel) {
+    return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
+  }
+
   List<String> modules() {
     return configs.stream()
         .map(config -> moduleRel(workspaceRoot, config.moduleDir()))

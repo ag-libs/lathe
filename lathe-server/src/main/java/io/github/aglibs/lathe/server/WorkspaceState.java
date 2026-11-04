@@ -37,6 +37,12 @@ final class WorkspaceState {
     return replaced;
   }
 
+  // The current workspace's source layout: its modules, packages and test roots.
+  SourceLayout layout() {
+    eventLoop.checkOnLoop();
+    return new SourceLayout(registry.allConfigs(), root);
+  }
+
   Path root() {
     eventLoop.checkOnLoop();
     return root;
