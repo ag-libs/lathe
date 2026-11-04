@@ -4,7 +4,7 @@
 #   1. build + install Lathe (server + extension);
 #   2. run the multi-module invoker fixture → a synced copy at
 #      target/it/multi-module (with .lathe/) and an isolated server cache at
-#      target/it-home/.cache/lathe (the output dev/debug-e2e.sh drives);
+#      target/it home/.cache/lathe (the output dev/debug-e2e.sh drives);
 #   3. take an ISOLATED COPY of the tracked sample config examples/nvim
 #      (dev/demo/.nvim), so the demo is reproducible from the repo and never
 #      leaks anything from your personal ~/.config. Override with
@@ -19,14 +19,14 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
+cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 src_cfg="${LATHE_DEMO_NVIM_CONFIG:-$repo/examples/nvim}"
 
 echo "[demo] building + installing Lathe…"
 (cd "$repo" && mvn -q install -DskipTests)
 
 echo "[demo] building the multi-module invoker fixture…"
-(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=multi-module)
+(cd "$repo" && mvn -q verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module)
 [ -x "$fixture/.lathe/lathe-launcher.sh" ] \
   || { echo "[demo] server launcher missing at $fixture/.lathe — invoker build failed?" >&2; exit 1; }
 [ -d "$fixture/.lathe" ] \

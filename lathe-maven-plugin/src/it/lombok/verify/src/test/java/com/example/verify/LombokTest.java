@@ -4,12 +4,14 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.example.itsupport.Await;
 import com.example.itsupport.LspSession;
 import com.example.itsupport.McpSession;
 import com.example.itsupport.Os;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DefinitionParams;
@@ -198,14 +200,12 @@ class LombokTest {
 
   // The class file's constant pool names each method, so a generated getter shows as its name.
   private static void awaitInPersonClass(final String member) throws Exception {
-    for (int i = 0; i < 120; i++) {
-      if (new String(Files.readAllBytes(PERSON_CLASS), StandardCharsets.ISO_8859_1).contains(member)) {
-        return;
-      }
-
-      Thread.sleep(500);
-    }
-
-    throw new AssertionError("%s never appeared in %s".formatted(member, PERSON_CLASS));
+    Await.until(
+        "%s in %s".formatted(member, PERSON_CLASS),
+        Duration.ofSeconds(60),
+        () ->
+            new String(Files.readAllBytes(PERSON_CLASS), StandardCharsets.ISO_8859_1)
+                .contains(member),
+        Boolean::booleanValue);
   }
 }

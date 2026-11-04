@@ -87,7 +87,7 @@ property-file helpers.
 mvn install -DskipTests                                          # build and install all modules
 mvn verify -pl lathe-maven-plugin                                # all test layers (unit + invoker)
 mvn verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true  # invoker integration tests only (skipTests would skip them too)
-mvn verify -pl lathe-maven-plugin -Dinvoker.test=multi-module    # one specific invoker project
+mvn verify -pl lathe-maven-plugin -Dinvoker.test=setup-support,multi-module    # one specific invoker project
 mvn verify -pl lathe-junit,lathe-gradle-plugin -am               # the Gradle plugin and its TestKit fixtures
 ```
 

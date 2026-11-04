@@ -66,7 +66,7 @@ vhs dev/demo/demo.tape       # writes docs/demo.gif
 ```
 
 `prepare.sh` builds the invoker fixture (a synced copy at `lathe-maven-plugin/target/it/multi-module`
-with `.lathe/`, plus an isolated server cache at `target/it-home/.cache/lathe`) and takes an **isolated
+with `.lathe/`, plus an isolated server cache at `target/it home/.cache/lathe`) and takes an **isolated
 copy of your real Neovim config** under `dev/demo/.nvim`, so the demo looks like your editor
 (colorscheme, treesitter, cmp, neotest, the Lathe integration) without touching your live `~/.config`
 or `~/.local/share`. The tape runs that copy with two env vars:
