@@ -68,9 +68,7 @@ import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.RenameParams;
 import org.eclipse.lsp4j.SymbolInformation;
-import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
@@ -261,16 +259,9 @@ public final class LatheEngine {
   // An agent's column is easily off by one, and javac answers for the smallest tree around a
   // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
   // method for a word in a comment. So the position tools answer only on a name: first a word
-  // (cheap, no compile), then one javac's tree has a name at, not a word of a comment or a literal.
-  // The tool goes on with the analysis this compiles, so the file is compiled once.
-  private void compileAtName(final Path file, final int line, final int column) {
-    requireWord(file, line, column);
-    final String uri = LatheUri.fromPath(file);
-    final String content = read(file);
-    final var pos = new Position(line, column);
-    request((session, cancel, progress) -> atName(session, uri, content, pos));
-  }
-
+  // (cheap, no compile, here), then one javac's tree has a name at, not a word of a comment or a
+  // literal (atName). The tool goes on with the analysis that compiles, so the file is compiled
+  // once.
   private void requireWord(final Path file, final int line, final int column) {
     if (wordAt(file, line, column).isEmpty()) {
       throw new NotOnName();
@@ -473,14 +464,19 @@ public final class LatheEngine {
    */
   public LatheRename rename(
       final Path file, final int line, final int column, final String newName) {
-    compileAtName(file, line, column);
+    requireWord(file, line, column);
     final String oldName = wordAt(file, line, column).orElseThrow();
-    final var params =
-        new RenameParams(
-            new TextDocumentIdentifier(file.toUri().toString()),
-            new Position(line, column),
-            newName);
-    final WorkspaceEdit edit = await(service.renameEdit(params));
+    final String fileUri = LatheUri.fromPath(file);
+    final String content = read(file);
+    final var pos = new Position(line, column);
+    // The engine moves files itself, so a type's rename may move its file.
+    final WorkspaceEdit edit =
+        request(
+            (session, cancel, progress) ->
+                atName(session, fileUri, content, pos)
+                    .thenCompose(
+                        onName ->
+                            session.renameFuture(fileUri, pos, newName, true, cancel, progress)));
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
       return new LatheRename(newName, 0, List.of(), List.of(), 0);
@@ -529,7 +525,11 @@ public final class LatheEngine {
   // other request meanwhile.
   private List<Location> textMentions(final String name) {
     try {
-      return TextMentions.find(await(service.textMentionSourcesFuture(name)), name);
+      return TextMentions.find(
+          request(
+              (session, cancel, progress) ->
+                  CompletableFuture.completedFuture(session.textMentionSources(name))),
+          name);
     } catch (final RuntimeException e) {
       LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
       return List.of();
@@ -552,7 +552,7 @@ public final class LatheEngine {
           files.stream()
               .map(file -> LatheUri.toPath(file.uri()))
               .collect(Collectors.toUnmodifiableSet());
-      await(service.writeReported(changed));
+      request((session, cancel, progress) -> session.writeReported(changed));
       // An editor's server on this workspace sees the files freshly stamped, so it would never
       // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
       final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
@@ -810,7 +810,11 @@ public final class LatheEngine {
   // sync that would. No files: every change not yet built, on disk or by the tools.
   // A pending build-file sync or a running build defers the check to a full sync.
   public LatheVerifyChange verifyChange(final List<Path> files) {
-    final ReconcileOutcome outcome = await(service.reconcileForVerify());
+    final VerifyPlan plan =
+        request(
+            (session, cancel, progress) ->
+                session.reconcileForVerify().thenApply(outcome -> plan(session, outcome, files)));
+    final ReconcileOutcome outcome = plan.outcome();
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
       // Another server's pass ends on its own; a sync would only add a build to wait for.
       final String sync =
@@ -820,36 +824,24 @@ public final class LatheEngine {
       return new LatheVerifyChange(outcome.deferral().name(), List.of(), List.of(), sync);
     }
 
-    // With no files: what changed on disk, what the tools wrote themselves (already stamped), and
-    // every earlier change not yet built, so a break stays reported until it is fixed.
-    final List<Path> touched =
-        files.isEmpty()
-            ? Stream.of(
-                    outcome.reacted(),
-                    await(service.takeWrittenSinceVerify()),
-                    await(service.changedSinceBuild()))
-                .flatMap(List::stream)
-                .distinct()
-                .toList()
-            : files;
-    // A file put back to what the last build compiled is no change.
-    final List<Path> changed = await(service.differingFromBuild(touched));
-    if (changed.isEmpty()) {
+    if (plan.changed().isEmpty()) {
       return new LatheVerifyChange(null, List.of(), List.of(), null);
     }
 
     final var checked = Stopwatch.start();
-    final Map<String, List<Path>> targets = await(service.verifyTargetsByModule(changed));
+    final Map<String, List<Path>> targets = plan.targets();
+    final Map<String, String> contents =
+        targets.values().stream()
+            .flatMap(List::stream)
+            .distinct()
+            .collect(Collectors.toUnmodifiableMap(LatheUri::fromPath, LatheEngine::read));
     // Every check starts before any is awaited, so the modules compile side by side, each on its
     // own worker; one at a time, a change with callers across a large reactor took seconds. A check
     // keeps no analysis: opened, each file would hold one until the cache evicted it, and on a
     // large reactor they outgrew the heap.
-    final Map<Path, CompletableFuture<List<Diagnostic>>> analyses =
-        targets.values().stream()
-            .flatMap(List::stream)
-            .distinct()
-            .collect(Collectors.toUnmodifiableMap(Function.identity(), this::check));
-    final Set<Path> changedSet = Set.copyOf(changed);
+    final Map<String, List<Diagnostic>> analyses =
+        request((session, cancel, progress) -> checkAll(session, contents));
+    final Set<Path> changedSet = Set.copyOf(plan.changed());
     final List<LatheModuleDiagnostics> perModule =
         targets.entrySet().stream()
             .map(
@@ -868,9 +860,75 @@ public final class LatheEngine {
                     targets.size(),
                     checked.elapsedMs(),
                     perModule.stream().mapToInt(module -> module.diagnostics().size()).sum()));
-    final List<String> downstream = await(service.downstreamModuleRels(changed));
     return new LatheVerifyChange(
-        null, perModule, downstream, syncFor(downstream, await(service.reactorModuleCount())));
+        null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
+  }
+
+  // What verify_change checks, read in one go on the loop once the workspace is fresh. With no
+  // files: what changed on disk, what the tools wrote themselves (already stamped), and every
+  // earlier change not yet built, so a break stays reported until it is fixed. A file put back to
+  // what the last build compiled is no change.
+  private static VerifyPlan plan(
+      final WorkspaceSession session, final ReconcileOutcome outcome, final List<Path> files) {
+    if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    final List<Path> touched =
+        files.isEmpty()
+            ? Stream.of(
+                    outcome.reacted(),
+                    session.takeWrittenSinceVerify(),
+                    session.changedSinceBuild())
+                .flatMap(List::stream)
+                .distinct()
+                .toList()
+            : files;
+    final List<Path> changed = session.differingFromBuild(touched);
+    if (changed.isEmpty()) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    return new VerifyPlan(
+        outcome,
+        changed,
+        session.verifyTargetsByModule(changed),
+        session.downstreamModuleRels(changed),
+        session.reactorModuleCount());
+  }
+
+  private record VerifyPlan(
+      ReconcileOutcome outcome,
+      List<Path> changed,
+      Map<String, List<Path>> targets,
+      List<String> downstream,
+      int moduleCount) {
+
+    VerifyPlan {
+      ValidCheck.check().notNull(outcome, "outcome").validate();
+      changed = List.copyOf(changed);
+      targets = Map.copyOf(targets);
+      downstream = List.copyOf(downstream);
+    }
+  }
+
+  // Compiles every file as a transient check, side by side on their modules' workers, and answers
+  // once all are done.
+  private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
+      final WorkspaceSession session, final Map<String, String> contents) {
+    final Map<String, CompletableFuture<List<Diagnostic>>> checks =
+        contents.entrySet().stream()
+            .collect(
+                Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey,
+                    entry -> session.diagnosticsTransientFuture(entry.getKey(), entry.getValue())));
+    return CompletableFuture.allOf(checks.values().toArray(CompletableFuture[]::new))
+        .thenApply(
+            done ->
+                checks.entrySet().stream()
+                    .collect(
+                        Collectors.toUnmodifiableMap(
+                            Map.Entry::getKey, entry -> entry.getValue().join())));
   }
 
   // Naming the dependents builds them and, with -am, every module they depend on, the changed ones
@@ -893,9 +951,10 @@ public final class LatheEngine {
   private List<LatheDiagnostic> diagnose(
       final List<Path> files,
       final Set<Path> changed,
-      final Map<Path, CompletableFuture<List<Diagnostic>>> analyses) {
+      final Map<String, List<Diagnostic>> analyses) {
     return files.stream()
-        .flatMap(file -> reportedIn(file, changed.contains(file), await(analyses.get(file))))
+        .flatMap(
+            file -> reportedIn(file, changed.contains(file), analyses.get(LatheUri.fromPath(file))))
         .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
         .toList();
   }
@@ -1024,14 +1083,6 @@ public final class LatheEngine {
     Optional<String> failing() {
       return Optional.ofNullable(failure);
     }
-  }
-
-  private CompletableFuture<List<Diagnostic>> analyze(final Path file) {
-    return service.diagnosticsFuture(LatheUri.fromPath(file), read(file), VERSION);
-  }
-
-  private CompletableFuture<List<Diagnostic>> check(final Path file) {
-    return service.diagnosticsTransientFuture(LatheUri.fromPath(file), read(file));
   }
 
   private static String read(final Path file) {
