@@ -223,6 +223,9 @@
           <!-- Passed as its own -D argument: MAVEN_OPTS would split the path at its space. -->
           <properties>
             <lathe.cache>${lathe.it.cache}</lathe.cache>
+            <!-- The fixtures build with Lathe enabled even on CI, where the CI variable would keep it
+                 out; their test forks get it too, as Surefire passes user properties on. -->
+            <lathe.disabled>false</lathe.disabled>
           </properties>
           <mavenOpts>-DlatheLocalRepo=${settings.localRepository} -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav</mavenOpts>
         </configuration>

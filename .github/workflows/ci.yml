@@ -71,10 +71,10 @@ jobs:
         # lathe-maven-plugin resolve the freshly built lathe artifacts from the
         # local repository.
         #
-        # `env -u CI` removes the CI env var for the whole build tree (Surefire
-        # forks, invoker builds, and their forks all inherit it), so Lathe runs
-        # ENABLED during tests. Otherwise LatheFlags.isDisabled() treats CI=true
-        # as a skip signal and every enabled-path test fails.
+        # The CI variable keeps Lathe out of this build, as it does any project's CI build, so the
+        # build does not sync its own .lathe/. Its tests still run Lathe enabled: Surefire sets
+        # lathe.disabled=false in Lathe's own tests and the invoker passes it to the fixture builds
+        # (and so to their test forks), and an explicit false wins over CI.
         #
         # The client modules are JDK-agnostic — build them on JDK 21 and on macOS (their scripts are
         # OS-sensitive), exclude them elsewhere.
@@ -87,17 +87,17 @@ jobs:
           GRADLE: -Dlathe.gradle.skip=true
         run: |
           if [ "${{ matrix.java }}" = "17" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
+            mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' \
               -Djvm="$JAVA_HOME_17_X64/bin/java" -Dinvoker.javaHome="$JAVA_HOME_17_X64" \
               -P '!multi-release-jdk21' $GRADLE
           elif [ "${{ matrix.java }}" = "21" ] || [ "${{ runner.os }}" = "macOS" ]; then
-            env -u CI mvn -B --no-transfer-progress clean install $GRADLE
+            mvn -B --no-transfer-progress clean install $GRADLE
           elif [ "${{ runner.os }}" = "Windows" ]; then
             # Neovim on Windows is a non-goal, so the row sets none up; the VS Code extension builds,
             # since Cursor on Windows is a target.
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
+            mvn -B --no-transfer-progress clean install -pl '!lathe-neovim' $GRADLE
           else
-            env -u CI mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
+            mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
       - name: Keep the invoker fixtures' downloads
@@ -175,9 +175,9 @@ jobs:
       - name: Invoker suite
         # Builds the reactor without running unit tests (maven.test.skip.exec; skipTests would also skip
         # the invoker), so every extraArtifact comes from this build, then runs the fixture builds with
-        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}. `env -u CI` keeps Lathe enabled in them.
+        # Maven ${{ matrix.maven }} on JDK ${{ matrix.java }}, which run Lathe enabled (lathe.disabled=false).
         run: |
-          env -u CI mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
+          mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
             -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
             -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64" -Dlathe.gradle.skip=true
 
