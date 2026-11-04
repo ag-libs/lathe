@@ -471,6 +471,8 @@ also inside another package's `exports` (a `…type.spi` beside `…type`) and i
 
 Highlight a qualified package name as one unit, and only where the same package is named.
 
+Also (exploratory round, 2026-11-04): `find_references` on a package segment in `exports` returns every segment of the module and package names (EqualsVerifier, Helidon `exports io.helidon.webserver.spi`); the rename form is FR-027.
+
 ### Regression targets
 
 None yet.
@@ -622,6 +624,8 @@ Keep a parent-method caller only when its receiver's static type is a supertype 
 (or the override's class or a subtype), as find references already reasons about receivers;
 a method reference's qualifier type counts as the receiver.
 
+Also (exploratory round, 2026-11-04): incoming calls on EqualsVerifier's core stub `get()` include a call through the abstract base class.
+
 ### Regression targets
 
 None yet.
@@ -708,6 +712,68 @@ None yet.
 
 ---
 
+## EG-089 — Definition and hover on an interface call land on a nested implementation in the same file
+
+**Status: documented**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's definition and hover, MCP `get_definition` and `describe_symbol`.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+At `SocketTransportBinding.java:192` (`listenerConfig.backlog()`), definition goes to `ListenerConfig.java:3455`, a method of
+the nested `ListenerConfigImpl`, not to the interface method at `:403` the call binds to (`invokeinterface
+ListenerConfig.backlog`), and hover shows no javadoc ("Accept backlog." is on `:403`).
+Every generated Helidon `*Config` has this shape; hand-written code too (`builder/codegen Utils.java:139 packageName` →
+`TypeName.java:1475` in `TypeNameImpl`, not `:265`).
+It needs the call resolved through compiled classes and the source file holding a nested class that implements the method;
+the same layout compiled from source in one file resolves right. References and implementations from those sites are right.
+
+### Fix direction
+
+When mapping a binary method to its source, match the declaring class's binary name (`ListenerConfig`, not
+`ListenerConfig$ListenerConfigImpl`) before the method name and signature.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-090 — Incoming calls of an override miss callers that dispatch to it from an upstream module
+
+**Status: documented**
+
+**Value: medium — Size: S–M**
+
+**Affects: the editor's call hierarchy and MCP `call_hierarchy`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Incoming calls answer "No callers found" for `App1.java:22 initialize`, `HelloWorldApplication:82 run`,
+`MyConfiguredBundle:15 initialize` and the anonymous `getDataSourceFactory` overrides at `HelloWorldApplication:44/68`.
+Their callers dispatch through the base method in an upstream module (`Application.java:88`, `EnvironmentCommand:66`,
+`Bootstrap.java:150`, `HibernateBundle:72`, `AbstractLiquibaseCommand:78`); asked on the base method, they are found.
+`HibernateBundle:47` lists only its own module's tests.
+EG-044 (done) made an override's incoming calls include calls through its base method; across modules they are missing.
+The opposite of EG-080, which lists too many.
+
+### Fix direction
+
+Search the base method's callers in the modules upstream of the override's, not only in the override's module and its
+dependents.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -758,6 +824,131 @@ The answer does warn ("Not compiled: TrustedProxyMatcher.java:76"), and `verify_
 ### Fix direction
 
 Refuse a blueprint rename with the reason, as for Lombok members, or rename the generated members' callers too when the generator links them.
+
+Also (exploratory round, 2026-11-04): renaming Dropwizard's JMH `parseDuration` leaves 10 generated callers with no note; `verify_change` says clean while `get_diagnostics` on the generated file shows the errors.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-025 — A constructor's uses through `super(...)`, `this(...)` and anonymous subclasses are not found
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor's references and call hierarchy, MCP `find_references`, `call_hierarchy` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+`find_references` on `HibernateBundle.java:31` (`protected HibernateBundle(Class<?> entity, Class<?>... entities)`) answers
+only the declaration. It misses `super(...)` at `dual/HibernateBundle.java:21` and the anonymous `new HibernateBundle<X>(Person.class) { … }`
+at `HelloWorldApplication:42`, `MultipleUnitOfWorkTest:105/117`, `SubResourcesTest:132` and more; incoming calls say
+"No callers found" and `analyze_change` "1 production, 0 test; relevant tests: none".
+`JdbiHealthCheck:19` misses the `this(...)` at line 27.
+Changing the constructor's signature, `verify_change` reports 8 errors at exactly those sites.
+Definition and hover on the `this`/`super` keyword answer that the position is not on a name.
+
+### Fix direction
+
+Count a `super(...)`/`this(...)` call and the implicit superclass constructor call of an anonymous class body as uses of the
+constructor they resolve to, and resolve `this`/`super` in an explicit constructor call to that constructor.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-026 — A class declared with the same name in two modules resolves to one of them, and rename edits the wrong one
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: references, implementations, definition, rename, MCP `search_symbols` and `analyze_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+`equalsverifier-core` has a stub `nl.jqno.equalsverifier.internal.versionspecific.SequencedCollectionsValueSupplier`;
+`equalsverifier-21` has the real class under the same name and depends on core (a multi-release overlay).
+`search_symbols` lists only the `-21` one; definition from `equalsverifier-core/.../BuiltinVersionSpecificValueProvider.java:24`
+lands in `-21`; `find_references` from the core declaration answers the two `-21` lines and misses core's own uses (lines 8
+and 24), still saying "no need to re-verify with grep"; `find_implementations` of `GenericValueSupplier.get()` finds 8 of 10
+(not the two core stubs).
+`rename_symbol` on the core stub renamed and moved the `-21` file, left core untouched, and `verify_change` said "No errors".
+The log shows `[type-index] duplicate type … skipped`: the index keeps one entry per binary name.
+
+### Fix direction
+
+Key the reactor's type index by module and binary name, and resolve a name from the module asking (its own copy first, then
+its dependencies'), so each module sees the copy javac would.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-027 — `module-info.java` `provides … with` is missed by references and rename, and listed once per package segment
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: references, rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+In a fresh session, `find_references` on `HstsFeatureProvider` (`webserver/hsts/.../HstsFeatureProvider.java:29`) answers 2
+references, not the `with io.helidon.webserver.hsts.HstsFeatureProvider;` at `module-info.java:42`; renaming it reports
+"2 edit(s) across 1 file(s)", moves the file and leaves `module-info.java` on the old name (`verify_change` then reports
+`cannot find symbol` there). The same for `ServerFeatureProvider`: 79 references, none in a `module-info.java`.
+Once `module-info.java` has been analyzed in the session, the line is found, but four times (once per package segment), and
+renaming from that line writes `with io.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider.HstsServerFeatureProvider;`.
+Related to EG-071 (per-segment matching of package names in `module-info.java`).
+
+### Fix direction
+
+Include the module's `module-info.java` among the files searched for a type's uses, and match a qualified name in a
+directive by its last segment's element only.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-028 — Renaming a parameter or record component leaves its `@param` tag
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: rename, the editor and MCP.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+Renaming `handler` to `task` at `Handler.java:37` leaves `@param handler` at line 34; `ProxyProtocolV2Data.java:186`
+`hostName` to `host` leaves `@param hostName` at line 184.
+The "Not renamed — review" list names 12 `"handler"` string literals in unrelated modules (messaging tests, JwtProvider,
+declarative codegen) for a method-local parameter, and not the `@param` tag.
+Not EG-050, which covers `{@link}` and `{@code}`.
+
+### Fix direction
+
+Rename the `@param` name of the method (or record) that declares the parameter, and leave string literals outside the
+declaring scope off the review list for a local symbol.
 
 ### Regression targets
 
@@ -1541,6 +1732,8 @@ Order hand-written sources before generated ones (and production before tests, a
 counts them), so a capped answer shows what an agent edits.
 When refusing a generated symbol, name its blueprint declaration when the generator links one.
 
+Also (exploratory round, 2026-11-04): `search_symbols` lists the generated `ListenerConfig` and `ListenerConfigImpl` before the hand-written `ListenerConfigBlueprint`.
+
 ### Regression targets
 
 None yet.
@@ -2270,6 +2463,8 @@ Records show as `struct`, enum constants as `field`, and an enum constant body's
 Label records `record` and enum constants `enum constant` in the MCP text (LSP has no record kind, so its
 mapping can stay), and list a constant body's members under the constant.
 
+Also (exploratory round, 2026-11-04): `outline` shows a record as "struct" while `search_symbols` calls it "Class" (Dropwizard).
+
 ### Regression targets
 
 None yet.
@@ -2295,6 +2490,8 @@ to tell them apart.
 
 Print the column (`file:line:column`), or merge the hits of one line into one row with both columns.
 
+Also (exploratory round, 2026-11-04): Dropwizard's `KIBIBYTES` gives 46 rows for 34 lines; Helidon's generated `ObserveServices__ServiceDescriptor.java` lines 64 and 66 twice.
+
 ### Regression targets
 
 None yet.
@@ -2318,6 +2515,8 @@ Some modules show no test status at all, while others say `tests: not captured`.
 ### Fix direction
 
 Show a status for every module: captured, not captured (with the command), or no tests.
+
+Also (exploratory round, 2026-11-04): no test status for Dropwizard's docs/source/examples `conscrypt`, `getting-started` and `views`.
 
 ### Regression targets
 
@@ -2370,3 +2569,239 @@ Test: `analyze_change` on an interface method that a subinterface redeclares lis
 
 None yet. The battery's reference round trip no longer catches this: since it accepts a definition that
 `find_references` agrees with, it passes on Helidon either way.
+
+---
+
+## MC-79 — `verify_change` reports a broken change once; the next call says the callers compile
+
+**Status: accepted**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Change `Duration.java:206` to `toSeconds(int scale)`: the first `verify_change` reports 5 errors; the next one, in the same
+session or a new one, says "No errors — the changed files and their callers compile". `get_diagnostics` on
+`DataSourceFactory` still shows both errors.
+Fixing only `DataSourceFactory` then answers that the callers compile "so a full build is optional", while `JdbiHealthCheck`,
+`SessionFactoryHealthCheck` and the tests are still broken.
+With no files, `verify_change` checks what changed since the last check: the sources the pass just wrote and the tools'
+writes, a set each call drains. The first check wrote the change into the mirror, so the next has nothing to check.
+
+### Fix direction
+
+Check every source whose content still differs from what the last build compiled (its compile stamp against the build's
+fingerprint), plus a source deleted since the build, not only what changed since the last check.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-80 — `verify_change` skips callers that reach a changed type without naming it
+
+**Status: documented**
+
+**Value: high — Size: S–M**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+With the same `toSeconds(int)` change, `verify_change` misses 5 errors in three `dropwizard-health` test files
+(`ScheduleTest:24`, `HealthCheckConfigurationTest:25/26`, `DefaultHealthFactoryTest:60/61`). They call
+`getSchedule().getDowntimeInterval().toSeconds()` and never name `Duration`; `find_references` lists all 11 uses and
+`get_diagnostics` on `ScheduleTest` shows the error.
+The callers checked are the files that mention the changed file's type.
+
+### Fix direction
+
+Take the callers from the changed members' references (the reference index already answers them), or add the files that
+mention a changed member's name in the modules that can see it.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-81 — `verify_change` after a `module-info.java` edit checks only `module-info.java`
+
+**Status: documented**
+
+**Value: high — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+Removing `requires static java.sql;` (or `requires org.objenesis;`) from `equalsverifier-core`'s `module-info.java`:
+`verify_change` says "No errors", and the log shows `[verify] 1 file(s)`. `get_diagnostics` on `JavaSqlValueSupplier.java`
+reports "package java.sql is not visible".
+
+### Fix direction
+
+A changed `module-info.java` affects every source of its module (and the modules reading it): check the module's sources.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-82 — `verify_change` says clean when the change fails only the build's Error Prone and `-Werror`
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: MCP `verify_change`, `run_test` and the notes.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+Renaming `Formatter.of` to `ofX` (`Formatter.java:37`) leaves a `{@link}` at line 20 dangling, an Error Prone `InvalidLink`
+warning that `-Werror` fails. `verify_change` reports no errors: the log shows `[compile:batch] failed=1` then
+`[verify] 37 files diags=0`, the callers checked against the old classes, with no "Not compiled" note.
+With the link fixed too, it reports 103 errors. An unused new parameter, and an unused local in a test, give the same.
+The other tools' note reads only `Formatter.java:1: warnings found and -Werror specified`: line 1, the warning itself
+hidden; `run_test` refuses with the same text.
+Related to EG-084 (the open compile skips the build's plugins) and MC-73 (a file that does not compile answers from stale
+classes); this is their consequence for `verify_change`.
+
+### Fix direction
+
+When a changed file's write fails, report that failure in `verify_change` (its real diagnostics, not the `-Werror` summary)
+and say the callers were checked against the previous classes.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-83 — Kotlin callers are invisible, yet references and rename call themselves complete
+
+**Status: documented**
+
+**Value: high — Size: M (a note) / L (support)**
+
+**Affects: MCP `find_references`, `rename_symbol`, `analyze_change`, `verify_change`, `workspace_summary`.**
+
+Found by the exploratory MCP round (2026-11-04) on EqualsVerifier.
+
+### Observed behaviour
+
+`find_references` on `withPrefabValuesForField` (`SingleTypeEqualsVerifierApi.java:244`) misses `KotlinWithoutReflectTest.kt:110`
+and `:159` and says "no need to re-verify with grep". Renaming it, or `Warning.ALL_FIELDS_SHOULD_BE_USED`, leaves the Kotlin
+uses broken (`KotlinDelegationTest.kt:169`), the review list silent on `.kt` files, and `verify_change` clean.
+`analyze_change` counts no Kotlin callers (`forClass` has 77); `workspace_summary` reports 8 modules and leaves out the two
+Kotlin test modules that `workspace.json` lists.
+
+### Fix direction
+
+At least: when a module has Kotlin sources, say so in these answers (and stop claiming completeness), and list the `.kt`
+files that mention the name for review. Reading Kotlin is a separate decision.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-84 — Deleting a class created in the session is not caught by `verify_change`
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard.
+
+### Observed behaviour
+
+Create `Zzz.java` in `dropwizard-util`, use it from `JdbiHealthCheck` (qualified or imported), verify, then delete it:
+`verify_change` says "No errors" while `get_diagnostics` shows "cannot find symbol". Deleting an existing class
+(`DirectExecutorService.java`) correctly reports 6 errors.
+A deleted file that the last build never compiled counts as "back to what the build compiled" and is dropped.
+
+### Fix direction
+
+Keep a deleted source that the session wrote (it has a compile stamp) in the change set, whatever the build's fingerprints say.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-85 — Rename and `verify_change` say nothing about uses in modules the sync leaves out
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `rename_symbol` and `verify_change`.**
+
+Found by the exploratory MCP round (2026-11-04) on Helidon.
+
+### Observed behaviour
+
+Renaming `ServerFeature.setup` left `webserver/tests/webserver/.../FeaturesOrderingTest.java:268` broken: that module is
+behind the root `tests` profile and not synced. Neither the rename nor `verify_change` mentions it, though
+`get_diagnostics` on the file says it is outside the compiled modules.
+
+### Fix direction
+
+When the reactor has profile-gated modules not synced, say in a rename's and `verify_change`'s answer that they were not
+checked, and list their files that mention the name.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-86 — Smaller answer defects from the exploratory round
+
+**Status: documented**
+
+**Value: low — Size: S each**
+
+**Affects: MCP tools.**
+
+Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier and Helidon.
+
+### Observed behaviour
+
+- `fix_imports` imports `javax.xml.transform.Result` where the inherited `HealthCheck.Result` was meant (Dropwizard
+  `JdbiHealthCheck` with every import removed), and offers `java.awt.List` for `List<String>` (not generic).
+- `verify_change` lists at most javac's 100 errors per compile without saying so: `seconds(long)` to `seconds(long, int)`
+  reports "156 error(s)" of about 221.
+- `analyze_change` counts declarations and overriding declarations as references (`toSeconds`: "5 production" for 4 calls;
+  an unused constructor: "1 production").
+- `describe_symbol`'s `source:` label is the JPMS module name from one caller and the Maven module from another, and the
+  signature drops `final`, `<T>` and `default`.
+- `get_definition` on a `requires` module name answers "No definition found" without saying modules are not navigable.
+- The rename review list cites the line a text block opens on, not the line with the name (`PrefabValuesApi.java:106`
+  for line 108), and lists every `"get"` literal for a short name.
+- `search_symbols` labels an annotation "(Interface)"; `workspace_summary` has no size limit (about 46 KB on Helidon).
+
+### Fix direction
+
+Each is small; take them one by one when touching the tool.
+
+### Regression targets
+
+None yet.
