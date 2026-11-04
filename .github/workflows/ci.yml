@@ -61,10 +61,7 @@ jobs:
         # Node is fetched by Maven via frontend-maven-plugin, so no setup-node step is needed. Neovim
         # isn't supported on Windows, so its specs don't run there.
         if: runner.os != 'Windows'
-        uses: rhysd/action-setup-vim@v1
-        with:
-          neovim: true
-          version: stable
+        uses: ./.github/actions/neovim
 
       - name: Build, test, install
         # `install` (not just `verify`) so the maven-invoker integration tests in

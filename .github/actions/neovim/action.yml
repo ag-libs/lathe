@@ -1,0 +1,21 @@
+name: Neovim
+description: >-
+  The stable Neovim release on PATH, unpacked from its archive on GitHub into the runner's temp
+  directory. rhysd/action-setup-vim, used before, failed on the hosted runners while moving its
+  download out of /tmp ("EXDEV: cross-device link not permitted").
+runs:
+  using: composite
+  steps:
+    - name: Install Neovim
+      shell: bash
+      run: |
+        os=$(echo "$RUNNER_OS" | tr '[:upper:]' '[:lower:]')
+        arch=$(uname -m)
+        if [ "$arch" = aarch64 ]; then
+          arch=arm64
+        fi
+        asset="nvim-$os-$arch"
+        curl -fsSL --retry 3 "https://github.com/neovim/neovim/releases/download/stable/$asset.tar.gz" \
+          | tar xz -C "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/$asset/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/$asset/bin/nvim" --version | head -1
