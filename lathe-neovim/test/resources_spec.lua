@@ -10,7 +10,8 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/resources_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 
 local picked
 package.loaded["lathe.pick"] = {
@@ -22,9 +23,7 @@ package.loaded["lathe.pick"] = {
 local resources = require("lathe.resources")
 
 local function stub_client(handler)
-  vim.lsp.get_clients = function(_)
-    return { { name = "lathe", request = handler } }
-  end
+  helper.fake_client(handler)
 end
 
 do -- _entries maps a resource list into "<icon>  <coordinate>  <path>" picker entries
@@ -101,9 +100,7 @@ do -- dispatches lathe.resources and feeds entries into the picker; open routes 
 end
 
 do -- no client -> warns
-  vim.lsp.get_clients = function(_)
-    return {}
-  end
+  helper.no_client()
   local warned = false
   vim.notify = function(_, level, _)
     if level == vim.log.levels.WARN then

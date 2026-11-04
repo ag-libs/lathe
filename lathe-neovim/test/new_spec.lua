@@ -13,32 +13,21 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/new_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 local new = require("lathe.new")
 local pick = require("lathe.pick")
 
 -- A fake Lathe client answering executeCommand from `responses` (keyed by command); returns the
--- ordered list of {command, argument} it received.
+-- ordered list of requests it received.
 local function stub_server(responses)
-	local requests = {}
-	vim.lsp.get_clients = function(_)
-		return {
-			{
-				name = "lathe",
-				request = function(_, _, params, callback, _)
-					table.insert(requests, { command = params.command, argument = params.arguments[1] })
-					callback(nil, responses[params.command])
-				end,
-			},
-		}
-	end
-	return requests
+	return helper.fake_client(responses)
 end
 
 local function request_for(requests, command)
 	for _, request in ipairs(requests) do
 		if request.command == command then
-			return request.argument
+			return request.arguments[1]
 		end
 	end
 end
@@ -466,9 +455,7 @@ do -- kind passed as an argument skips the kind picker
 end
 
 do -- server not attached -> warns, no picker
-	vim.lsp.get_clients = function(_)
-		return {}
-	end
+	helper.no_client()
 	local picked = false
 	pick.pick = function(_)
 		picked = true

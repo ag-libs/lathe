@@ -10,7 +10,8 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/imports_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 
 local imports = require("lathe.imports")
 
@@ -31,23 +32,7 @@ local SERVER_EDITS = {
 -- Answers lathe.missingImports with result and lathe.importEdits with edits, recording each request.
 local requests
 local function stub_client(result, edits)
-  requests = {}
-  vim.lsp.get_clients = function(_)
-    return {
-      {
-        name = "lathe",
-        offset_encoding = "utf-16",
-        request = function(_, method, params, callback, _)
-          requests[#requests + 1] = { method = method, command = params.command, arguments = params.arguments }
-          if params.command == "lathe.importEdits" then
-            callback(nil, edits)
-          else
-            callback(nil, result)
-          end
-        end,
-      },
-    }
-  end
+  requests = helper.fake_client({ ["lathe.missingImports"] = result, ["lathe.importEdits"] = edits })
 end
 
 -- Auto-select the given candidate index for every ambiguous prompt (nil = pick "Skip").
@@ -144,9 +129,7 @@ do -- no attached client -> warns, no request
       warned = true
     end
   end
-  vim.lsp.get_clients = function(_)
-    return {}
-  end
+  helper.no_client()
 
   imports.run(0)
 

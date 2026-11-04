@@ -9,16 +9,12 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/instances_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 local instances = require("lathe.instances")
 
 local function stub_client(handler)
-  vim.lsp.get_clients = function(_)
-    return { { name = "lathe", offset_encoding = "utf-16", request = handler } }
-  end
-  vim.lsp.util.make_position_params = function(_, _)
-    return { textDocument = { uri = "file:///X.java" }, position = { line = 0, character = 0 } }
-  end
+  helper.fake_client(handler, { position = true })
 end
 
 do -- dispatches lathe.instantiations and fills the quickfix from the locations
@@ -45,9 +41,7 @@ do -- no attached client -> warns, no request
   vim.notify = function(_, _, _)
     warned = true
   end
-  vim.lsp.get_clients = function(_)
-    return {}
-  end
+  helper.no_client()
 
   instances.find(0)
 
