@@ -4,7 +4,7 @@
 # overwrite, and run it by name (a real replay), asserting the console surfaces the active config.
 # Local dev tooling; not shipped, not wired into CI.
 #
-# Build the fixture first (produces .lathe and the it-home launcher for the working-tree server):
+# Build the fixture first (produces .lathe and the `target/it home` launcher for the working-tree server):
 #   mvn verify -pl lathe-maven-plugin -am -Dinvoker.test=multi-module -Dmaven.test.skip.exec=true
 set -euo pipefail
 
@@ -12,7 +12,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
+cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 runtime="$repo/lathe-neovim/runtime"
 spec_helper_dir="$repo/lathe-neovim/test"
 

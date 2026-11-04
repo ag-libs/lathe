@@ -17,7 +17,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
 fixture="$repo/lathe-maven-plugin/target/it/multi-module"
-cache="$repo/lathe-maven-plugin/target/it-home/.cache/lathe"
+cache="$repo/lathe-maven-plugin/target/it home/.cache/lathe"
 default_file="$fixture/jpms/src/test/java/com/example/jpms/HelloTest.java"
 default_line=16
 default_method=greet_returnsExpectedMessage
