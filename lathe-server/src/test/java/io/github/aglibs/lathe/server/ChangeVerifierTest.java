@@ -39,7 +39,7 @@ class ChangeVerifierTest {
             tmp.resolve("other/src/main/java"));
     final List<ModuleSourceConfig> configs = List.of(config, testCfg, otherCfg);
 
-    assertThat(WorkspaceSession.moduleSummaries(configs, tmp, WorkspaceModuleGraph.build(configs)))
+    assertThat(ChangeVerifier.moduleSummaries(configs, tmp, WorkspaceModuleGraph.build(configs)))
         .extracting(LatheModuleSummary::module, LatheModuleSummary::hasTests)
         .containsExactly(tuple("module", true), tuple("other", false));
   }
