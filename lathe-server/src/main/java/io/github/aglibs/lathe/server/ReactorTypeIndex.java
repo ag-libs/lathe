@@ -133,7 +133,7 @@ final class ReactorTypeIndex {
     return reactorLambdaShards.values().stream()
         .flatMap(shard -> shard.entrySet().stream())
         .collect(
-            Collectors.toMap(
+            Collectors.toUnmodifiableMap(
                 Map.Entry::getKey,
                 Map.Entry::getValue,
                 (left, right) -> Stream.concat(left.stream(), right.stream()).toList()));

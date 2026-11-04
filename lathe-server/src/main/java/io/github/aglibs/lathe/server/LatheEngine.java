@@ -41,7 +41,9 @@ import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -922,7 +924,9 @@ public final class LatheEngine {
     VerifyPlan {
       ValidCheck.check().notNull(outcome, "outcome").validate();
       changed = List.copyOf(changed);
-      targets = Map.copyOf(targets);
+      // In the order verifyTargetsByModule gives (the changed files' modules first): the answer
+      // lists the modules that way.
+      targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
       downstream = List.copyOf(downstream);
     }
   }

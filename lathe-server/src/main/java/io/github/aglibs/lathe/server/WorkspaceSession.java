@@ -48,7 +48,6 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -151,7 +150,8 @@ final class WorkspaceSession {
   private boolean documentsFollowDisk;
   private final DiagnosticPublisher publisher;
 
-  private final AtomicBoolean formatFailureReported = new AtomicBoolean();
+  // Loop state like the rest: a format failure is reported to the user once, then only logged.
+  private boolean formatFailureReported;
 
   WorkspaceSession(
       final LanguageClient client,
@@ -1154,7 +1154,8 @@ final class WorkspaceSession {
       LOG.log(Level.SEVERE, e, () -> "[format] %s failed %dms".formatted(uri, t.elapsedMs()));
       // Format-on-save would repeat the same failure (a formatter that cannot run on this JDK, a
       // file that does not parse) on every save; say why once, then only log.
-      if (formatFailureReported.compareAndSet(false, true)) {
+      if (!formatFailureReported) {
+        formatFailureReported = true;
         client.showMessage(
             new MessageParams(
                 MessageType.Warning,
