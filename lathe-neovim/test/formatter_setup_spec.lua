@@ -18,16 +18,16 @@ local spec = require("spec_helper").new()
 vim.env.LATHE_CACHE = vim.fn.tempname()
 local lathe = require("lathe")
 
--- The run-signs LspAttach autocmd is always registered; the format-on-save one is added on top only
--- when gated on. The augroup is recreated (clear=true) on each setup, so the count is per-setup.
+-- The format-on-save LspAttach autocmd, registered only when gated on. Its augroup is recreated
+-- (clear=true) on each setup, so the count is per-setup.
 local function lspattach_count()
-  return #vim.api.nvim_get_autocmds({ group = "LathePlugin", event = "LspAttach" })
+  return #vim.api.nvim_get_autocmds({ group = "LatheFormatOnSave", event = "LspAttach" })
 end
 
 -- Default: no style init option, no format-on-save autocmd.
 lathe.setup({})
 spec.check("default: no style init option", vim.lsp.config["lathe"].init_options.lathe.style, nil)
-spec.check("default: no format-on-save autocmd", lspattach_count(), 1)
+spec.check("default: no format-on-save autocmd", lspattach_count(), 0)
 
 -- style.formatter is forwarded to the server as the global-default init option.
 lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = true })
@@ -36,16 +36,16 @@ spec.check(
   vim.lsp.config["lathe"].init_options.lathe.style.formatter.engine,
   "google"
 )
-spec.check("format_on_save: autocmd installed", lspattach_count(), 2)
+spec.check("format_on_save: autocmd installed", lspattach_count(), 1)
 
 -- format_on_save == false: no save autocmd regardless of the formatter.
 lathe.setup({ style = { formatter = { engine = "google" } }, format_on_save = false })
-spec.check("no save: no format-on-save autocmd", lspattach_count(), 1)
+spec.check("no save: no format-on-save autocmd", lspattach_count(), 0)
 
 -- format_on_save wires the autocmd even without a global formatter option: the formatter can come
 -- from a workspace style file, so the capability is checked at runtime (per attach), not here.
 lathe.setup({ format_on_save = true })
-spec.check("save without global formatter: autocmd wired (runtime-gated)", lspattach_count(), 2)
+spec.check("save without global formatter: autocmd wired (runtime-gated)", lspattach_count(), 1)
 
 -- The style.indent fallback propagates from lathe.setup into the lathe.indent module.
 lathe.setup({ style = { indent = { profile = "google", continuation = 3 } } })

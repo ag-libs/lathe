@@ -23,7 +23,9 @@ function M.new()
     if actual == expected then
       reporter.ok(string.format("%s => %s", name, tostring(actual)))
     else
-      reporter.fail(string.format("%s: expected %s, got %s", name, tostring(expected), tostring(actual)))
+      reporter.fail(
+        string.format("%s: expected %s, got %s", name, tostring(expected), tostring(actual))
+      )
     end
   end
 
@@ -43,6 +45,48 @@ function M.new()
   end
 
   return reporter
+end
+
+--- Attach a fake Lathe client. `answer` is either a table of results by executeCommand command or
+--- a `request(client, method, params, callback, bufnr)` function for anything else. Returns the
+--- requests the client received, in order, as `{ method, command, arguments }`. `opts.position`
+--- also fixes the cursor position the code under test sends (file:///X.java, 0:0).
+function M.fake_client(answer, opts)
+  local requests = {}
+  local respond = answer
+  if type(answer) ~= "function" then
+    respond = function(_, _, params, callback, _)
+      callback(nil, answer[params.command])
+    end
+  end
+
+  vim.lsp.get_clients = function(_)
+    return {
+      {
+        name = "lathe",
+        offset_encoding = "utf-16",
+        request = function(client, method, params, callback, bufnr)
+          requests[#requests + 1] =
+            { method = method, command = params.command, arguments = params.arguments }
+          return respond(client, method, params, callback, bufnr)
+        end,
+      },
+    }
+  end
+  if opts and opts.position then
+    vim.lsp.util.make_position_params = function(_, _)
+      return { textDocument = { uri = "file:///X.java" }, position = { line = 0, character = 0 } }
+    end
+  end
+
+  return requests
+end
+
+--- No Lathe client attached.
+function M.no_client()
+  vim.lsp.get_clients = function(_)
+    return {}
+  end
 end
 
 return M

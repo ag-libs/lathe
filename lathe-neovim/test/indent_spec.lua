@@ -125,7 +125,13 @@ local FIXTURES = {
   },
   {
     "blank line after a wrapped statement inside a lambda body returns to the body indent",
-    { "  items.forEach(", "      value -> {", "        var built =", "            make(value);", "" },
+    {
+      "  items.forEach(",
+      "      value -> {",
+      "        var built =",
+      "            make(value);",
+      "",
+    },
     5,
     8,
   },

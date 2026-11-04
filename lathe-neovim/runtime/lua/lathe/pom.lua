@@ -10,7 +10,7 @@
 
 local M = {}
 
-local ns = vim.api.nvim_create_namespace('lathe_pom')
+local ns = vim.api.nvim_create_namespace("lathe_pom")
 
 -- Resolved config; replaced by setup(). validate defaults on (the headline feature), format off.
 M.config = { validate = true, format = false }
@@ -23,16 +23,16 @@ local function warn_once(message)
     return
   end
   warned[message] = true
-  vim.notify('Lathe: ' .. message, vim.log.levels.WARN, { title = 'Lathe' })
+  vim.notify("Lathe: " .. message, vim.log.levels.WARN, { title = "Lathe" })
 end
 
 local function has_xmllint()
-  return vim.fn.executable('xmllint') == 1
+  return vim.fn.executable("xmllint") == 1
 end
 
 -- Whole-buffer contents as one newline-joined string, fed to xmllint over stdin.
 local function buffer_text(bufnr)
-  return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), '\n')
+  return table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
 end
 
 -- Debounce state for live (on-change) validation: one reusable libuv timer per buffer.
@@ -43,7 +43,7 @@ local DEBOUNCE_MS = 250
 --- cache-unpacked bundle and the standalone plugin.
 ---@return string? path
 function M.schema_path()
-  return vim.api.nvim_get_runtime_file('schema/maven-4.0.0.xsd', false)[1]
+  return vim.api.nvim_get_runtime_file("schema/maven-4.0.0.xsd", false)[1]
 end
 
 --- Parse `xmllint --schema` stderr into `vim.diagnostic` entries. xmllint prints one error as a
@@ -54,7 +54,7 @@ end
 ---@param filename string the path passed to xmllint (echoed verbatim in each error)
 ---@return table[] diagnostics
 function M.parse_diagnostics(lines, filename)
-  local prefix = '^' .. vim.pesc(filename) .. ':(%d+):%s*(.+)$'
+  local prefix = "^" .. vim.pesc(filename) .. ":(%d+):%s*(.+)$"
   local diags = {}
   for _, line in ipairs(lines) do
     local lnum, message = line:match(prefix)
@@ -63,7 +63,7 @@ function M.parse_diagnostics(lines, filename)
         lnum = math.max(0, tonumber(lnum) - 1),
         col = 0,
         severity = vim.diagnostic.severity.ERROR,
-        source = 'xmllint',
+        source = "xmllint",
         message = message,
       }
     end
@@ -83,25 +83,25 @@ function M.validate(bufnr)
   end
 
   if not has_xmllint() then
-    warn_once('pom.xml validation needs `xmllint` (libxml2) on PATH; skipping.')
+    warn_once("pom.xml validation needs `xmllint` (libxml2) on PATH; skipping.")
     return
   end
 
   local schema = M.schema_path()
   if not schema then
-    warn_once('pom.xml schema not found on runtimepath; skipping validation.')
+    warn_once("pom.xml schema not found on runtimepath; skipping validation.")
     return
   end
 
   vim.system(
-    { 'xmllint', '--nonet', '--noout', '--schema', schema, '-' },
+    { "xmllint", "--nonet", "--noout", "--schema", schema, "-" },
     { text = true, stdin = buffer_text(bufnr) },
     vim.schedule_wrap(function(result)
       if not vim.api.nvim_buf_is_valid(bufnr) then
         return
       end
-      local lines = vim.split(result.stderr or '', '\n', { trimempty = true })
-      vim.diagnostic.set(ns, bufnr, M.parse_diagnostics(lines, '-'))
+      local lines = vim.split(result.stderr or "", "\n", { trimempty = true })
+      vim.diagnostic.set(ns, bufnr, M.parse_diagnostics(lines, "-"))
     end)
   )
 end
@@ -114,22 +114,22 @@ end
 function M.format_buffer(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   if not has_xmllint() then
-    warn_once('pom.xml formatting needs `xmllint` (libxml2) on PATH; skipping.')
+    warn_once("pom.xml formatting needs `xmllint` (libxml2) on PATH; skipping.")
     return
   end
 
-  local output = vim.fn.system({ 'xmllint', '--nonet', '--format', '-' }, buffer_text(bufnr))
+  local output = vim.fn.system({ "xmllint", "--nonet", "--format", "-" }, buffer_text(bufnr))
   if vim.v.shell_error ~= 0 then
     vim.notify(
-      'Lathe: pom.xml not formatted (invalid XML): ' .. vim.trim(output),
+      "Lathe: pom.xml not formatted (invalid XML): " .. vim.trim(output),
       vim.log.levels.WARN,
-      { title = 'Lathe' }
+      { title = "Lathe" }
     )
     return
   end
 
-  local lines = vim.split(output, '\n')
-  if lines[#lines] == '' then
+  local lines = vim.split(output, "\n")
+  if lines[#lines] == "" then
     table.remove(lines)
   end
   vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
@@ -140,7 +140,7 @@ end
 -- own default (override with the XMLLINT_INDENT env var). `--nonet` keeps it offline.
 local function set_formatprg(bufnr)
   if has_xmllint() then
-    vim.bo[bufnr].formatprg = 'xmllint --nonet --format -'
+    vim.bo[bufnr].formatprg = "xmllint --nonet --format -"
   end
 end
 
@@ -183,28 +183,28 @@ function M.setup(opts)
     format = opts.format == true,
   }
 
-  local augroup = vim.api.nvim_create_augroup('LathePom', { clear = true })
+  local augroup = vim.api.nvim_create_augroup("LathePom", { clear = true })
 
   if M.config.validate then
     -- Validate immediately on open, then live (debounced) on every edit -- buffer contents, not the
     -- saved file -- so schema errors surface as you type rather than only on write.
-    vim.api.nvim_create_autocmd('BufReadPost', {
+    vim.api.nvim_create_autocmd("BufReadPost", {
       group = augroup,
-      pattern = 'pom.xml',
+      pattern = "pom.xml",
       callback = function(ev)
         M.validate(ev.buf)
       end,
     })
-    vim.api.nvim_create_autocmd({ 'TextChanged', 'TextChangedI' }, {
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
       group = augroup,
-      pattern = 'pom.xml',
+      pattern = "pom.xml",
       callback = function(ev)
         schedule_validate(ev.buf)
       end,
     })
-    vim.api.nvim_create_autocmd('BufWipeout', {
+    vim.api.nvim_create_autocmd("BufWipeout", {
       group = augroup,
-      pattern = 'pom.xml',
+      pattern = "pom.xml",
       callback = function(ev)
         cancel_timer(ev.buf)
       end,
@@ -212,9 +212,9 @@ function M.setup(opts)
   end
 
   if M.config.format then
-    vim.api.nvim_create_autocmd('BufReadPost', {
+    vim.api.nvim_create_autocmd("BufReadPost", {
       group = augroup,
-      pattern = 'pom.xml',
+      pattern = "pom.xml",
       callback = function(ev)
         set_formatprg(ev.buf)
       end,

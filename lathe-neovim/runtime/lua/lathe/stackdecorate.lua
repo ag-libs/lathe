@@ -30,9 +30,7 @@ local jump_keymaps_set = {}
 -- replacing the output window's own buffer.
 local last_java_win
 
-local function lathe_client()
-  return vim.lsp.get_clients({ name = "lathe" })[1]
-end
+local lathe_client = require("lathe.util").client
 
 vim.api.nvim_create_autocmd("BufEnter", {
   group = STACKTRACE_AUGROUP,

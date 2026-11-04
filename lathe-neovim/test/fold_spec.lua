@@ -24,8 +24,16 @@ local IMPORTS = { kind = "imports", startLine = 2, endLine = 13 }
 local REGION = { kind = "region", startLine = 15, endLine = 66 }
 
 -- imports_start_line: pure selection of the imports fold's 0-based start line.
-spec.check("imports_start_line picks the imports fold", fold.imports_start_line(folds(IMPORTS, REGION)), 2)
-spec.check("imports_start_line ignores region-only folds", fold.imports_start_line(folds(REGION)), nil)
+spec.check(
+  "imports_start_line picks the imports fold",
+  fold.imports_start_line(folds(IMPORTS, REGION)),
+  2
+)
+spec.check(
+  "imports_start_line ignores region-only folds",
+  fold.imports_start_line(folds(REGION)),
+  nil
+)
 spec.check("imports_start_line on no folds", fold.imports_start_line(folds()), nil)
 spec.check("imports_start_line on nil", fold.imports_start_line(nil), nil)
 

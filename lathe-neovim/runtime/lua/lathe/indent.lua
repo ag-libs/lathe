@@ -16,7 +16,7 @@ end
 
 local function buffer_root(bufnr)
   local ok, root = pcall(function()
-    return require("lathe").get_root(bufnr)
+    return require("lathe.workspace").get_root(bufnr)
   end)
   return ok and root or nil
 end
@@ -31,7 +31,8 @@ local function widths(indent)
 
   local profile = indent.profile == "google" and "google" or "editor_config"
   local block = (indent.block and indent.block > 0) and indent.block or BASELINE_BLOCK[profile]
-  local continuation = (indent.continuation and indent.continuation > 0) and indent.continuation or nil
+  local continuation = (indent.continuation and indent.continuation > 0) and indent.continuation
+    or nil
   return block, continuation
 end
 

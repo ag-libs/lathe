@@ -32,13 +32,10 @@ local PRECEDENCE = { TEST_METHOD, TEST_CLASS, TEST_PACKAGE }
 -- Run tokens of in-flight Lathe debug sessions, so :LatheRunStop can cancel their replay JVMs.
 local active_tokens = {}
 
-local function lathe_client()
-  return vim.lsp.get_clients({ name = "lathe" })[1]
-end
+local util = require("lathe.util")
+local lathe_client = util.client
 
-local function notify(msg, level)
-  vim.notify(msg, level, { title = "Lathe" })
-end
+local notify = util.notify
 
 --- True when neotest is installed and set up (its run API is present), so :LatheDebug can route a test
 --- through neotest's dap strategy -- gutters/summary, the shared console, and a pass/fail outcome.
@@ -72,7 +69,7 @@ end
 --- correlated with the session. Shared by :LatheDebug's cursor path (M._test_config_for) and
 --- lathe.neotest's dap-strategy specs, so the config shape lives in one place. The DAP hostName/port
 --- are injected later by enrich_config, once the server has allocated the JDWP port.
-function M._attach_config(module_rel, selections, label, token)
+function M.attach_config(module_rel, selections, label, token)
   return {
     type = "lathe",
     request = "attach",
@@ -85,7 +82,7 @@ end
 
 --- The attach config for a resolved TEST target under the cursor, minting its own run token.
 function M._test_config_for(target)
-  return M._attach_config(target.moduleRel, {
+  return M.attach_config(target.moduleRel, {
     { selectorKind = SELECTOR_KIND[target.kind], selectorValue = target.id },
   }, target.label, output.next_token())
 end
@@ -220,7 +217,7 @@ function M.debug(bufnr)
   }, function(err, targets)
     targets = (not err and targets) or {}
     local test = M._test_target_for(targets, cursor_line)
-    local main = not test and require("lathe.run")._main_target_for(targets, cursor_line) or nil
+    local main = not test and require("lathe.run").main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       local route = M._debug_route(test ~= nil, main ~= nil, neotest_available())
       if route == "neotest" then
@@ -318,6 +315,22 @@ function M.setup()
   dap.adapters.lathe = start_adapter
   dap.listeners.after.event_terminated.lathe_decorate = M._decorate_on_session_end
   dap.listeners.after.event_exited.lathe_decorate = M._decorate_on_session_end
+  -- :LatheDebug attaches nvim-dap to the test or main class under the cursor, replayed under a
+  -- suspended JDWP agent (server-side lathe.debug.test / lathe.debug.main). Wired only when nvim-dap
+  -- is present, so a runtime without it loads unaffected.
+  vim.api.nvim_create_user_command("LatheDebug", function(cmd)
+    if cmd.args ~= "" then
+      M.debug_named(cmd.args)
+    else
+      M.debug(vim.api.nvim_get_current_buf())
+    end
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return require("lathe.run").complete_config(arglead)
+    end,
+    desc = "Lathe: debug the cursor target, or a saved config by name",
+  })
   return true
 end
 

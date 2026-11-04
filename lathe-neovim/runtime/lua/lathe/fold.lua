@@ -9,7 +9,7 @@
 
 local M = {}
 
-local IMPORTS_KIND = 'imports'
+local IMPORTS_KIND = "imports"
 
 --- Extract the 0-based start line of the imports fold from buf_request_sync-shaped foldingRange
 --- results (a map of client-id -> { result = { folds... } }). Returns nil when no client reported
@@ -39,7 +39,7 @@ end
 ---@return boolean
 function M.imports_closed(bufnr)
   local params = { textDocument = vim.lsp.util.make_text_document_params(bufnr) }
-  local results = vim.lsp.buf_request_sync(bufnr, 'textDocument/foldingRange', params, 500)
+  local results = vim.lsp.buf_request_sync(bufnr, "textDocument/foldingRange", params, 500)
   local line = M.imports_start_line(results)
   if not line then
     return false
@@ -60,7 +60,7 @@ local function ensure_closed(bufnr, lnum)
   for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
     vim.api.nvim_win_call(win, function()
       if vim.fn.foldclosed(lnum) == -1 then
-        pcall(vim.cmd, lnum .. 'foldclose')
+        pcall(vim.cmd, lnum .. "foldclose")
       end
       if vim.fn.foldclosed(lnum) ~= -1 then
         closed = true
@@ -99,7 +99,7 @@ function M.reclose_imports(bufnr, was_closed)
 
     if not lnum then
       local params = { textDocument = vim.lsp.util.make_text_document_params(bufnr) }
-      local results = vim.lsp.buf_request_sync(bufnr, 'textDocument/foldingRange', params, 500)
+      local results = vim.lsp.buf_request_sync(bufnr, "textDocument/foldingRange", params, 500)
       local line = M.imports_start_line(results)
       if line then
         lnum = line + 1
@@ -128,7 +128,7 @@ end
 ---@param opts table?
 function M.format(bufnr, opts)
   local was_closed = M.imports_closed(bufnr)
-  vim.lsp.buf.format(vim.tbl_extend('force', opts or {}, { bufnr = bufnr, async = false }))
+  vim.lsp.buf.format(vim.tbl_extend("force", opts or {}, { bufnr = bufnr, async = false }))
   M.reclose_imports(bufnr, was_closed)
 end
 

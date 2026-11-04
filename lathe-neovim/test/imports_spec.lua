@@ -10,7 +10,8 @@
 --     --cmd "set rtp+=lathe-neovim/test" \
 --     -l lathe-neovim/test/imports_spec.lua
 
-local spec = require("spec_helper").new()
+local helper = require("spec_helper")
+local spec = helper.new()
 
 local imports = require("lathe.imports")
 
@@ -25,29 +26,17 @@ end
 
 -- What a server places for the chosen imports; the client applies it verbatim.
 local SERVER_EDITS = {
-  { range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } }, newText = "placed by the server" },
+  {
+    range = { start = { line = 1, character = 0 }, ["end"] = { line = 1, character = 0 } },
+    newText = "placed by the server",
+  },
 }
 
 -- Answers lathe.missingImports with result and lathe.importEdits with edits, recording each request.
 local requests
 local function stub_client(result, edits)
-  requests = {}
-  vim.lsp.get_clients = function(_)
-    return {
-      {
-        name = "lathe",
-        offset_encoding = "utf-16",
-        request = function(_, method, params, callback, _)
-          requests[#requests + 1] = { method = method, command = params.command, arguments = params.arguments }
-          if params.command == "lathe.importEdits" then
-            callback(nil, edits)
-          else
-            callback(nil, result)
-          end
-        end,
-      },
-    }
-  end
+  requests =
+    helper.fake_client({ ["lathe.missingImports"] = result, ["lathe.importEdits"] = edits })
 end
 
 -- Auto-select the given candidate index for every ambiguous prompt (nil = pick "Skip").
@@ -122,7 +111,11 @@ do -- a server without lathe.importEdits answers nothing: warn, apply nothing, c
 
   spec.check("older server: no edit applied", applied, nil)
   spec.check("older server: warns", seen.level, vim.log.levels.WARN)
-  spec.check("older server: names the remedy", seen.message:find("update the Lathe build plugin") ~= nil, true)
+  spec.check(
+    "older server: names the remedy",
+    seen.message:find("update the Lathe build plugin") ~= nil,
+    true
+  )
 end
 
 do -- no missing imports -> notify, no edits requested or applied
@@ -144,9 +137,7 @@ do -- no attached client -> warns, no request
       warned = true
     end
   end
-  vim.lsp.get_clients = function(_)
-    return {}
-  end
+  helper.no_client()
 
   imports.run(0)
 
@@ -156,7 +147,11 @@ end
 do -- setup registers the command and the client-side code-action handler
   imports.setup()
   spec.check("LatheMissingImports registered", vim.fn.exists(":LatheMissingImports"), 2)
-  spec.check("code-action handler registered", type(vim.lsp.commands["lathe.missingImports"]), "function")
+  spec.check(
+    "code-action handler registered",
+    type(vim.lsp.commands["lathe.missingImports"]),
+    "function"
+  )
 end
 
 spec.finish("imports_spec")

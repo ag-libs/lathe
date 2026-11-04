@@ -44,9 +44,8 @@ local SIGN_TEXT = "▶"
 -- run overwrites it, matching the shared single-buffer output surface.
 local active_token
 
-local function lathe_client()
-  return vim.lsp.get_clients({ name = "lathe" })[1]
-end
+local util = require("lathe.util")
+local lathe_client = util.client
 
 local function in_range(range, line)
   return range ~= nil and line >= range.start.line and line <= range["end"].line
@@ -58,7 +57,7 @@ end
 --- several with the cursor on none). Always returns a MAIN target -- a MAIN_CLASS hit resolves to
 --- its class's method (id == the method's parentId) so the launch path is unchanged. Pure over the
 --- raw lathe.runnables.list targets, so it is unit-testable without a live client.
-function M._main_target_for(targets, cursor_line)
+function M.main_target_for(targets, cursor_line)
   local mains = {}
   local main_by_class = {}
   for _, t in ipairs(targets) do
@@ -130,9 +129,7 @@ function M.refresh_signs(bufnr)
   end, bufnr)
 end
 
-local function notify(msg, level)
-  vim.notify(msg, level, { title = "Lathe" })
-end
+local notify = util.notify
 
 local function on_finished(label, err, outcome)
   active_token = nil
@@ -142,7 +139,10 @@ local function on_finished(label, err, outcome)
   end
 
   if outcome and not outcome.launched then
-    notify("run blocked -- " .. table.concat(outcome.blockedReasons or {}, "; "), vim.log.levels.WARN)
+    notify(
+      "run blocked -- " .. table.concat(outcome.blockedReasons or {}, "; "),
+      vim.log.levels.WARN
+    )
     return
   end
 
@@ -246,7 +246,7 @@ function M.run(bufnr)
     command = "lathe.runnables.list",
     arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
   }, function(err, targets)
-    local target = not err and targets and M._main_target_for(targets, cursor_line) or nil
+    local target = not err and targets and M.main_target_for(targets, cursor_line) or nil
     vim.schedule(function()
       if not target then
         -- Main-only surface: no main means the user wants tests, which stay with neotest. Delegate
@@ -301,18 +301,23 @@ end
 --- the raw lathe.runnables.list targets, so it is unit-testable without a live client.
 function M._save_target_for(targets, cursor_line)
   for _, t in ipairs(targets) do
-    if (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line) then
+    if
+      (t.kind == RUN_KIND_MAIN or t.kind == RUN_KIND_TEST_METHOD) and in_range(t.range, cursor_line)
+    then
       return save_request(targets, t)
     end
   end
 
   for _, t in ipairs(targets) do
-    if (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS) and in_range(t.range, cursor_line) then
+    if
+      (t.kind == RUN_KIND_MAIN_CLASS or t.kind == RUN_KIND_TEST_CLASS)
+      and in_range(t.range, cursor_line)
+    then
       return save_request(targets, t)
     end
   end
 
-  local main = M._main_target_for(targets, cursor_line)
+  local main = M.main_target_for(targets, cursor_line)
   return main and save_request(targets, main) or nil
 end
 
@@ -418,6 +423,83 @@ function M.stop()
     command = "lathe.run.cancel",
     arguments = { { token = active_token } },
   })
+end
+
+--- Registers the run commands and keeps the gutter signs and the run configs current.
+function M.setup()
+  local augroup = vim.api.nvim_create_augroup("LatheRun", { clear = true })
+  -- Run surface: gutter signs for `main` methods plus :LatheRun to replay the buffer's main
+  -- class from .lathe/ bytecode. Tests keep going through the neotest adapter; this is the
+  -- main-only path (RunnableKind.MAIN, which neotest excludes). Signs refresh when the server
+  -- attaches and after each save, since an edit can add or remove a main.
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = augroup,
+    callback = function(args)
+      local client = vim.lsp.get_client_by_id(args.data.client_id)
+      if client and client.name == "lathe" then
+        M.refresh_signs(args.buf)
+        M.refresh_configs()
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    pattern = "*.java",
+    callback = function(ev)
+      if #vim.lsp.get_clients({ name = "lathe", bufnr = ev.buf }) > 0 then
+        M.refresh_signs(ev.buf)
+      end
+    end,
+  })
+  -- A hand-edited run config (either layer) refreshes the completion/picker cache without a
+  -- re-attach. The `run.json` pattern is a basename match (fires for any run.json), so the callback
+  -- narrows it to Lathe's own files: the reactor-root lathe-run.json or a `.lathe/run.json`. Absent
+  -- configs (or no attached client) make refresh_configs a harmless no-op.
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = augroup,
+    pattern = { "lathe-run.json", "run.json" },
+    callback = function(ev)
+      local name = ev.file or ""
+      if name:match("/%.lathe/run%.json$") or vim.fs.basename(name) == "lathe-run.json" then
+        M.refresh_configs()
+      end
+    end,
+  })
+  vim.api.nvim_create_user_command("LatheRun", function(cmd)
+    if cmd.args ~= "" then
+      M.run_named(cmd.args)
+    else
+      M.run(vim.api.nvim_get_current_buf())
+    end
+  end, {
+    nargs = "?",
+    complete = function(arglead)
+      return M.complete_config(arglead)
+    end,
+    desc = "Lathe: run the buffer main, or a saved config by name",
+  })
+  vim.api.nvim_create_user_command("LatheRunStop", function()
+    -- Stop a debug session if one is live (cancels its replay JVM directly); otherwise the M.
+    if not require("lathe.dap").stop() then
+      M.stop()
+    end
+  end, { desc = "Lathe: stop the active run or debug session" })
+  vim.api.nvim_create_user_command("LatheRunLast", function()
+    M.run_last()
+  end, { desc = "Lathe: re-run the last run config" })
+  vim.api.nvim_create_user_command("LatheRunSave", function(cmd)
+    M.save(cmd.args ~= "" and cmd.args or nil, cmd.bang)
+  end, {
+    nargs = "?",
+    bang = true,
+    complete = function(arglead)
+      return M.complete_config(arglead)
+    end,
+    desc = "Lathe: save the runnable under the cursor as a named config (! overwrites)",
+  })
+  vim.api.nvim_create_user_command("LatheRunOutput", function()
+    require("lathe.output").open()
+  end, { desc = "Lathe: toggle the run output console" })
 end
 
 return M

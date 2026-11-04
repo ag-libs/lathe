@@ -115,7 +115,8 @@ nio.run(function()
     local inner = vim.lsp.handlers["lathe/testEvent"]
     vim.lsp.handlers["lathe/testEvent"] = function(e, result, ...)
       if result and result.result then
-        events[#events + 1] = { positionId = result.result.positionId, status = result.result.status }
+        events[#events + 1] =
+          { positionId = result.result.positionId, status = result.result.status }
       end
       if inner then
         return inner(e, result, ...)
@@ -156,11 +157,13 @@ nio.run(function()
     for _, pos in (unopened and unopened:iter() or function() end) do
       captured.unopened_ids[pos.id] = pos.type
     end
-    captured.excluded_tree = adapter.discover_positions(SHAPES_DIR .. "/ExcludedByPatternTests.java")
+    captured.excluded_tree =
+      adapter.discover_positions(SHAPES_DIR .. "/ExcludedByPatternTests.java")
 
     -- R7: a file run before the file's discovery answers runs the class its path names.
     local assertions_file = SHAPES_DIR .. "/AssertionsTest.java"
-    captured.undiscovered_results = run_position(adapter, bare_tree("file", assertions_file, "AssertionsTest.java"))
+    captured.undiscovered_results =
+      run_position(adapter, bare_tree("file", assertions_file, "AssertionsTest.java"))
 
     -- Failures as the real server sends them: one package run of the shapes module. Before the
     -- printing run below, which the console-buffer checks read.
@@ -226,7 +229,11 @@ end
 for _, id in ipairs(METHOD_IDS) do
   spec.check("R6 method streamed a live event: " .. id, streamed_status[id], "passed")
 end
-spec.check("R6 spec.stream yields the method result to neotest", captured.method_stream_status, "passed")
+spec.check(
+  "R6 spec.stream yields the method result to neotest",
+  captured.method_stream_status,
+  "passed"
+)
 
 -- Deliverable 1: the replay transcript arrives as a list of stdout/stderr-tagged
 -- {stream, text} lines, not a flat string list. A passing run legitimately emits
@@ -249,18 +256,26 @@ spec.check("transcript entries carry text", entries_well_formed, true)
 -- Streamed lines are appended via vim.schedule, so wait for the stdout line before asserting.
 local adapter = require("lathe.neotest")
 vim.wait(3000, function()
-  local lines = adapter._live_output_lines()
+  local lines = require("lathe.output").lines()
   return lines ~= nil and vim.tbl_contains(lines, "hello on stdout")
 end, 25)
-local live_lines = adapter._live_output_lines() or {}
-spec.check("O1 stdout line streamed to live buffer", vim.tbl_contains(live_lines, "hello on stdout"), true)
-spec.check("O1 stderr line streamed to live buffer", vim.tbl_contains(live_lines, "warning on stderr"), true)
-spec.check("O3 stderr line is highlighted", #adapter._live_output_stderr_rows() > 0, true)
+local live_lines = require("lathe.output").lines() or {}
+spec.check(
+  "O1 stdout line streamed to live buffer",
+  vim.tbl_contains(live_lines, "hello on stdout"),
+  true
+)
+spec.check(
+  "O1 stderr line streamed to live buffer",
+  vim.tbl_contains(live_lines, "warning on stderr"),
+  true
+)
+spec.check("O3 stderr line is highlighted", #require("lathe.output").stderr_rows() > 0, true)
 
 -- O8: the run's header -- the run configuration label, then the replay launch command -- opens the
 -- buffer, both highlighted as command lines, so the user can see (and copy) what ran the tests.
 -- It is emitted before any process output.
-local command_rows = adapter._live_output_command_rows()
+local command_rows = require("lathe.output").command_rows()
 spec.check("O8 header lines are highlighted", vim.deep_equal(command_rows, { 0, 1 }), true)
 spec.check(
   "O8 first line names the run configuration",
@@ -287,12 +302,24 @@ spec.check(
 spec.check("R2 file run output reachable from file position", captured.file_has_output, true)
 
 local unopened_ids = captured.unopened_ids or {}
-spec.check("D4 unopened file's class discovered", unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest"], "namespace")
-spec.check("D4 unopened file's method discovered", unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest#plain()"], "test")
+spec.check(
+  "D4 unopened file's class discovered",
+  unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest"],
+  "namespace"
+)
+spec.check(
+  "D4 unopened file's method discovered",
+  unopened_ids[SHAPES_PACKAGE .. ".IdShapesTest#plain()"],
+  "test"
+)
 spec.check("D4 a class the build's filter excludes has no tree", captured.excluded_tree, nil)
 
 local undiscovered = (captured.undiscovered_results or {})[SHAPES_PACKAGE .. ".AssertionsTest#singleLine()"]
-spec.check("R7 file run before discovery runs its class", undiscovered and undiscovered.status, "failed")
+spec.check(
+  "R7 file run before discovery runs its class",
+  undiscovered and undiscovered.status,
+  "failed"
+)
 
 -- F3/F4: a comparison failure's text carries the diff of its values, and a class whose @BeforeAll
 -- broke reports its real error on the class, both straight from the server.
@@ -301,7 +328,9 @@ local single_line = shapes[SHAPES_PACKAGE .. ".AssertionsTest#singleLine()"]
 spec.check("F3 comparison failure is failed", single_line and single_line.status, "failed")
 spec.check(
   "F3 comparison failure's text ends with the diff of its values",
-  single_line and single_line.short and single_line.short:match("\n%-Hello, Alice!\n%+Hello, alice!$") ~= nil,
+  single_line
+    and single_line.short
+    and single_line.short:match("\n%-Hello, Alice!\n%+Hello, alice!$") ~= nil,
   true
 )
 -- O9: a test's output holds the lines it printed, not the whole run's.
