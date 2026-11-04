@@ -16,27 +16,17 @@ class ChangeVerifierTest {
 
   @TempDir private Path tmp;
 
-  private Path sourceRoot;
-  private Path sourceFile;
   private ModuleSourceConfig config;
 
   @BeforeEach
   void setUp() {
-    sourceRoot = tmp.resolve("module/src/main/java");
-    sourceFile = sourceRoot.resolve("com/example/Foo.java");
-    config =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
+    config = TestCompiler.mainTreeConfig(tmp, "module");
   }
 
   @Test
   void moduleSummaries_mainAndTestTrees_hasTestsOnlyWhereATestTreeExists() {
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
-    final var otherCfg =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/other"),
-            tmp.resolve("other/target/classes"),
-            tmp.resolve("other/src/main/java"));
+    final var otherCfg = TestCompiler.mainTreeConfig(tmp, "other");
     final List<ModuleSourceConfig> configs = List.of(config, testCfg, otherCfg);
 
     assertThat(ChangeVerifier.moduleSummaries(configs, tmp, WorkspaceModuleGraph.build(configs)))

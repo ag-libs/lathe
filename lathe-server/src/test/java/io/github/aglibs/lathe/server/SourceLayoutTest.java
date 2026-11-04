@@ -22,9 +22,7 @@ class SourceLayoutTest {
   void setUp() {
     sourceRoot = tmp.resolve("module/src/main/java");
     sourceFile = sourceRoot.resolve("com/example/Foo.java");
-    config =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
+    config = TestCompiler.mainTreeConfig(tmp, "module");
   }
 
   @Test
@@ -60,11 +58,7 @@ class SourceLayoutTest {
   @Test
   void modules_distinctSortedModuleRels() {
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
-    final var otherCfg =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/other"),
-            tmp.resolve("other/target/classes"),
-            tmp.resolve("other/src/main/java"));
+    final var otherCfg = TestCompiler.mainTreeConfig(tmp, "other");
 
     assertThat(new SourceLayout(List.of(config, testCfg, otherCfg), tmp).modules())
         .containsExactly("module", "other"); // "module" appears twice (main+test) → distinct

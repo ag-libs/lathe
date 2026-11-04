@@ -28,9 +28,7 @@ class TestCounterpartsTest {
   void setUp() {
     sourceRoot = tmp.resolve("module/src/main/java");
     sourceFile = sourceRoot.resolve("com/example/Foo.java");
-    config =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/module"), tmp.resolve("module/target/classes"), sourceRoot);
+    config = TestCompiler.mainTreeConfig(tmp, "module");
   }
 
   // Go to test: a main type's tests by the build's default test names, in its own module and in a
@@ -40,11 +38,7 @@ class TestCounterpartsTest {
   void testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject() throws Exception {
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
     final var itCfg = TestCompiler.testTreeConfig(tmp, "it", "src/test/java");
-    final var itMain =
-        TestCompiler.moduleConfig(
-            tmp.resolve(".lathe/it"),
-            tmp.resolve("it/target/classes"),
-            tmp.resolve("it/src/main/java"));
+    final var itMain = TestCompiler.mainTreeConfig(tmp, "it");
     final List<ModuleSourceConfig> configs = List.of(config, testCfg, itCfg, itMain);
     final Map<String, Path> files =
         Map.of(
