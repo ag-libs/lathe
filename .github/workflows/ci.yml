@@ -164,9 +164,20 @@ jobs:
         with:
           java: ${{ matrix.java }}
 
+      # The distribution never changes for a version, so it is downloaded once and then restored.
+      - name: Restore Maven ${{ matrix.maven }} for the fixture builds
+        id: maven-dist
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/apache-maven-${{ matrix.maven }}
+          key: maven-dist-${{ runner.os }}-${{ matrix.maven }}
+
+      # From Maven Central, which publishes every Maven distribution behind a CDN: archive.apache.org
+      # is a single host that times out under load and failed the invoker jobs.
       - name: Download Maven ${{ matrix.maven }} for the fixture builds
+        if: steps.maven-dist.outputs.cache-hit != 'true'
         run: |
-          curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${{ matrix.maven }}/binaries/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
+          curl -fsSL --retry 3 "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${{ matrix.maven }}/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
             | tar xz -C "$RUNNER_TEMP"
 
       - name: Invoker suite
@@ -242,6 +253,17 @@ jobs:
         run: |
           curl -fsSL -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+
+      - name: Cache the fixtures' Gradle user home
+        # TestKit runs the fixtures with a Gradle user home of their own, under the build directory,
+        # which the Gradle cache above does not cover: each job regenerated the Gradle API jar
+        # (about 185 MB) and recompiled the fixtures' Kotlin scripts, slowest on Windows. Per OS,
+        # Gradle and JDK, since those generated files depend on all three.
+        uses: actions/cache@v6
+        with:
+          path: lathe-gradle-plugin/target/gradle/tmp/functionalTest/work/.gradle-test-kit/caches
+          key: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ hashFiles('lathe-gradle-plugin/build.gradle.kts', 'lathe-gradle-plugin/settings.gradle.kts', 'lathe-gradle-plugin/gradle.properties') }}
+          restore-keys: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-
 
       - name: Build and test the Gradle plugin
         # maven.test.skip leaves out the dependencies' tests; lathe.gradle.skipUnitTests says whether
