@@ -11038,13 +11038,13 @@ Lathe cannot reach the JVM that runs the tests, so the capture-only test task no
 warns, naming Develocity's test acceleration, when no launch was written after it
 (`[lathe] :jupiter-tests:test captured no test launch …`) or when the launch written names a jar that is gone
 (`… captured a launch naming …, a temporary jar …`): Develocity deletes its launcher's copies only later in the build,
-so a jar in the temporary directory outside the build counts, as well as one already gone.
+so a jar in the temporary directory outside the build and Gradle's user home counts, as well as one already gone.
 With Predictive Test Selection off, `jupiter-tests` captures and skips its tests as expected.
 
 ### Regression targets
 
 `LatheSyncTaskFunctionalTest.captureOnlySync_testJvmWithoutTheAgent_warnsThatNothingWasCaptured`,
-`LatheTestCaptureTest.temporaryJar_launcherCopyOrGone_namesIt_buildRepositoryAndDirectoriesNot`.
+`LatheTestCaptureTest.temporaryJar_launcherCopyOrGone_namesIt_buildCachesAndDirectoriesNot`.
 
 ---
 

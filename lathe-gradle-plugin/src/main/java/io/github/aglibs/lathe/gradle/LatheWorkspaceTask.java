@@ -249,10 +249,6 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     LauncherCopier.copyToWorkspace(root, installer.install());
   }
 
-  // The newest JDK any project compiles with, as the server's: the server then parses what every
-  // module's compile accepts. One older than the server runs on does not count (a toolchain on JDK
-  // 11; the server's javac then compiles for 11 with --release); a build with none runs the server
-  // on the JDK Gradle runs on, which is new enough.
   // The runner of the first project whose runner jars are all in place. A project this build did
   // not refresh keeps its last facts, whose runner may come from a build since deleted, and one
   // stale project would otherwise fail every test run with a missing runner class.
@@ -275,6 +271,10 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     return fact.runnerClasspath().stream().map(Path::of).allMatch(Files::exists);
   }
 
+  // The newest JDK any project compiles with, as the server's: the server then parses what every
+  // module's compile accepts. One older than the server runs on does not count (a toolchain on JDK
+  // 11; the server's javac then compiles for 11 with --release); a build with none runs the server
+  // on the JDK Gradle runs on, which is new enough.
   static JdkSource compilingJdk(final List<ProjectFacts> facts) {
     return facts.stream()
         .filter(

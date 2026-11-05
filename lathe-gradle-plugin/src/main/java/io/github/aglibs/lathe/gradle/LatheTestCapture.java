@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -87,7 +88,11 @@ final class LatheTestCapture {
                           Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""),
                           agentJar));
                   if (captureOnly) {
-                    captureOnly(task, agentJar, moduleDir.toFile(), project.getRootDir());
+                    captureOnly(
+                        task,
+                        agentJar,
+                        moduleDir.toFile(),
+                        List.of(project.getRootDir(), project.getGradle().getGradleUserHomeDir()));
                   }
                 });
     // Every project's facts and the workspace come first and the tests follow, as on Maven, where
@@ -125,13 +130,13 @@ final class LatheTestCapture {
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always
   // forks, since a run served from the cache or up to date captures nothing.
   private static void captureOnly(
-      final Test task, final File agentJar, final File moduleDir, final File rootDir) {
+      final Test task, final File agentJar, final File moduleDir, final List<File> keptDirs) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
     final var marker = new File(moduleDir, LatheLayout.Gradle.CAPTURE_MARKER);
     final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
-    task.doLast(test -> warnIfNotCaptured(test, marker, launch, rootDir));
+    task.doLast(test -> warnIfNotCaptured(test, marker, launch, keptDirs));
     task.getOutputs().upToDateWhen(ignored -> false);
     task.getOutputs().cacheIf(ignored -> false);
     if (GradleVersion.current().getBaseVersion().compareTo(FAIL_ON_NO_TESTS) >= 0) {
@@ -150,7 +155,7 @@ final class LatheTestCapture {
   // a temporary directory deleted later in the build. A launch written in the same clock tick as
   // the marker counts as written.
   private static void warnIfNotCaptured(
-      final Task test, final File marker, final File launch, final File rootDir) {
+      final Task test, final File marker, final File launch, final List<File> keptDirs) {
     if (launch.lastModified() < marker.lastModified()) {
       test.getLogger()
           .warn(
@@ -163,7 +168,10 @@ final class LatheTestCapture {
       return;
     }
 
-    temporaryJar(launch, rootDir.toPath(), Path.of(System.getProperty("java.io.tmpdir")))
+    temporaryJar(
+            launch,
+            keptDirs.stream().map(File::toPath).toList(),
+            Path.of(System.getProperty("java.io.tmpdir")))
         .ifPresent(
             jar ->
                 test.getLogger()
@@ -177,21 +185,29 @@ final class LatheTestCapture {
                         TEST_ACCELERATION));
   }
 
-  // A jar already gone, or one in the temporary directory outside the build: a launcher's copy,
-  // which outlives the test task but not the build. The build itself may live in the temporary
-  // directory.
-  static Optional<String> temporaryJar(final File launch, final Path rootDir, final Path tmpDir) {
-    final TestLaunchData data =
-        IOUtil.unchecked(() -> Json.read(launch.toPath(), TestLaunchData.class));
+  // A jar already gone, or one in the temporary directory outside the build and Gradle's user home
+  // (either may live there, as on some CI machines): a launcher's copy, which outlives the test
+  // task but not the build. A launch that can't be read is not checked: a warning must not fail
+  // the build.
+  static Optional<String> temporaryJar(
+      final File launch, final List<Path> keptDirs, final Path tmpDir) {
+    final TestLaunchData data;
+    try {
+      data = Json.read(launch.toPath(), TestLaunchData.class);
+    } catch (final IOException | RuntimeException e) {
+      return Optional.empty();
+    }
+
     return Stream.concat(data.classPath().stream(), data.modulePath().stream())
         .filter(entry -> entry.endsWith(".jar"))
-        .filter(entry -> isTemporary(Path.of(entry).normalize(), rootDir, tmpDir))
+        .filter(entry -> isTemporary(Path.of(entry).normalize(), keptDirs, tmpDir))
         .findFirst();
   }
 
-  private static boolean isTemporary(final Path jar, final Path rootDir, final Path tmpDir) {
+  private static boolean isTemporary(final Path jar, final List<Path> keptDirs, final Path tmpDir) {
     return !Files.exists(jar)
-        || (jar.startsWith(tmpDir.normalize()) && !jar.startsWith(rootDir.normalize()));
+        || (jar.startsWith(tmpDir.normalize())
+            && keptDirs.stream().noneMatch(dir -> jar.startsWith(dir.normalize())));
   }
 
   // Without lathe-junit the filter that skips the tests is missing too, and a capture-only run

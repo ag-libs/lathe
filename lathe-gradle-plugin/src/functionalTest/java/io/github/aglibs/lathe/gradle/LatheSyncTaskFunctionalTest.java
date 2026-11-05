@@ -312,7 +312,8 @@ class LatheSyncTaskFunctionalTest {
     final var captureOnly = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
 
     assertThat(cached.task(":app:test").getOutcome()).isEqualTo(TaskOutcome.FROM_CACHE);
-    assertThat(captureOnly.getOutput()).doesNotContain("captured no test launch");
+    assertThat(captureOnly.getOutput())
+        .doesNotContain("captured no test launch", "captured a launch naming");
     assertThat(capturedFromCache).isFalse();
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.MAIN_LAUNCH_FILE)).exists();
     assertThat(launch.classPath())

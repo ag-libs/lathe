@@ -65,8 +65,8 @@ public final class CompletenessGate {
 
   // A jar the launch names that no mirror stands for and that is gone: the test JVM would fail to
   // load its classes midway. Develocity's test acceleration starts the tests through a launcher it
-  // copies to a temporary directory and deletes after the run. A missing directory is left alone:
-  // builds list output directories that were never created.
+  // copies to a temporary directory and deletes after the run; a cache cleanup removes a dependency
+  // jar. A missing directory is left alone: builds list output directories never created.
   private static List<String> missingJars(
       final List<String> paths, final ReactorRewrite reactorRewrite) {
     return paths.stream()
@@ -78,8 +78,8 @@ public final class CompletenessGate {
         .map(
             path ->
                 """
-                %s no longer exists: the build deleted it after this launch was captured, as \
-                Develocity's test acceleration does; capture the launch again with that turned off\
+                %s no longer exists: capture the launch again (with Develocity's test \
+                acceleration off, if that started the tests: it deletes its launcher's jars)\
                 """
                     .formatted(path))
         .toList();
