@@ -94,13 +94,16 @@
         </configuration>
         <executions>
           <!-- The javac test helpers lathe-server's tests share, in a package no main code has, so
-               they load from the classpath next to this module on the module path. -->
+               they load from the classpath next to this module on the module path. Built even
+               with -Dmaven.test.skip (then empty): lathe-server resolves it as a dependency
+               whether or not its tests compile. -->
           <execution>
             <id>test-helpers</id>
             <goals>
               <goal>test-jar</goal>
             </goals>
             <configuration>
+              <skip>false</skip>
               <includes>
                 <include>io/github/aglibs/lathe/analysis/testing/**</include>
                 <include>Sample.java</include>
