@@ -228,8 +228,10 @@ class SaveTest extends ServiceTestBase {
         save(file);
       }
 
+      // At least once: the batch republishes the dependents of the saved dep, so a file the first
+      // save compiled can be published twice, and exactly once only held when the check ran first.
       for (final Path file : files) {
-        verify(client, timeout(10_000))
+        verify(client, timeout(10_000).atLeastOnce())
             .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
       }
 
