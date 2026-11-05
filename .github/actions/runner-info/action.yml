@@ -1,0 +1,63 @@
+name: Runner info
+description: >-
+  What kind of runner a job got, and how busy it was: at the start its CPU, memory, disks, boot
+  time and (on Windows) Microsoft Defender's state; at the end the processes that used the most CPU
+  and Defender's activity during the job. For comparing a slow run with a fast one; never fails the
+  job.
+inputs:
+  phase:
+    description: start or end
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Runner info (${{ inputs.phase }}, Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+        $os = Get-CimInstance Win32_OperatingSystem
+        try {
+          if ('${{ inputs.phase }}' -eq 'start') {
+            $cpu = Get-CimInstance Win32_Processor
+            $cs = Get-CimInstance Win32_ComputerSystem
+            'CPU: {0} ({1} cores, {2} threads), load {3}%' -f $cpu.Name, $cpu.NumberOfCores, $cpu.NumberOfLogicalProcessors, $cpu.LoadPercentage
+            'Memory: {0:N1} GB, free {1:N1} GB' -f ($cs.TotalPhysicalMemory / 1GB), ($os.FreePhysicalMemory / 1MB)
+            'Booted: {0:u}, {1:N1} min ago' -f $os.LastBootUpTime, ((Get-Date) - $os.LastBootUpTime).TotalMinutes
+            Get-PhysicalDisk | Format-Table FriendlyName, MediaType, BusType, @{ n = 'GB'; e = { [int]($_.Size / 1GB) } } -AutoSize | Out-String -Width 200
+            Get-MpComputerStatus | Format-List RealTimeProtectionEnabled, BehaviorMonitorEnabled, AntivirusSignatureLastUpdated, QuickScanStartTime, QuickScanEndTime, FullScanStartTime, FullScanEndTime | Out-String -Width 200
+          }
+          else {
+            'Load now: {0}%' -f (Get-CimInstance Win32_Processor).LoadPercentage
+            'Defender scanner (MsMpEng) CPU: {0} s' -f (Get-Process MsMpEng -ErrorAction SilentlyContinue).CPU
+            'Processes by CPU time:'
+            Get-Process | Sort-Object CPU -Descending | Select-Object -First 12 | Format-Table Name, Id, @{ n = 'CPU s'; e = { [int]$_.CPU } }, @{ n = 'MB'; e = { [int]($_.WorkingSet64 / 1MB) } } -AutoSize | Out-String -Width 200
+            'Defender events since boot (scans, updates):'
+            Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; StartTime = $os.LastBootUpTime } -MaxEvents 40 -ErrorAction SilentlyContinue |
+              Format-Table TimeCreated, Id, @{ n = 'Message'; e = { ($_.Message -split "`n")[0] } } -AutoSize | Out-String -Width 200
+          }
+        }
+        catch {
+          "runner info unavailable: $_"
+        }
+        exit 0
+
+    - name: Runner info (${{ inputs.phase }})
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        if [ '${{ inputs.phase }}' = start ]; then
+          echo "CPU: $( (lscpu 2>/dev/null | sed -n 's/^Model name: *//p'; sysctl -n machdep.cpu.brand_string 2>/dev/null) | head -1), $(getconf _NPROCESSORS_ONLN) threads"
+          (free -h 2>/dev/null || vm_stat 2>/dev/null) | head -3
+          uptime
+          df -h . | tail -1
+        else
+          uptime
+          echo 'Processes by CPU time:'
+          if [ "$RUNNER_OS" = macOS ]; then
+            ps -A -o time,rss,comm -r | head -13
+          else
+            ps -eo time,rss,comm --sort=-time | head -13
+          fi
+        fi
+        true

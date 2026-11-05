@@ -113,6 +113,9 @@ val functionalTestTask =
       // parallel JVMs, one core left for the build itself. One class's tests stay in one JVM, in
       // order.
       maxParallelForks = (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1)
+      // Each test as it starts and ends: CI stamps every log line with its time, so a slow or stuck
+      // run shows which test it is in while it runs.
+      testLogging { events("started", "passed", "skipped", "failed") }
       dependsOn("publishAllPublicationsToFixturesRepository")
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
