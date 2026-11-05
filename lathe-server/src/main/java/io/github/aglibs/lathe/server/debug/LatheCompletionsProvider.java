@@ -7,7 +7,6 @@ import com.sun.jdi.StackFrame;
 import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -47,11 +46,8 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
   private final FrameSources frames;
   private final WorkspaceTypeIndex typeIndex;
 
-  LatheCompletionsProvider(
-      final Function<Path, Optional<CompilationWorker>> workerFor,
-      final List<Path> sourceRoots,
-      final WorkspaceTypeIndex typeIndex) {
-    this.frames = new FrameSources(workerFor, sourceRoots);
+  LatheCompletionsProvider(final FrameSources frames, final WorkspaceTypeIndex typeIndex) {
+    this.frames = frames;
     this.typeIndex = typeIndex;
   }
 
@@ -78,11 +74,6 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
       return List.of();
     }
 
-    final CompilationWorker worker = frames.workerFor(file).orElse(null);
-    if (worker == null) {
-      return List.of();
-    }
-
     final String content = Files.readString(file);
     // Splice `var __LATHE_COMPLETE__ =` at the frame's line and the snippet on the next line, so
     // the
@@ -104,17 +95,25 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
     // The engine derives context (member vs. name) and every item's replacement range from the
     // content itself via its sentinel pipeline, so it ignores this trigger kind — Invoked is a
     // neutral constant, not an inference from the snippet text.
-    final CompletionOutcome outcome =
-        worker
-            .completeTransient(
-                file.toUri().toString(),
-                content,
-                synthetic,
-                position,
-                new CompletionContext(CompletionTriggerKind.Invoked),
-                typeIndex,
-                List.of())
+    final Optional<CompletionOutcome> completed =
+        frames
+            .onWorker(
+                file,
+                worker ->
+                    worker.completeTransient(
+                        file.toUri().toString(),
+                        content,
+                        synthetic,
+                        position,
+                        new CompletionContext(CompletionTriggerKind.Invoked),
+                        typeIndex,
+                        List.of()))
             .join();
+    if (completed.isEmpty()) {
+      return List.of();
+    }
+
+    final CompletionOutcome outcome = completed.get();
 
     // The engine attaches a javac-derived replacement range to every item, which toDapItem reads;
     // the fallback (a pure insert at the cursor) is only reached if an item carries no range.

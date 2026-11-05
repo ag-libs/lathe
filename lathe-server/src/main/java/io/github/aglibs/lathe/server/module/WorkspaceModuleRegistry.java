@@ -111,6 +111,11 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
         .findFirst();
   }
 
+  // The worker of the module whose sources hold the file.
+  public Optional<CompilationWorker> moduleWorkerFor(final Path filePath) {
+    return moduleSourceFor(filePath).map(this::workerFor);
+  }
+
   public List<Path> allSourceRoots() {
     return moduleSources.stream().flatMap(m -> m.searchRoots().stream()).toList();
   }

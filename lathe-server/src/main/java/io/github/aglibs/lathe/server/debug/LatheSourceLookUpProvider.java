@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.logging.Logger;
 
 /**
@@ -31,13 +30,10 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
 
   private static final Logger LOG = Logger.getLogger(LatheSourceLookUpProvider.class.getName());
 
-  private final Function<Path, Optional<CompilationWorker>> workerFor;
-  private final List<Path> sourceRoots;
+  private final FrameSources frames;
 
-  public LatheSourceLookUpProvider(
-      final Function<Path, Optional<CompilationWorker>> workerFor, final List<Path> sourceRoots) {
-    this.workerFor = workerFor;
-    this.sourceRoots = List.copyOf(sourceRoots);
+  public LatheSourceLookUpProvider(final FrameSources frames) {
+    this.frames = frames;
   }
 
   @Override
@@ -111,13 +107,14 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
   }
 
   private Optional<String> classNameAt(final String uri, final int line) {
-    return workerFor
-        .apply(LatheUri.toPath(uri))
-        .flatMap(worker -> worker.enclosingBinaryName(uri, line).join());
+    return frames
+        .onWorker(LatheUri.toPath(uri), worker -> worker.enclosingBinaryName(uri, line))
+        .join()
+        .flatMap(name -> name);
   }
 
   private String sourceUri(final String fullyQualifiedName) {
-    return TypeSourceLocator.findSourceFile(fullyQualifiedName, sourceRoots)
+    return TypeSourceLocator.findSourceFile(fullyQualifiedName, frames.sourceRoots())
         .map(path -> path.toUri().toString())
         .orElse(null);
   }

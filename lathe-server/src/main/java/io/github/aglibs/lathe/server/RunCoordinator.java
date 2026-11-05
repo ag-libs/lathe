@@ -18,8 +18,8 @@ import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.debug.DapHost;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.debug.FrameSources;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.CompletenessResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -52,6 +52,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -411,7 +412,11 @@ final class RunCoordinator {
       host =
           DapHost.start(
               new LatheProviderContext(
-                  this::debugWorkerFor, debugSourceRoots, reactorIndex.current()),
+                  new FrameSources(
+                      task -> eventLoop.submit(Executors.callable(task)),
+                      file -> state.registry().moduleWorkerFor(file),
+                      debugSourceRoots),
+                  reactorIndex.current()),
               () -> eventLoop.execute(() -> cancelRun(token)));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
@@ -421,15 +426,6 @@ final class RunCoordinator {
     LOG.info(
         () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
     return new DebugStartResult(host.port(), jdwpPort);
-  }
-
-  // Called on the debug adapter's threads: reads the workspace on the event loop like every other
-  // access, and always the current registry, since a sync replaces it mid-session. Cancelled (so
-  // the debugger request fails) once the session has closed.
-  private Optional<CompilationWorker> debugWorkerFor(final Path file) {
-    return eventLoop
-        .submit(() -> state.registry().moduleSourceFor(file).map(state.registry()::workerFor))
-        .join();
   }
 
   private static void assertLaunchComplete(final CompletenessResult gate) {
