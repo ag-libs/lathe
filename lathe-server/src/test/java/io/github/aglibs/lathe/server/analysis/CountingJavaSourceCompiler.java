@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.util.EnumMap;
 import java.util.Map;
 import javax.tools.StandardJavaFileManager;

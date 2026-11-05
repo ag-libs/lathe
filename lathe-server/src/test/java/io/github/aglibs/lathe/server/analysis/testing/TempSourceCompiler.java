@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.analysis;
+package io.github.aglibs.lathe.server.analysis.testing;
 
 import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.core.FileUtil;
@@ -8,7 +8,10 @@ import io.github.aglibs.lathe.core.typeindex.DependencyTypeIndexOrigin;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOrigin;
-import io.github.aglibs.lathe.server.TestJavac;
+import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.server.analysis.CompilerResult;
+import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;

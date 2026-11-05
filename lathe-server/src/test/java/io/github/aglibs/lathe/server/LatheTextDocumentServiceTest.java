@@ -21,6 +21,7 @@ import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -668,7 +669,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     Files.writeString(api, "package com.example; public interface Api {}\n");
     Files.writeString(impl, "package com.example; public class Impl implements Api {}\n");
     // Compile both into the module's reactor classes dir so the reactor scan indexes Impl <: Api.
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
     service.initialize(tmp);
 

@@ -4,7 +4,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,15 +23,15 @@ import org.junit.jupiter.api.io.TempDir;
  */
 public abstract class SampleFixture {
 
-  private static final ThreadLocal<TestCompiler.ParsedSource> SAMPLE =
+  private static final ThreadLocal<TestJavac.ParsedSource> SAMPLE =
       ThreadLocal.withInitial(() -> IOUtil.unchecked(SampleFixture::parse));
 
   @TempDir public Path tmp;
 
-  public final TestCompiler.ParsedSource compiled = SAMPLE.get();
+  public final TestJavac.ParsedSource compiled = SAMPLE.get();
 
   // The file outlives the parse: tests read the source text back through the compilation unit.
-  private static TestCompiler.ParsedSource parse() throws IOException {
+  private static TestJavac.ParsedSource parse() throws IOException {
     final var source =
         new String(
             Objects.requireNonNull(SampleFixture.class.getResourceAsStream("/Sample.java"))
@@ -40,7 +40,7 @@ public abstract class SampleFixture {
     final Path sourceFile = Files.writeString(dir.resolve("Sample.java"), source);
     dir.toFile().deleteOnExit();
     sourceFile.toFile().deleteOnExit();
-    return TestCompiler.parse(sourceFile);
+    return TestJavac.parse(sourceFile);
   }
 
   Optional<String> hoverAt(final int line, final int character) {

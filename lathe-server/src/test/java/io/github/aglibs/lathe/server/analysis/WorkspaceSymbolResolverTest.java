@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

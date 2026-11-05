@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -182,10 +182,10 @@ class DeclarationLocatorTest {
     assertThat(contract.get().getEnclosingElement().getSimpleName().toString()).isEqualTo("Top");
   }
 
-  private static TestCompiler.ParsedSource compile(
+  private static TestJavac.ParsedSource compile(
       final Path tempDir, final String filename, final String source) throws IOException {
     final var file = tempDir.resolve(filename);
     Files.writeString(file, source);
-    return TestCompiler.parse(file);
+    return TestJavac.parse(file);
   }
 }

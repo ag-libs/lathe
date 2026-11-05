@@ -6,7 +6,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePathScanner;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,7 +27,7 @@ class CompilerTreesTest {
         Files.writeString(
             tmp.resolve("T.java"),
             "class T { void f(int x) { switch (x) { case 1 -> {} default -> {} } } }");
-    final var parsed = TestCompiler.parse(file);
+    final var parsed = TestJavac.parse(file);
     final List<Boolean> constants = new ArrayList<>();
     final List<Boolean> selectors = new ArrayList<>();
     new TreePathScanner<Void, Void>() {

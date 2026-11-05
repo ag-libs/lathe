@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;

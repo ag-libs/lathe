@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -145,7 +145,7 @@ class ImportAnalyzerTest {
 
   private AttributedFileAnalysis analyze(final String source) throws IOException {
     final var file = writeSource(source);
-    final var parsed = TestCompiler.parse(file);
+    final var parsed = TestJavac.parse(file);
     return new AttributedFileAnalysis(
         parsed.trees(),
         parsed.task().getElements(),

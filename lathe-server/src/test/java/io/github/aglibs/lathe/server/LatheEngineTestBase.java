@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -70,7 +71,7 @@ abstract class LatheEngineTestBase {
         "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
     final Path caller =
         TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }
 
@@ -84,7 +85,7 @@ abstract class LatheEngineTestBase {
     final String callerSource =
         "package com.other;\nclass Caller { void run(com.example.Callee c) { c.greet(); } }\n";
     final Path caller = TestCompiler.writeModuleSource(tmp, "com/other/Caller.java", callerSource);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }
 
@@ -111,7 +112,7 @@ abstract class LatheEngineTestBase {
             import com.example.Outer;
             class Other implements Outer.Listener { Outer.Inner b; }
             """);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), outer, user, other);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), outer, user, other);
     return new NestedFixture(outer, user, other, outerSource, userSource);
   }
 

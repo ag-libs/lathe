@@ -3,7 +3,8 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -374,7 +375,7 @@ class RunnableScannerTest {
 
   private static List<RunTarget> scan(final String source, final String moduleRel) {
     try (var session =
-        new SourceAnalysisSession(new TempSourceCompiler(TestCompiler.JUNIT_CLASSPATH))) {
+        new SourceAnalysisSession(new TempSourceCompiler(TestJavac.JUNIT_CLASSPATH))) {
       session.compile(URI, source, 1, CompileMode.OPEN);
       return session.runnables(URI, source, 1, moduleRel);
     }

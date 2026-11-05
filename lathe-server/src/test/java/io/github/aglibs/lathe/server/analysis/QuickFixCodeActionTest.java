@@ -4,7 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.List;
@@ -515,7 +516,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         package com.other;
         public class PublicClass {}
         """);
-    TestCompiler.compileToDir(classDir, ppFile, pubFile);
+    TestJavac.compileToDir(classDir, ppFile, pubFile);
     session.close();
     session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
 

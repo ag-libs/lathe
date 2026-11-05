@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -41,7 +41,7 @@ class JavadocLocatorTest {
         }
         """);
 
-    TestCompiler.compileToDir(classDir, documentedSrc);
+    TestJavac.compileToDir(classDir, documentedSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(
@@ -56,7 +56,7 @@ class JavadocLocatorTest {
         }
         """);
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, classDir)) {
       final var classElement = parsed.task().getElements().getTypeElement("Documented");
       assertThat(parsed.trees().getPath(classElement)).isNull();
 

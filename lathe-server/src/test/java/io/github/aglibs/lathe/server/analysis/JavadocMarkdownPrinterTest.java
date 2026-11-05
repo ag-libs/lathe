@@ -8,7 +8,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.DocTrees;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.TestJavac;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;

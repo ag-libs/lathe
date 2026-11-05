@@ -8,7 +8,6 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
-import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.BatchWrite;
@@ -20,6 +19,8 @@ import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.server.analysis.testing.JavacCrashFixtures;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -490,7 +491,7 @@ class ModuleSourceCompilerTest {
     Files.writeString(circle, "package shapes; final class Circle implements Shape {}");
     final var config =
         TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-    TestCompiler.compileToDir(config.latheClassesDir(), shape, circle);
+    TestJavac.compileToDir(config.latheClassesDir(), shape, circle);
 
     // The edit: Shape now permits a brand-new Square absent from the mirror.
     final String editedShape = "package shapes; sealed interface Shape permits Circle, Square {}";
@@ -583,7 +584,7 @@ class ModuleSourceCompilerTest {
           }
         }
         """);
-    TestCompiler.compileToDir(config.latheClassesDir(), processor);
+    TestJavac.compileToDir(config.latheClassesDir(), processor);
     final Path services =
         config.latheClassesDir().resolve("META-INF/services/javax.annotation.processing.Processor");
     Files.createDirectories(services.getParent());
@@ -711,7 +712,7 @@ class ModuleSourceCompilerTest {
     final var config =
         TestCompiler.moduleConfig(
             td.resolve(".lathe/module"), td.resolve("module/target/classes"), sourceRoot);
-    TestCompiler.compileToDir(config.latheClassesDir(), reactorSource);
+    TestJavac.compileToDir(config.latheClassesDir(), reactorSource);
     final var typeIndex =
         WorkspaceTypeIndex.build(
             List.of(), List.of(ClassFileTypeScanner.scanDirectory(config.latheClassesDir())));

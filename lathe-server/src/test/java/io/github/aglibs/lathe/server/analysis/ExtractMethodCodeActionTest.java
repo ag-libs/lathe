@@ -2,7 +2,8 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -421,7 +422,7 @@ class ExtractMethodCodeActionTest extends CodeActionTestBase {
     final Path sibling = tmp.resolve("Date.java");
     Files.writeString(sibling, "package com.example;\npublic class Date {}\n");
     final Path classDir = tmp.resolve("sibling-classes");
-    TestCompiler.compileToDir(classDir, sibling);
+    TestJavac.compileToDir(classDir, sibling);
     session.close();
     session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
     final String samePackage =

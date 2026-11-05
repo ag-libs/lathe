@@ -2,7 +2,8 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +23,7 @@ class MethodImplementationTest {
     final String serviceContent = "interface Service<T> { T execute(T value); }\n";
     final var serviceSource = Files.writeString(tempDir.resolve("Service.java"), serviceContent);
     final var classDir = tempDir.resolve("classes");
-    TestCompiler.compileToDir(classDir, serviceSource);
+    TestJavac.compileToDir(classDir, serviceSource);
     final String candidateContent =
         """
         abstract class AbstractService implements Service<String> {
@@ -72,7 +73,7 @@ class MethodImplementationTest {
     final String serviceContent = "interface HasText { String text(); }\n";
     final var serviceSource = Files.writeString(tempDir.resolve("HasText.java"), serviceContent);
     final var classDir = tempDir.resolve("classes");
-    TestCompiler.compileToDir(classDir, serviceSource);
+    TestJavac.compileToDir(classDir, serviceSource);
     final String recordContent = "record Impl(String text) implements HasText {}\n";
     final var recordUri = tempDir.resolve("Impl.java").toUri().toString();
 
@@ -181,7 +182,7 @@ class MethodImplementationTest {
     final String content = "interface Transformer { String apply(String input); }\n";
     final var source = Files.writeString(tempDir.resolve("Transformer.java"), content);
     final var classDir = tempDir.resolve("classes");
-    TestCompiler.compileToDir(classDir, source);
+    TestJavac.compileToDir(classDir, source);
     final String candidateContent =
         """
         import java.util.function.Supplier;
@@ -217,7 +218,7 @@ class MethodImplementationTest {
     final String content = "interface Transformer { String apply(String input); }\n";
     final var source = Files.writeString(tempDir.resolve("Transformer.java"), content);
     final var classDir = tempDir.resolve("classes");
-    TestCompiler.compileToDir(classDir, source);
+    TestJavac.compileToDir(classDir, source);
     // SubTransformer only inherits the SAM → its lambda (line 6) implements Transformer.apply.
     // Mixed defaults apply, so its SAM is Other.run → its lambda (line 7) implements run(), not
     // apply, and must be excluded.

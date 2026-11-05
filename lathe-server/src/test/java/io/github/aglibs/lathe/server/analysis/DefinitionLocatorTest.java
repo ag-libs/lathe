@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -149,7 +149,7 @@ class DefinitionLocatorTest extends SampleFixture {
         """;
     final var sourceFile = tempDir.resolve("Widget.java");
     Files.writeString(sourceFile, source);
-    final var parsed = TestCompiler.parse(sourceFile);
+    final var parsed = TestJavac.parse(sourceFile);
     final var widgetType = parsed.task().getElements().getTypeElement("Widget");
     final var getMethod =
         widgetType.getEnclosedElements().stream()
@@ -182,7 +182,7 @@ class DefinitionLocatorTest extends SampleFixture {
     final var overlayFile = tempDir.resolve("Greeter.java");
     Files.writeString(overlayFile, GREETER_SOURCE);
 
-    final var parsed = TestCompiler.parse(overlayFile);
+    final var parsed = TestJavac.parse(overlayFile);
     final var greet = memberNamed(parsed.task().getElements().getTypeElement("Greeter"), "greet");
     assertThat(parsed.trees().getPath(greet)).isNotNull();
 
@@ -245,7 +245,7 @@ class DefinitionLocatorTest extends SampleFixture {
     Files.writeString(sourceFile, ENUM_ARGUMENT_SOURCE);
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    try (final var parsed = TestCompiler.parseWithClasspath(sourceFile, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(sourceFile, classDir)) {
       final var expression = "statuses.put(\"string\", Status.ACTIVE)";
       final var typePath = pathAt(parsed.trees(), parsed.cu(), expression, "Status");
       final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
@@ -309,12 +309,12 @@ class DefinitionLocatorTest extends SampleFixture {
 
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    TestCompiler.compileToDir(classDir, greeterSrc);
+    TestJavac.compileToDir(classDir, greeterSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, classDir)) {
       final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
       final var location =
@@ -340,7 +340,7 @@ class DefinitionLocatorTest extends SampleFixture {
     Files.createDirectories(classDir);
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { String s; }");
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, classDir)) {
       final var stringElement = parsed.task().getElements().getTypeElement("java.lang.String");
 
       final var file = DefinitionLocator.findSourceFile(stringElement, List.of(srcRoot));
@@ -360,12 +360,12 @@ class DefinitionLocatorTest extends SampleFixture {
 
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    TestCompiler.compileToDir(classDir, greeterSrc);
+    TestJavac.compileToDir(classDir, greeterSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { public void run(Greeter g) { g.greet(); } }");
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, classDir)) {
       final var greeterElement = parsed.task().getElements().getTypeElement("Greeter");
       assertThat(parsed.trees().getPath(greeterElement)).isNull();
 
@@ -460,12 +460,12 @@ class DefinitionLocatorTest extends SampleFixture {
 
     final var classDir = tempDir.resolve("classes");
     Files.createDirectories(classDir);
-    TestCompiler.compileToDir(classDir, typeSrc);
+    TestJavac.compileToDir(classDir, typeSrc);
 
     final var userSrc = tempDir.resolve("User.java");
     Files.writeString(userSrc, "public class User { %s ref; }".formatted(typeName));
 
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, classDir)) {
       final var type = parsed.task().getElements().getTypeElement(typeName);
       final var member = selector.apply(type);
       assertThat(parsed.trees().getPath(member)).isNull();
@@ -491,7 +491,7 @@ class DefinitionLocatorTest extends SampleFixture {
       final Path sourceRoot)
       throws IOException {
     final var overlayFile = writeModuleInfo(overlayDir, overlaySource);
-    final var parsed = TestCompiler.parse(overlayFile);
+    final var parsed = TestJavac.parse(overlayFile);
     final var module = parsed.task().getElements().getModuleElement(targetModule);
     return new DefinitionLocator(parsed.parser())
         .locate(module, parsed.trees(), List.of(sourceRoot), overlayFile.toUri().toString());
@@ -524,7 +524,7 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   private static Optional<Location> definitionAt(
-      final TestCompiler.ParsedSource parsed, final TreePath path) {
+      final TestJavac.ParsedSource parsed, final TreePath path) {
     final var element = SourceLocator.elementAt(parsed.trees(), path);
     return new DefinitionLocator(parsed.parser())
         .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());

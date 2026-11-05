@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
@@ -45,7 +46,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             tmp,
             "com/example/Caller.java",
             "package com.example; class Caller { void run(Greeter g) { g.greet(); } }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl, caller);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl, caller);
     engine = new LatheEngine(tmp);
 
     final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("greet"));
@@ -116,7 +117,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             "com/example/Caller.java",
             "package com.example; class Caller { void run(Callee c) { c.greet(); Old.old(); }"
                 + " private void unused() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), old, callee, caller);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), old, callee, caller);
     engine = new LatheEngine(tmp);
     assertThat(engine.diagnostics(caller))
         .as("the caller has a removal warning and an unused-method hint")
@@ -155,7 +156,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             tmp,
             "com/example/Sub.java",
             "package com.example;\nclass Sub extends Callee {\n  static void welcome() {}\n}\n");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, sub);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), callee, sub);
     stampModule(callee, sub);
     engine = new LatheEngine(tmp);
 

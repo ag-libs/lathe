@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;

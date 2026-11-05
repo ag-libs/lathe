@@ -10,8 +10,8 @@ import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.SampleFixture;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -108,9 +108,9 @@ class WorkspaceManifestTest extends SampleFixture {
     final Path classDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("mymodule");
     Files.createDirectories(classDir);
     final Path sampleSrc = Path.of(compiled.cu().getSourceFile().toUri());
-    TestCompiler.compileToDir(classDir, sampleSrc);
+    TestJavac.compileToDir(classDir, sampleSrc);
 
-    try (final var parsed = TestCompiler.parseWithClasspath(sampleSrc, classDir)) {
+    try (final var parsed = TestJavac.parseWithClasspath(sampleSrc, classDir)) {
       final var sampleType = parsed.task().getElements().getTypeElement("Sample");
 
       assertThat(WorkspaceManifest.empty().libraries().originLabel(sampleType, parsed.fm()))
@@ -233,7 +233,7 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final Path jar = tmp.resolve("First Last/repo/greeter.jar");
     Files.createDirectories(jar.getParent());
-    TestCompiler.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
+    TestJavac.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
     writeWorkspaceManifest(
         List.of(
             new DependencyData(
@@ -246,7 +246,7 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final Path userSrc = tmp.resolve("User.java");
     Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
-    try (final var parsed = TestCompiler.parseWithClasspath(userSrc, jar)) {
+    try (final var parsed = TestJavac.parseWithClasspath(userSrc, jar)) {
       final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
       assertThat(

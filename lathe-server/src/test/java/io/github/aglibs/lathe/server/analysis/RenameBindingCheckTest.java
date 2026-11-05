@@ -2,7 +2,8 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -29,7 +30,7 @@ class RenameBindingCheckTest {
             tmp.resolve("Api.java"),
             "public class Api { public String text() { return \"\"; } }\n");
     final Path classes = tmp.resolve("classes");
-    TestCompiler.compileToDir(classes, api);
+    TestJavac.compileToDir(classes, api);
     final var target =
         new ReferenceTarget(
             ElementKind.METHOD,

@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -54,7 +55,7 @@ final class ClassFileFixture implements AutoCloseable {
                 public void foo(String text) {}
             }
             """);
-    TestCompiler.compileToDir(classDir, src, base);
+    TestJavac.compileToDir(classDir, src, base);
     this.session = new SourceAnalysisSession(new TempSourceCompiler(List.of(classDir)));
   }
 

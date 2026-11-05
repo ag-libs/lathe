@@ -11,7 +11,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.sun.source.util.JavacTask;
-import io.github.aglibs.lathe.server.JavacCrashFixtures;
+import io.github.aglibs.lathe.server.analysis.testing.JavacCrashFixtures;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;

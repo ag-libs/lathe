@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.type.TypeKind;

@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -145,7 +146,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final String implSource =
         "package com.example; class EnGreeter implements Greeter { public void greet() {} }";
     final Path impl = TestCompiler.writeModuleSource(tmp, "com/example/EnGreeter.java", implSource);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
     engine = new LatheEngine(tmp);
 
     final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
@@ -184,7 +185,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
               tmp, "com/example/%s.java".formatted(source.getKey()), source.getValue()));
     }
 
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         tmp.resolve(".lathe/module/classes"), files.values().toArray(Path[]::new));
     engine = new LatheEngine(tmp);
     final BiFunction<String, String, List<String>> found =
@@ -218,7 +219,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final String source =
         "package com.example;\nenum Color {\n  RED { String label() { return \"r\"; } },\n  GREEN;\n  String label() { return \"g\"; }\n}\n";
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Color.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file);
     engine = new LatheEngine(tmp);
 
     for (final String name : List.of("RED", "GREEN")) {
@@ -351,7 +352,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             tmp,
             "com/example/EnGreeter.java",
             "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
     stampModule(iface, impl);
     engine = new LatheEngine(tmp);
     assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50)).isEmpty();

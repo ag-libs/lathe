@@ -2,14 +2,14 @@ package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.SourceParser;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -154,7 +154,7 @@ final class CompletionFixture implements AutoCloseable {
     Files.writeString(sourceFile, source);
     final List<String> options =
         Stream.concat(Stream.of("-proc:none"), extraOptions.stream()).toList();
-    final var parsed = TestCompiler.parse(sourceFile, options, moduleInfoFile);
+    final var parsed = TestJavac.parse(sourceFile, options, moduleInfoFile);
     return new AttributedFileAnalysis(
         parsed.trees(),
         parsed.task().getElements(),

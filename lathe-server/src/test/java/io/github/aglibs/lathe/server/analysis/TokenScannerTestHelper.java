@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,7 +14,7 @@ final class TokenScannerTestHelper {
       throws IOException {
     final Path src = tmp.resolve(filename);
     Files.writeString(src, source);
-    final var compiled = TestCompiler.parse(src);
+    final var compiled = TestJavac.parse(src);
     return TokenScanner.scan(compiled.trees(), compiled.cu());
   }
 

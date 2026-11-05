@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,7 +37,7 @@ class ExtractionSupportTest {
     final var file = tmp.resolve("Bundle.java");
     Files.writeString(file, RECORD_WITH_NON_CANONICAL_CTOR);
 
-    final var parsed = TestCompiler.parse(file);
+    final var parsed = TestJavac.parse(file);
     final var trees = parsed.trees();
     final CompilationUnitTree cu = parsed.cu();
     final var scope = TreePath.getPath(cu, cu.getTypeDecls().get(0));

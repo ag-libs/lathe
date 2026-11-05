@@ -8,12 +8,12 @@ import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.JdkSourceData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.LibrarySources;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +36,7 @@ class ExternalCompilerTest {
     Files.writeString(helperSource, "package b; public class Helper {}");
     final Path helperJar = tmp.resolve("repo/helper.jar");
     Files.createDirectories(helperJar.getParent());
-    TestCompiler.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
+    TestJavac.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
 
     final Path usesSourceRoot = tmp.resolve("sources/uses");
     final Path usesSource = usesSourceRoot.resolve("a/Uses.java");
@@ -44,7 +44,7 @@ class ExternalCompilerTest {
     Files.createDirectories(usesSource.getParent());
     Files.writeString(usesSource, usesContent);
     final Path usesJar = tmp.resolve("repo/uses.jar");
-    TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
+    TestJavac.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
 
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
@@ -77,7 +77,7 @@ class ExternalCompilerTest {
     Files.writeString(helperSource, "package b; public class Helper {}");
     final Path helperJar = tmp.resolve("repo/helper.jar");
     Files.createDirectories(helperJar.getParent());
-    TestCompiler.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
+    TestJavac.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
 
     final Path usesSourceRoot = tmp.resolve("sources/uses");
     final Path usesSource = usesSourceRoot.resolve("a/Uses.java");
@@ -85,7 +85,7 @@ class ExternalCompilerTest {
     Files.createDirectories(usesSource.getParent());
     Files.writeString(usesSource, usesContent);
     final Path usesJar = tmp.resolve("repo/uses.jar");
-    TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
+    TestJavac.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
 
     writeWorkspaceManifest(
         usesJar, usesSourceRoot, List.of(helperJar), helperJar, helperSourceRoot);
@@ -120,7 +120,7 @@ class ExternalCompilerTest {
     Files.writeString(helperSource, "package b; public class Helper {}");
     final Path helperJar = tmp.resolve("repo/helper.jar");
     Files.createDirectories(helperJar.getParent());
-    TestCompiler.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
+    TestJavac.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
 
     final Path usesSourceRoot = tmp.resolve("sources/uses");
     final Path usesSource = usesSourceRoot.resolve("a/Uses.java");
@@ -128,7 +128,7 @@ class ExternalCompilerTest {
     Files.createDirectories(usesSource.getParent());
     Files.writeString(usesSource, usesContent);
     final Path usesJar = tmp.resolve("repo/uses.jar");
-    TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
+    TestJavac.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
 
     final var uri = usesSource.toUri().toString();
 
@@ -161,7 +161,7 @@ class ExternalCompilerTest {
     Files.writeString(helperSource, "package b; public class Helper {}");
     final Path helperJar = tmp.resolve("repo/helper.jar");
     Files.createDirectories(helperJar.getParent());
-    TestCompiler.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
+    TestJavac.compileToJar(helperJar, tmp.resolve("classes/helper"), List.of(), helperSource);
 
     final Path usesSourceRoot = tmp.resolve("sources/uses");
     final Path usesSource = usesSourceRoot.resolve("a/Uses.java");
@@ -169,7 +169,7 @@ class ExternalCompilerTest {
     Files.createDirectories(usesSource.getParent());
     Files.writeString(usesSource, usesContent);
     final Path usesJar = tmp.resolve("repo/uses.jar");
-    TestCompiler.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
+    TestJavac.compileToJar(usesJar, tmp.resolve("classes/uses"), List.of(helperJar), usesSource);
     writeWorkspaceManifest(usesJar, usesSourceRoot, List.of(), helperJar, helperSourceRoot);
 
     try (final var ctx =

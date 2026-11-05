@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 

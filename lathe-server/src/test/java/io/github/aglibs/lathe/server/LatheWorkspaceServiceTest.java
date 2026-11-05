@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport
 import io.github.aglibs.lathe.server.analysis.RunTarget;
 import io.github.aglibs.lathe.server.analysis.RunnableKind;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -189,7 +190,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
           }
         }
         """);
-    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null, TestCompiler.JUNIT_CLASSPATH);
+    TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null, TestJavac.JUNIT_CLASSPATH);
     service.initialize(tmp);
     return source;
   }
@@ -252,7 +253,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                 LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
                 json(
                     "jar",
-                    TestCompiler.jarOf(Test.class).toString(),
+                    TestJavac.jarOf(Test.class).toString(),
                     "entry",
                     "META-INF/MANIFEST.MF"));
     assertThat(Files.readString(Path.of(manifest))).startsWith("Manifest-Version");

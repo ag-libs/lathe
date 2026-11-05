@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server.analysis.completion;
 
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.TestCompiler;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -109,7 +109,7 @@ abstract class CompletionTestSupport {
         libSrc.resolve("com/example/lib/internal/InternalType.java"),
         "package com.example.lib.internal; public class InternalType {}");
     final Path libOut = tmp.resolve("lib-out");
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         libOut,
         List.of(),
         List.of(),
@@ -134,7 +134,7 @@ abstract class CompletionTestSupport {
         otherSrc.resolve("com/example/other/OtherType.java"),
         "package com.example.other; public class OtherType {}");
     final Path otherOut = tmp.resolve("other-out");
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         otherOut,
         List.of(),
         List.of(),
@@ -154,7 +154,7 @@ abstract class CompletionTestSupport {
         libSrc.resolve("com/example/lib/LibType.java"),
         "package com.example.lib; public class LibType {}");
     final Path libOut = tmp.resolve("lib-out");
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         libOut,
         List.of(),
         List.of("--module-path", otherOut.toString()),

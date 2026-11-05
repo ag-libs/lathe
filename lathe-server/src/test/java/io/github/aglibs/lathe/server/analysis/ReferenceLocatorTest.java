@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SampleFixture.posOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;

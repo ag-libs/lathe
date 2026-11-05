@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.analysis.testing;
 
 // Sources that javac itself fails on while Lathe attributes past their errors, which command-line
 // javac never does.

@@ -1,5 +1,8 @@
 package io.github.aglibs.lathe.server.analysis;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import io.github.aglibs.lathe.server.analysis.testing.TempSourceCompiler;
 // Sample.java DocHelper positions (0-based lines):
 //
 // 115:   public static class DocHelper {                     DocHelper=22
@@ -8,9 +11,6 @@ package io.github.aglibs.lathe.server.analysis;
 // 144:       var greeting = greet();                         greet=21
 // 145:       var items = repeat("hi", 3);                    repeat=18
 // 146:       var upper = repeat("hi", 3).stream()...greet()  greet=52
-
-import static org.assertj.core.api.Assertions.assertThat;
-
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.Hover;

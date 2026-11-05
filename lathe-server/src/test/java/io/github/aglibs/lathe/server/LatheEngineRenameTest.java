@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import java.nio.file.Files;
@@ -112,7 +113,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file);
     engine = new LatheEngine(tmp);
 
     // A JDK type, a JDK method, and a project method overriding a JDK one.
@@ -138,7 +139,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "count", "total"))
@@ -166,7 +167,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "toString", "renamed"))
@@ -699,7 +700,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Patterns.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file);
     engine = new LatheEngine(tmp);
 
     renameAt(file, source, "s ?", "text");
@@ -740,7 +741,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         """;
     final Path utilFile = TestCompiler.writeModuleSource(tmp, "com/example/Util.java", util);
     final Path userFile = TestCompiler.writeModuleSource(tmp, "com/example/app/User.java", user);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), utilFile, userFile);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), utilFile, userFile);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(utilFile, util, "go(int", "goInt"))
@@ -772,7 +773,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         "module",
         tmp.resolve("module/src/main/java"),
         tmp.resolve("module/target/generated-sources/annotations"));
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file, generated);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), file, generated);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "name", "label"))
