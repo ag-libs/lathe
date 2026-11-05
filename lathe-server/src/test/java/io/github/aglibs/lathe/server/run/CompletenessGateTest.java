@@ -134,7 +134,7 @@ final class CompletenessGateTest {
             List.of(
                 workspaceRoot.resolve("app/target/test-classes").toString(),
                 workspaceRoot.resolve("tools/lib").toString(),
-                "/m2/junit.jar"));
+                jar("m2/junit.jar")));
 
     final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
 
@@ -144,6 +144,32 @@ final class CompletenessGateTest {
         .asString()
         .startsWith("dep/target/classes-jdk21 runs as the last build left it");
     assertThat(CompletenessGate.verify(testLaunch(), workspaceRoot, rewrite()).notes()).isEmpty();
+  }
+
+  // A jar the build deleted after the capture (Develocity's test launcher copies its jars to a
+  // temporary directory) blocks the run, naming it, rather than failing midway on a missing class;
+  // an output directory that was never created does not.
+  @Test
+  void verify_capturedJarDeleted_blockedNamingIt_missingDirectoryNot() throws IOException {
+    seedModule("dep", LatheLayout.CLASSES_DIR);
+    seedModule("app", LatheLayout.TEST_CLASSES_DIR);
+    final Path deleted = workspaceRoot.resolve("tmp/test-launcher/opentest4j-1.3.0.jar");
+    final var data =
+        testLaunch(
+            List.of(workspaceRoot.resolve("dep/target/classes").toString()),
+            List.of(
+                workspaceRoot.resolve("app/target/test-classes").toString(),
+                workspaceRoot.resolve("app/build/resources/main").toString(),
+                jar("m2/junit.jar"),
+                deleted.toString()));
+
+    final CompletenessResult result = CompletenessGate.verify(data, workspaceRoot, rewrite());
+
+    assertThat(result.complete()).isFalse();
+    assertThat(result.reasons())
+        .singleElement()
+        .asString()
+        .startsWith("%s no longer exists".formatted(deleted));
   }
 
   private void mavenBuilt(final String outputDir) throws IOException {
@@ -159,12 +185,12 @@ final class CompletenessGateTest {
     Files.writeString(outputDir.resolve("Placeholder.class"), "bytes");
   }
 
-  private MainLaunchData mainLaunch() {
+  private MainLaunchData mainLaunch() throws IOException {
     return new MainLaunchData(
         LaunchMode.MODULE,
         "/jdk",
         "com.example.jpms",
-        List.of(workspaceRoot.resolve("jpms/target/classes").toString(), "/m2/validcheck.jar"),
+        List.of(workspaceRoot.resolve("jpms/target/classes").toString(), jar("m2/validcheck.jar")),
         List.of(),
         List.of(),
         List.of(),
@@ -174,10 +200,17 @@ final class CompletenessGateTest {
         "");
   }
 
-  private TestLaunchData testLaunch() {
+  private TestLaunchData testLaunch() throws IOException {
     return testLaunch(
         List.of(workspaceRoot.resolve("dep/target/classes").toString()),
-        List.of(workspaceRoot.resolve("app/target/test-classes").toString(), "/m2/junit.jar"));
+        List.of(workspaceRoot.resolve("app/target/test-classes").toString(), jar("m2/junit.jar")));
+  }
+
+  private String jar(final String relative) throws IOException {
+    final Path jar = workspaceRoot.resolve(relative);
+    Files.createDirectories(jar.getParent());
+    Files.writeString(jar, "jar");
+    return jar.toString();
   }
 
   private TestLaunchData testLaunch(final List<String> modulePath, final List<String> classPath) {

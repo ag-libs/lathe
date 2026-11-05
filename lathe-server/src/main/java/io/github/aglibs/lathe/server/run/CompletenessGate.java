@@ -47,7 +47,7 @@ public final class CompletenessGate {
       throws IOException {
     final Map<Path, Set<String>> touched = latheTouchedDirs(paths, workspaceRoot, reactorRewrite);
     final Path latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).normalize();
-    final var reasons = new ArrayList<String>();
+    final var reasons = new ArrayList<>(missingJars(paths, reactorRewrite));
     for (final Map.Entry<Path, Set<String>> entry : touched.entrySet()) {
       final Path moduleDir = entry.getKey();
       final String moduleRel = FileUtil.slashed(latheDir.relativize(moduleDir));
@@ -61,6 +61,28 @@ public final class CompletenessGate {
     return reasons.isEmpty()
         ? CompletenessResult.open(lastBuildNotes(paths, workspaceRoot, reactorRewrite))
         : CompletenessResult.blocked(reasons);
+  }
+
+  // A jar the launch names that no mirror stands for and that is gone: the test JVM would fail to
+  // load its classes midway. Develocity's test acceleration starts the tests through a launcher it
+  // copies to a temporary directory and deletes after the run. A missing directory is left alone:
+  // builds list output directories that were never created.
+  private static List<String> missingJars(
+      final List<String> paths, final ReactorRewrite reactorRewrite) {
+    return paths.stream()
+        .map(path -> Path.of(path).normalize())
+        .filter(path -> path.toString().endsWith(".jar"))
+        .filter(path -> !reactorRewrite.mirrors().containsKey(path))
+        .filter(path -> !Files.exists(path))
+        .distinct()
+        .map(
+            path ->
+                """
+                %s no longer exists: the build deleted it after this launch was captured, as \
+                Develocity's test acceleration does; capture the launch again with that turned off\
+                """
+                    .formatted(path))
+        .toList();
   }
 
   // A directory in a reactor module's build directory that no mirror stands for, such as a copy of
