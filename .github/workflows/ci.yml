@@ -312,7 +312,7 @@ jobs:
         # went into a few tests (each test class's first, which starts its Gradle daemon) or all.
         if: always()
         run: |
-          PY=$(command -v python || command -v python3)
+          PY=$(command -v python || command -v python3) || true
           "$PY" - <<'EOF' || true
           import glob, xml.etree.ElementTree as ET
           rows = []
