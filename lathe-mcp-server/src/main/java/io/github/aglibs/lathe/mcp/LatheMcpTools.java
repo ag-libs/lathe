@@ -1137,20 +1137,17 @@ final class LatheMcpTools {
             : "%d%n%s"
                 .formatted(impact.overrideFamily().size(), locationLines(impact.overrideFamily()));
     final String text =
-        """
-        %s
-        references: %d production, %d test%s
-        affected modules: %s
-        relevant tests: %s
-        override family: %s"""
-            .formatted(
-                impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
-                impact.productionRefs(),
-                impact.testRefs(),
-                impact.referencesTruncated() ? " (truncated)" : "",
-                joinOrNone(impact.affectedModules()),
-                joinOrNone(impact.relevantTests()),
-                overrides);
+        String.join(
+            System.lineSeparator(),
+            impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
+            "references: %d production, %d test%s"
+                .formatted(
+                    impact.productionRefs(),
+                    impact.testRefs(),
+                    impact.referencesTruncated() ? " (truncated)" : ""),
+            "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
+            "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
+            "override family: %s".formatted(overrides));
     return result(text, notes);
   }
 

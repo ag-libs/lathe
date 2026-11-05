@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -1102,11 +1103,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   }
 
   private static CodeAction findThrowsAction(final List<Either<Command, CodeAction>> actions) {
-    return actions.stream()
-        .map(a -> a.getRight())
-        .filter(a -> a.getTitle().startsWith("Add 'throws"))
-        .findFirst()
-        .orElseThrow();
+    return actionTitled(actions, title -> title.startsWith("Add 'throws"));
   }
 
   private static Diagnostic diagWithCode(final List<Diagnostic> diags, final String codePrefix) {

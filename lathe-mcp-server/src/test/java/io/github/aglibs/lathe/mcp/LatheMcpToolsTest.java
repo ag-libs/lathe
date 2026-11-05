@@ -520,8 +520,7 @@ class LatheMcpToolsTest {
                 LatheMcpTools.outlineResult(
                     tmp.resolve("Shop.java"), items, LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            String.join(
-                System.lineSeparator(),
+            lines(
                 "2 declaration(s) in app/Shop.java:",
                 "class Shop  3:1: public class Shop {",
                 "  method sell  8:1: int sell(int count) {"));
@@ -564,8 +563,7 @@ class LatheMcpToolsTest {
 
     assertThat(text(LatheMcpTools.importsResult(imports, LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            String.join(
-                System.lineSeparator(),
+            lines(
                 "Added 2 import(s) to app/src/main/java/a/Foo.java: java.time.Duration, java.util.ArrayList",
                 "Ambiguous — add one yourself:",
                 "  List: java.util.List, java.awt.List",
@@ -926,26 +924,26 @@ class LatheMcpToolsTest {
                         List.of("ShopTest")),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            "int sell(int count)\n"
-                + "references: 4 production, 2 test (truncated)\n"
-                + "affected modules: app, core\n"
-                + "relevant tests: ShopTest\n"
-                + lines(
-                    "override family: 2",
-                    "app/Base.java:4: abstract int sell(int count);",
-                    "app/Shop.java:8: int sell(int count) {"));
+            lines(
+                "int sell(int count)",
+                "references: 4 production, 2 test (truncated)",
+                "affected modules: app, core",
+                "relevant tests: ShopTest",
+                "override family: 2",
+                "app/Base.java:4: abstract int sell(int count);",
+                "app/Shop.java:8: int sell(int count) {"));
     assertThat(
             text(
                 LatheMcpTools.analyzeResult(
                     new LatheChangeImpact("", List.of(), 0, 0, false, List.of(), List.of()),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            """
-            (no symbol at that position)
-            references: 0 production, 0 test
-            affected modules: none
-            relevant tests: none
-            override family: none""");
+            lines(
+                "(no symbol at that position)",
+                "references: 0 production, 0 test",
+                "affected modules: none",
+                "relevant tests: none",
+                "override family: none"));
   }
 
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.

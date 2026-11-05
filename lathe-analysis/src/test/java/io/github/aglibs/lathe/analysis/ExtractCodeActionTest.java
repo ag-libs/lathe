@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -805,24 +806,11 @@ class ExtractCodeActionTest extends CodeActionTestBase {
   }
 
   private static List<TextEdit> replaceAllEdits(final List<Either<Command, CodeAction>> actions) {
-    return actions.stream()
-        .filter(Either::isRight)
-        .map(Either::getRight)
-        .filter(a -> a.getTitle().contains("replace all"))
-        .findFirst()
-        .orElseThrow()
-        .getEdit()
-        .getChanges()
-        .get(TempSourceCompiler.TEST_URI);
+    return editsOf(actionTitled(actions, title -> title.contains("replace all")));
   }
 
   private static String newTextAtLineStart(final List<TextEdit> edits) {
-    return edits.stream()
-        .filter(e -> e.getRange().getStart().equals(e.getRange().getEnd()))
-        .filter(e -> !e.getNewText().startsWith("import "))
-        .map(TextEdit::getNewText)
-        .findFirst()
-        .orElseThrow();
+    return insertEdit(edits).getNewText();
   }
 
   private static String replacementText(final List<TextEdit> edits) {

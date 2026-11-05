@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -7,10 +8,8 @@ import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.Diagnostic;
@@ -82,20 +81,14 @@ abstract class CodeActionTestBase {
     final int start = marked.indexOf('«');
     final int end = marked.indexOf('»') - 1;
     final String source = unmarked(marked);
-    final Position from = positionOf(source, start);
-    final Position to = positionOf(source, end);
+    final Position from = SourceLocator.offsetToPosition(source, start);
+    final Position to = SourceLocator.offsetToPosition(source, end);
     return extractActionsSpanning(
         source, from.getLine(), from.getCharacter(), to.getLine(), to.getCharacter());
   }
 
   protected static String unmarked(final String marked) {
     return marked.replace("«", "").replace("»", "");
-  }
-
-  protected static Position positionOf(final String source, final int offset) {
-    final int lineStart = source.lastIndexOf('\n', offset - 1) + 1;
-    final int line = (int) source.substring(0, lineStart).chars().filter(c -> c == '\n').count();
-    return new Position(line, offset - lineStart);
   }
 
   protected static List<TextEdit> addCtorEdits(final List<Either<Command, CodeAction>> actions) {
@@ -129,45 +122,10 @@ abstract class CodeActionTestBase {
   // earlier offsets stay valid, so a test can assert on (and recompile) the rewritten file. Edits
   // at one offset land in list order, as LSP specifies: the stable ascending sort keeps that order,
   // and walking it backwards applies the later edit first.
-  protected static String applyEdits(final String source, final List<TextEdit> edits) {
-    final List<TextEdit> ordered = new ArrayList<>(edits);
-    ordered.sort(Comparator.comparingInt(e -> offsetOf(source, e.getRange().getStart())));
-    Collections.reverse(ordered);
-    String result = source;
-    for (final TextEdit edit : ordered) {
-      final int start = offsetOf(source, edit.getRange().getStart());
-      final int end = offsetOf(source, edit.getRange().getEnd());
-      result = result.substring(0, start) + edit.getNewText() + result.substring(end);
-    }
-
-    return result;
-  }
-
-  protected static int offsetOf(final String source, final Position position) {
-    int line = 0;
-    int index = 0;
-    while (line < position.getLine() && index < source.length()) {
-      if (source.charAt(index) == '\n') {
-        line++;
-      }
-
-      index++;
-    }
-
-    return index + position.getCharacter();
-  }
 
   protected List<Either<Command, CodeAction>> replaceVarActionsAt(
       final String source, final int line, final int character) {
-    session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    return session.codeAction(
-        TempSourceCompiler.TEST_URI,
-        source,
-        1,
-        rangeAt(line, character),
-        List.of(),
-        typeIndex,
-        LearnedStaticImports.empty());
+    return extractActionsSpanning(source, line, character, line, character);
   }
 
   protected List<Either<Command, CodeAction>> extractActionsSpanning(
@@ -190,15 +148,22 @@ abstract class CodeActionTestBase {
 
   protected static List<TextEdit> editsOfActionStartingWith(
       final List<Either<Command, CodeAction>> actions, final String titlePrefix) {
+    return editsOf(actionTitled(actions, title -> title.startsWith(titlePrefix)));
+  }
+
+  // The first code action whose title matches; a test fails when none does.
+  protected static CodeAction actionTitled(
+      final List<Either<Command, CodeAction>> actions, final Predicate<String> title) {
     return actions.stream()
         .filter(Either::isRight)
         .map(Either::getRight)
-        .filter(a -> a.getTitle().startsWith(titlePrefix))
+        .filter(action -> title.test(action.getTitle()))
         .findFirst()
-        .orElseThrow()
-        .getEdit()
-        .getChanges()
-        .get(TempSourceCompiler.TEST_URI);
+        .orElseThrow();
+  }
+
+  protected static List<TextEdit> editsOf(final CodeAction action) {
+    return action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI);
   }
 
   protected List<Either<Command, CodeAction>> diagnosticActions(

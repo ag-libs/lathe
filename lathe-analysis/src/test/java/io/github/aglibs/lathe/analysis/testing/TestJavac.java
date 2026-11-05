@@ -141,9 +141,13 @@ public final class TestJavac {
       Files.createDirectories(classDir);
       // The shared file manager keeps this output dir afterwards; only compileToDir writes classes.
       fm.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classDir));
-      JavaSourceCompiler.COMPILER
+      // A fixture that does not compile would make every assertion after it misleading.
+      if (!JavaSourceCompiler.COMPILER
           .getTask(null, fm, null, options, null, fm.getJavaFileObjects(sources))
-          .call();
+          .call()) {
+        throw new IllegalStateException(
+            "test fixture does not compile: %s".formatted(List.of(sources)));
+      }
     } finally {
       release(classpath, fm);
     }

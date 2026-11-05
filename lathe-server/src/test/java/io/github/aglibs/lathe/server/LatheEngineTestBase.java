@@ -6,11 +6,13 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.server.engine.LatheRename;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Arrays;
 import java.util.stream.Collectors;
+import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -26,10 +28,37 @@ abstract class LatheEngineTestBase {
     }
   }
 
+  protected static final String API_SOURCE =
+      "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
+
+  // Compiles the sources into the module's mirror, as the build would have.
+  protected void compileIntoMirror(final Path... sources) throws IOException {
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), sources);
+  }
+
+  // The position of the first occurrence of token in the source.
+  protected static Position positionOf(final String source, final String token) {
+    return offsetToPosition(source, source.indexOf(token));
+  }
+
+  // Greeter declares greet() and EnGreeter implements it; written to the module, not compiled.
+  protected GreeterFixture greeterFixture() throws IOException {
+    final String ifaceSource = "package com.example;\ninterface Greeter {\n  void greet();\n}\n";
+    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
+    final Path impl =
+        TestCompiler.writeModuleSource(
+            tmp,
+            "com/example/EnGreeter.java",
+            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
+    return new GreeterFixture(iface, impl, ifaceSource);
+  }
+
+  protected record GreeterFixture(Path iface, Path impl, String ifaceSource) {}
+
   // Renames the symbol at the first occurrence of `at` in the file's source.
   protected LatheRename renameAt(
       final Path file, final String source, final String at, final String newName) {
-    final var pos = offsetToPosition(source, source.indexOf(at));
+    final var pos = positionOf(source, at);
     return engine.rename(file, pos.getLine(), pos.getCharacter(), newName);
   }
 
@@ -71,7 +100,7 @@ abstract class LatheEngineTestBase {
         "package com.example; class Caller { void run(Callee c) { c.greet(); } }";
     final Path caller =
         TestCompiler.writeModuleSource(tmp, "com/example/Caller.java", callerSource);
-    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    compileIntoMirror(callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }
 
@@ -85,7 +114,7 @@ abstract class LatheEngineTestBase {
     final String callerSource =
         "package com.other;\nclass Caller { void run(com.example.Callee c) { c.greet(); } }\n";
     final Path caller = TestCompiler.writeModuleSource(tmp, "com/other/Caller.java", callerSource);
-    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), callee, caller);
+    compileIntoMirror(callee, caller);
     return new GreetFixture(callee, caller, calleeSource, callerSource);
   }
 
@@ -112,7 +141,7 @@ abstract class LatheEngineTestBase {
             import com.example.Outer;
             class Other implements Outer.Listener { Outer.Inner b; }
             """);
-    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), outer, user, other);
+    compileIntoMirror(outer, user, other);
     return new NestedFixture(outer, user, other, outerSource, userSource);
   }
 

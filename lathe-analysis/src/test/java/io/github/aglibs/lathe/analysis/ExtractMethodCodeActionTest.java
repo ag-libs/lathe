@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
+import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;

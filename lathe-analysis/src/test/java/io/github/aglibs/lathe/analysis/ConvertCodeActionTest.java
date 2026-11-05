@@ -439,13 +439,9 @@ class ConvertCodeActionTest extends CodeActionTestBase {
   }
 
   private static String tryWithResourcesEdit(final List<Either<Command, CodeAction>> actions) {
-    final CodeAction action =
-        actions.stream()
-            .map(Either::getRight)
-            .filter(a -> "Surround with try-with-resources".equals(a.getTitle()))
-            .findFirst()
-            .orElseThrow();
-    return action.getEdit().getChanges().get(TempSourceCompiler.TEST_URI).get(0).getNewText();
+    return editsOf(actionTitled(actions, "Surround with try-with-resources"::equals))
+        .get(0)
+        .getNewText();
   }
 
   private static List<TextEdit> convertVarEdits(final List<Either<Command, CodeAction>> actions) {
