@@ -409,6 +409,48 @@ class LatheSyncTaskFunctionalTest {
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).doesNotExist();
   }
 
+  // A build can fail a test task whose tests were all skipped, as a capture-only run skips them.
+  // The facts come before the tests, as on Maven, so the first sync still writes the workspace and
+  // the test JVM still captures its launch; only the build's own check fails.
+  @Test
+  void captureOnlySync_testTaskFails_stillWritesTheWorkspaceAndCaptures() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "app/build.gradle.kts",
+                """
+                plugins { java }
+                dependencies {
+                  implementation(project(":lib"))
+                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
+                  testImplementation("org.junit.jupiter:junit-jupiter")
+                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                }
+                tasks.test {
+                  useJUnitPlatform()
+                  doLast { throw GradleException("every test was skipped") }
+                }
+                """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                """
+                package com.example.app;
+
+                class AppTest {
+                  @org.junit.jupiter.api.Test
+                  void runs() {}
+                }
+                """);
+
+    final var result = fixture.runner("latheSync", "-Plathe.capture.only=true").buildAndFail();
+
+    assertThat(result.task(":app:test").getOutcome()).isEqualTo(TaskOutcome.FAILED);
+    assertThat(result.getOutput()).contains("every test was skipped");
+    assertThat(workspace().outputs()).extracting(OutputData::module).contains("app", "lib");
+    assertThat(workspace().runnerClasspath()).isNotEmpty();
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
+  }
+
   private WorkspaceManifestData workspace() throws IOException {
     return Json.read(
         dir.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
