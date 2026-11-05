@@ -40,11 +40,9 @@ import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.Isolated;
 
-// The write pass: external changes, startup catch-up, reported files, failures, deletions,
-// resources. Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
-@Isolated
+// The write pass: external changes, startup catch-up, reported files, failures, deletions and
+// resources.
 class WritePassTest extends ServiceTestBase {
 
   private static final Path FOO_KEY = Path.of("com/example/Foo.java");
@@ -190,7 +188,7 @@ class WritePassTest extends ServiceTestBase {
         core.resolve("B.java"), "package com.example; public class B { A.X x; }", 6_000L);
     service.reconcileNow(true).get(10, TimeUnit.SECONDS);
 
-    try (final var compiles = new CompileLog()) {
+    try (final var compiles = new CompileLog(tmp)) {
       service.reconcileNow(true).get(10, TimeUnit.SECONDS);
       assertThat(writes(compiles))
           .as("nothing changed and nothing was written, so no failure is retried")
@@ -257,7 +255,7 @@ class WritePassTest extends ServiceTestBase {
     service.initialize(tmp);
     awaitStartup();
 
-    try (final var compiles = new CompileLog()) {
+    try (final var compiles = new CompileLog(tmp)) {
       service.writeReported(Set.of(generated)).get(10, TimeUnit.SECONDS);
       assertThat(writes(compiles))
           .as("a processor's output is never an input of a write")
@@ -563,7 +561,7 @@ class WritePassTest extends ServiceTestBase {
 
   private void assertPassCompiles(final boolean compiles, final long stampedMtime)
       throws Exception {
-    try (final var compileLog = new CompileLog()) {
+    try (final var compileLog = new CompileLog(tmp)) {
       service.reconcileNow(true).get(5, TimeUnit.SECONDS);
       assertThat(writes(compileLog)).as("compiled at %d", stampedMtime).hasSize(compiles ? 1 : 0);
     }

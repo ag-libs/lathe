@@ -152,15 +152,18 @@ abstract class ServiceTestBase {
         .anyMatch(diagnostic -> diagnostic.getMessage().getLeft().contains(message));
   }
 
-  // Collects log messages, so a test can count operations that leave no other observable trace.
-  // The compile log while open: a test counts compile tasks here, as a stale result is dropped
-  // unpublished and redundant compiles show nowhere else.
-  // Hears every compile in the JVM: a test class using it must be @Isolated.
+  // The compile log of one workspace while open: a test counts compile tasks here, as a stale
+  // result is dropped unpublished and redundant compiles show nowhere else. The logger hears every
+  // compile in the JVM; each compile line names a file it compiled, so keeping the lines under the
+  // workspace lets test classes compile in parallel.
   protected static final class CompileLog extends Handler implements AutoCloseable {
     private static final Logger COMPILER = Logger.getLogger(SourceAnalysisSession.class.getName());
     private final Queue<String> messages = new ConcurrentLinkedQueue<>();
+    private final String workspaceUri;
 
-    CompileLog() {
+    CompileLog(final Path workspace) {
+      final String uri = LatheUri.canonical(workspace.toUri().toString());
+      workspaceUri = uri.endsWith("/") ? uri : uri + "/";
       COMPILER.addHandler(this);
     }
 
@@ -174,7 +177,9 @@ abstract class ServiceTestBase {
 
     @Override
     public void publish(final LogRecord record) {
-      messages.add(record.getMessage());
+      if (record.getMessage().contains(workspaceUri)) {
+        messages.add(record.getMessage());
+      }
     }
 
     @Override
