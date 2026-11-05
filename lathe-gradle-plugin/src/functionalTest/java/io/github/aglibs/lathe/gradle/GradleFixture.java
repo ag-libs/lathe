@@ -168,12 +168,15 @@ final class GradleFixture {
       }
     }
 
-    return GradleRunner.create()
-        .withGradleInstallation(new File(System.getProperty("lathe.gradle.fixturesHome")))
-        .withProjectDir(dir.toFile())
-        .withPluginClasspath()
-        .withEnvironment(outsideCi())
-        .withArguments(Stream.concat(Stream.of(LATHE_CACHE), Stream.of(args)).toList());
+    final var runner =
+        GradleRunner.create()
+            .withGradleInstallation(new File(System.getProperty("lathe.gradle.fixturesHome")))
+            .withProjectDir(dir.toFile())
+            .withPluginClasspath()
+            .withEnvironment(outsideCi())
+            .withArguments(Stream.concat(Stream.of(LATHE_CACHE), Stream.of(args)).toList());
+    // On CI the build's output goes to the test's too, where the CI log shows it as it runs.
+    return Boolean.getBoolean("lathe.gradle.fixturesOutput") ? runner.forwardOutput() : runner;
   }
 
   // The fixture builds run as on a developer's machine, without the CI variable that keeps
