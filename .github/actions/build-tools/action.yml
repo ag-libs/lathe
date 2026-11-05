@@ -29,7 +29,7 @@ runs:
         restore-keys: maven-${{ runner.os }}-
 
     - name: Set up JDK 21 to build (JDK 17 row)
-      # lathe-server's src/main/java21 needs a JDK 21+ compiler; this JDK becomes JAVA_HOME and
+      # lathe-analysis's src/main/java21 needs a JDK 21+ compiler; this JDK becomes JAVA_HOME and
       # JAVA_HOME_17_X64 keeps pointing at 17 for the tests.
       if: inputs.java == '17'
       uses: actions/setup-java@v6
