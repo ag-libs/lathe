@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import java.nio.file.Files;
@@ -114,7 +113,20 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
 
   @Test
   void notes_latheWrittenByAnotherVersion_syncRequiredWithTheCommand() throws Exception {
-    writeManifest("0", List.of());
+    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
+    Json.write(
+        new WorkspaceManifestData(
+            "0",
+            tmp.toString(),
+            null,
+            List.of(),
+            null,
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            null),
+        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
     engine = new LatheEngine(tmp);
 
     assertThat(engine.notes(List.of()).syncRequired())
@@ -144,7 +156,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
     final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
-    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
+    TestCompiler.recordBuildFiles(tmp, List.of(pom));
     engine = new LatheEngine(tmp);
     engine.diagnostics(fx.caller());
     assertThat(engine.notes(List.of()).syncRequired()).isEmpty();
@@ -174,7 +186,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
       throws Exception {
     final GreetFixture fx = greetFixture();
     final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
-    writeManifest(LatheLayout.SCHEMA_VERSION, List.of(syncedBuildFile(pom)));
+    TestCompiler.recordBuildFiles(tmp, List.of(pom));
     TestCompiler.writeAt(pom, "<project/>", 99_000_000_000L);
     engine = new LatheEngine(tmp);
     engine.diagnostics(fx.caller());
@@ -186,27 +198,5 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     engine.diagnostics(fx.caller());
 
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
-  }
-
-  private BuildFileData syncedBuildFile(final Path file) throws Exception {
-    return new BuildFileData(FileUtil.slashed(tmp.relativize(file)), FileUtil.fingerprint(file));
-  }
-
-  private void writeManifest(final String schemaVersion, final List<BuildFileData> buildFiles)
-      throws Exception {
-    Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR));
-    Json.write(
-        new WorkspaceManifestData(
-            schemaVersion,
-            tmp.toString(),
-            null,
-            List.of(),
-            null,
-            List.of(),
-            buildFiles,
-            List.of(),
-            List.of(),
-            null),
-        tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
   }
 }

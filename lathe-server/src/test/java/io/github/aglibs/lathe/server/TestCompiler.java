@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
+import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
@@ -277,6 +279,32 @@ public final class TestCompiler {
   // dependent's classpath entry for it resolves to the mirror.
   private static void recordOutput(final Path workspaceRoot, final String moduleName)
       throws IOException {
+    rewriteManifest(
+        workspaceRoot,
+        existing ->
+            Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList(),
+        WorkspaceManifestData::buildFiles);
+  }
+
+  // Records the build files in workspace.json as a sync that just read them does, so a later edit
+  // to one reads as a build-file change.
+  public static void recordBuildFiles(final Path workspaceRoot, final List<Path> files)
+      throws IOException {
+    final List<BuildFileData> synced = new ArrayList<>();
+    for (final Path file : files) {
+      synced.add(
+          new BuildFileData(
+              FileUtil.slashed(workspaceRoot.relativize(file)), FileUtil.fingerprint(file)));
+    }
+
+    rewriteManifest(workspaceRoot, WorkspaceManifestData::outputs, existing -> synced);
+  }
+
+  private static void rewriteManifest(
+      final Path workspaceRoot,
+      final Function<WorkspaceManifestData, List<OutputData>> outputs,
+      final Function<WorkspaceManifestData, List<BuildFileData>> buildFiles)
+      throws IOException {
     final Path manifestFile =
         workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON);
     final WorkspaceManifestData existing =
@@ -293,8 +321,7 @@ public final class TestCompiler {
                 List.of(),
                 List.of(),
                 null);
-    final List<OutputData> outputs =
-        Stream.concat(existing.outputs().stream(), targetOutputs(moduleName).stream()).toList();
+    Files.createDirectories(manifestFile.getParent());
     Json.write(
         new WorkspaceManifestData(
             existing.schemaVersion(),
@@ -303,9 +330,9 @@ public final class TestCompiler {
             existing.runnerClasspath(),
             existing.jdk(),
             existing.dependencySources(),
-            existing.buildFiles(),
+            buildFiles.apply(existing),
             existing.resourceRoots(),
-            outputs,
+            outputs.apply(existing),
             existing.buildTool()),
         manifestFile);
   }

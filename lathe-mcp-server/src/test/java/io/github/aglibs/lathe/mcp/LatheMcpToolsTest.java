@@ -4,13 +4,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
+import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.server.engine.LatheCall;
+import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
+import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
+import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
+import io.github.aglibs.lathe.server.engine.LatheReferences;
+import io.github.aglibs.lathe.server.engine.LatheRename;
+import io.github.aglibs.lathe.server.engine.LatheSymbol;
+import io.github.aglibs.lathe.server.engine.LatheTestFailure;
+import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
@@ -521,17 +532,22 @@ class LatheMcpToolsTest {
 
   private static LatheOutlineItem outlineItem(
       final String kind, final String name, final int depth, final int line, final String code) {
+    return new LatheOutlineItem(kind, name, depth, location("app/Shop.java", line, code));
+  }
+
+  private static LatheLocation location(final String path, final int line, final String code) {
+    return location(path, line, LatheLocation.Origin.REACTOR, code);
+  }
+
+  // A location at a 1-based line, as the tools print it.
+  private static LatheLocation location(
+      final String path, final int line, final LatheLocation.Origin origin, final String code) {
     final var at = new Position(line - 1, 0);
-    return new LatheOutlineItem(
-        kind,
-        name,
-        depth,
-        new LatheLocation(
-            "file:///w/app/Shop.java",
-            "app/Shop.java",
-            new Range(at, at),
-            LatheLocation.Origin.REACTOR,
-            code));
+    return new LatheLocation("file:///w/%s".formatted(path), path, new Range(at, at), origin, code);
+  }
+
+  private static String lines(final String... lines) {
+    return String.join(System.lineSeparator(), lines);
   }
 
   @Test
@@ -672,5 +688,292 @@ class LatheMcpToolsTest {
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412 [EXTERNAL]: void connect() {");
+  }
+
+  // A capped list says how many there are in all; an empty one says none, without the authority.
+  @Test
+  void referencesAndImplementationsResult_cappedListAndEmpty_headerLinesThenAuthority_orNone() {
+    final var call = location("app/App.java", 12, "shop.sell(1);");
+    final var dependency =
+        location("lib/Lib.java", 3, LatheLocation.Origin.EXTERNAL, "void sell(int n) {");
+
+    assertThat(
+            text(
+                LatheMcpTools.referencesResult(
+                    new LatheReferences(5, true, List.of(call, dependency)),
+                    LatheMcpTools.NO_NOTES)))
+        .startsWith(
+            lines(
+                "5 references (showing first 2):",
+                "app/App.java:12: shop.sell(1);",
+                "lib/Lib.java:3 [EXTERNAL]: void sell(int n) {",
+                "",
+                "All javac-resolved references"));
+    assertThat(
+            text(
+                LatheMcpTools.implementationsResult(
+                    new LatheImplementations(1, false, List.of(call)), LatheMcpTools.NO_NOTES)))
+        .startsWith(
+            lines(
+                "1 implementation(s):",
+                "app/App.java:12: shop.sell(1);",
+                "",
+                "All javac-resolved implementers"));
+    assertThat(
+            text(
+                LatheMcpTools.referencesResult(
+                    new LatheReferences(0, false, List.of()), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No references found.");
+  }
+
+  // The places where the old name is still text are listed for the agent to decide, never edited.
+  @Test
+  void renameResult_editsAndMentions_filesThenTheMentionsToReview_orNothingToRename() {
+    final var rename =
+        new LatheRename(
+            "total",
+            3,
+            List.of(
+                new LatheFileEdit(
+                    "file:///w/app/Shop.java", "app/Shop.java", LatheLocation.Origin.REACTOR, 2),
+                new LatheFileEdit(
+                    "file:///w/gen/ShopView.java",
+                    "gen/ShopView.java",
+                    LatheLocation.Origin.GENERATED,
+                    1)),
+            List.of(location("app/Shop.java", 7, "// the count of items")),
+            4);
+
+    final String text = text(LatheMcpTools.renameResult(rename, LatheMcpTools.NO_NOTES));
+
+    assertThat(text)
+        .startsWith(
+            lines(
+                "Renamed to total: 3 edit(s) across 2 file(s):",
+                "  app/Shop.java — 2 edit(s)",
+                "  gen/ShopView.java [GENERATED] — 1 edit(s)"))
+        .endsWith(
+            lines(
+                "Not renamed — review: the old name is still text in 4 place(s) (showing first 1):",
+                "app/Shop.java:7: // the count of items"));
+    assertThat(
+            text(
+                LatheMcpTools.renameResult(
+                    new LatheRename("total", 0, List.of(), List.of(), 0), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No references to rename.");
+  }
+
+  // Outgoing entries are call sites; an empty reactor-only answer points at scope=all.
+  @Test
+  void callHierarchyResult_incomingOutgoingAndEmpty_arrowLinesOrWhatTheScopeLeftOut() {
+    final var caller = new LatheCall("run", location("app/App.java", 12, "shop.sell(1);"));
+    final var callee = new LatheCall("total", location("app/Shop.java", 9, "return total();"));
+
+    assertThat(
+            text(
+                LatheMcpTools.callHierarchyResult(
+                    new LatheCallHierarchy(true, 3, true, List.of(caller)),
+                    SymbolScope.REACTOR,
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(lines("3 callers (showing first 1):", "← run  app/App.java:12: shop.sell(1);"));
+    assertThat(
+            text(
+                LatheMcpTools.callHierarchyResult(
+                    new LatheCallHierarchy(false, 1, false, List.of(callee)),
+                    SymbolScope.ALL,
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(lines("1 call(s):", "→ total  app/Shop.java:9: return total();"));
+    assertThat(
+            text(
+                LatheMcpTools.callHierarchyResult(
+                    new LatheCallHierarchy(false, 0, false, List.of()),
+                    SymbolScope.REACTOR,
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            "No callees in the reactor; scope=all includes calls into the JDK and dependencies.");
+    assertThat(
+            text(
+                LatheMcpTools.callHierarchyResult(
+                    new LatheCallHierarchy(false, 0, false, List.of()),
+                    SymbolScope.ALL,
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No calls found.");
+    assertThat(
+            text(
+                LatheMcpTools.callHierarchyResult(
+                    new LatheCallHierarchy(true, 0, false, List.of()),
+                    SymbolScope.REACTOR,
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No callers found.");
+  }
+
+  @Test
+  void searchResult_symbolsAndNoMatch_oneLineEachWithItsContainer_orTheQuery() {
+    final var symbols =
+        List.of(
+            new LatheSymbol(
+                "Shop", "class", "com.example", location("app/Shop.java", 3, "class Shop {")),
+            new LatheSymbol("sell", "method", "", location("app/Shop.java", 8, "int sell() {")));
+
+    assertThat(text(LatheMcpTools.searchResult("S", symbols, LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "2 symbol(s):",
+                "Shop (class) — com.example  app/Shop.java:3",
+                "sell (method)  app/Shop.java:8"));
+    assertThat(text(LatheMcpTools.searchResult("Cart", List.of(), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("No symbols matching 'Cart'.");
+  }
+
+  // A run that reported no test says how the JVM ended instead of a PASS over nothing.
+  @Test
+  void testRunResult_blockedNothingRanFailedAndPassed_eachSaysWhatHappened() {
+    assertThat(
+            text(
+                LatheMcpTools.testRunResult(
+                    testRun(false, List.of("no runner jar", "not captured"), 0, 0, 0, List.of()),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Test run blocked: no runner jar; not captured");
+    assertThat(
+            text(
+                LatheMcpTools.testRunResult(
+                    new LatheTestRun(
+                        true,
+                        List.of(),
+                        List.of("com.example.ShopTest"),
+                        0,
+                        0,
+                        0,
+                        0,
+                        List.of(),
+                        1,
+                        List.of("Error: could not find the main class"),
+                        List.of()),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "No test ran (exit 1)",
+                "Ran: com.example.ShopTest",
+                "    | Error: could not find the main class"));
+    assertThat(
+            text(
+                LatheMcpTools.testRunResult(
+                    testRun(
+                        true,
+                        List.of(),
+                        1,
+                        1,
+                        1,
+                        List.of(
+                            new LatheTestFailure(
+                                "ShopTest.sell",
+                                "expected 2 but was 1",
+                                14,
+                                List.of("at ShopTest.sell")))),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            lines(
+                "FAIL — 1 passed, 1 failed, 1 skipped",
+                "Ran: com.example.ShopTest",
+                "  ShopTest.sell:14 — expected 2 but was 1",
+                "    | at ShopTest.sell",
+                "Note: classes from the last build"));
+    assertThat(
+            text(
+                LatheMcpTools.testRunResult(
+                    testRun(true, List.of(), 2, 0, 0, List.of()), LatheMcpTools.NO_NOTES)))
+        .startsWith(lines("PASS — 2 passed, 0 failed, 0 skipped", "Ran: com.example.ShopTest"));
+  }
+
+  private static LatheTestRun testRun(
+      final boolean launched,
+      final List<String> blockedReasons,
+      final int passed,
+      final int failed,
+      final int skipped,
+      final List<LatheTestFailure> failures) {
+    return new LatheTestRun(
+        launched,
+        blockedReasons,
+        launched ? List.of("com.example.ShopTest") : List.of(),
+        passed + failed + skipped,
+        passed,
+        failed,
+        skipped,
+        failures,
+        failed == 0 ? 0 : 1,
+        List.of(),
+        launched ? List.of("classes from the last build") : List.of());
+  }
+
+  @Test
+  void analyzeResult_impactAndNoSymbol_everyFieldOnItsLine_noneWhereEmpty() {
+    final var base = location("app/Base.java", 4, "abstract int sell(int count);");
+    final var override = location("app/Shop.java", 8, "int sell(int count) {");
+
+    assertThat(
+            text(
+                LatheMcpTools.analyzeResult(
+                    new LatheChangeImpact(
+                        "int sell(int count)",
+                        List.of(base, override),
+                        4,
+                        2,
+                        true,
+                        List.of("app", "core"),
+                        List.of("ShopTest")),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            "int sell(int count)\n"
+                + "references: 4 production, 2 test (truncated)\n"
+                + "affected modules: app, core\n"
+                + "relevant tests: ShopTest\n"
+                + lines(
+                    "override family: 2",
+                    "app/Base.java:4: abstract int sell(int count);",
+                    "app/Shop.java:8: int sell(int count) {"));
+    assertThat(
+            text(
+                LatheMcpTools.analyzeResult(
+                    new LatheChangeImpact("", List.of(), 0, 0, false, List.of(), List.of()),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo(
+            """
+            (no symbol at that position)
+            references: 0 production, 0 test
+            affected modules: none
+            relevant tests: none
+            override family: none""");
+  }
+
+  // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
+  @Test
+  void diagnosticsText_notCheckedCleanAndDiagnostics_saysWhichWithOneLinePerDiagnostic() {
+    final Path file = tmp.resolve("Shop.java");
+    final var error =
+        new Diagnostic(
+            new Range(new Position(4, 9), new Position(4, 12)),
+            "cannot find symbol",
+            DiagnosticSeverity.Error,
+            "javac");
+    final var warning =
+        new Diagnostic(
+            new Range(new Position(0, 0), new Position(0, 1)),
+            "unchecked call",
+            DiagnosticSeverity.Warning,
+            "javac");
+
+    assertThat(
+            LatheMcpTools.diagnosticsText(
+                file, List.of(error), LatheNotes.ofNotChecked(List.of("Shop.java: no module"))))
+        .isEqualTo("Shop.java was not checked.");
+    assertThat(LatheMcpTools.diagnosticsText(file, List.of(), LatheMcpTools.NO_NOTES))
+        .isEqualTo("No errors or warnings in Shop.java.");
+    assertThat(LatheMcpTools.diagnosticsText(file, List.of(error, warning), LatheMcpTools.NO_NOTES))
+        .isEqualTo(
+            lines(
+                "2 diagnostic(s) in Shop.java:",
+                "  Error [5:10] cannot find symbol",
+                "  Warning [1:1] unchecked call"));
   }
 }

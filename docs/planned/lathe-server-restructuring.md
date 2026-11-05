@@ -145,9 +145,56 @@ Each new module is listed with its pom changes for approval before it is added.
 
 ## 6. Tests
 
-- Split `CodeActionTest` by provider family and `LatheEngineTest` by tool; files get clearer and the slowest classes shorter
-  (estimated 47 s → about 35 s on CI's 4 cores; the 137 s total is the real limit).
-- Once `WritePass` and `ReferenceSearch` exist, new gap fixes are tested against them, not through the full engine.
+### Speed (done)
+
+- `LatheEngineTest` is six classes by tool family over `LatheEngineTestBase`,
+  and `CodeActionTest` four by provider family over `CodeActionTestBase`.
+- No class is `@Isolated`: `CompileLog` keeps only the compile lines under its own workspace,
+  so the classes that count compiles run with the rest instead of one by one at the end.
+- On an idle 16-core machine the `lathe-server` suite went from 31.5 s to 24 s wall;
+  every class now ends between 11 and 16 s, so more speed needs less work, not more parallelism.
+
+### Coverage (done for the routes and the MCP text)
+
+Measured with every test layer: unit tests, the Maven invoker ITs and the servers they start,
+the MCP tests, the Neovim specs and end-to-end specs, and the Gradle TestKit fixtures.
+The JaCoCo agent goes to every JVM through `JAVA_TOOL_OPTIONS`, appending to one file:
+
+```bash
+JAVA_TOOL_OPTIONS="-javaagent:<org.jacoco.agent runtime jar>=destfile=<file>,append=true,includes=io.github.aglibs.lathe.*" \
+  mvn -o verify -Dmaven.test.failure.ignore=true -Dinvoker.ignoreFailures=true
+```
+
+Then `org.jacoco.cli report` over each module's `target/classes/io` (not the multi-release `META-INF/versions`).
+Use the real Maven, not `mvnd`, so every fork inherits the variable.
+Expect failures that are only the measurement: tests that compare a child JVM's exact output
+see the agent's "Picked up JAVA_TOOL_OPTIONS" line, and replays load the agent twice (TE-15).
+Count without log statements: a `LOG.fine(() -> …)` supplier is a line that runs only with `FINE` on.
+
+| | Lines | Branches |
+|---|---|---|
+| Reactor, all layers (2026-11-05) | 86.2% (87.4% without log lines) | 73.9% |
+| `lathe-server`, unit tests, before → after | 84.4% → 86.9% | 72.4% → 73.1% |
+
+What the end-to-end layers added was mainly the run and routing code (`RunCoordinator` 28% → 42%).
+Two kinds of code no test reached:
+
+- **LSP routes.** Each feature was tested on its own, but not the way from the request through the event loop to it.
+  `LspRoutesTest` and `LatheWorkspaceServiceTest` now drive every untested request and command
+  (`LatheWorkspaceService` 30% → 82%, `LatheTextDocumentService` 64% → 87%, `WorkspaceSession` 63% → 86%).
+- **The text of MCP results** that agents read: references, rename, call hierarchy, search, test run, analyze, diagnostics.
+  Each formatter now has a test (`LatheMcpTools` 72% → 92%).
+
+What remains:
+
+- **Debug evaluation** (`JdiInterpreter` 0%, the evaluation, completion and source-lookup providers 24–42%,
+  about 450 lines) and the debug launch paths of `RunCoordinator`: they need a debuggee JVM, so a design of their own.
+- **`RunCoordinator` runs**: measure again once TE-15 lets replays start under an agent.
+- `WritePass` is well covered; what it misses are I/O-error `catch` blocks.
+
+### Later
+
+- New gap fixes are tested against the owning component (`WritePass`, `ReferenceSearch`), not through the full engine.
 - `WorkspaceSessionTest`'s direct calls into about 25 package-private statics move with the code they test.
 
 ## 7. Keeping it from growing back
