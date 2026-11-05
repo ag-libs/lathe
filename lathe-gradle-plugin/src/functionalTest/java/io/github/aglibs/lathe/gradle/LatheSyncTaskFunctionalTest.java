@@ -309,9 +309,10 @@ class LatheSyncTaskFunctionalTest {
     final TestLaunchData launch = Json.read(testLaunch, TestLaunchData.class);
     Files.delete(testLaunch);
     Files.delete(ran);
-    fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+    final var captureOnly = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
 
     assertThat(cached.task(":app:test").getOutcome()).isEqualTo(TaskOutcome.FROM_CACHE);
+    assertThat(captureOnly.getOutput()).doesNotContain("captured no test launch");
     assertThat(capturedFromCache).isFalse();
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.MAIN_LAUNCH_FILE)).exists();
     assertThat(launch.classPath())
@@ -447,19 +448,7 @@ class LatheSyncTaskFunctionalTest {
     return multiProject()
         .file(
             "app/build.gradle.kts",
-            """
-            plugins { java }
-            dependencies {
-              implementation(project(":lib"))
-              testImplementation(platform("org.junit:junit-bom:5.11.4"))
-              testImplementation("org.junit.jupiter:junit-jupiter")
-              testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-            }
-            tasks.test {
-              useJUnitPlatform()
-              doLast { throw GradleException("every test was skipped") }
-            }
-            """)
+            appTests("doLast { throw GradleException(\"every test was skipped\") }"))
         .file(
             "app/src/test/java/com/example/app/AppTest.java",
             """
@@ -470,6 +459,54 @@ class LatheSyncTaskFunctionalTest {
               void runs() {}
             }
             """);
+  }
+
+  // Develocity's test acceleration runs the tests in a JVM of its own, without the task's
+  // JDK_JAVA_OPTIONS: lathe-junit is not loaded, so nothing is captured and the tests run in full,
+  // and the sync says so rather than leave the editor with no launch and no reason.
+  @Test
+  void captureOnlySync_testJvmWithoutTheAgent_warnsThatNothingWasCaptured() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "app/build.gradle.kts",
+                appTests("doFirst { environment.remove(\"JDK_JAVA_OPTIONS\") }"))
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                """
+                package com.example.app;
+
+                class AppTest {
+                  @org.junit.jupiter.api.Test
+                  void runs() throws Exception {
+                    java.nio.file.Files.writeString(java.nio.file.Path.of("ran.txt"), "ran");
+                  }
+                }
+                """);
+
+    final var result = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+
+    assertThat(result.getOutput())
+        .contains("[lathe] :app:test captured no test launch: its test JVM did not load");
+    assertThat(dir.resolve("app/ran.txt")).exists();
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).doesNotExist();
+  }
+
+  private static String appTests(final String testConfiguration) {
+    return """
+        plugins { java }
+        dependencies {
+          implementation(project(":lib"))
+          testImplementation(platform("org.junit:junit-bom:5.11.4"))
+          testImplementation("org.junit.jupiter:junit-jupiter")
+          testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+        }
+        tasks.test {
+          useJUnitPlatform()
+          %s
+        }
+        """
+        .formatted(testConfiguration);
   }
 
   private WorkspaceManifestData workspace() throws IOException {
