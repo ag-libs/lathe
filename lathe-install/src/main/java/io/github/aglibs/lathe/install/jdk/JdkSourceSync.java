@@ -1,5 +1,7 @@
 package io.github.aglibs.lathe.install.jdk;
 
+import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.ZipCache;
 import io.github.aglibs.lathe.install.SyncException;
@@ -21,20 +23,34 @@ public final class JdkSourceSync {
     }
 
     final var t = Stopwatch.start();
+    if (Files.exists(source.sourceDir())) {
+      LOG.info("[sync] jdk sources already cached in %dms".formatted(t.elapsedMs()));
+      return;
+    }
+
+    // Builds that start together on an empty cache (parallel builds, a test suite's forks) would
+    // each extract the same sources: one does, and the others wait for it.
     try {
-      if (Files.exists(source.sourceDir())) {
-        LOG.info("[sync] jdk sources already cached in %dms".formatted(t.elapsedMs()));
-        return;
-      }
-
-      final int skipped = ZipCache.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
-      if (skipped > 0) {
-        LOG.warn("[sync] jdk sources skipped %d unsafe entries".formatted(skipped));
-      }
-
-      LOG.info("[sync] jdk sources extracted in %dms".formatted(t.elapsedMs()));
+      LOG.info(
+          LatheLock.exclusive(
+              LatheLayout.cacheLockFile(source.sourceDir()),
+              () -> LOG.info("[sync] jdk sources waiting for another build extracting them"),
+              () -> extractOnce(source, t)));
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to extract JDK sources", e);
     }
+  }
+
+  private static String extractOnce(final JdkSource source, final Stopwatch t) throws IOException {
+    if (Files.exists(source.sourceDir())) {
+      return "[sync] jdk sources extracted by another build, waited %dms".formatted(t.elapsedMs());
+    }
+
+    final int skipped = ZipCache.extract(source.sourceZip(), source.sourceDir(), ignored -> {});
+    if (skipped > 0) {
+      LOG.warn("[sync] jdk sources skipped %d unsafe entries".formatted(skipped));
+    }
+
+    return "[sync] jdk sources extracted in %dms".formatted(t.elapsedMs());
   }
 }

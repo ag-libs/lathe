@@ -5,7 +5,7 @@ There are no Groovy or BeanShell verify scripts: a fixture proves what it tests 
 
 | Fixture | What it covers |
 |---|---|
-| `setup-support` | Installs `lathe-it-support`, the jar the other fixtures' tests share (`LspSession`, `McpSession`, `Os`, `Await`); runs first. |
+| `setup-support` | Installs `lathe-it-support`, the jar the other fixtures' tests share (`LspSession`, `McpSession`, `Os`, `Await`); runs first, alone, and with Lathe enabled, so its sync fills the shared Lathe cache (JDK sources and type index) before the fixtures that build in parallel. |
 | `capture-only-suite` | A capture-only sync on a JUnit `@Suite`: the suite discovers its tests and none of them runs. |
 | `formatters` | One project synced once per Spotless formatter, palantir then Eclipse; the second build also checks the first one's `jvm.args` is gone. |
 | `lombok` | A Lombok project as its users build it, checked against the real LSP and MCP servers (`LombokTest`); JDK 17 to 27 only. |

@@ -16,6 +16,9 @@ public final class LatheLayout {
   public static final String CACHE_LATHE_DIR = "lathe";
   public static final String CACHE_DEPS_DIR = "deps";
   public static final String CACHE_JDKS_DIR = "jdks";
+  // Beside a cache entry several builds may fill at once (a JDK's sources, its type index): the
+  // first holds it while it builds the entry, the others wait and then reuse it.
+  public static final String CACHE_LOCK_SUFFIX = ".lock";
   public static final String TYPE_INDEX_DIR = "type-index";
   public static final String LOGS_DIR = "logs";
   public static final String MCP_LOG_PREFIX = "mcp-";
@@ -352,6 +355,10 @@ public final class LatheLayout {
 
   public static Path moduleLockFile(final Path moduleDir) {
     return moduleDir.resolve(MODULE_LOCK_FILE);
+  }
+
+  public static Path cacheLockFile(final Path cacheEntry) {
+    return cacheEntry.resolveSibling(cacheEntry.getFileName() + CACHE_LOCK_SUFFIX);
   }
 
   public static String paramsFileName(final String sourceTree) {
