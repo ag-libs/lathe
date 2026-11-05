@@ -68,7 +68,9 @@ public final class CompilationWorker {
 
   private final ExecutorService executor;
   // Where results are completed: the server's event loop, so what a caller chains on a result runs
-  // there and may touch session state.
+  // there and may touch session state. Two exceptions: a request the closed worker refuses fails
+  // on the caller's thread, and closeAsync completes on the worker thread, as the registry waits
+  // for it on the loop during a reload and a completion queued there would never run.
   private final Executor delivery;
   private final Supplier<SourceAnalysisSession> contextFactory;
   private final IntConsumer processTerminator;

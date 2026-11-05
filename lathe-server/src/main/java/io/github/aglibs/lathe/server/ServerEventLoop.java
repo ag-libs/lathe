@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -93,10 +93,7 @@ final class ServerEventLoop {
                   if (failure == null) {
                     rejoined.complete(value);
                   } else {
-                    rejoined.completeExceptionally(
-                        failure instanceof CompletionException
-                            ? failure
-                            : new CompletionException(failure));
+                    rejoined.completeExceptionally(ExceptionUtil.asCompletion(failure));
                   }
                 }));
     return rejoined;

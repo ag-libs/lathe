@@ -32,17 +32,12 @@ import java.util.stream.Stream;
 // changes nothing but what WritePass's own methods change.
 final class ChangeVerifier {
 
-  private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final FeatureRouter router;
   private final WritePass writePass;
 
   ChangeVerifier(
-      final ServerEventLoop eventLoop,
-      final WorkspaceState state,
-      final FeatureRouter router,
-      final WritePass writePass) {
-    this.eventLoop = eventLoop;
+      final WorkspaceState state, final FeatureRouter router, final WritePass writePass) {
     this.state = state;
     this.router = router;
     this.writePass = writePass;

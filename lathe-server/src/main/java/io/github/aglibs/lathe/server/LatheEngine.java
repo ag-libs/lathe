@@ -562,8 +562,8 @@ public final class LatheEngine {
   }
 
   // Best effort: the rename is on disk by now, and a scan that fails must not report it as failed.
-  // The scan reads and parses files on this thread, not the session's worker, which serves every
-  // other request meanwhile.
+  // The scan reads and parses files on this thread, not the event loop, which serves every other
+  // request meanwhile.
   private List<Location> textMentions(final String name) {
     try {
       return TextMentions.find(query(session -> session.textMentionSources(name)), name);

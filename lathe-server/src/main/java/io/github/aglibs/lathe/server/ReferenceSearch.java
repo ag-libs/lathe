@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
@@ -28,7 +29,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -99,7 +99,7 @@ final class ReferenceSearch {
 
     router.touchAnalysisCache(openFile.uri());
 
-    // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
+    // Capture the declaring module on the event loop, before any async hand-off
     final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
 
     final var t = Stopwatch.start();
@@ -152,11 +152,7 @@ final class ReferenceSearch {
             })
         .exceptionally(
             ex -> {
-              if (ex instanceof CancellationException cancellation) {
-                throw cancellation;
-              }
-              if (ex instanceof CompletionException completion
-                  && completion.getCause() instanceof CancellationException cancellation) {
+              if (ExceptionUtil.completionCause(ex) instanceof CancellationException cancellation) {
                 throw cancellation;
               }
               LOG.log(
@@ -165,9 +161,7 @@ final class ReferenceSearch {
                   () ->
                       "[references] %s target=%s %dms failed"
                           .formatted(uri, targetName.get(), t.elapsedMs()));
-              throw ex instanceof CompletionException completion
-                  ? completion
-                  : new CompletionException(ex);
+              throw ExceptionUtil.asCompletion(ex);
             });
   }
 

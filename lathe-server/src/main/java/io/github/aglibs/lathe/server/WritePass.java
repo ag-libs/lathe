@@ -181,6 +181,7 @@ final class WritePass {
   }
 
   List<Path> takeWrittenSinceVerify() {
+    eventLoop.checkOnLoop();
     final List<Path> taken = List.copyOf(writtenSinceVerify);
     writtenSinceVerify.clear();
     return taken;
@@ -295,6 +296,7 @@ final class WritePass {
   // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
   // event loop. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow(final boolean eager) {
+    eventLoop.checkOnLoop();
     return requestPass(eager).thenAccept(stale -> {});
   }
 
@@ -305,6 +307,7 @@ final class WritePass {
   // is registered as running before any of its work, so one that finishes at once still ends
   // cleanly.
   CompletableFuture<List<Path>> requestPass(final boolean eager) {
+    eventLoop.checkOnLoop();
     if (runningPass != null) {
       if (nextPass == null) {
         nextPass = new CompletableFuture<>();
@@ -368,6 +371,7 @@ final class WritePass {
     trees.forEach(this::reconcileDeletedSourcesIn);
     // Under a build the configs it compiles with are its own; the first pass after it compares.
     if (!building) {
+      eventLoop.checkOnLoop();
       reportLombokConfigChanges(trees);
     }
 
@@ -531,6 +535,7 @@ final class WritePass {
   // Files the editor saved or the MCP engine wrote: written by a pass, the next one if a pass is
   // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    eventLoop.checkOnLoop();
     report(changed);
     return requestPass(false).thenAccept(stale -> {});
   }
@@ -664,7 +669,7 @@ final class WritePass {
   // Writes one level's trees together and starts the next level once all of them finish, so every
   // write resolves against the freshly written upstream classes. Stops at a reload (another
   // generation), and while a build holds the reactor lock writes only reported files; what is left
-  // stays stale for the next pass. Completes on the session thread.
+  // stays stale for the next pass. Completes on the event loop.
   private CompletableFuture<Void> writeLevels(
       final Deque<List<ModuleSourceConfig>> levels,
       final Map<ModuleSourceConfig, List<Path>> batches,

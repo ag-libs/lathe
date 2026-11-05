@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
  * without a file-system read; {@link #syncFromDisk} catches up with files changed outside the
  * editor.
  *
- * <p>Not thread-safe. All reads and writes must happen on the lathe-worker thread.
+ * <p>Not thread-safe. All reads and writes must happen on the event loop.
  */
 final class ReferenceCandidateIndex {
 

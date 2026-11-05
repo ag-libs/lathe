@@ -47,7 +47,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.logging.Level;
@@ -185,7 +184,7 @@ final class WorkspaceSession {
                 this::refreshOpenFiles,
                 this::keepWriteDiagnostics,
                 () -> renameTransaction.memberPaths()));
-    this.verifier = new ChangeVerifier(eventLoop, state, router, writePass);
+    this.verifier = new ChangeVerifier(state, router, writePass);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
 
@@ -1388,9 +1387,7 @@ final class WorkspaceSession {
                 new MessageActionItem(LATER_ACTION)));
     request.setMessage(message);
     request.setType(MessageType.Warning);
-    client
-        .showMessageRequest(request)
-        .thenAccept(action -> eventLoop.execute(() -> onSyncPromptResponse(action)));
+    eventLoop.rejoin(client.showMessageRequest(request)).thenAccept(this::onSyncPromptResponse);
   }
 
   // Sync / Sync + capture ask the client to run Maven (the server never does); Later just
@@ -1523,12 +1520,7 @@ final class WorkspaceSession {
           if (failure == null) {
             eventLoop.runLogged(() -> afterCompile.accept(snapshot, result));
           } else {
-            publisher.publishError(
-                snapshot,
-                mode,
-                failure instanceof CompletionException
-                    ? failure
-                    : new CompletionException(failure));
+            publisher.publishError(snapshot, mode, ExceptionUtil.asCompletion(failure));
           }
         });
     return compiled;

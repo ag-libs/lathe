@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -18,7 +19,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -484,7 +484,7 @@ final class RenameService {
   // A refusal reaches the client as the request's error; the log keeps why it was refused.
   private static void logRefusal(
       final String operation, final String uri, final Stopwatch t, final Throwable failure) {
-    final Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    final Throwable cause = ExceptionUtil.completionCause(failure);
     if (cause instanceof final ResponseErrorException refused) {
       LOG.info(
           () ->

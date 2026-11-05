@@ -158,7 +158,7 @@ final class ReactorTypeIndex {
     reactorIndexStale = true;
   }
 
-  // Built off the session thread, as a rebuild takes 100-200ms on a large reactor and would hold
+  // Built off the event loop, as a rebuild takes 100-200ms on a large reactor and would hold
   // back the publishes queued behind it; applied only if the index is still the one it was built
   // from and no newer build started.
   private void rebuild() {
@@ -169,19 +169,18 @@ final class ReactorTypeIndex {
     final long build = ++reactorIndexBuilds;
     final var rebuilt = new CompletableFuture<Void>();
     reactorIndexRebuilt = rebuilt;
-    CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
+    eventLoop
+        .rejoin(CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards)))
         .whenComplete(
-            (index, error) ->
-                eventLoop.execute(
-                    () -> {
-                      if (error != null) {
-                        LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
-                      } else if (typeIndex == base && build == reactorIndexBuilds) {
-                        typeIndex = index;
-                      }
+            (index, error) -> {
+              if (error != null) {
+                LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
+              } else if (typeIndex == base && build == reactorIndexBuilds) {
+                typeIndex = index;
+              }
 
-                      rebuilt.complete(null);
-                    }));
+              rebuilt.complete(null);
+            });
   }
 
   // Index types from dirty/open sources not yet built, so they show in symbols before their class

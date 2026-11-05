@@ -96,17 +96,15 @@ abstract class ServiceTestBase {
         .toList();
   }
 
-  // Force a round-trip through the single worker thread: a request submitted after initialize's
-  // load
-  // task completes only once that task (and its startup reconciliation) has run.
+  // Force a round-trip through the event loop: a request submitted after initialize's load task
+  // completes only once that task (and its startup reconciliation) has run.
   protected void awaitWorkerIdle() throws Exception {
     final var params = new FoldingRangeRequestParams();
     params.setTextDocument(new TextDocumentIdentifier("file:///nonexistent.java"));
     service.foldingRange(params).get(5, TimeUnit.SECONDS);
   }
 
-  // A reconcile pass runs after initialize on the FIFO worker, so startup reconciliation is
-  // finished
+  // A reconcile pass runs after initialize on the event loop, so startup reconciliation is finished
   // before the test mutates sources.
   protected void awaitStartup() throws Exception {
     service.reconcileNow(false).get(5, TimeUnit.SECONDS);

@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 // by content (a hash of the text before and after the edit), never by the shape of the change
 // events, so this holds for every editor. Until the editor applies the edit (a member shows its
 // edited text) the transaction is dormant: every event is ordinary and no file is held, so a rename
-// the user cancels never delays the files it named. Owned by the session's worker thread.
+// the user cancels never delays the files it named. Owned by the event loop.
 final class RenameTransaction {
 
   enum Action {

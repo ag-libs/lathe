@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
@@ -236,7 +237,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   // from the server) to an InvalidParams response so the editor shows the reason, not the generic
   // lsp4j "Internal error." wrapping.
   private static Object rethrowInvalidParams(final Throwable e) {
-    final Throwable cause = (e instanceof CompletionException) ? e.getCause() : e;
+    final Throwable cause = ExceptionUtil.completionCause(e);
     if (cause instanceof IllegalArgumentException iae) {
       throw invalidParams(iae);
     }

@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
@@ -98,6 +99,7 @@ final class RunCoordinator {
 
   CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    eventLoop.checkOnLoop();
     return startTestRun(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
@@ -122,11 +124,10 @@ final class RunCoordinator {
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
-    // Register/deregister the run by token so a cancel can reach it. Marshaled onto the event loop
-    // so
-    // activeRuns keeps the single-threaded discipline of every other field. Removal covers the
-    // blocked/error paths too (removing an unregistered token is a no-op).
-    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
+    // Register/deregister the run by token so a cancel can reach it, on the event loop like every
+    // other field. Removal covers the blocked/error paths too (removing an unregistered token is a
+    // no-op).
+    eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
     final Consumer<LaunchSession> onStart =
         session -> eventLoop.execute(() -> activeRuns.put(token, session));
 
@@ -152,6 +153,7 @@ final class RunCoordinator {
   }
 
   void cancelRun(final String token) {
+    eventLoop.checkOnLoop();
     final LaunchSession session = activeRuns.get(token);
     if (session == null) {
       LOG.fine(() -> "[cancel] %s no active run".formatted(token));
@@ -170,6 +172,7 @@ final class RunCoordinator {
    */
   CompletableFuture<DebugStartResult> debugTest(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    eventLoop.checkOnLoop();
     return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
@@ -231,6 +234,7 @@ final class RunCoordinator {
    */
   CompletableFuture<DebugStartResult> debugMain(
       final String moduleRel, final String mainClass, final String token) {
+    eventLoop.checkOnLoop();
     return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
@@ -350,15 +354,14 @@ final class RunCoordinator {
       final CompletableFuture<Void> jdwpReady,
       final String label) {
     activeRuns.put(token, session);
-    session
-        .onExit()
+    eventLoop
+        .rejoin(session.onExit())
         .whenComplete(
-            (outcome, error) ->
-                eventLoop.execute(
-                    () -> {
-                      publishTestFinished(token, outcome, error);
-                      endDebugSession(token);
-                    }));
+            (outcome, error) -> {
+              publishTestFinished(
+                  token, outcome, error == null ? null : ExceptionUtil.completionCause(error));
+              endDebugSession(token);
+            });
 
     // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening. Gate on
     // the agent's own "Listening for transport ... at address:" banner (surfaced through the drain
@@ -538,6 +541,7 @@ final class RunCoordinator {
   // them. Answered from the cache until the module's test classes change (sync and save compiles
   // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
   CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
+    eventLoop.checkOnLoop();
     final FileTime stamp = testClassesStamp(moduleRel);
     final CachedDiscovery cached = discoveries.get(moduleRel);
     if (cached != null && Objects.equals(cached.stamp(), stamp)) {
@@ -842,6 +846,7 @@ final class RunCoordinator {
 
   CompletableFuture<LaunchOutcome> runMainFuture(
       final String moduleRel, final String mainClass, final String token) {
+    eventLoop.checkOnLoop();
     return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
@@ -852,7 +857,7 @@ final class RunCoordinator {
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
     final var result = new CompletableFuture<LaunchOutcome>();
-    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
+    eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
     final Consumer<LaunchSession> onStart =
         session -> eventLoop.execute(() -> activeRuns.put(token, session));
 
@@ -929,6 +934,7 @@ final class RunCoordinator {
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
+    eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
     return switch (config.kind()) {
       case MAIN -> startMainRun(config.module(), config.mainClass(), token, config);
@@ -937,6 +943,7 @@ final class RunCoordinator {
   }
 
   CompletableFuture<DebugStartResult> debugNamed(final String name, final String token) {
+    eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
     return switch (config.kind()) {
       case MAIN -> startDebugMain(config.module(), config.mainClass(), token, config);
@@ -945,6 +952,7 @@ final class RunCoordinator {
   }
 
   List<RunConfigInfo> listRunConfigs() {
+    eventLoop.checkOnLoop();
     return readRunConfig().configs().stream().map(RunCoordinator::toInfo).toList();
   }
 
@@ -956,6 +964,7 @@ final class RunCoordinator {
       final List<TestSelection> selectors,
       final boolean overwrite)
       throws IOException {
+    eventLoop.checkOnLoop();
     return new RunConfigWriter(state.root())
         .save(name, moduleRel, kind, mainClass, selectors, overwrite);
   }
