@@ -245,6 +245,17 @@ jobs:
           curl -fsSL -o "$RUNNER_TEMP/gradle.zip" "https://services.gradle.org/distributions/gradle-${{ matrix.gradle }}-bin.zip"
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
 
+      - name: Cache the fixtures' Gradle user home
+        # TestKit runs the fixtures with a Gradle user home of their own, under the build directory,
+        # which the Gradle cache above does not cover: each job regenerated the Gradle API jar
+        # (about 185 MB) and recompiled the fixtures' Kotlin scripts, slowest on Windows. Per OS,
+        # Gradle and JDK, since those generated files depend on all three.
+        uses: actions/cache@v6
+        with:
+          path: lathe-gradle-plugin/target/gradle/tmp/functionalTest/work/.gradle-test-kit/caches
+          key: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ hashFiles('lathe-gradle-plugin/build.gradle.kts', 'lathe-gradle-plugin/settings.gradle.kts', 'lathe-gradle-plugin/gradle.properties') }}
+          restore-keys: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-
+
       - name: Build and test the Gradle plugin
         # maven.test.skip leaves out the dependencies' tests; lathe.gradle.skipUnitTests says whether
         # the plugin's own run. lathe-junit is named because the fixtures get it as an extra
