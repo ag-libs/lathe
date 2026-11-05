@@ -9573,6 +9573,44 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-29 — On Gradle, the workspace merges facts a build did not refresh — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: the editor and MCP on a Gradle build where a project's `latheFacts` did not run.**
+
+Found while fixing the capture-only sync ordering (2026-11-05); what remains of the stale-workspace half once a failing
+test task no longer keeps facts from running.
+
+### Observed behaviour
+
+`latheWorkspace` merges every `lathe-facts.json` under `.lathe/`, whether or not this build wrote it.
+A project whose facts did not run (its compile failed, or on Gradle 8 under Isolated Projects a test task failed
+before its facts started) contributes the facts of an earlier build.
+That is mostly what Maven does too, but `runnerClasspath` takes the first non-empty value across all facts, so one
+stale project can point the whole workspace at a runner jar from a build that no longer exists: every test run then
+fails with `ClassNotFoundException: io.github.aglibs.lathe.runner.LatheTestRunner`, as seen on Caffeine before the
+ordering fix.
+
+### Fix direction
+
+Take the runner classpath only from facts this build wrote (or skip one whose jars are gone), and say in the build
+output which projects' facts are older than this build.
+
+### Resolution
+
+`latheWorkspace` still merges the facts each project last wrote, as a build of one project needs, but takes the
+runner classpath from the first project whose runner jars are all in place, and warns for each project whose
+recorded runner is gone, naming it.
+
+### Regression targets
+
+`LatheWorkspaceTaskTest.runnerClasspath_staleRunnerFirst_takesThePresentOneAndNamesTheStale`.
+
+---
+
 ## WS-28 — On Gradle, a first sync whose test tasks fail leaves the workspace empty or stale — done
 
 **Status: done.**
@@ -10890,6 +10928,125 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 ---
 
 # Test Execution (TE) — resolved
+
+## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: run, debug and replay on Gradle builds that run tests through the Develocity plugin.**
+
+Found by the Gradle plugin's end-to-end check (2026-10-25) on JUnit's own build.
+Gradle support is not on `main` yet (branch `feat/gradle-plugin`), so this gap applies once it lands.
+
+### Observed behaviour
+
+The Develocity Gradle plugin starts the test JVM through its own launcher, with that launcher's jar
+and a copy of `opentest4j` in a temporary directory (`/tmp/test-distribution-test-launcher-forked…/`)
+that is deleted after the run; it does so even with the build's own switch for Test Distribution off.
+The capture records the launch it saw, so `test-launch.json` names files that no longer exist.
+The server's completeness gate checks only the reactor's trees, so the replay launches anyway and
+fails with `NoClassDefFoundError: org/opentest4j/AssertionFailedError`.
+
+### Fix direction
+
+Decided 2026-10-25: a known limitation, not worked around (mapping the temporary copies back to
+same-named jars is a guess; switching Develocity off needs the Develocity plugin's API).
+The gate blocks a replay whose class or module path names a missing file outside the reactor, with
+a reason naming the file and suggesting a launch outside the Develocity plugin's test acceleration;
+the Gradle guide documents the limitation.
+
+### Resolution
+
+The completeness gate now blocks a replay whose class or module path names a jar that no `.lathe/` mirror stands
+for and that no longer exists, with a reason naming the jar and Develocity's test acceleration as the usual cause.
+A missing directory is left alone, since builds list output directories that were never created.
+The Gradle guide says to turn Develocity's Predictive Test Selection and Test Distribution off for the capture-only
+sync; with them off (`-Pjunit.develocity.predictiveTestSelection.enabled=false` in JUnit's build), `jupiter-tests`
+captures a launch whose 50 entries all exist.
+
+### Regression targets
+
+`CompletenessGateTest.verify_capturedJarDeleted_blockedNamingIt_missingDirectoryNot`.
+
+---
+
+## TE-13 — On Gradle, test runs in JUnit's own repository fail to load opentest4j — duplicate of TE-7
+
+**Status: done (duplicate of TE-7).**
+
+**Value: medium — Size: S**
+
+**Affects: editor test runs and MCP `run_test` on JUnit's own repository; possibly any JUnit 6 build with parallel execution.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+In junit-framework, `documentation` is captured (its `test-launch.json` lists `opentest4j-1.3.0.jar` on its class path), yet a run of `example.MyFirstJUnitJupiterRecordTests`, from the editor or MCP, fails before any test: `NoClassDefFoundError: org/opentest4j/TestAbortedException`, thrown in a JUnit 6 parallel-execution worker (`WorkerThreadPoolHierarchicalTestExecutorService`) while initializing `OpenTest4JAndJUnit4AwareThrowableCollector`.
+JUnit tests the platform it builds, so the replay rewrites the platform's own jars to their `.lathe/` mirrors; whether that or JUnit 6's worker threads is the cause is open.
+Test runs in Micronaut, Hibernate ORM, Caffeine and a JUnit 5 fixture pass.
+
+### Fix direction
+
+Reproduce on a small JUnit 6 project with parallel execution enabled; if it passes there, it is specific to a build that tests the JUnit Platform itself.
+Then compare the replay's class path and class-loader setup with Gradle's test worker for the failing run.
+
+### Resolution
+
+The same cause as TE-7: the captured `documentation` launch names
+`/tmp/test-distribution-test-launcher-forked…/opentest4j-1.3.0.jar` and the launcher's own jar, both deleted after the
+run, so the replay could not load `org.opentest4j.TestAbortedException`; JUnit 6's parallel worker only happened to
+load it first.
+The TE-7 gate now blocks that run with a reason naming the missing jar.
+
+### Regression targets
+
+See TE-7.
+
+---
+
+## TE-14 — On Gradle, JUnit's own repository captures one test module of five, silently — done
+
+**Status: done.**
+
+**Value: low — Size: S**
+
+**Affects: editor test runs and MCP `run_test` on JUnit's own repository.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+The capture-only sync of junit-framework runs the `test` task of all five test modules (`documentation`, `jupiter-tests`, `platform-tests`, `junit-vintage-engine`, `platform-tooling-support-tests`), but only `documentation` writes a `test-launch.json`; the build succeeds and nothing says why the other four wrote none.
+A run in one of them answers that no test launch was captured.
+Micronaut (64 of its test modules) and Hibernate ORM (17) capture as expected.
+
+### Fix direction
+
+Find what keeps the capture listener from recording in those forks (JUnit tests its own platform, which may shadow the listener's), and report a test task that ran without a capture.
+
+### Resolution
+
+JUnit's build turns Develocity's Predictive Test Selection on by default.
+Develocity then runs the selected tests in a JVM of its own, which does not get the test task's `JDK_JAVA_OPTIONS`:
+lathe-junit never loads, so nothing is captured, and without its filter the capture-only sync ran every test in full.
+Sometimes its test-selection JVM, which does load lathe-junit, captures a launch instead, naming jars in a temporary
+directory deleted after the run (TE-7's launch).
+Lathe cannot reach the JVM that runs the tests, so the capture-only test task now writes a marker as it starts and
+warns, naming Develocity's test acceleration, when no launch was written after it
+(`[lathe] :jupiter-tests:test captured no test launch …`) or when the launch written names a jar that is gone
+(`… captured a launch naming …, a temporary jar …`): Develocity deletes its launcher's copies only later in the build,
+so a jar in the temporary directory outside the build counts, as well as one already gone.
+With Predictive Test Selection off, `jupiter-tests` captures and skips its tests as expected.
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.captureOnlySync_testJvmWithoutTheAgent_warnsThatNothingWasCaptured`,
+`LatheTestCaptureTest.temporaryJar_launcherCopyOrGone_namesIt_buildRepositoryAndDirectoriesNot`.
+
+---
 
 ## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them — done
 
