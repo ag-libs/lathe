@@ -111,11 +111,8 @@ val functionalTestTask =
       shouldRunAfter(tasks.test)
       // Each fixture is a real Gradle build, slow to start (most on Windows): test classes run in
       // parallel JVMs, one core left for the build itself. One class's tests stay in one JVM, in
-      // order. A CI runner has half the cores its processor count says (Windows: 2 cores, 4
-      // threads), and each JVM drives a Gradle daemon of its own: one JVM per core there.
-      val processors = Runtime.getRuntime().availableProcessors()
-      val ci = providers.environmentVariable("CI").isPresent
-      maxParallelForks = (if (ci) processors / 2 else processors - 1).coerceAtLeast(1)
+      // order.
+      maxParallelForks = (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1)
       dependsOn("publishAllPublicationsToFixturesRepository")
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
