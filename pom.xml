@@ -398,6 +398,33 @@
 
   <profiles>
     <profile>
+      <!-- CI runners have half the cores their processor count says (a Windows runner is 2 cores, 4
+           threads), and test classes running one per thread there fight for them, which turned a
+           busy runner's minutes into tens of minutes: one per core instead. CI sets the variable. -->
+      <id>ci</id>
+      <activation>
+        <property>
+          <name>env.CI</name>
+        </property>
+      </activation>
+      <build>
+        <pluginManagement>
+          <plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-plugin</artifactId>
+              <configuration>
+                <configurationParameters>
+                  junit.jupiter.execution.parallel.config.strategy=dynamic
+                  junit.jupiter.execution.parallel.config.dynamic.factor=0.5
+                </configurationParameters>
+              </configuration>
+            </plugin>
+          </plugins>
+        </pluginManagement>
+      </build>
+    </profile>
+    <profile>
       <!-- Coverage costs about 8% of test CPU and nothing reads the report yet: run it on demand with -Pcoverage. -->
       <id>coverage</id>
       <build>
