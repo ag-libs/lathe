@@ -6,6 +6,9 @@ inputs:
   java:
     description: The JDK the row runs its tests on.
     required: true
+  maven-version:
+    description: The Maven that builds Lathe.
+    default: 3.9.16
 runs:
   using: composite
   steps:
@@ -37,10 +40,10 @@ runs:
         java-version: '21'
         distribution: 'temurin'
 
-    - name: Set up Maven 3.9.16
-      uses: stCarolas/setup-maven@v5
+    - name: Set up Maven ${{ inputs.maven-version }}
+      uses: ./.github/actions/maven
       with:
-        maven-version: 3.9.16
+        version: ${{ inputs.maven-version }}
 
     - name: Set up Gradle 9.8.2
       # Builds lathe-gradle-plugin and runs its fixtures, unless a job points them at an older Gradle.
