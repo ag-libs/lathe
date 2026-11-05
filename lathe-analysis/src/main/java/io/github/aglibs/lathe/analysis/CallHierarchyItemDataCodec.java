@@ -40,7 +40,8 @@ public final class CallHierarchyItemDataCodec {
                 target.erasedDescriptor(),
                 kind,
                 uri,
-                target.scope())));
+                target.scope(),
+                target.staticMember())));
     return item;
   }
 
@@ -52,6 +53,7 @@ public final class CallHierarchyItemDataCodec {
     json.addProperty("kind", data.kind().name());
     json.addProperty("routingUri", data.routingUri());
     json.addProperty("scope", data.scope().name());
+    json.addProperty("staticMember", data.staticMember());
     return json;
   }
 
@@ -67,7 +69,10 @@ public final class CallHierarchyItemDataCodec {
           json.get("erasedDescriptor").getAsString(),
           ElementKind.valueOf(json.get("kind").getAsString()),
           json.get("routingUri").getAsString(),
-          ReferenceTarget.SearchScope.valueOf(json.get("scope").getAsString()));
+          ReferenceTarget.SearchScope.valueOf(json.get("scope").getAsString()),
+          // An item from before the flag (a server restart under an open hierarchy): not static,
+          // which searches every file spelling the name, as then.
+          json.has("staticMember") && json.get("staticMember").getAsBoolean());
     }
 
     return null;

@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import javax.lang.model.element.ElementKind;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
@@ -36,8 +37,15 @@ class CallHierarchyIncomingLocatorTest {
       assertThat(items.get(0).getName()).isEqualTo("run");
 
       final List<CallHierarchyIncomingCall> calls =
-          session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
+          session
+              .searchIncomingCalls(
+                  TempSourceCompiler.TEST_URI,
+                  content,
+                  1,
+                  targetFrom(items.get(0)),
+                  Set.of(),
+                  () -> {})
+              .hits();
 
       assertThat(calls).hasSize(1);
       assertThat(calls.get(0).getFrom().getName()).isEqualTo("invoke");
@@ -73,8 +81,15 @@ class CallHierarchyIncomingLocatorTest {
       assertThat(data.kind()).isEqualTo(ElementKind.CONSTRUCTOR);
 
       final List<CallHierarchyIncomingCall> calls =
-          session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
+          session
+              .searchIncomingCalls(
+                  TempSourceCompiler.TEST_URI,
+                  content,
+                  1,
+                  targetFrom(items.get(0)),
+                  Set.of(),
+                  () -> {})
+              .hits();
 
       assertThat(calls)
           .extracting(c -> c.getFrom().getName(), c -> c.getFromRanges().get(0).getStart())
@@ -101,8 +116,15 @@ class CallHierarchyIncomingLocatorTest {
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyIncomingCall> calls =
-          session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
+          session
+              .searchIncomingCalls(
+                  TempSourceCompiler.TEST_URI,
+                  content,
+                  1,
+                  targetFrom(items.get(0)),
+                  Set.of(),
+                  () -> {})
+              .hits();
 
       assertThat(calls).isEmpty();
     }
@@ -129,8 +151,15 @@ class CallHierarchyIncomingLocatorTest {
       assertThat(items.get(0).getName()).isEqualTo("setup");
 
       final List<CallHierarchyIncomingCall> calls =
-          session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
+          session
+              .searchIncomingCalls(
+                  TempSourceCompiler.TEST_URI,
+                  content,
+                  1,
+                  targetFrom(items.get(0)),
+                  Set.of(),
+                  () -> {})
+              .hits();
 
       assertThat(calls).hasSize(1);
       assertThat(calls.get(0).getFrom().getName()).isEqualTo("run");
@@ -160,8 +189,15 @@ class CallHierarchyIncomingLocatorTest {
       // u.setup() targets Unrelated.setup(), which neither overrides nor is overridden by
       // FeatureImpl.setup(); it must not be reported.
       final List<CallHierarchyIncomingCall> calls =
-          session.searchIncomingCalls(
-              TempSourceCompiler.TEST_URI, content, 1, targetFrom(items.get(0)), () -> {});
+          session
+              .searchIncomingCalls(
+                  TempSourceCompiler.TEST_URI,
+                  content,
+                  1,
+                  targetFrom(items.get(0)),
+                  Set.of(),
+                  () -> {})
+              .hits();
 
       assertThat(calls).isEmpty();
     }
@@ -177,6 +213,7 @@ class CallHierarchyIncomingLocatorTest {
         data.scope(),
         List.of(),
         false,
+        data.staticMember(),
         -1);
   }
 

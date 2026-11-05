@@ -165,6 +165,11 @@ public final class ProgressReporter {
       reporter.notifyProgress(token, begin);
     }
 
+    // More work joins a running task: a search's second phase.
+    public synchronized void extend(final int more) {
+      total += more;
+    }
+
     public synchronized void advance() {
       if (token == null || state == State.ENDED) {
         return;

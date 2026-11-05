@@ -40,6 +40,7 @@ class RenameBindingCheckTest {
             ReferenceTarget.SearchScope.REACTOR_MODULES,
             List.of(),
             true,
+            false,
             -1);
 
     try (var compiler = new TempSourceCompiler(List.of(classes))) {

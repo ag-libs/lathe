@@ -9,7 +9,8 @@ public record CallHierarchyItemData(
     String erasedDescriptor,
     ElementKind kind,
     String routingUri,
-    ReferenceTarget.SearchScope scope) {
+    ReferenceTarget.SearchScope scope,
+    boolean staticMember) {
 
   public CallHierarchyItemData {
     ValidCheck.check()

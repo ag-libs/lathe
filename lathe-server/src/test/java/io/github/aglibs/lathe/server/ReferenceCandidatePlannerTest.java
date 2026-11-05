@@ -47,6 +47,11 @@ class ReferenceCandidatePlannerTest {
   }
 
   private Set<String> plan(final WorkspaceTypeIndex typeIndex, final ReferenceTarget target) {
+    return candidatePlan(typeIndex, target).primary();
+  }
+
+  private ReferenceCandidatePlanner.CandidatePlan candidatePlan(
+      final WorkspaceTypeIndex typeIndex, final ReferenceTarget target) {
     final var index = ReferenceCandidateIndex.build(List.of(config()));
     return new ReferenceCandidatePlanner(index, typeIndex).planCandidates(config(), target);
   }
@@ -77,6 +82,21 @@ class ReferenceCandidatePlannerTest {
         ReferenceTarget.SearchScope.REACTOR_MODULES,
         overriddenDeclarers,
         kind == ElementKind.METHOD,
+        false,
+        -1);
+  }
+
+  private static ReferenceTarget staticMethod(
+      final String ownerBinaryName, final String simpleName, final String descriptor) {
+    return new ReferenceTarget(
+        ElementKind.METHOD,
+        ownerBinaryName,
+        simpleName,
+        descriptor,
+        ReferenceTarget.SearchScope.REACTOR_MODULES,
+        List.of(),
+        true,
+        true,
         -1);
   }
 
@@ -125,7 +145,8 @@ class ReferenceCandidatePlannerTest {
   private Set<String> planWith(final ModuleSourceConfig cfg, final ReferenceTarget target) {
     final var index = ReferenceCandidateIndex.build(List.of(cfg));
     return new ReferenceCandidatePlanner(index, WorkspaceTypeIndex.empty())
-        .planCandidates(cfg, target);
+        .planCandidates(cfg, target)
+        .primary();
   }
 
   @Test
@@ -283,6 +304,187 @@ class ReferenceCandidatePlannerTest {
         """);
 
     assertThat(plan(method("com.example.Config", "amount", "()", List.of()))).isEmpty();
+  }
+
+  // A static method's callers name its family, import it statically, or sit inside the family;
+  // a file naming the family is searched first even without the method's name, as it may expose the
+  // family, and a file spelling only the method's name is deferred until one does.
+  @Test
+  void planCandidates_staticMethod_searchesTheFamilyFirstAndDefersTheRest() throws IOException {
+    final Path util =
+        write(
+            "Util.java",
+            """
+            package com.example;
+            class Util { static boolean isEmpty(String s) { return s.isEmpty(); } }
+            """);
+    final Path caller =
+        write(
+            "Caller.java",
+            """
+            package com.example;
+            class Caller { boolean check(String s) { return Util.isEmpty(s); } }
+            """);
+    final Path sub =
+        write(
+            "SubUtil.java",
+            """
+            package com.example;
+            class SubUtil extends Util { boolean check(String s) { return isEmpty(s); } }
+            """);
+    final Path importer =
+        write(
+            "Importer.java",
+            """
+            package com.example;
+            import static com.example.Util.isEmpty;
+            class Importer { boolean check(String s) { return isEmpty(s); } }
+            """);
+    final Path holder =
+        write(
+            "Holder.java",
+            """
+            package com.example;
+            class Holder { Util util() { return null; } }
+            """);
+    final List<Path> unrelated = listCheckers(3);
+    final var typeIndex =
+        reactorIndex(entry("com.example.Util"), entry("com.example.SubUtil", "com.example.Util"));
+
+    final var plan =
+        candidatePlan(typeIndex, staticMethod("com.example.Util", "isEmpty", "(java.lang.String)"));
+
+    assertThat(plan.primary())
+        .containsExactlyInAnyOrder(uri(util), uri(caller), uri(sub), uri(importer), uri(holder));
+    assertThat(plan.deferred())
+        .containsExactlyInAnyOrderElementsOf(unrelated.stream().map(this::uri).toList());
+    assertThat(plan.exposureFamily())
+        .containsExactlyInAnyOrder("com.example.Util", "com.example.SubUtil");
+  }
+
+  // Files that spell isEmpty only for java.util.List's: callers of no static isEmpty.
+  private List<Path> listCheckers(final int count) throws IOException {
+    final var files = new java.util.ArrayList<Path>();
+    for (int i = 0; i < count; i++) {
+      files.add(
+          write(
+              "Unrelated%d.java".formatted(i),
+              """
+              package com.example;
+              import java.util.List;
+              class Unrelated%d { boolean check(List<String> list) { return list.isEmpty(); } }
+              """
+                  .formatted(i)));
+    }
+
+    return List.copyOf(files);
+  }
+
+  // When the family is named in at least as many files as spell the method, the method's files are
+  // the smaller search, and as in one phase they need no exposure check.
+  @Test
+  void planCandidates_staticMethodOfAWidelyNamedType_searchesTheMethodsFilesInOnePhase()
+      throws IOException {
+    final Path util =
+        write(
+            "Util.java",
+            """
+            package com.example;
+            class Util { static boolean isEmpty(String s) { return s.isEmpty(); } }
+            """);
+    final Path caller =
+        write(
+            "Caller.java",
+            """
+            package com.example;
+            class Caller { boolean check(String s) { return Util.isEmpty(s); } }
+            """);
+    for (int i = 0; i < 3; i++) {
+      write(
+          "Holder%d.java".formatted(i),
+          """
+          package com.example;
+          class Holder%d { Util util; }
+          """
+              .formatted(i));
+    }
+
+    final var plan =
+        candidatePlan(
+            reactorIndex(entry("com.example.Util")),
+            staticMethod("com.example.Util", "isEmpty", "(java.lang.String)"));
+
+    assertThat(plan.primary()).containsExactlyInAnyOrder(uri(util), uri(caller));
+    assertThat(plan.deferred()).isEmpty();
+    assertThat(plan.exposureFamily()).isEmpty();
+  }
+
+  // An interface's static method takes no receiver and is not inherited: only files naming the
+  // interface can call it, so the narrowed set is the whole answer.
+  @Test
+  void planCandidates_interfaceStaticMethod_searchesFilesNamingTheInterfaceInOnePhase()
+      throws IOException {
+    final Path checks =
+        write(
+            "Checks.java",
+            """
+            package com.example;
+            interface Checks { static boolean isEmpty(String s) { return s.isEmpty(); } }
+            """);
+    final Path caller =
+        write(
+            "Caller.java",
+            """
+            package com.example;
+            class Caller { boolean check(String s) { return Checks.isEmpty(s); } }
+            """);
+    listCheckers(2);
+    final var typeIndex =
+        WorkspaceTypeIndex.empty()
+            .withReactorEntries(
+                List.of(
+                    List.of(
+                        new TypeIndexEntry(
+                            "Checks",
+                            "com.example.Checks",
+                            "com.example",
+                            TypeKind.INTERFACE,
+                            true,
+                            List.of()))));
+
+    final var plan =
+        candidatePlan(
+            typeIndex, staticMethod("com.example.Checks", "isEmpty", "(java.lang.String)"));
+
+    assertThat(plan.primary()).containsExactlyInAnyOrder(uri(checks), uri(caller));
+    assertThat(plan.deferred()).isEmpty();
+    assertThat(plan.exposureFamily()).isEmpty();
+  }
+
+  @Test
+  void planCandidates_instanceMethod_defersNothing() throws IOException {
+    final Path holder =
+        write(
+            "Holder.java",
+            """
+            package com.example;
+            class Holder { boolean isEmpty() { return true; } }
+            """);
+    final Path other =
+        write(
+            "Other.java",
+            """
+            package com.example;
+            class Other { boolean check(Holder h) { return h.isEmpty(); } }
+            """);
+
+    final var plan =
+        candidatePlan(
+            WorkspaceTypeIndex.empty(), method("com.example.Holder", "isEmpty", "()", List.of()));
+
+    assertThat(plan.primary()).containsExactlyInAnyOrder(uri(holder), uri(other));
+    assertThat(plan.deferred()).isEmpty();
+    assertThat(plan.exposureFamily()).isEmpty();
   }
 
   @Test

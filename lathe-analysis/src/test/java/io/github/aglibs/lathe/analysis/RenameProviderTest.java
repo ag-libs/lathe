@@ -106,7 +106,10 @@ class RenameProviderTest {
       assertThat(target.isLocalScope()).isTrue();
 
       final List<Location> occurrences =
-          session.searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true).stream()
+          session
+              .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+              .hits()
+              .stream()
               .map(match -> new Location(match.uri(), match.range()))
               .toList();
       final var edits =
@@ -145,7 +148,10 @@ class RenameProviderTest {
           session.resolveTarget(requestAt(source, posOf(source, "\tcache.put", "cache")));
 
       final List<Range> ranges =
-          session.searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true).stream()
+          session
+              .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+              .hits()
+              .stream()
               .map(match -> match.range())
               .toList();
 
@@ -495,7 +501,10 @@ class RenameProviderTest {
     final var target =
         session.resolveRenameTarget(requestAt(source, posOf(source, cursorText, cursorToken)));
     final List<Location> occurrences =
-        session.searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true).stream()
+        session
+            .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, true)
+            .hits()
+            .stream()
             .map(match -> new Location(match.uri(), match.range()))
             .toList();
     return RenameProvider.toWorkspaceEdit(occurrences, newName)

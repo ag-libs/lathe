@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server.module;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.FamilyExposure;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
@@ -15,6 +16,7 @@ import io.github.aglibs.lathe.server.LombokFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Position;
@@ -81,6 +83,7 @@ class LombokAnalysisTest {
       assertThat(
               session
                   .searchReferences(uri(), SOURCE, 1, session.resolveTarget(request), true)
+                  .hits()
                   .stream()
                   .map(match -> match.range().getStart()))
           .containsExactlyInAnyOrder(
@@ -253,6 +256,37 @@ class LombokAnalysisTest {
         .orElseThrow()
         .getRange()
         .getStart();
+  }
+
+  // The getter Lombok generates from a private field is public: a file can reach Util's static
+  // methods through holder.getUtil() without naming Util, so it exposes the family.
+  @Test
+  void familyExposure_getterGeneratedFromAPrivateField_countsAsExposing() {
+    final String source =
+        """
+        package com.example;
+
+        import lombok.Getter;
+
+        @Getter
+        class Holder {
+          private Util util;
+        }
+
+        class Util {
+          static boolean isEmpty(String s) {
+            return s.isEmpty();
+          }
+        }
+        """;
+    try (var compiler =
+        new ModuleSourceCompiler(
+            LombokFixtures.moduleConfig(td, sourceRoot(), null), new CompilationAdmission(1))) {
+      final var analysis = compiler.compile(uri(), source, CompileMode.OPEN).fileAnalysis();
+
+      assertThat(FamilyExposure.exposures(analysis, Set.of("com.example.Util")))
+          .containsExactly("com.example.Holder.getUtil");
+    }
   }
 
   private SourceAnalysisSession session() {

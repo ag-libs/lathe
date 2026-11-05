@@ -15,7 +15,8 @@ class CallHierarchyItemDataCodecTest {
           "(java.lang.String,int)",
           ElementKind.METHOD,
           "file:///com/example/Foo.java",
-          ReferenceTarget.SearchScope.REACTOR_MODULES);
+          ReferenceTarget.SearchScope.REACTOR_MODULES,
+          true);
 
   @Test
   void encode_decode_roundTrip_preservesAllFields() {
@@ -34,6 +35,7 @@ class CallHierarchyItemDataCodecTest {
     json.addProperty("kind", "METHOD");
     json.addProperty("routingUri", "file:///com/example/Foo.java");
     json.addProperty("scope", "REACTOR_MODULES");
+    json.addProperty("staticMember", true);
 
     final CallHierarchyItemData decoded = CallHierarchyItemDataCodec.decode(json);
 
@@ -44,5 +46,14 @@ class CallHierarchyItemDataCodecTest {
     assertThat(decoded.kind()).isEqualTo(ElementKind.METHOD);
     assertThat(decoded.routingUri()).isEqualTo("file:///com/example/Foo.java");
     assertThat(decoded.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
+    assertThat(decoded.staticMember()).isTrue();
+  }
+
+  @Test
+  void decode_itemWithoutStaticFlag_decodesAsNotStatic() {
+    final JsonObject encoded = CallHierarchyItemDataCodec.encode(SAMPLE);
+    encoded.remove("staticMember");
+
+    assertThat(CallHierarchyItemDataCodec.decode(encoded).staticMember()).isFalse();
   }
 }

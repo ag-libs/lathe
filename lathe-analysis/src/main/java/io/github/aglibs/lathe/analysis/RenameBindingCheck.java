@@ -108,6 +108,7 @@ public final class RenameBindingCheck {
         target.scope(),
         target.overriddenDeclarers(),
         target.overrideFamilyBounded(),
+        target.staticMember(),
         target.hasDeclarationIdentity() && declaringFile != null
             ? declaringFile.shifted((int) target.declarationOffset())
             : target.declarationOffset());

@@ -650,66 +650,77 @@ public final class SourceAnalysisSession implements AutoCloseable {
         .orElse(null);
   }
 
-  public List<ReferenceMatch> searchReferences(
+  public SearchHits<ReferenceMatch> searchReferences(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration) {
-    return searchReferences(uri, content, version, target, includeDeclaration, () -> {});
+    return searchReferences(uri, content, version, target, includeDeclaration, Set.of(), () -> {});
   }
 
-  public List<ReferenceMatch> searchReferences(
+  // exposureFamily: the family whose exposure to unnamed files to report (FamilyExposure), empty
+  // for none.
+  public SearchHits<ReferenceMatch> searchReferences(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     final AttributedFileAnalysis analysis =
         ensureAttributedAnalysis(uri, content, version, cancelChecker);
     cancelChecker.checkCanceled();
-    return locateReferences(uri, target, includeDeclaration, analysis);
+    return new SearchHits<>(
+        locateReferences(uri, target, includeDeclaration, analysis),
+        FamilyExposure.exposures(analysis, exposureFamily));
   }
 
-  public List<ReferenceMatch> searchReferencesTransient(
+  public SearchHits<ReferenceMatch> searchReferencesTransient(
       final List<TransientSource> sources,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final IntConsumer progressPerFile,
       final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
     final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
     cancelChecker.checkCanceled();
     LOG.fine(() -> "[references:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
-    final var results = new ArrayList<ReferenceMatch>();
+    final var results = new ArrayList<SearchHits<ReferenceMatch>>();
     for (final var analysis : analyses) {
       cancelChecker.checkCanceled();
       final List<ReferenceMatch> matches =
           locateReferences(analysis.uri(), target, includeDeclaration, analysis.analysis());
-      results.addAll(matches);
+      results.add(
+          new SearchHits<>(matches, FamilyExposure.exposures(analysis.analysis(), exposureFamily)));
       progressPerFile.accept(matches.size());
     }
 
-    return List.copyOf(results);
+    return SearchHits.merge(results);
   }
 
-  public List<CallHierarchyIncomingCall> searchIncomingCalls(
+  public SearchHits<CallHierarchyIncomingCall> searchIncomingCalls(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     final AttributedFileAnalysis analysis =
         ensureAttributedAnalysis(uri, content, version, cancelChecker);
     cancelChecker.checkCanceled();
-    return locateIncomingCalls(uri, target, analysis);
+    return new SearchHits<>(
+        locateIncomingCalls(uri, target, analysis),
+        FamilyExposure.exposures(analysis, exposureFamily));
   }
 
-  public List<CallHierarchyIncomingCall> searchIncomingCallsTransient(
+  public SearchHits<CallHierarchyIncomingCall> searchIncomingCallsTransient(
       final String uri,
       final String content,
       final ReferenceTarget target,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     final var t = Stopwatch.start();
     final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
@@ -718,7 +729,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
         () ->
             "[compile:fast] %s %dms diags=%d"
                 .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return locateIncomingCalls(uri, target, run.fileAnalysis());
+    return new SearchHits<>(
+        locateIncomingCalls(uri, target, run.fileAnalysis()),
+        FamilyExposure.exposures(run.fileAnalysis(), exposureFamily));
   }
 
   private List<CallHierarchyIncomingCall> locateIncomingCalls(
@@ -1074,6 +1087,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
             data.scope(),
             List.of(),
             false,
+            data.staticMember(),
             -1);
     try {
       return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);

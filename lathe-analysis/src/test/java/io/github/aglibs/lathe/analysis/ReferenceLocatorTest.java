@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.eclipse.lsp4j.Position;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -994,7 +995,9 @@ class ReferenceLocatorTest {
 
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
-          session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
+          session
+              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .hits();
 
       assertThat(results).hasSize(1);
       assertThat(session.resolveTarget(request)).isNotNull();
@@ -1011,11 +1014,17 @@ class ReferenceLocatorTest {
         List.of(new TransientSource(TempSourceCompiler.TEST_URI, METHOD_SOURCE));
     try (final var session = new SourceAnalysisSession(countingCompiler)) {
       final List<ReferenceMatch> first =
-          session.searchReferencesTransient(sources, target, false, hits -> {}, () -> {});
+          session
+              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .hits();
       final List<ReferenceMatch> second =
-          session.searchReferencesTransient(sources, target, false, hits -> {}, () -> {});
+          session
+              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .hits();
       final List<ReferenceMatch> cached =
-          session.searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false);
+          session
+              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .hits();
 
       assertThat(first).hasSize(1);
       assertThat(second).isEqualTo(first);
@@ -1234,6 +1243,7 @@ class ReferenceLocatorTest {
               target ->
                   session
                       .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, false)
+                      .hits()
                       .stream())
           .map(match -> match.range().getStart())
           .toList();

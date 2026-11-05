@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
@@ -23,7 +24,18 @@ final class ReferenceCandidatePlanner {
     this.typeIndex = typeIndex;
   }
 
-  Set<String> planCandidates(final ModuleSourceConfig config, final ReferenceTarget target) {
+  // The files to search first, and those to search only when one of them exposes the target's
+  // family (exposureFamily) to files that never name it; deferred is empty but for a static method.
+  record CandidatePlan(Set<String> primary, Set<String> deferred, Set<String> exposureFamily) {
+
+    CandidatePlan {
+      primary = Set.copyOf(primary);
+      deferred = Set.copyOf(deferred);
+      exposureFamily = Set.copyOf(exposureFamily);
+    }
+  }
+
+  CandidatePlan planCandidates(final ModuleSourceConfig config, final ReferenceTarget target) {
     final var kind = target.kind();
     // A constructor's simple name is javac's "<init>", which no source file ever spells; key
     // candidate discovery on the declaring type's simple name instead (FR-013).
@@ -33,36 +45,80 @@ final class ReferenceCandidatePlanner {
             : target.simpleName();
     final Set<String> simpleCandidates = index.candidateUris(lookupName);
     if (simpleCandidates.isEmpty()) {
-      return Set.of();
+      return onePhase(Set.of());
     }
 
     if (kind == ElementKind.LOCAL_VARIABLE
         || kind == ElementKind.PARAMETER
         || kind == ElementKind.EXCEPTION_PARAMETER
         || kind == ElementKind.RESOURCE_VARIABLE) {
-      return simpleCandidates;
+      return onePhase(simpleCandidates);
     }
 
     if (kind.isClass() || kind.isInterface()) {
-      return planTypeCandidates(config, target, simpleCandidates);
+      return onePhase(planTypeCandidates(config, target, simpleCandidates));
     }
 
     // Constructors and enum constants are not inherited, so they resolve only through their
     // declaring type's simple name (plus any static-import spelling).
     if (kind == ElementKind.CONSTRUCTOR || kind == ElementKind.ENUM_CONSTANT) {
-      return narrowToFamily(Set.of(target.qualifiedName()), target, simpleCandidates);
+      return onePhase(narrowToFamily(Set.of(target.qualifiedName()), target, simpleCandidates));
     }
 
     if (kind == ElementKind.FIELD) {
-      return narrowToFamily(overrideFamily(target), target, simpleCandidates);
+      return onePhase(narrowToFamily(overrideFamily(target), target, simpleCandidates));
     }
 
-    // Methods (and any other unhandled kind) use the broad simple-name candidate set. Override-
-    // family narrowing dropped call sites whose receiver type is never spelled in the file — a var
-    // bound from a getter chain, a chained call, or a generic type variable (FR-011). Reference
-    // search is explicit, batched, and cancellable, so compiling every file that spells the method
-    // name is an acceptable trade; the reference locator rejects the non-matches.
-    return simpleCandidates;
+    if (kind == ElementKind.METHOD && target.staticMember()) {
+      return planStaticMethod(target, simpleCandidates);
+    }
+
+    // Instance methods (and any other unhandled kind) use the broad simple-name candidate set.
+    // Override-family narrowing dropped call sites whose receiver type is never spelled in the file
+    // — a var bound from a getter chain, a chained call, or a generic type variable (FR-011).
+    // Reference search is explicit, batched, and cancellable, so compiling every file that spells
+    // the method name is an acceptable trade; the reference locator rejects the non-matches.
+    return onePhase(simpleCandidates);
+  }
+
+  // A static method is called through its declaring type or a subtype by name, a static import,
+  // or unqualified inside the family; only an expression of a family type reaches it from a file
+  // naming none of them, and that takes a declaration exposing the family, which names it. So the
+  // first phase is every file naming the family, whether or not it spells the method: each is
+  // checked for such a declaration (FamilyExposure), and the rest wait for one. An interface's
+  // static method is not inherited and takes no receiver, so naming the interface is the only way.
+  private CandidatePlan planStaticMethod(
+      final ReferenceTarget target, final Set<String> simpleCandidates) {
+    final var owner = target.qualifiedName();
+    final boolean interfaceMethod =
+        typeIndex
+            .findType(owner)
+            .map(entry -> entry.kind() == TypeKind.INTERFACE || entry.kind() == TypeKind.ANNOTATION)
+            .orElse(false);
+    if (interfaceMethod) {
+      return onePhase(narrowToFamily(Set.of(owner), target, simpleCandidates));
+    }
+
+    final Set<String> family =
+        Stream.concat(Stream.of(owner), subtypeBinaryNames(owner))
+            .collect(Collectors.toUnmodifiableSet());
+    final Set<String> primary =
+        Stream.concat(familyFiles(family).stream(), staticImportSites(target))
+            .collect(Collectors.toUnmodifiableSet());
+    // A family named more widely than the method: the files spelling the method are fewer.
+    if (primary.size() >= simpleCandidates.size()) {
+      return onePhase(simpleCandidates);
+    }
+
+    final Set<String> deferred =
+        simpleCandidates.stream()
+            .filter(uri -> !primary.contains(uri))
+            .collect(Collectors.toUnmodifiableSet());
+    return new CandidatePlan(primary, deferred, family);
+  }
+
+  private static CandidatePlan onePhase(final Set<String> candidates) {
+    return new CandidatePlan(candidates, Set.of(), Set.of());
   }
 
   private Set<String> planTypeCandidates(
@@ -137,19 +193,26 @@ final class ReferenceCandidatePlanner {
       final Set<String> familyBinaryNames,
       final ReferenceTarget target,
       final Set<String> simpleCandidates) {
-    final Set<String> familyFiles =
-        familyBinaryNames.stream()
-            .map(ReferenceCandidatePlanner::simpleNameOf)
-            .flatMap(name -> index.candidateUris(name).stream())
-            .collect(Collectors.toUnmodifiableSet());
-    final Stream<String> staticImportSites =
-        Stream.concat(
-            index
-                .candidateUris("%s.%s".formatted(target.qualifiedName(), target.simpleName()))
-                .stream(),
-            index.candidateUris(target.qualifiedName() + ".*").stream());
-    return Stream.concat(simpleCandidates.stream().filter(familyFiles::contains), staticImportSites)
+    final Set<String> familyFiles = familyFiles(familyBinaryNames);
+    return Stream.concat(
+            simpleCandidates.stream().filter(familyFiles::contains), staticImportSites(target))
         .collect(Collectors.toUnmodifiableSet());
+  }
+
+  // The files spelling the simple name of a family type.
+  private Set<String> familyFiles(final Set<String> familyBinaryNames) {
+    return familyBinaryNames.stream()
+        .map(ReferenceCandidatePlanner::simpleNameOf)
+        .flatMap(name -> index.candidateUris(name).stream())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
+  private Stream<String> staticImportSites(final ReferenceTarget target) {
+    return Stream.concat(
+        index
+            .candidateUris("%s.%s".formatted(target.qualifiedName(), target.simpleName()))
+            .stream(),
+        index.candidateUris(target.qualifiedName() + ".*").stream());
   }
 
   private static String simpleNameOf(final String binaryName) {

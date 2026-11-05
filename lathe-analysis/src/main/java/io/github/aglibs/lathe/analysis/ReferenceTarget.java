@@ -28,6 +28,7 @@ public record ReferenceTarget(
     SearchScope scope,
     List<String> overriddenDeclarers,
     boolean overrideFamilyBounded,
+    boolean staticMember,
     long declarationOffset) {
 
   public enum SearchScope {
@@ -101,6 +102,7 @@ public record ReferenceTarget(
               scope,
               List.of(),
               false,
+              false,
               -1);
       case METHOD, CONSTRUCTOR -> {
         final var ee = (ExecutableElement) element;
@@ -116,6 +118,7 @@ public record ReferenceTarget(
             scope,
             declarers,
             method,
+            isStatic(element),
             -1);
       }
       case FIELD, ENUM_CONSTANT -> {
@@ -128,6 +131,7 @@ public record ReferenceTarget(
             scope,
             List.of(),
             false,
+            isStatic(element),
             -1);
       }
       default ->
@@ -138,6 +142,7 @@ public record ReferenceTarget(
               null,
               scope,
               List.of(),
+              false,
               false,
               declarationOffset);
     };
@@ -188,6 +193,10 @@ public record ReferenceTarget(
         .filter(component -> component.getSimpleName().contentEquals(name))
         .findFirst()
         .orElse(null);
+  }
+
+  private static boolean isStatic(final Element element) {
+    return element.getModifiers().contains(Modifier.STATIC);
   }
 
   private static SearchScope scopeFor(final Element element) {

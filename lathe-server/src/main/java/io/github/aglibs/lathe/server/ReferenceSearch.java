@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.analysis.CallHierarchyItemDataCodec;
 import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
@@ -282,22 +283,77 @@ final class ReferenceSearch {
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       progress.begin(progressTitle, 1);
       return searchOpenDocument(
-          cursorWorker, openFile, target, includeDeclaration, cancelChecker, progress);
+              cursorWorker, openFile, target, includeDeclaration, Set.of(), cancelChecker, progress)
+          .thenApply(SearchHits::hits);
     }
 
     final var planningTimer = Stopwatch.start();
     return readSearchInputs(planSearch(cursorConfig, target))
         .thenCompose(
             searchInputs ->
-                runSearch(
+                withDeferredCandidates(
                     searchInputs,
-                    openFile.uri(),
-                    planningTimer,
                     target,
-                    includeDeclaration,
                     cancelChecker,
                     progress,
-                    progressTitle));
+                    inputs ->
+                        runSearch(
+                            inputs,
+                            openFile.uri(),
+                            planningTimer,
+                            target,
+                            includeDeclaration,
+                            cancelChecker,
+                            progress,
+                            progressTitle)));
+  }
+
+  // Runs a planned search, then, when a searched file exposes the target's family to files that
+  // never name it (a static method's search only), the files the plan deferred.
+  private <T> CompletableFuture<List<T>> withDeferredCandidates(
+      final List<ModuleSearchInputs> searchInputs,
+      final ReferenceTarget target,
+      final CancelChecker cancelChecker,
+      final ProgressReporter.Task progress,
+      final Function<List<ModuleSearchInputs>, CompletableFuture<SearchHits<T>>> search) {
+    return search
+        .apply(searchInputs)
+        .thenCompose(
+            first -> {
+              cancelChecker.checkCanceled();
+              if (first.exposures().isEmpty()) {
+                return CompletableFuture.completedFuture(first.hits());
+              }
+
+              return readSearchInputs(deferredPlans(searchInputs))
+                  .thenCompose(
+                      deferredInputs -> {
+                        final int deferred =
+                            deferredInputs.stream()
+                                .mapToInt(inputs -> inputs.inputs().size())
+                                .sum();
+                        LOG.fine(
+                            () ->
+                                "[references:deferred] %s exposed by %s searching deferred=%d"
+                                    .formatted(target.simpleName(), first.exposures(), deferred));
+                        progress.extend(deferred);
+                        return search.apply(deferredInputs);
+                      })
+                  .thenApply(
+                      second ->
+                          Stream.concat(first.hits().stream(), second.hits().stream()).toList());
+            });
+  }
+
+  // The second phase: each module's deferred files, with no exposure check, as nothing is
+  // deferred past them.
+  private static List<ModuleSearchPlan> deferredPlans(final List<ModuleSearchInputs> searched) {
+    return searched.stream()
+        .map(
+            module ->
+                new ModuleSearchPlan(
+                    module.worker(), List.of(), module.deferredUris(), List.of(), Set.of()))
+        .toList();
   }
 
   private List<ModuleSearchPlan> planSearch(
@@ -316,9 +372,25 @@ final class ReferenceSearch {
   // loop. The search then routes open documents, which is loop state again, so it rejoins the loop.
   private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
       final List<ModuleSearchPlan> plans) {
+    final List<ModuleSearchPlan> checked = checkingExposureOnlyWhenDeferred(plans);
     return eventLoop.rejoin(
         CompletableFuture.supplyAsync(
-            () -> plans.stream().map(ReferenceSearch::readCandidates).toList()));
+            () -> checked.stream().map(ReferenceSearch::readCandidates).toList()));
+  }
+
+  // With nothing deferred in any module, an exposure would change nothing: skip the check.
+  private static List<ModuleSearchPlan> checkingExposureOnlyWhenDeferred(
+      final List<ModuleSearchPlan> plans) {
+    if (plans.stream().anyMatch(plan -> !plan.deferredUris().isEmpty())) {
+      return plans;
+    }
+
+    return plans.stream()
+        .map(
+            plan ->
+                new ModuleSearchPlan(
+                    plan.worker(), plan.openDocuments(), plan.candidateUris(), List.of(), Set.of()))
+        .toList();
   }
 
   private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
@@ -326,12 +398,12 @@ final class ReferenceSearch {
         plan.worker(),
         new WorkspaceSearchInputs(
             plan.openDocuments(),
-            plan.candidateUris().stream()
-                .flatMap(uri -> readDiskCandidate(uri).stream())
-                .toList()));
+            plan.candidateUris().stream().flatMap(uri -> readDiskCandidate(uri).stream()).toList()),
+        plan.deferredUris(),
+        plan.exposureFamily());
   }
 
-  private CompletableFuture<List<ReferenceMatch>> runSearch(
+  private CompletableFuture<SearchHits<ReferenceMatch>> runSearch(
       final List<ModuleSearchInputs> searchInputs,
       final String uri,
       final Stopwatch planningTimer,
@@ -373,16 +445,16 @@ final class ReferenceSearch {
             .mapToInt(WorkspaceSearchInputs::size)
             .sum());
 
-    final List<CompletableFuture<List<ReferenceMatch>>> searches =
+    final List<CompletableFuture<SearchHits<ReferenceMatch>>> searches =
         searchInputs.stream()
             .flatMap(
                 inputs ->
                     searchFutures(inputs, target, includeDeclaration, cancelChecker, progress))
             .toList();
-    return joinCandidateResults(searches, cancelChecker);
+    return joinSearchHits(searches, cancelChecker);
   }
 
-  private Stream<CompletableFuture<List<ReferenceMatch>>> searchFutures(
+  private Stream<CompletableFuture<SearchHits<ReferenceMatch>>> searchFutures(
       final ModuleSearchInputs searchInputs,
       final ReferenceTarget target,
       final boolean includeDeclaration,
@@ -391,48 +463,68 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     final CompilationWorker worker = searchInputs.worker();
     final WorkspaceSearchInputs inputs = searchInputs.inputs();
-    final Stream<CompletableFuture<List<ReferenceMatch>>> openSearches =
+    final Set<String> family = searchInputs.exposureFamily();
+    final Stream<CompletableFuture<SearchHits<ReferenceMatch>>> openSearches =
         inputs.openDocuments().stream()
             .map(
                 doc ->
                     searchOpenDocument(
-                        worker, doc, target, includeDeclaration, cancelChecker, progress));
-    final Stream<CompletableFuture<List<ReferenceMatch>>> diskSearches =
+                        worker, doc, target, includeDeclaration, family, cancelChecker, progress));
+    final Stream<CompletableFuture<SearchHits<ReferenceMatch>>> diskSearches =
         CollectionUtil.partition(inputs.diskCandidates(), REFERENCE_BATCH_SIZE).stream()
             .map(
                 chunk ->
                     searchDiskChunk(
-                        worker, chunk, target, includeDeclaration, cancelChecker, progress));
+                        worker,
+                        chunk,
+                        target,
+                        includeDeclaration,
+                        family,
+                        cancelChecker,
+                        progress));
     return Stream.concat(openSearches, diskSearches);
   }
 
-  private CompletableFuture<List<ReferenceMatch>> searchOpenDocument(
+  private CompletableFuture<SearchHits<ReferenceMatch>> searchOpenDocument(
       final CompilationWorker worker,
       final OpenDocument doc,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     router.touchAnalysisCache(doc.uri());
     return worker
         .searchReferences(
-            doc.uri(), doc.content(), doc.version(), target, includeDeclaration, cancelChecker)
+            doc.uri(),
+            doc.content(),
+            doc.version(),
+            target,
+            includeDeclaration,
+            exposureFamily,
+            cancelChecker)
         .whenComplete(advancing(progress, false));
   }
 
-  private CompletableFuture<List<ReferenceMatch>> searchDiskChunk(
+  private CompletableFuture<SearchHits<ReferenceMatch>> searchDiskChunk(
       final CompilationWorker worker,
       final List<DiskCandidate> chunk,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
     final List<TransientSource> sources =
         chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
     return worker.searchReferencesTransient(
-        sources, target, includeDeclaration, hits -> progress.advance(true, hits), cancelChecker);
+        sources,
+        target,
+        includeDeclaration,
+        exposureFamily,
+        hits -> progress.advance(true, hits),
+        cancelChecker);
   }
 
   List<ModuleSourceConfig> planSearchScope(
@@ -469,6 +561,13 @@ final class ReferenceSearch {
                         })));
   }
 
+  private static <T> CompletableFuture<SearchHits<T>> joinSearchHits(
+      final List<CompletableFuture<SearchHits<T>>> futures, final CancelChecker cancelChecker) {
+    return joinCandidateResults(
+            futures.stream().map(future -> future.thenApply(List::of)).toList(), cancelChecker)
+        .thenApply(SearchHits::merge);
+  }
+
   static List<Location> toLocations(final List<ReferenceMatch> matches) {
     return matches.stream().map(ReferenceMatch::toLocation).toList();
   }
@@ -499,8 +598,8 @@ final class ReferenceSearch {
     }
 
     return worker
-        .searchReferences(doc.uri(), doc.content(), doc.version(), target, true, () -> {})
-        .thenApply(ReferenceSearch::toHighlights);
+        .searchReferences(doc.uri(), doc.content(), doc.version(), target, true, Set.of(), () -> {})
+        .thenApply(found -> toHighlights(found.hits()));
   }
 
   private static List<DocumentHighlight> toHighlights(final List<ReferenceMatch> matches) {
@@ -529,11 +628,11 @@ final class ReferenceSearch {
   }
 
   // Counts a file's matches into the search's progress once its search succeeds.
-  private static <T> BiConsumer<List<T>, Throwable> advancing(
+  private static <T> BiConsumer<SearchHits<T>, Throwable> advancing(
       final ProgressReporter.Task progress, final boolean transientFile) {
-    return (matches, failure) -> {
+    return (found, failure) -> {
       if (failure == null) {
-        progress.advance(transientFile, matches.size());
+        progress.advance(transientFile, found.hits().size());
       }
     };
   }
@@ -563,22 +662,36 @@ final class ReferenceSearch {
     }
   }
 
-  private record ModuleSearchInputs(CompilationWorker worker, WorkspaceSearchInputs inputs) {
+  // deferredUris and exposureFamily as in ModuleSearchPlan, carried to the second phase.
+  private record ModuleSearchInputs(
+      CompilationWorker worker,
+      WorkspaceSearchInputs inputs,
+      List<String> deferredUris,
+      Set<String> exposureFamily) {
 
     ModuleSearchInputs {
       ValidCheck.check().notNull(worker, "worker").notNull(inputs, "inputs").validate();
+      deferredUris = List.copyOf(deferredUris);
+      exposureFamily = Set.copyOf(exposureFamily);
     }
   }
 
   // A module's search as planned from session state: its open documents, and the files on disk
-  // that may reference the target, not read yet.
+  // that may reference the target, not read yet; deferredUris are searched only when a searched
+  // file exposes exposureFamily (see ReferenceCandidatePlanner.CandidatePlan).
   private record ModuleSearchPlan(
-      CompilationWorker worker, List<OpenDocument> openDocuments, List<String> candidateUris) {
+      CompilationWorker worker,
+      List<OpenDocument> openDocuments,
+      List<String> candidateUris,
+      List<String> deferredUris,
+      Set<String> exposureFamily) {
 
     ModuleSearchPlan {
       ValidCheck.check().notNull(worker, "worker").validate();
       openDocuments = List.copyOf(openDocuments);
       candidateUris = List.copyOf(candidateUris);
+      deferredUris = List.copyOf(deferredUris);
+      exposureFamily = Set.copyOf(exposureFamily);
     }
   }
 
@@ -588,6 +701,12 @@ final class ReferenceSearch {
     // @Builder) is in scope; it references the record by simple name and never lives under a
     // regular source root (FR-012/FR-013).
     final List<Path> searchRoots = config.searchRoots();
+    final var planner =
+        new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());
+    final ReferenceCandidatePlanner.CandidatePlan plan = planner.planCandidates(config, target);
+    // A package-private static method's callers share its package, but a declaration exposing its
+    // family to them may sit in any package of the module: the first phase looks module-wide.
+    final Path firstPhasePackage = plan.exposureFamily().isEmpty() ? packageRel : null;
     final List<OpenDocument> openForConfig =
         docs.all().stream()
             .filter(
@@ -597,18 +716,23 @@ final class ReferenceSearch {
                         .moduleSourceFor(LatheUri.toPath(doc.uri()))
                         .map(c -> c.equals(config))
                         .orElse(false))
-            .filter(doc -> isInPackageScope(LatheUri.toPath(doc.uri()), searchRoots, packageRel))
+            .filter(
+                doc -> isInPackageScope(LatheUri.toPath(doc.uri()), searchRoots, firstPhasePackage))
             .toList();
     final Set<String> openUris =
         openForConfig.stream().map(OpenDocument::uri).collect(Collectors.toUnmodifiableSet());
-    final var planner =
-        new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());
-    final List<String> candidateUris =
-        planner.planCandidates(config, target).stream()
+    return new ModuleSearchPlan(
+        state.registry().workerFor(config),
+        openForConfig,
+        plan.primary().stream()
+            .filter(uri -> !openUris.contains(uri))
+            .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, firstPhasePackage))
+            .toList(),
+        plan.deferred().stream()
             .filter(uri -> !openUris.contains(uri))
             .filter(uri -> isInPackageScope(LatheUri.toPath(uri), searchRoots, packageRel))
-            .toList();
-    return new ModuleSearchPlan(state.registry().workerFor(config), openForConfig, candidateUris);
+            .toList(),
+        plan.exposureFamily());
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -873,6 +997,7 @@ final class ReferenceSearch {
             data.scope(),
             List.of(),
             false,
+            data.staticMember(),
             -1);
     final var progressTitle = "Finding callers of %s".formatted(target.simpleName());
 
@@ -890,13 +1015,17 @@ final class ReferenceSearch {
       final OpenDocument declaringDoc = docs.get(data.routingUri());
       final var plan =
           declaringDoc != null
-              ? new ModuleSearchPlan(routedWorker.get(), List.of(declaringDoc), List.of())
-              : new ModuleSearchPlan(routedWorker.get(), List.of(), List.of(data.routingUri()));
+              ? new ModuleSearchPlan(
+                  routedWorker.get(), List.of(declaringDoc), List.of(), List.of(), Set.of())
+              : new ModuleSearchPlan(
+                  routedWorker.get(), List.of(), List.of(data.routingUri()), List.of(), Set.of());
       return readSearchInputs(List.of(plan))
           .thenCompose(
               inputs ->
-                  FeatureAnswers.concatAll(
-                      incomingCallFutures(inputs.get(0), target, cancelChecker, progress)));
+                  joinSearchHits(
+                      incomingCallFutures(inputs.get(0), target, cancelChecker, progress).toList(),
+                      cancelChecker))
+          .thenApply(SearchHits::hits);
     }
 
     final Path packageRel =
@@ -910,20 +1039,29 @@ final class ReferenceSearch {
     return readSearchInputs(
             configs.stream().map(config -> planModuleSearch(config, target, packageRel)).toList())
         .thenCompose(
-            searchInputs -> {
-              final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
-                  searchInputs.stream()
-                      .flatMap(
-                          inputs -> incomingCallFutures(inputs, target, cancelChecker, progress))
-                      .toList();
-              progress.begin(progressTitle, searches.size());
-              return joinCandidateResults(searches, cancelChecker);
-            })
+            searchInputs ->
+                withDeferredCandidates(
+                    searchInputs,
+                    target,
+                    cancelChecker,
+                    progress,
+                    inputs -> {
+                      final List<CompletableFuture<SearchHits<CallHierarchyIncomingCall>>>
+                          searches =
+                              inputs.stream()
+                                  .flatMap(
+                                      module ->
+                                          incomingCallFutures(
+                                              module, target, cancelChecker, progress))
+                                  .toList();
+                      progress.begin(progressTitle, searches.size());
+                      return joinSearchHits(searches, cancelChecker);
+                    }))
         .thenApply(
             FeatureAnswers.logged(LOG, "callHierarchy:incoming", data.routingUri(), t, "calls"));
   }
 
-  private Stream<CompletableFuture<List<CallHierarchyIncomingCall>>> incomingCallFutures(
+  private Stream<CompletableFuture<SearchHits<CallHierarchyIncomingCall>>> incomingCallFutures(
       final ModuleSearchInputs planned,
       final ReferenceTarget target,
       final CancelChecker cancelChecker,
@@ -931,6 +1069,7 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     final var worker = planned.worker();
     final var inputs = planned.inputs();
+    final Set<String> family = planned.exposureFamily();
     return Stream.concat(
         inputs.openDocuments().stream()
             .map(
@@ -939,7 +1078,7 @@ final class ReferenceSearch {
                   router.touchAnalysisCache(doc.uri());
                   return worker
                       .searchIncomingCalls(
-                          doc.uri(), doc.content(), doc.version(), target, cancelChecker)
+                          doc.uri(), doc.content(), doc.version(), target, family, cancelChecker)
                       .whenComplete(advancing(progress, false));
                 }),
         inputs.diskCandidates().stream()
@@ -947,7 +1086,8 @@ final class ReferenceSearch {
                 d -> {
                   cancelChecker.checkCanceled();
                   return worker
-                      .searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker)
+                      .searchIncomingCallsTransient(
+                          d.uri(), d.content(), target, family, cancelChecker)
                       .whenComplete(advancing(progress, true));
                 }));
   }
