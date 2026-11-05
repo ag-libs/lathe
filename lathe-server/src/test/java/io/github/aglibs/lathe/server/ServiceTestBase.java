@@ -22,6 +22,7 @@ import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
 import org.eclipse.lsp4j.FoldingRangeRequestParams;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ReferenceContext;
 import org.eclipse.lsp4j.ReferenceParams;
@@ -47,7 +48,7 @@ abstract class ServiceTestBase {
 
   @BeforeEach
   void setUp() {
-    client = mock(LanguageClient.class);
+    client = mock(LatheLanguageClient.class);
     service = new LatheTextDocumentService(DEBOUNCE_MS);
     service.connect(client);
   }
@@ -135,6 +136,56 @@ abstract class ServiceTestBase {
     sources.put("shapes/Shape.java", "package shapes; sealed interface Shape permits Circle {}");
     sources.put("shapes/Circle.java", "package shapes; final class Circle implements Shape {}");
     return TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L).get(0);
+  }
+
+  // Api.sell implemented by Shop, which Use creates and calls twice; compiled into the mirror and
+  // stamped, so the workspace starts fresh. Use is open once the server is up.
+  protected ShopFixture openShop() throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    sources.put(
+        "com/example/Api.java",
+        "package com.example;\npublic interface Api {\n  int sell(int count);\n}\n");
+    sources.put(
+        "com/example/Shop.java",
+        """
+        package com.example;
+        public class Shop implements Api {
+          public int sell(int count) {
+            return count;
+          }
+        }
+        """);
+    sources.put(
+        "com/example/Use.java",
+        """
+        package com.example;
+        class Use {
+          int run() {
+            final Shop shop = new Shop();
+            return shop.sell(1) + shop.sell(2);
+          }
+        }
+        """);
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    service.initialize(tmp);
+    awaitStartup();
+    final var fixture = new ShopFixture(files.get(0), files.get(1), files.get(2));
+    openDoc(fixture.use(), Files.readString(fixture.use()));
+    awaitWorkerIdle();
+    return fixture;
+  }
+
+  protected record ShopFixture(Path api, Path shop, Path use) {}
+
+  // The position of the first occurrence of token in the file, as the client sends it.
+  protected static Position positionOf(final Path file, final String token) {
+    final String content = IOUtil.unchecked(() -> Files.readString(file));
+    return offsetToPosition(content, content.indexOf(token));
+  }
+
+  protected static TextDocumentIdentifier documentOf(final Path file) {
+    return new TextDocumentIdentifier(file.toUri().toString());
   }
 
   protected record DepFixture(Path dep, List<Path> users) {
