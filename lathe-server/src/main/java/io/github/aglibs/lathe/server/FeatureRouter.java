@@ -4,6 +4,8 @@ import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
@@ -77,7 +79,37 @@ final class FeatureRouter {
         : LearnedStaticImports.empty();
   }
 
+  // An open document with the worker that analyzes it and, for a reactor file, its module: what a
+  // feature that runs its own search starts from. Empty when the document is not open or no worker
+  // analyzes it; touches the analysis cache.
+  Optional<OpenRoute> openRoute(final String uri) {
+    eventLoop.checkOnLoop();
+    final OpenDocument doc = docs.get(uri);
+    if (doc == null) {
+      return Optional.empty();
+    }
+
+    final CompilerRoute route = routeCompiler(uri);
+    final Optional<CompilationWorker> worker = route.analysisWorker();
+    if (worker.isEmpty()) {
+      return Optional.empty();
+    }
+
+    touchAnalysisCache(uri);
+    final ModuleSourceConfig config =
+        route instanceof final CompilerRoute.Module module ? module.config() : null;
+    return Optional.of(new OpenRoute(doc, worker.get(), config));
+  }
+
+  // config is null for a file outside the reactor (a dependency's or the JDK's source).
+  record OpenRoute(OpenDocument doc, CompilationWorker worker, ModuleSourceConfig config) {
+    OpenRoute {
+      ValidCheck.check().notNull(doc, "doc").notNull(worker, "worker").validate();
+    }
+  }
+
   <T> CompletableFuture<T> openDocFeature(
+      final String operation,
       final String uri,
       final T fallback,
       final BiFunction<CompilationWorker, OpenDocument, CompletableFuture<T>> op) {
@@ -87,7 +119,7 @@ final class FeatureRouter {
       return CompletableFuture.completedFuture(fallback);
     }
 
-    return routeFeature(uri, worker -> op.apply(worker, doc), fallback);
+    return routeFeature(operation, uri, fallback, worker -> op.apply(worker, doc));
   }
 
   void touchAnalysisCache(final String uri) {
@@ -102,16 +134,19 @@ final class FeatureRouter {
             });
   }
 
+  // A feature on a file, answered by the worker of the module that compiles it. A file no module
+  // compiles gets the fallback, and so does a failure, logged under the operation's name.
   <T> CompletableFuture<T> routeFeature(
+      final String operation,
       final String uri,
-      final Function<CompilationWorker, CompletableFuture<T>> operation,
-      final T missingFallback) {
+      final T fallback,
+      final Function<CompilationWorker, CompletableFuture<T>> op) {
     final Optional<CompilationWorker> worker = routeCompiler(uri).analysisWorker();
     if (worker.isEmpty()) {
-      return CompletableFuture.completedFuture(missingFallback);
+      return CompletableFuture.completedFuture(fallback);
     }
 
     touchAnalysisCache(uri);
-    return operation.apply(worker.get());
+    return op.apply(worker.get()).exceptionally(FeatureAnswers.failedFor(operation, uri, fallback));
   }
 }

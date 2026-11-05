@@ -705,36 +705,22 @@ final class WorkspaceSession {
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        uri,
-        null,
-        (worker, doc) -> {
-          final var request = router.featureRequest(doc, pos);
-          return worker.hover(request).exceptionally(FeatureAnswers.failedFor("hover", uri, null));
-        });
+        "hover", uri, null, (worker, doc) -> worker.hover(router.featureRequest(doc, pos)));
   }
 
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        uri,
-        true,
-        (worker, doc) ->
-            worker
-                .onName(router.featureRequest(doc, pos))
-                .exceptionally(FeatureAnswers.failedFor("onName", uri, true)));
+        "onName", uri, true, (worker, doc) -> worker.onName(router.featureRequest(doc, pos)));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
     return router.openDocFeature(
+        "signatureHelp",
         uri,
         null,
-        (worker, doc) -> {
-          final var request = router.featureRequest(doc, pos);
-          return worker
-              .signatureHelp(request)
-              .exceptionally(FeatureAnswers.failedFor("signatureHelp", uri, null));
-        });
+        (worker, doc) -> worker.signatureHelp(router.featureRequest(doc, pos)));
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -766,15 +752,15 @@ final class WorkspaceSession {
             "[%s] %s line=%d character=%d"
                 .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
     return router.openDocFeature(
+        operation,
         uri,
         Either.forLeft(List.of()),
         (worker, doc) ->
             find.apply(worker, router.featureRequest(doc, pos))
                 .thenApply(
                     location ->
-                        FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)))
-                .exceptionally(
-                    FeatureAnswers.failedFor(operation, uri, Either.forLeft(List.of()))));
+                        FeatureAnswers.definitionResult(
+                            location.map(List::of).orElseGet(List::of))));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
@@ -783,6 +769,7 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .openDocFeature(
+            "typeHierarchy:prepare",
             uri,
             List.of(),
             (worker, doc) -> {
@@ -804,9 +791,10 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .routeFeature(
+            "typeHierarchy:supertypes",
             data.routingUri(),
-            worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
-            List.of())
+            List.of(),
+            worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs))
         .thenApply(
             FeatureAnswers.logged(LOG, "typeHierarchy:supertypes", data.binaryName(), t, "items"));
   }
@@ -823,9 +811,10 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .routeFeature(
+            "typeHierarchy:subtypes",
             data.routingUri(),
-            worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
-            List.of())
+            List.of(),
+            worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs))
         .thenApply(
             FeatureAnswers.logged(LOG, "typeHierarchy:subtypes", data.binaryName(), t, "items"));
   }
@@ -845,11 +834,12 @@ final class WorkspaceSession {
               final var indexSnapshot = reactorIndex.current();
               final List<Path> sourceDirs = state.typeSourceDirs();
               return router.routeFeature(
+                  "typeHierarchy:explore",
                   data.routingUri(),
+                  TypeHierarchyExplorerResult.empty(),
                   worker ->
                       worker.typeHierarchyExplore(
-                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP),
-                  TypeHierarchyExplorerResult.empty());
+                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP));
             })
         .thenApply(
             result -> {
@@ -872,21 +862,19 @@ final class WorkspaceSession {
     final var route = router.routeCompiler(uri);
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.openDocFeature(
+        "completion",
         uri,
         CompletionOutcome.of(List.of()),
         (worker, doc) ->
-            worker
-                .complete(
-                    uri,
-                    doc.content(),
-                    doc.version(),
-                    pos,
-                    context,
-                    indexSnapshot,
-                    completionModuleNames(route, uri),
-                    staticImports)
-                .exceptionally(
-                    FeatureAnswers.failedFor("completion", uri, CompletionOutcome.of(List.of()))));
+            worker.complete(
+                uri,
+                doc.content(),
+                doc.version(),
+                pos,
+                context,
+                indexSnapshot,
+                completionModuleNames(route, uri),
+                staticImports));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -919,7 +907,9 @@ final class WorkspaceSession {
     final LearnedStaticImports staticImports =
         router.learnedStaticImports(router.routeCompiler(uri));
     return router.routeFeature(
+        "codeAction",
         uri,
+        List.of(),
         moduleWorker ->
             moduleWorker
                 .cachedTypeEntries(neededTypeNames)
@@ -938,9 +928,7 @@ final class WorkspaceSession {
                     actions ->
                         resolveSupported
                             ? CompileCheckedActions.defer(uri, openFile.version(), actions)
-                            : actions)
-                .exceptionally(FeatureAnswers.failedFor("codeAction", uri, List.of())),
-        List.of());
+                            : actions));
   }
 
   // The check may compile twice (the rewritten text, then the original to compare errors); the
@@ -959,14 +947,12 @@ final class WorkspaceSession {
     final LearnedStaticImports staticImports =
         router.learnedStaticImports(router.routeCompiler(uri));
     return router.routeFeature(
+        "missingImports",
         uri,
+        MissingImportsResult.empty(),
         moduleWorker ->
-            moduleWorker
-                .missingImports(
-                    uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
-                .exceptionally(
-                    FeatureAnswers.failedFor("missingImports", uri, MissingImportsResult.empty())),
-        MissingImportsResult.empty());
+            moduleWorker.missingImports(
+                uri, openFile.content(), openFile.version(), indexSnapshot, staticImports));
   }
 
   // The index with the open files' types added. Built off the loop, as a rebuild takes 100-200ms on
@@ -992,23 +978,21 @@ final class WorkspaceSession {
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
     return router.openDocFeature(
+        "semanticTokens",
         uri,
         null,
         (worker, doc) ->
             worker
                 .semanticTokens(uri, doc.content(), doc.version())
-                .thenApply(WorkspaceSession::encodeTokensOrNull)
-                .exceptionally(FeatureAnswers.failedFor("semanticTokens", uri, null)));
+                .thenApply(WorkspaceSession::encodeTokensOrNull));
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
     return router.openDocFeature(
+        "documentSymbol",
         uri,
         List.of(),
-        (worker, doc) ->
-            worker
-                .documentSymbol(uri, doc.content())
-                .exceptionally(FeatureAnswers.failedFor("documentSymbol", uri, List.of())));
+        (worker, doc) -> worker.documentSymbol(uri, doc.content()));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {

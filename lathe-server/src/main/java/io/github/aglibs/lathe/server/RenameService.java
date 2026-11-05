@@ -416,8 +416,7 @@ final class RenameService {
 
     final var cursorWorker = module.worker();
     final var request = router.featureRequest(openFile, pos);
-    final Optional<ModuleSourceConfig> cursorConfig =
-        state.registry().moduleSourceFor(LatheUri.toPath(uri));
+    final ModuleSourceConfig cursorConfig = module.config();
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
@@ -442,7 +441,7 @@ final class RenameService {
                               .searchReferencesForTarget(
                                   openFile,
                                   cursorWorker,
-                                  cursorConfig.orElse(null),
+                                  cursorConfig,
                                   searchTarget,
                                   true,
                                   cancelChecker,
@@ -468,7 +467,7 @@ final class RenameService {
                                               matches,
                                               newName,
                                               uri,
-                                              cursorConfig.orElse(null),
+                                              cursorConfig,
                                               cancelChecker)
                                           .thenApply(
                                               kept ->
