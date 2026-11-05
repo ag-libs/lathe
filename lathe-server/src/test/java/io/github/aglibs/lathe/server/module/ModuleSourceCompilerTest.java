@@ -275,6 +275,34 @@ class ModuleSourceCompilerTest {
     }
   }
 
+  // --release limits code to that release's API, as the build does: Stream.toList() came in Java
+  // 16,
+  // so a module released for 11 cannot call it, though the JDK compiling it has it.
+  @Test
+  void compile_releaseOlderThanTheJdk_reportsANewerApiAsTheBuildWould() throws Exception {
+    final var config = TestCompiler.mainTreeConfig(td, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    Files.createDirectories(sourceRoot);
+    final String uri = sourceRoot.resolve("Names.java").toUri().toString();
+    final String source =
+        "class Names { java.util.List<String> all() { return java.util.stream.Stream.of(\"a\").toList(); } }";
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            withOptions(config, "11", config.proc()), new CompilationAdmission(1))) {
+      assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN)))
+          .singleElement()
+          .asString()
+          .contains("toList");
+    }
+
+    try (var compiler =
+        new ModuleSourceCompiler(
+            withOptions(config, null, config.proc()), new CompilationAdmission(1))) {
+      assertThat(errorMessages(compiler.compile(uri, source, CompileMode.OPEN))).isEmpty();
+    }
+  }
+
   private static List<String> errorMessages(final CompilerResult result) {
     return result.diagnostics().stream()
         .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
@@ -567,7 +595,8 @@ class ModuleSourceCompilerTest {
 
     try (var compiler =
         new ModuleSourceCompiler(
-            withProc(config, LatheFlags.PROC_NONE), new CompilationAdmission(1))) {
+            withOptions(config, config.release(), LatheFlags.PROC_NONE),
+            new CompilationAdmission(1))) {
       final BatchWrite write = compiler.compileBatch(sources, () -> {});
 
       assertThat(write.failedUris()).isEmpty();
@@ -590,7 +619,8 @@ class ModuleSourceCompilerTest {
     }
   }
 
-  private static ModuleSourceConfig withProc(final ModuleSourceConfig config, final String proc) {
+  private static ModuleSourceConfig withOptions(
+      final ModuleSourceConfig config, final String release, final String proc) {
     return new ModuleSourceConfig(
         config.moduleDir(),
         config.sourceTree(),
@@ -600,7 +630,7 @@ class ModuleSourceCompilerTest {
         config.classpath(),
         config.modulepath(),
         config.processorPath(),
-        config.release(),
+        release,
         config.encoding(),
         config.parameters(),
         config.enablePreview(),
