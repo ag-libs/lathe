@@ -23,12 +23,9 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.TextDocumentContentChangeEvent;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.parallel.Isolated;
 import org.mockito.ArgumentCaptor;
 
 // Saves through the write pass: coalescing, one dependents refresh, write-only diagnostics.
-// Counts compiles through a JVM-wide log, so no other test class may compile meanwhile.
-@Isolated
 class SaveTest extends ServiceTestBase {
 
   @Test
@@ -135,7 +132,7 @@ class SaveTest extends ServiceTestBase {
     clearInvocations(client);
     // Count compiles, not publishes: a stale result is dropped unpublished, so a pile-up of
     // redundant compiles only shows in the compile log.
-    try (final var compiles = new CompileLog()) {
+    try (final var compiles = new CompileLog(tmp)) {
       // A single save refreshes its open dependents as soon as its own compile is done, in one
       // analysis task for their tree.
       save(fx.dep());
@@ -223,7 +220,7 @@ class SaveTest extends ServiceTestBase {
 
     awaitWorkerIdle();
     clearInvocations(client);
-    try (final var compiles = new CompileLog()) {
+    try (final var compiles = new CompileLog(tmp)) {
       // A Save All of hand-edited files: the first save compiles at once, the rest arrive while it
       // runs and compile together when it is done.
       for (final Path file : files) {

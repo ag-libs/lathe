@@ -344,8 +344,9 @@ Message format: `[operation] uri-or-module detail Xms outcome`
     * Disable a test with `@DisabledOnOs` only for behaviour that is OS-specific by nature (the
       executable bit, OpenJDK builds), never to skip a test that is POSIX-only by accident.
 - `lathe-server` test classes run in parallel, so tests **MUST** be parallel-safe: no mutable `static`
-  state, compile through `TestJavac` / `TempSourceCompiler`, and mark a class `@Isolated` if it
-  observes JVM-wide state (e.g. `CompileLog`, which hears every compile in the JVM).
+  state, compile through `TestJavac` / `TempSourceCompiler`, and keep only your own workspace's part
+  of JVM-wide state (as `CompileLog` keeps the compiles under its workspace). `@Isolated` runs a class
+  alone after all the others, so it is the last resort.
 
 ### How to write a new test
 

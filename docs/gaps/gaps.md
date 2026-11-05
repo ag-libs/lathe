@@ -1039,9 +1039,9 @@ No `source.*` capability is claimed: `source.organizeImports` would over-promise
 removal + sorting) and `source.addMissingImports` is non-standard, so the feature is an
 `executeCommand`, consistent with `lathe.typeHierarchy` / `lathe.createType`.
 
-Regression targets: `CodeActionTest.missingImports_mixedNames_partitionsCandidatesByAmbiguity`,
-`CodeActionTest.missingImports_allTypesResolved_returnsNoItems`,
-`CodeActionTest.codeAction_typeRef_offersAddMissingImportsCommand`; client `imports_spec.lua`.
+Regression targets: `QuickFixCodeActionTest.missingImports_mixedNames_partitionsCandidatesByAmbiguity`,
+`QuickFixCodeActionTest.missingImports_allTypesResolved_returnsNoItems`,
+`QuickFixCodeActionTest.codeAction_typeRef_offersAddMissingImportsCommand`; client `imports_spec.lua`.
 
 ### Remaining — automatic invocation (deferred, backlog)
 

@@ -97,8 +97,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     cancelChecker.checkCanceled();
     LOG.info(
         () ->
-            "[compile:batch] %d files %dms failed=%d"
-                .formatted(sources.size(), t.elapsedMs(), run.failedUris().size()));
+            "[compile:batch] %d files from %s %dms failed=%d"
+                .formatted(
+                    sources.size(), firstUri(sources), t.elapsedMs(), run.failedUris().size()));
     return run;
   }
 
@@ -156,8 +157,16 @@ public final class SourceAnalysisSession implements AutoCloseable {
       diagnostics.put(source.uri(), mapDiagnostics(run, source.content()));
     }
 
-    LOG.info(() -> "[compile:open-batch] %d files %dms".formatted(sources.size(), t.elapsedMs()));
+    LOG.info(
+        () ->
+            "[compile:open-batch] %d files from %s %dms"
+                .formatted(sources.size(), firstUri(sources), t.elapsedMs()));
     return Map.copyOf(diagnostics);
+  }
+
+  // Where a batch ran, for its log line: the line has room for one file, not all of them.
+  private static String firstUri(final List<TransientSource> sources) {
+    return sources.isEmpty() ? "nothing" : sources.get(0).uri();
   }
 
   private static List<Diagnostic> mapDiagnostics(final CompilerResult run, final String content) {
