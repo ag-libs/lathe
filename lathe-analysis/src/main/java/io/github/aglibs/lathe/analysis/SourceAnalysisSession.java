@@ -1109,7 +1109,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
     return Stream.of(
             request.sourceRoots().stream(),
-            request.libraries().depSourceDirs().stream(),
+            request.libraries().dependencySourceDirs().stream(),
             request.libraries().jdkModuleSourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();

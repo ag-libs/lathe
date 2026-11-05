@@ -58,7 +58,7 @@ final class WorkspaceState {
     return Stream.of(
             registry.allSourceRoots().stream(),
             manifest.libraries().jdkModuleSourceDirs().stream(),
-            manifest.libraries().depSourceDirs().stream())
+            manifest.libraries().dependencySourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
   }

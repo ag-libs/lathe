@@ -68,8 +68,8 @@ Build order: `lathe-core` → `lathe-junit` → `lathe-test-runner` → `lathe-i
 `lathe-maven-plugin` → `lathe-openjdk-maven-plugin` → `lathe-neovim` → `lathe-vscode` →
 `lathe-gradle-plugin` (listed last).
 
-`lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and
-property-file helpers.
+`lathe-compiler`, `lathe-maven-plugin`, `lathe-analysis` and `lathe-server` use `lathe-core` for shared
+layout and property-file helpers.
 
 - `groupId`: `io.github.ag-libs`
 - Package root: `io.github.aglibs.lathe`
@@ -79,8 +79,8 @@ property-file helpers.
   (a JDK 17 base version plus a JDK 21 version in the multi-release jar's `META-INF/versions/21`).
   Everything else stays version-neutral; a new JDK-specific check is one more method there.
 - `lathe-analysis` never reaches into `lathe-server`; the compiler enforces it. Shared test helpers
-  (`TestJavac`, `TempSourceCompiler`, `SampleFixture`) live in its `io.github.aglibs.lathe.analysis.testing`
-  package, which its test-jar carries to `lathe-server`'s tests.
+  (`TestJavac`, `TempSourceCompiler`, `JavacCrashFixtures`, `LoggingConfig`) live in its
+  `io.github.aglibs.lathe.analysis.testing` package, which its test-jar carries to `lathe-server`'s tests.
 - Repo root: this directory
 
 ---
@@ -270,7 +270,7 @@ show it as their own log lines). Not JUL: Maven prints JUL in its raw format, ou
 
 **`lathe-maven-plugin`** — Mojo logger via `getLog()`.
 
-**`lathe-server`** — JUL only.
+**`lathe-server`** and **`lathe-analysis`** — JUL only.
 `LATHE_DEBUG=1` enables `FINE` level.
 
 | Level     | When to use                                                                                                                                                                                          |
@@ -380,6 +380,7 @@ Every test module needs `src/test/resources/junit-platform.properties`:
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-`lathe-server` tests require a `LoggingConfig` JUnit extension registered via
+`lathe-server` and `lathe-analysis` tests register the shared `LoggingConfig` JUnit extension via
 `META-INF/services/org.junit.jupiter.api.extension.Extension`.
-It loads the production `logging.properties` so log output is consistent during test runs.
+It sets Lathe's loggers to `FINE`, so every `LOG.fine` message is built and a bad format fails a test,
+and where the server's `logging.properties` is on the classpath it loads it, so log output is consistent.

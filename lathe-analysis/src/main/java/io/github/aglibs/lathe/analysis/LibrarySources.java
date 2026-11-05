@@ -25,7 +25,9 @@ import javax.tools.StandardLocation;
 
 // The libraries a workspace compiles against, as its last sync recorded them: each dependency jar
 // with its GAV and extracted sources, and the JDK with its sources. Maps a javac element or a
-// source file back to the library it came from.
+// source file back to the library it came from. jarToGav holds the dependencies' main jars, the
+// ones that also carry resources. "Dependency" methods cover the jars only, "external" ones the
+// jars and the JDK.
 public record LibrarySources(
     Map<Path, String> jarToGav,
     Map<Path, Path> jarToSourceDir,
@@ -129,7 +131,7 @@ public record LibrarySources(
         .toList();
   }
 
-  public List<Path> depSourceDirs() {
+  public List<Path> dependencySourceDirs() {
     return List.copyOf(jarToSourceDir.values());
   }
 
@@ -144,12 +146,12 @@ public record LibrarySources(
       LOG.log(
           Level.WARNING,
           e,
-          () -> "[manifest] failed to list JDK module dirs in %s".formatted(jdkSourceDir));
+          () -> "[libraries] failed to list JDK module dirs in %s".formatted(jdkSourceDir));
       return List.of();
     }
   }
 
-  public List<Path> depClasspathForFile(final Path file) {
+  public List<Path> dependencyClasspathForFile(final Path file) {
     return externalSourceRootForFile(file)
         .map(
             root -> {

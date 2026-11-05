@@ -46,7 +46,8 @@
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
     </dependency>
-    <!-- Test sources the runnables tests compile annotate a JUnit @Suite. -->
+    <!-- TestJavac.JUNIT_CLASSPATH (from the lathe-analysis test-jar, whose test dependencies do not
+         come along) loads @Suite from it. -->
     <dependency>
       <groupId>org.junit.platform</groupId>
       <artifactId>junit-platform-suite-api</artifactId>

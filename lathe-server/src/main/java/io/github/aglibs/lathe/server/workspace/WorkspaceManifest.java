@@ -130,7 +130,9 @@ public final class WorkspaceManifest {
       final var reactorRewrite = ReactorRewrite.of(workspaceRoot, data.outputs());
       return new WorkspaceManifest(
           LibrarySources.from(
-              entries, jdk != null ? jdk.version() : null, jdk != null ? jdk.sourceDir() : null),
+              data.dependencySources(),
+              jdk != null ? jdk.version() : null,
+              jdk != null ? jdk.sourceDir() : null),
           typeIndexShardPaths,
           resolvedBuildFiles,
           buildFileFingerprints,

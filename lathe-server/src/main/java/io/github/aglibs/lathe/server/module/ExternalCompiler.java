@@ -72,7 +72,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
     try {
       final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot.get(), filePath, content);
 
-      final var classpath = libraries.depClasspathForFile(filePath);
+      final var classpath = libraries.dependencyClasspathForFile(filePath);
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
 
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();

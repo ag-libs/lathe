@@ -406,7 +406,7 @@ final class RunCoordinator {
     final List<Path> debugSourceRoots =
         Stream.of(
                 state.registry().allSourceRoots(),
-                state.manifest().libraries().depSourceDirs(),
+                state.manifest().libraries().dependencySourceDirs(),
                 state.manifest().libraries().jdkModuleSourceDirs())
             .flatMap(List::stream)
             .toList();

@@ -3,8 +3,7 @@ package io.github.aglibs.lathe.server.workspace;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
-import io.github.aglibs.lathe.analysis.testing.SampleFixture;
-import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.DependencyData;
@@ -18,11 +17,13 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class WorkspaceManifestTest extends SampleFixture {
+class WorkspaceManifestTest {
+
+  @TempDir private Path tmp;
 
   @Test
   void load_missingFile_returnsEmpty(@TempDir final Path dir) {
-    assertThat(WorkspaceManifest.load(dir).libraries().originLabel(null, null)).isEmpty();
+    assertThat(WorkspaceManifest.load(dir).libraries()).isEqualTo(LibrarySources.none());
   }
 
   @Test
@@ -84,101 +85,8 @@ class WorkspaceManifestTest extends SampleFixture {
         .containsExactly(runnerJar, launcherJar);
   }
 
-  @Test
-  void originLabel_jdkType_returnsModuleName() {
-    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.empty().libraries().originLabel(listType, compiled.fm()))
-        .hasValue("java.base");
-  }
-
-  @Test
-  void originLabel_jdkType_withVersionInManifest_includesVersion() throws Exception {
-    writeWorkspaceManifest(
-        List.of(),
-        new JdkSourceData("OpenJDK", "21.0.1", SourceStatus.MISSING, null, null, null, null),
-        List.of());
-
-    final var listType = compiled.task().getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.load(tmp).libraries().originLabel(listType, compiled.fm()))
-        .hasValue("java.base (JDK 21.0.1)");
-  }
-
-  @Test
-  void originLabel_reactorClass_returnsModuleName() throws Exception {
-    final Path classDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("mymodule");
-    Files.createDirectories(classDir);
-    final Path sampleSrc = Path.of(compiled.cu().getSourceFile().toUri());
-    TestJavac.compileToDir(classDir, sampleSrc);
-
-    try (final var parsed = TestJavac.parseWithClasspath(sampleSrc, classDir)) {
-      final var sampleType = parsed.task().getElements().getTypeElement("Sample");
-
-      assertThat(WorkspaceManifest.empty().libraries().originLabel(sampleType, parsed.fm()))
-          .hasValue("mymodule");
-    }
-  }
-
-  @Test
-  void load_dependencySourceClasspath_returnsSelfJarAndTransitiveJars() throws Exception {
-    final Path selfJar = tmp.resolve("repo/self.jar");
-    final Path transitiveJar = tmp.resolve("repo/transitive.jar");
-    final Path sourceDir = tmp.resolve("sources/self");
-    final Path sourceFile = sourceDir.resolve("com/example/Self.java");
-    writeWorkspaceManifest(
-        List.of(
-            new DependencyData(
-                "com.example:self:1",
-                selfJar.toString(),
-                SourceStatus.PRESENT,
-                sourceDir.toString(),
-                List.of(transitiveJar.toString()),
-                null)));
-    Files.createDirectories(sourceFile.getParent());
-    Files.writeString(sourceFile, "package com.example; public class Self {}");
-
-    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
-
-    assertThat(manifest.libraries().externalSourceRootForFile(sourceFile)).hasValue(sourceDir);
-    assertThat(manifest.libraries().containsFile(sourceFile)).isTrue();
-    assertThat(manifest.libraries().externalSourceDirs()).containsExactly(sourceDir);
-    assertThat(manifest.libraries().depClasspathForFile(sourceFile))
-        .containsExactly(selfJar, transitiveJar);
-  }
-
-  // Per-platform classifier jars of one artifact share its sources dir.
-  @Test
-  void load_classifierJarsSharingASourceDir_loadsWithTheFirstJar() throws Exception {
-    final Path sourceDir = tmp.resolve("sources/natives");
-    final Path sourceFile = sourceDir.resolve("com/example/Natives.java");
-    final Path linuxJar = tmp.resolve("repo/natives-linux-x86_64.jar");
-    final Path osxJar = tmp.resolve("repo/natives-osx-aarch_64.jar");
-    final Path otherJar = tmp.resolve("repo/other.jar");
-    writeWorkspaceManifest(
-        List.of(
-            new DependencyData(
-                "com.example:natives:1",
-                linuxJar.toString(),
-                SourceStatus.PRESENT,
-                sourceDir.toString(),
-                List.of(otherJar.toString()),
-                null),
-            new DependencyData(
-                "com.example:natives:1",
-                osxJar.toString(),
-                SourceStatus.PRESENT,
-                sourceDir.toString(),
-                List.of(),
-                null)));
-
-    final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
-
-    assertThat(manifest.libraries().externalSourceDirs()).containsExactly(sourceDir);
-    assertThat(manifest.libraries().depClasspathForFile(sourceFile))
-        .startsWith(linuxJar, otherJar)
-        .contains(osxJar);
-  }
-
-  // A test-jar dependency and a tests-classifier one name the same jar.
+  // A test-jar dependency and a tests-classifier one name the same jar: the manifest loads, with
+  // its libraries and type-index shards from the first entry.
   @Test
   void load_jarListedTwice_loadsWithTheFirstEntry() throws Exception {
     final Path jar = tmp.resolve("repo/lib-1-tests.jar");
@@ -220,41 +128,6 @@ class WorkspaceManifestTest extends SampleFixture {
         List.of());
 
     assertThat(WorkspaceManifest.load(tmp).typeIndexShardPaths()).containsExactly(typeIndex);
-  }
-
-  // The jar URI is percent-encoded; a space in the path (C:\Users\First Last\.m2) must survive.
-  @Test
-  void externalSourceRoot_classpathJarUnderAPathWithASpace_returnsMappedSourceDir()
-      throws Exception {
-    final Path sourceDir = tmp.resolve("sources/greeter");
-    final Path greeterSrc = sourceDir.resolve("com/example/Greeter.java");
-    Files.createDirectories(greeterSrc.getParent());
-    Files.writeString(greeterSrc, "package com.example; public class Greeter {}");
-
-    final Path jar = tmp.resolve("First Last/repo/greeter.jar");
-    Files.createDirectories(jar.getParent());
-    TestJavac.compileToJar(jar, tmp.resolve("classes/greeter"), List.of(), greeterSrc);
-    writeWorkspaceManifest(
-        List.of(
-            new DependencyData(
-                "com.example:greeter:1",
-                jar.toString(),
-                SourceStatus.PRESENT,
-                sourceDir.toString(),
-                List.of(),
-                null)));
-
-    final Path userSrc = tmp.resolve("User.java");
-    Files.writeString(userSrc, "import com.example.Greeter; public class User { Greeter g; }");
-    try (final var parsed = TestJavac.parseWithClasspath(userSrc, jar)) {
-      final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
-
-      assertThat(
-              WorkspaceManifest.load(tmp)
-                  .libraries()
-                  .externalSourceRoot(greeterElement, parsed.fm()))
-          .hasValue(sourceDir);
-    }
   }
 
   private void writeWorkspaceManifest(final List<DependencyData> deps) throws Exception {
