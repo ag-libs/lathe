@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.install.typeindex;
 
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.JdkTypeIndexOrigin;
@@ -39,30 +40,48 @@ public final class JdkTypeIndexSync {
 
     final Path index = indexPath(source);
     final var t = Stopwatch.start();
-    try {
-      final Optional<TypeIndexFile> current = currentIndex(index, source);
-      if (current.isPresent()) {
-        LOG.debug(
-            "[type-index] reused JDK %s %dms types=%d"
-                .formatted(source.version(), t.elapsedMs(), current.get().types().size()));
-        return source.withTypeIndex(index);
-      }
-
-      final TypeIndexFile file =
-          new TypeIndexFile(
-              LatheLayout.CACHE_SCHEMA_VERSION,
-              TypeIndexOrigin.jdk(
-                  new JdkTypeIndexOrigin(
-                      source.home().toString(), source.vendor(), source.version())),
-              scanJdk());
-      TypeIndexFiles.write(index, file);
+    final Optional<TypeIndexFile> current = currentIndex(index, source);
+    if (current.isPresent()) {
       LOG.debug(
-          "[type-index] scanned JDK %s %dms types=%d"
-              .formatted(source.version(), t.elapsedMs(), file.types().size()));
+          "[type-index] reused JDK %s %dms types=%d"
+              .formatted(source.version(), t.elapsedMs(), current.get().types().size()));
       return source.withTypeIndex(index);
+    }
+
+    // As for the JDK's sources: builds that start together on an empty cache would each scan the
+    // whole JDK, so one does and the others wait for its index.
+    try {
+      return LatheLock.exclusive(
+          LatheLayout.cacheLockFile(index),
+          () -> LOG.info("[sync] jdk type index waiting for another build indexing the JDK"),
+          () -> indexOnce(source, index, t));
     } catch (final IOException | UncheckedIOException e) {
       throw new SyncException("lathe:sync failed to index JDK types", e);
     }
+  }
+
+  private static JdkSource indexOnce(final JdkSource source, final Path index, final Stopwatch t)
+      throws IOException {
+    final Optional<TypeIndexFile> built = currentIndex(index, source);
+    if (built.isPresent()) {
+      LOG.info(
+          "[sync] jdk type index built by another build, waited %dms types=%d"
+              .formatted(t.elapsedMs(), built.get().types().size()));
+      return source.withTypeIndex(index);
+    }
+
+    final TypeIndexFile file =
+        new TypeIndexFile(
+            LatheLayout.CACHE_SCHEMA_VERSION,
+            TypeIndexOrigin.jdk(
+                new JdkTypeIndexOrigin(
+                    source.home().toString(), source.vendor(), source.version())),
+            scanJdk());
+    TypeIndexFiles.write(index, file);
+    LOG.info(
+        "[sync] jdk type index built for JDK %s in %dms types=%d"
+            .formatted(source.version(), t.elapsedMs(), file.types().size()));
+    return source.withTypeIndex(index);
   }
 
   public static Path indexPath(final JdkSource source) {

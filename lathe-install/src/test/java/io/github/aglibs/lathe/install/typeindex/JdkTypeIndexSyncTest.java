@@ -5,16 +5,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexOriginKind;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Map;
+import java.util.concurrent.FutureTask;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -55,6 +59,31 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     assertThat(Files.getLastModifiedTime(index).toMillis()).isEqualTo(1000);
   }
 
+  // A build that finds another scanning the JDK waits for it, then reuses the index it wrote
+  // instead of scanning the JDK again.
+  @Test
+  void index_anotherBuildIndexing_waitsAndReusesItsIndex() throws Exception {
+    useTempCache();
+    final JdkSource source = source();
+    final Path index = JdkTypeIndexSync.indexPath(source);
+    JdkTypeIndexSync.index(source);
+    final Path written = Files.move(index, tmp.resolve("written-index.json"));
+    final Closeable otherBuild =
+        LatheLock.tryExclusive(LatheLayout.cacheLockFile(index)).orElseThrow();
+    final var build = new FutureTask<>(() -> JdkTypeIndexSync.index(source));
+    final var buildThread = new Thread(build);
+    buildThread.start();
+
+    awaitWaiting(buildThread);
+    Files.move(written, index);
+    Files.setLastModifiedTime(index, FileTime.fromMillis(1000));
+    otherBuild.close();
+    final JdkSource indexed = build.get();
+
+    assertThat(indexed.typeIndex()).isEqualTo(index);
+    assertThat(Files.getLastModifiedTime(index).toMillis()).isEqualTo(1000);
+  }
+
   @Test
   void index_staleSchema_rebuildsShard() throws Exception {
     useTempCache();
@@ -80,6 +109,15 @@ class JdkTypeIndexSyncTest extends AbstractCachePropertyTest {
     final JdkSource source = JdkSource.missing("vendor", "version", "cache-key", null);
 
     assertThat(JdkTypeIndexSync.index(source)).isSameAs(source);
+  }
+
+  // A build waiting for the cache lock sleeps between attempts; nothing else on its way does.
+  private static void awaitWaiting(final Thread build) {
+    final var waited = Stopwatch.start();
+    while (build.getState() != Thread.State.TIMED_WAITING) {
+      assertThat(waited.elapsedMs()).as("the build waits for the lock").isLessThan(10_000);
+      Thread.onSpinWait();
+    }
   }
 
   private void useTempCache() {

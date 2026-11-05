@@ -72,6 +72,36 @@ public final class LatheLock {
     return Optional.empty();
   }
 
+  // Runs the work under the lock of tryExclusive, waiting for it first: a build that finds another
+  // filling the same cache entry waits for it, then finds the entry in place. onWait runs once,
+  // when the lock is first found held, so a long wait is said rather than looking like a hang.
+  public static <T> T exclusive(
+      final Path lockFile, final Runnable onWait, final IOUtil.IOSupplier<T> work)
+      throws IOException {
+    final Closeable held = awaitExclusive(lockFile, onWait);
+    try {
+      return work.get();
+    } finally {
+      held.close();
+    }
+  }
+
+  private static Closeable awaitExclusive(final Path lockFile, final Runnable onWait)
+      throws IOException {
+    for (int attempt = 0; ; attempt++) {
+      final Optional<Closeable> held = tryExclusive(lockFile);
+      if (held.isPresent()) {
+        return held.get();
+      }
+
+      if (attempt == 0) {
+        onWait.run();
+      }
+
+      IOUtil.sleep(POLL_INTERVAL_MS);
+    }
+  }
+
   private static void awaitClear(final Path lockFile) throws IOException {
     while (isHeld(lockFile)) {
       IOUtil.sleep(POLL_INTERVAL_MS);
