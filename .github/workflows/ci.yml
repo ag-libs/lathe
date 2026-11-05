@@ -164,9 +164,18 @@ jobs:
         with:
           java: ${{ matrix.java }}
 
+      # The distribution never changes for a version, so it is downloaded once and then restored.
+      - name: Restore Maven ${{ matrix.maven }} for the fixture builds
+        id: maven-dist
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/apache-maven-${{ matrix.maven }}
+          key: maven-dist-${{ runner.os }}-${{ matrix.maven }}
+
       # From Maven Central, which publishes every Maven distribution behind a CDN: archive.apache.org
       # is a single host that times out under load and failed the invoker jobs.
       - name: Download Maven ${{ matrix.maven }} for the fixture builds
+        if: steps.maven-dist.outputs.cache-hit != 'true'
         run: |
           curl -fsSL --retry 3 "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${{ matrix.maven }}/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
             | tar xz -C "$RUNNER_TEMP"
