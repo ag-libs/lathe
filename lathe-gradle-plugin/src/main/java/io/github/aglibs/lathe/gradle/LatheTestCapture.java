@@ -92,7 +92,8 @@ final class LatheTestCapture {
                         task,
                         agentJar,
                         moduleDir.toFile(),
-                        List.of(project.getRootDir(), project.getGradle().getGradleUserHomeDir()));
+                        project.getRootDir(),
+                        project.getGradle().getGradleUserHomeDir());
                   }
                 });
     // Every project's facts and the workspace come first and the tests follow, as on Maven, where
@@ -129,14 +130,20 @@ final class LatheTestCapture {
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always
   // forks, since a run served from the cache or up to date captures nothing.
+  // The task's actions hold only File values: the configuration cache on Gradle 8 can't restore a
+  // List.of() a lambda captured.
   private static void captureOnly(
-      final Test task, final File agentJar, final File moduleDir, final List<File> keptDirs) {
+      final Test task,
+      final File agentJar,
+      final File moduleDir,
+      final File rootDir,
+      final File userHome) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
     final var marker = new File(moduleDir, LatheLayout.Gradle.CAPTURE_MARKER);
     final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
-    task.doLast(test -> warnIfNotCaptured(test, marker, launch, keptDirs));
+    task.doLast(test -> warnIfNotCaptured(test, marker, launch, rootDir, userHome));
     task.getOutputs().upToDateWhen(ignored -> false);
     task.getOutputs().cacheIf(ignored -> false);
     if (GradleVersion.current().getBaseVersion().compareTo(FAIL_ON_NO_TESTS) >= 0) {
@@ -155,7 +162,11 @@ final class LatheTestCapture {
   // a temporary directory deleted later in the build. A launch written in the same clock tick as
   // the marker counts as written.
   private static void warnIfNotCaptured(
-      final Task test, final File marker, final File launch, final List<File> keptDirs) {
+      final Task test,
+      final File marker,
+      final File launch,
+      final File rootDir,
+      final File userHome) {
     if (launch.lastModified() < marker.lastModified()) {
       test.getLogger()
           .warn(
@@ -170,7 +181,7 @@ final class LatheTestCapture {
 
     temporaryJar(
             launch,
-            keptDirs.stream().map(File::toPath).toList(),
+            List.of(rootDir.toPath(), userHome.toPath()),
             Path.of(System.getProperty("java.io.tmpdir")))
         .ifPresent(
             jar ->
