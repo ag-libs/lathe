@@ -1557,6 +1557,34 @@ None yet.
 
 ---
 
+## TE-15 — A captured test launch keeps the options `JAVA_TOOL_OPTIONS` added, so a replay gets them twice
+
+**Status: documented**
+
+**Value: medium — Size: S**
+
+**Affects: editor test runs, test discovery and MCP `run_test`, on Maven and Gradle, for anyone whose environment sets `JAVA_TOOL_OPTIONS` (or `JDK_JAVA_OPTIONS`), e.g. a corporate or profiling agent.**
+
+Found while measuring coverage across the whole reactor (2026-11-05), with the JaCoCo agent given to every JVM through `JAVA_TOOL_OPTIONS`.
+
+### Observed behaviour
+
+`LaunchCapture` records the test fork's `RuntimeMXBean.getInputArguments()`, which includes the options the JVM read from `JAVA_TOOL_OPTIONS` as if they were on the command line.
+The replayed JVM inherits the same environment, so it gets each of those options twice.
+For a Java agent the second load is fatal: the replay exits 134 with `duplicate class definition for java.lang.$JaCoCo`, and the run reports that no test ran.
+In the reactor build this failed `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses`, 20 Neovim end-to-end checks (discovery, run status, streamed output) and the Gradle `LatheSyncTaskFunctionalTest.build_plainBuild_refreshesTheWorkspaceAndCapturesTestRuns`, which asserts that no `-javaagent` is captured.
+
+### Fix direction
+
+In the fork, drop from the captured arguments the ones the JVM took from `JAVA_TOOL_OPTIONS` and `JDK_JAVA_OPTIONS` (both readable there), so a replay's own environment supplies them once.
+The Gradle plugin passes `lathe-junit` itself through `JDK_JAVA_OPTIONS`, which the capture already leaves out by location; keep the two rules consistent.
+
+### Regression targets
+
+A `LaunchCapture.toLaunchData` test with environment-supplied arguments; the Gradle functional test above, run with `JAVA_TOOL_OPTIONS` set.
+
+---
+
 # Debug & Evaluation Gaps (DB)
 
 Gaps in the in-process DAP adapter and the two-stage expression evaluator (see [lathe-run-test-debug.md](../done/lathe-run-test-debug.md) §12.11).
