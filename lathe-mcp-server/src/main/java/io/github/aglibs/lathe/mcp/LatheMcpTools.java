@@ -853,8 +853,7 @@ final class LatheMcpTools {
       "Only javac-resolved uses of this declaration were renamed (overload- and scope-correct);"
           + " same-named unrelated symbols were left untouched.";
 
-  private static CallToolResult referencesResult(
-      final LatheReferences refs, final LatheNotes notes) {
+  static CallToolResult referencesResult(final LatheReferences refs, final LatheNotes notes) {
     return locationListResult(
         "reference",
         refs.total(),
@@ -864,7 +863,7 @@ final class LatheMcpTools {
         REFERENCES_AUTHORITY);
   }
 
-  private static CallToolResult implementationsResult(
+  static CallToolResult implementationsResult(
       final LatheImplementations impls, final LatheNotes notes) {
     return locationListResult(
         "implementation",
@@ -1037,7 +1036,7 @@ final class LatheMcpTools {
   }
 
   // An empty reactor-only answer says what the scope left out: the method may call only the JDK.
-  private static CallToolResult callHierarchyResult(
+  static CallToolResult callHierarchyResult(
       final LatheCallHierarchy ch, final SymbolScope scope, final LatheNotes notes) {
     // Outgoing entries are call sites: a callee called twice is two.
     final String noun = ch.incoming() ? "caller" : "call";
@@ -1067,7 +1066,7 @@ final class LatheMcpTools {
     return result(text, notes);
   }
 
-  private static CallToolResult searchResult(
+  static CallToolResult searchResult(
       final String query, final List<LatheSymbol> symbols, final LatheNotes notes) {
     final String text =
         symbols.isEmpty()
@@ -1091,7 +1090,7 @@ final class LatheMcpTools {
     return "%s %s  %s".formatted(arrow, call.name(), locationLine(call.location()));
   }
 
-  private static CallToolResult testRunResult(final LatheTestRun run, final LatheNotes notes) {
+  static CallToolResult testRunResult(final LatheTestRun run, final LatheNotes notes) {
     if (!run.launched()) {
       return result(
           "Test run blocked: %s".formatted(String.join("; ", run.blockedReasons())), notes);
@@ -1131,8 +1130,7 @@ final class LatheMcpTools {
     return output.stream().map(line -> "%n    | %s".formatted(line)).collect(Collectors.joining());
   }
 
-  private static CallToolResult analyzeResult(
-      final LatheChangeImpact impact, final LatheNotes notes) {
+  static CallToolResult analyzeResult(final LatheChangeImpact impact, final LatheNotes notes) {
     final String overrides =
         impact.overrideFamily().isEmpty()
             ? "none"
@@ -1265,7 +1263,7 @@ final class LatheMcpTools {
 
   // Never "compiles cleanly": no module may compile the file, and the analysis is not the write
   // (whose failure the "Not compiled:" note reports).
-  private static String diagnosticsText(
+  static String diagnosticsText(
       final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
     if (!notes.notChecked().isEmpty()) {
       return "%s was not checked.".formatted(file.getFileName());
