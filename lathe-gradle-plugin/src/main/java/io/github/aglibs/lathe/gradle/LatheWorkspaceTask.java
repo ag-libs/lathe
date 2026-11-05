@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -135,11 +136,14 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
         librarySources,
         JdkTypeIndexSync.index(jdk),
         PluginProps.version(),
-        facts.stream()
-            .map(ProjectFacts::runnerClasspath)
-            .filter(runner -> !runner.isEmpty())
-            .findFirst()
-            .orElse(List.of()),
+        runnerClasspath(
+            facts,
+            module ->
+                getLogger()
+                    .warn(
+                        "[lathe] {}: the test runner its last build recorded is gone, so it is not"
+                            + " used; build that project again to refresh it",
+                        module.isEmpty() ? "the root project" : module)),
         buildFiles(root),
         resourceRoots,
         outputs,
@@ -249,6 +253,28 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   // module's compile accepts. One older than the server runs on does not count (a toolchain on JDK
   // 11; the server's javac then compiles for 11 with --release); a build with none runs the server
   // on the JDK Gradle runs on, which is new enough.
+  // The runner of the first project whose runner jars are all in place. A project this build did
+  // not refresh keeps its last facts, whose runner may come from a build since deleted, and one
+  // stale project would otherwise fail every test run with a missing runner class.
+  static List<String> runnerClasspath(
+      final List<ProjectFacts> facts, final Consumer<String> staleModule) {
+    final List<ProjectFacts> withRunner =
+        facts.stream().filter(fact -> !fact.runnerClasspath().isEmpty()).toList();
+    withRunner.stream()
+        .filter(fact -> !runnerInPlace(fact))
+        .map(ProjectFacts::module)
+        .forEach(staleModule);
+    return withRunner.stream()
+        .filter(LatheWorkspaceTask::runnerInPlace)
+        .map(ProjectFacts::runnerClasspath)
+        .findFirst()
+        .orElse(List.of());
+  }
+
+  private static boolean runnerInPlace(final ProjectFacts fact) {
+    return fact.runnerClasspath().stream().map(Path::of).allMatch(Files::exists);
+  }
+
   static JdkSource compilingJdk(final List<ProjectFacts> facts) {
     return facts.stream()
         .filter(
