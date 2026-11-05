@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -21,27 +22,43 @@ class LatheCaptureTaskFunctionalTest {
 
   @TempDir Path dir;
 
-  // One project, captured, wiped, and captured again with the compile up to date; the
-  // configuration cache is stored and then reused.
+  // One project through the builds a developer's day brings. A build cache filled by a build
+  // without Lathe serves the compile to one with it, as Lathe never changes the build's own tasks,
+  // and the capture still runs; a wiped .lathe/ is refilled with the compile up to date, the
+  // configuration cache stored and then reused; a compile that fails keeps the last good capture.
   @Test
-  void capture_javaProject_writesParamsMirrorsAndStampsAndRefillsAWipedLathe() throws Exception {
+  void capture_javaProject_capturesFromCacheRefillsAWipedLatheAndKeepsTheLastGoodOne()
+      throws Exception {
     final var fixture =
         new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", GradleFixture.JAVA)
+            .file(
+                "settings.gradle",
+                SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
+            .file("build.gradle", GradleFixture.JAVA)
             .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
             .file(
                 "src/test/java/com/example/AppTest.java",
                 "package com.example; class AppTest {}\n");
 
-    final var first = fixture.runner("testClasses", "--configuration-cache").build();
+    fixture.runner("testClasses", "--build-cache", "-Plathe.disabled=true").build();
+    FileUtil.deleteDir(dir.resolve("build"));
+    final var fromCache =
+        fixture.runner("testClasses", "--build-cache", "--configuration-cache").build();
     FileUtil.deleteDir(dir.resolve(".lathe"));
-    final var second = fixture.runner("testClasses", "--configuration-cache").build();
+    final var refilled =
+        fixture.runner("testClasses", "--build-cache", "--configuration-cache").build();
+    final boolean refilledClasses =
+        Files.exists(dir.resolve(".lathe/classes/com/example/App.class"));
+    fixture.file("src/main/java/com/example/App.java", "package com.example; class App {\n");
+    final var failed = fixture.runner("classes", "--continue").buildAndFail();
 
-    assertThat(first.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
-    assertThat(second.getOutput()).contains("Configuration cache entry reused.");
-    assertThat(second.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.UP_TO_DATE);
-    assertThat(second.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(fromCache.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.FROM_CACHE);
+    assertThat(fromCache.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(refilled.getOutput()).contains("Configuration cache entry reused.");
+    assertThat(refilled.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.UP_TO_DATE);
+    assertThat(refilled.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(refilledClasses).isTrue();
+    assertThat(failed.task(":latheCaptureMain")).isNull();
     assertThat(dir.resolve(".lathe/classes/com/example/App.class")).exists();
     assertThat(dir.resolve(".lathe/test-classes/com/example/AppTest.class")).exists();
     assertThat(dir.resolve(".lathe").resolve(LatheLayout.compiledStampsFileName("classes")))
@@ -63,14 +80,14 @@ class LatheCaptureTaskFunctionalTest {
   void capture_multiProjectWithProcessor_mirrorsGeneratedSources() throws Exception {
     final var fixture =
         new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS + "include(\"lib\", \"processor\", \"app\")\n")
+            .file("settings.gradle", SETTINGS + "include(\"lib\", \"processor\", \"app\")\n")
             .file(
-                "lib/build.gradle.kts",
-                "plugins { `java-library` }\ntasks.compileJava { options.release = 17 }\n")
+                "lib/build.gradle",
+                "plugins { id 'java-library' }\ncompileJava.options.release = 17\n")
             .file(
                 "lib/src/main/java/com/example/lib/Lib.java",
                 "package com.example.lib; public class Lib {}\n")
-            .file("processor/build.gradle.kts", GradleFixture.JAVA)
+            .file("processor/build.gradle", GradleFixture.JAVA)
             .file(
                 "processor/src/main/java/com/example/processor/GreeterProcessor.java",
                 """
@@ -114,13 +131,13 @@ class LatheCaptureTaskFunctionalTest {
                 "processor/src/main/resources/META-INF/services/javax.annotation.processing.Processor",
                 "com.example.processor.GreeterProcessor\n")
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 """
-                plugins { java }
-                tasks.compileJava { options.release = 17 }
+                plugins { id 'java' }
+                compileJava.options.release = 17
                 dependencies {
-                  implementation(project(":lib"))
-                  annotationProcessor(project(":processor"))
+                  implementation project(':lib')
+                  annotationProcessor project(':processor')
                 }
                 """)
             .file(
@@ -141,42 +158,6 @@ class LatheCaptureTaskFunctionalTest {
     assertThat(app.classpath()).contains(fixture.path("lib/build/classes/java/main"));
   }
 
-  @Test
-  void capture_failedCompileAfterAGoodOne_keepsTheLastGoodCapture() throws Exception {
-    final var fixture =
-        new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", GradleFixture.JAVA)
-            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n");
-
-    fixture.runner("classes").build();
-    fixture.file("src/main/java/com/example/App.java", "package com.example; class App {\n");
-    final var failed = fixture.runner("classes", "--continue").buildAndFail();
-
-    assertThat(failed.task(":latheCaptureMain")).isNull();
-    assertThat(dir.resolve(".lathe/classes/com/example/App.class")).exists();
-  }
-
-  // The cache-key rule: Lathe never changes the build's own tasks, so a cache filled by a build
-  // without Lathe serves the compile to a build with it.
-  @Test
-  void capture_buildCacheFilledWithoutLathe_compileComesFromTheCache() throws Exception {
-    final var fixture =
-        new GradleFixture(dir)
-            .file(
-                "settings.gradle.kts",
-                SETTINGS + "buildCache { local { directory = file(\"build-cache\") } }\n")
-            .file("build.gradle.kts", GradleFixture.JAVA)
-            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n");
-
-    fixture.runner("classes", "--build-cache", "-Plathe.disabled=true").build();
-    FileUtil.deleteDir(dir.resolve("build"));
-    final var withLathe = fixture.runner("classes", "--build-cache").build();
-
-    assertThat(withLathe.task(":compileJava").getOutcome()).isEqualTo(TaskOutcome.FROM_CACHE);
-    assertThat(withLathe.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
-  }
-
   // Gradle's rule, for the compile and the main run: a module goes on the module path, required or
   // not, a plain jar on the classpath; the run leads with the app's own classes and names its
   // module. A modular project compiles against its siblings' jars, and its tests run as Gradle
@@ -186,33 +167,33 @@ class LatheCaptureTaskFunctionalTest {
     final var fixture =
         new GradleFixture(dir)
             .file(
-                "settings.gradle.kts",
+                "settings.gradle",
                 SETTINGS
                     + "include(\"lib\", \"plain\", \"app\")\n"
                     + GradleFixture.latheRepositories())
-            .file("lib/build.gradle.kts", "plugins { `java-library` }\n")
+            .file("lib/build.gradle", "plugins { id 'java-library' }\n")
             .file(
                 "lib/src/main/java/module-info.java",
                 "module com.example.lib { exports com.example.lib; }\n")
             .file(
                 "lib/src/main/java/com/example/lib/Lib.java",
                 "package com.example.lib; public class Lib {}\n")
-            .file("plain/build.gradle.kts", GradleFixture.JAVA)
+            .file("plain/build.gradle", GradleFixture.JAVA)
             .file(
                 "plain/src/main/java/com/example/plain/Plain.java",
                 "package com.example.plain; public class Plain {}\n")
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 """
-                plugins { java }
+                plugins { id 'java' }
                 dependencies {
-                  implementation(project(":lib"))
-                  implementation(project(":plain"))
-                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
-                  testImplementation("org.junit.jupiter:junit-jupiter")
-                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                  implementation project(':lib')
+                  implementation project(':plain')
+                  testImplementation platform('org.junit:junit-bom:5.11.4')
+                  testImplementation 'org.junit.jupiter:junit-jupiter'
+                  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
                 }
-                tasks.test { useJUnitPlatform() }
+                test { useJUnitPlatform() }
                 """)
             .file(
                 "app/src/test/java/com/example/app/AppTest.java",
