@@ -924,19 +924,17 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .cachedTypeEntries(neededTypeNames)
+                .thenCompose(openEntries -> enrichedIndex(baseIndex, reactorEntries, openEntries))
                 .thenCompose(
-                    openEntries -> {
-                      final var enriched =
-                          buildEnrichedIndex(baseIndex, reactorEntries, openEntries);
-                      return moduleWorker.codeAction(
-                          uri,
-                          openFile.content(),
-                          openFile.version(),
-                          range,
-                          requests,
-                          enriched,
-                          staticImports);
-                    })
+                    enriched ->
+                        moduleWorker.codeAction(
+                            uri,
+                            openFile.content(),
+                            openFile.version(),
+                            range,
+                            requests,
+                            enriched,
+                            staticImports))
                 .thenApply(
                     actions ->
                         resolveSupported
@@ -946,13 +944,10 @@ final class WorkspaceSession {
         List.of());
   }
 
-  // The check may compile twice (the rewritten text, then the original to compare errors), and the
-  // second starts from the first one's completion, off the loop: each compile routes on the loop.
+  // The check may compile twice (the rewritten text, then the original to compare errors); the
+  // second starts from the first one's result, which the worker delivers on the loop.
   CompletableFuture<CodeAction> resolveCodeActionFuture(final CodeAction action) {
-    return CompileCheckedActions.resolve(
-        action,
-        docs::get,
-        (uri, content) -> eventLoop.submitCompose(() -> diagnosticsTransientFuture(uri, content)));
+    return CompileCheckedActions.resolve(action, docs::get, this::diagnosticsTransientFuture);
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
@@ -975,17 +970,20 @@ final class WorkspaceSession {
         MissingImportsResult.empty());
   }
 
-  private static WorkspaceTypeIndex buildEnrichedIndex(
+  // The index with the open files' types added. Built off the loop, as a rebuild takes 100-200ms on
+  // a large reactor (as ReactorTypeIndex's), and back on the loop with the result.
+  private CompletableFuture<WorkspaceTypeIndex> enrichedIndex(
       final WorkspaceTypeIndex base,
       final List<List<TypeIndexEntry>> reactorEntries,
       final List<TypeIndexEntry> openFileEntries) {
     if (openFileEntries.isEmpty()) {
-      return base;
+      return CompletableFuture.completedFuture(base);
     }
 
     final List<List<TypeIndexEntry>> allReactor =
         Stream.concat(reactorEntries.stream(), Stream.of(openFileEntries)).toList();
-    return base.withReactorEntries(allReactor);
+    return eventLoop.rejoin(
+        CompletableFuture.supplyAsync(() -> base.withReactorEntries(allReactor)));
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {

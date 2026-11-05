@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
@@ -173,36 +174,31 @@ final class RenameService {
       return CompletableFuture.completedFuture(target);
     }
 
-    return eventLoop
-        .submitCompose(
-            () ->
-                reactorIndex
-                        .current()
-                        .findType(target.qualifiedName())
-                        .filter(
-                            type ->
-                                type.kind()
-                                    == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
-                        .isEmpty()
-                    ? CompletableFuture.completedFuture(List.<String>of())
-                    : FeatureAnswers.concatAll(
-                        search
-                            .subtypeImplementationFiles(
-                                target,
-                                reactorIndex.current(),
-                                TypeSourceLocator::isNamedDeclaration)
-                            .map(
-                                entry ->
-                                    search.fileQueryFuture(
-                                        entry.getKey(),
-                                        analysis ->
-                                            MethodImplementationLocator.inheritedOutsideFamily(
-                                                analysis, target, entry.getValue())))))
-        .thenApply(
-            reasons -> {
-              refuseIfPresent(reasons.stream().findFirst());
-              return target;
-            });
+    final boolean onInterface =
+        reactorIndex
+            .current()
+            .findType(target.qualifiedName())
+            .filter(type -> type.kind() == TypeKind.INTERFACE)
+            .isPresent();
+    final CompletableFuture<List<String>> inheritedOutside =
+        onInterface
+            ? FeatureAnswers.concatAll(
+                search
+                    .subtypeImplementationFiles(
+                        target, reactorIndex.current(), TypeSourceLocator::isNamedDeclaration)
+                    .map(
+                        entry ->
+                            search.fileQueryFuture(
+                                entry.getKey(),
+                                analysis ->
+                                    MethodImplementationLocator.inheritedOutsideFamily(
+                                        analysis, target, entry.getValue()))))
+            : CompletableFuture.completedFuture(List.of());
+    return inheritedOutside.thenApply(
+        reasons -> {
+          refuseIfPresent(reasons.stream().findFirst());
+          return target;
+        });
   }
 
   // A rename that would change what a name means, a use the new name captures or a renamed site
@@ -214,9 +210,7 @@ final class RenameService {
       final String cursorUri,
       final ModuleSourceConfig cursorConfig,
       final CancelChecker cancelChecker) {
-    return eventLoop
-        .submitCompose(
-            () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
+    return meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker)
         .thenAccept(RenameService::refuseIfPresent);
   }
 

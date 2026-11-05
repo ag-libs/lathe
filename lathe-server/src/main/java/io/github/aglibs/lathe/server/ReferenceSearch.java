@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -319,7 +318,7 @@ final class ReferenceSearch {
     }
 
     final var planningTimer = Stopwatch.start();
-    return readSearchInputs(() -> planSearch(cursorConfig, target))
+    return readSearchInputs(planSearch(cursorConfig, target))
         .thenCompose(
             searchInputs ->
                 runSearch(
@@ -344,15 +343,14 @@ final class ReferenceSearch {
         .toList();
   }
 
-  // Planning reads session state, so it runs on the event loop; reading the candidate files does
-  // not, so it runs off it, where a search over thousands of files cannot stall the loop. The
-  // search then routes open documents, which is loop state again, so it rejoins the loop.
+  // Planning reads session state, so the caller plans on the event loop; reading the candidate
+  // files does not, so it runs off it, where a search over thousands of files cannot stall the
+  // loop. The search then routes open documents, which is loop state again, so it rejoins the loop.
   private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
-      final Callable<List<ModuleSearchPlan>> plan) {
+      final List<ModuleSearchPlan> plans) {
     return eventLoop.rejoin(
-        eventLoop
-            .submit(plan)
-            .thenApplyAsync(plans -> plans.stream().map(ReferenceSearch::readCandidates).toList()));
+        CompletableFuture.supplyAsync(
+            () -> plans.stream().map(ReferenceSearch::readCandidates).toList()));
   }
 
   private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
@@ -668,10 +666,8 @@ final class ReferenceSearch {
         .resolveTarget(request)
         .thenCompose(
             target ->
-                eventLoop.submitCompose(
-                    () ->
-                        implementationForTarget(
-                            target, request, cursorWorker, indexSnapshot, lambdaSnapshot)))
+                implementationForTarget(
+                    target, request, cursorWorker, indexSnapshot, lambdaSnapshot))
         .thenApply(
             locations -> {
               LOG.fine(
@@ -848,30 +844,32 @@ final class ReferenceSearch {
   }
 
   // A query over a source file's analysis in its own module: the open document's, or else the
-  // file on disk attributed once.
+  // file on disk, read off the loop and attributed once.
   <T> CompletableFuture<List<T>> fileQueryFuture(
       final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
-    final var config = state.registry().moduleSourceFor(sourceFile);
-    if (config.isEmpty()) {
+    final Optional<CompilationWorker> worker = state.registry().moduleWorkerFor(sourceFile);
+    if (worker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
     final var uri = LatheUri.fromPath(sourceFile);
     final OpenDocument openFile = docs.get(uri);
-    final var diskFile = openFile == null ? readDiskCandidate(uri).orElse(null) : null;
-    if (openFile == null && diskFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final String content = openFile != null ? openFile.content() : diskFile.content();
-    final int version = openFile != null ? openFile.version() : 0;
-    final var worker = state.registry().workerFor(config.get());
     if (openFile != null) {
       router.touchAnalysisCache(openFile.uri());
-      return worker.queryFile(uri, content, version, query);
+      return worker.get().queryFile(uri, openFile.content(), openFile.version(), query);
     }
 
-    return worker.queryFileTransient(uri, content, query);
+    return eventLoop
+        .rejoin(CompletableFuture.supplyAsync(() -> readDiskCandidate(uri)))
+        .thenCompose(
+            disk ->
+                disk.flatMap(
+                        file ->
+                            state
+                                .registry()
+                                .moduleWorkerFor(sourceFile)
+                                .map(w -> w.queryFileTransient(uri, file.content(), query)))
+                    .orElseGet(() -> CompletableFuture.completedFuture(List.of())));
   }
 
   CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
@@ -967,10 +965,7 @@ final class ReferenceSearch {
 
     final var t = Stopwatch.start();
     return readSearchInputs(
-            () ->
-                configs.stream()
-                    .map(config -> planModuleSearch(config, target, packageRel))
-                    .toList())
+            configs.stream().map(config -> planModuleSearch(config, target, packageRel)).toList())
         .thenCompose(
             searchInputs -> {
               final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
