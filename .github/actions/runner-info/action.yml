@@ -46,6 +46,9 @@ runs:
       if: runner.os != 'Windows'
       shell: bash
       run: |
+        # GitHub runs bash steps with -e and pipefail, and `ps | head` ends with ps's broken pipe:
+        # neither may fail the job.
+        set +e +o pipefail
         if [ '${{ inputs.phase }}' = start ]; then
           echo "CPU: $( (lscpu 2>/dev/null | sed -n 's/^Model name: *//p'; sysctl -n machdep.cpu.brand_string 2>/dev/null) | head -1), $(getconf _NPROCESSORS_ONLN) threads"
           (free -h 2>/dev/null || vm_stat 2>/dev/null) | head -3

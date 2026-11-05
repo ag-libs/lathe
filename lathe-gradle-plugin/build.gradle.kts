@@ -114,8 +114,14 @@ val functionalTestTask =
       // order.
       maxParallelForks = (Runtime.getRuntime().availableProcessors() - 1).coerceAtLeast(1)
       // Each test as it starts and ends: CI stamps every log line with its time, so a slow or stuck
-      // run shows which test it is in while it runs.
-      testLogging { events("started", "passed", "skipped", "failed") }
+      // run shows which test it is in while it runs. On CI each fixture build's own output too, so
+      // a stuck test also shows where in its build it stopped; a local run stays quiet.
+      val ci = providers.environmentVariable("CI").isPresent
+      systemProperty("lathe.gradle.fixturesOutput", ci)
+      testLogging {
+        events("started", "passed", "skipped", "failed")
+        showStandardStreams = ci
+      }
       dependsOn("publishAllPublicationsToFixturesRepository")
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
