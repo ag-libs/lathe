@@ -6,7 +6,6 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,8 +40,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
   // field on the caller's thread, where it may still be null.
   private WorkspaceSession session;
   // Written in initialize, read in formatting; volatile publishes it safely across lsp4j's
-  // request-handling thread(s). The engine runs on the event loop, not here. Null = formatting
-  // disabled.
+  // request-handling thread(s). The engine runs on the session's format thread, not here. Null =
+  // formatting disabled.
   private volatile FormatEngine formatEngine;
   private volatile boolean formatterPinned;
   // Whether the client can apply a RenameFile resource operation; gates renaming a public top-level
@@ -524,14 +523,15 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submit(() -> session.format(uri, engine));
+    return eventLoop.submitCompose(
+        () -> session.formatFuture(uri, engine).thenApply(edits -> edits));
   }
 
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
   void useWorkspaceFormatter(final Path root) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(root);
     formatterPinned = spec != null;
-    formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root, this);
+    formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root);
   }
 
   // The whole-file formatting edits, refused (not empty) when there is no formatter or it fails.
@@ -549,7 +549,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final String canonical = LatheUri.canonical(uri);
-    return eventLoop.submit(() -> session.formatOrRefuse(canonical, engine));
+    return eventLoop.submitCompose(() -> session.formatOrRefuseFuture(canonical, engine));
   }
 
   @Override
@@ -563,16 +563,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<List<? extends TextEdit>> rangesFormatting(
       final DocumentRangesFormattingParams params) {
     return formatRanges(LatheUri.canonical(params.getTextDocument().getUri()), params.getRanges());
-  }
-
-  // A format engine calls this while the event loop runs session.format, so it reads the session
-  // directly rather than through the event loop.
-  Optional<String> moduleRelOf(final Path file) {
-    return session.moduleRelOf(file);
-  }
-
-  Optional<Path> buildTool() {
-    return session.buildTool();
   }
 
   // Reads session state on the event loop, for a caller outside it: the workspace service's
@@ -618,7 +608,8 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submit(() -> session.formatRanges(uri, ranges, engine));
+    return eventLoop.submitCompose(
+        () -> session.formatRangesFuture(uri, ranges, engine).thenApply(edits -> edits));
   }
 
   @Override

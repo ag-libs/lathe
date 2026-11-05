@@ -34,8 +34,7 @@ final class FormatEngines {
     }
   }
 
-  static FormatEngine forSpec(
-      final FormatterSpec spec, final Path workingDir, final LatheTextDocumentService service) {
+  static FormatEngine forSpec(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
       case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
           pinned(
@@ -56,8 +55,7 @@ final class FormatEngines {
                   new EclipseFormatEngine(
                       spec.options().getOrDefault(LatheFlags.FORMAT_FILE, ""), spec.classpath()));
       case LatheFlags.FORMATTER_COMMAND -> commandEngine(spec.command(), workingDir);
-      case LatheFlags.FORMATTER_COMMAND_FILE ->
-          fileCommandEngine(spec.command(), workingDir, service);
+      case LatheFlags.FORMATTER_COMMAND_FILE -> fileCommandEngine(spec.command(), workingDir);
       default -> null;
     };
   }
@@ -96,17 +94,12 @@ final class FormatEngines {
         command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, workingDir);
   }
 
-  private static FormatEngine fileCommandEngine(
-      final List<String> command, final Path workingDir, final LatheTextDocumentService service) {
+  private static FormatEngine fileCommandEngine(final List<String> command, final Path workingDir) {
     if (command.isEmpty() || workingDir == null) {
       return null;
     }
 
     return new FileCommandFormatEngine(
-        command,
-        workingDir,
-        FileCommandFormatEngine.DEFAULT_TIMEOUT,
-        service::moduleRelOf,
-        service::buildTool);
+        command, workingDir, FileCommandFormatEngine.DEFAULT_TIMEOUT);
   }
 }

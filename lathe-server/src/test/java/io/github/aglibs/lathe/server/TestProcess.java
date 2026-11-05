@@ -43,6 +43,7 @@ public final class TestProcess {
   // what reading stdin returns. spawn [exit|exit-destroying]: starts a sleeping child, prints its
   // pid, then sleeps, or exits (killing its children on exit first, as the servers do).
   // marked: prints output around the test runner's markers (one test, a gap, two at once).
+  // await gate file: waits until the gate file exists, then uppercases the file like upper.
   public static void main(final String[] args) throws IOException, InterruptedException {
     switch (args[0]) {
       case "upper" -> upper(args);
@@ -55,6 +56,7 @@ public final class TestProcess {
       case "read" -> System.out.println(System.in.read());
       case "spawn" -> spawn(args.length > 1 ? args[1] : "");
       case "marked" -> marked();
+      case "await" -> await(Path.of(args[1]), args[2]);
       default -> throw new IllegalArgumentException(args[0]);
     }
   }
@@ -102,6 +104,15 @@ public final class TestProcess {
   private static void echoLine(final String streamAndText) {
     final var stream = streamAndText.startsWith("err:") ? System.err : System.out;
     stream.println(streamAndText.substring(streamAndText.indexOf(':') + 1));
+  }
+
+  private static void await(final Path gate, final String file)
+      throws IOException, InterruptedException {
+    while (!Files.exists(gate)) {
+      Thread.sleep(10);
+    }
+
+    upper(new String[] {"upper", file});
   }
 
   private static void upper(final String[] args) throws IOException {

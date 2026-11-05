@@ -58,4 +58,9 @@ public final class FormatterFixtures {
         .sorted()
         .toList();
   }
+
+  // A file to format, in the reactor root's module, with no build tool recorded.
+  static FormatTarget target(final Path file) {
+    return new FormatTarget(file, ".", null);
+  }
 }

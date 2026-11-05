@@ -6,7 +6,6 @@ import static io.github.aglibs.lathe.server.FormatterLoader.invoke;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -40,7 +39,7 @@ final class GjfFormatEngine implements FormatEngine {
   }
 
   @Override
-  public String format(final String source, final Path file) throws Exception {
+  public String format(final String source, final FormatTarget target) throws Exception {
     final List<Pass> pipeline = gjf().pipeline();
     return FormatEngine.converge(source, current -> applyAll(pipeline, current));
   }

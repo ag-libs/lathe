@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import java.nio.file.Path;
 import java.util.List;
 
 // A Java source-to-source formatter: the project's pinned formatter run in-process
@@ -18,7 +17,7 @@ sealed interface FormatEngine
   // a blank line that only the next pass collapses.
   int MAX_PASSES = 10;
 
-  String format(String source, Path file) throws Exception;
+  String format(String source, FormatTarget target) throws Exception;
 
   // Whole-file engines (external commands) cannot format a range; in-process ones can.
   default boolean formatsRanges() {

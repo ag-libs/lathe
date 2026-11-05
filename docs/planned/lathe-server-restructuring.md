@@ -62,10 +62,9 @@ These rules are in `AGENTS.md` (`CLAUDE.md` links to it), so every agent sees th
    Known exception, kept for now (KISS): a workspace reload closes the old registry on the loop, waiting for its
    workers to drain. Reloads are rare; make the close asynchronous (with one admission shared across registries)
    only if a measurement shows a noticeable stall.
-   Second known exception: a formatter that runs an external command (`FileCommandFormatEngine`, e.g. Spotless
-   through the build tool) waits for that process on the loop, so the server answers nothing else meanwhile.
-   In-process formatters (google-java-format, palantir, Eclipse) take milliseconds and are not affected.
-   The fix is to snapshot the text on the loop, run the command off it, and rejoin to apply the edits.
+   Formatting is not one: the text and what the formatter needs from the session (`FormatTarget`) are read on
+   the loop, the format runs on the session's single format thread (an external command, e.g. Spotless through
+   the build tool, waits on its process there), and the result rejoins the loop.
 5. Field names say the thread: `eventLoop` for `ServerEventLoop`, `moduleWorker` for a `CompilationWorker`
    (today both are called `worker`).
 

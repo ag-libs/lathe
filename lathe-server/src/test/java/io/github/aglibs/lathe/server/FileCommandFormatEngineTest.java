@@ -10,23 +10,16 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class FileCommandFormatEngineTest {
 
-  private static final Function<Path, Optional<String>> NO_MODULE = file -> Optional.empty();
-  private static final Supplier<Optional<Path>> NO_TOOL = Optional::empty;
-
   @TempDir private Path root;
 
   private FileCommandFormatEngine engine(final List<String> command) {
-    return new FileCommandFormatEngine(
-        command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT, NO_MODULE, NO_TOOL);
+    return new FileCommandFormatEngine(command, root, FileCommandFormatEngine.DEFAULT_TIMEOUT);
   }
 
   @Test
@@ -37,7 +30,7 @@ class FileCommandFormatEngineTest {
     // Fake in-place formatter: uppercase whatever is in the file (%FILE% -> the scratch temp).
     final var upper = engine(TestProcess.command("upper", "%FILE%"));
 
-    final String result = upper.format("buffer\n", file);
+    final String result = upper.format("buffer\n", FormatterFixtures.target(file));
 
     assertThat(result)
         .isEqualTo("BUFFER\n"); // the buffer, formatted via a scratch file, is returned
@@ -54,31 +47,28 @@ class FileCommandFormatEngineTest {
     // The formatter sees %FILE% = the scratch path; echo its basename back so we can inspect it.
     final var echoName = engine(TestProcess.command("name", "%FILE%"));
 
-    final String scratchName = echoName.format("buffer\n", file).strip();
+    final String scratchName = echoName.format("buffer\n", FormatterFixtures.target(file)).strip();
 
     assertThat(scratchName).startsWith(".lathe-fmt-").endsWith(".java");
   }
 
   @Test
-  void format_substitutesModule_fromLookupOrDotWhenNone() throws Exception {
-    final Path sub = root.resolve("sub");
-    Files.createDirectories(sub);
-    final var echoModule =
-        new FileCommandFormatEngine(
-            TestProcess.command("write", "%MODULE%", "%FILE%"),
-            root,
-            FileCommandFormatEngine.DEFAULT_TIMEOUT,
-            file -> file.startsWith(sub) ? Optional.of("sub") : Optional.empty(),
-            NO_TOOL);
+  void format_substitutesModule_fromTheTarget() throws Exception {
+    final Path sub = Files.createDirectories(root.resolve("sub"));
+    final var echoModule = engine(TestProcess.command("write", "%MODULE%", "%FILE%"));
 
-    assertThat(echoModule.format("x", sub.resolve("Foo.java"))).isEqualTo("sub");
-    assertThat(echoModule.format("x", root.resolve("Root.java"))).isEqualTo(".");
+    assertThat(echoModule.format("x", new FormatTarget(sub.resolve("Foo.java"), "sub", null)))
+        .isEqualTo("sub");
+    assertThat(echoModule.format("x", FormatterFixtures.target(root.resolve("Root.java"))))
+        .isEqualTo(".");
   }
 
   @Test
   void format_nonZeroExit_throwsAndLeavesBufferUnchanged() {
     assertThatThrownBy(
-            () -> engine(TestProcess.command("exit", "1")).format("x", root.resolve("F.java")))
+            () ->
+                engine(TestProcess.command("exit", "1"))
+                    .format("x", FormatterFixtures.target(root.resolve("F.java"))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("exited");
   }
@@ -86,10 +76,9 @@ class FileCommandFormatEngineTest {
   @Test
   void format_exceedsTimeout_throws() {
     final var slow =
-        new FileCommandFormatEngine(
-            TestProcess.command("sleep"), root, Duration.ofMillis(200), NO_MODULE, NO_TOOL);
+        new FileCommandFormatEngine(TestProcess.command("sleep"), root, Duration.ofMillis(200));
 
-    assertThatThrownBy(() -> slow.format("x", root.resolve("F.java")))
+    assertThatThrownBy(() -> slow.format("x", FormatterFixtures.target(root.resolve("F.java"))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("timed out");
   }
@@ -100,16 +89,12 @@ class FileCommandFormatEngineTest {
         Stream.concat(
                 Stream.of("%MVN%"), TestProcess.toolArgs("write", "by tool", "%FILE%").stream())
             .toList();
-    final var recorded =
-        new FileCommandFormatEngine(
-            command,
-            root,
-            FileCommandFormatEngine.DEFAULT_TIMEOUT,
-            NO_MODULE,
-            () -> Optional.of(TestProcess.java()));
+    final Path file = root.resolve("F.java");
 
-    assertThat(recorded.format("x", root.resolve("F.java"))).isEqualTo("by tool");
-    assertThatThrownBy(() -> engine(List.of("%MVN%", "%FILE%")).format("x", root.resolve("F.java")))
+    assertThat(engine(command).format("x", new FormatTarget(file, ".", TestProcess.java())))
+        .isEqualTo("by tool");
+    assertThatThrownBy(
+            () -> engine(List.of("%MVN%", "%FILE%")).format("x", FormatterFixtures.target(file)))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("%MVN%");
   }
@@ -120,15 +105,10 @@ class FileCommandFormatEngineTest {
         .as("empty command")
         .isInstanceOf(ValidationException.class);
     assertThatThrownBy(
-            () ->
-                new FileCommandFormatEngine(
-                    List.of("mvn"), null, Duration.ofSeconds(1), NO_MODULE, NO_TOOL))
+            () -> new FileCommandFormatEngine(List.of("mvn"), null, Duration.ofSeconds(1)))
         .as("null workspace root")
         .isInstanceOf(ValidationException.class);
-    assertThatThrownBy(
-            () ->
-                new FileCommandFormatEngine(
-                    List.of("mvn"), root, Duration.ZERO, NO_MODULE, NO_TOOL))
+    assertThatThrownBy(() -> new FileCommandFormatEngine(List.of("mvn"), root, Duration.ZERO))
         .as("non-positive timeout")
         .isInstanceOf(ValidationException.class);
   }

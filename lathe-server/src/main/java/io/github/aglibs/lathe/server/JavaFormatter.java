@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.Stopwatch;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.logging.Logger;
@@ -17,10 +16,10 @@ final class JavaFormatter {
   private JavaFormatter() {}
 
   // Builds the minimal edit, or empty when already formatted. Throws the engine's native failure;
-  // WorkspaceSession.format catches it to log and notify the client.
-  static List<TextEdit> format(final FormatEngine engine, final String content, final Path file)
-      throws Exception {
-    return edits(engine, content, () -> engine.format(content, file));
+  // WorkspaceSession catches it to log and notify the client.
+  static List<TextEdit> format(
+      final FormatEngine engine, final String content, final FormatTarget target) throws Exception {
+    return edits(engine, content, () -> engine.format(content, target));
   }
 
   // Formats only the given ranges (LSP positions) of content; text outside them is not touched.

@@ -241,7 +241,8 @@ against the `multi-module` invoker workspace — both use the checkout build dir
     * **Loop-confined helpers call `eventLoop.checkOnLoop()`**, which fails fast off the loop; a new
       helper that reads or writes session state does too.
     * **Nothing waits on the loop**: no `get`/`join`, no waiting on a process or another thread;
-      return a future instead.
+      return a future instead. Formatting runs on the session's format thread for this reason: read
+      what it needs on the loop (`FormatTarget`), then `rejoin` with the edits.
     * **No locks or concurrent collections for session state**: route the access through the loop.
 
 ## Markdown style
