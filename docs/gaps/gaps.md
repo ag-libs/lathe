@@ -801,6 +801,123 @@ None yet.
 
 ---
 
+## EG-091 — No inlay hints
+
+**Status: documented**
+
+**Affects: the editor.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), which offers them.
+
+### Gap
+
+The server does not advertise `inlayHintProvider`, and no handler exists.
+java-index shows parameter names at call sites, the type of a `var` local, lambda parameter types and the types in a member chain.
+
+### Fix direction
+
+Answer `textDocument/inlayHint` for the requested range from the open file's attributed tree: javac knows each argument's parameter, each `var`'s type and each lambda parameter's type, so the hints are exact.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-092 — Symbol search finds types only, not methods and fields
+
+**Status: documented**
+
+**Affects: the editor's workspace symbols and MCP `search_symbols`.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose symbol search covers classes, methods and fields across sources and libraries.
+
+### Gap
+
+`workspace/symbol` and `search_symbols` match type names only.
+A method or field is found only by first finding its type.
+
+### Fix direction
+
+See [Fuzzy Method-Name Symbol Search in the Reactor](../potential/lathe-reactor-method-symbol-search.md) for the reactor;
+dependencies and the JDK would need members in the type-index shards.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-093 — Hover shows no overrides, usage count or deprecation
+
+**Status: documented**
+
+**Affects: the editor's hover and MCP `describe_symbol`.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose hover adds what a method overrides, how often a symbol is used, and a deprecation note.
+
+### Gap
+
+`HoverFormatter` renders the signature and javadoc only.
+
+### Fix direction
+
+Add the overridden method (from `Elements.overrides`, already used by implementations), and the `@Deprecated` state with the javadoc's `@deprecated` text.
+A usage count needs a reference count that is cheap to compute, which today it is not (FR-029).
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-094 — A deprecated API's use does not suggest its replacement
+
+**Status: documented**
+
+**Affects: the editor's diagnostics and code actions.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), which reports uses of `@Deprecated` APIs with the replacement the javadoc names.
+
+### Gap
+
+Deprecated members are struck through by semantic tokens, and javac warns about them only when the build enables `-Xlint:deprecation`.
+Nothing names the replacement.
+
+### Fix direction
+
+For a use of a deprecated element, read its javadoc's `@deprecated` block through `DocTrees`, and offer the `{@link}` it names in the diagnostic, or as a quick fix when the replacement is a drop-in.
+
+### Regression targets
+
+None yet.
+
+---
+
+## EG-095 — No Spring Boot or Quarkus configuration-key navigation
+
+**Status: documented**
+
+**Affects: the editor and MCP.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), which links keys in `application*.properties` and `.yml` both ways with the Java that reads them
+(`@Value`, `@ConfigurationProperties`, `@ConfigProperty`, `@ConfigMapping`, `getProperty("…")`), shows per-profile values on hover, and has an MCP `java_config` tool.
+
+### Gap
+
+Lathe does not read configuration files; a key and the code that binds it are connected only by grep.
+
+### Fix direction
+
+Design first: the resource roots are already captured; the binding annotations are attributed by javac, so the Java side is exact.
+Decide the scope (which frameworks, relaxed binding, profiles) before any code.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Find References Gaps (FR)
 
 Active references and rename gaps.
@@ -2871,6 +2988,28 @@ Found by the exploratory MCP round (2026-11-04) on Dropwizard, EqualsVerifier an
 ### Fix direction
 
 Each is small; take them one by one when touching the tool.
+
+### Regression targets
+
+None yet.
+
+---
+
+## MC-87 — One MCP server answers for one worktree only
+
+**Status: documented**
+
+**Affects: MCP, with several git worktrees.**
+
+Found by the comparison with [java-index](https://github.com/slgobinath/java-index) (2026-11-05), whose tools all take an optional `worktree` path and share one daemon per repository.
+
+### Gap
+
+An agent working across worktrees needs one Lathe MCP server per worktree, each with its own JVM and indexes.
+
+### Fix direction
+
+Design first; it overlaps [Shared Workspace Server](../potential/lathe-shared-workspace-server.md), which keeps one process per client until measurements show a need.
 
 ### Regression targets
 
