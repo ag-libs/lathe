@@ -1,13 +1,21 @@
 package io.github.aglibs.lathe.gradle;
 
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.JavaArgfile;
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.gradle.api.Project;
@@ -34,6 +42,11 @@ final class LatheTestCapture {
   private static final String TEST_RUNNER = "latheTestRunner";
   private static final String JUNIT_LAUNCHER = "org.junit.platform:junit-platform-launcher";
   private static final GradleVersion FAIL_ON_NO_TESTS = GradleVersion.version("9.0");
+  private static final String TEST_ACCELERATION =
+      """
+      A plugin that runs the tests in a JVM of its own, as Develocity's Predictive Test Selection \
+      and Test Distribution do, keeps Lathe out: turn it off for the capture-only sync\
+      """;
 
   private LatheTestCapture() {}
 
@@ -75,7 +88,12 @@ final class LatheTestCapture {
                           Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""),
                           agentJar));
                   if (captureOnly) {
-                    captureOnly(task, agentJar);
+                    captureOnly(
+                        task,
+                        agentJar,
+                        moduleDir.toFile(),
+                        project.getRootDir(),
+                        project.getGradle().getGradleUserHomeDir());
                   }
                 });
     // Every project's facts and the workspace come first and the tests follow, as on Maven, where
@@ -112,14 +130,95 @@ final class LatheTestCapture {
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always
   // forks, since a run served from the cache or up to date captures nothing.
-  private static void captureOnly(final Test task, final File agentJar) {
+  // The task's actions hold only File values: the configuration cache on Gradle 8 can't restore a
+  // List.of() a lambda captured.
+  private static void captureOnly(
+      final Test task,
+      final File agentJar,
+      final File moduleDir,
+      final File rootDir,
+      final File userHome) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
+    final var marker = new File(moduleDir, LatheLayout.Gradle.CAPTURE_MARKER);
+    final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
+    task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
+    task.doLast(test -> warnIfNotCaptured(test, marker, launch, rootDir, userHome));
     task.getOutputs().upToDateWhen(ignored -> false);
     task.getOutputs().cacheIf(ignored -> false);
     if (GradleVersion.current().getBaseVersion().compareTo(FAIL_ON_NO_TESTS) >= 0) {
       task.getFailOnNoDiscoveredTests().set(false);
     }
+  }
+
+  private static void markCaptureStart(final File marker) throws IOException {
+    Files.createDirectories(marker.toPath().getParent());
+    Files.writeString(marker.toPath(), "", StandardCharsets.UTF_8);
+  }
+
+  // Develocity's test acceleration runs the tests in a JVM of its own, without the task's
+  // JDK_JAVA_OPTIONS: lathe-junit is not loaded there, so the tests run in full, and either no
+  // launch is captured, or the one captured comes from its test-selection JVM and names jars from
+  // a temporary directory deleted later in the build. A launch written in the same clock tick as
+  // the marker counts as written.
+  private static void warnIfNotCaptured(
+      final Task test,
+      final File marker,
+      final File launch,
+      final File rootDir,
+      final File userHome) {
+    if (launch.lastModified() < marker.lastModified()) {
+      test.getLogger()
+          .warn(
+              """
+              [lathe] {} captured no test launch: its test JVM did not load lathe-junit, so its \
+              tests ran in full. {}\
+              """,
+              test.getPath(),
+              TEST_ACCELERATION);
+      return;
+    }
+
+    temporaryJar(
+            launch,
+            List.of(rootDir.toPath(), userHome.toPath()),
+            Path.of(System.getProperty("java.io.tmpdir")))
+        .ifPresent(
+            jar ->
+                test.getLogger()
+                    .warn(
+                        """
+                        [lathe] {} captured a launch naming {}, a temporary jar, so its tests \
+                        can't be run from the editor. {}\
+                        """,
+                        test.getPath(),
+                        jar,
+                        TEST_ACCELERATION));
+  }
+
+  // A jar already gone, or one in the temporary directory outside the build and Gradle's user home
+  // (either may live there, as on some CI machines): a launcher's copy, which outlives the test
+  // task but not the build. A launch that can't be read is not checked: a warning must not fail
+  // the build.
+  static Optional<String> temporaryJar(
+      final File launch, final List<Path> keptDirs, final Path tmpDir) {
+    final TestLaunchData data;
+    try {
+      data = Json.read(launch.toPath(), TestLaunchData.class);
+    } catch (final IOException | RuntimeException e) {
+      return Optional.empty();
+    }
+
+    return Stream.concat(data.classPath().stream(), data.modulePath().stream())
+        .filter(entry -> entry.endsWith(".jar"))
+        .filter(entry -> isTemporary(Path.of(entry).normalize(), keptDirs, tmpDir))
+        .findFirst();
+  }
+
+  private static boolean isTemporary(final Path jar, final List<Path> keptDirs, final Path tmpDir) {
+    return !Files.exists(jar)
+        || (jar.startsWith(tmpDir.normalize())
+            && keptDirs.stream().noneMatch(dir -> jar.startsWith(dir.normalize())));
   }
 
   // Without lathe-junit the filter that skips the tests is missing too, and a capture-only run

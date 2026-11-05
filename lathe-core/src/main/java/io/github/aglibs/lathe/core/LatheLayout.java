@@ -269,6 +269,9 @@ public final class LatheLayout {
     // which the copy into this directory would empty.
     public static final String AGENT_DIR = ".agent";
     public static final String AGENT_JAR = "lathe-junit.jar";
+    // Written as a capture-only test task starts, in its module's directory (the agent directory
+    // is a Sync target, which deletes what it did not copy): an older launch was not captured.
+    public static final String CAPTURE_MARKER = ".capture-started";
     // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
     public static final String FACTS_FILE = "lathe-facts.json";
     // Output and state directories inside a build-logic build, never part of it.

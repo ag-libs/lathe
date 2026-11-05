@@ -128,9 +128,15 @@ names each such test task.
   `NOTE: Picked up JDK_JAVA_OPTIONS: -javaagent:…/lathe-junit.jar`, and nothing suppresses that line.
   JVMs the tests start inherit the variable: they print the notice too, and one that runs JUnit inside
   the project's directory captures its own launch over the test JVM's.
-- **Tests run through the Develocity plugin's test launcher** (as JUnit's own build does) start from copies of some
-  jars in a temporary directory that is gone after the run, so replaying those tests from the editor fails to load
-  classes.
+- **Develocity's test acceleration** (Predictive Test Selection or Test Distribution, as JUnit's own build uses)
+  runs the tests in a JVM of its own.
+  That JVM may not load Lathe at all: nothing is captured, the capture-only sync runs every test in full, and the
+  sync warns `[lathe] :x:test captured no test launch`.
+  Or the launch captured comes from its test-selection JVM and names jars in a temporary directory that is gone after
+  the run: the sync warns `[lathe] :x:test captured a launch naming …, a temporary jar`, and a run from the
+  editor is blocked with a reason naming the missing jar.
+  Turn those features off for the capture-only sync (JUnit's build:
+  `-Pjunit.develocity.predictiveTestSelection.enabled=false`).
 - **Gradle 8.x with Isolated Projects on:** only a build of the root's `build`, `check`, or `test` refreshes the
   workspace files; a build of one project refreshes that project's part, and the rest waits for the next root
   build or sync. Gradle 9 has no such limit.
