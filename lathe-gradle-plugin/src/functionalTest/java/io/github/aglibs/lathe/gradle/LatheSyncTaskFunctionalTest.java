@@ -414,41 +414,62 @@ class LatheSyncTaskFunctionalTest {
   // the test JVM still captures its launch; only the build's own check fails.
   @Test
   void captureOnlySync_testTaskFails_stillWritesTheWorkspaceAndCaptures() throws Exception {
-    final var fixture =
-        multiProject()
-            .file(
-                "app/build.gradle.kts",
-                """
-                plugins { java }
-                dependencies {
-                  implementation(project(":lib"))
-                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
-                  testImplementation("org.junit.jupiter:junit-jupiter")
-                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-                }
-                tasks.test {
-                  useJUnitPlatform()
-                  doLast { throw GradleException("every test was skipped") }
-                }
-                """)
-            .file(
-                "app/src/test/java/com/example/app/AppTest.java",
-                """
-                package com.example.app;
-
-                class AppTest {
-                  @org.junit.jupiter.api.Test
-                  void runs() {}
-                }
-                """);
-
-    final var result = fixture.runner("latheSync", "-Plathe.capture.only=true").buildAndFail();
+    final var result =
+        failingTests().runner("latheSync", "-Plathe.capture.only=true").buildAndFail();
 
     assertThat(result.task(":app:test").getOutcome()).isEqualTo(TaskOutcome.FAILED);
     assertThat(result.getOutput()).contains("every test was skipped");
     assertThat(workspace().outputs()).extracting(OutputData::module).contains("app", "lib");
     assertThat(workspace().runnerClasspath()).isNotEmpty();
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
+  }
+
+  // Under Isolated Projects the ordering is still allowed: on Gradle 9 the test tasks wait for the
+  // root's workspace; on Gradle 8, where a project may not name another's task, only for their own
+  // project's facts, so only the failing project's own module is certain to be written.
+  @Test
+  void captureOnlySync_testTaskFailsUnderIsolatedProjects_stillWritesItsModule() throws Exception {
+    final var result =
+        failingTests()
+            .runner(
+                "latheSync",
+                "-Plathe.capture.only=true",
+                "-Dorg.gradle.unsafe.isolated-projects=true")
+            .buildAndFail();
+
+    assertThat(result.getOutput()).contains("every test was skipped");
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.Gradle.FACTS_FILE)).exists();
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
+  }
+
+  // app's tests pass, then its test task fails, as a build that rejects skipped tests does.
+  private GradleFixture failingTests() throws Exception {
+    return multiProject()
+        .file(
+            "app/build.gradle.kts",
+            """
+            plugins { java }
+            dependencies {
+              implementation(project(":lib"))
+              testImplementation(platform("org.junit:junit-bom:5.11.4"))
+              testImplementation("org.junit.jupiter:junit-jupiter")
+              testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+            }
+            tasks.test {
+              useJUnitPlatform()
+              doLast { throw GradleException("every test was skipped") }
+            }
+            """)
+        .file(
+            "app/src/test/java/com/example/app/AppTest.java",
+            """
+            package com.example.app;
+
+            class AppTest {
+              @org.junit.jupiter.api.Test
+              void runs() {}
+            }
+            """);
   }
 
   private WorkspaceManifestData workspace() throws IOException {
