@@ -17,18 +17,25 @@ class LatheSettingsPluginFunctionalTest {
   // load it in different class loaders, so applying it twice would show 2.
   private static final String PROBE =
       """
+      println("LATHE ${project.name} " + plugins.count { it.getClass().simpleName == 'LatheProjectPlugin' })
+      """;
+
+  // The same in Kotlin, for the fixture that keeps the Kotlin DSL under test.
+  private static final String KOTLIN_PROBE =
+      """
       println("LATHE ${project.name} " + plugins.count { it.javaClass.simpleName == "LatheProjectPlugin" })
       """;
 
   @TempDir Path dir;
 
+  // The one fixture in the Kotlin DSL, as most Gradle builds now are, under Isolated Projects.
   @Test
   void apply_multiProjectBuild_appliesLatheToEveryProjectAndReusesTheCache() throws Exception {
     final var fixture =
         new GradleFixture(dir)
             .file("settings.gradle.kts", SETTINGS + "include(\"lib\")\n")
-            .file("build.gradle.kts", PROBE)
-            .file("lib/build.gradle.kts", PROBE);
+            .file("build.gradle.kts", KOTLIN_PROBE)
+            .file("lib/build.gradle.kts", KOTLIN_PROBE);
 
     final var isolatedProjects = "-Dorg.gradle.unsafe.isolated-projects=true";
     final var first = fixture.runner("help", isolatedProjects).build();
@@ -39,33 +46,15 @@ class LatheSettingsPluginFunctionalTest {
     assertThat(second.getOutput()).contains("Configuration cache entry reused.");
   }
 
+  // The switches, as the Gradle guide lists them: gradle.properties opts out until a .lathe/ opts
+  // back in, which the configuration cache must notice; the command line wins over both; CI keeps
+  // Lathe out even beside a .lathe/, unless the command line turns it on.
   @Test
-  void apply_ciOrCommandLine_commandLineWins() throws Exception {
+  void apply_switches_commandLineWinsThenDotLatheThenCiAndGradleProperties() throws Exception {
     final var fixture =
         new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", PROBE);
-
-    assertThat(fixture.runner("help").withEnvironment(ci()).build().getOutput())
-        .contains("LATHE app 0");
-    assertThat(
-            fixture
-                .runner("help", "-Plathe.disabled=false")
-                .withEnvironment(ci())
-                .build()
-                .getOutput())
-        .contains("LATHE app 1");
-    assertThat(fixture.runner("help", "-Plathe.disabled=true").build().getOutput())
-        .contains("LATHE app 0");
-  }
-
-  // The configuration cache must notice the new .lathe/ and configure the build again.
-  @Test
-  void apply_gradlePropertiesOptOut_dotLatheOptsBackInButNotOverCommandLine() throws Exception {
-    final var fixture =
-        new GradleFixture(dir)
-            .file("settings.gradle.kts", SETTINGS)
-            .file("build.gradle.kts", PROBE)
+            .file("settings.gradle", SETTINGS)
+            .file("build.gradle", PROBE)
             .file("gradle.properties", "lathe.disabled=true\n");
 
     final var optedOut = fixture.runner("help", "--configuration-cache").build();
@@ -73,10 +62,16 @@ class LatheSettingsPluginFunctionalTest {
     final var optedIn = fixture.runner("help", "--configuration-cache").build();
     final var killed =
         fixture.runner("help", "--configuration-cache", "-Plathe.disabled=true").build();
+    fixture.file("gradle.properties", "");
+    final var onCi = fixture.runner("help").withEnvironment(ci()).build();
+    final var forcedOnCi =
+        fixture.runner("help", "-Plathe.disabled=false").withEnvironment(ci()).build();
 
     assertThat(optedOut.getOutput()).contains("LATHE app 0");
     assertThat(optedIn.getOutput()).contains("LATHE app 1");
     assertThat(killed.getOutput()).contains("LATHE app 0");
+    assertThat(onCi.getOutput()).contains("LATHE app 0");
+    assertThat(forcedOnCi.getOutput()).contains("LATHE app 1");
   }
 
   @Test
@@ -84,11 +79,11 @@ class LatheSettingsPluginFunctionalTest {
     final var fixture =
         new GradleFixture(dir)
             .latheInitScript("lathe.init.gradle.kts")
-            .file("settings.gradle.kts", "rootProject.name = \"app\"\n")
-            .file("build.gradle.kts", PROBE);
+            .file("settings.gradle", "rootProject.name = \"app\"\n")
+            .file("build.gradle", PROBE);
 
     final var personal = fixture.runner("help", "--init-script", "lathe.init.gradle.kts").build();
-    fixture.file("settings.gradle.kts", SETTINGS);
+    fixture.file("settings.gradle", SETTINGS);
     final var both = fixture.runner("help", "--init-script", "lathe.init.gradle.kts").build();
 
     assertThat(personal.getOutput()).contains("LATHE app 1");
@@ -100,12 +95,12 @@ class LatheSettingsPluginFunctionalTest {
     final var fixture =
         new GradleFixture(dir)
             .latheInitScript("lathe.init.gradle.kts")
-            .file("settings.gradle.kts", "rootProject.name = \"app\"\nincludeBuild(\"logic\")\n")
-            .file("build.gradle.kts", PROBE)
-            .file("buildSrc/build.gradle.kts", GradleFixture.JAVA + PROBE)
+            .file("settings.gradle", "rootProject.name = \"app\"\nincludeBuild(\"logic\")\n")
+            .file("build.gradle", PROBE)
+            .file("buildSrc/build.gradle", GradleFixture.JAVA + PROBE)
             .file("buildSrc/src/main/java/Helper.java", "class Helper {}\n")
-            .file("logic/settings.gradle.kts", "rootProject.name = \"logic\"\n")
-            .file("logic/build.gradle.kts", GradleFixture.JAVA + PROBE)
+            .file("logic/settings.gradle", "rootProject.name = \"logic\"\n")
+            .file("logic/build.gradle", GradleFixture.JAVA + PROBE)
             .file("logic/src/main/java/Logic.java", "class Logic {}\n");
 
     final var result =

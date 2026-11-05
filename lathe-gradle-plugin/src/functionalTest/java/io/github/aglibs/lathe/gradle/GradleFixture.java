@@ -21,7 +21,10 @@ import org.gradle.testkit.runner.GradleRunner;
 // an older one in the older-version CI jobs.
 final class GradleFixture {
 
-  static final String JAVA = "plugins { java }\n";
+  // The fixtures' build scripts are Groovy: Gradle compiles each new script before it can configure
+  // the build, and a Groovy one compiles in about half the time of a Kotlin one, the bulk of a
+  // fixture build's cost. A few fixtures stay Kotlin, where the Kotlin DSL itself is under test.
+  static final String JAVA = "plugins { id 'java' }\n";
 
   // A sync installs the server and extracts the JDK sources into Lathe's cache: one for every
   // fixture build, under the build directory, not the user's.
@@ -115,7 +118,7 @@ final class GradleFixture {
                 System.getProperty("lathe.version")));
   }
 
-  // Lathe registered in the settings, as a team commits it.
+  // Lathe registered in the settings, as a team commits it; the same in either DSL.
   static String latheSettings(final String rootName) {
     return """
         plugins { id("io.github.ag-libs.lathe") }
@@ -124,7 +127,8 @@ final class GradleFixture {
         .formatted(rootName);
   }
 
-  // Settings-level repositories that resolve Lathe's server from the repository the reactor fills.
+  // Settings-level repositories that resolve Lathe's server from the repository the reactor fills;
+  // the same in either DSL.
   static String latheRepositories() {
     return """
         dependencyResolutionManagement {

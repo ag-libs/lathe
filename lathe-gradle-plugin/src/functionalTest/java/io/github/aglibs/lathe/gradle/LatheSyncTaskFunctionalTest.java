@@ -35,15 +35,36 @@ class LatheSyncTaskFunctionalTest {
   // A library and an app using it: latheSync writes the workspace files from both projects' facts,
   // installs the server, and is configuration-cache safe. The library's mirror holds its resources
   // beside its classes, as its jar does, since replay stands the mirror in for the jar. A project
-  // without Java sources has no mirror, so its outputs are not listed: replay takes its jar.
+  // without Java sources has no mirror, so its outputs are not listed: replay takes its jar. Of two
+  // libraries from a Maven repository, the one with a -sources jar is recorded as present and its
+  // sources extracted into Lathe's cache, the other as missing, resolved under a reused
+  // configuration cache, with a jar one of the build's own tasks makes on the classpath.
   @Test
   void sync_multiProjectBuild_writesTheWorkspaceFilesAndInstallsTheServer() throws Exception {
     final var fixture =
         multiProject()
-            .file("settings.gradle.kts", SETTINGS + "include(\"res\")\n")
-            .file("res/build.gradle.kts", "plugins { `java-library` }\n")
+            .file("settings.gradle", SETTINGS + "include(\"res\")\n")
+            .file("res/build.gradle", "plugins { id 'java-library' }\n")
             .file("res/src/main/resources/res.properties", "name=res\n")
-            .file("lib/src/main/resources/META-INF/services/com.example.Api", "lib\n");
+            .file("lib/src/main/resources/META-INF/services/com.example.Api", "lib\n")
+            .mavenLibrary("repo", "withsrc", true)
+            .mavenLibrary("repo", "nosrc", false)
+            .file(
+                "app/build.gradle",
+                """
+                plugins { id 'java' }
+                repositories { maven { url = uri("$rootDir/repo") } }
+                def extraJar = tasks.register('extraJar', Jar) {
+                  archiveFileName = 'extra.jar'
+                  destinationDirectory = layout.buildDirectory.dir('extra')
+                }
+                dependencies {
+                  implementation project(':lib')
+                  implementation 'com.example:withsrc:1.0'
+                  testImplementation 'com.example:nosrc:1.0'
+                  testImplementation files(extraJar)
+                }
+                """);
 
     fixture.runner("latheSync", "--configuration-cache").build();
     final var second = fixture.runner("latheSync", "--configuration-cache").build();
@@ -64,7 +85,7 @@ class LatheSyncTaskFunctionalTest {
                 "lib/src/main/resources", "lib/build/resources/main", "", false, "lib"));
     assertThat(workspace.buildFiles())
         .extracting(BuildFileData::path)
-        .contains("settings.gradle.kts", "lib/build.gradle.kts", "app/build.gradle.kts");
+        .contains("settings.gradle", "lib/build.gradle", "app/build.gradle");
     assertThat(Path.of(Files.readString(lathe.resolve(LatheLayout.JAVA_HOME_FILE)))).isDirectory();
     assertThat(lathe.resolve(LatheLayout.LAUNCHER_SCRIPT)).exists();
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
@@ -78,6 +99,15 @@ class LatheSyncTaskFunctionalTest {
     assertThat(launch.classPath())
         .contains(
             fixture.path("app/build/classes/java/main"), fixture.path("lib/build/libs/lib.jar"));
+    final List<DependencyData> libraries = workspace.dependencySources();
+    assertThat(libraries)
+        .extracting(DependencyData::gav, DependencyData::status)
+        .containsExactlyInAnyOrder(
+            tuple("com.example:nosrc:1.0", SourceStatus.MISSING),
+            tuple("com.example:withsrc:1.0", SourceStatus.PRESENT));
+    final DependencyData withSources =
+        libraries.stream().filter(library -> library.dir() != null).findFirst().orElseThrow();
+    assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
   }
 
   // A one-module sync, like Maven's -pl, builds that module alone; the workspace files are written
@@ -103,13 +133,13 @@ class LatheSyncTaskFunctionalTest {
     final var fixture =
         multiProject()
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 """
-                plugins { java }
-                dependencies { implementation(project(":lib")) }
-                tasks.compileJava {
-                  options.isFork = true
-                  options.forkOptions.jvmArgs = listOf("--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED")
+                plugins { id 'java' }
+                dependencies { implementation project(':lib') }
+                compileJava {
+                  options.fork = true
+                  options.forkOptions.jvmArgs = ['--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED']
                 }
                 """)
             .file(
@@ -135,28 +165,28 @@ class LatheSyncTaskFunctionalTest {
   void build_removedProjectAndTests_prunedAsTheBuildsSeeThem() throws Exception {
     final var fixture =
         multiProject()
-            .file("settings.gradle.kts", SETTINGS + "include(\"tool\", \"gen\")\n")
-            .file("tool/build.gradle.kts", GradleFixture.JAVA)
+            .file("settings.gradle", SETTINGS + "include(\"tool\", \"gen\")\n")
+            .file("tool/build.gradle", GradleFixture.JAVA)
             .file(
                 "tool/src/main/java/com/example/tool/Tool.java",
                 "package com.example.tool; class Tool {}\n")
             .file(
-                "gen/build.gradle.kts",
+                "gen/build.gradle",
                 """
-                plugins { java }
-                val generate = tasks.register("generate") {
-                  val out = layout.buildDirectory.dir("generated/gen")
+                plugins { id 'java' }
+                def generate = tasks.register('generate') {
+                  def out = layout.buildDirectory.dir('generated/gen')
                   outputs.dir(out)
                   doLast {
-                    val file = out.get().file("com/example/gen/Gen.java").asFile
+                    def file = out.get().file('com/example/gen/Gen.java').asFile
                     file.parentFile.mkdirs()
-                    file.writeText("package com.example.gen; public class Gen {}")
+                    file.text = 'package com.example.gen; public class Gen {}'
                   }
                 }
-                sourceSets.main { java.srcDir(generate) }
+                sourceSets.main.java.srcDir(generate)
                 """);
     fixture.runner("latheSync", "--configuration-cache").build();
-    fixture.file("settings.gradle.kts", SETTINGS + "include(\"gen\")\n");
+    fixture.file("settings.gradle", SETTINGS + "include(\"gen\")\n");
     FileUtil.deleteDir(dir.resolve("app/src/test"));
 
     fixture.runner(":lib:testClasses", "--configuration-cache").build();
@@ -181,12 +211,12 @@ class LatheSyncTaskFunctionalTest {
     final var fixture =
         multiProject()
             .file(
-                "build.gradle.kts",
+                "build.gradle",
                 """
-                val lock = layout.projectDirectory.file(".lathe/lathe.lock").asFile
-                tasks.register("probeLock") {
-                  mustRunAfter(":app:latheCaptureMain")
-                  doLast { println("LOCK HELD " + lock.exists()) }
+                def lock = layout.projectDirectory.file('.lathe/lathe.lock').asFile
+                tasks.register('probeLock') {
+                  mustRunAfter(':app:latheCaptureMain')
+                  doLast { println('LOCK HELD ' + lock.exists()) }
                 }
                 """);
     fixture.runner("latheSync").build();
@@ -195,47 +225,6 @@ class LatheSyncTaskFunctionalTest {
 
     assertThat(result.getOutput()).contains("LOCK HELD true");
     assertThat(LatheLayout.reactorLockFile(dir.resolve(LatheLayout.LATHE_DIR))).doesNotExist();
-  }
-
-  // A library with a -sources jar and one without, from a Maven repository: the first is recorded
-  // as present and its sources extracted into Lathe's cache, the second as missing; resolved under
-  // a reused configuration cache, with a jar one of the build's own tasks makes on the classpath.
-  @Test
-  void sync_librariesWithAndWithoutSources_recordsThemAndExtractsTheSources() throws Exception {
-    final var fixture =
-        multiProject()
-            .mavenLibrary("repo", "withsrc", true)
-            .mavenLibrary("repo", "nosrc", false)
-            .file(
-                "app/build.gradle.kts",
-                """
-                plugins { java }
-                repositories { maven { url = uri(rootDir.resolve("repo")) } }
-                val extraJar = tasks.register<Jar>("extraJar") {
-                  archiveFileName = "extra.jar"
-                  destinationDirectory = layout.buildDirectory.dir("extra")
-                }
-                dependencies {
-                  implementation(project(":lib"))
-                  implementation("com.example:withsrc:1.0")
-                  testImplementation("com.example:nosrc:1.0")
-                  testImplementation(files(extraJar))
-                }
-                """);
-    fixture.runner("latheSync", "--configuration-cache").build();
-
-    final var second = fixture.runner("latheSync", "--configuration-cache").build();
-
-    assertThat(second.getOutput()).contains("Configuration cache entry reused.");
-    final List<DependencyData> libraries = workspace().dependencySources();
-    assertThat(libraries)
-        .extracting(DependencyData::gav, DependencyData::status)
-        .containsExactlyInAnyOrder(
-            tuple("com.example:nosrc:1.0", SourceStatus.MISSING),
-            tuple("com.example:withsrc:1.0", SourceStatus.PRESENT));
-    final DependencyData withSources =
-        libraries.stream().filter(library -> library.dir() != null).findFirst().orElseThrow();
-    assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
   }
 
   // A plain build keeps .lathe/ current, as a Maven build does, with no sync: the workspace files,
@@ -251,30 +240,30 @@ class LatheSyncTaskFunctionalTest {
     final var fixture =
         multiProject()
             .file(
-                "settings.gradle.kts",
+                "settings.gradle",
                 SETTINGS
                     + "include(\"app:agent\")\n"
                     + "buildCache { local { directory = file(\"build-cache\") } }\n")
-            .file("app/agent/build.gradle.kts", GradleFixture.JAVA)
+            .file("app/agent/build.gradle", GradleFixture.JAVA)
             .file(
                 "app/agent/src/main/java/com/example/agent/Agent.java",
                 "package com.example.agent; class Agent {}\n")
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 """
-                plugins { java }
+                plugins { id 'java' }
                 dependencies {
-                  implementation(project(":lib"))
-                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
-                  testImplementation("org.junit.jupiter:junit-jupiter")
-                  testImplementation("org.junit.platform:junit-platform-suite")
-                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-                  testCompileOnly("com.example:unused:1.0")
+                  implementation project(':lib')
+                  testImplementation platform('org.junit:junit-bom:5.11.4')
+                  testImplementation 'org.junit.jupiter:junit-jupiter'
+                  testImplementation 'org.junit.platform:junit-platform-suite'
+                  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+                  testCompileOnly 'com.example:unused:1.0'
                 }
-                tasks.test { useJUnitPlatform() }
+                test { useJUnitPlatform() }
                 // As Micronaut's build does: walk every configuration's dependencies, then change one.
-                configurations.all { dependencies.removeAll { it.group == "io.github.ag-libs" } }
-                configurations.testCompileOnly { dependencies.removeAll { it.name == "unused" } }
+                configurations.all { dependencies.removeAll { it.group == 'io.github.ag-libs' } }
+                configurations.testCompileOnly { dependencies.removeAll { it.name == 'unused' } }
                 """)
             .file(
                 "app/src/test/java/com/example/app/AppSuite.java",
@@ -333,7 +322,8 @@ class LatheSyncTaskFunctionalTest {
   }
 
   // A project whose directory is outside the root build's has no place under .lathe/ (its module
-  // would be ../shared, and .lathe/../shared a directory of the build): it is left out.
+  // would be ../shared, and .lathe/../shared a directory of the build): it is left out. The fixture
+  // keeps the Kotlin DSL, so the workspace records Kotlin build files as the server's build files.
   @Test
   void sync_projectOutsideTheRoot_leftOutAndWritesNothingThere() throws Exception {
     final Path root = dir.resolve("root");
@@ -351,22 +341,23 @@ class LatheSyncTaskFunctionalTest {
                 "package com.example.shared; public class Shared {}\n")
             .file(
                 "app/build.gradle.kts",
-                GradleFixture.JAVA + "dependencies { implementation(project(\":shared\")) }\n")
+                "plugins { java }\ndependencies { implementation(project(\":shared\")) }\n")
             .file(
                 "app/src/main/java/com/example/app/App.java",
                 "package com.example.app; class App { com.example.shared.Shared shared; }\n");
 
     fixture.runner("latheSync").build();
 
+    final WorkspaceManifestData workspace =
+        Json.read(
+            root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
+            WorkspaceManifestData.class);
     assertThat(root.resolve("shared")).doesNotExist();
     assertThat(root.resolve(".lathe/app/classes/com/example/app/App.class")).exists();
-    assertThat(
-            Json.read(
-                    root.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON),
-                    WorkspaceManifestData.class)
-                .outputs())
-        .extracting(OutputData::module)
-        .containsOnly("app");
+    assertThat(workspace.outputs()).extracting(OutputData::module).containsOnly("app");
+    assertThat(workspace.buildFiles())
+        .extracting(BuildFileData::path)
+        .contains("settings.gradle.kts", "build.gradle.kts", "app/build.gradle.kts");
   }
 
   // Without lathe-junit the capture-only filter is missing too: a capture-only sync skips the test
@@ -377,17 +368,17 @@ class LatheSyncTaskFunctionalTest {
     final var fixture =
         multiProject()
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 """
-                plugins { java }
+                plugins { id 'java' }
                 repositories { mavenCentral() }
                 dependencies {
-                  implementation(project(":lib"))
-                  testImplementation(platform("org.junit:junit-bom:5.11.4"))
-                  testImplementation("org.junit.jupiter:junit-jupiter")
-                  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                  implementation project(':lib')
+                  testImplementation platform('org.junit:junit-bom:5.11.4')
+                  testImplementation 'org.junit.jupiter:junit-jupiter'
+                  testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
                 }
-                tasks.test { useJUnitPlatform() }
+                test { useJUnitPlatform() }
                 """)
             .file(
                 "app/src/test/java/com/example/app/AppTest.java",
@@ -448,8 +439,8 @@ class LatheSyncTaskFunctionalTest {
   private GradleFixture failingTests() throws Exception {
     return multiProject()
         .file(
-            "app/build.gradle.kts",
-            appTests("doLast { throw GradleException(\"every test was skipped\") }"))
+            "app/build.gradle",
+            appTests("doLast { throw new GradleException(\"every test was skipped\") }"))
         .file(
             "app/src/test/java/com/example/app/AppTest.java",
             """
@@ -470,7 +461,7 @@ class LatheSyncTaskFunctionalTest {
     final var fixture =
         multiProject()
             .file(
-                "app/build.gradle.kts",
+                "app/build.gradle",
                 appTests("doFirst { environment.remove(\"JDK_JAVA_OPTIONS\") }"))
             .file(
                 "app/src/test/java/com/example/app/AppTest.java",
@@ -495,14 +486,14 @@ class LatheSyncTaskFunctionalTest {
 
   private static String appTests(final String testConfiguration) {
     return """
-        plugins { java }
+        plugins { id 'java' }
         dependencies {
-          implementation(project(":lib"))
-          testImplementation(platform("org.junit:junit-bom:5.11.4"))
-          testImplementation("org.junit.jupiter:junit-jupiter")
-          testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+          implementation project(':lib')
+          testImplementation platform('org.junit:junit-bom:5.11.4')
+          testImplementation 'org.junit.jupiter:junit-jupiter'
+          testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
         }
-        tasks.test {
+        test {
           useJUnitPlatform()
           %s
         }
@@ -524,16 +515,16 @@ class LatheSyncTaskFunctionalTest {
 
   private GradleFixture multiProject() throws Exception {
     return new GradleFixture(dir)
-        .file("settings.gradle.kts", SETTINGS)
-        .file("build.gradle.kts", "")
-        .file("lib/build.gradle.kts", "plugins { `java-library` }\n")
+        .file("settings.gradle", SETTINGS)
+        .file("build.gradle", "")
+        .file("lib/build.gradle", "plugins { id 'java-library' }\n")
         .file(
             "lib/src/main/java/com/example/lib/Lib.java",
             "package com.example.lib; public class Lib {}\n")
         .file("lib/src/main/resources/lib.properties", "name=lib\n")
         .file(
-            "app/build.gradle.kts",
-            GradleFixture.JAVA + "dependencies { implementation(project(\":lib\")) }\n")
+            "app/build.gradle",
+            GradleFixture.JAVA + "dependencies { implementation project(':lib') }\n")
         .file(
             "app/src/main/java/com/example/app/App.java",
             "package com.example.app; class App { com.example.lib.Lib lib; }\n")
