@@ -68,7 +68,7 @@ class LatheSyncTaskFunctionalTest {
     assertThat(Path.of(Files.readString(lathe.resolve(LatheLayout.JAVA_HOME_FILE)))).isDirectory();
     assertThat(lathe.resolve(LatheLayout.LAUNCHER_SCRIPT)).exists();
     assertThat(Files.readString(lathe.resolve(LatheLayout.SYNC_SCRIPT), StandardCharsets.UTF_8))
-        .contains("latheSync", "--module");
+        .contains("latheSync", "--module", "-Plathe.capture.only=true --continue");
     assertThat(lathe.resolve("app/classes/com/example/app/App.class")).exists();
     assertThat(lathe.resolve("lib/classes/META-INF/services/com.example.Api")).exists();
     final MainLaunchData launch =

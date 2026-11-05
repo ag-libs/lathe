@@ -1301,6 +1301,38 @@ None yet.
 
 ---
 
+## WS-29 — On Gradle, the workspace merges facts a build did not refresh
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: the editor and MCP on a Gradle build where a project's `latheFacts` did not run.**
+
+Found while fixing the capture-only sync ordering (2026-11-05); what remains of the stale-workspace half once a failing
+test task no longer keeps facts from running.
+
+### Observed behaviour
+
+`latheWorkspace` merges every `lathe-facts.json` under `.lathe/`, whether or not this build wrote it.
+A project whose facts did not run (its compile failed, or on Gradle 8 under Isolated Projects a test task failed
+before its facts started) contributes the facts of an earlier build.
+That is mostly what Maven does too, but `runnerClasspath` takes the first non-empty value across all facts, so one
+stale project can point the whole workspace at a runner jar from a build that no longer exists: every test run then
+fails with `ClassNotFoundException: io.github.aglibs.lathe.runner.LatheTestRunner`, as seen on Caffeine before the
+ordering fix.
+
+### Fix direction
+
+Take the runner classpath only from facts this build wrote (or skip one whose jars are gone), and say in the build
+output which projects' facts are older than this build.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
