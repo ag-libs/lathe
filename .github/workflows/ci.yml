@@ -97,6 +97,14 @@ jobs:
             mvn -B --no-transfer-progress clean install -pl '!lathe-neovim,!lathe-vscode' $GRADLE
           fi
 
+      - name: Show the fixtures' JDK cache use
+        # Each fixture's sync logs where the JDK's sources and type index came from (extracted, built,
+        # already cached, or waited for another build) and how long that took, in the fixture's own
+        # build.log, which the job's output does not show: setup-support should be the only one that
+        # extracts and builds them.
+        if: always()
+        run: grep -H "\[sync\] jdk" lathe-maven-plugin/target/it/*/build.log || true
+
       - name: Keep the invoker fixtures' downloads
         # The fixtures resolve into lathe-maven-plugin/target/local-repo, which the cache never
         # sees, so every run downloaded what only they use (formatters, Lombok, JUnit 5). Copied
@@ -189,6 +197,14 @@ jobs:
           mvn -B --no-transfer-progress verify -pl '!lathe-neovim,!lathe-vscode' -Dmaven.test.skip.exec=true \
             -Dinvoker.mavenHome="$RUNNER_TEMP/apache-maven-${{ matrix.maven }}" \
             -Dinvoker.javaHome="$JAVA_HOME_${{ matrix.java }}_X64" -Dlathe.gradle.skip=true
+
+      - name: Show the fixtures' JDK cache use
+        # Each fixture's sync logs where the JDK's sources and type index came from (extracted, built,
+        # already cached, or waited for another build) and how long that took, in the fixture's own
+        # build.log, which the job's output does not show: setup-support should be the only one that
+        # extracts and builds them.
+        if: always()
+        run: grep -H "\[sync\] jdk" lathe-maven-plugin/target/it/*/build.log || true
 
       - name: Upload invoker logs
         if: failure()
