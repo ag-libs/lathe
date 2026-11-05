@@ -1301,6 +1301,32 @@ None yet.
 
 ---
 
+## WS-30 — The JDK type index lists the build's JDK, not the project's
+
+**Status: documented**
+
+**Value: low — Size: S**
+
+**Affects: completion and type search of JDK types, when a build compiles with a different JDK than it runs on (a toolchain).**
+
+Found while reviewing the JDK cache lock (2026-11-05).
+
+### Observed behaviour
+
+`JdkTypeIndexSync` records the index as the project's JDK (`source.home()`, vendor and version, which also key its cache entry), but `scanJdk` reads the `jrt:/` file system of the JVM the sync runs in: the build's own JDK.
+When the two differ (Maven or Gradle on JDK 25 compiling with a JDK 17 toolchain), the index lists the build JDK's types: completion and type search offer types the project's JDK lacks, and miss any it has that the build JDK does not.
+The cache entry is keyed by the project's JDK, so the first build to index it decides its content for every later build.
+
+### Fix direction
+
+Scan the project's JDK: open its `jrt:/` through `source.home()` (`FileSystems.newFileSystem(URI.create("jrt:/"), Map.of("java.home", ...))`, public API since JDK 9), and keep the build JDK's only when the two are the same.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone

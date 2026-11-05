@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,6 +28,32 @@ final class LatheLockTest {
     final Optional<Closeable> again = LatheLock.tryExclusive(lockFile);
     assertThat(again).isPresent();
     again.get().close();
+  }
+
+  // A build that finds another holding the cache lock says so once, waits, and runs its work
+  // under the lock once the other lets go; a free lock runs the work at once, saying nothing.
+  @Test
+  void exclusive_heldByAnother_waitsOnceThenRunsUnderTheLock_freeRunsAtOnce() throws IOException {
+    final Path lockFile = LatheLayout.cacheLockFile(moduleDir.resolve("cache/jdks/jdk-21"));
+    final Closeable held = LatheLock.tryExclusive(lockFile).orElseThrow();
+    final var waits = new AtomicInteger();
+    final var freeWaits = new AtomicInteger();
+
+    // The other build lets go as soon as this one starts waiting.
+    final boolean ranLocked =
+        LatheLock.exclusive(
+            lockFile,
+            () -> {
+              waits.incrementAndGet();
+              IOUtil.unchecked(held::close);
+            },
+            () -> LatheLock.tryExclusive(lockFile).isEmpty());
+    final String free = LatheLock.exclusive(lockFile, freeWaits::incrementAndGet, () -> "free");
+
+    assertThat(ranLocked).isTrue();
+    assertThat(waits).hasValue(1);
+    assertThat(free).isEqualTo("free");
+    assertThat(freeWaits).hasValue(0);
   }
 
   @Test
