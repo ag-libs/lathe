@@ -155,8 +155,7 @@ public final class WorkspaceTypeIndex {
         Collections.unmodifiableNavigableMap(mutable);
     // No visibility filter: every named type -- top-level and nested, any visibility -- so
     // workspace/symbol can resolve package-private dependency classes (a stack frame's internal
-    // impl
-    // class) and nested types (Map.Entry, a reactor record nested in a test class). Synthetic
+    // impl class) and nested types (Map.Entry, a reactor record nested in a test class). Synthetic
     // anonymous/local classes (digit-started simple names) and blank obfuscator names are excluded.
     final TreeMap<String, List<TypeIndexEntry>> symbolMutable =
         deduped.stream()

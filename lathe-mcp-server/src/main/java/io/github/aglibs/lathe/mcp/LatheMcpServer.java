@@ -157,8 +157,7 @@ public final class LatheMcpServer {
 
   // An MCP client ends a stdio session by closing the server's stdin, and one that dies sends no
   // signal at all. The SDK's transport stops reading at end of input but leaves the process, and
-  // the
-  // engine's threads, running: an orphan per session. So end of input ends the server.
+  // the engine's threads, running: an orphan per session. So end of input ends the server.
   private static final class ClientInput extends FilterInputStream {
 
     private final Runnable onEnd;
@@ -188,9 +187,9 @@ public final class LatheMcpServer {
   }
 
   // Process start time + pid, so each agent session maps to one log file; pid alone if the start
-  // time is unavailable.
-  // One log per session would accrue forever; the names start with the session's start time, so
-  // name order is age order. Best-effort: a failure costs only the pruning.
+  // time is unavailable. One log per session would accrue forever; the names start with the
+  // session's start time, so name order is age order. Best-effort: a failure costs only the
+  // pruning.
   private static void pruneSessionLogs() {
     try {
       FileUtil.deleteAllButLast(

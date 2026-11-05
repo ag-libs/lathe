@@ -83,8 +83,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   // A module whose source dir sits under a directory that has its own .lathe/ belongs to a nested
   // workspace (a git worktree or checkout under the repo) — its params leak into this .lathe/ when
-  // a
-  // build runs inside it. Only an ancestor .lathe/ marks a nested workspace; a .lathe/ at the
+  // a build runs inside it. Only an ancestor .lathe/ marks a nested workspace; a .lathe/ at the
   // module's own dir is a stray and does not disqualify a real module.
   private static boolean isNestedWorkspace(final Path workspaceRoot, final Path moduleRel) {
     Path dir = workspaceRoot.resolve(moduleRel).getParent();

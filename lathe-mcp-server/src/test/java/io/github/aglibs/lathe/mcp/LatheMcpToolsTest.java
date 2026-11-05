@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -35,6 +36,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -975,5 +977,28 @@ class LatheMcpToolsTest {
                 "2 diagnostic(s) in Shop.java:",
                 "  Error [5:10] cannot find symbol",
                 "  Warning [1:1] unchecked call"));
+  }
+
+  // The engine's lines are 0-based like every position; the agent reads them 1-based.
+  @Test
+  void formatResult_oneLineOrASpanOrNothing_linesAsTheAgentReadsThem() {
+    final Path file = tmp.resolve("Shop.java");
+
+    assertThat(
+            text(
+                LatheMcpTools.formatResult(
+                    file,
+                    Optional.of(new LatheFormat("app/Shop.java", 5, 7)),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Formatted app/Shop.java: lines 6–8 changed.");
+    assertThat(
+            text(
+                LatheMcpTools.formatResult(
+                    file,
+                    Optional.of(new LatheFormat("app/Shop.java", 0, 0)),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Formatted app/Shop.java: line 1 changed.");
+    assertThat(text(LatheMcpTools.formatResult(file, Optional.empty(), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Shop.java was already formatted.");
   }
 }

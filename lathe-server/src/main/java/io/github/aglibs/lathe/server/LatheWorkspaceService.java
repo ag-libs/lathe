@@ -124,7 +124,7 @@ final class LatheWorkspaceService implements WorkspaceService {
             session ->
                 session
                     .runs()
-                    .debugTest(argument.moduleRel(), argument.selections(), argument.token()))
+                    .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token()))
         .thenApply(result -> result);
   }
 
@@ -135,7 +135,7 @@ final class LatheWorkspaceService implements WorkspaceService {
             session ->
                 session
                     .runs()
-                    .debugMain(argument.moduleRel(), argument.mainClass(), argument.token()))
+                    .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token()))
         .thenApply(result -> result);
   }
 
@@ -172,7 +172,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> debugNamed(final ExecuteCommandParams params) {
     final var argument = parseNamedArgument(params.getArguments().get(0));
     return textDocumentService
-        .onLoopFuture(session -> session.runs().debugNamed(argument.name(), argument.token()))
+        .onLoopFuture(session -> session.runs().debugNamedFuture(argument.name(), argument.token()))
         .thenApply(result -> (Object) result)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
@@ -313,7 +313,8 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> discoverTests(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .onLoopFuture(session -> session.runs().discoverTests(json.get("moduleRel").getAsString()))
+        .onLoopFuture(
+            session -> session.runs().discoverTestsFuture(json.get("moduleRel").getAsString()))
         .thenApply(discovery -> discovery);
   }
 
@@ -353,8 +354,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   // The edits for the imports a client chose from lathe.missingImports, placed by the server so
-  // each
-  // goes to its sorted place in its group.
+  // each goes to its sorted place in its group.
   private CompletableFuture<Object> importEdits(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     final List<String> chosen =

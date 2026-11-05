@@ -190,8 +190,8 @@ final class AddConstructorParameterProvider {
 
   // Source constructors only. A constructor has a null return type; javac's synthesized default
   // constructor is positioned before the class body's `{` (a real member always starts after it),
-  // so
-  // the `start > brace` guard drops it — the same discriminator `CodeActionSupport.lastField` uses.
+  // so the `start > brace` guard drops it — the same discriminator `CodeActionSupport.lastField`
+  // uses.
   private static List<MethodTree> explicitConstructors(
       final ClassTree cls,
       final CompilationUnitTree cu,

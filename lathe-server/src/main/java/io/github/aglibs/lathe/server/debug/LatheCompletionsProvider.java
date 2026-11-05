@@ -76,10 +76,9 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
 
     final String content = Files.readString(file);
     // Splice `var __LATHE_COMPLETE__ =` at the frame's line and the snippet on the next line, so
-    // the
-    // snippet is an initializer expression in the method's lexical scope. The snippet keeps column
-    // 0,
-    // so its own line is where the cursor sits; the column is a 0-based offset into the snippet.
+    // the snippet is an initializer expression in the method's lexical scope. The snippet keeps
+    // column 0, so its own line is where the cursor sits; the column is a 0-based offset into the
+    // snippet.
     final int frameLine = location.lineNumber() - 1;
     final int lineStart = SourceLocator.toOffset(content, frameLine, 0);
     final int snippetLine = frameLine + 1;

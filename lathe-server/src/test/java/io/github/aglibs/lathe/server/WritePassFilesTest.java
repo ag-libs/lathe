@@ -264,8 +264,7 @@ class WritePassFilesTest {
   @Test
   void staleModules_includesOpenFiles_excludesGeneratedRoots() throws Exception {
     // The write pass compiles the whole changed set together, so a saved rename's open files must
-    // be
-    // included -- an interface rename saves its users, which resolve the new type only if they
+    // be included -- an interface rename saves its users, which resolve the new type only if they
     // compile in the same batch.
     writeJava("Open", 9_000L); // stale and open -> still counted
     writeJava("Real", 5_000L);

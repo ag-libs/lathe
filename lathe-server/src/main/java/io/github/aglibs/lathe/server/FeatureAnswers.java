@@ -37,8 +37,7 @@ final class FeatureAnswers {
   }
 
   // A feature's answer passed on unchanged, logged with how many items it holds and how long it
-  // took;
-  // the caller's logger names the line.
+  // took; the caller's logger names the line.
   static <C extends Collection<?>> Function<C, C> logged(
       final Logger log,
       final String operation,

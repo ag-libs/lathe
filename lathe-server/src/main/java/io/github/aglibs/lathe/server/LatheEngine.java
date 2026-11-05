@@ -256,13 +256,6 @@ public final class LatheEngine {
     return new LatheImplementations(capped.total(), capped.truncated(), capped.references());
   }
 
-  // An agent's column is easily off by one, and javac answers for the smallest tree around a
-  // position: a method for its modifiers or indentation, the class past a line's end, the enclosing
-  // method for a word in a comment. So the position tools answer only on a name: first a word
-  // (cheap, no compile, here), then one javac's tree has a name at, not a word of a comment or a
-  // literal (positionRequest). The tool goes on with the analysis that compiles, so the file is
-  // compiled
-  // once.
   // A position tool's own work, run once the name check passed, on the analysis it compiled.
   @FunctionalInterface
   private interface PositionWork<T> {
@@ -275,7 +268,11 @@ public final class LatheEngine {
   }
 
   // One request for a position tool: the name check (a word here, then a name in javac's tree on
-  // the loop), then the tool's work, chained.
+  // the loop), then the tool's work, chained. An agent's column is easily off by one, and javac
+  // answers for the smallest tree around a position: a method for its modifiers or indentation, the
+  // class past a line's end, the enclosing method for a word in a comment. So the position tools
+  // answer only on a name, and the tool goes on with the analysis that checked it, so the file is
+  // compiled once.
   private <T> T positionRequest(
       final Path file, final int line, final int column, final PositionWork<T> work) {
     requireWord(file, line, column);
@@ -658,10 +655,8 @@ public final class LatheEngine {
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.
-  // LatheFormat reports the lines it changed as an agent reads them, 1-based: the one place the
-  // server converts, since the record is all the MCP layer sees of the edit.
   private static int firstLine(final TextEdit edit) {
-    return edit.getRange().getStart().getLine() + 1;
+    return edit.getRange().getStart().getLine();
   }
 
   // A replacement ending in a line break ends on the line before it.

@@ -42,9 +42,8 @@ class CompletionTypeRankingTest extends CompletionTestSupport {
   @Test
   void completion_typePrefix_commonPlatformOutranksReactor() throws IOException {
     // Option A: ubiquitous platform packages (java.util) stay above reactor types, since we lack
-    // the
-    // usage statistics IDEs use to keep java.util types on top. The reactor-marked java.text.Format
-    // must NOT outrank java.util.Formatter.
+    // the usage statistics IDEs use to keep java.util types on top. The reactor-marked
+    // java.text.Format must NOT outrank java.util.Formatter.
     final var index =
         CompletionFixture.typeIndex(
             tmp.resolve("index.json"),

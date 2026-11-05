@@ -207,13 +207,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   // A package is a directory that holds Java sources (the parent of each `.java`).
   // Intermediate dirs like `com` are not packages and must not be offered.
   private static List<String> packagesUnder(final Path root) {
-    if (!Files.isDirectory(root)) {
-      return List.of();
-    }
-
-    try (final var walk = Files.walk(root)) {
-      return walk.filter(Files::isRegularFile)
-          .filter(FileUtil::isJavaFile)
+    try {
+      return FileUtil.walkFiles(root, FileUtil::isJavaFile).stream()
           .map(source -> packageOf(root, source.getParent()))
           .distinct()
           .sorted()

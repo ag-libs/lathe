@@ -561,8 +561,7 @@ final class ExtractMethodProvider {
   // compile-time constant (a case label or an annotation value needs one, and extracting one gains
   // nothing), not inside a case label or an annotation, not an assignment's target, not a
   // statement's own parentheses, not a bare variable or `this` (a call gains nothing, and a copy
-  // may
-  // be the `throw e` of a precise rethrow or a constructor's `this.field = …`).
+  // may be the `throw e` of a precise rethrow or a constructor's `this.field = …`).
   private static boolean replaceableByCall(final TreePath exprPath, final Trees trees) {
     return !(exprPath.getLeaf() instanceof final IdentifierTree identifier
             && (identifier.getName().contentEquals("this")

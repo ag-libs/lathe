@@ -54,8 +54,7 @@ final class DeclarationNameCompletionProvider {
   }
 
   // The Java idioms for a catch parameter lead the type-derived names; skip any already in scope so
-  // a
-  // nested catch does not shadow an outer `e`.
+  // a nested catch does not shadow an outer `e`.
   private static List<String> exceptionIdioms(
       final ParsedSentinel parsed, final Set<String> taken) {
     if (!parsed.catchParameter()) {

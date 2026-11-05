@@ -294,8 +294,7 @@ public final class CompletionEngine {
             .toList();
 
     // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
-    // that
-    // would otherwise re-add each subtype as a plain type candidate (EG-022).
+    // that would otherwise re-add each subtype as a plain type candidate (EG-022).
     if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !sealedCaseCandidates.isEmpty()) {
       return new CompletionOutcome(items, null);
     }

@@ -55,6 +55,8 @@ final class ReferenceSearch {
 
   private static final Logger LOG = Logger.getLogger(ReferenceSearch.class.getName());
 
+  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
+  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
 
   private final ServerEventLoop eventLoop;

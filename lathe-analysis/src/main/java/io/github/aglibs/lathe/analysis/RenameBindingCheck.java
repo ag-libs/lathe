@@ -315,10 +315,9 @@ public final class RenameBindingCheck {
   }
 
   // Whether an element is one the rename renames: its declaration's name is a renamed site of a
-  // file
-  // in the batch. A renamed site resolving to it means what it meant, even where the check cannot
-  // see that it belongs to the renamed family (a JPMS module cannot take another's sources, so an
-  // implementation there no longer appears to override the renamed interface method).
+  // file in the batch. A renamed site resolving to it means what it meant, even where the check
+  // cannot see that it belongs to the renamed family (a JPMS module cannot take another's sources,
+  // so an implementation there no longer appears to override the renamed interface method).
   private static Predicate<Element> renamedDeclarations(
       final List<TransientAnalysis> analyses,
       final Map<String, EditedFile> byUri,
@@ -361,8 +360,7 @@ public final class RenameBindingCheck {
   // A renamed site that now resolves to another declaration of the new name means something else;
   // one that does not resolve does not: javac found only an enclosing tree, or made up an error
   // symbol bearing the name (a module that cannot see the edited declaration, as another module of
-  // a
-  // JPMS reactor, still has the old one). That is a compile error the diagnostics report.
+  // a JPMS reactor, still has the old one). That is a compile error the diagnostics report.
   private static boolean named(final Element element, final String name) {
     if (element.asType().getKind() == TypeKind.ERROR) {
       return false;

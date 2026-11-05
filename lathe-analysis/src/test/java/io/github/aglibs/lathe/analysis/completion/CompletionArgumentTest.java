@@ -599,8 +599,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
     assertThat(labels(fixture.complete(enumSource.formatted("§"))))
         .contains("Dialect.OAUTH", "Dialect.BASIC");
     // Typing the value (`OA`) still surfaces `Dialect.OAUTH`: matching keys on the bare constant,
-    // not
-    // only the qualified label. The inserted text remains the qualified reference.
+    // not only the qualified label. The inserted text remains the qualified reference.
     final var prefixed = fixture.complete(enumSource.formatted("OA§"));
     assertThat(labels(prefixed)).contains("Dialect.OAUTH").doesNotContain("Dialect.BASIC");
     assertThat(itemLabeled(prefixed, "Dialect.OAUTH").orElseThrow().getInsertText())

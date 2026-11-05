@@ -312,8 +312,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   // Where a detached run writes a file's text: its own temp file, or for another module's file one
   // under a directory of its own mirroring the file's path, as javac needs only a source's file
-  // name
-  // to match its public class.
+  // name to match its public class.
   private Path detachedTempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
     return ownSourceRoot(filePath).isPresent()

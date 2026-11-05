@@ -21,8 +21,7 @@ final class ResourceFinder {
   private ResourceFinder() {}
 
   // Every resource the finder lists: reactor resource roots (real editable files) and each dep
-  // jar's
-  // entries (read from its central directory -- no decompression, no extraction). `.class` is
+  // jar's entries (read from its central directory -- no decompression, no extraction). `.class` is
   // excluded; origin comes from the owning module / GAV.
   static List<ResourceEntry> list(
       final Map<Path, String> resourceDirs, final Map<Path, String> jarToGav) {
@@ -35,13 +34,8 @@ final class ResourceFinder {
   }
 
   private static List<ResourceEntry> resourcesUnder(final Path dir, final String module) {
-    if (!Files.isDirectory(dir)) {
-      return List.of();
-    }
-
-    try (final var walk = Files.walk(dir)) {
-      return walk.filter(Files::isRegularFile)
-          .filter(ResourceFinder::isResource)
+    try {
+      return FileUtil.walkFiles(dir, ResourceFinder::isResource).stream()
           .map(
               file ->
                   ResourceEntry.reactor(

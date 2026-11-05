@@ -303,8 +303,7 @@ final class WritePass {
   // Asks for a write pass; completes with the stale sources it considered once its writes finish.
   // eager treats every stale source as ready (startup, an MCP query) instead of waiting a tick for
   // a file that may still be being written. Runs on the event loop, which owns all pass state; the
-  // pass
-  // is registered as running before any of its work, so one that finishes at once still ends
+  // pass is registered as running before any of its work, so one that finishes at once still ends
   // cleanly.
   CompletableFuture<List<Path>> requestPass(final boolean eager) {
     eventLoop.checkOnLoop();

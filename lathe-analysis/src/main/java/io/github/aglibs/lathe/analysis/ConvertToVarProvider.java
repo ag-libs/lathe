@@ -29,11 +29,10 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Request-driven (non-diagnostic) refactor: replace an explicit local-variable type with `var` —
-// the
-// inverse of ReplaceVarProvider, sharing the `refactor.rewrite` kind so one editor shortcut toggles
-// either direction. Offered only for a block-level local whose initializer gives `var` a
-// well-defined type; a diamond initializer is expanded (`new ArrayList<>()` ->
-// `new ArrayList<String>()`) so `var` never silently infers `Object`.
+// the inverse of ReplaceVarProvider, sharing the `refactor.rewrite` kind so one editor shortcut
+// toggles either direction. Offered only for a block-level local whose initializer gives `var` a
+// well-defined type; a diamond initializer is expanded (`new ArrayList<>()` -> `new
+// ArrayList<String>()`) so `var` never silently infers `Object`.
 final class ConvertToVarProvider {
 
   private static final Logger LOG = Logger.getLogger(ConvertToVarProvider.class.getName());

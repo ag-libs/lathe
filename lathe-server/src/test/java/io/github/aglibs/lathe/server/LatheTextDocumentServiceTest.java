@@ -762,8 +762,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   // Go to type definition: the declared type of the symbol at the cursor, an array's element type,
   // a generic's own type, a constructor's class, a method's return type, a type itself; nothing for
-  // a
-  // primitive.
+  // a primitive.
   @Test
   void typeDefinition_symbolsOfEachKind_goToTheirTypeDeclaration() throws Exception {
     final String use =

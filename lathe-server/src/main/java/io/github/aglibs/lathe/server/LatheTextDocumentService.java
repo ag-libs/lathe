@@ -24,12 +24,9 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
-/**
- * The LSP document service and the shared analysis seam. Two front-ends drive it: {@link
- * LatheServer} over JSON-RPC and the in-process {@code LatheEngine} (MCP). The lifecycle methods
- * and {@link #diagnosticsFuture} are {@code public} so the engine in the {@code engine} subpackage
- * can consume the same session without exposing the rest of the LSP surface.
- */
+// The LSP document service, and the way onto the event loop for everything outside it. Two
+// front-ends drive it: LatheServer over JSON-RPC, and the in-process LatheEngine (MCP), which
+// reaches the session through onLoop, onLoopFuture and onLoopCompose.
 public final class LatheTextDocumentService implements TextDocumentService {
 
   private static final Logger LOG = Logger.getLogger(LatheTextDocumentService.class.getName());
@@ -77,7 +74,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     formatEngine = engine;
   }
 
-  public void setFileRenameSupported(final boolean supported) {
+  void setFileRenameSupported(final boolean supported) {
     fileRenameSupported = supported;
   }
 
@@ -86,12 +83,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   // On the event loop like all session state; queued after connect, so it is set before initialize.
-  public void setDocumentsFollowDisk(final boolean follow) {
+  void setDocumentsFollowDisk(final boolean follow) {
     eventLoop.execute(() -> session.setDocumentsFollowDisk(follow));
   }
 
   // Whether a user answers prompts; without one, a due sync is only reported.
-  public void setInteractive(final boolean interactive) {
+  void setInteractive(final boolean interactive) {
     eventLoop.execute(() -> session.setInteractive(interactive));
   }
 
@@ -531,7 +528,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   }
 
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
-  public void useWorkspaceFormatter(final Path root) {
+  void useWorkspaceFormatter(final Path root) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(root);
     formatterPinned = spec != null;
     formatEngine = spec == null ? null : FormatEngines.forSpec(spec, root, this);
@@ -539,7 +536,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
   // The whole-file formatting edits, refused (not empty) when there is no formatter or it fails.
   // Only a pinned formatter whose jars are missing is one a sync can supply.
-  public CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
+  CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
     final FormatEngine engine = formatEngine;
     if (engine == null) {
       final String reason =

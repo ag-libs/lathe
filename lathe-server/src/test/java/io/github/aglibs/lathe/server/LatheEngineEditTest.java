@@ -40,8 +40,8 @@ class LatheEngineEditTest extends LatheEngineTestBase {
         .hasValueSatisfying(
             format -> {
               assertThat(format.path()).isEqualTo(FileUtil.slashed(tmp.relativize(source)));
-              assertThat(format.firstLine()).isEqualTo(6);
-              assertThat(format.lastLine()).isEqualTo(8);
+              assertThat(format.firstLine()).isEqualTo(5);
+              assertThat(format.lastLine()).isEqualTo(7);
             });
     assertThat(Files.readString(source)).contains("  int twice() {\n    return n * 2;\n  }\n");
     assertThat(engine.format(source)).isEmpty();

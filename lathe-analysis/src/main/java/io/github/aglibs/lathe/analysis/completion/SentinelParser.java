@@ -505,8 +505,7 @@ final class SentinelParser {
   }
 
   // The simple name of the last type argument of a generic type (Map<String, User> -> User), or
-  // null
-  // for a non-generic type. The last argument is the element/value in the common containers.
+  // null for a non-generic type. The last argument is the element/value in the common containers.
   private static String elementTypeName(final Tree type) {
     if (type instanceof ParameterizedTypeTree parameterized
         && !parameterized.getTypeArguments().isEmpty()) {

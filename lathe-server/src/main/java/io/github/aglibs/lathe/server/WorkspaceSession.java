@@ -80,9 +80,6 @@ final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
 
-  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
-  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
-
   // Upper bound on transitive subtypes returned by the type-hierarchy explorer, so a near-Object or
   // huge marker-interface anchor cannot flood the picker or the source-locating pass. Beyond it the
   // result is flagged truncated.
@@ -721,7 +718,8 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    if (router.routeCompiler(uri) instanceof CompilerRoute.External) {
+    final CompilerRoute route = router.routeCompiler(uri);
+    if (route instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(List.of());
     }
 
@@ -738,8 +736,7 @@ final class WorkspaceSession {
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = reactorIndex.current();
     final List<List<TypeIndexEntry>> reactorEntries = reactorIndex.shards();
-    final LearnedStaticImports staticImports =
-        router.learnedStaticImports(router.routeCompiler(uri));
+    final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
         "codeAction",
         uri,
@@ -773,13 +770,13 @@ final class WorkspaceSession {
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null || router.routeCompiler(uri) instanceof CompilerRoute.External) {
+    final CompilerRoute route = router.routeCompiler(uri);
+    if (openFile == null || route instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(MissingImportsResult.empty());
     }
 
     final var indexSnapshot = reactorIndex.current();
-    final LearnedStaticImports staticImports =
-        router.learnedStaticImports(router.routeCompiler(uri));
+    final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
         "missingImports",
         uri,
@@ -931,7 +928,7 @@ final class WorkspaceSession {
             sourceDirs,
             entry -> !reactorOnly || reactorIndex.current().isReactorType(entry.binaryName()));
     LOG.info(
-        () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
+        () -> "[symbol] query=%s %dms hits=%d".formatted(query, t.elapsedMs(), results.size()));
     return results;
   }
 
@@ -1136,9 +1133,8 @@ final class WorkspaceSession {
 
     releaseSessionsOnTick();
     // Defer every reactive branch (staleness prompt, build-file/workspace reload) while a build
-    // runs, so a
-    // mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after the lock
-    // clears picks up the settled state in one reload.
+    // runs, so a mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after
+    // the lock clears picks up the settled state in one reload.
     if (writePass.reactorBuildInProgress()) {
       LOG.fine(() -> "[watcher] skipped — reactor build in progress");
       return;

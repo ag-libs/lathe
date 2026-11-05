@@ -368,8 +368,7 @@ class UnusedDeclarationScannerTest {
   // --- Unnamed variables (JEP 456) ---
 
   // Unnamed variables (`_`) are standard only on JDK 22+ (JEP 456); earlier the source below does
-  // not
-  // compile and the scan is suppressed.
+  // not compile and the scan is suppressed.
   @Test
   @EnabledForJreRange(min = JRE.JAVA_22)
   void compile_unnamedVariableUnderscore_notReportedButNamedStillIs() {

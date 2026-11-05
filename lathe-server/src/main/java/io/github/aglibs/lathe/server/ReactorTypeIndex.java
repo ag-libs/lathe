@@ -22,8 +22,7 @@ import java.util.stream.Stream;
 
 // The workspace type index and the reactor shards it is built from: each tree's bytecode types plus
 // the types of its sources not built yet. Event-loop state: every entry point checks the loop, and
-// a
-// rebuild runs off it and is applied back on it.
+// a rebuild runs off it and is applied back on it.
 final class ReactorTypeIndex {
 
   private static final Logger LOG = Logger.getLogger(ReactorTypeIndex.class.getName());

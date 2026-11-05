@@ -112,10 +112,9 @@ class ModuleSourceCompilerTest {
   }
 
   // A detached compile or analysis (a check of edited text, as codeAction/resolve, verify_change
-  // and
-  // a rename's meaning check run) leaves the document's own compile undisturbed: javac reads text
-  // lazily from the per-document temp file, so a tree cached from that compile, which code actions
-  // cut text by, keeps reading its own text, while the check reads the edited text.
+  // and a rename's meaning check run) leaves the document's own compile undisturbed: javac reads
+  // text lazily from the per-document temp file, so a tree cached from that compile, which code
+  // actions cut text by, keeps reading its own text, while the check reads the edited text.
   @Test
   void detached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
