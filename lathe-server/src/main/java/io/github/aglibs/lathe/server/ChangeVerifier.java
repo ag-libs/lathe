@@ -191,9 +191,7 @@ final class ChangeVerifier {
               config ->
                   placements.put(
                       path,
-                      new ModulePlacement(
-                          SourceLayout.moduleRel(state.root(), config.moduleDir()),
-                          config.isTestTree())));
+                      new ModulePlacement(state.layout().moduleRel(config), config.isTestTree())));
     }
 
     return Map.copyOf(placements);
@@ -337,7 +335,7 @@ final class ChangeVerifier {
             moduleRel ->
                 Files.isDirectory(SourceLayout.moduleLatheDir(state.root(), moduleRel))
                     ? "%s is in no source root of module %s, so a sync does not add it"
-                        .formatted(relative, moduleRel.isEmpty() ? "." : moduleRel)
+                        .formatted(relative, SourceLayout.displayed(moduleRel))
                     : "%s is in no synced module — run `%s`"
                         .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
         .orElseGet(

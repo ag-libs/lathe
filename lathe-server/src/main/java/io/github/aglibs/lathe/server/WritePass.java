@@ -722,11 +722,13 @@ final class WritePass {
     final var stamps = new LinkedHashMap<Path, SourceStamp>();
     for (final var source : sources) {
       final long mtime = mtimeMillis(source);
-      final String content = readSource(source);
-      if (content == null) {
+      final Optional<String> read = FileUtil.readIfPresent(source);
+      if (read.isEmpty()) {
         reported.remove(source);
         continue;
       }
+
+      final String content = read.get();
 
       transientSources.add(new TransientSource(LatheUri.fromPath(source), content));
       // The content compiled, not a later read: a save during a long batch must not stamp it.
@@ -749,7 +751,7 @@ final class WritePass {
           return "[react] writing %d file(s) in %s: %s%s"
               .formatted(
                   stamps.size(),
-                  SourceLayout.moduleRel(state.root(), config.moduleDir()),
+                  state.layout().moduleRel(config),
                   names,
                   stamps.size() > 20 ? " +%d more".formatted(stamps.size() - 20) : "");
         });
@@ -785,9 +787,7 @@ final class WritePass {
       LOG.log(
           Level.FINE,
           error,
-          () ->
-              "[react] batch compile failed in %s"
-                  .formatted(SourceLayout.moduleRel(state.root(), config.moduleDir())));
+          () -> "[react] batch compile failed in %s".formatted(state.layout().moduleRel(config)));
       stamps.forEach(
           (source, stamp) ->
               failedCompiles.put(source, new FailedWrite(stamp.mtime(), "the compiler failed")));
@@ -811,9 +811,7 @@ final class WritePass {
           () ->
               "[react] %d of %d file(s) failed in %s, writing the rest"
                   .formatted(
-                      byFailure.get(true).size(),
-                      stamps.size(),
-                      SourceLayout.moduleRel(state.root(), config.moduleDir())));
+                      byFailure.get(true).size(), stamps.size(), state.layout().moduleRel(config)));
       // The failed files' open buffers get their write diagnostics.
       refreshScope.add(config.moduleDir());
       final List<Path> rest = byFailure.get(false);
@@ -843,8 +841,7 @@ final class WritePass {
     LOG.fine(
         () ->
             "[react] recompiled %d file(s) in %s"
-                .formatted(
-                    stamps.size(), SourceLayout.moduleRel(state.root(), config.moduleDir())));
+                .formatted(stamps.size(), state.layout().moduleRel(config)));
     return CompletableFuture.completedFuture(null);
   }
 
@@ -929,14 +926,6 @@ final class WritePass {
     return packageRel != null
         ? config.latheClassesDir().resolve(packageRel)
         : config.latheClassesDir();
-  }
-
-  static String readSource(final Path source) {
-    try {
-      return Files.readString(source);
-    } catch (final IOException e) {
-      return null;
-    }
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external

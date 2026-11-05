@@ -11,7 +11,10 @@ import java.util.logging.Logger;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 
 // The shapes a feature's answer takes on its way to the client, shared by the session and its
 // components.
@@ -64,5 +67,11 @@ final class FeatureAnswers {
         (left, right) ->
             left.thenCombine(
                 right, (first, second) -> Stream.concat(first.stream(), second.stream()).toList()));
+  }
+
+  // A request the server refuses, with the reason the editor shows the user.
+  static ResponseErrorException refused(final String reason) {
+    return new ResponseErrorException(
+        new ResponseError(ResponseErrorCode.RequestFailed, reason, null));
   }
 }

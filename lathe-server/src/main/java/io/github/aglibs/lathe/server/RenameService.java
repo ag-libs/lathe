@@ -33,8 +33,6 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 
 // Decides whether a symbol can be renamed and computes the edit: the declaration, every override
 // and implementation, and every use the reference search finds, refused when a use would then mean
@@ -120,7 +118,7 @@ final class RenameService {
             declaration ->
                 declaration.getValue().isEmpty()
                     && !reactorIndex.current().isReactorType(declaration.getKey()))) {
-      throw renameRefused(
+      throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, outside the project (JDK or a dependency), so it cannot be renamed"
               .formatted(target.simpleName()));
     }
@@ -128,7 +126,7 @@ final class RenameService {
     if (declarations.values().stream()
         .flatMap(Optional::stream)
         .anyMatch(this::isGeneratedSource)) {
-      throw renameRefused(
+      throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, in generated source; rename the source it is generated from instead"
               .formatted(target.simpleName()));
     }
@@ -330,13 +328,8 @@ final class RenameService {
 
   private static void refuseIfPresent(final Optional<String> reason) {
     if (reason.isPresent()) {
-      throw renameRefused(reason.get());
+      throw FeatureAnswers.refused(reason.get());
     }
-  }
-
-  private static ResponseErrorException renameRefused(final String message) {
-    return new ResponseErrorException(
-        new ResponseError(ResponseErrorCode.RequestFailed, message, null));
   }
 
   // The source file to rename when the target is the file-defining type for its file (so `Foo.java`
@@ -401,7 +394,7 @@ final class RenameService {
     final var t = Stopwatch.start();
     if (!RenameProvider.isValidName(newName)) {
       final var invalid =
-          renameRefused(
+          FeatureAnswers.refused(
               "`%s` is not a valid name: it must be one Java identifier, not a keyword"
                   .formatted(newName));
       logRefusal("rename", uri, t, invalid);

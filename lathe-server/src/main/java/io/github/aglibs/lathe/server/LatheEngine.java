@@ -190,7 +190,10 @@ public final class LatheEngine {
 
   /** Compiler diagnostics for {@code file} at its current on-disk content. */
   public List<Diagnostic> diagnostics(final Path file) {
-    return compileFromDisk(file);
+    return fileRequest(
+        file,
+        (session, uri, diagnostics, cancel, progress) ->
+            CompletableFuture.completedFuture(diagnostics));
   }
 
   /**
@@ -249,10 +252,9 @@ public final class LatheEngine {
   private LatheImplementations capImplementations(
       final Either<List<? extends Location>, List<? extends LocationLink>> either,
       final int maxResults) {
-    final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
-    final List<LatheLocation> capped =
-        locations.stream().limit(maxResults).map(this::toLatheLocation).toList();
-    return new LatheImplementations(locations.size(), locations.size() > maxResults, capped);
+    final LatheReferences capped =
+        capReferences(either.isLeft() ? either.getLeft() : List.of(), maxResults);
+    return new LatheImplementations(capped.total(), capped.truncated(), capped.references());
   }
 
   // An agent's column is easily off by one, and javac answers for the smallest tree around a
@@ -453,19 +455,11 @@ public final class LatheEngine {
   // The reactor's types first, then the JDK's and dependencies', then JDK internals: hidden from a
   // plain project, but one that adds exports (an annotation processor, a javac plugin) uses them.
   private int rank(final SymbolInformation symbol) {
-    if (origin(symbol) != LatheLocation.Origin.EXTERNAL) {
+    if (origin(LatheUri.toPath(symbol.getLocation().getUri())) != LatheLocation.Origin.EXTERNAL) {
       return 0;
     }
 
     return jdkInternal(symbol.getContainerName()) ? 2 : 1;
-  }
-
-  private LatheLocation.Origin origin(final SymbolInformation symbol) {
-    return origin(symbol.getLocation().getUri());
-  }
-
-  private LatheLocation.Origin origin(final String uri) {
-    return origin(LatheUri.toPath(uri));
   }
 
   // In a JDK package its modules do not export to everyone (javac's internals, jdk.internal): no
@@ -526,7 +520,7 @@ public final class LatheEngine {
     final Map<String, String> moves = RenameProvider.fileMoves(edit);
     final List<String> nonReactor =
         Stream.concat(textEdits.keySet().stream(), moves.values().stream())
-            .filter(uri -> origin(uri) != LatheLocation.Origin.REACTOR)
+            .filter(uri -> origin(LatheUri.toPath(uri)) != LatheLocation.Origin.REACTOR)
             .sorted()
             .toList();
     if (!nonReactor.isEmpty()) {
@@ -551,7 +545,9 @@ public final class LatheEngine {
     // review, never edited here.
     final List<Location> mentions =
         textMentions(oldName).stream()
-            .filter(mention -> origin(mention.getUri()) == LatheLocation.Origin.REACTOR)
+            .filter(
+                mention ->
+                    origin(LatheUri.toPath(mention.getUri())) == LatheLocation.Origin.REACTOR)
             .toList();
     return new LatheRename(
         newName,
@@ -612,7 +608,7 @@ public final class LatheEngine {
   // like a rename. Empty when the file was already formatted.
   public Optional<LatheFormat> format(final Path file) {
     requireReactorFile(file);
-    compileFromDisk(file); // the formatter reads the file's document, so register it
+    diagnostics(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
     // Through the LSP service, which holds the formatter the workspace resolved.
     final List<TextEdit> edits = await(service.formatFuture(uri));
@@ -816,7 +812,7 @@ public final class LatheEngine {
   // Where the method calls each callee, in source order, so the answer reads as the method does.
   private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
     return request((session, cancel, progress) -> session.outgoingCallsFuture(item)).stream()
-        .filter(call -> scope.includes(origin(call.getTo().getUri())))
+        .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
         .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
         .toList();
@@ -1085,13 +1081,6 @@ public final class LatheEngine {
   // after, before the idle reconcile tick has caught up: freshen the mirror first so cross-file
   // answers see those edits. What the pass could not write (code that does not compile, a pending
   // build-file sync, a running build) answers from the current mirror, as notes() reports.
-  private List<Diagnostic> compileFromDisk(final Path file) {
-    return fileRequest(
-        file,
-        (session, uri, diagnostics, cancel, progress) ->
-            CompletableFuture.completedFuture(diagnostics));
-  }
-
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
   // and the file's runnable targets.
   private record TestFacts(String failure, List<RunTarget> targets) {

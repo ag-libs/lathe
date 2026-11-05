@@ -14,14 +14,13 @@ import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -538,12 +537,8 @@ final class ReferenceSearch {
   }
 
   private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
-    try {
-      return Optional.of(new DiskCandidate(uri, Files.readString(LatheUri.toPath(uri))));
-    } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: %s".formatted(uri));
-      return Optional.empty();
-    }
+    return FileUtil.readIfPresent(LatheUri.toPath(uri))
+        .map(content -> new DiskCandidate(uri, content));
   }
 
   private record DiskCandidate(String uri, String content) {

@@ -31,6 +31,15 @@ final class FileUtilTest {
   @TempDir private Path tempDir;
 
   @Test
+  void readIfPresent_fileMissingOrADirectory_emptyOtherwiseItsText() throws IOException {
+    final Path file = Files.writeString(tempDir.resolve("A.java"), "class A {}");
+
+    assertThat(FileUtil.readIfPresent(file)).hasValue("class A {}");
+    assertThat(FileUtil.readIfPresent(tempDir.resolve("Missing.java"))).isEmpty();
+    assertThat(FileUtil.readIfPresent(tempDir)).isEmpty();
+  }
+
+  @Test
   void listEntries_predicate_keepsMatchesSkipsDirsAndFiltered() throws IOException {
     final Path jar =
         ZipFixture.create(

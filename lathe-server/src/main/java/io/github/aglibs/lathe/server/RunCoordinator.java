@@ -55,6 +55,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -123,30 +124,37 @@ final class RunCoordinator {
     final Path root = state.root();
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
+    return launchOnItsThread(
+        moduleRel,
+        token,
+        (onStart, result) ->
+            launchTest(
+                root,
+                reactorRewrite,
+                runnerClasspath,
+                moduleRel,
+                selections,
+                overlay,
+                onLine,
+                onResult,
+                onStart,
+                t,
+                result));
+  }
+
+  // Launches on a thread of its own, so the loop never waits for the JVM. While it runs, the run is
+  // registered by token, on the event loop like every other field, so a cancel reaches it; it is
+  // unregistered when it ends, blocked or not (removing an unregistered token is a no-op).
+  private CompletableFuture<LaunchOutcome> launchOnItsThread(
+      final String moduleRel,
+      final String token,
+      final BiConsumer<Consumer<LaunchSession>, CompletableFuture<LaunchOutcome>> launch) {
     final var result = new CompletableFuture<LaunchOutcome>();
-    // Register/deregister the run by token so a cancel can reach it, on the event loop like every
-    // other field. Removal covers the blocked/error paths too (removing an unregistered token is a
-    // no-op).
     eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
     final Consumer<LaunchSession> onStart =
         session -> eventLoop.execute(() -> activeRuns.put(token, session));
-
     final var thread =
-        new Thread(
-            () ->
-                launchTest(
-                    root,
-                    reactorRewrite,
-                    runnerClasspath,
-                    moduleRel,
-                    selections,
-                    overlay,
-                    onLine,
-                    onResult,
-                    onStart,
-                    t,
-                    result),
-            "lathe-launch-" + moduleRel);
+        new Thread(() -> launch.accept(onStart, result), "lathe-launch-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
@@ -187,15 +195,10 @@ final class RunCoordinator {
     }
 
     try {
-      final TestLaunchData template =
-          new LaunchReader(state.root())
-              .test(moduleRel)
-              .orElseThrow(
-                  () ->
-                      new IllegalStateException(
-                          noCapturedLaunch(state.root(), moduleRel, selections)));
-      assertLaunchComplete(
-          CompletenessGate.verify(template, state.root(), state.manifest().reactorRewrite()));
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(state.root(), state.manifest().reactorRewrite(), moduleRel, selections);
+      requireLaunchable(captured.gate().reasons());
+      final TestLaunchData template = captured.template();
 
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
@@ -246,9 +249,7 @@ final class RunCoordinator {
       final MainLaunchPlan plan =
           resolveMainLaunch(
               state.root(), state.manifest().reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
-      if (plan.blocked()) {
-        throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
-      }
+      requireLaunchable(plan.blockedReasons());
 
       final var jdwpReady = new CompletableFuture<Void>();
       final ResolvedLaunch resolved = plan.launch();
@@ -308,21 +309,15 @@ final class RunCoordinator {
       final JdwpOptions jdwp)
       throws IOException {
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
-      final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
-      if (template.isEmpty()) {
-        return MainLaunchPlan.blocked(
-            List.of(noCapturedLaunch(workspaceRoot, moduleRel, List.of())));
-      }
-
-      final CompletenessResult gate =
-          CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
-      if (!gate.complete()) {
-        return MainLaunchPlan.blocked(gate.reasons());
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, List.of());
+      if (!captured.gate().complete()) {
+        return MainLaunchPlan.blocked(captured.gate().reasons());
       }
 
       return MainLaunchPlan.ready(
           RunOverlay.applyToTestMain(
-              template.get(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
+              captured.template(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
     }
 
     final Optional<MainLaunchData> template = new LaunchReader(workspaceRoot).main(moduleRel);
@@ -431,9 +426,36 @@ final class RunCoordinator {
     return new DebugStartResult(host.port(), jdwpPort);
   }
 
-  private static void assertLaunchComplete(final CompletenessResult gate) {
-    if (!gate.complete()) {
-      throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
+  private static void requireLaunchable(final List<String> blockedReasons) {
+    if (!blockedReasons.isEmpty()) {
+      throw new IllegalStateException("debug launch incomplete: " + blockedReasons);
+    }
+  }
+
+  // The module's captured test launch, checked by the completeness gate. A module with no capture
+  // gets an incomplete gate whose reason says how to capture one, and no template.
+  private static CheckedTestLaunch checkedTestLaunch(
+      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
+      final String moduleRel,
+      final List<TestSelection> selections)
+      throws IOException {
+    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
+    if (template.isEmpty()) {
+      return new CheckedTestLaunch(
+          null,
+          CompletenessResult.blocked(
+              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
+    }
+
+    return new CheckedTestLaunch(
+        template.get(), CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite));
+  }
+
+  // template is null when the gate is incomplete because nothing was captured.
+  private record CheckedTestLaunch(TestLaunchData template, CompletenessResult gate) {
+    CheckedTestLaunch {
+      ValidCheck.check().notNull(gate, "gate").validate();
     }
   }
 
@@ -750,18 +772,9 @@ final class RunCoordinator {
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result) {
     try {
-      final var template = new LaunchReader(workspaceRoot).test(moduleRel);
-      if (template.isEmpty()) {
-        LOG.warning(
-            () ->
-                "[launch] %s %s blocked no captured test-launch.json"
-                    .formatted(moduleRel, selectionLabel(selections)));
-        result.complete(
-            LaunchOutcome.blocked(List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
-        return;
-      }
-
-      final var gate = CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, selections);
+      final CompletenessResult gate = captured.gate();
       if (!gate.complete()) {
         LOG.warning(
             () ->
@@ -776,7 +789,7 @@ final class RunCoordinator {
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template.get(),
+              captured.template(),
               workspaceRoot,
               reactorRewrite,
               runnerClasspath,
@@ -856,28 +869,12 @@ final class RunCoordinator {
     final Path root = state.root();
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
-    final var result = new CompletableFuture<LaunchOutcome>();
-    eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
-    final Consumer<LaunchSession> onStart =
-        session -> eventLoop.execute(() -> activeRuns.put(token, session));
-
-    final var thread =
-        new Thread(
-            () ->
-                launchMain(
-                    root,
-                    reactorRewrite,
-                    moduleRel,
-                    mainClass,
-                    overlay,
-                    onLine,
-                    onStart,
-                    t,
-                    result),
-            "lathe-launch-" + moduleRel);
-    thread.setDaemon(true);
-    thread.start();
-    return result;
+    return launchOnItsThread(
+        moduleRel,
+        token,
+        (onStart, result) ->
+            launchMain(
+                root, reactorRewrite, moduleRel, mainClass, overlay, onLine, onStart, t, result));
   }
 
   private static void launchMain(

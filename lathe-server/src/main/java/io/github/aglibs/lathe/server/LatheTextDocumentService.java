@@ -29,11 +29,8 @@ import org.eclipse.lsp4j.TextDocumentPositionParams;
 import org.eclipse.lsp4j.TypeDefinitionParams;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
@@ -556,9 +553,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
                   .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
               : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
                   .formatted(LatheLayout.STYLE_SHARED_FILE);
-      return CompletableFuture.failedFuture(
-          new ResponseErrorException(
-              new ResponseError(ResponseErrorCode.RequestFailed, reason, null)));
+      return CompletableFuture.failedFuture(FeatureAnswers.refused(reason));
     }
 
     final String canonical = LatheUri.canonical(uri);

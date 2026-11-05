@@ -49,6 +49,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -83,11 +84,8 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
@@ -478,15 +476,11 @@ final class WorkspaceSession {
       router.touchAnalysisCache(uri);
       return module
           .worker()
-          .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
+          .runnables(uri, doc.content(), doc.version(), state.layout().moduleRel(module.config()))
           .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
     return CompletableFuture.completedFuture(List.of());
-  }
-
-  private String moduleRel(final ModuleSourceConfig config) {
-    return SourceLayout.moduleRel(state.root(), config.moduleDir());
   }
 
   Optional<Path> buildTool() {
@@ -499,8 +493,8 @@ final class WorkspaceSession {
     return state
         .registry()
         .moduleSourceFor(file)
-        .map(this::moduleRel)
-        .map(rel -> rel.isEmpty() ? "." : rel);
+        .map(state.layout()::moduleRel)
+        .map(SourceLayout::displayed);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -516,7 +510,8 @@ final class WorkspaceSession {
     LOG.info(() -> "[open] %s".formatted(uri));
     state.candidateIndex().update(uri, content);
     // An editor may open a buffer restored with unsaved changes.
-    if (LatheUri.isFileUri(uri) && content.equals(WritePass.readSource(LatheUri.toPath(uri)))) {
+    if (LatheUri.isFileUri(uri)
+        && FileUtil.readIfPresent(LatheUri.toPath(uri)).filter(content::equals).isPresent()) {
       unsaved.remove(uri);
     } else {
       unsaved.add(uri);
@@ -653,9 +648,8 @@ final class WorkspaceSession {
   private void reloadFromDisk(final Path source) {
     final String uri = LatheUri.fromPath(source);
     final OpenDocument open = docs.get(uri);
-    final String content = WritePass.readSource(source);
-    if (open != null && content != null) {
-      docs.put(uri, content, open.version());
+    if (open != null) {
+      FileUtil.readIfPresent(source).ifPresent(content -> docs.put(uri, content, open.version()));
     }
   }
 
@@ -781,26 +775,19 @@ final class WorkspaceSession {
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
       final TypeHierarchyItem item) {
-    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final var indexSnapshot = reactorIndex.current();
-    final List<Path> sourceDirs = state.typeSourceDirs();
-    final var t = Stopwatch.start();
-    return router
-        .routeFeature(
-            "typeHierarchy:supertypes",
-            data.routingUri(),
-            List.of(),
-            worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs))
-        .thenApply(
-            FeatureAnswers.logged(LOG, "typeHierarchy:supertypes", data.binaryName(), t, "items"));
+    return typeHierarchyLevel(
+        "typeHierarchy:supertypes", item, CompilationWorker::typeHierarchySupertypes);
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
       final TypeHierarchyItem item) {
+    return typeHierarchyLevel(
+        "typeHierarchy:subtypes", item, CompilationWorker::typeHierarchySubtypes);
+  }
+
+  // One level of a type's hierarchy, answered by the worker of the module that holds it.
+  private CompletableFuture<List<TypeHierarchyItem>> typeHierarchyLevel(
+      final String operation, final TypeHierarchyItem item, final TypeHierarchyStep step) {
     final var data = TypeHierarchyItemDataCodec.decode(item.getData());
     if (data == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -811,12 +798,20 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .routeFeature(
-            "typeHierarchy:subtypes",
+            operation,
             data.routingUri(),
             List.of(),
-            worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs))
-        .thenApply(
-            FeatureAnswers.logged(LOG, "typeHierarchy:subtypes", data.binaryName(), t, "items"));
+            worker -> step.apply(worker, item, indexSnapshot, sourceDirs))
+        .thenApply(FeatureAnswers.logged(LOG, operation, data.binaryName(), t, "items"));
+  }
+
+  @FunctionalInterface
+  private interface TypeHierarchyStep {
+    CompletableFuture<List<TypeHierarchyItem>> apply(
+        CompilationWorker worker,
+        TypeHierarchyItem item,
+        WorkspaceTypeIndex index,
+        List<Path> sourceDirs);
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
@@ -1002,21 +997,8 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final Optional<CompilationWorker> worker = router.routeCompiler(uri).analysisWorker();
-    if (worker.isEmpty()) {
-      LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    return foldWith(worker.get(), uri, doc);
-  }
-
-  private CompletableFuture<List<FoldingRange>> foldWith(
-      final CompilationWorker worker, final String uri, final OpenDocument doc) {
-    router.touchAnalysisCache(uri);
-    return worker
-        .foldingRange(uri, doc.content())
-        .exceptionally(FeatureAnswers.failedFor("foldingRange", uri, List.of()));
+    return router.routeFeature(
+        "foldingRange", uri, List.of(), worker -> worker.foldingRange(uri, doc.content()));
   }
 
   List<? extends TextEdit> format(final String uri, final FormatEngine engine) {
@@ -1039,13 +1021,10 @@ final class WorkspaceSession {
         Thread.currentThread().interrupt();
       }
 
-      throw new ResponseErrorException(
-          new ResponseError(
-              ResponseErrorCode.RequestFailed,
-              "Could not format %s: %s"
-                  .formatted(
-                      LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()),
-              null));
+      throw FeatureAnswers.refused(
+          "Could not format %s: %s"
+              .formatted(
+                  LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()));
     }
   }
 
@@ -1134,12 +1113,14 @@ final class WorkspaceSession {
     textEdits.forEach(
         (uri, edits) -> {
           final OpenDocument open = docs.get(uri);
-          final String original =
-              open != null ? open.content() : WritePass.readSource(LatheUri.toPath(uri));
-          if (original != null) {
-            tx.add(
-                moves.getOrDefault(uri, uri), original, SourceLocator.applyEdits(original, edits));
-          }
+          final Optional<String> original =
+              open != null
+                  ? Optional.of(open.content())
+                  : FileUtil.readIfPresent(LatheUri.toPath(uri));
+          original.ifPresent(
+              text ->
+                  tx.add(
+                      moves.getOrDefault(uri, uri), text, SourceLocator.applyEdits(text, edits)));
         });
     moves.forEach(tx::addMovedAway);
     LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));
@@ -1466,10 +1447,6 @@ final class WorkspaceSession {
         : publisher.publishIfCurrent(snapshot, withWriteDiagnostics(snapshot, result));
   }
 
-  private void submitCompile(final OpenDocument snapshot, final AfterCompile afterCompile) {
-    submitCompile(router.routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
-  }
-
   // The compile, which completes exceptionally if it threw; its error is published either way.
   private CompletableFuture<CompileResponse> submitCompile(
       final CompilerRoute route,
@@ -1481,15 +1458,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
-    return submitTo(route, route.analysisWorker().orElseThrow(), snapshot, mode, afterCompile);
-  }
-
-  private CompletableFuture<CompileResponse> submitTo(
-      final CompilerRoute route,
-      final CompilationWorker moduleWorker,
-      final OpenDocument snapshot,
-      final CompileMode mode,
-      final AfterCompile afterCompile) {
+    final CompilationWorker moduleWorker = route.analysisWorker().orElseThrow();
     router.touchAnalysisCache(snapshot.uri());
     final List<CompileRequest> siblings =
         route instanceof final CompilerRoute.Module module
@@ -1600,7 +1569,9 @@ final class WorkspaceSession {
     }
 
     LOG.fine(
-        () -> "[dependents] batch %d file(s) in %s".formatted(snapshots.size(), moduleRel(config)));
+        () ->
+            "[dependents] batch %d file(s) in %s"
+                .formatted(snapshots.size(), state.layout().moduleRel(config)));
     state
         .registry()
         .workerFor(config)
@@ -1663,25 +1634,29 @@ final class WorkspaceSession {
   }
 
   private void scheduleOpenFile(final String uri) {
-    eventLoop.schedule(
-        uri,
-        0L,
-        () -> {
-          final OpenDocument openFile = docs.get(uri);
-          if (openFile != null) {
-            compileAndPublish(openFile, CompileMode.OPEN);
-          }
-        });
+    scheduleCompile(uri, openFile -> compileAndPublish(openFile, CompileMode.OPEN));
   }
 
   private void scheduleAstRefresh(final String uri) {
+    scheduleCompile(
+        uri,
+        openFile ->
+            submitCompile(
+                router.routeCompiler(uri),
+                openFile,
+                CompileMode.FAST,
+                publisher::refreshTokensIfCurrent));
+  }
+
+  // Compiles the open document once the loop is free; nothing if it was closed meanwhile.
+  private void scheduleCompile(final String uri, final Consumer<OpenDocument> compile) {
     eventLoop.schedule(
         uri,
         0L,
         () -> {
           final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {
-            submitCompile(openFile, publisher::refreshTokensIfCurrent);
+            compile.accept(openFile);
           }
         });
   }
