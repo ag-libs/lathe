@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
@@ -14,6 +15,7 @@ import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.RenameProvider;
+import io.github.aglibs.lathe.server.analysis.RunTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.analysis.SourceLocator;
@@ -37,7 +39,6 @@ import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
-import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
@@ -427,7 +428,7 @@ final class WorkspaceSession {
 
   List<ResourceEntry> resources() {
     return ResourceFinder.list(
-        state.manifest().resourceDirModules(), state.manifest().dependencyJarsToGav());
+        state.manifest().resourceDirModules(), state.manifest().libraries().jarToGav());
   }
 
   // The tests of the file's type, or from a test the type it tests.
@@ -450,6 +451,7 @@ final class WorkspaceSession {
     final Path dest =
         state
             .manifest()
+            .libraries()
             .dependencySourceDir(jarPath)
             .map(dir -> dir.resolve(entry))
             .orElseGet(ResourceFinder.tempDest(entry));

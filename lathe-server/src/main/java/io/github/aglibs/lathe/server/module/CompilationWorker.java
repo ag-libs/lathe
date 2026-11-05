@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
+import io.github.aglibs.lathe.server.analysis.RunTarget;
 import io.github.aglibs.lathe.server.analysis.SemanticToken;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
@@ -20,7 +21,6 @@ import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
-import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
@@ -96,7 +96,9 @@ public final class CompilationWorker {
       final Executor delivery) {
     return new CompilationWorker(
         "lathe-external",
-        () -> new SourceAnalysisSession(new ExternalCompiler(manifest, compilationAdmission)),
+        () ->
+            new SourceAnalysisSession(
+                new ExternalCompiler(manifest.libraries(), compilationAdmission)),
         delivery);
   }
 

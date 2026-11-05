@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import com.sun.source.util.JavacTask;
 import io.github.aglibs.lathe.server.JavacCrashFixtures;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -131,7 +130,7 @@ class SourceAnalysisSessionTest {
     final String uri = TempSourceCompiler.TEST_URI;
     final String cachedContent = "class Test { String value; }";
     final String currentContent = "class Test { Integer value; }";
-    final var manifest = WorkspaceManifest.empty();
+    final var libraries = LibrarySources.none();
     final var pos =
         SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
 
@@ -139,7 +138,8 @@ class SourceAnalysisSessionTest {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
       assertThat(
-              ctx.hover(new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), manifest)))
+              ctx.hover(
+                  new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), libraries)))
           .isNotNull();
     }
   }

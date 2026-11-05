@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.run;
+package io.github.aglibs.lathe.server.analysis;
 
 public enum RunnableKind {
   MAIN,

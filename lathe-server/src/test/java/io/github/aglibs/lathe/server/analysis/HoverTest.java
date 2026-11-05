@@ -11,7 +11,6 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
 import org.eclipse.lsp4j.Hover;
@@ -33,7 +32,7 @@ class HoverTest extends SampleFixture {
               0,
               SourceLocator.offsetToPosition(source, offset),
               List.of(),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       final Hover hover = session.hover(request);
       return hover == null ? null : hover.getContents().getRight().getValue();
     }
@@ -266,7 +265,7 @@ class HoverTest extends SampleFixture {
               0,
               pos,
               List.of(fixture.srcDir()),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       final var hover = fixture.session().hover(request);
 
       assertThat(hover).isNotNull();
@@ -296,7 +295,7 @@ class HoverTest extends SampleFixture {
               0,
               pos,
               List.of(fixture.srcDir()),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       final var hover = fixture.session().hover(request);
 
       assertThat(hover).isNotNull();

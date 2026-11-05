@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
@@ -44,7 +45,7 @@ final class FeatureRouter {
         doc.version(),
         pos,
         state.registry().allSourceRoots(),
-        state.manifest());
+        state.manifest().libraries());
   }
 
   CompilerRoute routeCompiler(final String uri) {
@@ -57,7 +58,7 @@ final class FeatureRouter {
             module -> new CompilerRoute.Module(state.registry().workerFor(module), module))
         .orElseGet(
             () -> {
-              if (state.manifest().containsFile(path)) {
+              if (state.manifest().libraries().containsFile(path)) {
                 return new CompilerRoute.External(state.registry().externalWorker());
               }
 

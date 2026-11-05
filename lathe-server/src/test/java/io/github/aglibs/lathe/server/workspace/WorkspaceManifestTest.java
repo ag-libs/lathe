@@ -22,7 +22,7 @@ class WorkspaceManifestTest extends SampleFixture {
 
   @Test
   void load_missingFile_returnsEmpty(@TempDir final Path dir) {
-    assertThat(WorkspaceManifest.load(dir).originLabel(null, null)).isEmpty();
+    assertThat(WorkspaceManifest.load(dir).libraries().originLabel(null, null)).isEmpty();
   }
 
   @Test
@@ -87,7 +87,7 @@ class WorkspaceManifestTest extends SampleFixture {
   @Test
   void originLabel_jdkType_returnsModuleName() {
     final var listType = compiled.task().getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.empty().originLabel(listType, compiled.fm()))
+    assertThat(WorkspaceManifest.empty().libraries().originLabel(listType, compiled.fm()))
         .hasValue("java.base");
   }
 
@@ -99,7 +99,7 @@ class WorkspaceManifestTest extends SampleFixture {
         List.of());
 
     final var listType = compiled.task().getElements().getTypeElement("java.util.List");
-    assertThat(WorkspaceManifest.load(tmp).originLabel(listType, compiled.fm()))
+    assertThat(WorkspaceManifest.load(tmp).libraries().originLabel(listType, compiled.fm()))
         .hasValue("java.base (JDK 21.0.1)");
   }
 
@@ -113,7 +113,7 @@ class WorkspaceManifestTest extends SampleFixture {
     try (final var parsed = TestCompiler.parseWithClasspath(sampleSrc, classDir)) {
       final var sampleType = parsed.task().getElements().getTypeElement("Sample");
 
-      assertThat(WorkspaceManifest.empty().originLabel(sampleType, parsed.fm()))
+      assertThat(WorkspaceManifest.empty().libraries().originLabel(sampleType, parsed.fm()))
           .hasValue("mymodule");
     }
   }
@@ -138,10 +138,11 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    assertThat(manifest.externalSourceRootForFile(sourceFile)).hasValue(sourceDir);
-    assertThat(manifest.containsFile(sourceFile)).isTrue();
-    assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
-    assertThat(manifest.depClasspathForFile(sourceFile)).containsExactly(selfJar, transitiveJar);
+    assertThat(manifest.libraries().externalSourceRootForFile(sourceFile)).hasValue(sourceDir);
+    assertThat(manifest.libraries().containsFile(sourceFile)).isTrue();
+    assertThat(manifest.libraries().externalSourceDirs()).containsExactly(sourceDir);
+    assertThat(manifest.libraries().depClasspathForFile(sourceFile))
+        .containsExactly(selfJar, transitiveJar);
   }
 
   // Per-platform classifier jars of one artifact share its sources dir.
@@ -171,8 +172,8 @@ class WorkspaceManifestTest extends SampleFixture {
 
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
-    assertThat(manifest.externalSourceDirs()).containsExactly(sourceDir);
-    assertThat(manifest.depClasspathForFile(sourceFile))
+    assertThat(manifest.libraries().externalSourceDirs()).containsExactly(sourceDir);
+    assertThat(manifest.libraries().depClasspathForFile(sourceFile))
         .startsWith(linuxJar, otherJar)
         .contains(osxJar);
   }
@@ -204,8 +205,8 @@ class WorkspaceManifestTest extends SampleFixture {
     final WorkspaceManifest manifest = WorkspaceManifest.load(tmp);
 
     assertThat(manifest.loadProblem()).isEmpty();
-    assertThat(manifest.dependencyJarsToGav()).containsExactly(entry(jar, first.gav()));
-    assertThat(manifest.dependencySourceDir(jar)).hasValue(sourceDir);
+    assertThat(manifest.libraries().jarToGav()).containsExactly(entry(jar, first.gav()));
+    assertThat(manifest.libraries().dependencySourceDir(jar)).hasValue(sourceDir);
     assertThat(manifest.typeIndexShardPaths()).containsExactly(typeIndex);
   }
 
@@ -248,7 +249,10 @@ class WorkspaceManifestTest extends SampleFixture {
     try (final var parsed = TestCompiler.parseWithClasspath(userSrc, jar)) {
       final var greeterElement = parsed.task().getElements().getTypeElement("com.example.Greeter");
 
-      assertThat(WorkspaceManifest.load(tmp).externalSourceRoot(greeterElement, parsed.fm()))
+      assertThat(
+              WorkspaceManifest.load(tmp)
+                  .libraries()
+                  .externalSourceRoot(greeterElement, parsed.fm()))
           .hasValue(sourceDir);
     }
   }

@@ -4,6 +4,7 @@ import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosit
 import static org.mockito.Mockito.mock;
 
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static java.util.logging.Level.SEVERE;
 
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;

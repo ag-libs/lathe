@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SampleFixture.posOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
@@ -76,7 +75,7 @@ class ReferenceLocatorTest {
         0,
         posOf(ReferenceLocatorTest.METHOD_SOURCE, "run();", "run"),
         List.of(),
-        WorkspaceManifest.empty());
+        LibrarySources.none());
   }
 
   // --- fields ---
@@ -1119,7 +1118,7 @@ class ReferenceLocatorTest {
               0,
               new Position(9999, 0),
               List.of(),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       assertThat(session.resolveTarget(request)).isNull();
     }
   }
@@ -1227,7 +1226,7 @@ class ReferenceLocatorTest {
               0,
               posOf(source, context, token),
               List.of(),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       return session.instantiationTargets(request).stream()
           .flatMap(
               target ->

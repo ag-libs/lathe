@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -619,7 +618,7 @@ class SignatureHelpTest {
     final var pos = SourceLocator.offsetToPosition(source, markerOffset);
     final var request =
         new SourceFeatureRequest(
-            TempSourceCompiler.TEST_URI, source, 0, pos, List.of(), WorkspaceManifest.empty());
+            TempSourceCompiler.TEST_URI, source, 0, pos, List.of(), LibrarySources.none());
     return session.signatureHelp(request);
   }
 }

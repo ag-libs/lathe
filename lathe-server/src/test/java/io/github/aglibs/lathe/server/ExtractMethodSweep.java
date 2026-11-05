@@ -16,6 +16,7 @@ import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.validcheck.ValidCheck;

@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server.analysis;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.List;
@@ -12,7 +11,7 @@ public record SourceFeatureRequest(
     int version,
     Position pos,
     List<Path> sourceRoots,
-    WorkspaceManifest manifest) {
+    LibrarySources libraries) {
 
   public SourceFeatureRequest {
     ValidCheck.check()
@@ -20,7 +19,7 @@ public record SourceFeatureRequest(
         .notNull(content, "content")
         .notNull(pos, "pos")
         .notNull(sourceRoots, "sourceRoots")
-        .notNull(manifest, "manifest")
+        .notNull(libraries, "libraries")
         .validate();
     sourceRoots = List.copyOf(sourceRoots);
   }

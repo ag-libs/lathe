@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,7 +46,7 @@ class MethodImplementationTest {
                   0,
                   new Position(0, 27),
                   List.of(tempDir),
-                  WorkspaceManifest.empty()));
+                  LibrarySources.none()));
     }
 
     try (var candidateSession =
@@ -88,7 +87,7 @@ class MethodImplementationTest {
                   0,
                   new Position(0, 27),
                   List.of(tempDir),
-                  WorkspaceManifest.empty()));
+                  LibrarySources.none()));
     }
 
     try (var candidateSession =
@@ -115,7 +114,7 @@ class MethodImplementationTest {
               0,
               new Position(9999, 0),
               List.of(tempDir),
-              WorkspaceManifest.empty());
+              LibrarySources.none());
       assertThat(session.resolveTarget(request)).isNull();
     }
   }
@@ -401,6 +400,6 @@ class MethodImplementationTest {
 
   private SourceFeatureRequest samRequest(final String content, final Position pos) {
     return new SourceFeatureRequest(
-        TempSourceCompiler.TEST_URI, content, 0, pos, List.of(tempDir), WorkspaceManifest.empty());
+        TempSourceCompiler.TEST_URI, content, 0, pos, List.of(tempDir), LibrarySources.none());
   }
 }

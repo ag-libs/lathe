@@ -11,7 +11,6 @@ import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.analysis.completion.CompletionRequest;
-import io.github.aglibs.lathe.server.run.RunTarget;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
@@ -466,7 +465,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
             .locate(element, cur.analysis().trees(), allRoots)
             .map(JavadocMarkdownPrinter::format)
             .orElse(null);
-    final var origin = request.manifest().originLabel(element, compiler.fileManager()).orElse(null);
+    final var origin =
+        request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
     final var fmt = new TypeDisplayFormatter(cur.analysis().types());
     final List<String> sourceParamNames =
         element instanceof ExecutableElement exe ? parser.resolveParamNames(exe, allRoots) : null;
@@ -481,7 +481,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   private static List<Path> allRoots(final SourceFeatureRequest request) {
     return Stream.concat(
-            request.sourceRoots().stream(), request.manifest().externalSourceDirs().stream())
+            request.sourceRoots().stream(), request.libraries().externalSourceDirs().stream())
         .toList();
   }
 
@@ -816,7 +816,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     if (result.isEmpty()) {
       result =
           request
-              .manifest()
+              .libraries()
               .externalSourceRoot(element, compiler.fileManager())
               .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
               .flatMap(
@@ -1109,8 +1109,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
     return Stream.of(
             request.sourceRoots().stream(),
-            request.manifest().depSourceDirs().stream(),
-            request.manifest().jdkModuleSourceDirs().stream())
+            request.libraries().depSourceDirs().stream(),
+            request.libraries().jdkModuleSourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
   }

@@ -235,7 +235,7 @@ class WorkspaceSymbolTest {
   void resolveSourcePath_jdkModuleSubdir_resolvesInsideModuleDir(@TempDir final Path jdkRoot)
       throws IOException {
     // JDK sources are organized by module: <jdkRoot>/<module>/<package>/<Type>.java
-    // WorkspaceManifest.jdkModuleSourceDirs() expands jdkRoot into its immediate module subdirs,
+    // LibrarySources.jdkModuleSourceDirs() expands jdkRoot into its immediate module subdirs,
     // so resolveSourcePath receives each module dir (e.g. java.base/) as a separate source root
     final Path moduleDir = jdkRoot.resolve("java.base/java/util");
     Files.createDirectories(moduleDir);

@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server.run;
+package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import org.eclipse.lsp4j.Range;

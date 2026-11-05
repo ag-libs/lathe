@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
@@ -186,6 +185,6 @@ class CallHierarchyIncomingLocatorTest {
         0,
         position,
         List.of(sourceRoot),
-        WorkspaceManifest.empty());
+        LibrarySources.none());
   }
 }

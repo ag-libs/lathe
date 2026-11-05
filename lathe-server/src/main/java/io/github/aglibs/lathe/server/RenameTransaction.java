@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheUri;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;

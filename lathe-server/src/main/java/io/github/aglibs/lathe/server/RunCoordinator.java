@@ -5,6 +5,7 @@ import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
@@ -401,8 +402,8 @@ final class RunCoordinator {
     final List<Path> debugSourceRoots =
         Stream.of(
                 state.registry().allSourceRoots(),
-                state.manifest().depSourceDirs(),
-                state.manifest().jdkModuleSourceDirs())
+                state.manifest().libraries().depSourceDirs(),
+                state.manifest().libraries().jdkModuleSourceDirs())
             .flatMap(List::stream)
             .toList();
     final DapHost host;

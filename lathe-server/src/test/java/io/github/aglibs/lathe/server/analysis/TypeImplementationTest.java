@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -65,7 +64,7 @@ class TypeImplementationTest {
 
   private SourceFeatureRequest request(final String content, final Position position) {
     return new SourceFeatureRequest(
-        "file:///Test.java", content, 0, position, List.of(sourceRoot), WorkspaceManifest.empty());
+        "file:///Test.java", content, 0, position, List.of(sourceRoot), LibrarySources.none());
   }
 
   private void write(final String name, final String content) throws IOException {

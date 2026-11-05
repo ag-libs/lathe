@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;

@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server.analysis;
 import static io.github.aglibs.lathe.server.analysis.SampleFixture.posOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -509,6 +508,6 @@ class RenameProviderTest {
 
   private static SourceFeatureRequest requestAt(final String source, final Position pos) {
     return new SourceFeatureRequest(
-        TempSourceCompiler.TEST_URI, source, 1, pos, List.of(), WorkspaceManifest.empty());
+        TempSourceCompiler.TEST_URI, source, 1, pos, List.of(), LibrarySources.none());
   }
 }

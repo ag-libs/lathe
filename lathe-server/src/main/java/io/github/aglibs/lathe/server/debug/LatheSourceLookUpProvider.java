@@ -5,7 +5,7 @@ import com.microsoft.java.debug.core.adapter.ISourceLookUpProvider;
 import com.microsoft.java.debug.core.adapter.Source;
 import com.microsoft.java.debug.core.adapter.SourceType;
 import com.microsoft.java.debug.core.protocol.Types;
-import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.io.IOException;

@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server.module;
 
 import io.github.aglibs.lathe.core.FileUtil;
-import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.server.analysis.CompileMode;
 import io.github.aglibs.lathe.server.analysis.CompilerResult;
 import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
+import io.github.aglibs.lathe.server.analysis.LibrarySources;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -26,7 +26,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
 
   private static final Logger LOG = Logger.getLogger(ExternalCompiler.class.getName());
 
-  private final WorkspaceManifest manifest;
+  private final LibrarySources libraries;
 
   private final StandardJavaFileManager fm;
   private final JavacRunner runner;
@@ -34,8 +34,8 @@ public final class ExternalCompiler implements JavaSourceCompiler {
   private final Set<String> patchedModules = new HashSet<>();
 
   ExternalCompiler(
-      final WorkspaceManifest manifest, final CompilationAdmission compilationAdmission) {
-    this.manifest = manifest;
+      final LibrarySources libraries, final CompilationAdmission compilationAdmission) {
+    this.libraries = libraries;
     try {
       this.fm = JavaSourceCompiler.createFileManager();
       this.runner = new JavacRunner(fm, compilationAdmission, LombokProcessors.none());
@@ -62,7 +62,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
       final CompileMode mode,
       final CancelChecker cancelChecker) {
     final var filePath = LatheUri.toPath(uri);
-    final var sourceRoot = manifest.externalSourceRootForFile(filePath);
+    final var sourceRoot = libraries.externalSourceRootForFile(filePath);
     if (sourceRoot.isEmpty()) {
       LOG.fine(() -> "[external] no source root for %s — skipping".formatted(uri));
       return new CompilerResult(
@@ -72,7 +72,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
     try {
       final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot.get(), filePath, content);
 
-      final var classpath = manifest.depClasspathForFile(filePath);
+      final var classpath = libraries.depClasspathForFile(filePath);
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
 
       final JavaFileObject jfo = fm.getJavaFileObjects(tempFile).iterator().next();
@@ -86,7 +86,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
   private List<String> buildOptions(final Path filePath) {
     final var options = new ArrayList<String>();
     options.add("-proc:none");
-    manifest
+    libraries
         .jdkModuleForFile(filePath)
         .filter(patchedModules::add)
         .ifPresent(

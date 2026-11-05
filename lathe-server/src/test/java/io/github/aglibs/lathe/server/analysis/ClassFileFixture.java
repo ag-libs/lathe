@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.analysis;
 
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,12 +65,7 @@ final class ClassFileFixture implements AutoCloseable {
     final var pos = SourceLocator.offsetToPosition(source, markerOffset);
     final var request =
         new SourceFeatureRequest(
-            TempSourceCompiler.TEST_URI,
-            source,
-            0,
-            pos,
-            List.of(srcDir),
-            WorkspaceManifest.empty());
+            TempSourceCompiler.TEST_URI, source, 0, pos, List.of(srcDir), LibrarySources.none());
     return session.signatureHelp(request);
   }
 

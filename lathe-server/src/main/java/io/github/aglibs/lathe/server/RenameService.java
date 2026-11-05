@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.server.analysis.ReferenceMatch;

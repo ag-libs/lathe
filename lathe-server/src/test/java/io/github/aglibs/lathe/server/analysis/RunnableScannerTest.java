@@ -4,8 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.run.RunTarget;
-import io.github.aglibs.lathe.server.run.RunnableKind;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

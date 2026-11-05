@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.server.analysis;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -99,6 +98,6 @@ class CallHierarchyPrepareTest {
         0,
         position,
         List.of(sourceRoot),
-        WorkspaceManifest.empty());
+        LibrarySources.none());
   }
 }

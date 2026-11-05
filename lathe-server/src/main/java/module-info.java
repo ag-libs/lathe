@@ -30,8 +30,9 @@ module io.github.aglibs.lathe.server {
   // JDI (com.sun.jdi) backs the virtual-machine-manager provider's attach connector.
   requires jdk.jdi;
 
-  // RunTarget/LaunchOutcome cross the JSON-RPC boundary as raw records, serialized reflectively
-  // by lsp4j's Gson layer -- without this, Gson can't call setAccessible on their accessors.
+  // LaunchOutcome and its records cross the JSON-RPC boundary as raw records, serialized
+  // reflectively by lsp4j's Gson layer -- without this, Gson can't call setAccessible on their
+  // accessors.
   opens io.github.aglibs.lathe.server.run to
       com.google.gson;
 
@@ -41,8 +42,8 @@ module io.github.aglibs.lathe.server {
   opens io.github.aglibs.lathe.server to
       com.google.gson;
 
-  // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) crosses the JSON-RPC
-  // boundary as a raw record; Gson reflects on its accessors.
+  // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) and RunTarget cross the
+  // JSON-RPC boundary as raw records; Gson reflects on their accessors.
   opens io.github.aglibs.lathe.server.analysis to
       com.google.gson;
 
