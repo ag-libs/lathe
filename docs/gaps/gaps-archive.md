@@ -9573,6 +9573,49 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-28 — On Gradle, a first sync whose test tasks fail leaves the workspace empty or stale — done
+
+**Status: done.**
+
+**Value: high — Size: S–M**
+
+**Affects: the editor and MCP on a Gradle build whose capture-only test run fails.**
+
+Found by the end-to-end Gradle check (2026-11-04): Lathe 0.3.0 as released, the plugin from a local repository standing in for the Gradle Plugin Portal, applied with the guide's personal init script and first-run command `./gradlew latheSync -Plathe.capture.only=true`.
+
+### Observed behaviour
+
+On Caffeine, the guide's first-run command fails: Caffeine's build rejects a test run in which tests are skipped ("Do not skip tests"), and capture-only mode reports every test skipped, so the `test` task of `caffeine`, `guava`, `jcache` and `simulator` fails.
+Each module's `latheFacts` depends on that test task, so Gradle skips it; `latheWorkspace`, a finalizer, still runs and merges whatever `lathe-facts.json` files are already there.
+On a first sync there are none: `workspace.json` lists no modules, no libraries and no test runner, so Lathe does nothing for that project, and only the failed build hints at why.
+On a workspace synced before, the old facts are merged instead: here a `runnerClasspath` naming a `0.1.0-SNAPSHOT` runner jar from a deleted build, so every test run failed with `ClassNotFoundException: io.github.aglibs.lathe.runner.LatheTestRunner`.
+A plain `./gradlew latheSync` works (all four modules, the 0.3.0 runner, 13 s) but captures no test launch.
+
+### Fix direction
+
+A failed test task must not keep a module out of the workspace: `latheFacts` should not depend on the test task succeeding, or `latheWorkspace` should refuse to merge facts that are missing or older than this build and say so.
+The Gradle guide should mention builds that reject skipped tests, as the Maven guide does for `failIfNoTests`, with plain `latheSync` as the first step there.
+
+### Resolution
+
+As on Maven, where the sync runs before the test phase, a capture-only sync now writes the workspace before any test
+runs.
+`latheFacts` no longer depends on the test task: the test task finalizes it, so the sync still starts it, and runs
+after it and after the root's `latheWorkspace`, so every project's facts and the merged workspace are written before
+the first test task starts.
+A failing test task fails the build, but cannot keep a project out of the workspace.
+Under Isolated Projects on Gradle 8, where a project may not name the root's task, a test task waits for its own
+project's facts only.
+On Caffeine a fresh capture-only sync now lists all four modules and the runner, and captures `simulator`'s launch;
+`caffeine`, `guava` and `jcache` test on Java 11, which Lathe warns it does not capture.
+The Gradle guide says what a build that rejects skipped tests does, and that `--continue` captures every project.
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.captureOnlySync_testTaskFails_stillWritesTheWorkspaceAndCaptures`.
+
+---
+
 ## WS-20 — A class added outside the editor takes about 8 s to resolve in an open file — done
 
 **Status: done.**

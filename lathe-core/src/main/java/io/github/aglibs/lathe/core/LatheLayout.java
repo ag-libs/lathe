@@ -236,6 +236,9 @@ public final class LatheLayout {
     // The task the sync script runs, and its argument that captures the tests without running them.
     public static final String SYNC_TASK = "latheSync";
     public static final String CAPTURE_ONLY_ARG = "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY);
+    // The editor's sync with tests goes on past a failed task: Gradle starts no new task after a
+    // failure, so a build that rejects skipped tests would capture only its first test task.
+    public static final String CONTINUE_ARG = "--continue";
     // A project's first run, for the setup message: it writes .lathe/ without running the tests.
     public static final String FIRST_BUILD_COMMAND =
         "./gradlew %s %s".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);

@@ -96,6 +96,11 @@ latheSync --module app                   # one project (its directory), and what
 
 `latheSync` compiles what is out of date and writes the workspace files; with `-Plathe.capture.only=true` it also
 starts each test task with every test skipped, which is all capture needs.
+The test tasks start only after every project's workspace files are written, so a build that rejects skipped tests
+(a test listener that fails the task, as Caffeine's does) fails the sync, but the workspace is complete,
+and the launch of each test task that ran is captured.
+Gradle starts no other task after the first failure, so the editor's sync with tests adds `--continue` to capture
+every project's test launch; add it yourself when you run the command by hand.
 It does not replay the `-P` or `-D` properties you passed on the command line: put a property every build needs
 in `gradle.properties`.
 

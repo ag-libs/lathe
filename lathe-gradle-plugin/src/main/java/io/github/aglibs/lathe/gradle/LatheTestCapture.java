@@ -42,7 +42,8 @@ final class LatheTestCapture {
       final TaskProvider<LatheFactsTask> facts,
       final SourceSet test,
       final Path moduleDir,
-      final boolean captureOnly) {
+      final boolean captureOnly,
+      final boolean crossProject) {
     final Configuration junit =
         LatheProjectPlugin.resolvable(
             project, LATHE_JUNIT, ServerInstaller.JUNIT_CAPTURE_COORDINATES);
@@ -77,10 +78,21 @@ final class LatheTestCapture {
                     captureOnly(task, agentJar);
                   }
                 });
+    // Every project's facts and the workspace come first and the tests follow, as on Maven, where
+    // the sync runs before the test phase: Gradle starts no new task after a failure, so a failing
+    // test task (a build that rejects skipped tests) would leave the workspace unwritten. Where a
+    // project may not name another's task, only its own facts come first.
     if (captureOnly) {
+      testTask.configure(
+          task -> {
+            task.mustRunAfter(facts);
+            if (crossProject) {
+              task.mustRunAfter(LatheProjectPlugin.ROOT_PATH + LatheProjectPlugin.WORKSPACE_TASK);
+            }
+          });
       facts.configure(
           task -> {
-            task.dependsOn(testTask);
+            task.finalizedBy(testTask);
             // Runs every capture-only sync, which is when a test task too old to capture warns.
             task.getOutputs().upToDateWhen(ignored -> false);
             task.getTestTask().set(testTask.map(Task::getPath));
@@ -111,8 +123,7 @@ final class LatheTestCapture {
   }
 
   // Without lathe-junit the filter that skips the tests is missing too, and a capture-only run
-  // would
-  // run every test while capturing nothing: the task is skipped instead, and says why.
+  // would run every test while capturing nothing: the task is skipped instead, and says why.
   private static boolean agentInPlace(final Task test, final File agentJar) {
     if (agentJar.isFile()) {
       return true;

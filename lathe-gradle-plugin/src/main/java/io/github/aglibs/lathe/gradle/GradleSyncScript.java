@@ -21,7 +21,10 @@ final class GradleSyncScript {
         javaHome,
         initScripts.stream().flatMap(script -> Stream.of("--init-script", script)).toList(),
         List.of(LatheLayout.Gradle.SYNC_TASK),
-        List.of(LatheLayout.Gradle.SYNC_TASK, LatheLayout.Gradle.CAPTURE_ONLY_ARG),
+        List.of(
+            LatheLayout.Gradle.SYNC_TASK,
+            LatheLayout.Gradle.CAPTURE_ONLY_ARG,
+            LatheLayout.Gradle.CONTINUE_ARG),
         List.of("--" + LatheSyncTask.MODULE_OPTION, LatheFlags.SYNC_MODULE_TOKEN),
         List.of());
   }

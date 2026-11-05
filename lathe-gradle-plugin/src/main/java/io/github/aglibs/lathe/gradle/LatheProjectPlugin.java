@@ -117,9 +117,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
   }
 
   private void triggerWorkspace(final Project project, final TaskProvider<LatheFactsTask> facts) {
-    final boolean isolated = features.getIsolatedProjects().getActive().getOrElse(false);
-    if (!isolated
-        || GradleVersion.current().getBaseVersion().compareTo(CROSS_PROJECT_TRIGGER) >= 0) {
+    if (crossProjectAllowed()) {
       facts.configure(task -> task.finalizedBy(ROOT_PATH + WORKSPACE_TASK));
       return;
     }
@@ -130,6 +128,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
           .matching(task -> ROOT_LIFECYCLE.contains(task.getName()))
           .configureEach(task -> task.finalizedBy(WORKSPACE_TASK));
     }
+  }
+
+  private boolean crossProjectAllowed() {
+    return !features.getIsolatedProjects().getActive().getOrElse(false)
+        || GradleVersion.current().getBaseVersion().compareTo(CROSS_PROJECT_TRIGGER) >= 0;
   }
 
   // The root's workspace write and sync: the sync builds every other project's facts through a
@@ -291,8 +294,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
             });
   }
 
-  private static void registerJava(
-      final Project project, final TaskProvider<LatheFactsTask> facts) {
+  private void registerJava(final Project project, final TaskProvider<LatheFactsTask> facts) {
     final var rootDir = project.getRootDir().toPath();
     final Path moduleDir = rootDir.resolve(LatheLayout.moduleDir(module(project)));
     final SourceSetContainer sourceSets =
@@ -323,7 +325,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
             .getProviders()
             .gradleProperty(LatheFlags.CAPTURE_ONLY)
             .map("true"::equals)
-            .getOrElse(false));
+            .getOrElse(false),
+        crossProjectAllowed());
     registerLibraries(project, facts, main, test);
     final TaskProvider<LatheMainLaunchTask> mainLaunch = registerMainLaunch(project, main);
     facts.configure(task -> task.dependsOn(mainLaunch));

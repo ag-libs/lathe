@@ -176,9 +176,9 @@ final class GradleFixture {
         .withArguments(Stream.concat(Stream.of(LATHE_CACHE), Stream.of(args)).toList());
   }
 
-  // The fixture builds run as on a developer's machine, without the CI variable that keeps Lathe
-  // out
-  // of a CI build (Lathe's own CI build keeps it set). A test about CI passes its own environment.
+  // The fixture builds run as on a developer's machine, without the CI variable that keeps
+  // Lathe out of a CI build (Lathe's own CI build keeps it set). A test about CI passes its own
+  // environment.
   private static Map<String, String> outsideCi() {
     final var env = new HashMap<>(System.getenv());
     env.remove(LatheFlags.CI_ENV);
