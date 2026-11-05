@@ -164,9 +164,11 @@ jobs:
         with:
           java: ${{ matrix.java }}
 
+      # From Maven Central, which publishes every Maven distribution behind a CDN: archive.apache.org
+      # is a single host that times out under load and failed the invoker jobs.
       - name: Download Maven ${{ matrix.maven }} for the fixture builds
         run: |
-          curl -fsSL "https://archive.apache.org/dist/maven/maven-3/${{ matrix.maven }}/binaries/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
+          curl -fsSL --retry 3 "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${{ matrix.maven }}/apache-maven-${{ matrix.maven }}-bin.tar.gz" \
             | tar xz -C "$RUNNER_TEMP"
 
       - name: Invoker suite
