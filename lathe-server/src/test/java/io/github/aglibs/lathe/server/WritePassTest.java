@@ -117,7 +117,7 @@ class WritePassTest extends ServiceTestBase {
     assertThat(
             service
                 .onLoop(session -> session.notes(List.of()))
-                .get(5, TimeUnit.SECONDS)
+                .get(TIMEOUT_S, TimeUnit.SECONDS)
                 .notCompiled())
         .as("the broken file stays recorded though the rest of its tree was written after it")
         .singleElement()
@@ -315,7 +315,7 @@ class WritePassTest extends ServiceTestBase {
     writeFoo(CHANGED_FOO, 5_000L); // changed since its stamp → stale
 
     // A single eager pass compiles it (no two-tick wait), advancing the stamp to the source mtime.
-    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+    service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
   }
@@ -336,7 +336,7 @@ class WritePassTest extends ServiceTestBase {
         shape, "package shapes; sealed interface Shape permits Circle, Square {}", 5_000L);
     TestCompiler.writeAt(square, "package shapes; final class Square implements Shape {}", 5_000L);
 
-    service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+    service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(classesDir.resolve("shapes/Square.class")).exists();
     assertThat(moduleStamps())
@@ -430,7 +430,7 @@ class WritePassTest extends ServiceTestBase {
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
 
     Files.delete(fx.dep());
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     verify(client, timeout(5_000))
         .publishDiagnostics(
@@ -451,8 +451,8 @@ class WritePassTest extends ServiceTestBase {
     writeFoo(CHANGED_FOO, 5_000L); // now stale
 
     // First pass records the change as pending (two-tick stability); the second recompiles it.
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     // Recompiled in-process (its stamp advanced to the source's mtime) and not prompted for Maven.
     assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
@@ -482,7 +482,7 @@ class WritePassTest extends ServiceTestBase {
       assertThatThrownBy(() -> pass.get(300, TimeUnit.MILLISECONDS))
           .as("waits while the other server writes")
           .isInstanceOf(TimeoutException.class);
-      assertThat(service.reconcileForVerify().get(5, TimeUnit.SECONDS).deferral())
+      assertThat(service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
           .as("a query answers after the grace, not after the other server's pass")
           .isEqualTo(ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING);
       assertThat(pass).isNotDone();
@@ -516,7 +516,7 @@ class WritePassTest extends ServiceTestBase {
     Files.writeString(
         added,
         "package com.other;\nclass Added { int a() { return new com.example.Dep().v(); } }\n");
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(referencingFiles(fx.dep(), dep)).contains(added).doesNotContain(user);
   }
@@ -567,7 +567,7 @@ class WritePassTest extends ServiceTestBase {
   private void assertPassCompiles(final boolean compiles, final long stampedMtime)
       throws Exception {
     try (final var compileLog = new CompileLog(tmp)) {
-      service.reconcileNow(true).get(5, TimeUnit.SECONDS);
+      service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
       assertThat(writes(compileLog)).as("compiled at %d", stampedMtime).hasSize(compiles ? 1 : 0);
     }
 
@@ -585,8 +585,8 @@ class WritePassTest extends ServiceTestBase {
         "package com.example; class Foo { Missing field; }",
         5_000L);
 
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     // A failed compile must not stamp the source fresh: it stays stale so a later batch retries it
     // once its dependency lands, instead of leaving a stale mirror class marked up to date.
@@ -625,7 +625,7 @@ class WritePassTest extends ServiceTestBase {
     assertThat(goneCopy).exists();
 
     Files.delete(gone);
-    service.reconcileNow().get(5, TimeUnit.SECONDS);
+    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(goneCopy).doesNotExist();
     assertThat(tmp.resolve(".lathe/app/classes/kept.conf")).hasContent("kept");

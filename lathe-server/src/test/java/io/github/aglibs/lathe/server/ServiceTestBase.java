@@ -42,6 +42,8 @@ import org.junit.jupiter.api.io.TempDir;
 abstract class ServiceTestBase {
 
   protected static final long DEBOUNCE_MS = 50;
+  // How long a test waits for the server's answer: a deadline for a busy machine, not a delay.
+  protected static final long TIMEOUT_S = 5;
 
   protected LanguageClient client;
   protected LatheTextDocumentService service;
@@ -101,13 +103,13 @@ abstract class ServiceTestBase {
   protected void awaitWorkerIdle() throws Exception {
     final var params = new FoldingRangeRequestParams();
     params.setTextDocument(new TextDocumentIdentifier("file:///nonexistent.java"));
-    service.foldingRange(params).get(5, TimeUnit.SECONDS);
+    service.foldingRange(params).get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // A reconcile pass runs after initialize on the event loop, so startup reconciliation is finished
   // before the test mutates sources.
   protected void awaitStartup() throws Exception {
-    service.reconcileNow(false).get(5, TimeUnit.SECONDS);
+    service.reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // Dep plus userCount callers of Dep.v(), compiled into the mirror and stamped, so the workspace

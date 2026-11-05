@@ -44,8 +44,6 @@ import org.junit.jupiter.api.Test;
 
 class LatheWorkspaceServiceTest extends ServiceTestBase {
 
-  private static final long TIMEOUT_S = 5;
-
   private LatheWorkspaceService workspace;
 
   @BeforeEach
@@ -57,7 +55,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   void executeCommand_unknownCommand_completesWithNull() throws Exception {
     final var params = new ExecuteCommandParams("lathe.unknown", List.of());
 
-    final var result = workspace.executeCommand(params).get(5, TimeUnit.SECONDS);
+    final var result = workspace.executeCommand(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(result).isNull();
   }
@@ -66,11 +64,10 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   void executeCommand_createTypeInvalidArgs_returnInvalidParamsWithReason() throws Exception {
     openShop();
     // Async: a name rejected inside the server surfaces its reason, not lsp4j's "Internal error".
-    assertInvalidParams(
-        responseError(workspace, "main", "class", "9Bad"), "not a valid Java type name");
+    assertInvalidParams(createTypeError("main", "class", "9Bad"), "not a valid Java type name");
 
     // Sync: an unknown scope rejected while parsing the command arguments.
-    assertInvalidParams(responseError(workspace, "bogus", "class", "Foo"), "unknown source scope");
+    assertInvalidParams(createTypeError("bogus", "class", "Foo"), "unknown source scope");
   }
 
   private static void assertInvalidParams(final ResponseError error, final String reason) {
@@ -78,27 +75,11 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(error.getMessage()).contains(reason);
   }
 
-  private static ResponseError responseError(
-      final LatheWorkspaceService svc, final String kind, final String type, final String name) {
-    final var params =
-        new ExecuteCommandParams("lathe.createType", List.of(createTypeArgument(kind, type, name)));
-    Throwable cause = catchThrowable(() -> svc.executeCommand(params).get(5, TimeUnit.SECONDS));
-    while (cause != null && !(cause instanceof ResponseErrorException)) {
-      cause = cause.getCause();
-    }
-    assertThat(cause).isInstanceOf(ResponseErrorException.class);
-    return ((ResponseErrorException) cause).getResponseError();
-  }
-
-  private static JsonObject createTypeArgument(
-      final String kind, final String type, final String name) {
-    final var json = new JsonObject();
-    json.addProperty("moduleRel", "module");
-    json.addProperty("kind", kind);
-    json.addProperty("pkg", "com.example");
-    json.addProperty("type", type);
-    json.addProperty("name", name);
-    return json;
+  private ResponseError createTypeError(final String kind, final String type, final String name) {
+    return commandError(
+        LatheWorkspaceService.CREATE_TYPE_COMMAND,
+        json(
+            "moduleRel", "module", "kind", kind, "pkg", "com.example", "type", type, "name", name));
   }
 
   @Test
@@ -108,7 +89,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     argument.addProperty("token", "no-such-token");
     final var params = new ExecuteCommandParams("lathe.run.cancel", List.of(argument));
 
-    final var result = workspace.executeCommand(params).get(5, TimeUnit.SECONDS);
+    final var result = workspace.executeCommand(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(result).isNull();
   }
@@ -126,7 +107,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     argument.add("selections", selections);
     final var params = new ExecuteCommandParams("lathe.run.test", List.of(argument));
 
-    final var result = workspace.executeCommand(params).get(5, TimeUnit.SECONDS);
+    final var result = workspace.executeCommand(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(result).isInstanceOf(LaunchOutcome.class);
     final var outcome = (LaunchOutcome) result;
@@ -140,7 +121,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     final String uri = source.toUri().toString();
     openDoc(source, Files.readString(source));
 
-    final Object result = listRunnables(uri).get(5, TimeUnit.SECONDS);
+    final Object result = listRunnables(uri).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(result).isInstanceOf(List.class);
     @SuppressWarnings("unchecked")
@@ -161,7 +142,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
     // Not opened: only an open document has editor content to analyze. The neotest client discovers
     // against the server-confirmed open, so a miss answers empty rather than compiling from disk.
-    final Object result = listRunnables(uri).get(5, TimeUnit.SECONDS);
+    final Object result = listRunnables(uri).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(result).isInstanceOf(List.class);
     assertThat((List<?>) result).isEmpty();
@@ -198,7 +179,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   // The commands the editor's pickers and test tree use, answered from the workspace layout.
   @Test
-  void projectCommands_shopWorkspace_answerFromTheModulesAndTheirTrees() throws Exception {
+  void executeCommand_projectCommands_answerFromTheModulesAndTheirTrees() throws Exception {
     final ShopFixture shop = openShop();
 
     assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("module"));
@@ -236,9 +217,8 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
             command(
                 LatheWorkspaceService.TEST_COUNTERPARTS_COMMAND,
                 json("uri", shop.shop().toUri().toString())))
-        .asInstanceOf(InstanceOfAssertFactories.type(TestCounterparts.class))
-        .extracting(TestCounterparts::fromTest)
-        .isEqualTo(false);
+        .as("a main file with no test yet")
+        .isEqualTo(new TestCounterparts(false, List.of()));
 
     assertThat(command(LatheWorkspaceService.RESOURCES_COMMAND)).isEqualTo(List.of());
     final var manifest =
@@ -260,7 +240,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   }
 
   @Test
-  void codeCommands_onTheShop_instantiationsHierarchyAndImports() throws Exception {
+  void executeCommand_codeCommandsOnTheShop_instantiationsHierarchyAndImports() throws Exception {
     final ShopFixture shop = openShop();
     openDoc(shop.shop(), Files.readString(shop.shop()));
     final Path buyer =
@@ -298,7 +278,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   // A saved configuration is listed and runs by name; a name nothing saved is refused with the
   // reason. Nothing launches: the workspace has no runner, so a run says what blocks it.
   @Test
-  void runCommands_savedConfigAndUnknownName_listedOrRefused_aRunSaysWhatBlocksIt()
+  void executeCommand_runConfigsAndRuns_savedListed_unknownRefused_runSaysWhatBlocksIt()
       throws Exception {
     openShop();
 
@@ -324,7 +304,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     for (final String unknown :
         List.of(
             LatheWorkspaceService.RUN_NAMED_COMMAND, LatheWorkspaceService.DEBUG_NAMED_COMMAND)) {
-      assertInvalidParams(commandError(unknown, json("name", "missing")), "missing");
+      assertInvalidParams(commandError(unknown, json("name", "nosuchconfig")), "nosuchconfig");
     }
 
     final var outcome =
@@ -333,13 +313,13 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                 LatheWorkspaceService.RUN_MAIN_COMMAND,
                 json("moduleRel", "module", "mainClass", "com.example.Use"));
     assertThat(outcome.launched()).isFalse();
-    assertThat(outcome.blockedReasons()).isNotEmpty();
+    assertThat(outcome.blockedReasons()).containsExactly("no derived main-launch.json for module");
   }
 
   // A build-file edit prompts once; Later only dismisses it, and the next edit prompts again,
   // where the answer asks the client to sync.
   @Test
-  void syncPrompt_buildFileEdited_promptsAndSyncsOnlyWhenAsked() throws Exception {
+  void reconcileForVerify_buildFileEdited_promptsAndSyncsOnlyWhenAsked() throws Exception {
     final Path pom = Files.writeString(tmp.resolve("pom.xml"), "<project/>");
     TestCompiler.recordBuildFiles(tmp, List.of(pom));
     when(client.showMessageRequest(any()))
@@ -363,7 +343,8 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   // A sync that rewrites workspace.json reloads it: a module the sync added is there at once.
   @Test
-  void reload_workspaceJsonRewritten_loadsTheNewModuleAndSaysSo() throws Exception {
+  void reconcileForVerify_workspaceJsonRewritten_reloadsWithTheNewModuleAndSaysSo()
+      throws Exception {
     openShop();
     assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("module"));
 
