@@ -14,6 +14,7 @@ module io.github.aglibs.lathe.server {
   // Reads an Eclipse formatter profile (an XML export) for the pinned Eclipse formatter.
   requires java.xml;
   requires io.github.aglibs.lathe.core;
+  requires io.github.aglibs.lathe.analysis;
   requires io.github.aglibs.validcheck;
 
   // Lombok's processors are found the way javac finds them, through the service file of its jar.
@@ -40,11 +41,6 @@ module io.github.aglibs.lathe.server {
   opens io.github.aglibs.lathe.server.debug to
       com.google.gson;
   opens io.github.aglibs.lathe.server to
-      com.google.gson;
-
-  // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) and RunTarget cross the
-  // JSON-RPC boundary as raw records; Gson reflects on their accessors.
-  opens io.github.aglibs.lathe.server.analysis to
       com.google.gson;
 
   // LatheLanguageClient is our custom JSON-RPC remote interface; lsp4j.jsonrpc reflects on its

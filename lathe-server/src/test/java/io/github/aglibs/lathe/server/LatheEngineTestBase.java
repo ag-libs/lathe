@@ -1,10 +1,10 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.engine.LatheRename;
 import java.nio.file.Files;
 import java.nio.file.Path;

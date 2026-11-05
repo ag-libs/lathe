@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server.debug;
 
 import com.sun.jdi.AbsentInformationException;
 import com.sun.jdi.Location;
-import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
+import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.nio.file.Files;
 import java.nio.file.Path;

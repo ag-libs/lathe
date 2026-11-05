@@ -1,14 +1,14 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
+import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.RunKind;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.RunTarget;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
-import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;

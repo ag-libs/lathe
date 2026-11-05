@@ -13,7 +13,7 @@ import com.sun.jdi.ReferenceType;
 import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.analysis.AttributedExpression;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;

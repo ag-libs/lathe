@@ -40,7 +40,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.analysis.AttributedExpression;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;

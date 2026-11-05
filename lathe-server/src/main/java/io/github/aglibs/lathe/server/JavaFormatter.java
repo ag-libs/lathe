@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;

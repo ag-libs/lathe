@@ -1,14 +1,14 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceRole;
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.RenameBindingCheck;
+import io.github.aglibs.lathe.analysis.RenameProvider;
+import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
-import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.server.analysis.ReferenceRole;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
-import io.github.aglibs.lathe.server.analysis.RenameProvider;
-import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;

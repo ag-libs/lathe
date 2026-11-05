@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.engine;
 
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 

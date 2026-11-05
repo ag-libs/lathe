@@ -1,16 +1,16 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.RenameProvider;
+import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
-import io.github.aglibs.lathe.server.analysis.RenameProvider;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;

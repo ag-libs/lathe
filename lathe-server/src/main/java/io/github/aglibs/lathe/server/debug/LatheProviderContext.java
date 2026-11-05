@@ -6,7 +6,7 @@ import com.microsoft.java.debug.core.adapter.IHotCodeReplaceProvider;
 import com.microsoft.java.debug.core.adapter.ISourceLookUpProvider;
 import com.microsoft.java.debug.core.adapter.IVirtualMachineManagerProvider;
 import com.microsoft.java.debug.core.adapter.ProviderContext;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import java.nio.file.Path;
 import java.util.List;

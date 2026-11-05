@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
-import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import java.util.List;
 import java.util.logging.Logger;

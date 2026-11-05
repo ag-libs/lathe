@@ -1,0 +1,119 @@
+package io.github.aglibs.lathe.analysis.completion;
+
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ImportAnalyzer;
+import io.github.aglibs.lathe.analysis.ImportLayout;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
+import org.eclipse.lsp4j.CompletionItemLabelDetails;
+import org.eclipse.lsp4j.InsertTextFormat;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
+
+final class CompletionItemPresenter {
+
+  private CompletionItemPresenter() {}
+
+  static CompletionItem present(final RankedCompletionCandidate ranked) {
+    final var item = present(ranked.candidate());
+    item.setSortText(ranked.sortText());
+    return item;
+  }
+
+  static CompletionItem present(final CompletionCandidate candidate) {
+    final var item = new CompletionItem();
+    item.setLabel(candidate.label());
+    item.setInsertText(candidate.insertText());
+    item.setFilterText(candidate.name());
+    item.setDetail(candidate.detail());
+    item.setSortText(candidate.sortText());
+    item.setKind(kindFor(candidate.kind()));
+    applyLabelDetails(candidate, item);
+    if (candidate.snippet()) {
+      item.setInsertTextFormat(InsertTextFormat.Snippet);
+    }
+
+    return item;
+  }
+
+  private static void applyLabelDetails(
+      final CompletionCandidate candidate, final CompletionItem item) {
+    if (candidate.labelDetail() == null && candidate.labelDescription() == null) {
+      return;
+    }
+
+    final var labelDetails = new CompletionItemLabelDetails();
+    labelDetails.setDetail(candidate.labelDetail());
+    labelDetails.setDescription(candidate.labelDescription());
+    item.setLabelDetails(labelDetails);
+  }
+
+  static void applyImportEdits(
+      final List<CompletionCandidate> candidates,
+      final List<CompletionItem> items,
+      final AttributedFileAnalysis analysis) {
+    final var importAnalyzer = new ImportAnalyzer(analysis);
+    final Optional<ImportLayout> layout = importAnalyzer.layout();
+    if (layout.isEmpty()) {
+      return;
+    }
+
+    final var alreadyImported = importAnalyzer.importedQualifiedNames();
+    final var alreadyStaticImported = importAnalyzer.importedStaticNames();
+    for (int i = 0; i < candidates.size(); i++) {
+      final ImportEdit edit = candidates.get(i).importEdit();
+      if (edit == null) {
+        continue;
+      }
+
+      final var existing = edit.isStatic() ? alreadyStaticImported : alreadyImported;
+      if (existing.contains(edit.qualifiedName())) {
+        continue;
+      }
+
+      final String spelling = ImportLayout.spelling(edit.qualifiedName(), edit.isStatic());
+      items.get(i).setAdditionalTextEdits(List.of(layout.get().edit(spelling)));
+    }
+  }
+
+  static void addAdditionalTextEdit(final CompletionItem item, final TextEdit edit) {
+    final var existing = item.getAdditionalTextEdits();
+    if (existing != null
+        && existing.stream().anyMatch(e -> e.getNewText().equals(edit.getNewText()))) {
+      return;
+    }
+
+    item.setAdditionalTextEdits(
+        existing == null
+            ? List.of(edit)
+            : Stream.concat(existing.stream(), Stream.of(edit)).toList());
+  }
+
+  static void applyReplacementRange(final List<CompletionItem> items, final Range range) {
+    items.forEach(
+        item -> {
+          final var newText = item.getInsertText() != null ? item.getInsertText() : item.getLabel();
+          item.setTextEdit(Either.forLeft(new TextEdit(range, newText)));
+        });
+  }
+
+  private static CompletionItemKind kindFor(final CandidateKind kind) {
+    return switch (kind) {
+      case KEYWORD -> CompletionItemKind.Keyword;
+      case LOCAL_VARIABLE -> CompletionItemKind.Variable;
+      case FIELD -> CompletionItemKind.Field;
+      case PROPERTY -> CompletionItemKind.Property;
+      case METHOD -> CompletionItemKind.Method;
+      // A `::` reference is not a call; the Reference kind keeps clients from auto-appending `()`.
+      case METHOD_REFERENCE -> CompletionItemKind.Reference;
+      case PACKAGE -> CompletionItemKind.Module;
+      case TYPE_CLASS -> CompletionItemKind.Class;
+      case TYPE_INTERFACE -> CompletionItemKind.Interface;
+      case TYPE_ENUM -> CompletionItemKind.Enum;
+    };
+  }
+}

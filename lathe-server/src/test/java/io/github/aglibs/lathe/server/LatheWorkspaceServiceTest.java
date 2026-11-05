@@ -11,12 +11,12 @@ import static org.mockito.Mockito.when;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
-import io.github.aglibs.lathe.server.analysis.RunTarget;
-import io.github.aglibs.lathe.server.analysis.RunnableKind;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
-import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
+import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.RunnableKind;
+import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;

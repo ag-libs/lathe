@@ -1,11 +1,11 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
-import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;

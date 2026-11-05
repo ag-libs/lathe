@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server.workspace;
 
+import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -8,7 +9,6 @@ import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.analysis.LibrarySources;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;

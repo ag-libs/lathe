@@ -3,10 +3,10 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.server.LatheEngine.TestScope;
-import io.github.aglibs.lathe.server.analysis.RunTarget;
-import io.github.aglibs.lathe.server.analysis.RunnableKind;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.TestResult;

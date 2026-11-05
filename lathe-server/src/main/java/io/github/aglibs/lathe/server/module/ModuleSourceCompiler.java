@@ -1,19 +1,19 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompilerResult;
+import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.JavacDiagnosticMapper;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.CompilerResult;
-import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.JavacDiagnosticMapper;
-import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;

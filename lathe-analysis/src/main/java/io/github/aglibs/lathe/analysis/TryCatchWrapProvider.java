@@ -1,0 +1,83 @@
+package io.github.aglibs.lathe.analysis;
+
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.TreePath;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionKind;
+import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.Diagnostic;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
+
+final class TryCatchWrapProvider implements CodeActionProvider {
+
+  private static final Logger LOG = Logger.getLogger(TryCatchWrapProvider.class.getName());
+
+  @Override
+  public List<Either<Command, CodeAction>> provide(
+      final CodeActionRequest request,
+      final AttributedFileAnalysis analysis,
+      final WorkspaceTypeIndex typeIndex) {
+    if (analysis.tree() == null) {
+      return List.of();
+    }
+
+    final Diagnostic diag = request.diag();
+    final TreePath path =
+        CodeActionSupport.pathAt(
+            analysis,
+            diag.getRange().getStart().getLine(),
+            diag.getRange().getStart().getCharacter());
+    final TreePath statementPath = CodeActionSupport.enclosingStatementToWrap(path);
+    if (statementPath == null) {
+      return List.of();
+    }
+
+    final CompilationUnitTree cu = analysis.tree();
+    final var positions = analysis.trees().getSourcePositions();
+    final long statementStart = positions.getStartPosition(cu, statementPath.getLeaf());
+    final long statementEnd = positions.getEndPosition(cu, statementPath.getLeaf());
+    if (statementStart < 0 || statementEnd < 0) {
+      return List.of();
+    }
+
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
+      return List.of();
+    }
+
+    final String original = source.substring((int) statementStart, (int) statementEnd).strip();
+    final String indent = CodeActionSupport.lineIndent(source, (int) statementStart);
+    final String step = CodeActionSupport.indentUnit(source, statementPath, cu, positions);
+    final String wrapped =
+        """
+        try {
+        %s
+        %s} catch (%s e) {
+        %s}"""
+            .formatted(
+                CodeActionSupport.reindent(original, indent, step),
+                indent,
+                request.payload().name(),
+                indent);
+
+    final var start = SourceLocator.offsetToPosition(cu, statementStart);
+    final var end = SourceLocator.offsetToPosition(cu, statementEnd);
+    final var edit = new WorkspaceEdit();
+    edit.setChanges(Map.of(request.uri(), List.of(new TextEdit(new Range(start, end), wrapped))));
+
+    final var action = new CodeAction();
+    action.setTitle("Wrap in try/catch");
+    action.setKind(CodeActionKind.QuickFix);
+    action.setDiagnostics(List.of(diag));
+    action.setEdit(edit);
+
+    LOG.fine(() -> "[codeAction:tryCatch] %s".formatted(request.payload().name()));
+    return List.of(Either.forRight(action));
+  }
+}

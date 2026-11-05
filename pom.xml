@@ -31,6 +31,7 @@
     <module>lathe-junit</module>
     <module>lathe-test-runner</module>
     <module>lathe-compiler</module>
+    <module>lathe-analysis</module>
     <module>lathe-server</module>
     <module>lathe-mcp-server</module>
     <module>lathe-maven-extension</module>
@@ -137,6 +138,17 @@
         <groupId>io.github.ag-libs</groupId>
         <artifactId>lathe-compiler</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-analysis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.ag-libs</groupId>
+        <artifactId>lathe-analysis</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
       </dependency>
       <dependency>
         <groupId>io.github.ag-libs</groupId>

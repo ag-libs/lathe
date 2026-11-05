@@ -1,0 +1,79 @@
+package io.github.aglibs.lathe.analysis;
+
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.TreePath;
+import java.util.List;
+import java.util.Map;
+import java.util.logging.Logger;
+import java.util.stream.Stream;
+import javax.lang.model.type.TypeMirror;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.CodeActionKind;
+import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.WorkspaceEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
+
+// Request-driven (non-diagnostic) refactor: replace a `var` local declaration with its inferred
+// explicit type (CA-5). Invoked from the code-action range rather than a diagnostic.
+final class ReplaceVarProvider {
+
+  private static final Logger LOG = Logger.getLogger(ReplaceVarProvider.class.getName());
+
+  private static final String VAR = "var";
+
+  List<Either<Command, CodeAction>> provide(
+      final String uri, final Range range, final AttributedFileAnalysis analysis) {
+    final CompilationUnitTree cu = analysis.tree();
+    if (cu == null) {
+      return List.of();
+    }
+
+    final var trees = analysis.trees();
+    final long offset =
+        SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
+    final TreePath varPath =
+        CodeActionSupport.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
+    if (varPath == null) {
+      return List.of();
+    }
+
+    final var varTree = (VariableTree) varPath.getLeaf();
+    final long varStart = CodeActionSupport.varKeywordStart(analysis, cu, varTree);
+    if (varStart < 0) {
+      return List.of();
+    }
+
+    final var element = trees.getElement(varPath);
+    if (element == null) {
+      return List.of();
+    }
+
+    final TypeMirror type = element.asType();
+    if (!CodeActionSupport.isDenotable(type)) {
+      return List.of();
+    }
+
+    final var written = CodeActionSupport.sourceType(analysis, varPath, type);
+    final var replaceEdit =
+        new TextEdit(
+            new Range(
+                SourceLocator.offsetToPosition(cu, varStart),
+                SourceLocator.offsetToPosition(cu, varStart + VAR.length())),
+            written.text());
+    final List<TextEdit> edits =
+        Stream.concat(Stream.of(replaceEdit), written.imports().stream()).toList();
+
+    final var action = new CodeAction();
+    action.setTitle("Replace 'var' with '%s'".formatted(written.text()));
+    action.setKind(CodeActionKind.RefactorRewrite);
+    final var workspaceEdit = new WorkspaceEdit();
+    workspaceEdit.setChanges(Map.of(uri, edits));
+    action.setEdit(workspaceEdit);
+
+    LOG.fine(() -> "[codeAction:replaceVar] %s".formatted(written.text()));
+    return List.of(Either.forRight(action));
+  }
+}

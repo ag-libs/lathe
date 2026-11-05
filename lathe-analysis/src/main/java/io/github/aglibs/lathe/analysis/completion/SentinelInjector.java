@@ -1,0 +1,384 @@
+package io.github.aglibs.lathe.analysis.completion;
+
+import io.github.aglibs.lathe.analysis.SourceLocator;
+
+final class SentinelInjector {
+
+  static final String SENTINEL = "__LATHE_SENTINEL__";
+
+  enum Context {
+    STATEMENT,
+    EXPRESSION
+  }
+
+  private record BackwardResult(
+      String prefix,
+      int tokenStart,
+      Context context,
+      String receiverText,
+      boolean hasDot,
+      boolean memberReference) {}
+
+  private record ForwardResult(int unclosedParens, int unclosedBraces) {}
+
+  private final String content;
+
+  SentinelInjector(final String content) {
+    this.content = content;
+  }
+
+  SentinelInjectionResult inject(final int cursorOffset) {
+    final BackwardResult back = backwardScan(cursorOffset);
+    final ForwardResult fwd = forwardScan();
+
+    final int suffixStart = SourceLocator.identifierEnd(content, cursorOffset);
+
+    final boolean parenFollows =
+        suffixStart < content.length() && content.charAt(suffixStart) == '(';
+    final boolean suppressSemicolon =
+        back.context() == Context.STATEMENT
+            && !parenFollows
+            && shouldSuppressSemicolon(content, suffixStart);
+    final var semicolon =
+        back.context() == Context.STATEMENT && !parenFollows && !suppressSemicolon ? ";" : "";
+    final var injected =
+        "%s%s%s%s%s%s"
+            .formatted(
+                content.substring(0, back.tokenStart()),
+                SENTINEL,
+                ")".repeat(fwd.unclosedParens()),
+                semicolon,
+                content.substring(suffixStart),
+                "}".repeat(fwd.unclosedBraces()));
+
+    return new SentinelInjectionResult(
+        back.prefix(),
+        back.tokenStart(),
+        suffixStart,
+        back.receiverText(),
+        back.context(),
+        back.hasDot(),
+        back.memberReference(),
+        injected);
+  }
+
+  private BackwardResult backwardScan(final int cursorOffset) {
+    final int tokenStart = SourceLocator.identifierStart(content, cursorOffset);
+
+    final var prefix = content.substring(tokenStart, cursorOffset);
+
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int angleDepth = 0;
+    Context context = Context.STATEMENT;
+    int i = tokenStart - 1;
+
+    final boolean hasDot = i >= 0 && content.charAt(i) == '.';
+    final boolean memberReference =
+        !hasDot && i >= 1 && content.charAt(i) == ':' && content.charAt(i - 1) == ':';
+    if (hasDot) {
+      i--;
+    } else if (memberReference) {
+      i -= 2;
+    }
+
+    outer:
+    while (i >= 0) {
+      final char c = content.charAt(i);
+      switch (c) {
+        case ')' -> parenDepth++;
+        case '(' -> {
+          parenDepth--;
+          if (parenDepth < 0) {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+        }
+        case ']' -> bracketDepth++;
+        case '[' -> {
+          bracketDepth--;
+          if (bracketDepth < 0) {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+        }
+        case ';' -> {
+          break outer;
+        }
+        case '{' -> {
+          if (parenDepth == 0) {
+            break outer;
+          }
+        }
+        case ':' -> {
+          context = Context.EXPRESSION;
+          break outer;
+        }
+        case '>' -> {
+          if (i > 0 && content.charAt(i - 1) == '-') {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+          angleDepth++;
+        }
+        case '<' -> {
+          if (angleDepth > 0) {
+            angleDepth--;
+          } else {
+            context = Context.EXPRESSION;
+            break outer;
+          }
+        }
+        case '"' -> {
+          i--;
+          while (i >= 0) {
+            if (content.charAt(i) == '"') {
+              break;
+            }
+            if (content.charAt(i) == '\\') {
+              i--;
+            }
+            i--;
+          }
+        }
+        case '\'' -> {
+          if (i >= 2 && content.charAt(i - 2) == '\'') {
+            i -= 2;
+          } else if (i >= 3 && content.charAt(i - 2) == '\\' && content.charAt(i - 3) == '\'') {
+            i -= 3;
+          }
+        }
+        case '\n' -> {
+          int lineStart = i - 1;
+          while (lineStart > 0 && content.charAt(lineStart - 1) != '\n') {
+            lineStart--;
+          }
+          int k = lineStart;
+          while (k < i && (content.charAt(k) == ' ' || content.charAt(k) == '\t')) {
+            k++;
+          }
+          if (k + 1 < i && content.charAt(k) == '/' && content.charAt(k + 1) == '/') {
+            i = lineStart - 1;
+          }
+        }
+        case '/' -> {
+          if (i > 0 && content.charAt(i - 1) == '*') {
+            i -= 2;
+            while (i > 0) {
+              if (content.charAt(i) == '*' && content.charAt(i - 1) == '/') {
+                i -= 2;
+                break;
+              }
+              i--;
+            }
+          }
+        }
+        default -> {}
+      }
+      i--;
+    }
+
+    final String receiverText =
+        hasDot
+            ? collectReceiver(tokenStart - 2)
+            : memberReference ? collectReceiver(tokenStart - 3) : null;
+    return new BackwardResult(prefix, tokenStart, context, receiverText, hasDot, memberReference);
+  }
+
+  private String collectReceiver(final int from) {
+    int end = from;
+    while (end >= 0) {
+      final char c = content.charAt(end);
+      if (c != ' ' && c != '\t' && c != '\n' && c != '\r') {
+        break;
+      }
+      end--;
+    }
+    if (end < 0) {
+      return null;
+    }
+
+    int depth = 0;
+    int i = end;
+    while (i >= 0) {
+      final char c = content.charAt(i);
+      if (c == ')' || c == ']') {
+        depth++;
+      } else if (c == '(' || c == '[') {
+        depth--;
+      }
+
+      if (depth < 0) {
+        break;
+      }
+
+      if (depth == 0 && (c == ' ' || c == '\t' || c == '\n' || c == ';' || c == '{' || c == ',')) {
+        break;
+      }
+
+      i--;
+    }
+
+    final var raw = content.substring(i + 1, end + 1).trim();
+    final var result = raw.startsWith(".") ? raw.substring(1) : raw;
+    return result.isEmpty() ? null : result;
+  }
+
+  /**
+   * Returns true when the suffix looks like a variable declaration or class-header type position,
+   * meaning the sentinel token is already the type and no semicolon should be inserted between it
+   * and the rest of the expression.
+   *
+   * <p>Two cases are detected:
+   *
+   * <ul>
+   *   <li>{@code identifier[;=,)]} — variable/parameter name follows (var decl or resource decl)
+   *   <li>{@code \{} — opening brace follows (extends / implements clause before class body)
+   * </ul>
+   */
+  private static boolean shouldSuppressSemicolon(final String content, final int suffixStart) {
+    int i = suffixStart;
+    while (i < content.length() && (content.charAt(i) == ' ' || content.charAt(i) == '\t')) {
+      i++;
+    }
+
+    if (i >= content.length() || Character.isWhitespace(content.charAt(i))) {
+      return false;
+    }
+
+    final char first = content.charAt(i);
+    if (first == '{') {
+      return true;
+    }
+
+    if (!Character.isJavaIdentifierStart(first)) {
+      return false;
+    }
+
+    i = SourceLocator.identifierEnd(content, i);
+
+    while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
+      i++;
+    }
+
+    if (i >= content.length()) {
+      return false;
+    }
+
+    final char next = content.charAt(i);
+    return next == ';' || next == '=' || next == ',' || next == ')';
+  }
+
+  private ForwardResult forwardScan() {
+    int parenDepth = 0;
+    int braceDepth = 0;
+    boolean inString = false;
+    boolean inLineComment = false;
+    boolean inBlockComment = false;
+    int i = 0;
+
+    while (i < content.length()) {
+      if (inLineComment) {
+        if (content.charAt(i) == '\n') {
+          inLineComment = false;
+        }
+
+        i++;
+        continue;
+      }
+
+      if (inBlockComment) {
+        if (i + 1 < content.length() && content.charAt(i) == '*' && content.charAt(i + 1) == '/') {
+          inBlockComment = false;
+          i += 2;
+        } else {
+          i++;
+        }
+
+        continue;
+      }
+
+      if (!inString
+          && i + 1 < content.length()
+          && content.charAt(i) == '/'
+          && content.charAt(i + 1) == '/') {
+        inLineComment = true;
+        i += 2;
+        continue;
+      }
+
+      if (!inString
+          && i + 1 < content.length()
+          && content.charAt(i) == '/'
+          && content.charAt(i + 1) == '*') {
+        inBlockComment = true;
+        i += 2;
+        continue;
+      }
+
+      if (inString) {
+        if (content.charAt(i) == '\\' && i + 1 < content.length()) {
+          i += 2;
+        } else {
+          if (content.charAt(i) == '"') {
+            inString = false;
+          }
+          i++;
+        }
+        continue;
+      }
+
+      if (i + 2 < content.length()
+          && content.charAt(i) == '"'
+          && content.charAt(i + 1) == '"'
+          && content.charAt(i + 2) == '"') {
+        i += 3;
+        while (i < content.length()) {
+          if (i + 2 < content.length()
+              && content.charAt(i) == '"'
+              && content.charAt(i + 1) == '"'
+              && content.charAt(i + 2) == '"') {
+            i += 3;
+            break;
+          }
+          if (content.charAt(i) == '\\') {
+            i += 2;
+          } else {
+            i++;
+          }
+        }
+        continue;
+      }
+
+      if (content.charAt(i) == '"') {
+        inString = true;
+        i++;
+        continue;
+      }
+
+      if (content.charAt(i) == '\'') {
+        i++; // skip opening '
+        if (i < content.length() && content.charAt(i) == '\\') {
+          i++; // skip backslash
+        }
+        i++; // skip char value
+        if (i < content.length() && content.charAt(i) == '\'') {
+          i++; // skip closing '
+        }
+        continue;
+      }
+
+      switch (content.charAt(i)) {
+        case '(' -> parenDepth++;
+        case ')' -> parenDepth--;
+        case '{' -> braceDepth++;
+        case '}' -> braceDepth--;
+        default -> {}
+      }
+
+      i++;
+    }
+
+    return new ForwardResult(Math.max(0, parenDepth), Math.max(0, braceDepth));
+  }
+}

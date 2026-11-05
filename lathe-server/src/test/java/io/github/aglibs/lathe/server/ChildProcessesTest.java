@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.File;
 import java.io.IOException;
 import java.lang.ProcessBuilder.Redirect;

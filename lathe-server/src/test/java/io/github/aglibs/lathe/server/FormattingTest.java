@@ -3,8 +3,8 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

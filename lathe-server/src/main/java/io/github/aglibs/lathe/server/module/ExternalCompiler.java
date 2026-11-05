@@ -1,12 +1,12 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompilerResult;
+import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.CompilerResult;
-import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.LibrarySources;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
