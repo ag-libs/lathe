@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.ExtractionSupport;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,7 +12,6 @@ import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.CodeActionKind;
 import org.eclipse.lsp4j.CodeActionParams;
-import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
@@ -25,22 +25,23 @@ import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.ImplementationParams;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SignatureHelpParams;
+import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.TypeHierarchyPrepareParams;
 import org.eclipse.lsp4j.TypeHierarchySupertypesParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledForJreRange;
 
 // Each textDocument request through the service and the event loop to its feature and back, over
 // a real workspace: the features are covered on their own, this covers the way to them.
 class LspRoutesTest extends ServiceTestBase {
 
-  private static final long TIMEOUT_S = 5;
-
   @Test
-  void navigationRoutes_onTheShop_eachAnswerComesFromTheWorkspace() throws Exception {
+  void navigationRequests_onTheShop_eachAnswerComesFromTheWorkspace() throws Exception {
     final ShopFixture shop = openShop();
     final var call = documentOf(shop.use());
     final var sell = positionOf(shop.use(), "sell(1)");
@@ -72,7 +73,10 @@ class LspRoutesTest extends ServiceTestBase {
         service
             .documentHighlight(new DocumentHighlightParams(call, sell))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
-    assertThat(highlights).as("both calls in Use").hasSize(2);
+    assertThat(highlights)
+        .as("both calls in Use, on the return line")
+        .extracting(highlight -> highlight.getRange().getStart().getLine())
+        .containsExactly(4, 4);
 
     final List<TypeHierarchyItem> prepared =
         service
@@ -89,7 +93,7 @@ class LspRoutesTest extends ServiceTestBase {
   }
 
   @Test
-  void editingRoutes_inAnOpenFile_completeSignActAndFormat() throws Exception {
+  void editingRequests_inAnOpenFile_completeSignAndActWithResolve() throws Exception {
     final ShopFixture shop = openShop();
     final var use = documentOf(shop.use());
 
@@ -110,36 +114,67 @@ class LspRoutesTest extends ServiceTestBase {
         .singleElement()
         .satisfies(signature -> assertThat(signature.getLabel()).contains("sell(int count)"));
 
+    // Extract method is checked by compiling it before it is offered, so a client that resolves
+    // gets it without an edit and resolves it.
+    service.setCodeActionResolveSupported(true);
     final var selection =
         new Range(positionOf(shop.use(), "shop.sell(1)"), positionOf(shop.use(), " + shop"));
     final var context = new CodeActionContext(List.of());
     context.setOnly(List.of(CodeActionKind.Refactor));
-    final List<Either<Command, CodeAction>> actions =
+    final List<CodeAction> refactors =
         service
             .codeAction(new CodeActionParams(use, selection, context))
-            .get(TIMEOUT_S, TimeUnit.SECONDS);
-    final List<CodeAction> refactors =
-        actions.stream().filter(Either::isRight).map(Either::getRight).toList();
+            .get(TIMEOUT_S, TimeUnit.SECONDS)
+            .stream()
+            .filter(Either::isRight)
+            .map(Either::getRight)
+            .toList();
     assertThat(refactors)
         .extracting(CodeAction::getTitle)
         .anyMatch(title -> title.startsWith("Extract variable"));
+    final CodeAction unresolved =
+        refactors.stream()
+            .filter(action -> ExtractionSupport.METHOD_KIND.equals(action.getKind()))
+            .findFirst()
+            .orElseThrow();
+    assertThat(unresolved.getEdit()).isNull();
+    assertThat(unresolved.getData()).isNotNull();
     final CodeAction resolved =
-        service.resolveCodeAction(refactors.get(0)).get(TIMEOUT_S, TimeUnit.SECONDS);
-    assertThat(resolved.getEdit()).as("a resolved action carries its edit").isNotNull();
+        service.resolveCodeAction(unresolved).get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(resolved.getDisabled()).isNull();
+    assertThat(resolved.getEdit().getChanges().get(use.getUri()))
+        .extracting(TextEdit::getNewText)
+        .anyMatch(text -> text.contains("private int"));
+  }
 
+  @Test
+  @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
+  void formattingRequests_withAFormatter_rangeFormatsItsLinesOnly_onTypeAnswersNothingYet()
+      throws Exception {
+    final ShopFixture shop = openShop();
+    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    final String misindented =
+        "package com.example;\nclass Use {\n  int run() {\n final Shop shop = new Shop();\n"
+            + "    return shop.sell(1) + shop.sell(2);\n  }\n}\n";
+    change(shop.use(), misindented, 2);
+    awaitWorkerIdle();
+    final var use = documentOf(shop.use());
     final var options = new FormattingOptions(2, true);
+    final var line = new Range(new Position(3, 0), new Position(4, 0));
+
+    final List<? extends TextEdit> edits =
+        service
+            .rangesFormatting(new DocumentRangesFormattingParams(use, options, List.of(line)))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+
+    assertThat(edits)
+        .isNotEmpty()
+        .allSatisfy(edit -> assertThat(edit.getRange().getStart().getLine()).isEqualTo(3));
+    // On-type formatting is not implemented: it answers no edits, so typing changes nothing.
     assertThat(
             service
                 .onTypeFormatting(
-                    new DocumentOnTypeFormattingParams(
-                        use, options, positionOf(shop.use(), "}"), "}"))
-                .get(TIMEOUT_S, TimeUnit.SECONDS))
-        .as("formatting is off in this workspace")
-        .isEmpty();
-    assertThat(
-            service
-                .rangesFormatting(
-                    new DocumentRangesFormattingParams(use, options, List.of(selection)))
+                    new DocumentOnTypeFormattingParams(use, options, new Position(5, 3), "}"))
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
   }

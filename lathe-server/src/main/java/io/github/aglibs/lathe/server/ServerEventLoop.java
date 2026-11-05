@@ -1,10 +1,13 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,6 +29,9 @@ final class ServerEventLoop {
   private final ScheduledExecutorService executor =
       Executors.newSingleThreadScheduledExecutor(this::newWorkerThread);
   private final Map<String, ScheduledFuture<?>> pending = new HashMap<>();
+  // Results handed to deliver() and not yet completed. Worker threads add to it, so it is the one
+  // concurrent collection here: the loop's own plumbing, not session state.
+  private final Set<Runnable> undelivered = ConcurrentHashMap.newKeySet();
   private final IntConsumer processTerminator;
 
   ServerEventLoop() {
@@ -87,22 +93,29 @@ final class ServerEventLoop {
                   if (failure == null) {
                     rejoined.complete(value);
                   } else {
-                    rejoined.completeExceptionally(
-                        failure instanceof CompletionException
-                            ? failure
-                            : new CompletionException(failure));
+                    rejoined.completeExceptionally(ExceptionUtil.asCompletion(failure));
                   }
                 }));
     return rejoined;
   }
 
   // Completes a result on the loop, so whatever the receiver chains runs there. Once the loop has
-  // shut down it completes in place instead, so no caller waits for a result that cannot arrive.
+  // shut down it completes in place instead, and close() completes the ones its shutdown dropped
+  // from the queue, so no caller waits for a result that cannot arrive.
   void deliver(final Runnable completion) {
+    final Runnable delivery = () -> runLogged(completion);
+    undelivered.add(delivery);
     try {
-      executor.execute(() -> runLogged(completion));
+      executor.execute(() -> runIfUndelivered(delivery));
     } catch (final RejectedExecutionException ignored) {
-      completion.run();
+      runIfUndelivered(delivery);
+    }
+  }
+
+  // Whoever takes a delivery out of the set runs it: the loop, the rejected execute, or close().
+  private void runIfUndelivered(final Runnable delivery) {
+    if (undelivered.remove(delivery)) {
+      delivery.run();
     }
   }
 
@@ -149,6 +162,7 @@ final class ServerEventLoop {
                   last.run();
                 } finally {
                   executor.shutdownNow();
+                  List.copyOf(undelivered).forEach(this::runIfUndelivered);
                 }
 
                 return null;

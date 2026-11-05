@@ -1,10 +1,12 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
@@ -17,8 +19,8 @@ import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.debug.DapHost;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
+import io.github.aglibs.lathe.server.debug.FrameSources;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.CompletenessResult;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
@@ -51,7 +53,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -96,6 +100,7 @@ final class RunCoordinator {
 
   CompletableFuture<LaunchOutcome> runTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    eventLoop.checkOnLoop();
     return startTestRun(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
@@ -119,37 +124,44 @@ final class RunCoordinator {
     final Path root = state.root();
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
+    return launchOnItsThread(
+        moduleRel,
+        token,
+        (onStart, result) ->
+            launchTest(
+                root,
+                reactorRewrite,
+                runnerClasspath,
+                moduleRel,
+                selections,
+                overlay,
+                onLine,
+                onResult,
+                onStart,
+                t,
+                result));
+  }
+
+  // Launches on a thread of its own, so the loop never waits for the JVM. While it runs, the run is
+  // registered by token, on the event loop like every other field, so a cancel reaches it; it is
+  // unregistered when it ends, blocked or not (removing an unregistered token is a no-op).
+  private CompletableFuture<LaunchOutcome> launchOnItsThread(
+      final String moduleRel,
+      final String token,
+      final BiConsumer<Consumer<LaunchSession>, CompletableFuture<LaunchOutcome>> launch) {
     final var result = new CompletableFuture<LaunchOutcome>();
-    // Register/deregister the run by token so a cancel can reach it. Marshaled onto the event loop
-    // so
-    // activeRuns keeps the single-threaded discipline of every other field. Removal covers the
-    // blocked/error paths too (removing an unregistered token is a no-op).
-    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
+    eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
     final Consumer<LaunchSession> onStart =
         session -> eventLoop.execute(() -> activeRuns.put(token, session));
-
     final var thread =
-        new Thread(
-            () ->
-                launchTest(
-                    root,
-                    reactorRewrite,
-                    runnerClasspath,
-                    moduleRel,
-                    selections,
-                    overlay,
-                    onLine,
-                    onResult,
-                    onStart,
-                    t,
-                    result),
-            "lathe-launch-" + moduleRel);
+        new Thread(() -> launch.accept(onStart, result), "lathe-launch-" + moduleRel);
     thread.setDaemon(true);
     thread.start();
     return result;
   }
 
   void cancelRun(final String token) {
+    eventLoop.checkOnLoop();
     final LaunchSession session = activeRuns.get(token);
     if (session == null) {
       LOG.fine(() -> "[cancel] %s no active run".formatted(token));
@@ -166,8 +178,9 @@ final class RunCoordinator {
    * on the event loop; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills it,
    * and the DAP host is closed when the debuggee exits.
    */
-  CompletableFuture<DebugStartResult> debugTest(
+  CompletableFuture<DebugStartResult> debugTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
+    eventLoop.checkOnLoop();
     return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
@@ -182,15 +195,10 @@ final class RunCoordinator {
     }
 
     try {
-      final TestLaunchData template =
-          new LaunchReader(state.root())
-              .test(moduleRel)
-              .orElseThrow(
-                  () ->
-                      new IllegalStateException(
-                          noCapturedLaunch(state.root(), moduleRel, selections)));
-      assertLaunchComplete(
-          CompletenessGate.verify(template, state.root(), state.manifest().reactorRewrite()));
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(state.root(), state.manifest().reactorRewrite(), moduleRel, selections);
+      requireLaunchable(captured.gate().reasons());
+      final TestLaunchData template = captured.template();
 
       final int jdwpPort = PortUtil.free();
       final var jdwp = new JdwpOptions(jdwpPort);
@@ -224,11 +232,12 @@ final class RunCoordinator {
 
   /**
    * Launches the module's {@code mainClass} suspended under a JDWP agent and opens a DAP host — the
-   * main-class twin of {@link #debugTest}. A main run has no JUnit result stream, so it spawns with
-   * a null sink and a no-op result consumer.
+   * main-class twin of {@link #debugTestFuture}. A main run has no JUnit result stream, so it
+   * spawns with a null sink and a no-op result consumer.
    */
-  CompletableFuture<DebugStartResult> debugMain(
+  CompletableFuture<DebugStartResult> debugMainFuture(
       final String moduleRel, final String mainClass, final String token) {
+    eventLoop.checkOnLoop();
     return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
@@ -240,9 +249,7 @@ final class RunCoordinator {
       final MainLaunchPlan plan =
           resolveMainLaunch(
               state.root(), state.manifest().reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
-      if (plan.blocked()) {
-        throw new IllegalStateException("debug launch incomplete: " + plan.blockedReasons());
-      }
+      requireLaunchable(plan.blockedReasons());
 
       final var jdwpReady = new CompletableFuture<Void>();
       final ResolvedLaunch resolved = plan.launch();
@@ -302,21 +309,15 @@ final class RunCoordinator {
       final JdwpOptions jdwp)
       throws IOException {
     if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
-      final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
-      if (template.isEmpty()) {
-        return MainLaunchPlan.blocked(
-            List.of(noCapturedLaunch(workspaceRoot, moduleRel, List.of())));
-      }
-
-      final CompletenessResult gate =
-          CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
-      if (!gate.complete()) {
-        return MainLaunchPlan.blocked(gate.reasons());
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, List.of());
+      if (!captured.gate().complete()) {
+        return MainLaunchPlan.blocked(captured.gate().reasons());
       }
 
       return MainLaunchPlan.ready(
           RunOverlay.applyToTestMain(
-              template.get(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
+              captured.template(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
     }
 
     final Optional<MainLaunchData> template = new LaunchReader(workspaceRoot).main(moduleRel);
@@ -348,15 +349,14 @@ final class RunCoordinator {
       final CompletableFuture<Void> jdwpReady,
       final String label) {
     activeRuns.put(token, session);
-    session
-        .onExit()
+    eventLoop
+        .rejoin(session.onExit())
         .whenComplete(
-            (outcome, error) ->
-                eventLoop.execute(
-                    () -> {
-                      publishTestFinished(token, outcome, error);
-                      endDebugSession(token);
-                    }));
+            (outcome, error) -> {
+              publishTestFinished(
+                  token, outcome, error == null ? null : ExceptionUtil.completionCause(error));
+              endDebugSession(token);
+            });
 
     // Launcher spawns the JVM and returns before its -agentlib:jdwp socket is listening. Gate on
     // the agent's own "Listening for transport ... at address:" banner (surfaced through the drain
@@ -401,8 +401,8 @@ final class RunCoordinator {
     final List<Path> debugSourceRoots =
         Stream.of(
                 state.registry().allSourceRoots(),
-                state.manifest().depSourceDirs(),
-                state.manifest().jdkModuleSourceDirs())
+                state.manifest().libraries().dependencySourceDirs(),
+                state.manifest().libraries().jdkModuleSourceDirs())
             .flatMap(List::stream)
             .toList();
     final DapHost host;
@@ -410,7 +410,11 @@ final class RunCoordinator {
       host =
           DapHost.start(
               new LatheProviderContext(
-                  this::debugWorkerFor, debugSourceRoots, reactorIndex.current()),
+                  new FrameSources(
+                      task -> eventLoop.submit(Executors.callable(task)),
+                      file -> state.registry().moduleWorkerFor(file),
+                      debugSourceRoots),
+                  reactorIndex.current()),
               () -> eventLoop.execute(() -> cancelRun(token)));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
@@ -422,18 +426,36 @@ final class RunCoordinator {
     return new DebugStartResult(host.port(), jdwpPort);
   }
 
-  // Called on the debug adapter's threads: reads the workspace on the event loop like every other
-  // access, and always the current registry, since a sync replaces it mid-session. Cancelled (so
-  // the debugger request fails) once the session has closed.
-  private Optional<CompilationWorker> debugWorkerFor(final Path file) {
-    return eventLoop
-        .submit(() -> state.registry().moduleSourceFor(file).map(state.registry()::workerFor))
-        .join();
+  private static void requireLaunchable(final List<String> blockedReasons) {
+    if (!blockedReasons.isEmpty()) {
+      throw new IllegalStateException("debug launch incomplete: " + blockedReasons);
+    }
   }
 
-  private static void assertLaunchComplete(final CompletenessResult gate) {
-    if (!gate.complete()) {
-      throw new IllegalStateException("debug launch incomplete: " + gate.reasons());
+  // The module's captured test launch, checked by the completeness gate. A module with no capture
+  // gets an incomplete gate whose reason says how to capture one, and no template.
+  private static CheckedTestLaunch checkedTestLaunch(
+      final Path workspaceRoot,
+      final ReactorRewrite reactorRewrite,
+      final String moduleRel,
+      final List<TestSelection> selections)
+      throws IOException {
+    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
+    if (template.isEmpty()) {
+      return new CheckedTestLaunch(
+          null,
+          CompletenessResult.blocked(
+              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
+    }
+
+    return new CheckedTestLaunch(
+        template.get(), CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite));
+  }
+
+  // template is null when the gate is incomplete because nothing was captured.
+  private record CheckedTestLaunch(TestLaunchData template, CompletenessResult gate) {
+    CheckedTestLaunch {
+      ValidCheck.check().notNull(gate, "gate").validate();
     }
   }
 
@@ -444,8 +466,8 @@ final class RunCoordinator {
    * way the client learns the run's aggregate result and can complete its results reconciliation
    * (gutters, summary, pass/fail). A blank token (no live surface listening) is a no-op; a null
    * outcome (the JVM died before producing one) is reported as blocked so the client never waits
-   * forever. Fires for both {@code debugTest} and {@code debugMain}; a main debug carries no {@code
-   * testResults}, which the client ignores for a token it never registered.
+   * forever. Fires for both {@code debugTestFuture} and {@code debugMainFuture}; a main debug
+   * carries no {@code testResults}, which the client ignores for a token it never registered.
    */
   private void publishTestFinished(
       final String token, final LaunchOutcome outcome, final Throwable error) {
@@ -540,7 +562,8 @@ final class RunCoordinator {
   // The tests a run of the module would execute, found by a discover-mode launch that runs none of
   // them. Answered from the cache until the module's test classes change (sync and save compiles
   // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
-  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
+  CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
+    eventLoop.checkOnLoop();
     final FileTime stamp = testClassesStamp(moduleRel);
     final CachedDiscovery cached = discoveries.get(moduleRel);
     if (cached != null && Objects.equals(cached.stamp(), stamp)) {
@@ -749,18 +772,9 @@ final class RunCoordinator {
       final Stopwatch t,
       final CompletableFuture<LaunchOutcome> result) {
     try {
-      final var template = new LaunchReader(workspaceRoot).test(moduleRel);
-      if (template.isEmpty()) {
-        LOG.warning(
-            () ->
-                "[launch] %s %s blocked no captured test-launch.json"
-                    .formatted(moduleRel, selectionLabel(selections)));
-        result.complete(
-            LaunchOutcome.blocked(List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
-        return;
-      }
-
-      final var gate = CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
+      final CheckedTestLaunch captured =
+          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, selections);
+      final CompletenessResult gate = captured.gate();
       if (!gate.complete()) {
         LOG.warning(
             () ->
@@ -775,7 +789,7 @@ final class RunCoordinator {
       final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
       final ResolvedLaunch resolved =
           RunOverlay.applyToTest(
-              template.get(),
+              captured.template(),
               workspaceRoot,
               reactorRewrite,
               runnerClasspath,
@@ -845,6 +859,7 @@ final class RunCoordinator {
 
   CompletableFuture<LaunchOutcome> runMainFuture(
       final String moduleRel, final String mainClass, final String token) {
+    eventLoop.checkOnLoop();
     return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
@@ -854,28 +869,12 @@ final class RunCoordinator {
     final Path root = state.root();
     final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
     final var t = Stopwatch.start();
-    final var result = new CompletableFuture<LaunchOutcome>();
-    result.whenComplete((outcome, error) -> eventLoop.execute(() -> activeRuns.remove(token)));
-    final Consumer<LaunchSession> onStart =
-        session -> eventLoop.execute(() -> activeRuns.put(token, session));
-
-    final var thread =
-        new Thread(
-            () ->
-                launchMain(
-                    root,
-                    reactorRewrite,
-                    moduleRel,
-                    mainClass,
-                    overlay,
-                    onLine,
-                    onStart,
-                    t,
-                    result),
-            "lathe-launch-" + moduleRel);
-    thread.setDaemon(true);
-    thread.start();
-    return result;
+    return launchOnItsThread(
+        moduleRel,
+        token,
+        (onStart, result) ->
+            launchMain(
+                root, reactorRewrite, moduleRel, mainClass, overlay, onLine, onStart, t, result));
   }
 
   private static void launchMain(
@@ -932,6 +931,7 @@ final class RunCoordinator {
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
+    eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
     return switch (config.kind()) {
       case MAIN -> startMainRun(config.module(), config.mainClass(), token, config);
@@ -939,7 +939,8 @@ final class RunCoordinator {
     };
   }
 
-  CompletableFuture<DebugStartResult> debugNamed(final String name, final String token) {
+  CompletableFuture<DebugStartResult> debugNamedFuture(final String name, final String token) {
+    eventLoop.checkOnLoop();
     final RunItem config = resolveConfig(name);
     return switch (config.kind()) {
       case MAIN -> startDebugMain(config.module(), config.mainClass(), token, config);
@@ -948,6 +949,7 @@ final class RunCoordinator {
   }
 
   List<RunConfigInfo> listRunConfigs() {
+    eventLoop.checkOnLoop();
     return readRunConfig().configs().stream().map(RunCoordinator::toInfo).toList();
   }
 
@@ -959,6 +961,7 @@ final class RunCoordinator {
       final List<TestSelection> selectors,
       final boolean overwrite)
       throws IOException {
+    eventLoop.checkOnLoop();
     return new RunConfigWriter(state.root())
         .save(name, moduleRel, kind, mainClass, selectors, overwrite);
   }

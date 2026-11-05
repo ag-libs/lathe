@@ -2,20 +2,19 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CompiledStamps;
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import javax.tools.ToolProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -264,8 +263,7 @@ class WritePassFilesTest {
   @Test
   void staleModules_includesOpenFiles_excludesGeneratedRoots() throws Exception {
     // The write pass compiles the whole changed set together, so a saved rename's open files must
-    // be
-    // included -- an interface rename saves its users, which resolve the new type only if they
+    // be included -- an interface rename saves its users, which resolve the new type only if they
     // compile in the same batch.
     writeJava("Open", 9_000L); // stale and open -> still counted
     writeJava("Real", 5_000L);
@@ -327,18 +325,14 @@ class WritePassFilesTest {
   // Real class files, so each carries the SourceFile attribute naming the source it came from.
   private void compileIntoMirror(final Map<String, String> bodiesByFileName) throws IOException {
     final var sourceDir = Files.createDirectories(tmp.resolve("compile-src/com/example"));
-    bodiesByFileName.forEach(
-        (fileName, body) ->
-            IOUtil.unchecked(
-                () ->
-                    Files.writeString(
-                        sourceDir.resolve(fileName), "package com.example; %s".formatted(body))));
-    final String[] args =
-        Stream.concat(
-                Stream.of("-d", config.latheClassesDir().toString()),
-                bodiesByFileName.keySet().stream().map(sourceDir::resolve).map(Path::toString))
-            .toArray(String[]::new);
+    final List<Path> sources = new ArrayList<>();
+    for (final var source : bodiesByFileName.entrySet()) {
+      sources.add(
+          Files.writeString(
+              sourceDir.resolve(source.getKey()),
+              "package com.example; %s".formatted(source.getValue())));
+    }
 
-    assertThat(ToolProvider.getSystemJavaCompiler().run(null, null, null, args)).isZero();
+    TestJavac.compileToDir(config.latheClassesDir(), sources.toArray(Path[]::new));
   }
 }

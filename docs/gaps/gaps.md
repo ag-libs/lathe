@@ -594,8 +594,8 @@ A VS Code command over the same server command.
 
 ### Regression targets
 
-`WorkspaceSessionTest.testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject`,
-`WorkspaceSessionTest.testCounterpartNames_conventions_testNamesAndTheSubjectTheyStripTo`,
+`TestCounterpartsTest.testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject`,
+`TestCounterpartsTest.testCounterpartNames_conventions_testNamesAndTheSubjectTheyStripTo`,
 `new_spec.lua` (`:LatheGoToTest`).
 
 ---
@@ -1391,7 +1391,8 @@ Found while fixing a `lathe-server` bug through Lathe's own MCP server (2026-10-
 
 ### Observed behaviour
 
-On JDK 21+, a profile in `lathe-server/pom.xml` copies `target/classes` into `target/classes-jdk21`,
+On JDK 21+, a profile in `lathe-server/pom.xml` (since 2026-11-05 in `lathe-analysis/pom.xml`, with the
+multi-release classes) copies `target/classes` into `target/classes-jdk21`,
 overlays the multi-release `META-INF/versions/21` classes on it, and points Surefire's `classesDirectory` there.
 The captured `test-launch.json` names `target/classes-jdk21`.
 After editing `SourceScope.java`, `run_test` on `WorkspaceSessionTest` compiled the edit into the mirror

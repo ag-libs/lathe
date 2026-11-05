@@ -1,0 +1,858 @@
+package io.github.aglibs.lathe.analysis.completion;
+
+import com.sun.source.tree.ImportTree;
+import com.sun.source.tree.Scope;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.SourceParser;
+import io.github.aglibs.lathe.analysis.StaticImportCandidates;
+import io.github.aglibs.lathe.analysis.Strings;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeKind;
+import javax.lang.model.type.TypeMirror;
+import org.eclipse.lsp4j.CompletionItem;
+import org.eclipse.lsp4j.CompletionItemKind;
+
+public final class CompletionEngine {
+
+  private static final Logger LOG = Logger.getLogger(CompletionEngine.class.getName());
+  private static final int STATIC_MEMBER_FIT_LIMIT = 20;
+  private static final int MODULE_SEGMENT_LIMIT = 50;
+  private static final String INSTANCEOF_KEYWORD = "instanceof";
+
+  private final SentinelParser sentinelParser;
+  private final JavaSourceCompiler compiler;
+  private final MemberAccessCompleter memberAccessCompleter;
+  private final TypeReferenceCompleter typeReferenceCompleter;
+
+  public CompletionEngine(final SourceParser parser, final JavaSourceCompiler compiler) {
+    this.sentinelParser = new SentinelParser(parser);
+    this.compiler = compiler;
+    this.memberAccessCompleter = new MemberAccessCompleter(compiler);
+    this.typeReferenceCompleter = new TypeReferenceCompleter(compiler);
+  }
+
+  public CompletionOutcome complete(final CompletionRequest req) {
+    final var injected = new SentinelInjector(req.content()).inject(req.cursorOffset());
+    LOG.fine(
+        () ->
+            "[completion] inject prefix=|%s| receiver=|%s| ctx=%s hasDot=%s"
+                .formatted(
+                    injected.prefix(),
+                    injected.receiverText(),
+                    injected.context(),
+                    injected.hasDot()));
+
+    if (injected.hasDot() && injected.receiverText() == null) {
+      LOG.fine(() -> "[completion] bare dot with no receiver — returning empty");
+      return CompletionOutcome.of(List.of());
+    }
+
+    final int version = req.cached() != null ? req.cached().version() : -1;
+    final var parsed = sentinelParser.parse(injected, req.pos().getLine(), version, req.uri());
+    LOG.fine(
+        () ->
+            "[completion] parsed valid=%s sentinelCtx=%s receiver=|%s| class=%s method=%s role=%s"
+                .formatted(
+                    parsed.valid(),
+                    parsed.sentinelContext(),
+                    parsed.receiverText(),
+                    parsed.enclosingClass(),
+                    parsed.enclosingMethod(),
+                    parsed.typeReferenceRole()));
+
+    if (!parsed.valid()) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    if (parsed.sentinelContext() == SentinelContext.MODULE_DIRECTIVE) {
+      return completeModuleDirective(
+          injected, parsed.directiveKeyword(), req.typeIndex(), req.moduleNames());
+    }
+
+    // A case label finds its enum through the switch selector at the cursor. While typing, the
+    // cached tree predates the edit and no longer has the switch there, so the current text is
+    // recompiled; the recompile is returned for caching, as member access caches its own.
+    final var recompiled =
+        parsed.sentinelContext() == SentinelContext.CASE_LABEL
+                && compiler != null
+                && MemberAccessCompleter.staleBeforeCompletionToken(req, injected)
+            ? compiler.reattribute(req.uri(), req.content())
+            : null;
+    final var request =
+        recompiled == null
+            ? req
+            : new CompletionRequest(
+                req.uri(),
+                req.content(),
+                req.pos(),
+                req.context(),
+                new CachedFileAnalysis(req.content(), req.cached().version(), recompiled),
+                req.typeIndex(),
+                req.moduleNames(),
+                req.staticImports());
+    final var site = CompletionSite.from(request, injected, parsed);
+    final var outcome =
+        switch (parsed.sentinelContext()) {
+          case IMPORT -> completeImport(parsed, injected, request);
+          case SIMPLE_NAME, ARGUMENT_POSITION, CASE_LABEL ->
+              completeSimpleName(parsed, injected, request, site);
+          case CONSTRUCTOR_CALL ->
+              parsed.argIndex() >= 0
+                  ? completeSimpleName(parsed, injected, request, site)
+                  : typeReferenceCompleter.completeConstructorTypeReference(
+                      injected, request, parsed, site);
+          case TYPE_REFERENCE ->
+              shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected)
+                  ? completeSimpleName(parsed, injected, request, site)
+                  : typeReferenceCompleter.completeTypeReference(parsed, injected, request);
+          case ANNOTATION_CONTEXT ->
+              typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+                  injected, request, parsed.typeReferenceRole());
+          case ANNOTATION_ARGUMENT -> completeAnnotationArgument(parsed, injected, request);
+          case ANNOTATION_ARGUMENT_VALUE ->
+              completeAnnotationArgumentValue(parsed, injected, request);
+          case VARIABLE_DECLARATION ->
+              isRealNameSlot(parsed)
+                  ? completeDeclarationName(parsed, request)
+                  : (parsed.enclosingMethod() == null
+                      ? typeReferenceCompleter.completeTypeReference(parsed, injected, request)
+                      : CompletionOutcome.of(List.of()));
+          case MEMBER_ACCESS, STATIC_IMPORT, MEMBER_REFERENCE ->
+              memberAccessCompleter.complete(parsed, injected, request, site);
+          case LAMBDA_BODY ->
+              parsed.receiverText() != null
+                  ? memberAccessCompleter.complete(parsed, injected, request, site)
+                  : completeSimpleName(parsed, injected, request, site);
+          default -> CompletionOutcome.of(List.of());
+        };
+    final var withOverrides = mergeOverrideCandidates(outcome, parsed, injected, request);
+    CompletionItemPresenter.applyReplacementRange(withOverrides.items(), site.replacementRange());
+    CompletionEditApplier.preserveExistingMethodCall(
+        withOverrides.items(), request, injected.tokenEnd());
+    CompletionEditApplier.absorbFollowingSpaceAfterKeyword(
+        withOverrides.items(), request, injected.tokenEnd());
+    final var analysis =
+        withOverrides.freshAnalysis() != null
+            ? withOverrides.freshAnalysis()
+            : resolveAnalysis(request);
+    CompletionEditApplier.applyNestedOuterImportEdits(
+        withOverrides.items(), injected.receiverText(), analysis);
+    CompletionEditApplier.applyStatementSemicolonEdits(
+        withOverrides.items(), site, analysis, request, injected.tokenStart());
+    return recompiled != null && withOverrides.freshAnalysis() == null
+        ? new CompletionOutcome(withOverrides.items(), recompiled, withOverrides.incomplete())
+        : withOverrides;
+  }
+
+  // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
+  // typically parsed as a type reference; offer override/implement stubs for the enclosing type's
+  // inherited methods alongside whatever the context produced (EG-015).
+  private CompletionOutcome mergeOverrideCandidates(
+      final CompletionOutcome outcome,
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
+    final boolean memberStartSlot =
+        (parsed.sentinelContext() == SentinelContext.TYPE_REFERENCE
+                || parsed.sentinelContext() == SentinelContext.VARIABLE_DECLARATION)
+            && !isRealNameSlot(parsed);
+    if (!memberStartSlot || parsed.enclosingClass() == null || parsed.enclosingMethod() != null) {
+      return outcome;
+    }
+
+    final var analysis =
+        outcome.freshAnalysis() != null ? outcome.freshAnalysis() : resolveAnalysis(req);
+    if (analysis == null) {
+      return outcome;
+    }
+
+    final List<CompletionCandidate> overrides =
+        OverrideCompletionProvider.propose(analysis, req.cursorOffset(), injected.prefix());
+    if (overrides.isEmpty()) {
+      return outcome;
+    }
+
+    final List<CompletionItem> merged =
+        Stream.concat(
+                overrides.stream().map(CompletionItemPresenter::present), outcome.items().stream())
+            .toList();
+    return new CompletionOutcome(merged, outcome.freshAnalysis(), outcome.incomplete());
+  }
+
+  private CompletionOutcome completeImport(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
+    if (analysis == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var scope = TypeResolver.resolveScope(analysis, req.cursorOffset());
+    final var candidates =
+        new ImportCompletionProvider(analysis, scope)
+            .proposeCandidates(parsed.receiverText(), injected.prefix());
+    final List<CompletionItem> items =
+        candidates.stream().map(CompletionItemPresenter::present).toList();
+    final boolean hasSemicolon = req.charAfterCursor() == ';';
+
+    if (!hasSemicolon) {
+      items.stream()
+          .filter(i -> i.getKind() != CompletionItemKind.Module)
+          .filter(i -> i.getKind() != CompletionItemKind.Keyword)
+          .forEach(i -> i.setInsertText(i.getLabel() + ";"));
+    }
+
+    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private CompletionOutcome completeSimpleName(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final CompletionSite site) {
+    final var semanticContext = semanticContext(site, req, parsed);
+    final boolean recoveredMixedStatement =
+        shouldTreatTypeReferenceAsMixedSimpleName(parsed, injected);
+    final var instanceofCandidates = instanceofKeywordCandidates(injected, semanticContext);
+    if (semanticContext != null
+        && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot
+        && !hasUppercasePrefix(injected)
+        && instanceofCandidates.isEmpty()) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final var javacCandidates = completeJavacSimpleName(parsed, injected, req, semanticContext);
+    final var enumCandidates =
+        enumValueSlotCandidates(parsed, injected.prefix(), semanticContext, req);
+    final var enumCaseCandidates =
+        enumCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
+    final var sealedCaseCandidates =
+        sealedCaseLabelCandidates(parsed, injected.prefix(), semanticContext);
+
+    if (isStringCaseLabel(parsed, semanticContext)) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    if (isCaseLabelTypePattern(parsed, enumCaseCandidates, semanticContext)
+        && sealedCaseCandidates.isEmpty()) {
+      return typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+          injected, req, TypeReferenceRole.ORDINARY);
+    }
+
+    final var keywordCandidates =
+        KeywordProvider.suggestCandidates(parsed, injected.prefix(), injected.context());
+    LOG.fine(
+        () ->
+            "[completion] simple-name candidates javac=%d enum=%d enumCase=%d keywords=%d semantic=%s"
+                .formatted(
+                    javacCandidates.size(),
+                    enumCandidates.size(),
+                    enumCaseCandidates.size(),
+                    keywordCandidates.size() + instanceofCandidates.size(),
+                    semanticContext != null ? semanticContext.expectedValue() : null));
+    final var rankingContext =
+        recoveredMixedStatement
+                || (semanticContext != null
+                    && semanticContext.expectedValue() instanceof ExpectedValue.NoSlot)
+            ? null
+            : semanticContext;
+
+    final List<CompletionCandidate> candidates;
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !enumCaseCandidates.isEmpty()) {
+      candidates = enumCaseCandidates;
+    } else if (parsed.sentinelContext() == SentinelContext.CASE_LABEL
+        && !sealedCaseCandidates.isEmpty()) {
+      candidates = sealedCaseCandidates;
+    } else {
+      candidates =
+          Stream.of(javacCandidates, enumCandidates, keywordCandidates, instanceofCandidates)
+              .flatMap(List::stream)
+              .toList();
+    }
+
+    final List<CompletionItem> items =
+        Stream.concat(
+                presentSimpleNameCandidates(candidates, rankingContext).stream(),
+                learnedStaticImportItems(parsed, injected.prefix(), semanticContext, req).stream())
+            .toList();
+
+    // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
+    // that would otherwise re-add each subtype as a plain type candidate (EG-022).
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !sealedCaseCandidates.isEmpty()) {
+      return new CompletionOutcome(items, null);
+    }
+
+    if (!hasUppercasePrefix(injected)) {
+      return new CompletionOutcome(items, null);
+    }
+
+    // Type-index types: uppercase prefix in statement context only (avoids flooding arg lists)
+    final CompletionOutcome withTypes =
+        hasUppercasePrefix(injected)
+            ? TypeReferenceCompleter.mergeSimpleNameAndTypeIndexItems(
+                items,
+                typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+                    injected, req, TypeReferenceRole.ORDINARY))
+            : new CompletionOutcome(items, null);
+
+    // Static member fit: uppercase prefix + expected type, works in both statement and expression
+    if (semanticContext == null
+        || recoveredMixedStatement
+        || semanticContext.expectedValue() instanceof ExpectedValue.NoSlot) {
+      return withTypes;
+    }
+
+    final var scope = TypeResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
+    final var staticFitCandidates =
+        staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex(), scope);
+    if (staticFitCandidates.isEmpty()) {
+      return withTypes;
+    }
+
+    final List<RankedCompletionCandidate> ranked =
+        CompletionCandidateRanker.rank(staticFitCandidates, semanticContext);
+    final List<CompletionItem> staticFitItems =
+        ranked.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(
+        ranked.stream().map(RankedCompletionCandidate::candidate).toList(),
+        staticFitItems,
+        semanticContext.analysis());
+
+    final List<CompletionItem> finalItems =
+        Stream.concat(withTypes.items().stream(), staticFitItems.stream())
+            .collect(
+                Collectors.toMap(
+                    TypeReferenceCompleter::completionIdentity,
+                    i -> i,
+                    (existing, ignored) -> existing,
+                    LinkedHashMap::new))
+            .values()
+            .stream()
+            .toList();
+    return new CompletionOutcome(finalItems, null, withTypes.incomplete());
+  }
+
+  private List<CompletionCandidate> completeJavacSimpleName(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.enclosingClass() == null || semanticContext == null) {
+      return List.of();
+    }
+
+    return new CandidateGenerator(semanticContext.analysis())
+        .proposeSimpleNameCandidates(
+            parsed.enclosingClass(),
+            parsed.enclosingMethod(),
+            injected.prefix(),
+            req.cursorOffset(),
+            semanticContext);
+  }
+
+  // Any value slot whose expected type is an enum (argument, assignment, return, equality) offers
+  // that enum's constants. Case labels have their own unqualified path.
+  private static List<CompletionCandidate> enumValueSlotCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext,
+      final CompletionRequest req) {
+    if (parsed.sentinelContext() == SentinelContext.CASE_LABEL) {
+      return List.of();
+    }
+
+    final TypeElement typeEl = expectedEnumType(semanticContext);
+    if (typeEl == null) {
+      return List.of();
+    }
+
+    return new CandidateGenerator(semanticContext.analysis())
+        .proposeEnumConstantCandidates(typeEl, prefix, req.cursorOffset());
+  }
+
+  private static List<CompletionCandidate> enumCaseLabelCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL) {
+      return List.of();
+    }
+
+    final TypeElement typeEl = expectedEnumType(semanticContext);
+    if (typeEl == null) {
+      return List.of();
+    }
+
+    return new CandidateGenerator(semanticContext.analysis())
+        .proposeUnqualifiedEnumConstantCandidates(typeEl, prefix);
+  }
+
+  private static List<CompletionCandidate> instanceofKeywordCandidates(
+      final SentinelInjectionResult injected, final SemanticCompletionContext semanticContext) {
+    if (!INSTANCEOF_KEYWORD.startsWith(injected.prefix())) {
+      return List.of();
+    }
+
+    if (injected.receiverText() != null || injected.hasDot() || semanticContext == null) {
+      return List.of();
+    }
+
+    final TypeMirror type =
+        TypeResolver.resolvePrecedingExpressionType(
+            injected.tokenStart(), semanticContext.analysis());
+    return isReferenceTypeForInstanceof(type)
+        ? List.of(KeywordProvider.keywordCandidate(INSTANCEOF_KEYWORD))
+        : List.of();
+  }
+
+  private static boolean isReferenceTypeForInstanceof(final TypeMirror type) {
+    if (type == null) {
+      return false;
+    }
+
+    return switch (type.getKind()) {
+      case ARRAY, DECLARED, INTERSECTION, NULL, TYPEVAR -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean isCaseLabelTypePattern(
+      final ParsedSentinel parsed,
+      final List<CompletionCandidate> enumCaseCandidates,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL) {
+      return false;
+    }
+
+    if (!enumCaseCandidates.isEmpty()) {
+      return false;
+    }
+
+    if (semanticContext == null) {
+      return false;
+    }
+
+    return semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType
+        && expectedType.type().getKind() == TypeKind.DECLARED
+        && !isExpectedString(semanticContext);
+  }
+
+  private static boolean isStringCaseLabel(
+      final ParsedSentinel parsed, final SemanticCompletionContext semanticContext) {
+    return parsed.sentinelContext() == SentinelContext.CASE_LABEL
+        && isExpectedString(semanticContext);
+  }
+
+  private static boolean isExpectedString(final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return false;
+    }
+
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
+      return false;
+    }
+
+    final TypeMirror type = expectedType.type();
+
+    final var element = semanticContext.analysis().types().asElement(type);
+    return element instanceof final TypeElement typeElement
+        && "java.lang.String".equals(typeElement.getQualifiedName().toString());
+  }
+
+  private static List<CompletionCandidate> sealedCaseLabelCandidates(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext) {
+    if (parsed.sentinelContext() != SentinelContext.CASE_LABEL || semanticContext == null) {
+      return List.of();
+    }
+
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)
+        || expectedType.type().getKind() != TypeKind.DECLARED) {
+      return List.of();
+    }
+
+    final TypeMirror type = expectedType.type();
+
+    final var types = semanticContext.analysis().types();
+    if (!(types.asElement(type) instanceof final TypeElement selectorType)) {
+      return List.of();
+    }
+
+    return selectorType.getPermittedSubclasses().stream()
+        .map(types::asElement)
+        .filter(TypeElement.class::isInstance)
+        .map(TypeElement.class::cast)
+        .filter(subtype -> subtype.getSimpleName().toString().startsWith(prefix))
+        .map(CompletionEngine::sealedCaseCandidate)
+        .toList();
+  }
+
+  private static CompletionCandidate sealedCaseCandidate(final TypeElement subtype) {
+    final var name = subtype.getSimpleName().toString();
+    final var binding = Strings.decapitalize(name);
+    final CandidateKind kind =
+        switch (subtype.getKind()) {
+          case INTERFACE -> CandidateKind.TYPE_INTERFACE;
+          case ENUM -> CandidateKind.TYPE_ENUM;
+          default -> CandidateKind.TYPE_CLASS;
+        };
+    return new CompletionCandidate(
+        name,
+        name,
+        kind,
+        "permitted subtype",
+        "%s %s ->".formatted(name, binding),
+        false,
+        "0_sealed_%s".formatted(name),
+        null,
+        "permitted subtype",
+        null,
+        subtype.getQualifiedName().toString(),
+        null);
+  }
+
+  private static TypeElement expectedEnumType(final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return null;
+    }
+
+    if (!(semanticContext.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
+      return null;
+    }
+
+    final TypeMirror type = expectedType.type();
+
+    final var el = semanticContext.analysis().types().asElement(type);
+    if (el instanceof final TypeElement typeEl && typeEl.getKind() == ElementKind.ENUM) {
+      return typeEl;
+    }
+
+    return null;
+  }
+
+  // Static members the file's scope already imports elsewhere, ranked after everything in scope and
+  // among themselves by how many files import them; accepting one adds its `import static`.
+  private static List<CompletionItem> learnedStaticImportItems(
+      final ParsedSentinel parsed,
+      final String prefix,
+      final SemanticCompletionContext semanticContext,
+      final CompletionRequest req) {
+    if (semanticContext == null
+        || prefix.isEmpty()
+        || parsed.sentinelContext() == SentinelContext.CASE_LABEL) {
+      return List.of();
+    }
+
+    final List<StaticImportCandidates.Candidate> found =
+        StaticImportCandidates.find(
+            req.staticImports(), semanticContext.analysis(), name -> name.startsWith(prefix));
+    final var factory = new CandidateFactory(semanticContext.analysis().types());
+    final List<CompletionCandidate> candidates =
+        IntStream.range(0, found.size())
+            .mapToObj(rank -> learnedStaticImportCandidate(found.get(rank), rank, factory))
+            .toList();
+    final List<CompletionItem> items =
+        candidates.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(candidates, items, semanticContext.analysis());
+    return items;
+  }
+
+  // One item per name: an overloaded method shows `(…)` rather than one overload's parameters.
+  private static CompletionCandidate learnedStaticImportCandidate(
+      final StaticImportCandidates.Candidate found,
+      final int rank,
+      final CandidateFactory factory) {
+    final CompletionCandidate base =
+        factory.memberCandidate(found.overloads().get(0), (DeclaredType) found.owner().asType());
+    final boolean overloaded = found.overloads().size() > 1;
+    final String owner = found.owner().getQualifiedName().toString();
+    return new CompletionCandidate(
+        base.name(),
+        base.label(),
+        base.kind(),
+        owner,
+        overloaded ? "%s($1)".formatted(base.name()) : base.insertText(),
+        overloaded || base.snippet(),
+        "9_%04d_%s".formatted(rank, base.name()),
+        overloaded ? "(…)" : base.labelDetail(),
+        found.owner().getSimpleName().toString(),
+        base.valueType(),
+        owner,
+        new ImportEdit(found.qualifiedName(), true));
+  }
+
+  private static List<CompletionItem> presentSimpleNameCandidates(
+      final List<CompletionCandidate> candidates, final SemanticCompletionContext semanticContext) {
+    if (semanticContext == null) {
+      return candidates.stream().map(CompletionItemPresenter::present).toList();
+    }
+
+    final List<RankedCompletionCandidate> ranked =
+        CompletionCandidateRanker.rank(candidates, semanticContext);
+    final List<CompletionItem> items =
+        ranked.stream().map(CompletionItemPresenter::present).toList();
+    CompletionItemPresenter.applyImportEdits(
+        ranked.stream().map(RankedCompletionCandidate::candidate).toList(),
+        items,
+        semanticContext.analysis());
+    return items;
+  }
+
+  private static SemanticCompletionContext semanticContext(
+      final CompletionSite site, final CompletionRequest req, final ParsedSentinel parsed) {
+    if (req.cached() == null || req.cached().analysis() == null) {
+      return null;
+    }
+
+    return SemanticCompletionContext.from(site, req, parsed, req.cached().analysis());
+  }
+
+  private CompletionOutcome completeAnnotationArgument(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
+    if (analysis == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final List<CompletionItem> items =
+        AnnotationCompletionProvider.completeArgument(parsed, injected, analysis);
+    return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+  }
+
+  private CompletionOutcome completeAnnotationArgumentValue(
+      final ParsedSentinel parsed,
+      final SentinelInjectionResult injected,
+      final CompletionRequest req) {
+    final AttributedFileAnalysis analysis = resolveAnalysis(req);
+    if (analysis == null) {
+      return CompletionOutcome.of(List.of());
+    }
+
+    final List<CompletionItem> items =
+        AnnotationCompletionProvider.completeArgumentValue(parsed, injected, analysis);
+    if (!AnnotationCompletionProvider.isClassValuedElement(parsed, analysis)) {
+      return new CompletionOutcome(items, req.cached() == null ? analysis : null);
+    }
+
+    // A Class-typed value element (e.g. @ExtendWith's Class<? extends Extension>) expects a type
+    // name here, so offer type candidates alongside the value keywords (EG-038).
+    final var typeOutcome =
+        typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
+            injected, req, TypeReferenceRole.ORDINARY);
+    final List<CompletionItem> merged =
+        Stream.concat(items.stream(), typeOutcome.items().stream()).toList();
+    return new CompletionOutcome(merged, req.cached() == null ? analysis : null);
+  }
+
+  private CompletionOutcome completeDeclarationName(
+      final ParsedSentinel parsed, final CompletionRequest req) {
+    final List<CompletionCandidate> candidates =
+        DeclarationNameCompletionProvider.propose(parsed, resolveAnalysis(req), req.cursorOffset());
+    return CompletionOutcome.of(candidates.stream().map(CompletionItemPresenter::present).toList());
+  }
+
+  private AttributedFileAnalysis resolveAnalysis(final CompletionRequest req) {
+    return req.cached() != null
+        ? req.cached().analysis()
+        : (compiler != null ? compiler.reattribute(req.uri(), req.content()) : null);
+  }
+
+  private static boolean hasUppercasePrefix(final SentinelInjectionResult injected) {
+    return !injected.prefix().isEmpty()
+        && Character.isUpperCase(injected.prefix().charAt(0))
+        && injected.receiverText() == null;
+  }
+
+  private static boolean shouldTreatTypeReferenceAsMixedSimpleName(
+      final ParsedSentinel parsed, final SentinelInjectionResult injected) {
+    return parsed.receiverText() == null
+        && parsed.typeReferenceRole() == TypeReferenceRole.ORDINARY
+        && injected.context() == SentinelInjector.Context.STATEMENT
+        && hasUppercasePrefix(injected);
+  }
+
+  private List<CompletionCandidate> staticMemberFitCandidates(
+      final String prefix,
+      final SemanticCompletionContext context,
+      final WorkspaceTypeIndex typeIndex,
+      final Scope scope) {
+    if (typeIndex == null) {
+      return List.of();
+    }
+
+    if (!(context.expectedValue() instanceof final ExpectedValue.Type expectedType)) {
+      return List.of();
+    }
+
+    final TypeMirror type = expectedType.type();
+
+    final var validator = new TypeIndexValidator(context.analysis(), scope);
+    final Set<String> existingStaticImports =
+        context.analysis().tree() != null
+            ? context.analysis().tree().getImports().stream()
+                .filter(ImportTree::isStatic)
+                .map(imp -> imp.getQualifiedIdentifier().toString())
+                .collect(Collectors.toUnmodifiableSet())
+            : Set.of();
+
+    final var result = new ArrayList<CompletionCandidate>();
+    for (final var entry : typeIndex.search(prefix, 200)) {
+      if (!validator.isResolvable(entry)) {
+        continue;
+      }
+
+      final var typeEl = context.analysis().elements().getTypeElement(entry.qualifiedName());
+      if (typeEl == null) {
+        continue;
+      }
+
+      for (final var member : context.analysis().elements().getAllMembers(typeEl)) {
+        if (!member.getModifiers().contains(Modifier.PUBLIC)
+            || !member.getModifiers().contains(Modifier.STATIC)) {
+          continue;
+        }
+
+        if (member.getKind() != ElementKind.METHOD && member.getKind() != ElementKind.FIELD) {
+          continue;
+        }
+
+        final var returnType =
+            member.getKind() == ElementKind.METHOD
+                ? ((ExecutableElement) member).getReturnType()
+                : member.asType();
+
+        if (returnType.getKind() == TypeKind.VOID || returnType.getKind() == TypeKind.TYPEVAR) {
+          continue;
+        }
+
+        if (!context.analysis().types().isAssignable(returnType, type)) {
+          continue;
+        }
+
+        final var qualifiedMember =
+            "%s.%s".formatted(entry.qualifiedName(), member.getSimpleName());
+        if (existingStaticImports.contains(qualifiedMember)) {
+          continue;
+        }
+
+        result.add(staticMemberFitCandidate(member, typeEl, entry.qualifiedName(), context));
+        if (result.size() >= STATIC_MEMBER_FIT_LIMIT) {
+          return result;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private static CompletionCandidate staticMemberFitCandidate(
+      final Element member,
+      final TypeElement declaringType,
+      final String typeQualifiedName,
+      final SemanticCompletionContext context) {
+    final var base =
+        new CandidateFactory(context.analysis().types())
+            .memberCandidate(member, (DeclaredType) declaringType.asType());
+    final var typeName = declaringType.getSimpleName().toString();
+    final var qualifiedMember = "%s.%s".formatted(typeQualifiedName, member.getSimpleName());
+    return new CompletionCandidate(
+        "%s.%s".formatted(typeName, member.getSimpleName()),
+        base.label(),
+        base.kind(),
+        typeName,
+        base.insertText(),
+        base.snippet(),
+        null,
+        base.labelDetail(),
+        base.labelDescription(),
+        base.valueType(),
+        typeQualifiedName,
+        new ImportEdit(qualifiedMember, true));
+  }
+
+  /**
+   * Returns true when the VARIABLE_DECLARATION sentinel is a real name slot (the user has already
+   * typed an explicit type before the cursor). Returns false for javac error-recovery artifacts
+   * where the parser invents a synthetic type using the enclosing class name.
+   */
+  private static boolean isRealNameSlot(final ParsedSentinel parsed) {
+    return parsed.declaredTypeText() != null
+        && !parsed.declaredTypeText().equals(parsed.enclosingClass());
+  }
+
+  private static CompletionOutcome completeModuleDirective(
+      final SentinelInjectionResult injected,
+      final ModuleDirectiveKind kind,
+      final WorkspaceTypeIndex typeIndex,
+      final List<String> moduleNames) {
+    final List<CompletionItem> items =
+        switch (kind) {
+          case EXPORTS, OPENS, USES, PROVIDES, WITH -> nameSegmentItems(injected, typeIndex);
+          case REQUIRES, REQUIRES_TRANSITIVE, REQUIRES_STATIC ->
+              moduleNameItems(injected, moduleNames);
+          case MODULE -> List.of();
+          case NONE -> directiveKeywordItems();
+        };
+    return CompletionOutcome.of(items);
+  }
+
+  private static List<CompletionItem> moduleNameItems(
+      final SentinelInjectionResult injected, final List<String> moduleNames) {
+    final String prefix =
+        injected.receiverText() != null
+            ? "%s.%s".formatted(injected.receiverText(), injected.prefix())
+            : injected.prefix();
+    return moduleNames.stream()
+        .filter(name -> name.startsWith(prefix))
+        .map(CompletionEngine::toModuleItem)
+        .toList();
+  }
+
+  private static List<CompletionItem> nameSegmentItems(
+      final SentinelInjectionResult injected, final WorkspaceTypeIndex typeIndex) {
+    final String dotPrefix =
+        injected.receiverText() != null ? "%s.".formatted(injected.receiverText()) : "";
+    return typeIndex.searchByBinaryPrefix(dotPrefix, MODULE_SEGMENT_LIMIT).stream()
+        .filter(seg -> seg.startsWith(injected.prefix()))
+        .map(CompletionEngine::toModuleItem)
+        .toList();
+  }
+
+  private static CompletionItem toModuleItem(final String label) {
+    final var item = new CompletionItem(label);
+    item.setKind(CompletionItemKind.Module);
+    return item;
+  }
+
+  private static List<CompletionItem> directiveKeywordItems() {
+    return Stream.of("requires", "exports", "opens", "uses", "provides")
+        .map(CompletionEngine::toKeywordItem)
+        .toList();
+  }
+
+  private static CompletionItem toKeywordItem(final String keyword) {
+    final var item = new CompletionItem(keyword);
+    item.setKind(CompletionItemKind.Keyword);
+    return item;
+  }
+}

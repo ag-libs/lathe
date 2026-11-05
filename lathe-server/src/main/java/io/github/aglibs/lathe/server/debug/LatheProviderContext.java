@@ -6,12 +6,7 @@ import com.microsoft.java.debug.core.adapter.IHotCodeReplaceProvider;
 import com.microsoft.java.debug.core.adapter.ISourceLookUpProvider;
 import com.microsoft.java.debug.core.adapter.IVirtualMachineManagerProvider;
 import com.microsoft.java.debug.core.adapter.ProviderContext;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Optional;
-import java.util.function.Function;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 
 /**
  * The seam between Lathe and Microsoft java-debug: it supplies Lathe's implementations of the
@@ -31,18 +26,11 @@ public final class LatheProviderContext extends ProviderContext {
     registerProvider(ICompletionsProvider.class, new NoCompletionsProvider());
   }
 
-  public LatheProviderContext(
-      final Function<Path, Optional<CompilationWorker>> workerFor,
-      final List<Path> sourceRoots,
-      final WorkspaceTypeIndex typeIndex) {
+  public LatheProviderContext(final FrameSources frames, final WorkspaceTypeIndex typeIndex) {
     registerCommon();
-    registerProvider(
-        IEvaluationProvider.class, new LatheEvaluationProvider(workerFor, sourceRoots));
-    registerProvider(
-        ISourceLookUpProvider.class, new LatheSourceLookUpProvider(workerFor, sourceRoots));
-    registerProvider(
-        ICompletionsProvider.class,
-        new LatheCompletionsProvider(workerFor, sourceRoots, typeIndex));
+    registerProvider(IEvaluationProvider.class, new LatheEvaluationProvider(frames));
+    registerProvider(ISourceLookUpProvider.class, new LatheSourceLookUpProvider(frames));
+    registerProvider(ICompletionsProvider.class, new LatheCompletionsProvider(frames, typeIndex));
   }
 
   private void registerCommon() {

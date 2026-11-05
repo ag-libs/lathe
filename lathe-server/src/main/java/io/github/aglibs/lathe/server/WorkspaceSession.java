@@ -1,32 +1,31 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.analysis.RenameProvider;
+import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.SemanticToken;
+import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.TokenScanner;
+import io.github.aglibs.lathe.analysis.TransientSource;
+import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
+import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
+import io.github.aglibs.lathe.analysis.WorkspaceSymbolResolver;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
-import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.RenameProvider;
-import io.github.aglibs.lathe.server.analysis.SemanticToken;
-import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
-import io.github.aglibs.lathe.server.analysis.TextMentions;
-import io.github.aglibs.lathe.server.analysis.TokenScanner;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
-import io.github.aglibs.lathe.server.analysis.WorkspaceSymbolResolver;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
-import io.github.aglibs.lathe.server.debug.DebugStartResult;
-import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -34,10 +33,7 @@ import io.github.aglibs.lathe.server.module.CompileResponse;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
-import io.github.aglibs.lathe.server.run.LaunchOutcome;
-import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
-import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
@@ -46,23 +42,19 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
@@ -72,8 +64,6 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
-import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
@@ -82,21 +72,13 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.WorkspaceEdit;
-import org.eclipse.lsp4j.jsonrpc.CancelChecker;
-import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
 final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());
-
-  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
-  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
 
   // Upper bound on transitive subtypes returned by the type-hierarchy explorer, so a near-Object or
   // huge marker-interface anchor cannot flood the picker or the source-locating pass. Beyond it the
@@ -184,8 +166,39 @@ final class WorkspaceSession {
                 this::refreshOpenFiles,
                 this::keepWriteDiagnostics,
                 () -> renameTransaction.memberPaths()));
-    this.verifier = new ChangeVerifier(eventLoop, state, router, writePass);
+    this.verifier = new ChangeVerifier(state, router, writePass);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
+  }
+
+  // The session's components, for callers that already run on the event loop (the services and
+  // the engine): each one checks the loop itself.
+  RunCoordinator runs() {
+    return runs;
+  }
+
+  WritePass writePass() {
+    return writePass;
+  }
+
+  ChangeVerifier verifier() {
+    return verifier;
+  }
+
+  RenameService renames() {
+    return renames;
+  }
+
+  ReferenceSearch search() {
+    return search;
+  }
+
+  SourceLayout layout() {
+    return state.layout();
+  }
+
+  // The notes an agent's answer ends with, including a build-file sync this session knows is due.
+  LatheNotes notes(final List<Path> files) {
+    return verifier.notes(files, buildFilesChanged);
   }
 
   void initialize(final Path root) {
@@ -268,46 +281,6 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  CompletableFuture<LaunchOutcome> runTestFuture(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
-    return runs.runTestFuture(moduleRel, selections, token);
-  }
-
-  CompletableFuture<LaunchOutcome> runMainFuture(
-      final String moduleRel, final String mainClass, final String token) {
-    return runs.runMainFuture(moduleRel, mainClass, token);
-  }
-
-  CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
-    return runs.runNamedFuture(name, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugTest(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
-    return runs.debugTest(moduleRel, selections, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugMain(
-      final String moduleRel, final String mainClass, final String token) {
-    return runs.debugMain(moduleRel, mainClass, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugNamed(final String name, final String token) {
-    return runs.debugNamed(name, token);
-  }
-
-  void cancelRun(final String token) {
-    runs.cancelRun(token);
-  }
-
-  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
-    return runs.discoverTests(moduleRel);
-  }
-
-  List<RunConfigInfo> listRunConfigs() {
-    return runs.listRunConfigs();
-  }
-
   RunConfigWriter.Saved saveRunConfig(
       final String name,
       final String moduleRel,
@@ -317,77 +290,6 @@ final class WorkspaceSession {
       final boolean overwrite)
       throws IOException {
     return runs.saveRunConfig(name, moduleRel, kind, mainClass, selectors, overwrite);
-  }
-
-  CompletableFuture<Void> reconcileNow(final boolean eager) {
-    return writePass.reconcileNow(eager);
-  }
-
-  CompletableFuture<Void> writeReported(final Set<Path> changed) {
-    return writePass.writeReported(changed);
-  }
-
-  List<Path> takeWrittenSinceVerify() {
-    return writePass.takeWrittenSinceVerify();
-  }
-
-  Optional<Path> refreshResource(final String uri) {
-    return writePass.refreshResource(uri);
-  }
-
-  TextMentions.Sources textMentionSources(final String name) {
-    return verifier.textMentionSources(name);
-  }
-
-  List<Path> differingFromBuild(final List<Path> changed) {
-    return verifier.differingFromBuild(changed);
-  }
-
-  List<Path> changedSinceBuild() {
-    return verifier.changedSinceBuild();
-  }
-
-  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
-    return verifier.verifyTargetsByModule(changed);
-  }
-
-  Map<Path, ModulePlacement> classifyPaths(final List<Path> paths) {
-    return verifier.classifyPaths(paths);
-  }
-
-  int reactorModuleCount() {
-    return verifier.reactorModuleCount();
-  }
-
-  List<LatheModuleSummary> moduleSummaries() {
-    return verifier.moduleSummaries();
-  }
-
-  List<String> downstreamModuleRels(final List<Path> changed) {
-    return verifier.downstreamModuleRels(changed);
-  }
-
-  Optional<String> failingUnder(final Path file) {
-    return verifier.failingUnder(file);
-  }
-
-  LatheNotes notes(final List<Path> files) {
-    return verifier.notes(files, buildFilesChanged);
-  }
-
-  CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
-      prepareRenameFuture(final String uri, final Position pos, final boolean fileRenameSupported) {
-    return renames.prepareRenameFuture(uri, pos, fileRenameSupported);
-  }
-
-  CompletableFuture<WorkspaceEdit> renameFuture(
-      final String uri,
-      final Position pos,
-      final String newName,
-      final boolean fileRenameSupported,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return renames.renameFuture(uri, pos, newName, fileRenameSupported, cancelChecker, progress);
   }
 
   CreateTypeResult createType(final CreateTypeArgs args) {
@@ -401,39 +303,15 @@ final class WorkspaceSession {
     return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), args.name());
   }
 
-  List<String> modules() {
-    return state.layout().modules();
-  }
-
-  List<String> testModules() {
-    return state.layout().testModules();
-  }
-
-  List<PackageEntry> packages(final String moduleRel) {
-    return state.layout().packages(moduleRel);
-  }
-
-  ContextInfo resolveContext(final String uri) {
-    return state.layout().resolveContext(LatheUri.toPath(uri));
-  }
-
-  DirRun dirRun(final String uri) {
-    return state.layout().dirRun(LatheUri.toPath(uri));
-  }
-
-  List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
-    return state.layout().testSources(moduleRel, classNames);
-  }
-
   List<ResourceEntry> resources() {
     return ResourceFinder.list(
-        state.manifest().resourceDirModules(), state.manifest().dependencyJarsToGav());
+        state.manifest().resourceDirModules(), state.manifest().libraries().jarToGav());
   }
 
   // The tests of the file's type, or from a test the type it tests.
   TestCounterparts testCounterparts(final String uri) {
     final Path file = LatheUri.toPath(uri);
-    final ContextInfo context = resolveContext(uri);
+    final ContextInfo context = state.layout().resolveContext(file);
     return TestCounterparts.find(
         file,
         context == null ? "" : context.pkg(),
@@ -450,6 +328,7 @@ final class WorkspaceSession {
     final Path dest =
         state
             .manifest()
+            .libraries()
             .dependencySourceDir(jarPath)
             .map(dir -> dir.resolve(entry))
             .orElseGet(ResourceFinder.tempDest(entry));
@@ -477,15 +356,11 @@ final class WorkspaceSession {
       router.touchAnalysisCache(uri);
       return module
           .worker()
-          .runnables(uri, doc.content(), doc.version(), moduleRel(module.config()))
+          .runnables(uri, doc.content(), doc.version(), state.layout().moduleRel(module.config()))
           .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
     return CompletableFuture.completedFuture(List.of());
-  }
-
-  private String moduleRel(final ModuleSourceConfig config) {
-    return SourceLayout.moduleRel(state.root(), config.moduleDir());
   }
 
   Optional<Path> buildTool() {
@@ -498,8 +373,8 @@ final class WorkspaceSession {
     return state
         .registry()
         .moduleSourceFor(file)
-        .map(this::moduleRel)
-        .map(rel -> rel.isEmpty() ? "." : rel);
+        .map(state.layout()::moduleRel)
+        .map(SourceLayout::displayed);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -515,7 +390,8 @@ final class WorkspaceSession {
     LOG.info(() -> "[open] %s".formatted(uri));
     state.candidateIndex().update(uri, content);
     // An editor may open a buffer restored with unsaved changes.
-    if (LatheUri.isFileUri(uri) && content.equals(WritePass.readSource(LatheUri.toPath(uri)))) {
+    if (LatheUri.isFileUri(uri)
+        && FileUtil.readIfPresent(LatheUri.toPath(uri)).filter(content::equals).isPresent()) {
       unsaved.remove(uri);
     } else {
       unsaved.add(uri);
@@ -652,88 +528,29 @@ final class WorkspaceSession {
   private void reloadFromDisk(final Path source) {
     final String uri = LatheUri.fromPath(source);
     final OpenDocument open = docs.get(uri);
-    final String content = WritePass.readSource(source);
-    if (open != null && content != null) {
-      docs.put(uri, content, open.version());
+    if (open != null) {
+      FileUtil.readIfPresent(source).ifPresent(content -> docs.put(uri, content, open.version()));
     }
-  }
-
-  CompletableFuture<List<Location>> referencesFuture(
-      final String uri,
-      final Position pos,
-      final boolean includeDeclaration,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.referencesFuture(uri, pos, includeDeclaration, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<Location>> instantiationsFuture(
-      final String uri,
-      final Position pos,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.instantiationsFuture(uri, pos, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
-      final String uri, final Position pos) {
-    return search.documentHighlightFuture(uri, pos);
-  }
-
-  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
-      implementationFuture(final String uri, final Position pos) {
-    return search.implementationFuture(uri, pos);
-  }
-
-  CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
-      final CallHierarchyItem item) {
-    return search.outgoingCallsFuture(item);
-  }
-
-  CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
-      final CallHierarchyItem item,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.incomingCallsFuture(item, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
-      final String uri, final Position pos) {
-    return search.prepareCallHierarchyFuture(uri, pos);
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        uri,
-        null,
-        (worker, doc) -> {
-          final var request = router.featureRequest(doc, pos);
-          return worker.hover(request).exceptionally(FeatureAnswers.failedFor("hover", uri, null));
-        });
+        "hover", uri, null, (worker, doc) -> worker.hover(router.featureRequest(doc, pos)));
   }
 
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        uri,
-        true,
-        (worker, doc) ->
-            worker
-                .onName(router.featureRequest(doc, pos))
-                .exceptionally(FeatureAnswers.failedFor("onName", uri, true)));
+        "onName", uri, true, (worker, doc) -> worker.onName(router.featureRequest(doc, pos)));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
     return router.openDocFeature(
+        "signatureHelp",
         uri,
         null,
-        (worker, doc) -> {
-          final var request = router.featureRequest(doc, pos);
-          return worker
-              .signatureHelp(request)
-              .exceptionally(FeatureAnswers.failedFor("signatureHelp", uri, null));
-        });
+        (worker, doc) -> worker.signatureHelp(router.featureRequest(doc, pos)));
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -765,15 +582,15 @@ final class WorkspaceSession {
             "[%s] %s line=%d character=%d"
                 .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
     return router.openDocFeature(
+        operation,
         uri,
         Either.forLeft(List.of()),
         (worker, doc) ->
             find.apply(worker, router.featureRequest(doc, pos))
                 .thenApply(
                     location ->
-                        FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)))
-                .exceptionally(
-                    FeatureAnswers.failedFor(operation, uri, Either.forLeft(List.of()))));
+                        FeatureAnswers.definitionResult(
+                            location.map(List::of).orElseGet(List::of))));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
@@ -782,6 +599,7 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .openDocFeature(
+            "typeHierarchy:prepare",
             uri,
             List.of(),
             (worker, doc) -> {
@@ -793,25 +611,19 @@ final class WorkspaceSession {
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
       final TypeHierarchyItem item) {
-    final var data = TypeHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final var indexSnapshot = reactorIndex.current();
-    final List<Path> sourceDirs = state.typeSourceDirs();
-    final var t = Stopwatch.start();
-    return router
-        .routeFeature(
-            data.routingUri(),
-            worker -> worker.typeHierarchySupertypes(item, indexSnapshot, sourceDirs),
-            List.of())
-        .thenApply(
-            FeatureAnswers.logged(LOG, "typeHierarchy:supertypes", data.binaryName(), t, "items"));
+    return typeHierarchyLevel(
+        "typeHierarchy:supertypes", item, CompilationWorker::typeHierarchySupertypes);
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
       final TypeHierarchyItem item) {
+    return typeHierarchyLevel(
+        "typeHierarchy:subtypes", item, CompilationWorker::typeHierarchySubtypes);
+  }
+
+  // One level of a type's hierarchy, answered by the worker of the module that holds it.
+  private CompletableFuture<List<TypeHierarchyItem>> typeHierarchyLevel(
+      final String operation, final TypeHierarchyItem item, final TypeHierarchyStep step) {
     final var data = TypeHierarchyItemDataCodec.decode(item.getData());
     if (data == null) {
       return CompletableFuture.completedFuture(List.of());
@@ -822,11 +634,20 @@ final class WorkspaceSession {
     final var t = Stopwatch.start();
     return router
         .routeFeature(
+            operation,
             data.routingUri(),
-            worker -> worker.typeHierarchySubtypes(item, indexSnapshot, sourceDirs),
-            List.of())
-        .thenApply(
-            FeatureAnswers.logged(LOG, "typeHierarchy:subtypes", data.binaryName(), t, "items"));
+            List.of(),
+            worker -> step.apply(worker, item, indexSnapshot, sourceDirs))
+        .thenApply(FeatureAnswers.logged(LOG, operation, data.binaryName(), t, "items"));
+  }
+
+  @FunctionalInterface
+  private interface TypeHierarchyStep {
+    CompletableFuture<List<TypeHierarchyItem>> apply(
+        CompilationWorker worker,
+        TypeHierarchyItem item,
+        WorkspaceTypeIndex index,
+        List<Path> sourceDirs);
   }
 
   CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplorerFuture(
@@ -844,11 +665,12 @@ final class WorkspaceSession {
               final var indexSnapshot = reactorIndex.current();
               final List<Path> sourceDirs = state.typeSourceDirs();
               return router.routeFeature(
+                  "typeHierarchy:explore",
                   data.routingUri(),
+                  TypeHierarchyExplorerResult.empty(),
                   worker ->
                       worker.typeHierarchyExplore(
-                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP),
-                  TypeHierarchyExplorerResult.empty());
+                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP));
             })
         .thenApply(
             result -> {
@@ -871,21 +693,19 @@ final class WorkspaceSession {
     final var route = router.routeCompiler(uri);
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.openDocFeature(
+        "completion",
         uri,
         CompletionOutcome.of(List.of()),
         (worker, doc) ->
-            worker
-                .complete(
-                    uri,
-                    doc.content(),
-                    doc.version(),
-                    pos,
-                    context,
-                    indexSnapshot,
-                    completionModuleNames(route, uri),
-                    staticImports)
-                .exceptionally(
-                    FeatureAnswers.failedFor("completion", uri, CompletionOutcome.of(List.of()))));
+            worker.complete(
+                uri,
+                doc.content(),
+                doc.version(),
+                pos,
+                context,
+                indexSnapshot,
+                completionModuleNames(route, uri),
+                staticImports));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -898,7 +718,8 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    if (router.routeCompiler(uri) instanceof CompilerRoute.External) {
+    final CompilerRoute route = router.routeCompiler(uri);
+    if (route instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(List.of());
     }
 
@@ -915,75 +736,70 @@ final class WorkspaceSession {
             .collect(Collectors.toUnmodifiableSet());
     final var baseIndex = reactorIndex.current();
     final List<List<TypeIndexEntry>> reactorEntries = reactorIndex.shards();
-    final LearnedStaticImports staticImports =
-        router.learnedStaticImports(router.routeCompiler(uri));
+    final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
+        "codeAction",
         uri,
+        List.of(),
         moduleWorker ->
             moduleWorker
                 .cachedTypeEntries(neededTypeNames)
+                .thenCompose(openEntries -> enrichedIndex(baseIndex, reactorEntries, openEntries))
                 .thenCompose(
-                    openEntries -> {
-                      final var enriched =
-                          buildEnrichedIndex(baseIndex, reactorEntries, openEntries);
-                      return moduleWorker.codeAction(
-                          uri,
-                          openFile.content(),
-                          openFile.version(),
-                          range,
-                          requests,
-                          enriched,
-                          staticImports);
-                    })
+                    enriched ->
+                        moduleWorker.codeAction(
+                            uri,
+                            openFile.content(),
+                            openFile.version(),
+                            range,
+                            requests,
+                            enriched,
+                            staticImports))
                 .thenApply(
                     actions ->
                         resolveSupported
                             ? CompileCheckedActions.defer(uri, openFile.version(), actions)
-                            : actions)
-                .exceptionally(FeatureAnswers.failedFor("codeAction", uri, List.of())),
-        List.of());
+                            : actions));
   }
 
-  // The check may compile twice (the rewritten text, then the original to compare errors), and the
-  // second starts from the first one's completion, off the loop: each compile routes on the loop.
+  // The check may compile twice (the rewritten text, then the original to compare errors); the
+  // second starts from the first one's result, which the worker delivers on the loop.
   CompletableFuture<CodeAction> resolveCodeActionFuture(final CodeAction action) {
-    return CompileCheckedActions.resolve(
-        action,
-        docs::get,
-        (uri, content) -> eventLoop.submitCompose(() -> diagnosticsTransientFuture(uri, content)));
+    return CompileCheckedActions.resolve(action, docs::get, this::diagnosticsTransientFuture);
   }
 
   CompletableFuture<MissingImportsResult> missingImportsFuture(final String uri) {
     final OpenDocument openFile = docs.get(uri);
-    if (openFile == null || router.routeCompiler(uri) instanceof CompilerRoute.External) {
+    final CompilerRoute route = router.routeCompiler(uri);
+    if (openFile == null || route instanceof CompilerRoute.External) {
       return CompletableFuture.completedFuture(MissingImportsResult.empty());
     }
 
     final var indexSnapshot = reactorIndex.current();
-    final LearnedStaticImports staticImports =
-        router.learnedStaticImports(router.routeCompiler(uri));
+    final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
+        "missingImports",
         uri,
+        MissingImportsResult.empty(),
         moduleWorker ->
-            moduleWorker
-                .missingImports(
-                    uri, openFile.content(), openFile.version(), indexSnapshot, staticImports)
-                .exceptionally(
-                    FeatureAnswers.failedFor("missingImports", uri, MissingImportsResult.empty())),
-        MissingImportsResult.empty());
+            moduleWorker.missingImports(
+                uri, openFile.content(), openFile.version(), indexSnapshot, staticImports));
   }
 
-  private static WorkspaceTypeIndex buildEnrichedIndex(
+  // The index with the open files' types added. Built off the loop, as a rebuild takes 100-200ms on
+  // a large reactor (as ReactorTypeIndex's), and back on the loop with the result.
+  private CompletableFuture<WorkspaceTypeIndex> enrichedIndex(
       final WorkspaceTypeIndex base,
       final List<List<TypeIndexEntry>> reactorEntries,
       final List<TypeIndexEntry> openFileEntries) {
     if (openFileEntries.isEmpty()) {
-      return base;
+      return CompletableFuture.completedFuture(base);
     }
 
     final List<List<TypeIndexEntry>> allReactor =
         Stream.concat(reactorEntries.stream(), Stream.of(openFileEntries)).toList();
-    return base.withReactorEntries(allReactor);
+    return eventLoop.rejoin(
+        CompletableFuture.supplyAsync(() -> base.withReactorEntries(allReactor)));
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {
@@ -993,23 +809,21 @@ final class WorkspaceSession {
 
   CompletableFuture<SemanticTokens> semanticTokensFuture(final String uri) {
     return router.openDocFeature(
+        "semanticTokens",
         uri,
         null,
         (worker, doc) ->
             worker
                 .semanticTokens(uri, doc.content(), doc.version())
-                .thenApply(WorkspaceSession::encodeTokensOrNull)
-                .exceptionally(FeatureAnswers.failedFor("semanticTokens", uri, null)));
+                .thenApply(WorkspaceSession::encodeTokensOrNull));
   }
 
   CompletableFuture<List<DocumentSymbol>> documentSymbolFuture(final String uri) {
     return router.openDocFeature(
+        "documentSymbol",
         uri,
         List.of(),
-        (worker, doc) ->
-            worker
-                .documentSymbol(uri, doc.content())
-                .exceptionally(FeatureAnswers.failedFor("documentSymbol", uri, List.of())));
+        (worker, doc) -> worker.documentSymbol(uri, doc.content()));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
@@ -1019,21 +833,8 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    final Optional<CompilationWorker> worker = router.routeCompiler(uri).analysisWorker();
-    if (worker.isEmpty()) {
-      LOG.fine(() -> "[foldingRange] %s skipped route=missing ranges=0".formatted(uri));
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    return foldWith(worker.get(), uri, doc);
-  }
-
-  private CompletableFuture<List<FoldingRange>> foldWith(
-      final CompilationWorker worker, final String uri, final OpenDocument doc) {
-    router.touchAnalysisCache(uri);
-    return worker
-        .foldingRange(uri, doc.content())
-        .exceptionally(FeatureAnswers.failedFor("foldingRange", uri, List.of()));
+    return router.routeFeature(
+        "foldingRange", uri, List.of(), worker -> worker.foldingRange(uri, doc.content()));
   }
 
   List<? extends TextEdit> format(final String uri, final FormatEngine engine) {
@@ -1056,13 +857,10 @@ final class WorkspaceSession {
         Thread.currentThread().interrupt();
       }
 
-      throw new ResponseErrorException(
-          new ResponseError(
-              ResponseErrorCode.RequestFailed,
-              "Could not format %s: %s"
-                  .formatted(
-                      LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()),
-              null));
+      throw FeatureAnswers.refused(
+          "Could not format %s: %s"
+              .formatted(
+                  LatheUri.toPath(uri).getFileName(), ExceptionUtil.rootCause(e).getMessage()));
     }
   }
 
@@ -1130,7 +928,7 @@ final class WorkspaceSession {
             sourceDirs,
             entry -> !reactorOnly || reactorIndex.current().isReactorType(entry.binaryName()));
     LOG.info(
-        () -> "[symbol] query=%s hits=%d %dms".formatted(query, results.size(), t.elapsedMs()));
+        () -> "[symbol] query=%s %dms hits=%d".formatted(query, t.elapsedMs(), results.size()));
     return results;
   }
 
@@ -1151,12 +949,14 @@ final class WorkspaceSession {
     textEdits.forEach(
         (uri, edits) -> {
           final OpenDocument open = docs.get(uri);
-          final String original =
-              open != null ? open.content() : WritePass.readSource(LatheUri.toPath(uri));
-          if (original != null) {
-            tx.add(
-                moves.getOrDefault(uri, uri), original, SourceLocator.applyEdits(original, edits));
-          }
+          final Optional<String> original =
+              open != null
+                  ? Optional.of(open.content())
+                  : FileUtil.readIfPresent(LatheUri.toPath(uri));
+          original.ifPresent(
+              text ->
+                  tx.add(
+                      moves.getOrDefault(uri, uri), text, SourceLocator.applyEdits(text, edits)));
         });
     moves.forEach(tx::addMovedAway);
     LOG.fine(() -> "[rename-tx] begin members=%d".formatted(tx.size()));
@@ -1333,9 +1133,8 @@ final class WorkspaceSession {
 
     releaseSessionsOnTick();
     // Defer every reactive branch (staleness prompt, build-file/workspace reload) while a build
-    // runs, so a
-    // mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after the lock
-    // clears picks up the settled state in one reload.
+    // runs, so a mid-build workspace.json rewrite cannot re-arm the prompt. The first poll after
+    // the lock clears picks up the settled state in one reload.
     if (writePass.reactorBuildInProgress()) {
       LOG.fine(() -> "[watcher] skipped — reactor build in progress");
       return;
@@ -1388,9 +1187,7 @@ final class WorkspaceSession {
                 new MessageActionItem(LATER_ACTION)));
     request.setMessage(message);
     request.setType(MessageType.Warning);
-    client
-        .showMessageRequest(request)
-        .thenAccept(action -> eventLoop.execute(() -> onSyncPromptResponse(action)));
+    eventLoop.rejoin(client.showMessageRequest(request)).thenAccept(this::onSyncPromptResponse);
   }
 
   // Sync / Sync + capture ask the client to run Maven (the server never does); Later just
@@ -1485,10 +1282,6 @@ final class WorkspaceSession {
         : publisher.publishIfCurrent(snapshot, withWriteDiagnostics(snapshot, result));
   }
 
-  private void submitCompile(final OpenDocument snapshot, final AfterCompile afterCompile) {
-    submitCompile(router.routeCompiler(snapshot.uri()), snapshot, CompileMode.FAST, afterCompile);
-  }
-
   // The compile, which completes exceptionally if it threw; its error is published either way.
   private CompletableFuture<CompileResponse> submitCompile(
       final CompilerRoute route,
@@ -1500,15 +1293,7 @@ final class WorkspaceSession {
       return CompletableFuture.completedFuture(null);
     }
 
-    return submitTo(route, route.analysisWorker().orElseThrow(), snapshot, mode, afterCompile);
-  }
-
-  private CompletableFuture<CompileResponse> submitTo(
-      final CompilerRoute route,
-      final CompilationWorker moduleWorker,
-      final OpenDocument snapshot,
-      final CompileMode mode,
-      final AfterCompile afterCompile) {
+    final CompilationWorker moduleWorker = route.analysisWorker().orElseThrow();
     router.touchAnalysisCache(snapshot.uri());
     final List<CompileRequest> siblings =
         route instanceof final CompilerRoute.Module module
@@ -1523,12 +1308,7 @@ final class WorkspaceSession {
           if (failure == null) {
             eventLoop.runLogged(() -> afterCompile.accept(snapshot, result));
           } else {
-            publisher.publishError(
-                snapshot,
-                mode,
-                failure instanceof CompletionException
-                    ? failure
-                    : new CompletionException(failure));
+            publisher.publishError(snapshot, mode, ExceptionUtil.asCompletion(failure));
           }
         });
     return compiled;
@@ -1624,7 +1404,9 @@ final class WorkspaceSession {
     }
 
     LOG.fine(
-        () -> "[dependents] batch %d file(s) in %s".formatted(snapshots.size(), moduleRel(config)));
+        () ->
+            "[dependents] batch %d file(s) in %s"
+                .formatted(snapshots.size(), state.layout().moduleRel(config)));
     state
         .registry()
         .workerFor(config)
@@ -1687,25 +1469,29 @@ final class WorkspaceSession {
   }
 
   private void scheduleOpenFile(final String uri) {
-    eventLoop.schedule(
-        uri,
-        0L,
-        () -> {
-          final OpenDocument openFile = docs.get(uri);
-          if (openFile != null) {
-            compileAndPublish(openFile, CompileMode.OPEN);
-          }
-        });
+    scheduleCompile(uri, openFile -> compileAndPublish(openFile, CompileMode.OPEN));
   }
 
   private void scheduleAstRefresh(final String uri) {
+    scheduleCompile(
+        uri,
+        openFile ->
+            submitCompile(
+                router.routeCompiler(uri),
+                openFile,
+                CompileMode.FAST,
+                publisher::refreshTokensIfCurrent));
+  }
+
+  // Compiles the open document once the loop is free; nothing if it was closed meanwhile.
+  private void scheduleCompile(final String uri, final Consumer<OpenDocument> compile) {
     eventLoop.schedule(
         uri,
         0L,
         () -> {
           final OpenDocument openFile = docs.get(uri);
           if (openFile != null) {
-            submitCompile(openFile, publisher::refreshTokensIfCurrent);
+            compile.accept(openFile);
           }
         });
   }

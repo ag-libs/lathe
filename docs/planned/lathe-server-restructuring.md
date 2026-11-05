@@ -62,6 +62,10 @@ These rules are in `AGENTS.md` (`CLAUDE.md` links to it), so every agent sees th
    Known exception, kept for now (KISS): a workspace reload closes the old registry on the loop, waiting for its
    workers to drain. Reloads are rare; make the close asynchronous (with one admission shared across registries)
    only if a measurement shows a noticeable stall.
+   Second known exception: a formatter that runs an external command (`FileCommandFormatEngine`, e.g. Spotless
+   through the build tool) waits for that process on the loop, so the server answers nothing else meanwhile.
+   In-process formatters (google-java-format, palantir, Eclipse) take milliseconds and are not affected.
+   The fix is to snapshot the text on the loop, run the command off it, and rejoin to apply the edits.
 5. Field names say the thread: `eventLoop` for `ServerEventLoop`, `moduleWorker` for a `CompilationWorker`
    (today both are called `worker`).
 
@@ -130,13 +134,25 @@ It went from 5,863 lines to 1,779; the delegates go when Phase 2 lets the front 
 
 ### Phase 3 — Maven modules and `analysis` tidy-ups
 
-- New module `lathe-analysis`: today's `analysis` and `analysis/completion` packages.
-  First cut its four wrong-way edges:
-  `SourceAnalysisSession` moves next to `CompilationWorker`;
-  `SourceFeatureRequest` takes a small interface instead of `WorkspaceManifest`;
-  `RunTarget`/`RunnableKind` move down;
-  `WorkspaceManifest` stops calling `DefinitionLocator.topLevelClass`.
-  The compiler then enforces the layering agents keep crossing.
+- **Done:** module `lathe-analysis`, the former `analysis` and `analysis/completion` packages,
+  renamed to `io.github.aglibs.lathe.analysis`.
+  The edges it had into the server were cut first:
+  `RunTarget`/`RunnableKind` moved down;
+  the manifest's library lookups (jar/GAV/sources maps, the JDK, origin labels, external source roots)
+  became the `LibrarySources` record, which the manifest holds and `SourceFeatureRequest` and
+  `ExternalCompiler` take instead of the whole manifest;
+  `LatheUri` moved to `lathe-core`.
+  `SourceAnalysisSession` stayed in analysis: it no longer reaches up, and 17 analysis tests drive their
+  features through it.
+  The compiler now enforces the layering.
+- The multi-release jar (`CompilerTrees`) moved with it, with its `classes-jdk21` test profile.
+  A module that depends on it sees the `versions/21` classes only from the jar:
+  a reactor `test` hands lathe-server's tests the classes directory, so there `isCaseLabel` is the JDK 17 one.
+  Only completion inside a `case` label uses it, and those tests are in `lathe-analysis`.
+- Shared test helpers (`TestJavac`, `TempSourceCompiler`, `JavacCrashFixtures`, `SampleFixture`)
+  live in `io.github.aglibs.lathe.analysis.testing`, a package no main code has,
+  so `lathe-analysis`'s test-jar puts them on lathe-server's test classpath without a split package
+  while both modules run as named modules on the module path.
 - Optional, decided then: `lathe-server-debug`, isolating JDI, java-debug and rxjava.
 - Split `SourceLocator` (six concerns) and `TypeResolver` (three); one helper for the enclosing-path walks
   that about ten classes repeat.

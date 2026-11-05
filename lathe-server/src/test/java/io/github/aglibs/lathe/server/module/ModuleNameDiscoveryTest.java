@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.TestCompiler;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,7 +27,7 @@ class ModuleNameDiscoveryTest {
     final Path classDir = tmp.resolve("dep-classes");
     final Path jar = tmp.resolve("dep.jar");
     writeModule(sourceRoot, "com.example.dep", "com.example.dep");
-    TestCompiler.compileToJar(
+    TestJavac.compileToJar(
         jar,
         classDir,
         List.of(),
@@ -44,7 +45,7 @@ class ModuleNameDiscoveryTest {
     final Path originalTarget = tmp.resolve("reactor/target/classes");
     final Path remappedTarget = tmp.resolve(".lathe/reactor/classes");
     writeModule(sourceRoot, "com.example.reactor", "com.example.reactor");
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         remappedTarget,
         sourceRoot.resolve("module-info.java"),
         sourceRoot.resolve("com/example/reactor/Reactor.java"));

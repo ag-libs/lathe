@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -22,33 +21,20 @@ import org.junit.jupiter.api.condition.EnabledForJreRange;
 
 // verify_change and analyze_change: what a change breaks, and the sync it suggests.
 class LatheEngineVerifyTest extends LatheEngineTestBase {
-  private static final String API_SOURCE =
-      "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
-
   @Test
   void analyzeChange_interfaceMethod_reportsOverrideFamilyAndReferences() throws Exception {
-    final String ifaceSource =
-        """
-        package com.example;
-        interface Greeter {
-          void greet();
-        }
-        """;
-    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
-    final Path impl =
-        TestCompiler.writeModuleSource(
-            tmp,
-            "com/example/EnGreeter.java",
-            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
+    final GreeterFixture greeter = greeterFixture();
+    final String ifaceSource = greeter.ifaceSource();
+    final Path iface = greeter.iface();
     final Path caller =
         TestCompiler.writeModuleSource(
             tmp,
             "com/example/Caller.java",
             "package com.example; class Caller { void run(Greeter g) { g.greet(); } }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl, caller);
+    compileIntoMirror(iface, greeter.impl(), caller);
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("greet"));
+    final var pos = positionOf(ifaceSource, "greet");
     final LatheChangeImpact impact = engine.analyzeChange(iface, pos.getLine(), pos.getCharacter());
 
     assertThat(impact.signature()).contains("greet");
@@ -116,7 +102,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             "com/example/Caller.java",
             "package com.example; class Caller { void run(Callee c) { c.greet(); Old.old(); }"
                 + " private void unused() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), old, callee, caller);
+    compileIntoMirror(old, callee, caller);
     engine = new LatheEngine(tmp);
     assertThat(engine.diagnostics(caller))
         .as("the caller has a removal warning and an unused-method hint")
@@ -155,7 +141,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             tmp,
             "com/example/Sub.java",
             "package com.example;\nclass Sub extends Callee {\n  static void welcome() {}\n}\n");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), callee, sub);
+    compileIntoMirror(callee, sub);
     stampModule(callee, sub);
     engine = new LatheEngine(tmp);
 

@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.File;
 import java.io.IOException;
 import java.lang.ProcessBuilder.Redirect;
@@ -37,8 +38,8 @@ class ChildProcessesTest {
     final String classPath =
         String.join(
             File.pathSeparator,
-            TestCompiler.jarOf(TestProcess.class).toString(),
-            TestCompiler.jarOf(ChildProcesses.class).toString());
+            TestJavac.jarOf(TestProcess.class).toString(),
+            TestJavac.jarOf(ChildProcesses.class).toString());
     final Process parent =
         new ProcessBuilder(
                 TestProcess.java().toString(),

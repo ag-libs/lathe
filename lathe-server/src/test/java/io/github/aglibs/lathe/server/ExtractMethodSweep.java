@@ -14,10 +14,11 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.ExtractionSupport;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.lang.reflect.Proxy;
 import java.net.URI;
@@ -73,7 +74,7 @@ public final class ExtractMethodSweep {
   private static final long TIMEOUT_SECONDS = Long.getLong("sweep.timeout", 300);
   // Held strongly: JUL keeps loggers weakly, and a collected one would take its level with it.
   private static final Logger PROVIDER_LOG =
-      Logger.getLogger("io.github.aglibs.lathe.server.analysis.ExtractMethodProvider");
+      Logger.getLogger("io.github.aglibs.lathe.analysis.ExtractMethodProvider");
   private static final Pattern REFUSED =
       Pattern.compile("^\\[codeAction:extractMethod\\] refused: \\[(.*)\\]$");
 
@@ -196,7 +197,10 @@ public final class ExtractMethodSweep {
     final String uri = LatheUri.fromPath(file);
     // A file that does not compile as it is makes every compile check fail: counted apart.
     fileHasErrors =
-        service.diagnosticsFuture(uri, content, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).stream()
+        service
+            .onLoopFuture(session -> session.diagnosticsFuture(uri, content, 1))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .stream()
             .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
     if (fileHasErrors) {
       count(outcomes, "files with errors on open");

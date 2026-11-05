@@ -2,34 +2,34 @@ package io.github.aglibs.lathe.server;
 
 import static java.util.logging.Level.SEVERE;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CallHierarchyItemData;
+import io.github.aglibs.lathe.analysis.CallHierarchyItemDataCodec;
+import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.TransientSource;
+import io.github.aglibs.lathe.analysis.TypeSourceLocator;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.CallHierarchyItemData;
-import io.github.aglibs.lathe.server.analysis.CallHierarchyItemDataCodec;
-import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
-import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
-import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
@@ -55,6 +55,8 @@ final class ReferenceSearch {
 
   private static final Logger LOG = Logger.getLogger(ReferenceSearch.class.getName());
 
+  // Small: attributing disk candidates in one javac task amortizes its fixed per-invocation cost,
+  // while a small batch bounds peak memory, cancellation latency, and analyze()-crash blast radius.
   private static final int REFERENCE_BATCH_SIZE = 8;
 
   private final ServerEventLoop eventLoop;
@@ -83,24 +85,15 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final OpenDocument openFile = route.get().doc();
+    final CompilationWorker cursorWorker = route.get().worker();
+    final ModuleSourceConfig cursorConfig = route.get().config();
     final var request = router.featureRequest(openFile, pos);
-
-    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
-    if (routedWorker.isEmpty()) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final CompilationWorker cursorWorker = routedWorker.get();
-
-    router.touchAnalysisCache(openFile.uri());
-
-    // Capture declaring module synchronously on the lathe-worker thread before any async hand-off
-    final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
 
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
@@ -120,7 +113,7 @@ final class ReferenceSearch {
                         return searchReferencesForTarget(
                                 openFile,
                                 cursorWorker,
-                                cursorConfig.orElse(null),
+                                cursorConfig,
                                 searchTarget,
                                 includeDeclaration,
                                 cancelChecker,
@@ -132,7 +125,7 @@ final class ReferenceSearch {
                                         matches,
                                         openFile,
                                         cursorWorker,
-                                        cursorConfig.orElse(null),
+                                        cursorConfig,
                                         request,
                                         cancelChecker,
                                         progress));
@@ -152,11 +145,7 @@ final class ReferenceSearch {
             })
         .exceptionally(
             ex -> {
-              if (ex instanceof CancellationException cancellation) {
-                throw cancellation;
-              }
-              if (ex instanceof CompletionException completion
-                  && completion.getCause() instanceof CancellationException cancellation) {
+              if (ExceptionUtil.completionCause(ex) instanceof CancellationException cancellation) {
                 throw cancellation;
               }
               LOG.log(
@@ -165,9 +154,7 @@ final class ReferenceSearch {
                   () ->
                       "[references] %s target=%s %dms failed"
                           .formatted(uri, targetName.get(), t.elapsedMs()));
-              throw ex instanceof CompletionException completion
-                  ? completion
-                  : new CompletionException(ex);
+              throw ExceptionUtil.asCompletion(ex);
             });
   }
 
@@ -177,22 +164,15 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     cancelChecker.checkCanceled();
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
+    final OpenDocument openFile = route.get().doc();
+    final CompilationWorker cursorWorker = route.get().worker();
+    final ModuleSourceConfig cursorConfig = route.get().config();
     final var request = router.featureRequest(openFile, pos);
-
-    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
-    if (routedWorker.isEmpty()) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final CompilationWorker cursorWorker = routedWorker.get();
-
-    router.touchAnalysisCache(openFile.uri());
-    final var cursorConfig = state.registry().moduleSourceFor(LatheUri.toPath(uri));
     final var t = Stopwatch.start();
 
     return cursorWorker
@@ -215,7 +195,7 @@ final class ReferenceSearch {
                               searchReferencesForTarget(
                                   openFile,
                                   cursorWorker,
-                                  cursorConfig.orElse(null),
+                                  cursorConfig,
                                   target,
                                   false,
                                   cancelChecker,
@@ -301,24 +281,12 @@ final class ReferenceSearch {
       final String progressTitle) {
     if (target.scope() == ReferenceTarget.SearchScope.DECLARING_FILE) {
       progress.begin(progressTitle, 1);
-      return cursorWorker
-          .searchReferences(
-              openFile.uri(),
-              openFile.content(),
-              openFile.version(),
-              target,
-              includeDeclaration,
-              cancelChecker)
-          .whenComplete(
-              (matches, failure) -> {
-                if (failure == null) {
-                  progress.advance(false, matches.size());
-                }
-              });
+      return searchOpenDocument(
+          cursorWorker, openFile, target, includeDeclaration, cancelChecker, progress);
     }
 
     final var planningTimer = Stopwatch.start();
-    return readSearchInputs(() -> planSearch(cursorConfig, target))
+    return readSearchInputs(planSearch(cursorConfig, target))
         .thenCompose(
             searchInputs ->
                 runSearch(
@@ -343,15 +311,14 @@ final class ReferenceSearch {
         .toList();
   }
 
-  // Planning reads session state, so it runs on the event loop; reading the candidate files does
-  // not, so it runs off it, where a search over thousands of files cannot stall the loop. The
-  // search then routes open documents, which is loop state again, so it rejoins the loop.
+  // Planning reads session state, so the caller plans on the event loop; reading the candidate
+  // files does not, so it runs off it, where a search over thousands of files cannot stall the
+  // loop. The search then routes open documents, which is loop state again, so it rejoins the loop.
   private CompletableFuture<List<ModuleSearchInputs>> readSearchInputs(
-      final Callable<List<ModuleSearchPlan>> plan) {
+      final List<ModuleSearchPlan> plans) {
     return eventLoop.rejoin(
-        eventLoop
-            .submit(plan)
-            .thenApplyAsync(plans -> plans.stream().map(ReferenceSearch::readCandidates).toList()));
+        CompletableFuture.supplyAsync(
+            () -> plans.stream().map(ReferenceSearch::readCandidates).toList()));
   }
 
   private static ModuleSearchInputs readCandidates(final ModuleSearchPlan plan) {
@@ -451,12 +418,7 @@ final class ReferenceSearch {
     return worker
         .searchReferences(
             doc.uri(), doc.content(), doc.version(), target, includeDeclaration, cancelChecker)
-        .whenComplete(
-            (matches, failure) -> {
-              if (failure == null) {
-                progress.advance(false, matches.size());
-              }
-            });
+        .whenComplete(advancing(progress, false));
   }
 
   private CompletableFuture<List<ReferenceMatch>> searchDiskChunk(
@@ -517,6 +479,7 @@ final class ReferenceSearch {
   CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
       final String uri, final Position pos) {
     return router.openDocFeature(
+        "documentHighlight",
         uri,
         List.of(),
         (worker, doc) -> {
@@ -525,8 +488,7 @@ final class ReferenceSearch {
           return worker
               .resolveTarget(request)
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
-              .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"))
-              .exceptionally(FeatureAnswers.failedFor("documentHighlight", uri, List.of()));
+              .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
   }
 
@@ -566,13 +528,19 @@ final class ReferenceSearch {
     return sourceRoots.stream().anyMatch(root -> path.startsWith(root.resolve(packageRel)));
   }
 
+  // Counts a file's matches into the search's progress once its search succeeds.
+  private static <T> BiConsumer<List<T>, Throwable> advancing(
+      final ProgressReporter.Task progress, final boolean transientFile) {
+    return (matches, failure) -> {
+      if (failure == null) {
+        progress.advance(transientFile, matches.size());
+      }
+    };
+  }
+
   private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
-    try {
-      return Optional.of(new DiskCandidate(uri, Files.readString(LatheUri.toPath(uri))));
-    } catch (final IOException e) {
-      LOG.log(Level.FINE, e, () -> "[references] failed to read candidate: %s".formatted(uri));
-      return Optional.empty();
-    }
+    return FileUtil.readIfPresent(LatheUri.toPath(uri))
+        .map(content -> new DiskCandidate(uri, content));
   }
 
   private record DiskCandidate(String uri, String content) {
@@ -645,32 +613,23 @@ final class ReferenceSearch {
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       implementationFuture(final String uri, final Position pos) {
-    final OpenDocument openFile = docs.get(uri);
-    if (openFile == null) {
+    final Optional<FeatureRouter.OpenRoute> route = router.openRoute(uri);
+    if (route.isEmpty()) {
       return CompletableFuture.completedFuture(Either.forLeft(List.of()));
     }
 
-    final var request = router.featureRequest(openFile, pos);
+    final CompilationWorker cursorWorker = route.get().worker();
+    final var request = router.featureRequest(route.get().doc(), pos);
     final var indexSnapshot = reactorIndex.current();
     final var lambdaSnapshot = reactorIndex.lambdaImplementors();
-    final Optional<CompilationWorker> routedWorker = router.routeCompiler(uri).analysisWorker();
-    if (routedWorker.isEmpty()) {
-      return CompletableFuture.completedFuture(Either.forLeft(List.of()));
-    }
-
-    final CompilationWorker cursorWorker = routedWorker.get();
-
-    router.touchAnalysisCache(openFile.uri());
 
     final var t = Stopwatch.start();
     return cursorWorker
         .resolveTarget(request)
         .thenCompose(
             target ->
-                eventLoop.submitCompose(
-                    () ->
-                        implementationForTarget(
-                            target, request, cursorWorker, indexSnapshot, lambdaSnapshot)))
+                implementationForTarget(
+                    target, request, cursorWorker, indexSnapshot, lambdaSnapshot))
         .thenApply(
             locations -> {
               LOG.fine(
@@ -847,30 +806,32 @@ final class ReferenceSearch {
   }
 
   // A query over a source file's analysis in its own module: the open document's, or else the
-  // file on disk attributed once.
+  // file on disk, read off the loop and attributed once.
   <T> CompletableFuture<List<T>> fileQueryFuture(
       final Path sourceFile, final Function<AttributedFileAnalysis, List<T>> query) {
-    final var config = state.registry().moduleSourceFor(sourceFile);
-    if (config.isEmpty()) {
+    final Optional<CompilationWorker> worker = state.registry().moduleWorkerFor(sourceFile);
+    if (worker.isEmpty()) {
       return CompletableFuture.completedFuture(List.of());
     }
 
     final var uri = LatheUri.fromPath(sourceFile);
     final OpenDocument openFile = docs.get(uri);
-    final var diskFile = openFile == null ? readDiskCandidate(uri).orElse(null) : null;
-    if (openFile == null && diskFile == null) {
-      return CompletableFuture.completedFuture(List.of());
-    }
-
-    final String content = openFile != null ? openFile.content() : diskFile.content();
-    final int version = openFile != null ? openFile.version() : 0;
-    final var worker = state.registry().workerFor(config.get());
     if (openFile != null) {
       router.touchAnalysisCache(openFile.uri());
-      return worker.queryFile(uri, content, version, query);
+      return worker.get().queryFile(uri, openFile.content(), openFile.version(), query);
     }
 
-    return worker.queryFileTransient(uri, content, query);
+    return eventLoop
+        .rejoin(CompletableFuture.supplyAsync(() -> readDiskCandidate(uri)))
+        .thenCompose(
+            disk ->
+                disk.flatMap(
+                        file ->
+                            state
+                                .registry()
+                                .moduleWorkerFor(sourceFile)
+                                .map(w -> w.queryFileTransient(uri, file.content(), query)))
+                    .orElseGet(() -> CompletableFuture.completedFuture(List.of())));
   }
 
   CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
@@ -883,6 +844,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
     return router
         .openDocFeature(
+            "callHierarchy:outgoing",
             data.routingUri(),
             List.of(),
             (worker, doc) ->
@@ -924,37 +886,17 @@ final class ReferenceSearch {
         return CompletableFuture.completedFuture(List.of());
       }
 
-      final CompilationWorker worker = routedWorker.get();
       progress.begin(progressTitle, 1);
       final OpenDocument declaringDoc = docs.get(data.routingUri());
-      if (declaringDoc != null) {
-        router.touchAnalysisCache(declaringDoc.uri());
-        return worker
-            .searchIncomingCalls(
-                declaringDoc.uri(),
-                declaringDoc.content(),
-                declaringDoc.version(),
-                target,
-                cancelChecker)
-            .whenComplete(
-                (calls, failure) -> {
-                  if (failure == null) {
-                    progress.advance(false, calls.size());
-                  }
-                });
-      }
-      return readDiskCandidate(data.routingUri())
-          .map(
-              d ->
-                  worker
-                      .searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker)
-                      .whenComplete(
-                          (calls, failure) -> {
-                            if (failure == null) {
-                              progress.advance(true, calls.size());
-                            }
-                          }))
-          .orElseGet(() -> CompletableFuture.completedFuture(List.of()));
+      final var plan =
+          declaringDoc != null
+              ? new ModuleSearchPlan(routedWorker.get(), List.of(declaringDoc), List.of())
+              : new ModuleSearchPlan(routedWorker.get(), List.of(), List.of(data.routingUri()));
+      return readSearchInputs(List.of(plan))
+          .thenCompose(
+              inputs ->
+                  FeatureAnswers.concatAll(
+                      incomingCallFutures(inputs.get(0), target, cancelChecker, progress)));
     }
 
     final Path packageRel =
@@ -966,10 +908,7 @@ final class ReferenceSearch {
 
     final var t = Stopwatch.start();
     return readSearchInputs(
-            () ->
-                configs.stream()
-                    .map(config -> planModuleSearch(config, target, packageRel))
-                    .toList())
+            configs.stream().map(config -> planModuleSearch(config, target, packageRel)).toList())
         .thenCompose(
             searchInputs -> {
               final List<CompletableFuture<List<CallHierarchyIncomingCall>>> searches =
@@ -1001,12 +940,7 @@ final class ReferenceSearch {
                   return worker
                       .searchIncomingCalls(
                           doc.uri(), doc.content(), doc.version(), target, cancelChecker)
-                      .whenComplete(
-                          (calls, failure) -> {
-                            if (failure == null) {
-                              progress.advance(false, calls.size());
-                            }
-                          });
+                      .whenComplete(advancing(progress, false));
                 }),
         inputs.diskCandidates().stream()
             .map(
@@ -1014,12 +948,7 @@ final class ReferenceSearch {
                   cancelChecker.checkCanceled();
                   return worker
                       .searchIncomingCallsTransient(d.uri(), d.content(), target, cancelChecker)
-                      .whenComplete(
-                          (calls, failure) -> {
-                            if (failure == null) {
-                              progress.advance(true, calls.size());
-                            }
-                          });
+                      .whenComplete(advancing(progress, true));
                 }));
   }
 
@@ -1028,6 +957,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
     return router
         .openDocFeature(
+            "callHierarchy:prepare",
             uri,
             List.of(),
             (worker, doc) -> {

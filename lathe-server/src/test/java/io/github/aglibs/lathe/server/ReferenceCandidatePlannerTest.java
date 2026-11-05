@@ -2,11 +2,11 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -354,9 +354,8 @@ class ReferenceCandidatePlannerTest {
   void planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile()
       throws IOException {
     // FR-012: the generated builder is in the record's package but under the generated-sources
-    // root,
-    // and names the record without importing it. It is indexed, so the same-package filter must
-    // consult the generated root (not just sourceRoots) to keep it.
+    // root, and names the record without importing it. It is indexed, so the same-package filter
+    // must consult the generated root (not just sourceRoots) to keep it.
     write(
         "com/example/Config.java",
         """

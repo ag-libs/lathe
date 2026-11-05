@@ -1,0 +1,389 @@
+package io.github.aglibs.lathe.analysis;
+
+import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+public final class WorkspaceTypeIndex {
+
+  private static final Set<String> COMMON_PLATFORM_PACKAGES =
+      Set.of("java.lang", "java.util", "java.io", "java.time", "java.nio", "java.math");
+
+  private static final Logger LOG = Logger.getLogger(WorkspaceTypeIndex.class.getName());
+
+  private final List<TypeIndexEntry> staticEntries;
+  private final Set<String> reactorBinaryNames;
+  private final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower;
+  // Like bySimpleNameLower but with no visibility filter: every top-level type, including
+  // package-private ones. Backs searchSymbols() (workspace/symbol + stack-frame navigation), which
+  // must locate a dependency's internal impl classes; completion/import stay on bySimpleNameLower.
+  private final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower;
+  private final NavigableMap<String, TypeIndexEntry> byBinaryName;
+  private final Map<String, List<TypeIndexEntry>> directSubtypesByParent;
+  // How many reactor classes reference each type (document frequency); a completion-ranking signal.
+  private final Map<String, Integer> usageCounts;
+
+  private WorkspaceTypeIndex(
+      final List<TypeIndexEntry> staticEntries,
+      final Set<String> reactorBinaryNames,
+      final NavigableMap<String, List<TypeIndexEntry>> bySimpleNameLower,
+      final NavigableMap<String, List<TypeIndexEntry>> symbolsBySimpleNameLower,
+      final NavigableMap<String, TypeIndexEntry> byBinaryName,
+      final Map<String, List<TypeIndexEntry>> directSubtypesByParent,
+      final Map<String, Integer> usageCounts) {
+    this.staticEntries = staticEntries;
+    this.reactorBinaryNames = reactorBinaryNames;
+    this.bySimpleNameLower = bySimpleNameLower;
+    this.symbolsBySimpleNameLower = symbolsBySimpleNameLower;
+    this.byBinaryName = byBinaryName;
+    this.directSubtypesByParent = directSubtypesByParent;
+    this.usageCounts = usageCounts;
+  }
+
+  public static WorkspaceTypeIndex empty() {
+    return new WorkspaceTypeIndex(
+        List.of(),
+        Set.of(),
+        Collections.emptyNavigableMap(),
+        Collections.emptyNavigableMap(),
+        Collections.emptyNavigableMap(),
+        Map.of(),
+        Map.of());
+  }
+
+  public static WorkspaceTypeIndex build(final List<Path> shardPaths) {
+    return build(shardPaths, List.of());
+  }
+
+  public static WorkspaceTypeIndex build(
+      final List<Path> shardPaths, final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final var t = Stopwatch.start();
+    final List<TypeIndexFile> files =
+        shardPaths.stream()
+            .filter(WorkspaceTypeIndex::shardExists)
+            .flatMap(WorkspaceTypeIndex::loadFile)
+            .toList();
+    final List<TypeIndexEntry> staticEntries =
+        files.stream().flatMap(file -> file.types().stream()).toList();
+    final var index = create(staticEntries, reactorEntries, Map.of());
+    LOG.fine(
+        () ->
+            "[type-index] loaded index: %d simple names from %d/%d shard(s) + %d reactor shard(s) %dms"
+                .formatted(
+                    index.bySimpleNameLower.size(),
+                    files.size(),
+                    shardPaths.size(),
+                    reactorEntries.size(),
+                    t.elapsedMs()));
+    return index;
+  }
+
+  // A cheap immutable copy that attaches reactor usage counts (document frequency) to the built
+  // index; applied on the full-build path only, so an incremental save keeps the existing counts.
+  public WorkspaceTypeIndex withUsageCounts(final Map<String, Integer> usageCounts) {
+    return new WorkspaceTypeIndex(
+        staticEntries,
+        reactorBinaryNames,
+        bySimpleNameLower,
+        symbolsBySimpleNameLower,
+        byBinaryName,
+        directSubtypesByParent,
+        Map.copyOf(usageCounts));
+  }
+
+  public WorkspaceTypeIndex withReactorEntries(
+      final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final var t = Stopwatch.start();
+    // Usage counts carry over: they are refreshed only on a full build, not on an incremental save.
+    final var index = create(staticEntries, reactorEntries, usageCounts);
+    LOG.fine(
+        () ->
+            "[type-index] refreshed reactor index: %d simple names from %d static type(s) + %d reactor shard(s) %dms"
+                .formatted(
+                    index.bySimpleNameLower.size(),
+                    staticEntries.size(),
+                    reactorEntries.size(),
+                    t.elapsedMs()));
+    return index;
+  }
+
+  private static WorkspaceTypeIndex create(
+      final List<TypeIndexEntry> staticEntries,
+      final Collection<List<TypeIndexEntry>> reactorEntries,
+      final Map<String, Integer> usageCounts) {
+    final Set<String> reactorBinaryNames =
+        reactorEntries.stream()
+            .flatMap(List::stream)
+            .map(TypeIndexEntry::binaryName)
+            .collect(Collectors.toUnmodifiableSet());
+    final List<TypeIndexEntry> deduped = deduplicate(staticEntries, reactorEntries);
+    final TreeMap<String, List<TypeIndexEntry>> mutable =
+        deduped.stream()
+            .filter(
+                e ->
+                    e.typeNameCandidate()
+                        || (reactorBinaryNames.contains(e.binaryName()) && e.isTopLevel()))
+            .collect(
+                Collectors.groupingBy(
+                    e -> e.simpleName().toLowerCase(),
+                    TreeMap::new,
+                    Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
+    final NavigableMap<String, List<TypeIndexEntry>> map =
+        Collections.unmodifiableNavigableMap(mutable);
+    // No visibility filter: every named type -- top-level and nested, any visibility -- so
+    // workspace/symbol can resolve package-private dependency classes (a stack frame's internal
+    // impl class) and nested types (Map.Entry, a reactor record nested in a test class). Synthetic
+    // anonymous/local classes (digit-started simple names) and blank obfuscator names are excluded.
+    final TreeMap<String, List<TypeIndexEntry>> symbolMutable =
+        deduped.stream()
+            .filter(WorkspaceTypeIndex::isNamedSymbol)
+            .collect(
+                Collectors.groupingBy(
+                    e -> e.simpleName().toLowerCase(),
+                    TreeMap::new,
+                    Collectors.collectingAndThen(Collectors.toList(), List::copyOf)));
+    final NavigableMap<String, List<TypeIndexEntry>> symbolMap =
+        Collections.unmodifiableNavigableMap(symbolMutable);
+    final var byBinaryName = new TreeMap<String, TypeIndexEntry>();
+    for (final TypeIndexEntry entry : deduped) {
+      byBinaryName.put(entry.binaryName(), entry);
+    }
+
+    final Map<String, List<TypeIndexEntry>> directSubtypesByParent =
+        deduped.stream()
+            .flatMap(
+                entry -> entry.directSupertypes().stream().map(parent -> Map.entry(parent, entry)))
+            .collect(
+                Collectors.groupingBy(
+                    Map.Entry::getKey,
+                    Collectors.mapping(
+                        Map.Entry::getValue,
+                        Collectors.collectingAndThen(Collectors.toList(), List::copyOf))));
+    return new WorkspaceTypeIndex(
+        staticEntries,
+        reactorBinaryNames,
+        map,
+        symbolMap,
+        Collections.unmodifiableNavigableMap(byBinaryName),
+        Map.copyOf(directSubtypesByParent),
+        Map.copyOf(usageCounts));
+  }
+
+  public int usageCount(final String binaryName) {
+    return usageCounts.getOrDefault(binaryName, 0);
+  }
+
+  // A type a user could meaningfully search for by name: top-level or named nested, any visibility.
+  // Excludes synthetic anonymous/local classes (binary names like Foo$1, whose simple name starts
+  // with a digit) and blank obfuscator names.
+  private static boolean isNamedSymbol(final TypeIndexEntry entry) {
+    final String simpleName = entry.simpleName();
+    return !simpleName.isEmpty() && Character.isJavaIdentifierStart(simpleName.charAt(0));
+  }
+
+  private static List<TypeIndexEntry> deduplicate(
+      final List<TypeIndexEntry> staticEntries,
+      final Collection<List<TypeIndexEntry>> reactorEntries) {
+    final var seen = new LinkedHashMap<String, TypeIndexEntry>();
+    final var all =
+        Stream.concat(staticEntries.stream(), reactorEntries.stream().flatMap(List::stream));
+    for (final TypeIndexEntry entry : (Iterable<TypeIndexEntry>) all::iterator) {
+      final TypeIndexEntry existing = seen.put(entry.binaryName(), entry);
+      if (existing != null) {
+        seen.put(entry.binaryName(), existing);
+        LOG.fine(() -> "[type-index] duplicate type %s skipped".formatted(entry.binaryName()));
+      }
+    }
+    return List.copyOf(seen.values());
+  }
+
+  private static boolean shardExists(final Path shard) {
+    if (Files.exists(shard)) {
+      return true;
+    }
+
+    LOG.fine(() -> "[type-index] shard not found: %s".formatted(shard));
+    return false;
+  }
+
+  private static Stream<TypeIndexFile> loadFile(final Path shard) {
+    try {
+      return Stream.of(Json.read(shard, TypeIndexFile.class));
+    } catch (final IOException e) {
+      LOG.log(Level.WARNING, e, () -> "[type-index] failed to load shard %s".formatted(shard));
+      return Stream.empty();
+    }
+  }
+
+  public List<TypeIndexEntry> search(final String prefix, final int limit) {
+    return prefixMatches(bySimpleNameLower, prefix, limit);
+  }
+
+  // The full group of importable types with this exact simple name, unbounded and ranked like
+  // completion. Import resolution needs every exact match; a limit-truncated prefix scan starves
+  // common names (java.util.List) when many `List*` siblings sort ahead of them by binaryName.
+  public List<TypeIndexEntry> searchExact(final String simpleName) {
+    return bySimpleNameLower.getOrDefault(simpleName.toLowerCase(), List.of()).stream()
+        .sorted(ranking())
+        .toList();
+  }
+
+  // Same exact-prefix match as search(), but over the visibility-unfiltered symbol map, so
+  // workspace/symbol -- and the stack-frame navigation that resolves frames through it -- can find
+  // package-private top-level dependency types (a trace's internal impl classes) and link them to
+  // their extracted source. Completion and import quickfixes deliberately stay on search(), which
+  // excludes non-public types that cannot be referenced or imported.
+  public List<TypeIndexEntry> searchSymbols(final String prefix, final int limit) {
+    return prefixMatches(symbolsBySimpleNameLower, prefix, limit);
+  }
+
+  private List<TypeIndexEntry> prefixMatches(
+      final NavigableMap<String, List<TypeIndexEntry>> index,
+      final String prefix,
+      final int limit) {
+    if (prefix.isEmpty()) {
+      return List.of();
+    }
+
+    final String lower = prefix.toLowerCase();
+    return index.subMap(lower, lower + "￿").values().stream()
+        .flatMap(List::stream)
+        .sorted(ranking())
+        .limit(limit)
+        .toList();
+  }
+
+  // The one order for types offered to the user (completion, import candidates, workspace
+  // symbols). Usage frequency first, so the types the project actually references lead (a
+  // ubiquitous java.util.List beats java.awt.List and alphabetically-earlier dependency `List*`
+  // types). Origin decides equal usage -- notably a cold-start index with no counts yet -- so
+  // common java.* types still lead there; then the shorter name, then the name.
+  public Comparator<TypeIndexEntry> ranking() {
+    return Comparator.<TypeIndexEntry>comparingInt(e -> -usageCount(e.binaryName()))
+        .thenComparingInt(this::originRank)
+        .thenComparingInt(e -> e.qualifiedName().length())
+        .thenComparing(TypeIndexEntry::qualifiedName);
+  }
+
+  // Core java.lang, then other everyday platform packages, then reactor types, then the rest. Exact
+  // package match only: subpackages like java.lang.management or java.util.spi are specialized, not
+  // everyday types, so they rank as ordinary JDK entries (below reactor).
+  private int originRank(final TypeIndexEntry entry) {
+    if ("java.lang".equals(entry.packageName())) {
+      return 0;
+    }
+
+    if (COMMON_PLATFORM_PACKAGES.contains(entry.packageName())) {
+      return 1;
+    }
+
+    return reactorBinaryNames.contains(entry.binaryName()) ? 2 : 3;
+  }
+
+  // CamelCase-hump matching (e.g. "TaskMgr" -> TaskManager, "ASF" -> AbstractServerFactory) is
+  // scoped to reactor-owned types only, not JDK/dependency types: it is a supplementary layer on
+  // top of search()'s exact prefix match, not a replacement, so it deliberately does not touch
+  // search()'s existing contract or its completion/import-quickfix callers.
+  public List<TypeIndexEntry> searchCamelCase(final String query, final int limit) {
+    return bySimpleNameLower.values().stream()
+        .flatMap(List::stream)
+        .filter(entry -> reactorBinaryNames.contains(entry.binaryName()))
+        .filter(entry -> CamelCaseMatcher.matches(query, entry.simpleName()))
+        .limit(limit)
+        .toList();
+  }
+
+  public List<String> searchByBinaryPrefix(final String prefix, final int limit) {
+    final Set<String> seen = new LinkedHashSet<>();
+    // "￿" (U+FFFF) is the highest BMP char — acts as an exclusive upper bound for all ASCII binary
+    // names
+    for (final TypeIndexEntry entry : byBinaryName.subMap(prefix, prefix + "￿").values()) {
+      final String remainder = entry.binaryName().substring(prefix.length());
+      if (remainder.isEmpty() || remainder.charAt(0) == '$') {
+        continue;
+      }
+
+      int end = remainder.length();
+      final int dot = remainder.indexOf('.');
+      final int dollar = remainder.indexOf('$');
+      if (dot >= 0) {
+        end = dot;
+      }
+
+      if (dollar >= 0) {
+        end = Math.min(end, dollar);
+      }
+      seen.add(remainder.substring(0, end));
+      if (seen.size() >= limit) {
+        break;
+      }
+    }
+    return List.copyOf(seen);
+  }
+
+  public boolean isReactorType(final String binaryName) {
+    return reactorBinaryNames.contains(binaryName);
+  }
+
+  public Optional<TypeIndexEntry> findType(final String binaryName) {
+    return Optional.ofNullable(byBinaryName.get(binaryName));
+  }
+
+  public List<TypeIndexEntry> directSupertypes(final String binaryName) {
+    return findType(binaryName).stream()
+        .flatMap(entry -> entry.directSupertypes().stream())
+        .flatMap(name -> findType(name).stream())
+        .toList();
+  }
+
+  public List<TypeIndexEntry> directSubtypes(final String binaryName) {
+    return directSubtypesByParent.getOrDefault(binaryName, List.of()).stream().distinct().toList();
+  }
+
+  public List<TypeIndexEntry> transitiveSubtypes(final String binaryName) {
+    return transitiveClosure(binaryName, this::directSubtypes);
+  }
+
+  public List<TypeIndexEntry> transitiveSupertypes(final String binaryName) {
+    return transitiveClosure(binaryName, this::directSupertypes);
+  }
+
+  private List<TypeIndexEntry> transitiveClosure(
+      final String binaryName, final Function<String, List<TypeIndexEntry>> expand) {
+    final var visited = new HashSet<String>();
+    visited.add(binaryName);
+    final var pending = new ArrayDeque<>(expand.apply(binaryName));
+    final var results = new ArrayList<TypeIndexEntry>();
+    while (!pending.isEmpty()) {
+      final var next = pending.removeFirst();
+      if (visited.add(next.binaryName())) {
+        results.add(next);
+        pending.addAll(expand.apply(next.binaryName()));
+      }
+    }
+    return List.copyOf(results);
+  }
+}

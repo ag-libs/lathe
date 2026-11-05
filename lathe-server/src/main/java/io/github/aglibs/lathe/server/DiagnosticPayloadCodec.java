@@ -1,7 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.server.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.analysis.DiagnosticPayload;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;
 

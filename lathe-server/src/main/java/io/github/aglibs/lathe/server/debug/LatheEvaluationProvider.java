@@ -13,19 +13,16 @@ import com.sun.jdi.ReferenceType;
 import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
+import io.github.aglibs.lathe.analysis.AttributedExpression;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
@@ -61,9 +58,8 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
   // view, so it is refreshed after each invocation (see reloadFrames / DB-6).
   private volatile IStackFrameManager stackFrames;
 
-  LatheEvaluationProvider(
-      final Function<Path, Optional<CompilationWorker>> workerFor, final List<Path> sourceRoots) {
-    this.frames = new FrameSources(workerFor, sourceRoots);
+  LatheEvaluationProvider(final FrameSources frames) {
+    this.frames = frames;
   }
 
   @Override
@@ -106,16 +102,16 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
         frames
             .fileFor(frame.location())
             .orElseThrow(() -> new EvaluationException("source not found for " + frame.location()));
-    final CompilationWorker worker =
-        frames
-            .workerFor(file)
-            .orElseThrow(() -> new EvaluationException("no module worker for " + file));
     final String receiverType = accessibleTypeName(object.referenceType()).replace('$', '.');
     final AttributedExpression attributed =
-        worker
-            .attributeReceiverExpression(
-                file.toUri().toString(), receiverType, RECEIVER, expression)
+        frames
+            .onWorker(
+                file,
+                worker ->
+                    worker.attributeReceiverExpression(
+                        file.toUri().toString(), receiverType, RECEIVER, expression))
             .join()
+            .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
     final Value value =
         new JdiInterpreter(
@@ -288,15 +284,15 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .fileFor(location)
             .orElseThrow(() -> new EvaluationException("source not found for " + location));
     final String content = Files.readString(file);
-    final CompilationWorker worker =
-        frames
-            .workerFor(file)
-            .orElseThrow(() -> new EvaluationException("no module worker for " + file));
     final AttributedExpression attributed =
-        worker
-            .attributeExpression(
-                file.toUri().toString(), content, location.lineNumber(), expression)
+        frames
+            .onWorker(
+                file,
+                worker ->
+                    worker.attributeExpression(
+                        file.toUri().toString(), content, location.lineNumber(), expression))
             .join()
+            .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
     final Value value =
         new JdiInterpreter(attributed, frame, depth, body -> invokeGuarded(thread, body), Map.of())

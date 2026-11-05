@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.mcp;
 
+import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -7,7 +8,6 @@ import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.LatheEngine.TestScope;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -927,7 +927,7 @@ final class LatheMcpTools {
         .formatted(rename.mentionCount(), more, locationLines(rename.mentions()));
   }
 
-  private static CallToolResult formatResult(
+  static CallToolResult formatResult(
       final Path file, final Optional<LatheFormat> format, final LatheNotes notes) {
     return format
         .map(f -> result("Formatted %s: %s changed.".formatted(f.path(), lineSpan(f)), notes))
@@ -1031,8 +1031,8 @@ final class LatheMcpTools {
 
   private static String lineSpan(final LatheFormat format) {
     return format.firstLine() == format.lastLine()
-        ? "line %d".formatted(format.firstLine())
-        : "lines %d–%d".formatted(format.firstLine(), format.lastLine());
+        ? "line %d".formatted(toWire(format.firstLine()))
+        : "lines %d–%d".formatted(toWire(format.firstLine()), toWire(format.lastLine()));
   }
 
   // An empty reactor-only answer says what the scope left out: the method may call only the JDK.
@@ -1137,20 +1137,17 @@ final class LatheMcpTools {
             : "%d%n%s"
                 .formatted(impact.overrideFamily().size(), locationLines(impact.overrideFamily()));
     final String text =
-        """
-        %s
-        references: %d production, %d test%s
-        affected modules: %s
-        relevant tests: %s
-        override family: %s"""
-            .formatted(
-                impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
-                impact.productionRefs(),
-                impact.testRefs(),
-                impact.referencesTruncated() ? " (truncated)" : "",
-                joinOrNone(impact.affectedModules()),
-                joinOrNone(impact.relevantTests()),
-                overrides);
+        String.join(
+            System.lineSeparator(),
+            impact.signature().isBlank() ? "(no symbol at that position)" : impact.signature(),
+            "references: %d production, %d test%s"
+                .formatted(
+                    impact.productionRefs(),
+                    impact.testRefs(),
+                    impact.referencesTruncated() ? " (truncated)" : ""),
+            "affected modules: %s".formatted(joinOrNone(impact.affectedModules())),
+            "relevant tests: %s".formatted(joinOrNone(impact.relevantTests())),
+            "override family: %s".formatted(overrides));
     return result(text, notes);
   }
 
@@ -1356,7 +1353,7 @@ final class LatheMcpTools {
   }
 
   // Agents read and give 1-based lines and columns; the server's positions are 0-based. These two
-  // are this layer's only conversions (LatheFormat arrives 1-based already).
+  // are this layer's only conversions.
   private static int fromWire(final int oneBased) {
     return oneBased - 1;
   }

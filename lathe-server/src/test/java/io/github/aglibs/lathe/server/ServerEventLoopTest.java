@@ -185,10 +185,11 @@ class ServerEventLoopTest {
   }
 
   @Test
-  void close_runsLastOnTheLoop_droppingEverythingQueuedBehindIt() {
+  void close_runsLastOnTheLoop_droppingQueuedTasksButCompletingQueuedResults() {
     final var loop = new ServerEventLoop();
     final var ranOn = new AtomicReference<String>();
     final var late = new AtomicInteger();
+    final var result = new CompletableFuture<String>();
 
     loop.close(
         () -> {
@@ -196,10 +197,13 @@ class ServerEventLoopTest {
           // Queued while the final task runs, so behind it: neither may ever run.
           loop.execute(late::incrementAndGet);
           loop.schedule(URI, 0, late::incrementAndGet);
+          // A worker's result delivered meanwhile still completes, or its caller would wait.
+          loop.deliver(() -> result.complete("done"));
         });
 
     assertThat(ranOn.get()).isEqualTo(LOOP_THREAD);
     assertThat(late.get()).isZero();
+    assertThat(result).isCompletedWithValue("done");
     assertThat(loop.submit(() -> 1)).isCancelled();
   }
 

@@ -198,7 +198,9 @@ public final class ServerInstaller {
     return artifacts.resolveTransitive(SERVER_COORDINATES);
   }
 
-  // The full runtime closure of lathe-mcp-server (itself, lathe-server, lathe-core and the MCP SDK)
+  // The full runtime closure of lathe-mcp-server (itself, lathe-server, lathe-analysis, lathe-core
+  // and
+  // the MCP SDK)
   // for the classpath launcher.
   private List<Path> resolveMcpServerJars() throws SyncException {
     return artifacts.resolveTransitive(MCP_SERVER_COORDINATES);

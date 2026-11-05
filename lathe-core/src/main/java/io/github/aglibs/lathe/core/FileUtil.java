@@ -51,6 +51,16 @@ public final class FileUtil {
     return Path.of(path).toAbsolutePath().normalize();
   }
 
+  // A file's text, or empty when it cannot be read (deleted, moved, a directory): for a source a
+  // caller treats as absent rather than as an error.
+  public static Optional<String> readIfPresent(final Path file) {
+    try {
+      return Optional.of(Files.readString(file, StandardCharsets.UTF_8));
+    } catch (final IOException e) {
+      return Optional.empty();
+    }
+  }
+
   public static boolean isJavaFile(final Path path) {
     return path.getFileName().toString().endsWith(".java");
   }

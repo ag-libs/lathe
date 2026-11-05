@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,8 +22,7 @@ import java.util.stream.Stream;
 
 // The workspace type index and the reactor shards it is built from: each tree's bytecode types plus
 // the types of its sources not built yet. Event-loop state: every entry point checks the loop, and
-// a
-// rebuild runs off it and is applied back on it.
+// a rebuild runs off it and is applied back on it.
 final class ReactorTypeIndex {
 
   private static final Logger LOG = Logger.getLogger(ReactorTypeIndex.class.getName());
@@ -158,7 +157,7 @@ final class ReactorTypeIndex {
     reactorIndexStale = true;
   }
 
-  // Built off the session thread, as a rebuild takes 100-200ms on a large reactor and would hold
+  // Built off the event loop, as a rebuild takes 100-200ms on a large reactor and would hold
   // back the publishes queued behind it; applied only if the index is still the one it was built
   // from and no newer build started.
   private void rebuild() {
@@ -169,19 +168,18 @@ final class ReactorTypeIndex {
     final long build = ++reactorIndexBuilds;
     final var rebuilt = new CompletableFuture<Void>();
     reactorIndexRebuilt = rebuilt;
-    CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards))
+    eventLoop
+        .rejoin(CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards)))
         .whenComplete(
-            (index, error) ->
-                eventLoop.execute(
-                    () -> {
-                      if (error != null) {
-                        LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
-                      } else if (typeIndex == base && build == reactorIndexBuilds) {
-                        typeIndex = index;
-                      }
+            (index, error) -> {
+              if (error != null) {
+                LOG.log(Level.SEVERE, error, () -> "[type-index] reactor rebuild failed");
+              } else if (typeIndex == base && build == reactorIndexBuilds) {
+                typeIndex = index;
+              }
 
-                      rebuilt.complete(null);
-                    }));
+              rebuilt.complete(null);
+            });
   }
 
   // Index types from dirty/open sources not yet built, so they show in symbols before their class

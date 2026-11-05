@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>io.github.ag-libs</groupId>
+    <artifactId>lathe-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>lathe-analysis</artifactId>
+
+  <name>lathe-analysis</name>
+  <description>Lathe's javac-backed code analysis: what the language server's features compute from a compile.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.ag-libs</groupId>
+      <artifactId>lathe-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.lsp4j</groupId>
+      <artifactId>org.eclipse.lsp4j.jsonrpc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+    </dependency>
+    <!-- Test sources the runnables tests compile annotate a JUnit @Suite. -->
+    <dependency>
+      <groupId>org.junit.platform</groupId>
+      <artifactId>junit-platform-suite-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <compilerArgs>
+            <arg>-Xlint:all</arg>
+            <arg>-Xlint:-processing</arg>
+            <arg>-Xlint:-requires-automatic</arg>
+            <!-- lsp4j is an automatic module, and its types are this module's API. -->
+            <arg>-Xlint:-requires-transitive-automatic</arg>
+            <arg>-Werror</arg>
+          </compilerArgs>
+        </configuration>
+        <executions>
+          <!-- The few classes that use javac API newer than Java 17 (src/main/java21), compiled into
+               META-INF/versions/21 of the multi-release jar. -->
+          <execution>
+            <id>compile-java21</id>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+            <configuration>
+              <release>21</release>
+              <compileSourceRoots>
+                <compileSourceRoot>${project.basedir}/src/main/java21</compileSourceRoot>
+              </compileSourceRoots>
+              <multiReleaseOutput>true</multiReleaseOutput>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <configuration>
+          <archive>
+            <manifestEntries>
+              <Multi-Release>true</Multi-Release>
+            </manifestEntries>
+          </archive>
+        </configuration>
+        <executions>
+          <!-- The javac test helpers lathe-server's tests share, in a package no main code has, so
+               they load from the classpath next to this module on the module path. Built even
+               with -Dmaven.test.skip (then empty): lathe-server resolves it as a dependency
+               whether or not its tests compile. -->
+          <execution>
+            <id>test-helpers</id>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <skip>false</skip>
+              <includes>
+                <include>io/github/aglibs/lathe/analysis/testing/**</include>
+                <include>Sample.java</include>
+              </includes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <!-- Surefire opens only the packages of the selected test classes; SampleFixture (whose
+               @TempDir field JUnit injects) lives in the testing package. -->
+          <argLine>@{argLine}
+            --add-opens
+            io.github.aglibs.lathe.analysis/io.github.aglibs.lathe.analysis.testing=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+  <profiles>
+    <profile>
+      <!-- Surefire runs from a directory, where the JVM ignores META-INF/versions. On JDK 21+ the
+           tests run from a copy of the classes with the versions/21 classes laid over the base
+           ones, as the multi-release jar resolves them at run time. A module that depends on this
+           one sees the versions/21 classes only from the jar: a reactor `test` hands it the
+           classes directory instead. -->
+      <id>multi-release-jdk21</id>
+      <activation>
+        <jdk>[21,)</jdk>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>copy-base-classes</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-test-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/classes-jdk21</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}</directory>
+                      <excludes>
+                        <exclude>META-INF/versions/**</exclude>
+                      </excludes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+              <execution>
+                <id>overlay-jdk21-classes</id>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <phase>process-test-classes</phase>
+                <configuration>
+                  <outputDirectory>${project.build.directory}/classes-jdk21</outputDirectory>
+                  <overwrite>true</overwrite>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.outputDirectory}/META-INF/versions/21</directory>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <classesDirectory>${project.build.directory}/classes-jdk21</classesDirectory>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

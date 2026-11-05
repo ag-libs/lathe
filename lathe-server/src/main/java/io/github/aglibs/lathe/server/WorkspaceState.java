@@ -57,8 +57,8 @@ final class WorkspaceState {
     eventLoop.checkOnLoop();
     return Stream.of(
             registry.allSourceRoots().stream(),
-            manifest.jdkModuleSourceDirs().stream(),
-            manifest.depSourceDirs().stream())
+            manifest.libraries().jdkModuleSourceDirs().stream(),
+            manifest.libraries().dependencySourceDirs().stream())
         .flatMap(stream -> stream)
         .toList();
   }

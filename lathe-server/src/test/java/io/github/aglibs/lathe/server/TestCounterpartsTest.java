@@ -2,9 +2,10 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -12,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,22 +20,14 @@ class TestCounterpartsTest {
 
   @TempDir private Path tmp;
 
-  private Path sourceRoot;
-  private Path sourceFile;
-  private ModuleSourceConfig config;
-
-  @BeforeEach
-  void setUp() {
-    sourceRoot = tmp.resolve("module/src/main/java");
-    sourceFile = sourceRoot.resolve("com/example/Foo.java");
-    config = TestCompiler.mainTreeConfig(tmp, "module");
-  }
-
   // Go to test: a main type's tests by the build's default test names, in its own module and in a
   // separate test module, same package first; a main-tree class named like a test is not one.
   // From a test, the type it tests, not a nested type of that name; a type without tests has none.
   @Test
   void testCounterparts_mainAndTestFiles_rankedTestsAndTheirSubject() throws Exception {
+    final var config = TestCompiler.mainTreeConfig(tmp, "module");
+    final Path sourceRoot = config.sourceRoots().get(0);
+    final Path sourceFile = sourceRoot.resolve("com/example/Foo.java");
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
     final var itCfg = TestCompiler.testTreeConfig(tmp, "it", "src/test/java");
     final var itMain = TestCompiler.mainTreeConfig(tmp, "it");

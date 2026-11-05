@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.Gson;
-import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractionSupport;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

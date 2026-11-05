@@ -40,7 +40,7 @@ refresh_invoker_server() {
   # invoker populates ONCE and never refreshes for non-reactor dependencies -- so a plain rebuild
   # leaves stale jars there (missing the debug wiring). Copy each freshly installed version across.
   local artifact m2 inv jar ver
-  for artifact in lathe-core lathe-server; do
+  for artifact in lathe-core lathe-analysis lathe-server; do
     m2="$HOME/.m2/repository/io/github/ag-libs/$artifact"
     inv="$repo/lathe-maven-plugin/target/local-repo/io/github/ag-libs/$artifact"
     [ -d "$m2" ] && [ -d "$inv" ] || continue
