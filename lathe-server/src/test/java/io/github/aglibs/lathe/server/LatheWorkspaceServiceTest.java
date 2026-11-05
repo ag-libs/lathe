@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,16 +63,11 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   }
 
   @Test
-  void executeCommand_createTypeInvalidArgs_returnInvalidParamsWithReason() {
+  void executeCommand_createTypeInvalidArgs_returnInvalidParamsWithReason() throws Exception {
+    openShop();
     // Async: a name rejected inside the server surfaces its reason, not lsp4j's "Internal error".
-    final var tds = mock(LatheTextDocumentService.class);
-    when(tds.createTypeFuture(any()))
-        .thenReturn(
-            CompletableFuture.failedFuture(
-                new IllegalArgumentException("'9Bad' is not a valid Java type name")));
     assertInvalidParams(
-        responseError(new LatheWorkspaceService(tds), "main", "class", "9Bad"),
-        "not a valid Java type name");
+        responseError(workspace, "main", "class", "9Bad"), "not a valid Java type name");
 
     // Sync: an unknown scope rejected while parsing the command arguments.
     assertInvalidParams(responseError(workspace, "bogus", "class", "Foo"), "unknown source scope");
@@ -99,7 +93,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   private static JsonObject createTypeArgument(
       final String kind, final String type, final String name) {
     final var json = new JsonObject();
-    json.addProperty("moduleRel", "core");
+    json.addProperty("moduleRel", "module");
     json.addProperty("kind", kind);
     json.addProperty("pkg", "com.example");
     json.addProperty("type", type);

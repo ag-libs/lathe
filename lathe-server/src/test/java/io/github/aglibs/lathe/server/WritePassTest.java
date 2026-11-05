@@ -114,7 +114,11 @@ class WritePassTest extends ServiceTestBase {
         .as("stamps: the good file written, the broken one left stale")
         .containsEntry(Path.of("com/example/Good.java"), 5_000L)
         .containsEntry(Path.of("com/example/Broken.java"), 1_000L);
-    assertThat(service.notesFuture(List.of()).get(5, TimeUnit.SECONDS).notCompiled())
+    assertThat(
+            service
+                .onLoop(session -> session.notes(List.of()))
+                .get(5, TimeUnit.SECONDS)
+                .notCompiled())
         .as("the broken file stays recorded though the rest of its tree was written after it")
         .singleElement()
         .asString()

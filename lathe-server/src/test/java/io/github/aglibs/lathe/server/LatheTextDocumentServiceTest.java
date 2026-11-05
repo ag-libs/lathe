@@ -298,8 +298,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         tmp, "module", List.of(sourceRoot), null, List.of(), List.of(), List.of("-Xno-such-flag"));
     service.initialize(tmp);
 
+    final String content = Files.readString(source);
     final var diagnostics =
-        service.diagnosticsFuture(source.toUri().toString(), Files.readString(source), 1);
+        service.onLoopFuture(
+            session -> session.diagnosticsFuture(source.toUri().toString(), content, 1));
 
     assertThatThrownBy(() -> diagnostics.get(5, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
@@ -555,8 +557,14 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     final var outcome =
         service
-            .runTestFuture(
-                "app", List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")), "")
+            .onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runTestFuture(
+                            "app",
+                            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")),
+                            ""))
             .get(5, TimeUnit.SECONDS);
 
     assertThat(outcome.launched()).isFalse();
@@ -638,7 +646,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         selected.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS;
     final var outcome =
         service
-            .runTestFuture("app", List.of(new TestSelection(kind, selected)), "")
+            .onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runTestFuture("app", List.of(new TestSelection(kind, selected)), ""))
             .get(5, TimeUnit.SECONDS);
     assertThat(outcome.launched()).isFalse();
     return outcome.blockedReasons();
@@ -706,7 +718,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> symbolNames(final String query) throws Exception {
-    return service.workspaceSymbolFuture(query, false).get(5, TimeUnit.SECONDS).stream()
+    return service
+        .onLoop(session -> session.workspaceSymbol(query, false))
+        .get(5, TimeUnit.SECONDS)
+        .stream()
         .map(SymbolInformation::getName)
         .toList();
   }

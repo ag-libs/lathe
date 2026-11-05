@@ -197,7 +197,10 @@ public final class ExtractMethodSweep {
     final String uri = LatheUri.fromPath(file);
     // A file that does not compile as it is makes every compile check fail: counted apart.
     fileHasErrors =
-        service.diagnosticsFuture(uri, content, 1).get(TIMEOUT_SECONDS, TimeUnit.SECONDS).stream()
+        service
+            .onLoopFuture(session -> session.diagnosticsFuture(uri, content, 1))
+            .get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .stream()
             .anyMatch(d -> d.getSeverity() == DiagnosticSeverity.Error);
     if (fileHasErrors) {
       count(outcomes, "files with errors on open");

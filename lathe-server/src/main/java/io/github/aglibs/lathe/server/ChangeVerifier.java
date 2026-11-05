@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -342,5 +343,49 @@ final class ChangeVerifier {
             () ->
                 "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
                     .formatted(relative));
+  }
+
+  // What verify_change checks after a reconcile: the changed files (those named, or else everything
+  // written or changed since the build) and, per module, the files that see them.
+  VerifyPlan plan(final ReconcileOutcome outcome, final List<Path> files) {
+    if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    final List<Path> touched =
+        files.isEmpty()
+            ? Stream.of(outcome.reacted(), writePass.takeWrittenSinceVerify(), changedSinceBuild())
+                .flatMap(List::stream)
+                .distinct()
+                .toList()
+            : files;
+    final List<Path> changed = differingFromBuild(touched);
+    if (changed.isEmpty()) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    return new VerifyPlan(
+        outcome,
+        changed,
+        verifyTargetsByModule(changed),
+        downstreamModuleRels(changed),
+        reactorModuleCount());
+  }
+
+  record VerifyPlan(
+      ReconcileOutcome outcome,
+      List<Path> changed,
+      Map<String, List<Path>> targets,
+      List<String> downstream,
+      int moduleCount) {
+
+    VerifyPlan {
+      ValidCheck.check().notNull(outcome, "outcome").validate();
+      changed = List.copyOf(changed);
+      // In the order verifyTargetsByModule gives (the changed files' modules first): the answer
+      // lists the modules that way.
+      targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
+      downstream = List.copyOf(downstream);
+    }
   }
 }

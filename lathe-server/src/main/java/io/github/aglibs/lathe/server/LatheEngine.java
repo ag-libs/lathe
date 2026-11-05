@@ -42,9 +42,7 @@ import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -223,7 +221,7 @@ public final class LatheEngine {
             line,
             column,
             (session, uri, pos, cancel, progress) ->
-                session.referencesFuture(uri, pos, true, cancel, progress)),
+                session.search().referencesFuture(uri, pos, true, cancel, progress)),
         maxResults);
   }
 
@@ -245,7 +243,8 @@ public final class LatheEngine {
             file,
             line,
             column,
-            (session, uri, pos, cancel, progress) -> session.implementationFuture(uri, pos)),
+            (session, uri, pos, cancel, progress) ->
+                session.search().implementationFuture(uri, pos)),
         maxResults);
   }
 
@@ -510,7 +509,7 @@ public final class LatheEngine {
             line,
             column,
             (session, uri, pos, cancel, progress) ->
-                session.renameFuture(uri, pos, newName, true, cancel, progress));
+                session.renames().renameFuture(uri, pos, newName, true, cancel, progress));
     final String oldName = wordAt(file, line, column).orElseThrow();
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
@@ -562,7 +561,7 @@ public final class LatheEngine {
   // request meanwhile.
   private List<Location> textMentions(final String name) {
     try {
-      return TextMentions.find(query(session -> session.textMentionSources(name)), name);
+      return TextMentions.find(query(session -> session.verifier().textMentionSources(name)), name);
     } catch (final RuntimeException e) {
       LOG.log(Level.WARNING, e, () -> "[rename] text mentions of %s not listed".formatted(name));
       return List.of();
@@ -585,7 +584,7 @@ public final class LatheEngine {
           files.stream()
               .map(file -> LatheUri.toPath(file.uri()))
               .collect(Collectors.toUnmodifiableSet());
-      request((session, cancel, progress) -> session.writeReported(changed));
+      request((session, cancel, progress) -> session.writePass().writeReported(changed));
       // An editor's server on this workspace sees the files freshly stamped, so it would never
       // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
       final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
@@ -690,7 +689,7 @@ public final class LatheEngine {
         fileRequest(
             file,
             (session, uri, diagnostics, cancel, progress) -> {
-              final Optional<String> failing = session.failingUnder(file);
+              final Optional<String> failing = session.verifier().failingUnder(file);
               return session
                   .runnablesFuture(uri)
                   .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
@@ -717,7 +716,9 @@ public final class LatheEngine {
     final String token = "mcp-run-%d".formatted(runToken.incrementAndGet());
     final String moduleRel = selected.get(0).moduleRel();
     return LatheTestRun.from(
-        request((session, cancel, progress) -> session.runTestFuture(moduleRel, selections, token)),
+        request(
+            (session, cancel, progress) ->
+                session.runs().runTestFuture(moduleRel, selections, token)),
         selected.stream().map(RunTarget::id).toList());
   }
 
@@ -786,7 +787,8 @@ public final class LatheEngine {
             file,
             line,
             column,
-            (session, uri, pos, cancel, progress) -> session.prepareCallHierarchyFuture(uri, pos));
+            (session, uri, pos, cancel, progress) ->
+                session.search().prepareCallHierarchyFuture(uri, pos));
     final boolean incoming = direction == CallDirection.INCOMING;
     if (items.isEmpty()) {
       return new LatheCallHierarchy(incoming, 0, false, List.of());
@@ -801,7 +803,8 @@ public final class LatheEngine {
   // One LatheCall per call site (a caller may invoke the symbol at several ranges).
   private List<LatheCall> incomingCalls(final CallHierarchyItem item) {
     return request(
-            (session, cancel, progress) -> session.incomingCallsFuture(item, cancel, progress))
+            (session, cancel, progress) ->
+                session.search().incomingCallsFuture(item, cancel, progress))
         .stream()
         .flatMap(
             call ->
@@ -811,7 +814,8 @@ public final class LatheEngine {
 
   // Where the method calls each callee, in source order, so the answer reads as the method does.
   private List<LatheCall> outgoingCalls(final CallHierarchyItem item, final SymbolScope scope) {
-    return request((session, cancel, progress) -> session.outgoingCallsFuture(item)).stream()
+    return request((session, cancel, progress) -> session.search().outgoingCallsFuture(item))
+        .stream()
         .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
         .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
@@ -826,17 +830,19 @@ public final class LatheEngine {
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
   public List<LatheModuleSummary> modules() {
-    return query(WorkspaceSession::moduleSummaries);
+    return query(session -> session.verifier().moduleSummaries());
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
   // sync that would. No files: every change not yet built, on disk or by the tools.
   // A pending build-file sync or a running build defers the check to a full sync.
   public LatheVerifyChange verifyChange(final List<Path> files) {
-    final VerifyPlan plan =
+    final ChangeVerifier.VerifyPlan plan =
         request(
             (session, cancel, progress) ->
-                session.reconcileForVerify().thenApply(outcome -> plan(session, outcome, files)));
+                session
+                    .reconcileForVerify()
+                    .thenApply(outcome -> session.verifier().plan(outcome, files)));
     final ReconcileOutcome outcome = plan.outcome();
     if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
       // Another server's pass ends on its own; a sync would only add a build to wait for.
@@ -893,51 +899,6 @@ public final class LatheEngine {
   // files: what changed on disk, what the tools wrote themselves (already stamped), and every
   // earlier change not yet built, so a break stays reported until it is fixed. A file put back to
   // what the last build compiled is no change.
-  private static VerifyPlan plan(
-      final WorkspaceSession session, final ReconcileOutcome outcome, final List<Path> files) {
-    if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
-    }
-
-    final List<Path> touched =
-        files.isEmpty()
-            ? Stream.of(
-                    outcome.reacted(),
-                    session.takeWrittenSinceVerify(),
-                    session.changedSinceBuild())
-                .flatMap(List::stream)
-                .distinct()
-                .toList()
-            : files;
-    final List<Path> changed = session.differingFromBuild(touched);
-    if (changed.isEmpty()) {
-      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
-    }
-
-    return new VerifyPlan(
-        outcome,
-        changed,
-        session.verifyTargetsByModule(changed),
-        session.downstreamModuleRels(changed),
-        session.reactorModuleCount());
-  }
-
-  private record VerifyPlan(
-      ReconcileOutcome outcome,
-      List<Path> changed,
-      Map<String, List<Path>> targets,
-      List<String> downstream,
-      int moduleCount) {
-
-    VerifyPlan {
-      ValidCheck.check().notNull(outcome, "outcome").validate();
-      changed = List.copyOf(changed);
-      // In the order verifyTargetsByModule gives (the changed files' modules first): the answer
-      // lists the modules that way.
-      targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
-      downstream = List.copyOf(downstream);
-    }
-  }
 
   // Compiles every file as a transient check, side by side on their modules' workers, and answers
   // once all are done.
@@ -1016,10 +977,12 @@ public final class LatheEngine {
                     .thenCompose(
                         hover ->
                             session
+                                .search()
                                 .implementationFuture(uri, pos)
                                 .thenCompose(
                                     implementations ->
                                         session
+                                            .search()
                                             .referencesFuture(uri, pos, true, cancel, progress)
                                             .thenApply(
                                                 references ->
@@ -1031,7 +994,8 @@ public final class LatheEngine {
     final LatheReferences refs = capReferences(facts.references(), IMPACT_MAX_RESULTS);
     final List<Path> paths =
         refs.references().stream().map(ref -> LatheUri.toPath(ref.uri())).toList();
-    final Map<Path, ModulePlacement> placements = query(session -> session.classifyPaths(paths));
+    final Map<Path, ModulePlacement> placements =
+        query(session -> session.verifier().classifyPaths(paths));
 
     int production = 0;
     int test = 0;

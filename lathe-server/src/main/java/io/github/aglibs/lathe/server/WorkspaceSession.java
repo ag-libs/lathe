@@ -11,7 +11,6 @@ import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.SourceLocator;
-import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
@@ -27,8 +26,6 @@ import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.debug.DebugStartResult;
-import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -36,8 +33,6 @@ import io.github.aglibs.lathe.server.module.CompileResponse;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
-import io.github.aglibs.lathe.server.run.LaunchOutcome;
-import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -55,15 +50,11 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionContext;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Hover;
@@ -73,8 +64,6 @@ import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.PrepareRenameDefaultBehavior;
-import org.eclipse.lsp4j.PrepareRenameResult;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SemanticTokens;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
@@ -83,9 +72,7 @@ import org.eclipse.lsp4j.SymbolInformation;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.WorkspaceEdit;
-import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.jsonrpc.messages.Either3;
 import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
@@ -186,6 +173,37 @@ final class WorkspaceSession {
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
 
+  // The session's components, for callers that already run on the event loop (the services and
+  // the engine): each one checks the loop itself.
+  RunCoordinator runs() {
+    return runs;
+  }
+
+  WritePass writePass() {
+    return writePass;
+  }
+
+  ChangeVerifier verifier() {
+    return verifier;
+  }
+
+  RenameService renames() {
+    return renames;
+  }
+
+  ReferenceSearch search() {
+    return search;
+  }
+
+  SourceLayout layout() {
+    return state.layout();
+  }
+
+  // The notes an agent's answer ends with, including a build-file sync this session knows is due.
+  LatheNotes notes(final List<Path> files) {
+    return verifier.notes(files, buildFilesChanged);
+  }
+
   void initialize(final Path root) {
     memoryPressure = new MemoryPressure(eventLoop::execute, this::releaseUnderPressure);
     final var progress = progressReporter.open(null, new CompletableFuture<>());
@@ -266,46 +284,6 @@ final class WorkspaceSession {
         .collect(Collectors.toUnmodifiableSet());
   }
 
-  CompletableFuture<LaunchOutcome> runTestFuture(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
-    return runs.runTestFuture(moduleRel, selections, token);
-  }
-
-  CompletableFuture<LaunchOutcome> runMainFuture(
-      final String moduleRel, final String mainClass, final String token) {
-    return runs.runMainFuture(moduleRel, mainClass, token);
-  }
-
-  CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {
-    return runs.runNamedFuture(name, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugTest(
-      final String moduleRel, final List<TestSelection> selections, final String token) {
-    return runs.debugTest(moduleRel, selections, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugMain(
-      final String moduleRel, final String mainClass, final String token) {
-    return runs.debugMain(moduleRel, mainClass, token);
-  }
-
-  CompletableFuture<DebugStartResult> debugNamed(final String name, final String token) {
-    return runs.debugNamed(name, token);
-  }
-
-  void cancelRun(final String token) {
-    runs.cancelRun(token);
-  }
-
-  CompletableFuture<TestDiscovery> discoverTests(final String moduleRel) {
-    return runs.discoverTests(moduleRel);
-  }
-
-  List<RunConfigInfo> listRunConfigs() {
-    return runs.listRunConfigs();
-  }
-
   RunConfigWriter.Saved saveRunConfig(
       final String name,
       final String moduleRel,
@@ -315,77 +293,6 @@ final class WorkspaceSession {
       final boolean overwrite)
       throws IOException {
     return runs.saveRunConfig(name, moduleRel, kind, mainClass, selectors, overwrite);
-  }
-
-  CompletableFuture<Void> reconcileNow(final boolean eager) {
-    return writePass.reconcileNow(eager);
-  }
-
-  CompletableFuture<Void> writeReported(final Set<Path> changed) {
-    return writePass.writeReported(changed);
-  }
-
-  List<Path> takeWrittenSinceVerify() {
-    return writePass.takeWrittenSinceVerify();
-  }
-
-  Optional<Path> refreshResource(final String uri) {
-    return writePass.refreshResource(uri);
-  }
-
-  TextMentions.Sources textMentionSources(final String name) {
-    return verifier.textMentionSources(name);
-  }
-
-  List<Path> differingFromBuild(final List<Path> changed) {
-    return verifier.differingFromBuild(changed);
-  }
-
-  List<Path> changedSinceBuild() {
-    return verifier.changedSinceBuild();
-  }
-
-  Map<String, List<Path>> verifyTargetsByModule(final List<Path> changed) {
-    return verifier.verifyTargetsByModule(changed);
-  }
-
-  Map<Path, ModulePlacement> classifyPaths(final List<Path> paths) {
-    return verifier.classifyPaths(paths);
-  }
-
-  int reactorModuleCount() {
-    return verifier.reactorModuleCount();
-  }
-
-  List<LatheModuleSummary> moduleSummaries() {
-    return verifier.moduleSummaries();
-  }
-
-  List<String> downstreamModuleRels(final List<Path> changed) {
-    return verifier.downstreamModuleRels(changed);
-  }
-
-  Optional<String> failingUnder(final Path file) {
-    return verifier.failingUnder(file);
-  }
-
-  LatheNotes notes(final List<Path> files) {
-    return verifier.notes(files, buildFilesChanged);
-  }
-
-  CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>>
-      prepareRenameFuture(final String uri, final Position pos, final boolean fileRenameSupported) {
-    return renames.prepareRenameFuture(uri, pos, fileRenameSupported);
-  }
-
-  CompletableFuture<WorkspaceEdit> renameFuture(
-      final String uri,
-      final Position pos,
-      final String newName,
-      final boolean fileRenameSupported,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return renames.renameFuture(uri, pos, newName, fileRenameSupported, cancelChecker, progress);
   }
 
   CreateTypeResult createType(final CreateTypeArgs args) {
@@ -399,30 +306,6 @@ final class WorkspaceSession {
     return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), args.name());
   }
 
-  List<String> modules() {
-    return state.layout().modules();
-  }
-
-  List<String> testModules() {
-    return state.layout().testModules();
-  }
-
-  List<PackageEntry> packages(final String moduleRel) {
-    return state.layout().packages(moduleRel);
-  }
-
-  ContextInfo resolveContext(final String uri) {
-    return state.layout().resolveContext(LatheUri.toPath(uri));
-  }
-
-  DirRun dirRun(final String uri) {
-    return state.layout().dirRun(LatheUri.toPath(uri));
-  }
-
-  List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
-    return state.layout().testSources(moduleRel, classNames);
-  }
-
   List<ResourceEntry> resources() {
     return ResourceFinder.list(
         state.manifest().resourceDirModules(), state.manifest().libraries().jarToGav());
@@ -431,7 +314,7 @@ final class WorkspaceSession {
   // The tests of the file's type, or from a test the type it tests.
   TestCounterparts testCounterparts(final String uri) {
     final Path file = LatheUri.toPath(uri);
-    final ContextInfo context = resolveContext(uri);
+    final ContextInfo context = state.layout().resolveContext(file);
     return TestCounterparts.find(
         file,
         context == null ? "" : context.pkg(),
@@ -651,50 +534,6 @@ final class WorkspaceSession {
     if (open != null) {
       FileUtil.readIfPresent(source).ifPresent(content -> docs.put(uri, content, open.version()));
     }
-  }
-
-  CompletableFuture<List<Location>> referencesFuture(
-      final String uri,
-      final Position pos,
-      final boolean includeDeclaration,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.referencesFuture(uri, pos, includeDeclaration, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<Location>> instantiationsFuture(
-      final String uri,
-      final Position pos,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.instantiationsFuture(uri, pos, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<DocumentHighlight>> documentHighlightFuture(
-      final String uri, final Position pos) {
-    return search.documentHighlightFuture(uri, pos);
-  }
-
-  CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
-      implementationFuture(final String uri, final Position pos) {
-    return search.implementationFuture(uri, pos);
-  }
-
-  CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCallsFuture(
-      final CallHierarchyItem item) {
-    return search.outgoingCallsFuture(item);
-  }
-
-  CompletableFuture<List<CallHierarchyIncomingCall>> incomingCallsFuture(
-      final CallHierarchyItem item,
-      final CancelChecker cancelChecker,
-      final ProgressReporter.Task progress) {
-    return search.incomingCallsFuture(item, cancelChecker, progress);
-  }
-
-  CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchyFuture(
-      final String uri, final Position pos) {
-    return search.prepareCallHierarchyFuture(uri, pos);
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
