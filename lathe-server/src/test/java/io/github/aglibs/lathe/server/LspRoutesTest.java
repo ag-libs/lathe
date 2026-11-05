@@ -205,6 +205,26 @@ class LspRoutesTest extends ServiceTestBase {
         .satisfies(edit -> assertThat(edit.getNewText()).contains("SHOP"));
   }
 
+  // Closing the server while a command formatter runs answers the request (no edits) instead of
+  // leaving it waiting, and stops the formatter's process.
+  @Test
+  void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
+    final ShopFixture shop = openShop();
+    service.setFormatEngine(
+        new FileCommandFormatEngine(
+            TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
+            tmp,
+            FileCommandFormatEngine.DEFAULT_TIMEOUT));
+    final var formatting =
+        service.formatting(
+            new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
+    awaitWorkerIdle();
+
+    service.close();
+
+    assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
+  }
+
   private static List<String> files(
       final Either<List<? extends Location>, List<? extends LocationLink>> locations) {
     final List<String> uris =

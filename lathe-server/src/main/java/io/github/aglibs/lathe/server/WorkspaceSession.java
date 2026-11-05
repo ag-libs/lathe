@@ -41,6 +41,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -140,6 +141,9 @@ final class WorkspaceSession {
   // tool for up to a minute. One thread, so two formats never run a build in one module at once.
   private final ExecutorService formatThread =
       Executors.newSingleThreadExecutor(WorkspaceSession::newFormatThread);
+  // The formats queued or running there, so close() can cancel them: the thread's shutdown drops
+  // what is queued, and a caller would otherwise wait for an answer that cannot come.
+  private final Set<CompletableFuture<List<TextEdit>>> formatsInFlight = new HashSet<>();
 
   WorkspaceSession(
       final LanguageClient client,
@@ -245,6 +249,7 @@ final class WorkspaceSession {
     }
 
     formatThread.shutdownNow();
+    List.copyOf(formatsInFlight).forEach(format -> format.cancel(false));
     state.registry().close();
   }
 
@@ -894,6 +899,11 @@ final class WorkspaceSession {
               }
 
               final Throwable cause = ExceptionUtil.completionCause(failure);
+              if (cause instanceof CancellationException) {
+                LOG.fine(() -> "[format] %s cancelled: the server is closing".formatted(uri));
+                return List.of();
+              }
+
               LOG.log(
                   Level.SEVERE,
                   cause,
@@ -922,21 +932,24 @@ final class WorkspaceSession {
     final OpenDocument openFile = docs.get(uri);
     final String content = openFile != null ? openFile.content() : null;
     final FormatTarget target = formatTarget(LatheUri.toPath(uri));
-    return eventLoop
-        .rejoin(
-            CompletableFuture.supplyAsync(
-                () -> {
-                  try {
-                    return format.apply(content, target);
-                  } catch (final Exception e) {
-                    if (e instanceof InterruptedException) {
-                      Thread.currentThread().interrupt();
-                    }
+    final CompletableFuture<List<TextEdit>> running =
+        CompletableFuture.supplyAsync(
+            () -> {
+              try {
+                return format.apply(content, target);
+              } catch (final Exception e) {
+                if (e instanceof InterruptedException) {
+                  Thread.currentThread().interrupt();
+                }
 
-                    throw ExceptionUtil.asCompletion(e);
-                  }
-                },
-                formatThread))
+                throw ExceptionUtil.asCompletion(e);
+              }
+            },
+            formatThread);
+    formatsInFlight.add(running);
+    return eventLoop
+        .rejoin(running)
+        .whenComplete((result, failure) -> formatsInFlight.remove(running))
         .thenApply(
             result -> {
               LOG.info(
