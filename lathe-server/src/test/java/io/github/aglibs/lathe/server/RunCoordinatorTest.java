@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;

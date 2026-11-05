@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.io.IOException;
@@ -30,9 +31,7 @@ public final class TestProcess {
   public static List<String> toolArgs(final String... args) {
     return Stream.concat(
             Stream.of(
-                "-cp",
-                TestCompiler.jarOf(TestProcess.class).toString(),
-                TestProcess.class.getName()),
+                "-cp", TestJavac.jarOf(TestProcess.class).toString(), TestProcess.class.getName()),
             Stream.of(args))
         .toList();
   }

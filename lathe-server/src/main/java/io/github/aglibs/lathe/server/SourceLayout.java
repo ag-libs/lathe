@@ -33,30 +33,32 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return FileUtil.slashed(workspaceRoot.resolve(LatheLayout.LATHE_DIR).relativize(moduleDir));
   }
 
+  // The module's reactor-relative path, as the tools and the sync name it.
+  String moduleRel(final ModuleSourceConfig config) {
+    return moduleRel(workspaceRoot, config.moduleDir());
+  }
+
+  // A module path as a person reads it: "." for the module at the reactor root.
+  static String displayed(final String moduleRel) {
+    return moduleRel.isEmpty() ? "." : moduleRel;
+  }
+
   // The module's directory under .lathe/, the inverse of moduleRel.
   static Path moduleLatheDir(final Path workspaceRoot, final String moduleRel) {
     return workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
   }
 
   List<String> modules() {
-    return configs.stream()
-        .map(config -> moduleRel(workspaceRoot, config.moduleDir()))
-        .distinct()
-        .sorted()
-        .toList();
+    return configs.stream().map(config -> moduleRel(config)).distinct().sorted().toList();
   }
 
   List<String> testModules() {
-    return testConfigs().stream()
-        .map(config -> moduleRel(workspaceRoot, config.moduleDir()))
-        .distinct()
-        .sorted()
-        .toList();
+    return testConfigs().stream().map(config -> moduleRel(config)).distinct().sorted().toList();
   }
 
   List<PackageEntry> packages(final String moduleRel) {
     return configs.stream()
-        .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
+        .filter(config -> moduleRel(config).equals(moduleRel))
         .flatMap(SourceLayout::packageEntries)
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
@@ -96,7 +98,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
       }
 
       final String pkg = packageOf(root.get(), dirPath);
-      final String moduleRel = moduleRel(workspaceRoot, config.moduleDir());
+      final String moduleRel = moduleRel(config);
       if (pkg.isEmpty()) {
         return moduleRun(moduleRel);
       }
@@ -111,7 +113,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     final List<ModuleSourceConfig> enclosed =
         testConfigs.stream().filter(config -> testRootUnder(config, dirPath)).toList();
     if (enclosed.size() == 1) {
-      return moduleRun(moduleRel(workspaceRoot, enclosed.get(0).moduleDir()));
+      return moduleRun(moduleRel(enclosed.get(0)));
     }
 
     return new DirRun("", List.of());
@@ -123,7 +125,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   List<TestSource> testSources(final String moduleRel, final List<String> classNames) {
     final List<Path> roots =
         testConfigs().stream()
-            .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
+            .filter(config -> moduleRel(config).equals(moduleRel))
             .flatMap(config -> config.sourceRoots().stream())
             .toList();
     return classNames.stream()
@@ -134,9 +136,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
 
   private List<ModuleSourceConfig> configsFor(final String moduleRel) {
     final List<ModuleSourceConfig> matching =
-        configs.stream()
-            .filter(config -> moduleRel(workspaceRoot, config.moduleDir()).equals(moduleRel))
-            .toList();
+        configs.stream().filter(config -> moduleRel(config).equals(moduleRel)).toList();
     if (matching.isEmpty()) {
       throw new IllegalStateException("no module for " + moduleRel);
     }
@@ -169,9 +169,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .map(
             root ->
                 new ContextInfo(
-                    moduleRel(workspaceRoot, config.moduleDir()),
-                    scopeWire(config),
-                    packageOf(root, path.getParent())));
+                    moduleRel(config), scopeWire(config), packageOf(root, path.getParent())));
   }
 
   // The real (non-generated) source directory a new file lands in.
@@ -209,13 +207,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   // A package is a directory that holds Java sources (the parent of each `.java`).
   // Intermediate dirs like `com` are not packages and must not be offered.
   private static List<String> packagesUnder(final Path root) {
-    if (!Files.isDirectory(root)) {
-      return List.of();
-    }
-
-    try (final var walk = Files.walk(root)) {
-      return walk.filter(Files::isRegularFile)
-          .filter(FileUtil::isJavaFile)
+    try {
+      return FileUtil.walkFiles(root, FileUtil::isJavaFile).stream()
           .map(source -> packageOf(root, source.getParent()))
           .distinct()
           .sorted()

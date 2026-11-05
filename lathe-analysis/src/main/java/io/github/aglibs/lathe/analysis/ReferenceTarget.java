@@ -1,0 +1,478 @@
+package io.github.aglibs.lathe.analysis;
+
+import com.sun.source.util.Trees;
+import io.github.aglibs.validcheck.ValidCheck;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.element.RecordComponentElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
+import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+
+public record ReferenceTarget(
+    ElementKind kind,
+    String qualifiedName,
+    String simpleName,
+    String erasedDescriptor,
+    SearchScope scope,
+    List<String> overriddenDeclarers,
+    boolean overrideFamilyBounded,
+    long declarationOffset) {
+
+  public enum SearchScope {
+    DECLARING_FILE,
+    DECLARING_MODULE,
+    REACTOR_MODULES
+  }
+
+  public ReferenceTarget {
+    ValidCheck.check()
+        .notNull(kind, "kind")
+        .notBlank(qualifiedName, "qualifiedName")
+        .notBlank(simpleName, "simpleName")
+        .notNull(scope, "scope")
+        .notNull(overriddenDeclarers, "overriddenDeclarers")
+        .validate();
+    overriddenDeclarers = List.copyOf(overriddenDeclarers);
+  }
+
+  // Two same-named local-scope symbols in a class have identical structural descriptors, so a
+  // local-scope target is pinned to its declaration's source offset; -1 for member/type targets.
+  boolean hasDeclarationIdentity() {
+    return declarationOffset >= 0;
+  }
+
+  public boolean isType() {
+    return kind.isClass() || kind.isInterface();
+  }
+
+  public boolean isLocalScope() {
+    return isLocalScopeKind(kind);
+  }
+
+  static boolean isLocalScopeKind(final ElementKind kind) {
+    return kind == ElementKind.LOCAL_VARIABLE
+        || kind == ElementKind.PARAMETER
+        || kind == ElementKind.EXCEPTION_PARAMETER
+        || kind == ElementKind.RESOURCE_VARIABLE
+        || kind == ElementKind.BINDING_VARIABLE
+        || kind == ElementKind.TYPE_PARAMETER;
+  }
+
+  static ReferenceTarget from(final Element element, final Types types, final Elements elements) {
+    return from(element, null, types, elements);
+  }
+
+  static ReferenceTarget from(
+      final Element element, final Trees trees, final Types types, final Elements elements) {
+    final var accessor = recordAccessorFor(element, types);
+    if (accessor != null) {
+      return from(accessor, trees, types, elements);
+    }
+
+    final var kind = element.getKind();
+    final var simpleName = element.getSimpleName().toString();
+    final var scope = scopeFor(element);
+    final long declarationOffset =
+        isLocalScopeKind(kind) && trees != null
+            ? SourceLocator.declarationStartOffset(trees, element)
+            : -1;
+
+    return switch (kind) {
+      // Binary, as for members (Outer$Inner), so a nested type's package is everything before the
+      // last '.'.
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
+          new ReferenceTarget(
+              kind,
+              elements.getBinaryName((TypeElement) element).toString(),
+              simpleName,
+              null,
+              scope,
+              List.of(),
+              false,
+              -1);
+      case METHOD, CONSTRUCTOR -> {
+        final var ee = (ExecutableElement) element;
+        final var owner = (TypeElement) ee.getEnclosingElement();
+        final boolean method = kind == ElementKind.METHOD;
+        final List<String> declarers =
+            method ? overriddenDeclarers(ee, owner, types, elements) : List.of();
+        yield new ReferenceTarget(
+            kind,
+            elements.getBinaryName(owner).toString(),
+            simpleName,
+            buildDescriptor(ee, types),
+            scope,
+            declarers,
+            method,
+            -1);
+      }
+      case FIELD, ENUM_CONSTANT -> {
+        final var owner = (TypeElement) element.getEnclosingElement();
+        yield new ReferenceTarget(
+            kind,
+            elements.getBinaryName(owner).toString(),
+            simpleName,
+            null,
+            scope,
+            List.of(),
+            false,
+            -1);
+      }
+      default ->
+          new ReferenceTarget(
+              kind,
+              enclosingBinaryName(element, elements),
+              simpleName,
+              null,
+              scope,
+              List.of(),
+              false,
+              declarationOffset);
+    };
+  }
+
+  /**
+   * A record component is normalised to its generated accessor, whichever way javac reported the
+   * cursor symbol: a {@code RECORD_COMPONENT} element, its backing {@code FIELD} (the header, as
+   * javac usually reports it), or the implicit canonical-constructor {@code PARAMETER} that a bare
+   * reference inside the compact/canonical constructor body resolves to. The accessor is the
+   * public, reactor-visible symbol that call sites resolve to, giving broad candidate discovery and
+   * the correct search scope; the backing field and canonical-constructor parameter are then
+   * matched separately in {@link #matches} via {@link #matchesRecordComponentMember}. A same-named
+   * parameter of a non-canonical constructor is a distinct member and is not normalised.
+   */
+  private static ExecutableElement recordAccessorFor(final Element element, final Types types) {
+    final var kind = element.getKind();
+    if (kind == ElementKind.RECORD_COMPONENT) {
+      return ((RecordComponentElement) element).getAccessor();
+    }
+
+    if (kind == ElementKind.PARAMETER) {
+      final var record = enclosingRecord(element);
+      if (record == null || !isCanonicalConstructorParameter(element, record, types)) {
+        return null;
+      }
+
+      final var canonicalComponent = componentNamed(record, element.getSimpleName());
+      return canonicalComponent == null ? null : canonicalComponent.getAccessor();
+    }
+
+    if (kind != ElementKind.FIELD) {
+      return null;
+    }
+
+    final var owner = element.getEnclosingElement();
+    if (owner.getKind() != ElementKind.RECORD) {
+      return null;
+    }
+
+    final var component = componentNamed((TypeElement) owner, element.getSimpleName());
+    return component == null ? null : component.getAccessor();
+  }
+
+  private static RecordComponentElement componentNamed(
+      final TypeElement record, final CharSequence name) {
+    return record.getRecordComponents().stream()
+        .filter(component -> component.getSimpleName().contentEquals(name))
+        .findFirst()
+        .orElse(null);
+  }
+
+  private static SearchScope scopeFor(final Element element) {
+    final var kind = element.getKind();
+    if (isLocalScopeKind(kind)) {
+      return SearchScope.DECLARING_FILE;
+    }
+
+    final var mods = element.getModifiers();
+    if (mods.contains(Modifier.PRIVATE)) {
+      return SearchScope.DECLARING_FILE;
+    }
+
+    if (mods.contains(Modifier.PUBLIC) || mods.contains(Modifier.PROTECTED)) {
+      return SearchScope.REACTOR_MODULES;
+    }
+
+    return SearchScope.DECLARING_MODULE;
+  }
+
+  ExecutableElement resolveMethodElement(final Elements elements, final Types types) {
+    if (kind != ElementKind.METHOD) {
+      return null;
+    }
+
+    final var owner = elements.getTypeElement(qualifiedName.replace('$', '.'));
+    if (owner == null) {
+      return null;
+    }
+
+    return owner.getEnclosedElements().stream()
+        .filter(ExecutableElement.class::isInstance)
+        .map(ExecutableElement.class::cast)
+        .filter(el -> matches(el, types, elements))
+        .findFirst()
+        .orElse(null);
+  }
+
+  boolean matchesWithOverrides(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (matches(element, types, elements)) {
+      return true;
+    }
+
+    if (kind != ElementKind.METHOD) {
+      return false;
+    }
+
+    if (!(element instanceof final ExecutableElement ee) || !hasTypeOwner(ee)) {
+      return false;
+    }
+
+    if (targetMethod == null) {
+      return false;
+    }
+
+    return overridesEitherWay(ee, targetMethod, elements);
+  }
+
+  // Reference search (and so rename) also covers a record implementing the method through a
+  // component: its header, backing field, and canonical-constructor parameter stand for the
+  // implicit accessor, which has no declaration of its own. Call hierarchy keeps to real calls.
+  boolean matchesFamily(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (matchesWithOverrides(element, types, elements, targetMethod)) {
+      return true;
+    }
+
+    if (kind != ElementKind.METHOD || targetMethod == null || element == null) {
+      return false;
+    }
+
+    final var accessor = recordAccessorFor(element, types);
+    return accessor != null && overridesEitherWay(accessor, targetMethod, elements);
+  }
+
+  // The methods a family override also overrides outside the family, as Type.method: renaming the
+  // override would leave them behind and silently end those overrides.
+  List<String> overriddenOutsideFamily(
+      final Element element,
+      final Types types,
+      final Elements elements,
+      final ExecutableElement targetMethod) {
+    if (kind != ElementKind.METHOD
+        || targetMethod == null
+        || !(element instanceof final ExecutableElement method)
+        || method.getKind() != ElementKind.METHOD) {
+      return List.of();
+    }
+
+    return overriddenMethods(method, (TypeElement) method.getEnclosingElement(), types, elements)
+        .stream()
+        .filter(
+            overridden ->
+                !overridden.equals(targetMethod)
+                    && !overridesEitherWay(overridden, targetMethod, elements))
+        .map(
+            overridden ->
+                "%s.%s".formatted(declarer(overridden, elements), overridden.getSimpleName()))
+        .toList();
+  }
+
+  // A use javac could not resolve (`Missing::go`) names a member of no type: javac gives it a
+  // placeholder owner. It is no use of any declaration, so it matches nothing.
+  private static boolean hasTypeOwner(final Element element) {
+    return element.getEnclosingElement() instanceof TypeElement;
+  }
+
+  private static boolean isMember(final ElementKind kind) {
+    return kind == ElementKind.METHOD
+        || kind == ElementKind.CONSTRUCTOR
+        || kind == ElementKind.FIELD
+        || kind == ElementKind.ENUM_CONSTANT;
+  }
+
+  private static boolean overridesEitherWay(
+      final ExecutableElement method, final ExecutableElement target, final Elements elements) {
+    final var methodOwner = (TypeElement) method.getEnclosingElement();
+    final var targetOwner = (TypeElement) target.getEnclosingElement();
+    return elements.overrides(method, target, methodOwner)
+        || elements.overrides(target, method, targetOwner);
+  }
+
+  boolean matches(final Element element, final Types types, final Elements elements) {
+    if (element == null) {
+      return false;
+    }
+
+    if (kind == ElementKind.METHOD && matchesRecordComponentMember(element, types, elements)) {
+      return true;
+    }
+
+    if (element.getKind() != kind) {
+      return false;
+    }
+
+    if (!simpleName.equals(element.getSimpleName().toString())) {
+      return false;
+    }
+
+    if (isMember(kind) && !hasTypeOwner(element)) {
+      return false;
+    }
+
+    return switch (kind) {
+      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE ->
+          qualifiedName.equals(elements.getBinaryName((TypeElement) element).toString());
+
+      case METHOD, CONSTRUCTOR -> {
+        final var ee = (ExecutableElement) element;
+        final var owner = (TypeElement) ee.getEnclosingElement();
+        yield qualifiedName.equals(elements.getBinaryName(owner).toString())
+            && erasedDescriptor.equals(buildDescriptor(ee, types));
+      }
+
+      case FIELD, ENUM_CONSTANT -> {
+        final var owner = (TypeElement) element.getEnclosingElement();
+        yield qualifiedName.equals(elements.getBinaryName(owner).toString());
+      }
+      default -> qualifiedName.equals(enclosingBinaryName(element, elements));
+    };
+  }
+
+  /**
+   * When this target is a record accessor, other members backing the same component count as
+   * references too: the backing {@code FIELD} (in-body reads and writes) and the canonical
+   * constructor {@code PARAMETER} that javac reports for compact/canonical constructor bodies. A
+   * same-named parameter of a non-canonical constructor is a distinct member and is excluded.
+   */
+  private boolean matchesRecordComponentMember(
+      final Element element, final Types types, final Elements elements) {
+    final var elementKind = element.getKind();
+    if (elementKind != ElementKind.FIELD && elementKind != ElementKind.PARAMETER) {
+      return false;
+    }
+
+    if (!simpleName.equals(element.getSimpleName().toString())) {
+      return false;
+    }
+
+    final var record = enclosingRecord(element);
+    if (record == null
+        || !qualifiedName.equals(elements.getBinaryName(record).toString())
+        || componentNamed(record, simpleName) == null) {
+      return false;
+    }
+
+    return elementKind == ElementKind.FIELD
+        || isCanonicalConstructorParameter(element, record, types);
+  }
+
+  private static TypeElement enclosingRecord(final Element element) {
+    var owner = element.getEnclosingElement();
+    if (owner.getKind() == ElementKind.CONSTRUCTOR) {
+      owner = owner.getEnclosingElement();
+    }
+
+    return owner.getKind() == ElementKind.RECORD ? (TypeElement) owner : null;
+  }
+
+  private static boolean isCanonicalConstructorParameter(
+      final Element parameter, final TypeElement record, final Types types) {
+    final var constructor = (ExecutableElement) parameter.getEnclosingElement();
+    final List<? extends VariableElement> parameters = constructor.getParameters();
+    final List<? extends RecordComponentElement> components = record.getRecordComponents();
+    return parameters.size() == components.size()
+        && IntStream.range(0, parameters.size())
+            .allMatch(
+                i -> types.isSameType(parameters.get(i).asType(), components.get(i).asType()));
+  }
+
+  /**
+   * Binary names of the supertypes (transitively) that declare a method this target method
+   * overrides. The reference-candidate planner uses these, together with the declaring type and its
+   * subtypes, to bound a method search to its override family instead of every file that spells the
+   * simple name. Empty when the method overrides nothing (e.g. a record accessor with no
+   * interface).
+   */
+  private static List<String> overriddenDeclarers(
+      final ExecutableElement method,
+      final TypeElement owner,
+      final Types types,
+      final Elements elements) {
+    return overriddenMethods(method, owner, types, elements).stream()
+        .map(overridden -> declarer(overridden, elements))
+        .distinct()
+        .toList();
+  }
+
+  private static String declarer(final ExecutableElement method, final Elements elements) {
+    return elements.getBinaryName((TypeElement) method.getEnclosingElement()).toString();
+  }
+
+  // Every method in the supertypes (transitively) that the method overrides, nearest first.
+  private static List<ExecutableElement> overriddenMethods(
+      final ExecutableElement method,
+      final TypeElement owner,
+      final Types types,
+      final Elements elements) {
+    final var overridden = new ArrayList<ExecutableElement>();
+    final var visited = new HashSet<String>();
+    final var pending = new ArrayDeque<TypeMirror>(types.directSupertypes(owner.asType()));
+    while (!pending.isEmpty()) {
+      final var supertype = pending.removeFirst();
+      if (!(types.asElement(supertype) instanceof final TypeElement ste)) {
+        continue;
+      }
+
+      final var binaryName = elements.getBinaryName(ste).toString();
+      if (!visited.add(binaryName)) {
+        continue;
+      }
+
+      overridden.addAll(
+          ElementFilter.methodsIn(ste.getEnclosedElements()).stream()
+              .filter(candidate -> elements.overrides(method, candidate, owner))
+              .toList());
+      pending.addAll(types.directSupertypes(supertype));
+    }
+
+    return List.copyOf(overridden);
+  }
+
+  private static String buildDescriptor(final ExecutableElement method, final Types types) {
+    return method.getParameters().stream()
+        .map(p -> types.erasure(p.asType()).toString())
+        .collect(Collectors.joining(",", "(", ")"));
+  }
+
+  private static String enclosingBinaryName(final Element element, final Elements elements) {
+    Element e = element.getEnclosingElement();
+    while (e != null && !(e instanceof TypeElement)) {
+      e = e.getEnclosingElement();
+    }
+
+    if (e instanceof final TypeElement te) {
+      return elements.getBinaryName(te).toString();
+    }
+
+    return element.getSimpleName().toString();
+  }
+}

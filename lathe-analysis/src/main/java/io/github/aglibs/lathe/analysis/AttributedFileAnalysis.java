@@ -1,0 +1,23 @@
+package io.github.aglibs.lathe.analysis;
+
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.Trees;
+import java.util.List;
+import javax.lang.model.util.Elements;
+import javax.lang.model.util.Types;
+
+public record AttributedFileAnalysis(
+    Trees trees,
+    Elements elements,
+    Types types,
+    CompilationUnitTree tree,
+    List<SemanticToken> semanticTokens) {
+
+  public AttributedFileAnalysis {
+    semanticTokens = semanticTokens != null ? List.copyOf(semanticTokens) : null;
+  }
+
+  public static AttributedFileAnalysis diagnosticsOnly() {
+    return new AttributedFileAnalysis(null, null, null, null, null);
+  }
+}

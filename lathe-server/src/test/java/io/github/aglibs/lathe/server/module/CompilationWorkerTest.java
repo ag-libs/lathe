@@ -7,11 +7,11 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;

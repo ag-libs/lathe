@@ -1,26 +1,26 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.analysis.AttributedExpression;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.RenameBindingCheck;
+import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.SemanticToken;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.TransientSource;
+import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.CodeActionRequest;
-import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
-import io.github.aglibs.lathe.server.analysis.SemanticToken;
-import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.server.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyExplorerResult;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
-import io.github.aglibs.lathe.server.run.RunTarget;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Path;
 import java.util.List;
@@ -68,7 +68,9 @@ public final class CompilationWorker {
 
   private final ExecutorService executor;
   // Where results are completed: the server's event loop, so what a caller chains on a result runs
-  // there and may touch session state.
+  // there and may touch session state. Two exceptions: a request the closed worker refuses fails
+  // on the caller's thread, and closeAsync completes on the worker thread, as the registry waits
+  // for it on the loop during a reload and a completion queued there would never run.
   private final Executor delivery;
   private final Supplier<SourceAnalysisSession> contextFactory;
   private final IntConsumer processTerminator;
@@ -96,7 +98,9 @@ public final class CompilationWorker {
       final Executor delivery) {
     return new CompilationWorker(
         "lathe-external",
-        () -> new SourceAnalysisSession(new ExternalCompiler(manifest, compilationAdmission)),
+        () ->
+            new SourceAnalysisSession(
+                new ExternalCompiler(manifest.libraries(), compilationAdmission)),
         delivery);
   }
 

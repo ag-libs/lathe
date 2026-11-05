@@ -1,9 +1,10 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -63,7 +64,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("greet()"));
+    final var pos = positionOf(fx.callerSource(), "greet()");
     final List<LatheLocation> targets =
         engine.definition(fx.caller(), pos.getLine(), pos.getCharacter());
 
@@ -80,7 +81,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final var pos = positionOf(fx.calleeSource(), "greet");
     final LatheReferences references =
         engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50);
 
@@ -93,7 +94,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var calleePos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final var calleePos = positionOf(fx.calleeSource(), "greet");
     final LatheCallHierarchy incoming =
         engine.callHierarchy(
             fx.callee(),
@@ -110,7 +111,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
               assertThat(call.location().snippet()).contains("greet");
             });
 
-    final var callerPos = offsetToPosition(fx.callerSource(), fx.callerSource().indexOf("run"));
+    final var callerPos = positionOf(fx.callerSource(), "run");
     final LatheCallHierarchy outgoing =
         engine.callHierarchy(
             fx.caller(),
@@ -134,21 +135,13 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
   @Test
   void findImplementations_interface_findsImplementingClass() throws Exception {
-    final String ifaceSource =
-        """
-        package com.example;
-        interface Greeter {
-          void greet();
-        }
-        """;
-    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
-    final String implSource =
-        "package com.example; class EnGreeter implements Greeter { public void greet() {} }";
-    final Path impl = TestCompiler.writeModuleSource(tmp, "com/example/EnGreeter.java", implSource);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    final GreeterFixture greeter = greeterFixture();
+    final String ifaceSource = greeter.ifaceSource();
+    final Path iface = greeter.iface();
+    compileIntoMirror(iface, greeter.impl());
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
+    final var pos = positionOf(ifaceSource, "Greeter");
     final LatheImplementations impls =
         engine.findImplementations(iface, pos.getLine(), pos.getCharacter(), 50);
 
@@ -184,12 +177,12 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
               tmp, "com/example/%s.java".formatted(source.getKey()), source.getValue()));
     }
 
-    TestCompiler.compileToDir(
+    TestJavac.compileToDir(
         tmp.resolve(".lathe/module/classes"), files.values().toArray(Path[]::new));
     engine = new LatheEngine(tmp);
     final BiFunction<String, String, List<String>> found =
         (type, token) -> {
-          final var pos = offsetToPosition(sources.get(type), sources.get(type).indexOf(token));
+          final var pos = positionOf(sources.get(type), token);
           return engine
               .findImplementations(files.get(type), pos.getLine(), pos.getCharacter(), 50)
               .implementations()
@@ -218,7 +211,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final String source =
         "package com.example;\nenum Color {\n  RED { String label() { return \"r\"; } },\n  GREEN;\n  String label() { return \"g\"; }\n}\n";
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Color.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    compileIntoMirror(file);
     engine = new LatheEngine(tmp);
 
     for (final String name : List.of("RED", "GREEN")) {
@@ -239,7 +232,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final var pos = positionOf(fx.calleeSource(), "greet");
     final String markup = engine.describe(fx.callee(), pos.getLine(), pos.getCharacter());
 
     assertThat(markup).contains("greet");
@@ -331,7 +324,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
         tmp.resolve(LatheLayout.LATHE_DIR).resolve(LatheLayout.WORKSPACE_JSON));
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(source, source.indexOf("twice"));
+    final var pos = positionOf(source, "twice");
 
     assertThat(engine.describe(lib, pos.getLine(), pos.getCharacter()))
         .contains("twice(int amount)")
@@ -344,14 +337,11 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
   @Test
   void searchSymbolsAndFindImplementations_typeAddedOnDiskMidSession_foundByTheNextQuery()
       throws Exception {
-    final String ifaceSource = "package com.example;\ninterface Greeter {\n  void greet();\n}\n";
-    final Path iface = TestCompiler.writeModuleSource(tmp, "com/example/Greeter.java", ifaceSource);
-    final Path impl =
-        TestCompiler.writeModuleSource(
-            tmp,
-            "com/example/EnGreeter.java",
-            "package com.example; class EnGreeter implements Greeter { public void greet() {} }");
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), iface, impl);
+    final GreeterFixture greeter = greeterFixture();
+    final String ifaceSource = greeter.ifaceSource();
+    final Path iface = greeter.iface();
+    final Path impl = greeter.impl();
+    compileIntoMirror(iface, impl);
     stampModule(iface, impl);
     engine = new LatheEngine(tmp);
     assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50)).isEmpty();
@@ -364,7 +354,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
 
     assertThat(engine.searchSymbols("FrGreeter", SymbolScope.ALL, 50))
         .anySatisfy(symbol -> assertThat(symbol.name()).isEqualTo("FrGreeter"));
-    final var pos = offsetToPosition(ifaceSource, ifaceSource.indexOf("Greeter"));
+    final var pos = positionOf(ifaceSource, "Greeter");
     assertThat(
             engine
                 .findImplementations(iface, pos.getLine(), pos.getCharacter(), 50)
@@ -404,7 +394,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
   void references_queriedFileThenEditedOnDisk_findsTheNewUse() throws Exception {
     final GreetFixture fx = crossPackageGreetFixture();
     engine = new LatheEngine(tmp);
-    final var pos = offsetToPosition(fx.calleeSource(), fx.calleeSource().indexOf("greet"));
+    final var pos = positionOf(fx.calleeSource(), "greet");
     engine.diagnostics(fx.caller());
     final int before =
         engine.references(fx.callee(), pos.getLine(), pos.getCharacter(), 50).total();
@@ -434,7 +424,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final NestedFixture fx = nestedFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.outerSource(), fx.outerSource().indexOf("Inner"));
+    final var pos = positionOf(fx.outerSource(), "Inner");
     final LatheReferences references =
         engine.references(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
 
@@ -449,7 +439,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
     final NestedFixture fx = nestedFixture();
     engine = new LatheEngine(tmp);
 
-    final var pos = offsetToPosition(fx.outerSource(), fx.outerSource().indexOf("Listener"));
+    final var pos = positionOf(fx.outerSource(), "Listener");
     final LatheImplementations implementations =
         engine.findImplementations(fx.outer(), pos.getLine(), pos.getCharacter(), 50);
 

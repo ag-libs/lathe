@@ -1,13 +1,16 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
+import io.github.aglibs.lathe.analysis.ReferenceMatch;
+import io.github.aglibs.lathe.analysis.ReferenceRole;
+import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.RenameBindingCheck;
+import io.github.aglibs.lathe.analysis.RenameProvider;
+import io.github.aglibs.lathe.analysis.TypeSourceLocator;
+import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.MethodImplementationLocator;
-import io.github.aglibs.lathe.server.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.server.analysis.ReferenceRole;
-import io.github.aglibs.lathe.server.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.server.analysis.RenameBindingCheck;
-import io.github.aglibs.lathe.server.analysis.RenameProvider;
-import io.github.aglibs.lathe.server.analysis.TypeSourceLocator;
+import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
@@ -16,7 +19,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -31,8 +33,6 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseError;
-import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode;
 
 // Decides whether a symbol can be renamed and computes the edit: the declaration, every override
 // and implementation, and every use the reference search finds, refused when a use would then mean
@@ -118,7 +118,7 @@ final class RenameService {
             declaration ->
                 declaration.getValue().isEmpty()
                     && !reactorIndex.current().isReactorType(declaration.getKey()))) {
-      throw renameRefused(
+      throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, outside the project (JDK or a dependency), so it cannot be renamed"
               .formatted(target.simpleName()));
     }
@@ -126,7 +126,7 @@ final class RenameService {
     if (declarations.values().stream()
         .flatMap(Optional::stream)
         .anyMatch(this::isGeneratedSource)) {
-      throw renameRefused(
+      throw FeatureAnswers.refused(
           "`%s` is declared, or overrides a method declared, in generated source; rename the source it is generated from instead"
               .formatted(target.simpleName()));
     }
@@ -172,36 +172,31 @@ final class RenameService {
       return CompletableFuture.completedFuture(target);
     }
 
-    return eventLoop
-        .submitCompose(
-            () ->
-                reactorIndex
-                        .current()
-                        .findType(target.qualifiedName())
-                        .filter(
-                            type ->
-                                type.kind()
-                                    == io.github.aglibs.lathe.core.typeindex.TypeKind.INTERFACE)
-                        .isEmpty()
-                    ? CompletableFuture.completedFuture(List.<String>of())
-                    : FeatureAnswers.concatAll(
-                        search
-                            .subtypeImplementationFiles(
-                                target,
-                                reactorIndex.current(),
-                                TypeSourceLocator::isNamedDeclaration)
-                            .map(
-                                entry ->
-                                    search.fileQueryFuture(
-                                        entry.getKey(),
-                                        analysis ->
-                                            MethodImplementationLocator.inheritedOutsideFamily(
-                                                analysis, target, entry.getValue())))))
-        .thenApply(
-            reasons -> {
-              refuseIfPresent(reasons.stream().findFirst());
-              return target;
-            });
+    final boolean onInterface =
+        reactorIndex
+            .current()
+            .findType(target.qualifiedName())
+            .filter(type -> type.kind() == TypeKind.INTERFACE)
+            .isPresent();
+    final CompletableFuture<List<String>> inheritedOutside =
+        onInterface
+            ? FeatureAnswers.concatAll(
+                search
+                    .subtypeImplementationFiles(
+                        target, reactorIndex.current(), TypeSourceLocator::isNamedDeclaration)
+                    .map(
+                        entry ->
+                            search.fileQueryFuture(
+                                entry.getKey(),
+                                analysis ->
+                                    MethodImplementationLocator.inheritedOutsideFamily(
+                                        analysis, target, entry.getValue()))))
+            : CompletableFuture.completedFuture(List.of());
+    return inheritedOutside.thenApply(
+        reasons -> {
+          refuseIfPresent(reasons.stream().findFirst());
+          return target;
+        });
   }
 
   // A rename that would change what a name means, a use the new name captures or a renamed site
@@ -213,9 +208,7 @@ final class RenameService {
       final String cursorUri,
       final ModuleSourceConfig cursorConfig,
       final CancelChecker cancelChecker) {
-    return eventLoop
-        .submitCompose(
-            () -> meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker))
+    return meaningConflict(target, matches, newName, cursorUri, cursorConfig, cancelChecker)
         .thenAccept(RenameService::refuseIfPresent);
   }
 
@@ -335,13 +328,8 @@ final class RenameService {
 
   private static void refuseIfPresent(final Optional<String> reason) {
     if (reason.isPresent()) {
-      throw renameRefused(reason.get());
+      throw FeatureAnswers.refused(reason.get());
     }
-  }
-
-  private static ResponseErrorException renameRefused(final String message) {
-    return new ResponseErrorException(
-        new ResponseError(ResponseErrorCode.RequestFailed, message, null));
   }
 
   // The source file to rename when the target is the file-defining type for its file (so `Foo.java`
@@ -406,7 +394,7 @@ final class RenameService {
     final var t = Stopwatch.start();
     if (!RenameProvider.isValidName(newName)) {
       final var invalid =
-          renameRefused(
+          FeatureAnswers.refused(
               "`%s` is not a valid name: it must be one Java identifier, not a keyword"
                   .formatted(newName));
       logRefusal("rename", uri, t, invalid);
@@ -421,8 +409,7 @@ final class RenameService {
 
     final var cursorWorker = module.worker();
     final var request = router.featureRequest(openFile, pos);
-    final Optional<ModuleSourceConfig> cursorConfig =
-        state.registry().moduleSourceFor(LatheUri.toPath(uri));
+    final ModuleSourceConfig cursorConfig = module.config();
     return cursorWorker
         .renameConflict(request, newName)
         .thenCompose(
@@ -447,7 +434,7 @@ final class RenameService {
                               .searchReferencesForTarget(
                                   openFile,
                                   cursorWorker,
-                                  cursorConfig.orElse(null),
+                                  cursorConfig,
                                   searchTarget,
                                   true,
                                   cancelChecker,
@@ -473,7 +460,7 @@ final class RenameService {
                                               matches,
                                               newName,
                                               uri,
-                                              cursorConfig.orElse(null),
+                                              cursorConfig,
                                               cancelChecker)
                                           .thenApply(
                                               kept ->
@@ -489,7 +476,7 @@ final class RenameService {
   // A refusal reaches the client as the request's error; the log keeps why it was refused.
   private static void logRefusal(
       final String operation, final String uri, final Stopwatch t, final Throwable failure) {
-    final Throwable cause = failure instanceof CompletionException ? failure.getCause() : failure;
+    final Throwable cause = ExceptionUtil.completionCause(failure);
     if (cause instanceof final ResponseErrorException refused) {
       LOG.info(
           () ->

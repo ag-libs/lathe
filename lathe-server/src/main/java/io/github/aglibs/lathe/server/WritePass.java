@@ -1,18 +1,19 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
 import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -180,6 +181,7 @@ final class WritePass {
   }
 
   List<Path> takeWrittenSinceVerify() {
+    eventLoop.checkOnLoop();
     final List<Path> taken = List.copyOf(writtenSinceVerify);
     writtenSinceVerify.clear();
     return taken;
@@ -294,16 +296,17 @@ final class WritePass {
   // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
   // event loop. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow(final boolean eager) {
+    eventLoop.checkOnLoop();
     return requestPass(eager).thenAccept(stale -> {});
   }
 
   // Asks for a write pass; completes with the stale sources it considered once its writes finish.
   // eager treats every stale source as ready (startup, an MCP query) instead of waiting a tick for
   // a file that may still be being written. Runs on the event loop, which owns all pass state; the
-  // pass
-  // is registered as running before any of its work, so one that finishes at once still ends
+  // pass is registered as running before any of its work, so one that finishes at once still ends
   // cleanly.
   CompletableFuture<List<Path>> requestPass(final boolean eager) {
+    eventLoop.checkOnLoop();
     if (runningPass != null) {
       if (nextPass == null) {
         nextPass = new CompletableFuture<>();
@@ -367,6 +370,7 @@ final class WritePass {
     trees.forEach(this::reconcileDeletedSourcesIn);
     // Under a build the configs it compiles with are its own; the first pass after it compares.
     if (!building) {
+      eventLoop.checkOnLoop();
       reportLombokConfigChanges(trees);
     }
 
@@ -530,6 +534,7 @@ final class WritePass {
   // Files the editor saved or the MCP engine wrote: written by a pass, the next one if a pass is
   // running. The engine calls this holding the reactor lock, which defers everything but these.
   CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    eventLoop.checkOnLoop();
     report(changed);
     return requestPass(false).thenAccept(stale -> {});
   }
@@ -663,7 +668,7 @@ final class WritePass {
   // Writes one level's trees together and starts the next level once all of them finish, so every
   // write resolves against the freshly written upstream classes. Stops at a reload (another
   // generation), and while a build holds the reactor lock writes only reported files; what is left
-  // stays stale for the next pass. Completes on the session thread.
+  // stays stale for the next pass. Completes on the event loop.
   private CompletableFuture<Void> writeLevels(
       final Deque<List<ModuleSourceConfig>> levels,
       final Map<ModuleSourceConfig, List<Path>> batches,
@@ -716,11 +721,13 @@ final class WritePass {
     final var stamps = new LinkedHashMap<Path, SourceStamp>();
     for (final var source : sources) {
       final long mtime = mtimeMillis(source);
-      final String content = readSource(source);
-      if (content == null) {
+      final Optional<String> read = FileUtil.readIfPresent(source);
+      if (read.isEmpty()) {
         reported.remove(source);
         continue;
       }
+
+      final String content = read.get();
 
       transientSources.add(new TransientSource(LatheUri.fromPath(source), content));
       // The content compiled, not a later read: a save during a long batch must not stamp it.
@@ -743,7 +750,7 @@ final class WritePass {
           return "[react] writing %d file(s) in %s: %s%s"
               .formatted(
                   stamps.size(),
-                  SourceLayout.moduleRel(state.root(), config.moduleDir()),
+                  state.layout().moduleRel(config),
                   names,
                   stamps.size() > 20 ? " +%d more".formatted(stamps.size() - 20) : "");
         });
@@ -779,9 +786,7 @@ final class WritePass {
       LOG.log(
           Level.FINE,
           error,
-          () ->
-              "[react] batch compile failed in %s"
-                  .formatted(SourceLayout.moduleRel(state.root(), config.moduleDir())));
+          () -> "[react] batch compile failed in %s".formatted(state.layout().moduleRel(config)));
       stamps.forEach(
           (source, stamp) ->
               failedCompiles.put(source, new FailedWrite(stamp.mtime(), "the compiler failed")));
@@ -805,9 +810,7 @@ final class WritePass {
           () ->
               "[react] %d of %d file(s) failed in %s, writing the rest"
                   .formatted(
-                      byFailure.get(true).size(),
-                      stamps.size(),
-                      SourceLayout.moduleRel(state.root(), config.moduleDir())));
+                      byFailure.get(true).size(), stamps.size(), state.layout().moduleRel(config)));
       // The failed files' open buffers get their write diagnostics.
       refreshScope.add(config.moduleDir());
       final List<Path> rest = byFailure.get(false);
@@ -837,8 +840,7 @@ final class WritePass {
     LOG.fine(
         () ->
             "[react] recompiled %d file(s) in %s"
-                .formatted(
-                    stamps.size(), SourceLayout.moduleRel(state.root(), config.moduleDir())));
+                .formatted(stamps.size(), state.layout().moduleRel(config)));
     return CompletableFuture.completedFuture(null);
   }
 
@@ -923,14 +925,6 @@ final class WritePass {
     return packageRel != null
         ? config.latheClassesDir().resolve(packageRel)
         : config.latheClassesDir();
-  }
-
-  static String readSource(final Path source) {
-    try {
-      return Files.readString(source);
-    } catch (final IOException e) {
-      return null;
-    }
   }
 
   // Copy any resource whose .lathe/ destination is missing or older than the source, so an external

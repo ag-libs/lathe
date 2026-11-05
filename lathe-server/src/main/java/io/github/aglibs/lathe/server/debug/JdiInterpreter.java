@@ -40,7 +40,7 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreePath;
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
+import io.github.aglibs.lathe.analysis.AttributedExpression;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -288,9 +288,8 @@ final class JdiInterpreter {
       return current.getValue(variable);
     } catch (final AbsentInformationException e) {
       // Lathe's in-process write forces -g, so a replayed frame normally has a local-variable
-      // table.
-      // A miss here is a class Lathe did not compile (a precompiled dependency, or a synthetic
-      // lambda/bridge frame) — locals simply cannot be read from it.
+      // table. A miss here is a class Lathe did not compile (a precompiled dependency, or a
+      // synthetic lambda/bridge frame) — locals simply cannot be read from it.
       throw new EvaluationException(
           "local '%s' is unavailable: this frame has no local-variable table".formatted(name), e);
     }

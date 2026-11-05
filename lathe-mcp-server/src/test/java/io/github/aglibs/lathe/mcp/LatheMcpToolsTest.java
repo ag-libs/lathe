@@ -2,15 +2,16 @@ package io.github.aglibs.lathe.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
 import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheFileEdit;
+import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
@@ -35,6 +36,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -518,8 +520,7 @@ class LatheMcpToolsTest {
                 LatheMcpTools.outlineResult(
                     tmp.resolve("Shop.java"), items, LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            String.join(
-                System.lineSeparator(),
+            lines(
                 "2 declaration(s) in app/Shop.java:",
                 "class Shop  3:1: public class Shop {",
                 "  method sell  8:1: int sell(int count) {"));
@@ -562,8 +563,7 @@ class LatheMcpToolsTest {
 
     assertThat(text(LatheMcpTools.importsResult(imports, LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            String.join(
-                System.lineSeparator(),
+            lines(
                 "Added 2 import(s) to app/src/main/java/a/Foo.java: java.time.Duration, java.util.ArrayList",
                 "Ambiguous — add one yourself:",
                 "  List: java.util.List, java.awt.List",
@@ -924,26 +924,26 @@ class LatheMcpToolsTest {
                         List.of("ShopTest")),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            "int sell(int count)\n"
-                + "references: 4 production, 2 test (truncated)\n"
-                + "affected modules: app, core\n"
-                + "relevant tests: ShopTest\n"
-                + lines(
-                    "override family: 2",
-                    "app/Base.java:4: abstract int sell(int count);",
-                    "app/Shop.java:8: int sell(int count) {"));
+            lines(
+                "int sell(int count)",
+                "references: 4 production, 2 test (truncated)",
+                "affected modules: app, core",
+                "relevant tests: ShopTest",
+                "override family: 2",
+                "app/Base.java:4: abstract int sell(int count);",
+                "app/Shop.java:8: int sell(int count) {"));
     assertThat(
             text(
                 LatheMcpTools.analyzeResult(
                     new LatheChangeImpact("", List.of(), 0, 0, false, List.of(), List.of()),
                     LatheMcpTools.NO_NOTES)))
         .isEqualTo(
-            """
-            (no symbol at that position)
-            references: 0 production, 0 test
-            affected modules: none
-            relevant tests: none
-            override family: none""");
+            lines(
+                "(no symbol at that position)",
+                "references: 0 production, 0 test",
+                "affected modules: none",
+                "relevant tests: none",
+                "override family: none"));
   }
 
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
@@ -975,5 +975,28 @@ class LatheMcpToolsTest {
                 "2 diagnostic(s) in Shop.java:",
                 "  Error [5:10] cannot find symbol",
                 "  Warning [1:1] unchecked call"));
+  }
+
+  // The engine's lines are 0-based like every position; the agent reads them 1-based.
+  @Test
+  void formatResult_oneLineOrASpanOrNothing_linesAsTheAgentReadsThem() {
+    final Path file = tmp.resolve("Shop.java");
+
+    assertThat(
+            text(
+                LatheMcpTools.formatResult(
+                    file,
+                    Optional.of(new LatheFormat("app/Shop.java", 5, 7)),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Formatted app/Shop.java: lines 6–8 changed.");
+    assertThat(
+            text(
+                LatheMcpTools.formatResult(
+                    file,
+                    Optional.of(new LatheFormat("app/Shop.java", 0, 0)),
+                    LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Formatted app/Shop.java: line 1 changed.");
+    assertThat(text(LatheMcpTools.formatResult(file, Optional.empty(), LatheMcpTools.NO_NOTES)))
+        .isEqualTo("Shop.java was already formatted.");
   }
 }

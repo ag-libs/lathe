@@ -10,6 +10,7 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -81,7 +82,7 @@ class SaveTest extends ServiceTestBase {
             """,
             1_000L);
     final Path processors = tmp.resolve("processors");
-    TestCompiler.compileToDir(processors, processorSource);
+    TestJavac.compileToDir(processors, processorSource);
     return processors;
   }
 

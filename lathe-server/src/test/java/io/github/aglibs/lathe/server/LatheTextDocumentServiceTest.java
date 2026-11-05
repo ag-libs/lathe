@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.server.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -10,6 +10,11 @@ import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.TypeHierarchyItemData;
+import io.github.aglibs.lathe.analysis.TypeHierarchyItemDataCodec;
+import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -17,10 +22,6 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemData;
-import io.github.aglibs.lathe.server.analysis.TypeHierarchyItemDataCodec;
-import io.github.aglibs.lathe.server.analysis.completion.CompletionOutcome;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -146,7 +147,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final var params = new FoldingRangeRequestParams();
     params.setTextDocument(new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"));
 
-    final List<FoldingRange> ranges = service.foldingRange(params).get(5, TimeUnit.SECONDS);
+    final List<FoldingRange> ranges = service.foldingRange(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(ranges).isEmpty();
   }
@@ -161,7 +162,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 new HoverParams(
                     new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"),
                     new Position(0, 0)))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(hover).isNull();
   }
@@ -179,7 +180,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   void formatting_disabled_returnsEmptyEdits() throws Exception {
     final List<? extends TextEdit> edits =
-        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+        service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(edits).isEmpty();
   }
@@ -194,7 +195,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
 
     final List<? extends TextEdit> edits =
-        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+        service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(edits).isNotEmpty();
     verify(client, timeout(2000))
@@ -211,9 +212,9 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
 
     final List<? extends TextEdit> first =
-        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+        service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
     final List<? extends TextEdit> second =
-        service.formatting(formattingParams()).get(5, TimeUnit.SECONDS);
+        service.formatting(formattingParams()).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(first).isEmpty();
     assertThat(second).isEmpty();
@@ -236,7 +237,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\nint   y;\n}\n")));
 
     final List<? extends TextEdit> edits =
-        service.rangeFormatting(rangeFormattingParams(1)).get(5, TimeUnit.SECONDS);
+        service.rangeFormatting(rangeFormattingParams(1)).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(edits).hasSize(1);
     assertThat(edits.get(0).getRange().getStart().getLine()).isEqualTo(1);
@@ -249,7 +250,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new ExternalCommandFormatEngine(
             List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, tmp));
 
-    assertThat(service.rangeFormatting(rangeFormattingParams(0)).get(5, TimeUnit.SECONDS))
+    assertThat(service.rangeFormatting(rangeFormattingParams(0)).get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
   }
 
@@ -275,7 +276,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final List<? extends Location> locations =
         service
             .references(referenceParams(source, content, content.indexOf("target"), token))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
     verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
@@ -297,10 +298,12 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         tmp, "module", List.of(sourceRoot), null, List.of(), List.of(), List.of("-Xno-such-flag"));
     service.initialize(tmp);
 
+    final String content = Files.readString(source);
     final var diagnostics =
-        service.diagnosticsFuture(source.toUri().toString(), Files.readString(source), 1);
+        service.onLoopFuture(
+            session -> session.diagnosticsFuture(source.toUri().toString(), content, 1));
 
-    assertThatThrownBy(() -> diagnostics.get(5, TimeUnit.SECONDS))
+    assertThatThrownBy(() -> diagnostics.get(TIMEOUT_S, TimeUnit.SECONDS))
         .isInstanceOf(ExecutionException.class)
         .hasRootCauseInstanceOf(IllegalArgumentException.class);
   }
@@ -324,7 +327,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final List<Either<SymbolInformation, DocumentSymbol>> symbols =
         service
             .documentSymbol(new DocumentSymbolParams(new TextDocumentIdentifier(serverForm)))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(symbols).isNotEmpty();
   }
@@ -357,7 +360,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         service
             .instantiationsFuture(
                 source.toUri().toString(), offsetToPosition(content, content.indexOf("Widget {")))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
     verify(client, timeout(5_000).atLeast(2)).notifyProgress(progressCaptor.capture());
@@ -382,7 +385,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     service.cancelProgress(new WorkDoneProgressCancelParams(token));
 
     assertThat(response).isCancelled();
-    assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
+    assertThatThrownBy(() -> response.get(TIMEOUT_S, TimeUnit.SECONDS))
         .isInstanceOf(CancellationException.class);
     assertThatCode(
             () ->
@@ -391,7 +394,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                         new HoverParams(
                             new TextDocumentIdentifier(source.toUri().toString()),
                             new Position(0, 6)))
-                    .get(5, TimeUnit.SECONDS))
+                    .get(TIMEOUT_S, TimeUnit.SECONDS))
         .doesNotThrowAnyException();
   }
 
@@ -406,9 +409,12 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     openDoc(source, content);
 
     // A nested type is found by its canonical name, unlike a member's binary one.
-    assertThat(prepareRename(source, content, "Inner").get(5, TimeUnit.SECONDS)).isNotNull();
-    assertThat(prepareRename(source, content, "target").get(5, TimeUnit.SECONDS)).isNotNull();
-    assertThatThrownBy(() -> prepareRename(source, content, "Object").get(5, TimeUnit.SECONDS))
+    assertThat(prepareRename(source, content, "Inner").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .isNotNull();
+    assertThat(prepareRename(source, content, "target").get(TIMEOUT_S, TimeUnit.SECONDS))
+        .isNotNull();
+    assertThatThrownBy(
+            () -> prepareRename(source, content, "Object").get(TIMEOUT_S, TimeUnit.SECONDS))
         .cause()
         .isInstanceOf(ResponseErrorException.class)
         .hasMessageContaining("outside the project");
@@ -459,7 +465,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     params.setPosition(offsetToPosition(content, content.indexOf("target")));
 
     final List<CallHierarchyItem> items =
-        service.prepareCallHierarchy(params).get(5, TimeUnit.SECONDS);
+        service.prepareCallHierarchy(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(items).hasSize(1);
     assertThat(items.get(0).getName()).isEqualTo("target");
@@ -479,7 +485,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     params.setPosition(offsetToPosition(content, content.indexOf("Foo")));
 
     final List<CallHierarchyItem> items =
-        service.prepareCallHierarchy(params).get(5, TimeUnit.SECONDS);
+        service.prepareCallHierarchy(params).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(items).isEmpty();
   }
@@ -506,13 +512,13 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     prepParams.setTextDocument(new TextDocumentIdentifier(callerFile.toUri().toString()));
     prepParams.setPosition(offsetToPosition(callerContent, callerContent.indexOf("invoke")));
     final List<CallHierarchyItem> items =
-        service.prepareCallHierarchy(prepParams).get(5, TimeUnit.SECONDS);
+        service.prepareCallHierarchy(prepParams).get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(items).hasSize(1);
 
     final List<CallHierarchyOutgoingCall> calls =
         service
             .callHierarchyOutgoingCalls(new CallHierarchyOutgoingCallsParams(items.get(0)))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(calls).hasSize(1);
     assertThat(calls.get(0).getTo().getName()).isEqualTo("run");
@@ -536,13 +542,13 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     prepParams.setTextDocument(new TextDocumentIdentifier(source.toUri().toString()));
     prepParams.setPosition(offsetToPosition(content, content.indexOf("target")));
     final List<CallHierarchyItem> items =
-        service.prepareCallHierarchy(prepParams).get(5, TimeUnit.SECONDS);
+        service.prepareCallHierarchy(prepParams).get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(items).hasSize(1);
 
     final List<CallHierarchyIncomingCall> calls =
         service
             .callHierarchyIncomingCalls(new CallHierarchyIncomingCallsParams(items.get(0)))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(calls).hasSize(1);
     assertThat(calls.get(0).getFrom().getName()).isEqualTo("caller");
@@ -554,9 +560,15 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
     final var outcome =
         service
-            .runTestFuture(
-                "app", List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")), "")
-            .get(5, TimeUnit.SECONDS);
+            .onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runTestFuture(
+                            "app",
+                            List.of(new TestSelection(TestSelectionKind.CLASS, "com.example.Foo")),
+                            ""))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons()).anyMatch(reason -> reason.contains("run a build first"));
@@ -637,8 +649,12 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         selected.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS;
     final var outcome =
         service
-            .runTestFuture("app", List.of(new TestSelection(kind, selected)), "")
-            .get(5, TimeUnit.SECONDS);
+            .onLoopFuture(
+                session ->
+                    session
+                        .runs()
+                        .runTestFuture("app", List.of(new TestSelection(kind, selected)), ""))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(outcome.launched()).isFalse();
     return outcome.blockedReasons();
   }
@@ -668,7 +684,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     Files.writeString(api, "package com.example; public interface Api {}\n");
     Files.writeString(impl, "package com.example; public class Impl implements Api {}\n");
     // Compile both into the module's reactor classes dir so the reactor scan indexes Impl <: Api.
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
+    TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
     service.initialize(tmp);
 
@@ -682,7 +698,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final List<TypeHierarchyItem> subtypes =
         service
             .typeHierarchySubtypes(new TypeHierarchySubtypesParams(item))
-            .get(5, TimeUnit.SECONDS);
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(subtypes).extracting(TypeHierarchyItem::getName).contains("Impl");
   }
@@ -705,7 +721,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> symbolNames(final String query) throws Exception {
-    return service.workspaceSymbolFuture(query, false).get(5, TimeUnit.SECONDS).stream()
+    return service
+        .onLoop(session -> session.workspaceSymbol(query, false))
+        .get(TIMEOUT_S, TimeUnit.SECONDS)
+        .stream()
         .map(SymbolInformation::getName)
         .toList();
   }
@@ -725,12 +744,12 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     awaitStartup();
 
     // On the loop, where the format engine that asks for it runs.
-    assertThat(service.onLoop(session -> session.moduleRelOf(api)).get(5, TimeUnit.SECONDS))
+    assertThat(service.onLoop(session -> session.moduleRelOf(api)).get(TIMEOUT_S, TimeUnit.SECONDS))
         .contains("platform/api");
     assertThat(
             service
                 .onLoop(session -> session.moduleRelOf(tmp.resolve("scripts/Tool.java")))
-                .get(5, TimeUnit.SECONDS))
+                .get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
   }
 
@@ -746,8 +765,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   // Go to type definition: the declared type of the symbol at the cursor, an array's element type,
   // a generic's own type, a constructor's class, a method's return type, a type itself; nothing for
-  // a
-  // primitive.
+  // a primitive.
   @Test
   void typeDefinition_symbolsOfEachKind_goToTheirTypeDeclaration() throws Exception {
     final String use =

@@ -112,7 +112,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    compileIntoMirror(file);
     engine = new LatheEngine(tmp);
 
     // A JDK type, a JDK method, and a project method overriding a JDK one.
@@ -138,7 +138,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    compileIntoMirror(file);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "count", "total"))
@@ -166,7 +166,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Sample.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    compileIntoMirror(file);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "toString", "renamed"))
@@ -699,7 +699,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         }
         """;
     final Path file = TestCompiler.writeModuleSource(tmp, "com/example/Patterns.java", source);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file);
+    compileIntoMirror(file);
     engine = new LatheEngine(tmp);
 
     renameAt(file, source, "s ?", "text");
@@ -740,7 +740,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         """;
     final Path utilFile = TestCompiler.writeModuleSource(tmp, "com/example/Util.java", util);
     final Path userFile = TestCompiler.writeModuleSource(tmp, "com/example/app/User.java", user);
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), utilFile, userFile);
+    compileIntoMirror(utilFile, userFile);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(utilFile, util, "go(int", "goInt"))
@@ -772,7 +772,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
         "module",
         tmp.resolve("module/src/main/java"),
         tmp.resolve("module/target/generated-sources/annotations"));
-    TestCompiler.compileToDir(tmp.resolve(".lathe/module/classes"), file, generated);
+    compileIntoMirror(file, generated);
     engine = new LatheEngine(tmp);
 
     assertThatThrownBy(() -> renameAt(file, source, "name", "label"))
@@ -795,11 +795,9 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
   @Test
   void rename_publicTypeUsedInDownstreamModule_movesFileAndMirrorsOnlyTheNewClass()
       throws Exception {
-    final String apiSource =
-        "package com.example.api;\npublic class Api { public int a() { return 1; } }\n";
     final Path api =
         TestCompiler.writeMirroredModule(
-                tmp, "api", Map.of("com/example/api/Api.java", apiSource), List.of(), 1_000L)
+                tmp, "api", Map.of("com/example/api/Api.java", API_SOURCE), List.of(), 1_000L)
             .get(0);
     final Path app =
         TestCompiler.writeMirroredModule(
@@ -814,7 +812,7 @@ class LatheEngineRenameTest extends LatheEngineTestBase {
             .get(0);
     engine = new LatheEngine(tmp);
 
-    final LatheRename rename = renameAt(api, apiSource, "Api {", "Renamed");
+    final LatheRename rename = renameAt(api, API_SOURCE, "Api {", "Renamed");
 
     final Path renamed = api.resolveSibling("Renamed.java");
     assertThat(api).doesNotExist();

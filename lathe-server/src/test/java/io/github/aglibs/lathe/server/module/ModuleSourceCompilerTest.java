@@ -4,22 +4,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.source.tree.ClassTree;
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompilerResult;
+import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
+import io.github.aglibs.lathe.analysis.TransientSource;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.testing.JavacCrashFixtures;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.typeindex.ClassFileTypeScanner;
-import io.github.aglibs.lathe.server.JavacCrashFixtures;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import io.github.aglibs.lathe.server.TestCompiler;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.CompilerResult;
-import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
-import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
-import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
-import io.github.aglibs.lathe.server.analysis.WorkspaceTypeIndex;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -111,10 +112,9 @@ class ModuleSourceCompilerTest {
   }
 
   // A detached compile or analysis (a check of edited text, as codeAction/resolve, verify_change
-  // and
-  // a rename's meaning check run) leaves the document's own compile undisturbed: javac reads text
-  // lazily from the per-document temp file, so a tree cached from that compile, which code actions
-  // cut text by, keeps reading its own text, while the check reads the edited text.
+  // and a rename's meaning check run) leaves the document's own compile undisturbed: javac reads
+  // text lazily from the per-document temp file, so a tree cached from that compile, which code
+  // actions cut text by, keeps reading its own text, while the check reads the edited text.
   @Test
   void detached_otherText_cachedTreeKeepsItsOwnText() throws Exception {
     final Path sourceRoot = td.resolve("src/main/java");
@@ -490,7 +490,7 @@ class ModuleSourceCompilerTest {
     Files.writeString(circle, "package shapes; final class Circle implements Shape {}");
     final var config =
         TestCompiler.moduleConfig(td.resolve(".lathe"), td.resolve("target/classes"), sourceRoot);
-    TestCompiler.compileToDir(config.latheClassesDir(), shape, circle);
+    TestJavac.compileToDir(config.latheClassesDir(), shape, circle);
 
     // The edit: Shape now permits a brand-new Square absent from the mirror.
     final String editedShape = "package shapes; sealed interface Shape permits Circle, Square {}";
@@ -583,7 +583,7 @@ class ModuleSourceCompilerTest {
           }
         }
         """);
-    TestCompiler.compileToDir(config.latheClassesDir(), processor);
+    TestJavac.compileToDir(config.latheClassesDir(), processor);
     final Path services =
         config.latheClassesDir().resolve("META-INF/services/javax.annotation.processing.Processor");
     Files.createDirectories(services.getParent());
@@ -711,7 +711,7 @@ class ModuleSourceCompilerTest {
     final var config =
         TestCompiler.moduleConfig(
             td.resolve(".lathe/module"), td.resolve("module/target/classes"), sourceRoot);
-    TestCompiler.compileToDir(config.latheClassesDir(), reactorSource);
+    TestJavac.compileToDir(config.latheClassesDir(), reactorSource);
     final var typeIndex =
         WorkspaceTypeIndex.build(
             List.of(), List.of(ClassFileTypeScanner.scanDirectory(config.latheClassesDir())));

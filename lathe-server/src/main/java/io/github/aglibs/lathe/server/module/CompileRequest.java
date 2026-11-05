@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.module;
 
-import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.validcheck.ValidCheck;
 
 public record CompileRequest(

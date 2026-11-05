@@ -4,9 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -65,7 +68,7 @@ final class LatheWorkspaceService implements WorkspaceService {
           Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>>
       symbol(final WorkspaceSymbolParams params) {
     return textDocumentService
-        .workspaceSymbolFuture(params.getQuery(), false)
+        .onLoop(session -> session.workspaceSymbol(params.getQuery(), false))
         .thenApply(Either::forLeft);
   }
 
@@ -88,16 +91,19 @@ final class LatheWorkspaceService implements WorkspaceService {
       case DIR_RUNNABLES_COMMAND -> dirRunnables(params);
       case TEST_SOURCES_COMMAND -> testSources(params);
       case TEST_COUNTERPARTS_COMMAND -> testCounterparts(params);
-      case TEST_MODULES_COMMAND -> textDocumentService.testModulesFuture().thenApply(m -> m);
+      case TEST_MODULES_COMMAND ->
+          textDocumentService.onLoop(session -> session.layout().testModules()).thenApply(m -> m);
       case DISCOVER_TESTS_COMMAND -> discoverTests(params);
-      case RESOURCES_COMMAND -> textDocumentService.resourcesFuture().thenApply(r -> r);
+      case RESOURCES_COMMAND ->
+          textDocumentService.onLoop(session -> session.resources()).thenApply(r -> r);
       case RESOURCE_OPEN_COMMAND -> resourceOpen(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       case DEBUG_TEST_COMMAND -> debugTest(params);
       case DEBUG_MAIN_COMMAND -> debugMain(params);
       case RUN_NAMED_COMMAND -> runNamed(params);
       case DEBUG_NAMED_COMMAND -> debugNamed(params);
-      case LIST_RUN_CONFIGS_COMMAND -> textDocumentService.runConfigsFuture().thenApply(r -> r);
+      case LIST_RUN_CONFIGS_COMMAND ->
+          textDocumentService.onLoop(session -> session.runs().listRunConfigs()).thenApply(r -> r);
       case SAVE_RUN_CONFIG_COMMAND -> saveRunConfig(params);
       case INSTANTIATIONS_COMMAND -> instantiations(params);
       case TYPE_HIERARCHY_COMMAND -> typeHierarchy(params);
@@ -114,35 +120,51 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> debugTest(final ExecuteCommandParams params) {
     final var argument = parseRunTestArgument(params.getArguments().get(0));
     return textDocumentService
-        .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token())
+        .onLoopFuture(
+            session ->
+                session
+                    .runs()
+                    .debugTestFuture(argument.moduleRel(), argument.selections(), argument.token()))
         .thenApply(result -> result);
   }
 
   private CompletableFuture<Object> debugMain(final ExecuteCommandParams params) {
     final var argument = parseRunMainArgument(params.getArguments().get(0));
     return textDocumentService
-        .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
+        .onLoopFuture(
+            session ->
+                session
+                    .runs()
+                    .debugMainFuture(argument.moduleRel(), argument.mainClass(), argument.token()))
         .thenApply(result -> result);
   }
 
   private CompletableFuture<Object> runTest(final ExecuteCommandParams params) {
     final var argument = parseRunTestArgument(params.getArguments().get(0));
     return textDocumentService
-        .runTestFuture(argument.moduleRel(), argument.selections(), argument.token())
+        .onLoopFuture(
+            session ->
+                session
+                    .runs()
+                    .runTestFuture(argument.moduleRel(), argument.selections(), argument.token()))
         .thenApply(outcome -> outcome);
   }
 
   private CompletableFuture<Object> runMain(final ExecuteCommandParams params) {
     final var argument = parseRunMainArgument(params.getArguments().get(0));
     return textDocumentService
-        .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token())
+        .onLoopFuture(
+            session ->
+                session
+                    .runs()
+                    .runMainFuture(argument.moduleRel(), argument.mainClass(), argument.token()))
         .thenApply(outcome -> outcome);
   }
 
   private CompletableFuture<Object> runNamed(final ExecuteCommandParams params) {
     final var argument = parseNamedArgument(params.getArguments().get(0));
     return textDocumentService
-        .runNamedFuture(argument.name(), argument.token())
+        .onLoopFuture(session -> session.runs().runNamedFuture(argument.name(), argument.token()))
         .thenApply(outcome -> (Object) outcome)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
@@ -150,7 +172,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> debugNamed(final ExecuteCommandParams params) {
     final var argument = parseNamedArgument(params.getArguments().get(0));
     return textDocumentService
-        .debugNamedFuture(argument.name(), argument.token())
+        .onLoopFuture(session -> session.runs().debugNamedFuture(argument.name(), argument.token()))
         .thenApply(result -> (Object) result)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
@@ -162,30 +184,41 @@ final class LatheWorkspaceService implements WorkspaceService {
     final List<TestSelection> selectors =
         json.has("selectors") ? parseSelections(json.getAsJsonArray("selectors")) : List.of();
     return textDocumentService
-        .saveRunConfigFuture(
-            name,
-            json.get("moduleRel").getAsString(),
-            kind,
-            optionalString(json, "mainClass"),
-            selectors,
-            json.has("overwrite") && json.get("overwrite").getAsBoolean())
+        .onLoop(
+            session ->
+                session.saveRunConfig(
+                    name,
+                    json.get("moduleRel").getAsString(),
+                    kind,
+                    optionalString(json, "mainClass"),
+                    selectors,
+                    json.has("overwrite") && json.get("overwrite").getAsBoolean()))
         .thenApply(saved -> (Object) saved)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
 
   private CompletableFuture<Object> cancelTest(final ExecuteCommandParams params) {
     final String token = parseCancelArgument(params.getArguments().get(0));
-    return textDocumentService.cancelRunFuture(token);
+    return textDocumentService.onLoop(
+        session -> {
+          session.runs().cancelRun(token);
+          return null;
+        });
   }
 
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
     final String uri = uriArgument(params.getArguments().get(0));
-    return textDocumentService.runnablesFuture(uri).thenApply(targets -> targets);
+    return textDocumentService
+        .onLoopFuture(session -> session.runnablesFuture(uri))
+        .thenApply(targets -> targets);
   }
 
   private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
     final String uri = uriArgument(params.getArguments().get(0));
-    return textDocumentService.refreshResourceFuture(uri).thenApply(dest -> dest);
+    return textDocumentService
+        .onLoop(
+            session -> session.writePass().refreshResource(uri).map(Path::toString).orElse(null))
+        .thenApply(dest -> dest);
   }
 
   private CompletableFuture<Object> instantiations(final ExecuteCommandParams params) {
@@ -202,8 +235,10 @@ final class LatheWorkspaceService implements WorkspaceService {
     final var at =
         GSON.fromJson((JsonElement) params.getArguments().get(0), TextDocumentPositionParams.class);
     return textDocumentService
-        .typeHierarchyExplorerFuture(
-            LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition())
+        .onLoopFuture(
+            session ->
+                session.typeHierarchyExplorerFuture(
+                    LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition()))
         .thenApply(result -> result);
   }
 
@@ -216,7 +251,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     }
 
     return textDocumentService
-        .createTypeFuture(args)
+        .onLoop(session -> session.createType(args))
         .thenApply(result -> (Object) result)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
@@ -235,7 +270,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   // from the server) to an InvalidParams response so the editor shows the reason, not the generic
   // lsp4j "Internal error." wrapping.
   private static Object rethrowInvalidParams(final Throwable e) {
-    final Throwable cause = (e instanceof CompletionException) ? e.getCause() : e;
+    final Throwable cause = ExceptionUtil.completionCause(e);
     if (cause instanceof IllegalArgumentException iae) {
       throw invalidParams(iae);
     }
@@ -249,32 +284,37 @@ final class LatheWorkspaceService implements WorkspaceService {
   }
 
   private CompletableFuture<Object> modules() {
-    return textDocumentService.modulesFuture().thenApply(modules -> modules);
+    return textDocumentService
+        .onLoop(session -> session.layout().modules())
+        .thenApply(modules -> modules);
   }
 
   private CompletableFuture<Object> packages(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .packagesFuture(json.get("moduleRel").getAsString())
+        .onLoop(session -> session.layout().packages(json.get("moduleRel").getAsString()))
         .thenApply(packages -> packages);
   }
 
   private CompletableFuture<Object> resolveContext(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .resolveContextFuture(uriArgument(json))
+        .onLoop(session -> session.layout().resolveContext(LatheUri.toPath(uriArgument(json))))
         .thenApply(context -> context);
   }
 
   private CompletableFuture<Object> dirRunnables(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
-    return textDocumentService.dirRunFuture(uriArgument(json)).thenApply(plan -> plan);
+    return textDocumentService
+        .onLoop(session -> session.layout().dirRun(LatheUri.toPath(uriArgument(json))))
+        .thenApply(plan -> plan);
   }
 
   private CompletableFuture<Object> discoverTests(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .discoverTestsFuture(json.get("moduleRel").getAsString())
+        .onLoopFuture(
+            session -> session.runs().discoverTestsFuture(json.get("moduleRel").getAsString()))
         .thenApply(discovery -> discovery);
   }
 
@@ -283,38 +323,44 @@ final class LatheWorkspaceService implements WorkspaceService {
     final List<String> classNames =
         json.getAsJsonArray("classNames").asList().stream().map(JsonElement::getAsString).toList();
     return textDocumentService
-        .testSourcesFuture(json.get("moduleRel").getAsString(), classNames)
+        .onLoop(
+            session ->
+                session.layout().testSources(json.get("moduleRel").getAsString(), classNames))
         .thenApply(sources -> sources);
   }
 
   private CompletableFuture<Object> testCounterparts(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .testCounterpartsFuture(uriArgument(json))
+        .onLoop(session -> session.testCounterparts(uriArgument(json)))
         .thenApply(counterparts -> counterparts);
   }
 
   private CompletableFuture<Object> resourceOpen(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .resourceOpenFuture(json.get("jar").getAsString(), json.get("entry").getAsString())
+        .onLoop(
+            session ->
+                session.resourceOpen(
+                    json.get("jar").getAsString(), json.get("entry").getAsString()))
         .thenApply(path -> path);
   }
 
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
-    return textDocumentService.missingImportsFuture(uriArgument(json)).thenApply(result -> result);
+    return textDocumentService
+        .onLoopFuture(session -> session.missingImportsFuture(uriArgument(json)))
+        .thenApply(result -> result);
   }
 
   // The edits for the imports a client chose from lathe.missingImports, placed by the server so
-  // each
-  // goes to its sorted place in its group.
+  // each goes to its sorted place in its group.
   private CompletableFuture<Object> importEdits(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     final List<String> chosen =
         json.getAsJsonArray("imports").asList().stream().map(JsonElement::getAsString).toList();
     return textDocumentService
-        .missingImportsFuture(uriArgument(json))
+        .onLoopFuture(session -> session.missingImportsFuture(uriArgument(json)))
         .thenApply(result -> result.edits(chosen));
   }
 

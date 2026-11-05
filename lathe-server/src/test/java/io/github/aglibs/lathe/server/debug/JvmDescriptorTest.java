@@ -2,9 +2,9 @@ package io.github.aglibs.lathe.server.debug;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.server.analysis.AttributedExpression;
-import io.github.aglibs.lathe.server.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.server.analysis.TempSourceCompiler;
+import io.github.aglibs.lathe.analysis.AttributedExpression;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import java.util.function.BiConsumer;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;

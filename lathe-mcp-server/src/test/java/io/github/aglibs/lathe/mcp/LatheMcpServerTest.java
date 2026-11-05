@@ -55,8 +55,7 @@ class LatheMcpServerTest {
   }
 
   // A client ends a stdio session by closing stdin, and one that crashes sends no signal at all:
-  // the
-  // server must exit then, or each such session leaves a JVM running.
+  // the server must exit then, or each such session leaves a JVM running.
   @Test
   @Timeout(60)
   void main_clientClosesStdin_serverExits() throws Exception {

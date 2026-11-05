@@ -18,6 +18,7 @@ import com.sun.jdi.Value;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,7 +43,9 @@ class LatheEvaluationProviderTest {
     final IDebugAdapterContext context = mock(IDebugAdapterContext.class);
     when(context.getStackFrameManager()).thenReturn(stackFrames);
 
-    final var provider = new LatheEvaluationProvider(file -> Optional.empty(), List.of());
+    final var provider =
+        new LatheEvaluationProvider(
+            new FrameSources(CompletableFuture::runAsync, file -> Optional.empty(), List.of()));
     provider.initialize(context, Map.of());
 
     final ThreadReference thread = mock(ThreadReference.class);
@@ -57,7 +60,9 @@ class LatheEvaluationProviderTest {
   void invokeMethod_withoutInitialize_doesNotReloadOrThrow() throws Exception {
     // No initialize() means no captured frame manager: the reload is a no-op and the invocation
     // still completes normally (no NullPointerException from the missing cache).
-    final var provider = new LatheEvaluationProvider(file -> Optional.empty(), List.of());
+    final var provider =
+        new LatheEvaluationProvider(
+            new FrameSources(CompletableFuture::runAsync, file -> Optional.empty(), List.of()));
     final ThreadReference thread = mock(ThreadReference.class);
     when(thread.uniqueID()).thenReturn(1L);
 
@@ -77,7 +82,9 @@ class LatheEvaluationProviderTest {
     final IDebugAdapterContext context = mock(IDebugAdapterContext.class);
     when(context.getStackFrameManager()).thenReturn(stackFrames);
 
-    final var provider = new LatheEvaluationProvider(file -> Optional.empty(), List.of());
+    final var provider =
+        new LatheEvaluationProvider(
+            new FrameSources(CompletableFuture::runAsync, file -> Optional.empty(), List.of()));
     provider.initialize(context, Map.of());
 
     assertThatCode(

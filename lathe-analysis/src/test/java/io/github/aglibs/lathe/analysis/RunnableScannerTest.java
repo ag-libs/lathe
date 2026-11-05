@@ -1,0 +1,383 @@
+package io.github.aglibs.lathe.analysis;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+
+import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
+import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class RunnableScannerTest {
+
+  private static final String URI = TempSourceCompiler.TEST_URI;
+  private static final String MODULE_REL = "app";
+
+  @Test
+  void runnables_mainMethod_returnsMainTarget() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          public static void main(String[] args) {
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
+    final RunTarget method = targets.get(0);
+    final RunTarget mainClass = targets.get(1);
+    assertThat(method.id()).isEqualTo("demo.App#main");
+    assertThat(method.label()).isEqualTo("main");
+    assertThat(mainClass.id()).isEqualTo("demo.App");
+    assertThat(mainClass.parentId()).isEqualTo("demo");
+    // The method target's parentId pairs with the class-level target's id, so a client can link
+    // them; the class target ranges the class declaration line (above the method line).
+    assertThat(method.parentId()).isEqualTo(mainClass.id());
+    assertThat(mainClass.range().getStart().getLine())
+        .isLessThan(method.range().getStart().getLine());
+  }
+
+  @Test
+  void runnables_packagePrivateStaticMain_returnsMainTarget() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          static void main(String[] args) {
+          }
+        }
+        """;
+
+    assertThat(scan(source))
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
+  }
+
+  @Test
+  void runnables_instanceMainNoArgs_returnsMainTarget() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main() {
+          }
+        }
+        """;
+
+    final var target = scan(source).get(0);
+
+    assertThat(target.kind()).isEqualTo(RunnableKind.MAIN);
+    assertThat(target.id()).isEqualTo("demo.App#main");
+  }
+
+  @Test
+  void runnables_nestedClassWithMain_mainClassParentIdIsOuter() {
+    final String source =
+        """
+        package demo;
+
+        class Outer {
+          static class Inner {
+            public static void main(String[] args) {
+            }
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::id)
+        .containsExactly("demo.Outer$Inner#main", "demo.Outer$Inner");
+    final RunTarget mainClass =
+        targets.stream().filter(t -> t.kind() == RunnableKind.MAIN_CLASS).findFirst().orElseThrow();
+    assertThat(mainClass.parentId()).isEqualTo("demo.Outer");
+  }
+
+  @Test
+  void runnables_mainWithNonStringArrayParam_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main(int arg) {
+          }
+        }
+        """;
+
+    assertThat(scan(source)).isEmpty();
+  }
+
+  @Test
+  void runnables_mainWithTwoParams_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          void main(String[] args, int extra) {
+          }
+        }
+        """;
+
+    assertThat(scan(source)).isEmpty();
+  }
+
+  @Test
+  void runnables_testMethod_returnsMethodAndClassAndPackageTargets() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class FooTest {
+          @Test
+          void bar_condition_result() {
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .containsExactly(
+            RunnableKind.TEST_METHOD, RunnableKind.TEST_CLASS, RunnableKind.TEST_PACKAGE);
+    assertThat(targets.get(0).id()).isEqualTo("demo.FooTest#bar_condition_result()");
+    assertThat(targets.get(1).id()).isEqualTo("demo.FooTest");
+    assertThat(targets.get(2).id()).isEqualTo("demo");
+    assertThat(targets.get(0).parentId()).isEqualTo(targets.get(1).id());
+    assertThat(targets.get(1).parentId()).isEqualTo(targets.get(2).id());
+    assertThat(targets.get(2).parentId()).isEmpty();
+  }
+
+  // A JUnit suite has no test methods of its own: the class is a test target, run as a class; a
+  // class with neither tests nor @Suite is none.
+  @Test
+  void runnables_suiteClass_returnsClassAndPackageTargets() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.platform.suite.api.SelectClasses;
+        import org.junit.platform.suite.api.Suite;
+
+        @Suite
+        @SelectClasses(FooTest.class)
+        class AllSuite {}
+
+        class FooTest {}
+
+        @Deprecated
+        class NotASuite {}
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::kind, RunTarget::id)
+        .containsExactly(
+            tuple(RunnableKind.TEST_CLASS, "demo.AllSuite"),
+            tuple(RunnableKind.TEST_PACKAGE, "demo"));
+  }
+
+  @Test
+  void runnables_parameterizedTestWithGenericParams_erasesToFullyQualifiedTypes() {
+    final String source =
+        """
+        package demo;
+
+        import java.util.List;
+        import org.junit.jupiter.params.ParameterizedTest;
+
+        class FooTest {
+          @ParameterizedTest
+          void bar_input_result(String name, List<String> values) {
+          }
+        }
+        """;
+
+    final var method = scan(source).get(0);
+
+    assertThat(method.id())
+        .isEqualTo("demo.FooTest#bar_input_result(java.lang.String,java.util.List)");
+  }
+
+  @Test
+  void runnables_primitiveAndArrayParams_qualifyCorrectly() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class FooTest {
+          @Test
+          void bar_input_result(int count, String[] names) {
+          }
+        }
+        """;
+
+    final var method = scan(source).get(0);
+
+    assertThat(method.id()).isEqualTo("demo.FooTest#bar_input_result(int,java.lang.String[])");
+  }
+
+  @Test
+  void runnables_nestedClassWithTest_usesBinaryNameSeparator() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class Outer {
+          class Inner {
+            @Test
+            void nested_condition_result() {
+            }
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+
+    assertThat(targets)
+        .extracting(RunTarget::id)
+        .contains("demo.Outer$Inner#nested_condition_result()", "demo.Outer$Inner");
+    final RunTarget innerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer$Inner")).findFirst().orElseThrow();
+    assertThat(innerClass.parentId()).isEqualTo("demo.Outer");
+  }
+
+  @Test
+  void runnables_outerClassAlsoHasTest_innerClassParentIdIsOuterNotPackage() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Test;
+
+        class Outer {
+          @Test
+          void outer_condition_result() {
+          }
+
+          class Inner {
+            @Test
+            void inner_condition_result() {
+            }
+          }
+        }
+        """;
+
+    final List<RunTarget> targets = scan(source);
+    final RunTarget outerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer")).findFirst().orElseThrow();
+    final RunTarget innerClass =
+        targets.stream().filter(t -> t.id().equals("demo.Outer$Inner")).findFirst().orElseThrow();
+
+    assertThat(innerClass.parentId()).isEqualTo(outerClass.id());
+    assertThat(outerClass.parentId()).isEqualTo("demo");
+  }
+
+  // JUnit runs @Nested classes with their enclosing class, so every enclosing class is a test class
+  // to run; a plain inner class is not run with its outer one.
+  @Test
+  void runnables_testsOnlyInNestedClasses_everyEnclosingClassIsATestClass() {
+    final String source =
+        """
+        package demo;
+
+        import org.junit.jupiter.api.Nested;
+        import org.junit.jupiter.api.Test;
+
+        class Outer {
+          @Nested
+          class Deeper {
+            @Nested
+            class Deepest {
+              @Test
+              void deep_condition_result() {
+              }
+            }
+          }
+        }
+
+        class Other {
+          class Plain {
+            @Test
+            void plain_condition_result() {
+            }
+          }
+        }
+        """;
+
+    assertThat(scan(source))
+        .filteredOn(target -> target.kind() == RunnableKind.TEST_CLASS)
+        .extracting(RunTarget::id, RunTarget::parentId)
+        .containsExactlyInAnyOrder(
+            tuple("demo.Outer$Deeper$Deepest", "demo.Outer$Deeper"),
+            tuple("demo.Outer$Deeper", "demo.Outer"),
+            tuple("demo.Outer", "demo"),
+            tuple("demo.Other$Plain", "demo.Other"));
+  }
+
+  @Test
+  void runnables_classWithoutTestAnnotations_returnsNoTargets() {
+    final String source =
+        """
+        package demo;
+
+        class Plain {
+          void method() {
+          }
+        }
+        """;
+
+    assertThat(scan(source)).isEmpty();
+  }
+
+  @Test
+  void runnables_rootModuleBlankModuleRel_returnsTargetsWithBlankModuleRel() {
+    final String source =
+        """
+        package demo;
+
+        class App {
+          public static void main(String[] args) {
+          }
+        }
+        """;
+
+    // "" is the reactor-root module's key (single-module project). The scan must not reject it.
+    final List<RunTarget> targets = scan(source, "");
+
+    assertThat(targets)
+        .extracting(RunTarget::kind)
+        .containsExactly(RunnableKind.MAIN, RunnableKind.MAIN_CLASS);
+    assertThat(targets).extracting(RunTarget::moduleRel).containsOnly("");
+  }
+
+  private static List<RunTarget> scan(final String source) {
+    return scan(source, MODULE_REL);
+  }
+
+  private static List<RunTarget> scan(final String source, final String moduleRel) {
+    try (var session =
+        new SourceAnalysisSession(new TempSourceCompiler(TestJavac.JUNIT_CLASSPATH))) {
+      session.compile(URI, source, 1, CompileMode.OPEN);
+      return session.runnables(URI, source, 1, moduleRel);
+    }
+  }
+}

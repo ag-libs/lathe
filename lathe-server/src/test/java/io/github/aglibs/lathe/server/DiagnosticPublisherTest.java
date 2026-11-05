@@ -7,7 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import io.github.aglibs.lathe.server.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.server.module.CompileResponse;
 import java.util.List;
 import org.eclipse.lsp4j.Diagnostic;

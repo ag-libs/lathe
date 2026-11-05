@@ -1,8 +1,9 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -27,7 +28,7 @@ import java.util.stream.Collectors;
  * without a file-system read; {@link #syncFromDisk} catches up with files changed outside the
  * editor.
  *
- * <p>Not thread-safe. All reads and writes must happen on the lathe-worker thread.
+ * <p>Not thread-safe. All reads and writes must happen on the event loop.
  */
 final class ReferenceCandidateIndex {
 

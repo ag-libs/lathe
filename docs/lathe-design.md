@@ -100,11 +100,16 @@ lathe-maven-plugin
     writes     → ~/.cache/lathe/ (dependency sources, JDK sources)
     depends on → lathe-core
 
+lathe-analysis
+    javac-backed analysis the server's features compute from a compile; no session state
+    depends on   → lathe-core, lsp4j
+
 lathe-server
     reads        → .lathe/ params files + workspace manifest
     reads/writes → .lathe/<rel>/classes/, .lathe/<rel>/test-classes/, .lathe/<rel>/generated-sources/
     reads        → ~/.cache/lathe/ (sources)
-    depends on   → lathe-core, lsp4j (formatters are loaded from the project's pinned jars, not bundled)
+    depends on   → lathe-core, lathe-analysis, lsp4j (formatters are loaded from the project's pinned
+                   jars, not bundled)
 ```
 
 `lathe:init` does not install server binaries.

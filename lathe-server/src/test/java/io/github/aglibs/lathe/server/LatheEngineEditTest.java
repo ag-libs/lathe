@@ -4,13 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
-import io.github.aglibs.lathe.server.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImports;
 import java.nio.file.Files;
@@ -40,8 +40,8 @@ class LatheEngineEditTest extends LatheEngineTestBase {
         .hasValueSatisfying(
             format -> {
               assertThat(format.path()).isEqualTo(FileUtil.slashed(tmp.relativize(source)));
-              assertThat(format.firstLine()).isEqualTo(6);
-              assertThat(format.lastLine()).isEqualTo(8);
+              assertThat(format.firstLine()).isEqualTo(5);
+              assertThat(format.lastLine()).isEqualTo(7);
             });
     assertThat(Files.readString(source)).contains("  int twice() {\n    return n * 2;\n  }\n");
     assertThat(engine.format(source)).isEmpty();

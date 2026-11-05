@@ -1,15 +1,17 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
-import io.github.aglibs.lathe.server.analysis.TextMentions;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
+import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,17 +33,12 @@ import java.util.stream.Stream;
 // changes nothing but what WritePass's own methods change.
 final class ChangeVerifier {
 
-  private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final FeatureRouter router;
   private final WritePass writePass;
 
   ChangeVerifier(
-      final ServerEventLoop eventLoop,
-      final WorkspaceState state,
-      final FeatureRouter router,
-      final WritePass writePass) {
-    this.eventLoop = eventLoop;
+      final WorkspaceState state, final FeatureRouter router, final WritePass writePass) {
     this.state = state;
     this.router = router;
     this.writePass = writePass;
@@ -195,9 +192,7 @@ final class ChangeVerifier {
               config ->
                   placements.put(
                       path,
-                      new ModulePlacement(
-                          SourceLayout.moduleRel(state.root(), config.moduleDir()),
-                          config.isTestTree())));
+                      new ModulePlacement(state.layout().moduleRel(config), config.isTestTree())));
     }
 
     return Map.copyOf(placements);
@@ -341,12 +336,56 @@ final class ChangeVerifier {
             moduleRel ->
                 Files.isDirectory(SourceLayout.moduleLatheDir(state.root(), moduleRel))
                     ? "%s is in no source root of module %s, so a sync does not add it"
-                        .formatted(relative, moduleRel.isEmpty() ? "." : moduleRel)
+                        .formatted(relative, SourceLayout.displayed(moduleRel))
                     : "%s is in no synced module — run `%s`"
                         .formatted(relative, LatheLayout.SYNC_SCRIPT_COMMAND))
         .orElseGet(
             () ->
                 "%s is outside the modules the last build compiled (a profile may leave its module out), so Lathe cannot check it"
                     .formatted(relative));
+  }
+
+  // What verify_change checks after a reconcile: the changed files (those named, or else everything
+  // written or changed since the build) and, per module, the files that see them.
+  VerifyPlan plan(final ReconcileOutcome outcome, final List<Path> files) {
+    if (outcome.deferral() != ReconcileOutcome.DeferReason.NONE) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    final List<Path> touched =
+        files.isEmpty()
+            ? Stream.of(outcome.reacted(), writePass.takeWrittenSinceVerify(), changedSinceBuild())
+                .flatMap(List::stream)
+                .distinct()
+                .toList()
+            : files;
+    final List<Path> changed = differingFromBuild(touched);
+    if (changed.isEmpty()) {
+      return new VerifyPlan(outcome, List.of(), Map.of(), List.of(), 0);
+    }
+
+    return new VerifyPlan(
+        outcome,
+        changed,
+        verifyTargetsByModule(changed),
+        downstreamModuleRels(changed),
+        reactorModuleCount());
+  }
+
+  record VerifyPlan(
+      ReconcileOutcome outcome,
+      List<Path> changed,
+      Map<String, List<Path>> targets,
+      List<String> downstream,
+      int moduleCount) {
+
+    VerifyPlan {
+      ValidCheck.check().notNull(outcome, "outcome").validate();
+      changed = List.copyOf(changed);
+      // In the order verifyTargetsByModule gives (the changed files' modules first): the answer
+      // lists the modules that way.
+      targets = Collections.unmodifiableMap(new LinkedHashMap<>(targets));
+      downstream = List.copyOf(downstream);
+    }
   }
 }

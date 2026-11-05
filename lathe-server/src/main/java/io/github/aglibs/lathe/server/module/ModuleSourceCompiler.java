@@ -1,19 +1,19 @@
 package io.github.aglibs.lathe.server.module;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.BatchWrite;
+import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompilerResult;
+import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
+import io.github.aglibs.lathe.analysis.JavacDiagnosticMapper;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
+import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
-import io.github.aglibs.lathe.server.LatheUri;
-import io.github.aglibs.lathe.server.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.server.analysis.BatchWrite;
-import io.github.aglibs.lathe.server.analysis.CompileMode;
-import io.github.aglibs.lathe.server.analysis.CompilerResult;
-import io.github.aglibs.lathe.server.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.server.analysis.JavacDiagnosticMapper;
-import io.github.aglibs.lathe.server.analysis.TransientAnalysis;
-import io.github.aglibs.lathe.server.analysis.TransientSource;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -312,8 +312,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
 
   // Where a detached run writes a file's text: its own temp file, or for another module's file one
   // under a directory of its own mirroring the file's path, as javac needs only a source's file
-  // name
-  // to match its public class.
+  // name to match its public class.
   private Path detachedTempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
     return ownSourceRoot(filePath).isPresent()

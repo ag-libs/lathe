@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server.engine;
 
-import io.github.aglibs.lathe.server.LatheUri;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
 import java.util.List;

@@ -56,27 +56,31 @@ Which file answers which question:
 | `lathe-maven-plugin` | `lathe:init` (auto-bound to `initialize`, creates `.lathe/`) and `lathe:sync` (auto-bound to `process-test-classes`) Mojos; owns Maven invoker integration tests |
 | `lathe-maven-extension`| Maven build extension that injects the Lathe build wiring (compiler, sync, capture) in memory                                                                  |
 | `lathe-openjdk-maven-plugin`| `sync` goal for the OpenJDK build: reads its per-module compile descriptors and writes an OpenJDK-native `.lathe/`                                        |
-| `lathe-server`       | LSP server; reads the `.lathe/` files the build front-ends write; JPMS module; regular dep on `lathe-core`                                                       |
+| `lathe-analysis`     | javac-backed analysis (`io.github.aglibs.lathe.analysis`): what the server's features compute from a compile; no session state; JPMS, multi-release jar        |
+| `lathe-server`       | LSP server; reads the `.lathe/` files the build front-ends write; JPMS module; drives `lathe-analysis` from its module workers                                  |
 | `lathe-mcp-server`   | MCP server exposing Lathe's code intelligence to AI coding agents; runs `lathe-server` in process                                                                |
 | `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
 | `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
 | `lathe-gradle-plugin`| Gradle plugin, built by Gradle: this `pom` module fills `target/lathe-repo` with the reactor-built jars and runs `gradle build` (TestKit fixtures) against it.   |
 
 Build order: `lathe-core` → `lathe-junit` → `lathe-test-runner` → `lathe-install` → `lathe-compiler` →
-`lathe-server` → `lathe-mcp-server` → `lathe-maven-extension` → `lathe-install-maven` →
+`lathe-analysis` → `lathe-server` → `lathe-mcp-server` → `lathe-maven-extension` → `lathe-install-maven` →
 `lathe-maven-plugin` → `lathe-openjdk-maven-plugin` → `lathe-neovim` → `lathe-vscode` →
 `lathe-gradle-plugin` (listed last).
 
-`lathe-compiler`, `lathe-maven-plugin`, and `lathe-server` use `lathe-core` for shared layout and
-property-file helpers.
+`lathe-compiler`, `lathe-maven-plugin`, `lathe-analysis` and `lathe-server` use `lathe-core` for shared
+layout and property-file helpers.
 
 - `groupId`: `io.github.ag-libs`
 - Package root: `io.github.aglibs.lathe`
 - Java 17: `<maven.compiler.release>17</maven.compiler.release>` — Lathe runs on JDK 17+; building it needs
   JDK 21+ (see the next point). Java 18+ APIs and syntax are not available.
-- javac API newer than Java 17 lives **only** in `lathe-server/src/main/java21`, behind `CompilerTrees`
+- javac API newer than Java 17 lives **only** in `lathe-analysis/src/main/java21`, behind `CompilerTrees`
   (a JDK 17 base version plus a JDK 21 version in the multi-release jar's `META-INF/versions/21`).
   Everything else stays version-neutral; a new JDK-specific check is one more method there.
+- `lathe-analysis` never reaches into `lathe-server`; the compiler enforces it. Shared test helpers
+  (`TestJavac`, `TempSourceCompiler`, `JavacCrashFixtures`, `LoggingConfig`) live in its
+  `io.github.aglibs.lathe.analysis.testing` package, which its test-jar carries to `lathe-server`'s tests.
 - Repo root: this directory
 
 ---
@@ -266,7 +270,7 @@ show it as their own log lines). Not JUL: Maven prints JUL in its raw format, ou
 
 **`lathe-maven-plugin`** — Mojo logger via `getLog()`.
 
-**`lathe-server`** — JUL only.
+**`lathe-server`** and **`lathe-analysis`** — JUL only.
 `LATHE_DEBUG=1` enables `FINE` level.
 
 | Level     | When to use                                                                                                                                                                                          |
@@ -343,10 +347,10 @@ Message format: `[operation] uri-or-module detail Xms outcome`
     * Close what opens a file before `@TempDir` cleanup: Windows won't delete an open file.
     * Disable a test with `@DisabledOnOs` only for behaviour that is OS-specific by nature (the
       executable bit, OpenJDK builds), never to skip a test that is POSIX-only by accident.
-- `lathe-server` test classes run in parallel, so tests **MUST** be parallel-safe: no mutable `static`
-  state, compile through `TestJavac` / `TempSourceCompiler`, and keep only your own workspace's part
-  of JVM-wide state (as `CompileLog` keeps the compiles under its workspace). `@Isolated` runs a class
-  alone after all the others, so it is the last resort.
+- `lathe-server` and `lathe-analysis` test classes run in parallel, so tests **MUST** be parallel-safe:
+  no mutable `static` state, compile through `TestJavac` / `TempSourceCompiler`, and keep only your own
+  workspace's part of JVM-wide state (as `CompileLog` keeps the compiles under its workspace).
+  `@Isolated` runs a class alone after all the others, so it is the last resort.
 
 ### How to write a new test
 
@@ -376,6 +380,7 @@ Every test module needs `src/test/resources/junit-platform.properties`:
 junit.jupiter.extensions.autodetection.enabled=true
 ```
 
-`lathe-server` tests require a `LoggingConfig` JUnit extension registered via
+`lathe-server` and `lathe-analysis` tests register the shared `LoggingConfig` JUnit extension via
 `META-INF/services/org.junit.jupiter.api.extension.Extension`.
-It loads the production `logging.properties` so log output is consistent during test runs.
+It sets Lathe's loggers to `FINE`, so every `LOG.fine` message is built and a bad format fails a test,
+and where the server's `logging.properties` is on the classpath it loads it, so log output is consistent.

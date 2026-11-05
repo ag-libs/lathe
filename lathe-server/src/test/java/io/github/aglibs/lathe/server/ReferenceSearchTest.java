@@ -14,7 +14,7 @@ class ReferenceSearchTest {
 
   @Test
   void isInPackageScope_generatedSourcesCandidate_reactorScope_inScope() {
-    // FR-012/FR-013 + EG-052: a reactor-scoped search uses a null packageRel; the generated builder
+    // A reactor-scoped search uses a null packageRel; the generated builder
     // lives under the .lathe generated-sources mirror (the fresh copy Lathe keeps in sync), never
     // under a regular source root, yet must stay in scope. The stale Maven target/ copy is not.
     final var config = configWithGen(tmp.resolve("module/target/generated-sources/annotations"));

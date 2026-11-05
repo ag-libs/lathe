@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.server.analysis.RenameProvider;
+import io.github.aglibs.lathe.analysis.RenameProvider;
 import java.nio.file.Path;
 import javax.lang.model.SourceVersion;
 import org.eclipse.lsp4j.Position;

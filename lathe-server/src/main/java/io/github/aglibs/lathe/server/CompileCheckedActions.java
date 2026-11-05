@@ -2,9 +2,9 @@ package io.github.aglibs.lathe.server;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.analysis.ExtractionSupport;
-import io.github.aglibs.lathe.server.analysis.SourceLocator;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
 import java.util.List;

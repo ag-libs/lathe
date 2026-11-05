@@ -111,7 +111,7 @@ submit **one batch per module**.
 
 **Core addition.** The live path compiles a single in-memory buffer (`compile(uri, content, mode)`).
 A multi-file javac *task* already exists but only for analysis
-([`analyzeBatch`](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/JavaSourceCompiler.java),
+([`analyzeBatch`](../../lathe-analysis/src/main/java/io/github/aglibs/lathe/analysis/JavaSourceCompiler.java),
 writes no `.class`). R1 needs a new **batch FULL compile that writes classes**: given a module and a
 list of source paths, one javac task that emits `.class`/generated sources and returns the union of
 `writtenBinaryNames`. This is an internal compile-core entry point on `CompilationWorker` /
