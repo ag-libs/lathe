@@ -9634,17 +9634,17 @@ Apache Fineract with Lathe 0.3.1 on Gradle: `JAVA_HOME=<JDK 25> ./gradlew --no-d
 
 ### Resolution
 
-`LatheCaptureTask` reads the build directories another task may also write into without tracking them as inputs (`@Internal`), so Gradle no longer sees a second writer it cannot order:
-- the compile's generated-sources directory, whose changes the compiled classes, a tracked input, follow;
-- the processed-resources directory, replaced as an input by the source set's own resources (`getResourceSources()`), so an edited resource still reruns the capture.
+The plugin orders the tasks instead of hiding the overlap, so the capture never reads a directory while another task writes it:
+- the source set's `classes` task depends on its capture, so a task that runs after the classes and writes into what the capture reads (Fineract's `resolve`) runs after the capture; the processed resources stay a tracked input, so the next build mirrors that task's file, and a resource `processResources` filters or expands is captured when it changes;
+- the test compile runs after the main capture (`mustRunAfter`), so the main capture copies a shared generated-sources directory before the test compile cleans and refills it; that directory is read without being tracked (`@Internal`), as the compiled classes, a tracked input, change whenever it does.
 
-What another task writes into those directories (Fineract's OpenAPI spec) reaches the mirror whenever the capture runs, not as a change of its own; a resource that changes only through the build's property filtering is picked up at the next capture.
-When main and test share a generated-sources directory, each tree's mirror holds whatever the directory held when its capture ran, so the main tree's can include the test compile's sources and the other way round; the server compiles a generated source only when something refers to it.
+A first version marked both directories `@Internal` alone; review found it only silenced Gradle: the capture could then copy a directory another task was writing, run after the test compile had emptied main's generated sources, and miss filtered resources.
+The same order covers a task after the classes that writes into the classes directory (offline instrumentation, post-compile weaving). Not covered, as no project here has one: a task with no order to the classes at all that writes into a directory the capture reads.
 
 ### Regression targets
 
-`LatheCaptureTaskFunctionalTest.capture_testCompileSharingMainsGeneratedSourcesDir_buildsAndCapturesBoth` and
-`LatheCaptureTaskFunctionalTest.capture_taskWritingIntoProcessedResourcesAfterClasses_buildsAndTracksSourceResources`, each of which failed with Fineract's error before the fix.
+`LatheCaptureTaskFunctionalTest.capture_testCompileSharingMainsGeneratedSourcesDir_capturesMainsBeforeTheTestCompile` and
+`LatheCaptureTaskFunctionalTest.capture_taskWritingIntoProcessedResourcesAfterClasses_runsAfterTheCaptureAndIsMirrored`, each of which fails with Fineract's error without the fix.
 
 ---
 
