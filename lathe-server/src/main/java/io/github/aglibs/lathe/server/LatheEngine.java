@@ -88,6 +88,8 @@ public final class LatheEngine {
   // A request now chains what took several waits of 30 s each (freshen, compile, the tool's own
   // work): the bound only stops a request that hangs.
   private static final long REQUEST_TIMEOUT_SECONDS = 120;
+  // As long as an unused module session is kept, so a pause finds them released.
+  private static final long IDLE_SCAN_PAUSE_MS = 5 * 60 * 1000;
   private static final int TEST_CLASS_CANDIDATES = 20;
   private static final int LISTED_MENTIONS = 20;
   private static final Set<String> JDK_PACKAGES =
@@ -182,6 +184,8 @@ public final class LatheEngine {
     service.setDocumentsFollowDisk(true);
     // An agent cannot answer a prompt: a due sync stays in every answer's notes until a reload.
     service.setInteractive(false);
+    // Every query scans first, so between them the scan only costs CPU.
+    service.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
     service.useWorkspaceFormatter(workspaceRoot);
     service.initialize(workspaceRoot);
   }

@@ -116,6 +116,7 @@ final class WorkspaceSession {
   // A pressure round released the sessions of modules without open files; the next tick checks
   // whether that was enough.
   private boolean pressureFollowUp;
+  private final ScanPace scanPace = new ScanPace();
   // Per open file, the diagnostics of its last write and the content written: merged into its
   // publishes while it still has that content, for what analysis cannot report (annotation
   // processor and compiler plugin findings).
@@ -231,7 +232,7 @@ final class WorkspaceSession {
     watcher = new WorkspaceWatcher(root);
     watcher.updateBuildFiles(
         state.manifest().buildFiles(), state.manifest().buildFileFingerprints());
-    eventLoop.scheduleAtFixedRate(WritePass.scanIntervalMs(), this::checkForChanges);
+    eventLoop.scheduleAtFixedRate(WritePass.scanIntervalMs(), this::onScanTick);
     if (configured) {
       showWorkspaceStatus("Lathe: workspace ready.");
     } else {
@@ -269,27 +270,34 @@ final class WorkspaceSession {
 
   // On the change-scan tick, which runs anyway. If a pressure round did not bring memory back under
   // the threshold, the sessions of modules with open files go too; and any session long unused.
-  private void releaseSessionsOnTick() {
+  private int releaseSessionsOnTick() {
+    int released = 0;
     if (pressureFollowUp && memoryPressure.exceeded()) {
-      logRelease(
-          "pressure, files open", state.registry().releaseSessions(Set.of(), PRESSURE_IDLE_MS));
+      released +=
+          logRelease(
+              "pressure, files open", state.registry().releaseSessions(Set.of(), PRESSURE_IDLE_MS));
     }
 
     pressureFollowUp = false;
     if (state.registry().hasSessionIdleFor(IDLE_SESSION_MS)) {
-      logRelease(
-          "idle", state.registry().releaseSessions(modulesWithOpenDocuments(), IDLE_SESSION_MS));
+      released +=
+          logRelease(
+              "idle",
+              state.registry().releaseSessions(modulesWithOpenDocuments(), IDLE_SESSION_MS));
     }
+
+    return released;
   }
 
   // INFO only when a round freed something: under pressure the JVM reports many times a second.
-  private void logRelease(final String trigger, final int released) {
+  private int logRelease(final String trigger, final int released) {
     final Level level = released > 0 ? Level.INFO : Level.FINE;
     LOG.log(
         level,
         () ->
             "[memory] %s heap=%s released %d module session(s)"
                 .formatted(trigger, memoryPressure.usage(), released));
+    return released;
   }
 
   private Set<ModuleSourceConfig> modulesWithOpenDocuments() {
@@ -397,6 +405,10 @@ final class WorkspaceSession {
 
   void setInteractive(final boolean interactive) {
     this.interactive = interactive;
+  }
+
+  void setIdleScanPause(final long ms) {
+    scanPace.pauseAfter(ms);
   }
 
   void onOpen(final String uri, final String content, final int version) {
@@ -1180,6 +1192,29 @@ final class WorkspaceSession {
   private static final String SYNC_CAPTURE_ACTION = "Sync + capture tests";
   private static final String LATER_ACTION = "Later";
 
+  private void onScanTick() {
+    switch (scanPace.next(eventLoop.idleMs(), writePass.settling())) {
+      case SCAN -> checkForChanges();
+      case SKIP -> {}
+      case PAUSE -> {
+        LOG.info(() -> "[watcher] paused, no request for %ds".formatted(eventLoop.idleMs() / 1000));
+        releaseSessionsOnTick();
+        returnFreeHeap();
+      }
+      case PAUSED -> {
+        if (releaseSessionsOnTick() > 0) {
+          returnFreeHeap();
+        }
+      }
+    }
+  }
+
+  // G1 hands freed heap back to the OS only after a full collection, so without one an idle server
+  // keeps the peak of its last burst of work.
+  private static void returnFreeHeap() {
+    System.gc();
+  }
+
   private void checkForChanges() {
     if (watcher == null) {
       return;
@@ -1194,7 +1229,12 @@ final class WorkspaceSession {
       return;
     }
 
-    switch (watcher.poll()) {
+    final WorkspaceWatcher.PollResult change = watcher.poll();
+    if (change != WorkspaceWatcher.PollResult.NO_CHANGE) {
+      scanPace.changed();
+    }
+
+    switch (change) {
       case WORKSPACE_CHANGED -> {
         reload();
         writePass.forgetPendingStale();
