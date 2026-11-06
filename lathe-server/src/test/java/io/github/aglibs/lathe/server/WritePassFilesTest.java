@@ -45,7 +45,7 @@ class WritePassFilesTest {
     Files.writeString(outputDir.resolve("Foobar.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of());
+    final int deleted = ClassOutputs.deleteClassOutputs(config, sourceFile, Set.of());
 
     assertThat(deleted).isEqualTo(3);
     assertThat(outputDir.resolve("Foo.class")).doesNotExist();
@@ -65,10 +65,10 @@ class WritePassFilesTest {
     final Path classesRoot = config.latheClassesDir();
     Files.writeString(classesRoot.resolve("module-info.class"), "");
 
-    assertThat(WritePass.deleteClassOutputs(config, moduleInfo, Set.of("module-info")))
+    assertThat(ClassOutputs.deleteClassOutputs(config, moduleInfo, Set.of("module-info")))
         .as("kept: the write produced it")
         .isZero();
-    assertThat(WritePass.deleteClassOutputs(config, moduleInfo, Set.of())).isEqualTo(1);
+    assertThat(ClassOutputs.deleteClassOutputs(config, moduleInfo, Set.of())).isEqualTo(1);
     assertThat(classesRoot.resolve("com")).isDirectory();
   }
 
@@ -77,7 +77,7 @@ class WritePassFilesTest {
     final var txtFile = tmp.resolve("module/src/main/java/com/example/Foo.txt");
     Files.writeString(outputDir.resolve("Foo.class"), "");
 
-    final int deleted = WritePass.deleteClassOutputs(config, txtFile, Set.of());
+    final int deleted = ClassOutputs.deleteClassOutputs(config, txtFile, Set.of());
 
     assertThat(deleted).isZero();
     assertThat(outputDir.resolve("Foo.class")).exists();
@@ -93,7 +93,7 @@ class WritePassFilesTest {
         Map.of(
             Path.of("com/example/Live.java"), 2_000L, Path.of("com/example/Ghost.java"), 1_000L));
 
-    final int removed = WritePass.deleteOrphanedClassOutputs(TreeState.read(config));
+    final int removed = ClassOutputs.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isEqualTo(2);
     assertThat(outputDir.resolve("Ghost.class")).doesNotExist();
@@ -109,7 +109,7 @@ class WritePassFilesTest {
     Files.writeString(outputDir.resolve("Live.class"), "");
     writeStamps(Map.of(Path.of("com/example/Live.java"), 2_000L));
 
-    final int removed = WritePass.deleteOrphanedClassOutputs(TreeState.read(config));
+    final int removed = ClassOutputs.deleteOrphanedClassOutputs(TreeState.read(config));
 
     assertThat(removed).isZero();
     assertThat(outputDir.resolve("Live.class")).exists();
@@ -125,7 +125,8 @@ class WritePassFilesTest {
     Files.writeString(outputDir.resolve("Foo$1.class"), "");
     Files.writeString(outputDir.resolve("Bar.class"), "");
 
-    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+    final int deleted =
+        ClassOutputs.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(2);
     assertThat(outputDir.resolve("Foo$Inner.class")).doesNotExist();
@@ -142,7 +143,8 @@ class WritePassFilesTest {
         Map.of(
             "Foo.java", "class Foo {} class Helper {}", "Bar.java", "class Bar {} class Other {}"));
 
-    final int deleted = WritePass.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
+    final int deleted =
+        ClassOutputs.deleteClassOutputs(config, sourceFile, Set.of("com.example.Foo"));
 
     assertThat(deleted).isEqualTo(1);
     assertThat(outputDir.resolve("Helper.class")).doesNotExist();
@@ -159,10 +161,11 @@ class WritePassFilesTest {
         Map.of(
             "Foo.java", "class Alpha {} class Beta {}", "Bar.java", "class Bar {} class Other {}"));
 
-    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of("com.example.Alpha"))).isTrue();
+    assertThat(ClassOutputs.wroteClassOf(config, sourceFile, Set.of("com.example.Alpha"))).isTrue();
     // A failed compile writes nothing; another source's classes do not count either.
-    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of())).isFalse();
-    assertThat(WritePass.wroteClassOf(config, sourceFile, Set.of("com.example.Other"))).isFalse();
+    assertThat(ClassOutputs.wroteClassOf(config, sourceFile, Set.of())).isFalse();
+    assertThat(ClassOutputs.wroteClassOf(config, sourceFile, Set.of("com.example.Other")))
+        .isFalse();
   }
 
   @Test

@@ -59,6 +59,7 @@ final class WorkspaceSession {
   private final WorkspaceQueries queries;
   private final ReferenceSearch search;
   private final WritePass writePass;
+  private final ResourceMirror resourceMirror;
   private final ChangeVerifier verifier;
   private final RenameService renames;
   private WorkspaceWatcher watcher;
@@ -108,6 +109,7 @@ final class WorkspaceSession {
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
     this.queries = new WorkspaceQueries(state);
     this.search = new ReferenceSearch(eventLoop, state, reactorIndex, router, docs);
+    this.resourceMirror = new ResourceMirror(state);
     this.writePass =
         new WritePass(
             eventLoop,
@@ -123,7 +125,8 @@ final class WorkspaceSession {
                 },
                 this::refreshOpenFiles,
                 this::keepWriteDiagnostics,
-                () -> renameTransaction.memberPaths()));
+                () -> renameTransaction.memberPaths()),
+            resourceMirror);
     this.verifier = new ChangeVerifier(state, router, writePass);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }
@@ -144,6 +147,10 @@ final class WorkspaceSession {
 
   RunCoordinator runs() {
     return runs;
+  }
+
+  ResourceMirror resourceMirror() {
+    return resourceMirror;
   }
 
   WritePass writePass() {

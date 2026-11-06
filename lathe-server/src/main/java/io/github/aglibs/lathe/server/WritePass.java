@@ -12,14 +12,11 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
-import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
-import io.github.aglibs.lathe.core.typeindex.SourceTypeScanner;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -89,6 +86,7 @@ final class WritePass {
   private final ReactorTypeIndex reactorIndex;
   private final ProgressReporter progressReporter;
   private final Hooks hooks;
+  private final ResourceMirror resourceMirror;
   // Stale sources and their mtimes seen on the previous tick. An outside change is written only
   // once its mtime has held across two ticks, so a file mid-write is left to settle first.
   private Map<Path, Long> pendingStale = Map.of();
@@ -115,8 +113,6 @@ final class WritePass {
   // and a reactor type index rebuild. Deferred while another pass is requested, so a `:wa` burst
   // analyzes each open file once and rebuilds the index (~200ms on a large reactor) once.
   private final Set<Path> refreshScope = new HashSet<>();
-  // The resource files the last pass found, so the next one can drop the copies of deleted ones.
-  private Set<Path> scannedResources = Set.of();
   // Files the editor saved or the MCP engine wrote, each with the number of its latest report: the
   // pass writes them without waiting for them to settle, while a build holds the reactor lock, and
   // even when their mtime equals their stamp -- the writer said they changed. A file leaves once
@@ -139,12 +135,14 @@ final class WritePass {
       final WorkspaceState state,
       final ReactorTypeIndex reactorIndex,
       final ProgressReporter progressReporter,
-      final Hooks hooks) {
+      final Hooks hooks,
+      final ResourceMirror resourceMirror) {
     this.eventLoop = eventLoop;
     this.state = state;
     this.reactorIndex = reactorIndex;
     this.progressReporter = progressReporter;
     this.hooks = hooks;
+    this.resourceMirror = resourceMirror;
   }
 
   // A reload replaces the configs and workers a running pass writes through: the pass started
@@ -190,107 +188,6 @@ final class WritePass {
   static long scanIntervalMs() {
     final long configured = Long.getLong(LatheFlags.SCAN_INTERVAL_MS, DEFAULT_SCAN_INTERVAL_MS);
     return configured > 0 ? configured : DEFAULT_SCAN_INTERVAL_MS;
-  }
-
-  // Copies a changed resource into .lathe/ so a resource-only edit is picked up without a rebuild.
-  // Returns the .lathe/ destination written, or empty if the file maps to no resource root or the
-  // copy failed.
-  Optional<Path> refreshResource(final String uri) {
-    final var file = LatheUri.toPath(uri);
-    final Optional<Path> dest = state.manifest().resourceDestination(file);
-    if (dest.isEmpty()) {
-      LOG.fine(() -> "[resource] %s not a tracked resource → ignored".formatted(uri));
-      return Optional.empty();
-    }
-
-    return copyResource(file, dest.get());
-  }
-
-  private Optional<Path> copyResource(final Path file, final Path dest) {
-    try {
-      FileUtil.copyFileAtomically(file, dest);
-      LOG.info(() -> "[resource] %s → %s".formatted(file, dest));
-      return Optional.of(dest);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resource] copy failed for %s".formatted(file));
-      return Optional.empty();
-    }
-  }
-
-  // Deletes the source's class outputs except those the latest compile wrote (keptBinaryNames):
-  // empty for a deleted source, the compile's output set to prune what a save removed.
-  static int deleteClassOutputs(
-      final ModuleSourceConfig config, final Path source, final Set<String> keptBinaryNames) {
-    if (!FileUtil.isJavaFile(source)) {
-      return 0;
-    }
-
-    final var classDir = classDirOf(config, source);
-    if (classDir == null || !Files.isDirectory(classDir)) {
-      return 0;
-    }
-
-    try (final var stream = Files.list(classDir)) {
-      // A source at the tree's root (module-info.java) shares its directory with the packages.
-      final var deletedClassFiles =
-          stream
-              .filter(path -> path.getFileName().toString().endsWith(".class"))
-              .filter(
-                  path ->
-                      !keptBinaryNames.contains(
-                          FileUtil.classBinaryName(config.latheClassesDir(), path)))
-              .filter(path -> classOutputOf(source, path))
-              .toList();
-      deletedClassFiles.forEach(path -> IOUtil.unchecked(() -> Files.deleteIfExists(path)));
-      if (!deletedClassFiles.isEmpty()) {
-        LOG.fine(
-            () ->
-                "[delete] %s classes=%d".formatted(source.getFileName(), deletedClassFiles.size()));
-      }
-
-      return deletedClassFiles.size();
-    } catch (final IOException | UncheckedIOException e) {
-      LOG.log(Level.WARNING, e, () -> "[delete] class cleanup failed for %s".formatted(source));
-      return 0;
-    }
-  }
-
-  // A deleted source leaves its classes in the mirror, still resolvable by every sibling. A stamp
-  // key with no surviving source is that orphan: drop its classes and prune the stamp. Returns the
-  // class files removed (0 when a mismatched class cannot be located — a full mvn clean repairs
-  // it).
-  static int deleteOrphanedClassOutputs(final TreeState tree) {
-    final ModuleSourceConfig config = tree.config();
-    final List<Path> roots = config.sourceRoots();
-    if (roots.isEmpty()) {
-      return 0;
-    }
-
-    final Set<Path> orphans = tree.orphans();
-    if (orphans.isEmpty()) {
-      return 0;
-    }
-
-    LOG.fine(() -> "[delete] %s orphans=%s".formatted(config.moduleDir().getFileName(), orphans));
-    final Path root = roots.get(0);
-    int removed = 0;
-    for (final var rel : orphans) {
-      removed += deleteClassOutputs(config, root.resolve(rel), Set.of());
-    }
-
-    pruneOrphanStamps(config, orphans);
-    return removed;
-  }
-
-  private static void pruneOrphanStamps(final ModuleSourceConfig config, final Set<Path> orphans) {
-    try {
-      CompiledStamps.prune(config.moduleDir(), config.sourceTree(), orphans);
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () -> "[delete] stamp prune failed for %s".formatted(config.moduleDir()));
-    }
   }
 
   // The last scan found stale sources: the next tick writes those still settling.
@@ -393,7 +290,7 @@ final class WritePass {
     hooks.reread().accept(reread);
     final Map<ModuleSourceConfig, List<Path>> batches = claimReady(scan, eager, building);
     final var resourcesScanned = Stopwatch.start();
-    final int resources = building ? 0 : reconcileResources();
+    final int resources = building ? 0 : resourceMirror.reconcile();
     // Per pass, so a slow file system (macOS) shows what a scan costs there, and per file.
     LOG.fine(
         () ->
@@ -594,7 +491,7 @@ final class WritePass {
 
   private void reconcileDeletedSourcesIn(final TreeState tree) {
     final ModuleSourceConfig config = tree.config();
-    final int removed = deleteOrphanedClassOutputs(tree);
+    final int removed = ClassOutputs.deleteOrphanedClassOutputs(tree);
     if (removed == 0) {
       return;
     }
@@ -891,101 +788,13 @@ final class WritePass {
       final BatchWrite written,
       final SourceStamp stamp) {
     final Set<String> writtenBinaryNames = written.writtenBinaryNames();
-    if (!wroteClassOf(config, source, writtenBinaryNames)) {
+    if (!ClassOutputs.wroteClassOf(config, source, writtenBinaryNames)) {
       failedCompiles.put(source, new FailedWrite(stamp.mtime(), firstError(written, source)));
       return;
     }
 
-    deleteClassOutputs(config, source, writtenBinaryNames);
+    ClassOutputs.deleteClassOutputs(config, source, writtenBinaryNames);
     recordCompileStamp(config, source, stamp);
-  }
-
-  // Any written class of the source counts (Foo.class, Foo$*.class, or a sibling type), so a file
-  // declaring no type named after itself still freshens.
-  static boolean wroteClassOf(
-      final ModuleSourceConfig config, final Path source, final Set<String> writtenBinaryNames) {
-    // No type to key on (package-info/module-info or no source root) -- do not block.
-    if (config
-        .sourceRootOf(source)
-        .flatMap(root -> SourceTypeScanner.deriveEntry(root, source))
-        .isEmpty()) {
-      return true;
-    }
-
-    final var classDir = classDirOf(config, source);
-    return writtenBinaryNames.stream()
-        .map(name -> config.latheClassesDir().resolve("%s.class".formatted(name.replace('.', '/'))))
-        .filter(classFile -> classFile.getParent().equals(classDir))
-        .anyMatch(classFile -> classOutputOf(source, classFile));
-  }
-
-  // The mirror directory holding the source's package classes; null outside the config's roots.
-  private static Path classDirOf(final ModuleSourceConfig config, final Path source) {
-    final Optional<Path> sourceRoot = config.sourceRootOf(source);
-    if (sourceRoot.isEmpty()) {
-      return null;
-    }
-
-    final var packageRel = sourceRoot.get().relativize(source).getParent();
-    return packageRel != null
-        ? config.latheClassesDir().resolve(packageRel)
-        : config.latheClassesDir();
-  }
-
-  // Copy any resource whose .lathe/ destination is missing or older than the source, so an external
-  // resource edit is picked up without Maven; the copy bumps the destination mtime, so the next
-  // pass sees it as fresh. Remove the copy of a resource deleted since the last pass. Returns how
-  // many resources were checked.
-  private int reconcileResources() {
-    final Map<Path, Long> resources =
-        state.manifest().resourceSourceDirs().stream()
-            .flatMap(sourceDir -> resourceMtimesUnder(sourceDir).entrySet().stream())
-            .collect(
-                Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a));
-    resources.forEach(this::copyIfStale);
-    // Only files the last scan saw: a copy with no source may be the build's own output.
-    final Set<Path> deleted =
-        scannedResources.stream()
-            .filter(file -> !resources.containsKey(file) && Files.notExists(file))
-            .collect(Collectors.toUnmodifiableSet());
-    deleted.forEach(
-        file ->
-            state
-                .manifest()
-                .resourceDestination(file)
-                .ifPresent(dest -> deleteResource(file, dest)));
-    scannedResources = resources.keySet();
-    return resources.size();
-  }
-
-  private Map<Path, Long> resourceMtimesUnder(final Path sourceDir) {
-    try {
-      return FileUtil.fileMtimes(sourceDir, file -> true);
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
-      return Map.of();
-    }
-  }
-
-  private void deleteResource(final Path file, final Path dest) {
-    try {
-      Files.deleteIfExists(dest);
-      LOG.info(() -> "[resource] %s deleted → removed %s".formatted(file, dest));
-    } catch (final IOException e) {
-      LOG.log(Level.WARNING, e, () -> "[resource] delete failed for %s".formatted(dest));
-    }
-  }
-
-  // A missing copy reads as mtime 0, so it is copied too.
-  private void copyIfStale(final Path file, final long mtime) {
-    final Optional<Path> dest = state.manifest().resourceDestination(file);
-    if (dest.isEmpty()) {
-      return;
-    }
-
-    if (mtime > mtimeMillis(dest.get())) {
-      copyResource(file, dest.get());
-    }
   }
 
   // The Maven extension holds a heartbeated .lathe/lathe.lock for the whole reactor build; while it
@@ -1058,24 +867,6 @@ final class WritePass {
     } catch (final IOException e) {
       return 0L;
     }
-  }
-
-  // Foo.java's outputs are Foo.class, Foo$*.class, and any package-private sibling top-level type
-  // (Helper.class). Only the class file's SourceFile attribute ties a sibling back to Foo.java; a
-  // class generated from another source names that source, so it is never matched.
-  private static boolean classOutputOf(final Path source, final Path classFile) {
-    final var name = classFile.getFileName().toString();
-    if (!name.endsWith(".class")) {
-      return false;
-    }
-
-    final var typeName = FileUtil.javaTypeName(source);
-    if (name.equals("%s.class".formatted(typeName)) || name.startsWith("%s$".formatted(typeName))) {
-      return true;
-    }
-
-    final var sourceName = source.getFileName().toString();
-    return ClassSourceFile.of(classFile).filter(sourceName::equals).isPresent();
   }
 
   private void recordCompileStamp(

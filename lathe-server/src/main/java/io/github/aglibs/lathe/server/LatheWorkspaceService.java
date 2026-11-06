@@ -218,8 +218,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> refreshResource(final ExecuteCommandParams params) {
     final String uri = uriArgument(params.getArguments().get(0));
     return textDocumentService
-        .onLoop(
-            session -> session.writePass().refreshResource(uri).map(Path::toString).orElse(null))
+        .onLoop(session -> session.resourceMirror().refresh(uri).map(Path::toString).orElse(null))
         .thenApply(dest -> dest);
   }
 
