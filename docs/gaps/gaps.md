@@ -1154,38 +1154,6 @@ None yet.
 
 ---
 
-## FR-030 — A field reached through an expression that never names its type may be missed
-
-**Status: documented**
-
-**Value: unknown — Size: S to confirm**
-
-**Affects: references, rename and incoming calls for fields.**
-
-Found while designing the static-method narrowing of FR-029 (2026-11-05); not yet reproduced.
-
-### Suspected behaviour
-
-`ReferenceCandidatePlanner` narrows a field's candidates to the files that spell the field's name and a family type (the declaring type or a subtype), plus static imports.
-A file that reads the field through an expression whose type it never spells, such as `getOwner().name` or `var o = find(); o.name`, is not among them, so its use would be missed, and a rename would leave it.
-Methods were narrowed the same way until FR-011 widened them back to every file spelling the name, for exactly this reason; fields kept the narrowing.
-
-### Probe
-
-A reactor fixture with `class Owner { public String name; }`, an accessor `Owner owner()` in another class, and a third file that reads `holder.owner().name` without naming `Owner`: find references on `name` should list that read.
-
-### Fix direction
-
-Confirm with the probe first.
-If real: FR-029's exposure check closes it (keep the narrowed set when no non-private declaration exposes a family type), but an instance field's type is usually exposed, so most searches would fall back to every file spelling the name, slower than today.
-Weigh that against the gap.
-
-### Regression targets
-
-None yet.
-
----
-
 # Code Action Gaps (CA)
 
 Active `textDocument/codeAction` provider gaps. Resolved CA entries are in

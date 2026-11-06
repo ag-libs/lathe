@@ -461,6 +461,122 @@ class ReferenceCandidatePlannerTest {
     assertThat(plan.exposureFamily()).isEmpty();
   }
 
+  // A field is also read through an expression whose type the file never names (h.owner().name),
+  // and an enum constant labels a switch over one (case ALPHA): every file spelling the name is a
+  // candidate, a same-named member of another type included, which the locator rejects.
+  @Test
+  void planCandidates_fieldOrEnumConstant_searchesEveryFileSpellingItsNameInOnePhase()
+      throws IOException {
+    final Path owner =
+        write(
+            "Owner.java",
+            """
+            package com.example;
+            public class Owner { public String name; }
+            """);
+    write(
+        "Holder.java",
+        """
+        package com.example;
+        class Holder { Owner owner() { return new Owner(); } Kind kind() { return Kind.BETA; } }
+        """);
+    final Path reader =
+        write(
+            "Reader.java",
+            """
+            package com.example;
+            class Reader { String read(Holder h) { return h.owner().name; } }
+            """);
+    final Path kind =
+        write(
+            "Kind.java",
+            """
+            package com.example;
+            public enum Kind { ALPHA, BETA }
+            """);
+    final Path switcher =
+        write(
+            "Switcher.java",
+            """
+            package com.example;
+            class Switcher {
+              int f(Holder h) { switch (h.kind()) { case ALPHA: return 1; default: return 0; } }
+            }
+            """);
+    final Path other =
+        write(
+            "Other.java",
+            """
+            package com.example;
+            class Other { String name; static final int ALPHA = 1; }
+            """);
+    final var typeIndex = reactorIndex(entry("com.example.Owner"), entry("com.example.Kind"));
+
+    final var fieldPlan = candidatePlan(typeIndex, field("com.example.Owner", "name"));
+    final var constantPlan =
+        candidatePlan(
+            typeIndex,
+            target(ElementKind.ENUM_CONSTANT, "com.example.Kind", "ALPHA", null, List.of()));
+
+    assertThat(fieldPlan.primary()).containsExactlyInAnyOrder(uri(owner), uri(reader), uri(other));
+    assertThat(fieldPlan.deferred()).isEmpty();
+    assertThat(constantPlan.primary())
+        .containsExactlyInAnyOrder(uri(kind), uri(switcher), uri(other));
+    assertThat(constantPlan.deferred()).isEmpty();
+  }
+
+  // A library's type may be handed out by a declaration in a jar, which no phase checks.
+  @Test
+  void planCandidates_staticMethodOfALibraryType_searchesEveryFileSpellingItInOnePhase()
+      throws IOException {
+    write(
+        "Caller.java",
+        """
+        package com.example;
+        import org.lib.Util;
+        class Caller { boolean check(String s) { return Util.isEmpty(s); } }
+        """);
+    final List<Path> unrelated = listCheckers(3);
+
+    final var plan =
+        candidatePlan(
+            WorkspaceTypeIndex.empty(),
+            staticMethod("org.lib.Util", "isEmpty", "(java.lang.String)"));
+
+    assertThat(plan.primary()).hasSize(4);
+    assertThat(plan.primary()).containsAll(unrelated.stream().map(this::uri).toList());
+    assertThat(plan.deferred()).isEmpty();
+  }
+
+  // Whether two phases pay off is decided on the module's own files: a family named widely in
+  // another module does not turn this module's plan into one phase.
+  @Test
+  void planCandidates_staticMethodNamedWidelyInAnotherModule_keepsTwoPhasesHere()
+      throws IOException {
+    write(
+        "Util.java",
+        """
+        package com.example;
+        public class Util { public static boolean isEmpty(String s) { return s.isEmpty(); } }
+        """);
+    listCheckers(2);
+    final Path otherSrc = Files.createDirectories(root.resolve("other/src"));
+    for (int i = 0; i < 5; i++) {
+      Files.writeString(
+          otherSrc.resolve("Holder%d.java".formatted(i)),
+          "package com.other;\nclass Holder%d { com.example.Util util; }\n".formatted(i));
+    }
+
+    final var otherConfig = TestCompiler.moduleConfig(root.resolve("other"), otherSrc);
+    final var index = ReferenceCandidateIndex.build(List.of(config(), otherConfig));
+    final var plan =
+        new ReferenceCandidatePlanner(index, reactorIndex(entry("com.example.Util")))
+            .planCandidates(
+                config(), staticMethod("com.example.Util", "isEmpty", "(java.lang.String)"));
+
+    assertThat(plan.deferred()).hasSize(2);
+  }
+
   @Test
   void planCandidates_instanceMethod_defersNothing() throws IOException {
     final Path holder =
@@ -516,26 +632,6 @@ class ReferenceCandidatePlannerTest {
 
     assertThat(plan(typeIndex, field("com.example.Base", "count")))
         .containsExactlyInAnyOrder(uri(base), uri(client));
-  }
-
-  @Test
-  void planCandidates_fieldNoSubtypes_limitsToDeclaringTypeFiles() throws IOException {
-    final Path base =
-        write(
-            "Base.java",
-            """
-            package com.example;
-            class Base { protected int count; }
-            """);
-    // Same field name, unrelated owner — excluded when the field search is bounded.
-    write(
-        "Unrelated.java",
-        """
-        package com.example;
-        class Unrelated { int count; void bump() { count++; } }
-        """);
-
-    assertThat(plan(field("com.example.Base", "count"))).containsExactly(uri(base));
   }
 
   @Test

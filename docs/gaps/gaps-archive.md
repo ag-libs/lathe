@@ -145,6 +145,38 @@ lambdas attributed; a failure there still leaves the named subtypes.
 
 ---
 
+## FR-030 — A field or enum constant reached through an expression that never names its type is missed — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: references, rename and incoming calls for fields and enum constants.**
+
+Found while designing the static-method narrowing of FR-029 (2026-11-05); reproduced 2026-11-06.
+
+### Observed behaviour
+
+`ReferenceCandidatePlanner` narrowed a field's candidates to the files spelling its name and a family type (the declaring type or a subtype), and an enum constant's to the files spelling its enum.
+A file reaching either through an expression whose type it never spells was not searched:
+with `Holder.owner()` returning an `Owner`, references to `Owner.name` missed `h.owner().name`, and renaming `name` left that read behind, so the build broke;
+with `Holder.kind()` returning a `Kind`, references to `Kind.ALPHA` missed `switch (h.kind()) { case ALPHA: ... }`, which names the constant and never the enum.
+
+### Resolution
+
+Fields and enum constants are now searched, as instance methods are, in every file spelling their name, in one pass.
+FR-029's two phases (the files naming the family first, the rest once a declaration exposes it) were tried first and dropped in review:
+some declaration hands out the type of most fields and enums (a getter returning `Owner`), so the second phase nearly always ran, and the two phases then compiled more files than one pass, serially.
+Constructors keep their narrowing: `new Owner()`, `Owner::new` and a subclass's `super(...)` all name the type.
+The same review restricted the static-method two phases to reactor types (a library's type can be handed out by a declaration in a jar, which no phase checks) and decided them on the module's own files.
+
+### Regression targets
+
+`FieldAndEnumConstantSearchTest` (references and rename for a field read and an enum `case` through an unnamed type, and a same-named member of another type left alone),
+`ReferenceCandidatePlannerTest.planCandidates_fieldOrEnumConstant_searchesEveryFileSpellingItsNameInOnePhase`.
+
+---
+
 ## FR-022 — A rename to a name a use already sees silently rebinds the use — done
 
 **Status: done.**
