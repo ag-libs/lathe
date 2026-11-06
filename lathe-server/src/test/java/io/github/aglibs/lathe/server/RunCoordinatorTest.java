@@ -19,12 +19,10 @@ import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.run.DiscoveredTest;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
-import io.github.aglibs.lathe.server.run.TestDiscovery;
 import io.github.aglibs.lathe.server.run.TestResult;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -147,26 +145,6 @@ class RunCoordinatorTest extends ServiceTestBase {
         null,
         List.of(),
         null);
-  }
-
-  // A stored discovery is reused for the test classes it was found for, and only for those; a
-  // blocked one (no capture yet) is not stored.
-  @Test
-  void readDiscovery_storedForTheSameOrOtherTestClasses_reusedOnlyWhenTheStampMatches(
-      @TempDir final Path dir) {
-    final Path file = dir.resolve("module/test-discovery.json");
-    final FileTime stamp = FileTime.fromMillis(1_000);
-    final var discovery =
-        new TestDiscovery("module", List.of(), List.of(new DiscoveredTest("a.T#t()", "t", "")));
-    final var blocked = new TestDiscovery("other", List.of("no capture"), List.of());
-
-    RunCoordinator.writeDiscovery(file, stamp, discovery);
-    RunCoordinator.writeDiscovery(dir.resolve("other/test-discovery.json"), stamp, blocked);
-
-    assertThat(RunCoordinator.readDiscovery(file, stamp)).contains(discovery);
-    assertThat(RunCoordinator.readDiscovery(file, FileTime.fromMillis(2_000))).isEmpty();
-    assertThat(RunCoordinator.readDiscovery(file, null)).isEmpty();
-    assertThat(dir.resolve("other/test-discovery.json")).doesNotExist();
   }
 
   // A package or module run takes the build's class-name filter; a run naming a class or a method,

@@ -1,9 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -37,6 +35,7 @@ import io.github.aglibs.lathe.server.run.RunItem;
 import io.github.aglibs.lathe.server.run.RunOverlay;
 import io.github.aglibs.lathe.server.run.RunOverlaySet;
 import io.github.aglibs.lathe.server.run.TestDiscovery;
+import io.github.aglibs.lathe.server.run.TestDiscoveryStore;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
@@ -48,12 +47,10 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -81,9 +78,8 @@ final class RunCoordinator {
   // reaches the right one. Loop-only: launch threads hand their JVM back through a rejoin.
   private final Map<String, RunSlot> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
-  // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
-  // last one queued: discovery JVMs run one at a time. Both touched on the event loop only.
-  private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
+  // The modules' test discoveries, and the last one queued: discovery JVMs run one at a time.
+  private final TestDiscoveryStore discoveries = new TestDiscoveryStore();
   private CompletableFuture<TestDiscovery> lastDiscovery =
       CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
 
@@ -729,51 +725,22 @@ final class RunCoordinator {
         .toList();
   }
 
-  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
-
-    CachedDiscovery {
-      ValidCheck.check().notNull(result, "result").validate();
-    }
-  }
-
-  // A module's discovery on disk with the test-classes stamp it was found for, so a new session
-  // reuses it instead of launching a JVM per module again.
-  private record PersistedDiscovery(long stampMillis, TestDiscovery discovery) {
-
-    PersistedDiscovery {
-      ValidCheck.check().notNull(discovery, "discovery").validate();
-    }
-  }
-
   // The tests a run of the module would execute, found by a discover-mode launch that runs none of
   // them. Answered from the cache until the module's test classes change (sync and save compiles
   // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
   CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
     eventLoop.checkOnLoop();
-    final FileTime stamp = testClassesStamp(moduleRel);
-    final CachedDiscovery cached = discoveries.get(moduleRel);
-    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
-      return cached.result();
-    }
+    return discoveries.discovery(state.root(), moduleRel, () -> queuedDiscovery(moduleRel));
+  }
 
-    final Path persisted =
-        SourceLayout.moduleLatheDir(state.root(), moduleRel)
-            .resolve(LatheLayout.TEST_DISCOVERY_FILE);
-    final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
-    if (stored.isPresent()) {
-      final var result = CompletableFuture.completedFuture(stored.get());
-      discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
-      return result;
-    }
-
+  // Discovery JVMs run one at a time: each starts once the one queued before it ends.
+  private CompletableFuture<TestDiscovery> queuedDiscovery(final String moduleRel) {
     final CompletableFuture<TestDiscovery> result =
         eventLoop
             .rejoin(lastDiscovery)
             .handle((previous, error) -> moduleRel)
-            .thenCompose(this::launchDiscovery)
-            .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
+            .thenCompose(this::launchDiscovery);
     lastDiscovery = result;
-    discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
     return result;
   }
 
@@ -829,44 +796,8 @@ final class RunCoordinator {
         .toList();
   }
 
-  // The stored discovery, when it was found for the module's current test classes.
-  static Optional<TestDiscovery> readDiscovery(final Path file, final FileTime stamp) {
-    if (stamp == null || !Files.exists(file)) {
-      return Optional.empty();
-    }
-
-    final PersistedDiscovery persisted =
-        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
-    return persisted.stampMillis() == stamp.toMillis()
-        ? Optional.of(persisted.discovery())
-        : Optional.empty();
-  }
-
-  // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
-  static TestDiscovery writeDiscovery(
-      final Path file, final FileTime stamp, final TestDiscovery discovery) {
-    if (stamp != null && discovery.blockedReasons().isEmpty()) {
-      IOUtil.unchecked(
-          () ->
-              FileUtil.writeIfChanged(
-                  file.getParent(),
-                  file,
-                  Json.toJson(new PersistedDiscovery(stamp.toMillis(), discovery)),
-                  false));
-    }
-
-    return discovery;
-  }
-
   private static String sourceUri(final String path) {
     return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
-  }
-
-  private FileTime testClassesStamp(final String moduleRel) {
-    final Path stamps =
-        SourceLayout.moduleLatheDir(state.root(), moduleRel)
-            .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
-    return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
   private static String selectionLabel(final List<TestSelection> selections) {
