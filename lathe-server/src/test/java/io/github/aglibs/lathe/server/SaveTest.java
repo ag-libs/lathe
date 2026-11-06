@@ -6,16 +6,19 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.CollectionUtil;
+import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheLock;
 import java.io.Closeable;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -154,13 +157,14 @@ class SaveTest extends ServiceTestBase {
       // their compiles, instead of every completing save refreshing every other open file.
       final var burst = new ArrayList<Path>(List.of(fx.dep()));
       burst.addAll(fx.users());
-      saveAsOneBurst(burst);
+      whileWriteLockHeld(() -> burst.forEach(this::save));
       for (final Path user : fx.users()) {
         verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, user)));
       }
 
-      // One quiet window, not one per file, for a duplicate refresh to show before counting.
-      verify(client, after(QUIET_WINDOW_MS).times(fx.users().size() + 1)).publishDiagnostics(any());
+      assertThat(publishedFiles())
+          .as("files published, once each")
+          .containsExactlyInAnyOrderElementsOf(fileNames(burst));
 
       awaitWorkerIdle();
       assertRefreshedOnce(compiles, fx.users());
@@ -225,24 +229,25 @@ class SaveTest extends ServiceTestBase {
     awaitWorkerIdle();
     clearInvocations(client);
     try (final var compiles = new CompileLog(tmp)) {
-      // A Save All of hand-edited files: the saves arrive together and compile as one batch.
-      for (final Path file : files) {
-        Files.writeString(file, Files.readString(file) + "\n// edited\n");
-      }
+      // A Save All of hand-edited files: the saves arrive together and compile as one batch. The
+      // edits are written under the lock too, so no change scan sees them before their saves.
+      whileWriteLockHeld(
+          () -> {
+            for (final Path file : files) {
+              Files.writeString(file, Files.readString(file) + "\n// edited\n");
+            }
 
-      saveAsOneBurst(files);
+            files.forEach(this::save);
+          });
       for (final Path file : files) {
         verify(client, timeout(TIMEOUT_MS))
             .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
       }
 
-      // One quiet window, not one per file, for a duplicate publish to show before counting.
-      verify(client, after(QUIET_WINDOW_MS).times(files.size())).publishDiagnostics(any());
-
+      assertThat(publishedFiles())
+          .as("files published, once each")
+          .containsExactlyInAnyOrderElementsOf(fileNames(files));
       awaitWorkerIdle();
-      for (final Path file : files) {
-        verify(client, times(1)).publishDiagnostics(argThat(p -> isFor(p, file)));
-      }
 
       assertThat(writes(compiles))
           .as("write tasks, by files written")
@@ -258,19 +263,38 @@ class SaveTest extends ServiceTestBase {
     }
   }
 
-  // Saves the files as one burst, as `:wa` does, however slowly this thread runs: another server's
-  // write lock on .lathe/ (as WritePassTest holds it) keeps the first save's pass waiting until the
-  // server has taken every save, so they share one pass, which runs once the lock is free.
-  private void saveAsOneBurst(final List<Path> files) throws Exception {
+  // Runs the work (a burst of edits and saves, as `:wa` sends) holding .lathe/'s write lock, as
+  // another server would (and as WritePassTest does), and lets it go once the server has taken it
+  // all: the first save's pass waits for the lock and every later save joins it, so they share one
+  // pass however slowly this thread runs.
+  private void whileWriteLockHeld(final IOUtil.IORunnable work) throws Exception {
     final Closeable otherServer =
         LatheLock.tryExclusive(LatheLayout.writeLockFile(tmp.resolve(LatheLayout.LATHE_DIR)))
             .orElseThrow();
     try {
-      files.forEach(this::save);
+      work.run();
       awaitWorkerIdle();
     } finally {
       otherServer.close();
     }
+  }
+
+  // Every publish since the last clearInvocations, as the names of the files they were for, once a
+  // quiet window has passed for a duplicate to show: compared with the files expected, a failure
+  // names the file published twice, or one not expected at all.
+  private List<String> publishedFiles() {
+    verify(client, after(QUIET_WINDOW_MS).atLeastOnce()).publishDiagnostics(any());
+    // Read from the mock's own record of its calls, one entry per call: a captor here returned
+    // each publish many times over.
+    return mockingDetails(client).getInvocations().stream()
+        .filter(call -> call.getMethod().getName().equals("publishDiagnostics"))
+        .map(call -> call.<PublishDiagnosticsParams>getArgument(0).getUri())
+        .map(uri -> Path.of(URI.create(uri)).getFileName().toString())
+        .toList();
+  }
+
+  private static List<String> fileNames(final List<Path> files) {
+    return files.stream().map(file -> file.getFileName().toString()).toList();
   }
 
   // The open dependents were refreshed once: each republished exactly once, all by one multi-file
