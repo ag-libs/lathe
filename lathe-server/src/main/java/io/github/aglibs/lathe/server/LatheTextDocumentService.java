@@ -114,6 +114,13 @@ public final class LatheTextDocumentService implements TextDocumentService {
     return eventLoop.submitCompose(() -> session.writePass().reconcileNow(eager));
   }
 
+  // Test seam: completes once the loop has run what was queued, and every module worker has run its
+  // requests and delivered their results, the requests those results started included. A debounced
+  // compile still waiting for its delay is not counted.
+  CompletableFuture<Void> awaitIdle() {
+    return eventLoop.submitCompose(() -> session.workersDrained());
+  }
+
   // Test/tool seam: the freshen step the engine runs before each tool, reporting what recompiled or
   // why it was deferred.
   CompletableFuture<ReconcileOutcome> reconcileForVerify() {
