@@ -1,7 +1,7 @@
 # Lathe — Server Restructuring
 
-**Status: Phases 0–2 done (2026-11-04, branch `refactor/server-threading`); tests next, then Phase 3.**
-Starts on `main` after the Gradle merge (#44, 2026-11-04), which did not touch `lathe-server` or `lathe-mcp-server`.
+**Status: Phases 0–3 and the test phase shipped (PRs #93, #96, #98, #103; released in 0.3.1).**
+What is left is tracked in the [November 2026 code review](lathe-code-review-nov-2026.md).
 
 ## 1. Why
 

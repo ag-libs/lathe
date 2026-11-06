@@ -36,7 +36,7 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Releasing Module Sessions Under Memory Pressure](done/lathe-memory-pressure.md) — **shipped.** Release idle module
   sessions (their jar indexes) when the JVM reports the old generation above 70% after a collection, and after 5
   idle minutes; resolves EG-058 and the `verify_change` out-of-memory on Helidon at 2–3 GB. ✓
-- [Server Restructuring](planned/lathe-server-restructuring.md) — **approved direction (2026-11-04).**
+- [Server Restructuring](planned/lathe-server-restructuring.md) — **phases 0–3 shipped in 0.3.1; leftovers in the November 2026 review.**
   Split `WorkspaceSession` into event-loop components, make the threading contract executable, let MCP reach the core
   without the LSP adapter, then a `lathe-analysis` module. Same model; existing tests stay green.
 - [Code Review Findings (November 2026)](planned/lathe-code-review-nov-2026.md) — **planned (2026-11-06).**
@@ -58,7 +58,7 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
   change. **Follow-up:**
   re-run *all* failures in one replay JVM (repeat the previous run, narrowed to the failed selections)
   via a `run_set`/shadow retain on the unified `results()`.
-- [MCP Answers an Agent Can Trust](planned/lathe-mcp-trust.md) — text-only MCP answers that every client
+- [MCP Answers an Agent Can Trust](done/lathe-mcp-trust.md) — **shipped (PR #73).** Text-only MCP answers that every client
   shows the model, notes and refusals that say the real cause, a truthful `verify_change`, and fewer round
   trips (optional column, scope filters, test output); informed by a survey of IntelliJ's, NetBeans' and
   jdtls-based MCP servers.
@@ -97,7 +97,7 @@ after public-beta feedback (see the [roadmap](roadmap.md)).
 - [New Type Creation](done/lathe-new-type-creation.md) — **Won't do.** Snippet-completion alternative to
   the shipped `:LatheNew`; not pursued (kept as a rejected-design record).
 - [Google Indentation](planned/lathe-google-indent.md) — conservative on-type formatting.
-- [Type Definition Navigation](planned/lathe-type-definition.md) — `textDocument/typeDefinition` for Neovim's `grt`.
+- [Type Definition Navigation](done/lathe-type-definition.md) — **shipped.** `textDocument/typeDefinition` for Neovim's `grt`. ✓
 - [Type Hierarchy Explorer](done/lathe-type-hierarchy.md) — a Ctrl-H-style `:LatheTypeHierarchy` custom
   command showing the full both-directions transitive hierarchy in one Telescope picker; resolves NV-6.
 - [Resource Finder](done/lathe-resource-finder.md) — one `:LatheResourceFind` picker to find a
@@ -155,7 +155,7 @@ reused):
   import resolution (fix A) plus usage-aware prefix-search truncation (fix B); resolves CA-9. ✓
 - [Sibling Recompilation](done/lathe-sibling-recompilation.md) — open-dependent diagnostics refresh after
   an API change (shipped via `refreshOpenDependents`); closed-file recompilation dropped as a non-goal.
-- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — partially stale design; would back a
+- [Lightweight Watcher](planned/lathe-lightweight-watcher.md) — **superseded:** the `.lathe/` walk it fixes is gone; kept for the rationale other docs cite. Would back a
   non-intrusive source-staleness signal (the deferred WS-2, folded under WS-1) if beta feedback warrants it.
 - [Differential Testing Against jdtls](done/lathe-jdtls-differential-testing.md) — **implemented
   (2026-10-04)**, reversing the earlier won't-do. `dev/jdtls_diff.py` sends identical LSP requests to Lathe

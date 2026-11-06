@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved and implemented 2026-11-01 on branch `mcp-trust` (PR #73), one commit per gap; each gap's
+Shipped 2026-11-01 (PR #73), one commit per gap; each gap's
 resolution is in [gaps-archive.md](../gaps/gaps-archive.md).
 
 ## Goal

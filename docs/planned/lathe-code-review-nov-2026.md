@@ -23,6 +23,8 @@ duplication or states a boundary the code otherwise breaks. Every multi-class st
 
 ## Group A — cheap fixes for real defects and drift (one PR)
 
+**Done on branch `fix/code-review-group-a`**, one commit per item, except the two noted below.
+
 ### A1. Debug launches run on the event loop, and copy the run path
 
 `RunCoordinator.startDebugTest` / `startDebugMain` repeat `launchTest` / `launchMain`, but on the loop:
@@ -65,18 +67,20 @@ A test that trips the new check is a real violation, fixed in the same commit.
 - Twelve comments carry gap IDs (`MemberAccessCompleter`, `CandidateFactory`, `DefinitionLocator`,
   `UnusedDeclarationScanner`, …).
 - `ZipFixture` exists in both `lathe-core` and `lathe-install` tests.
+  *Not done:* one copy needs a `lathe-core` test-jar that `lathe-install` depends on (a pom change); left for a decision.
 
 ### A5. Docs that contradict the code
 
 - `docs/status.md` says type definition is not implemented; it is advertised and shipped.
-- Shipped designs still under `planned/`: type definition, MCP trust (PR #73), re-run failed tests (option 1),
+- Shipped designs still under `planned/`: type definition, MCP trust (PR #73),
   and the restructuring doc's "on branch" wording (merged as PR #93).
+  Re-run failed tests stays planned: its option 2 is still open, and its status already says option 1 shipped.
 - [Lightweight Watcher](lathe-lightweight-watcher.md) describes a `Files.walk` the current `WorkspaceWatcher`
   no longer does: mark it obsolete or move it to `potential/`.
 - `done/lathe-gradle-support.md` and `done/lathe-new-type-creation.md` still open with "Proposed".
 - Two docs link to `file:///home/...` paths; make them repo-relative.
 - Restructuring §7 ("`AGENTS.md` names the components; `WorkspaceSession` takes wiring only") never landed.
-  Add it, with the component list, once B1 lands.
+  Add it, with the component list, once B1 lands (*not done in Group A*).
 
 ---
 

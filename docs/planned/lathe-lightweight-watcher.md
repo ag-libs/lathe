@@ -1,8 +1,11 @@
 # Lathe — Lightweight Module-Targeted Workspace Watcher
 
+**Status: superseded.** The problem below is gone: `WorkspaceWatcher` no longer walks `.lathe/`, it stats the build files.
+Kept for the rationale other designs cite.
+
 ## Problem
 
-The current [WorkspaceWatcher.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceWatcher.java) polls the workspace every `2,000ms` using `Files.walk(latheDir)`.
+The current [WorkspaceWatcher.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceWatcher.java) polls the workspace every `2,000ms` using `Files.walk(latheDir)`.
 It filters every file in the `.lathe/` directory to calculate a fingerprint of all `lsp-params-*.json` files.
 
 Because `.lathe/` holds the copied `.class` files and generated sources for all reactor modules, this directory tree can grow to contain tens of thousands of files in large codebases (such as Dropwizard).
@@ -22,13 +25,13 @@ Replace the recursive file-system walk with a **lightweight, targeted modificati
 
 ## Proposed Design
 
-The server already registers and maintains the workspace configuration inside [WorkspaceSession.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceSession.java).
+The server already registers and maintains the workspace configuration inside [WorkspaceSession.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceSession.java).
 Instead of walking the file system to find params files, the watcher should query the status of the files Lathe already cares about.
 
 ### 1. Watcher Initialization
 
 The watcher should be initialized with the known set of configuration file paths rather than just the workspace root.
-Modify [WorkspaceWatcher.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceWatcher.java) to accept the list of active module configuration paths:
+Modify [WorkspaceWatcher.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/WorkspaceWatcher.java) to accept the list of active module configuration paths:
 
 ```java
 final class WorkspaceWatcher {
