@@ -1438,7 +1438,7 @@ final class WorkspaceSession {
     LOG.fine(
         () ->
             "[dependents] checking %d open file(s) across %d module(s)"
-                .formatted(docs.all().size(), scope.size()));
+                .formatted(docs.count(), scope.size()));
     final List<String> dependents =
         docs.all().stream()
             .map(OpenDocument::uri)

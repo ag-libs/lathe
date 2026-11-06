@@ -71,7 +71,7 @@ class DiagnosticPublisherTest {
   void publishEmptyIfCurrent_currentSnapshotWithDiagnostics_publishesEmptyAndRefreshesTokens()
       throws Exception {
     // A read-only external source is compiled, but its real diagnostics must be suppressed: the
-    // published list is empty even though the compile produced one (EG-041).
+    // published list is empty even though the compile produced one.
     final var snapshot = loop.call(() -> registry.put("file:///A.java", "class A {}", 1));
     final var realDiag =
         new Diagnostic(

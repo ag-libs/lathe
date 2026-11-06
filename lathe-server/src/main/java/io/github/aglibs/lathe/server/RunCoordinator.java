@@ -222,7 +222,7 @@ final class RunCoordinator {
   }
 
   private CompletableFuture<LaunchOutcome> outcome(final Spawned spawned) {
-    if (spawned.session() == null) {
+    if (spawned.replay().blocked()) {
       return CompletableFuture.completedFuture(
           LaunchOutcome.blocked(spawned.replay().blockedReasons()));
     }
@@ -279,7 +279,9 @@ final class RunCoordinator {
 
   // Prepares and spawns the launch on a thread of its own, so the loop never reads a launch file,
   // waits on a module lock or starts a process. The token is registered first: a cancel that comes
-  // before the JVM exists is kept, and the JVM is cancelled as soon as it is back on the loop.
+  // before the JVM exists is kept, and the JVM is cancelled as soon as it is back on the loop. A
+  // blank token (test discovery, a caller with no surface listening) is not registered: nothing
+  // can cancel it, and two such launches would share one slot.
   private CompletableFuture<Spawned> spawn(
       final String moduleRel,
       final String label,
@@ -287,7 +289,10 @@ final class RunCoordinator {
       final RunItem overlay,
       final Consumer<TranscriptLine> onLine,
       final IOUtil.IOSupplier<Replay> prepare) {
-    activeRuns.put(token, RunSlot.PENDING);
+    if (!token.isBlank()) {
+      activeRuns.put(token, RunSlot.PENDING);
+    }
+
     final Consumer<TestResult> onResult = resultConsumer(token);
     final CompletableFuture<Spawned> spawned =
         CompletableFuture.supplyAsync(
@@ -343,7 +348,7 @@ final class RunCoordinator {
 
   private void register(final String token, final Spawned spawned, final Throwable error) {
     final RunSlot slot = activeRuns.get(token);
-    if (error != null || spawned.session() == null) {
+    if (error != null || spawned.replay().blocked() || token.isBlank()) {
       activeRuns.remove(token);
       return;
     }
@@ -359,10 +364,11 @@ final class RunCoordinator {
     }
   }
 
-  // Whether the launch under the token is still running and nobody cancelled it.
+  // Whether nobody cancelled the launch under the token, nor did it end; a blank-token launch is
+  // never registered, and nothing can cancel it.
   private boolean isLive(final String token) {
     final RunSlot slot = activeRuns.get(token);
-    return slot != null && !slot.cancelled();
+    return token.isBlank() || slot != null && !slot.cancelled();
   }
 
   // A launch registered under its token: no session while it is still being prepared, and whether
@@ -370,6 +376,9 @@ final class RunCoordinator {
   private record RunSlot(LaunchSession session, boolean cancelled) {
 
     static final RunSlot PENDING = new RunSlot(null, false);
+
+    // Nothing to check: pending or started, cancelled or not, every combination occurs.
+    RunSlot {}
 
     RunSlot cancel() {
       return new RunSlot(session, true);
@@ -513,7 +522,7 @@ final class RunCoordinator {
       final Spawned spawned,
       final int jdwpPort,
       final CompletableFuture<Void> jdwpReady) {
-    if (spawned.session() == null) {
+    if (spawned.replay().blocked()) {
       throw new IllegalStateException(
           "debug launch incomplete: " + spawned.replay().blockedReasons());
     }
@@ -545,7 +554,10 @@ final class RunCoordinator {
                 .orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         .handle(
             (first, failure) -> {
+              // A suspended debuggee nobody will attach to would stay parked: it is cancelled,
+              // and its exit then publishes the outcome and clears the token.
               if (!jdwpReady.isDone() && !exited.isDone()) {
+                spawned.session().cancel();
                 throw new IllegalStateException(
                     "jdwp agent did not start listening on port %d within %dms"
                         .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS),
@@ -553,8 +565,9 @@ final class RunCoordinator {
               }
 
               // The debuggee may have exited, or been cancelled, while this waited for the loop:
-              // a host opened now would never be closed.
-              if (!jdwpReady.isDone() || !isLive(token)) {
+              // a host opened now would be closed at once, and the editor's one attach refused.
+              if (!jdwpReady.isDone() || exited.isDone() || !isLive(token)) {
+                spawned.session().cancel();
                 throw new IllegalStateException(
                     "the debuggee ended before the debugger attached on port %d"
                         .formatted(jdwpPort));

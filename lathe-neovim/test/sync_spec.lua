@@ -110,18 +110,11 @@ sync.run(nil, false)
 sync.run("", false)
 spec.check("nil/empty root does nothing", #calls, n)
 
--- The lathe/sync notification handler dispatches to run, forwarding capture and modules.
+-- The lathe/sync notification handler dispatches to run, forwarding capture.
 sync.setup()
-vim.lsp.handlers["lathe/sync"](
-  nil,
-  { workspaceRoot = "/ws/c", captureTests = true, modules = { "m" } }
-)
+vim.lsp.handlers["lathe/sync"](nil, { workspaceRoot = "/ws/c", captureTests = true })
 spec.check("lathe/sync handler runs at the given root", calls[#calls].opts.cwd, "/ws/c")
-spec.check(
-  "lathe/sync handler forwards capture and modules",
-  table.concat(last_args(), " "),
-  "--tests m"
-)
+spec.check("lathe/sync handler forwards capture", table.concat(last_args(), " "), "--tests")
 spec.check("registers :LatheSync", vim.fn.exists(":LatheSync"), 2)
 spec.check("registers :LatheSyncCaptureTest", vim.fn.exists(":LatheSyncCaptureTest"), 2)
 spec.check("registers :LatheSyncOutput", vim.fn.exists(":LatheSyncOutput"), 2)
