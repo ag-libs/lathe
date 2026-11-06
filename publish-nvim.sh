@@ -114,8 +114,9 @@ build_snapshot() {
   cp -R "$source_dir/$templates"/. "$dest"/
   cp "$source_dir/LICENSE" "$dest/LICENSE"
   local vfile="$dest/$version_lua"
-  sed -i "s/VERSION = '[^']*'/VERSION = '${version}'/" "$vfile"
-  grep -q "VERSION = '${version}'" "$vfile" \
+  # Either quote: StyLua writes double quotes, older tags have single ones.
+  sed -i -E "s/VERSION = (\"[^\"]*\"|'[^']*')/VERSION = \"${version}\"/" "$vfile"
+  grep -q "VERSION = \"${version}\"" "$vfile" \
     || die "failed to stamp version into $version_lua — did its shape change?"
 }
 
