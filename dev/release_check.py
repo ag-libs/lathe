@@ -18,7 +18,8 @@ DEV = Path(__file__).resolve().parent
 sys.path.insert(0, str(DEV))
 import mcp_battery  # noqa: E402
 
-STATUS = re.compile(r"^(PASS|FAIL|KNOWN|NOW PASSES|SKIP|SLOWER|REFUSED|WARN|RESTORED)\b")
+# TIMING: verify_scale.py's per-step time and memory, the numbers its run is for.
+STATUS = re.compile(r"^(PASS|FAIL|KNOWN|NOW PASSES|SKIP|SLOWER|REFUSED|WARN|RESTORED|TIMING)\b")
 
 
 def run(title, command):
