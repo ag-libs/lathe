@@ -18,8 +18,6 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -58,6 +56,7 @@ final class WorkspaceSession {
   private final FeatureRouter router;
   private final DocumentFeatures features;
   private final FormatService formats;
+  private final WorkspaceQueries queries;
   private final ReferenceSearch search;
   private final WritePass writePass;
   private final ChangeVerifier verifier;
@@ -107,6 +106,7 @@ final class WorkspaceSession {
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
+    this.queries = new WorkspaceQueries(state);
     this.search = new ReferenceSearch(eventLoop, state, reactorIndex, router, docs);
     this.writePass =
         new WritePass(
@@ -136,6 +136,10 @@ final class WorkspaceSession {
 
   FormatService formats() {
     return formats;
+  }
+
+  WorkspaceQueries queries() {
+    return queries;
   }
 
   RunCoordinator runs() {
@@ -253,43 +257,6 @@ final class WorkspaceSession {
         .map(uri -> state.registry().moduleSourceFor(LatheUri.toPath(uri)))
         .flatMap(Optional::stream)
         .collect(Collectors.toUnmodifiableSet());
-  }
-
-  CreateTypeResult createType(final CreateTypeArgs args) {
-    // module-info.java always belongs to the main source root, whatever scope the client sent.
-    final var scope = args.type() == TypeKind.MODULE_INFO ? SourceScope.MAIN : args.kind();
-    final var sourceRoot = state.layout().sourceRootFor(args.moduleRel(), scope);
-    LOG.info(
-        () ->
-            "[createType] %s %s.%s kind=%s type=%s"
-                .formatted(args.moduleRel(), args.pkg(), args.name(), args.kind(), args.type()));
-    return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), args.name());
-  }
-
-  List<ResourceEntry> resources() {
-    return ResourceFinder.list(
-        state.manifest().resourceDirModules(), state.manifest().libraries().jarToGav());
-  }
-
-  // Extracts one dependency jar entry to disk (read-only) and returns its path -- the only bytes
-  // written, on demand. Reuses the dep's sources cache dir when present, else a temp dir. Reactor
-  // resources need no extraction (they carry their real path).
-  String resourceOpen(final String jar, final String entry) {
-    final var jarPath = Path.of(jar);
-    final Path dest =
-        state
-            .manifest()
-            .libraries()
-            .dependencySourceDir(jarPath)
-            .map(dir -> dir.resolve(entry))
-            .orElseGet(ResourceFinder.tempDest(entry));
-    try {
-      FileUtil.extractEntry(jarPath, entry, dest);
-    } catch (final IOException e) {
-      throw new UncheckedIOException("extract %s from %s".formatted(entry, jar), e);
-    }
-
-    return dest.toString();
   }
 
   void setDocumentsFollowDisk(final boolean follow) {

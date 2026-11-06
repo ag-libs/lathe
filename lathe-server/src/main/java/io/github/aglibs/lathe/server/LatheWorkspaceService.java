@@ -95,7 +95,7 @@ final class LatheWorkspaceService implements WorkspaceService {
           textDocumentService.onLoop(session -> session.layout().testModules()).thenApply(m -> m);
       case DISCOVER_TESTS_COMMAND -> discoverTests(params);
       case RESOURCES_COMMAND ->
-          textDocumentService.onLoop(session -> session.resources()).thenApply(r -> r);
+          textDocumentService.onLoop(session -> session.queries().resources()).thenApply(r -> r);
       case RESOURCE_OPEN_COMMAND -> resourceOpen(params);
       case RESOURCE_REFRESH_COMMAND -> refreshResource(params);
       case DEBUG_TEST_COMMAND -> debugTest(params);
@@ -255,7 +255,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     }
 
     return textDocumentService
-        .onLoop(session -> session.createType(args))
+        .onLoop(session -> session.queries().createType(args))
         .thenApply(result -> (Object) result)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
@@ -345,8 +345,9 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .onLoop(
             session ->
-                session.resourceOpen(
-                    json.get("jar").getAsString(), json.get("entry").getAsString()))
+                session
+                    .queries()
+                    .resourceOpen(json.get("jar").getAsString(), json.get("entry").getAsString()))
         .thenApply(path -> path);
   }
 
