@@ -55,10 +55,13 @@ class LatheMcpServerTest {
   }
 
   // A client ends a stdio session by closing stdin, and one that crashes sends no signal at all:
-  // the server must exit then, or each such session leaves a JVM running.
+  // the server must exit then, or each such session leaves a JVM running. A line that is not a
+  // JSON-RPC message is dropped: the SDK's transport would stop reading at it, leaving the server
+  // deaf and, with stdin no longer read, never exiting.
+  // On a thread of its own: a deaf server blocks readLine, which the test thread cannot interrupt.
   @Test
-  @Timeout(60)
-  void main_clientClosesStdin_serverExits() throws Exception {
+  @Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+  void main_garbageLineThenStdinClosed_serverKeepsAnsweringThenExits() throws Exception {
     final var process =
         new ProcessBuilder(
                 Path.of(
@@ -82,6 +85,10 @@ class LatheMcpServerTest {
               new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
       assertThat(stdout.readLine()).as("the server answered the handshake").contains("\"result\"");
 
+      stdin.write(AFTER_GARBAGE.getBytes(StandardCharsets.UTF_8));
+      stdin.flush();
+      assertThat(stdout.readLine()).as("tools/list after a garbage line").contains("\"tools\"");
+
       stdin.close();
 
       assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("exited after stdin closed").isTrue();
@@ -95,5 +102,12 @@ class LatheMcpServerTest {
       """
       {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18",\
       "capabilities":{},"clientInfo":{"name":"test","version":"1"}}}
+      """;
+
+  private static final String AFTER_GARBAGE =
+      """
+      {"jsonrpc":"2.0","method":"notifications/initialized"}
+      this is not json {
+      {"jsonrpc":"2.0","id":2,"method":"tools/list"}
       """;
 }

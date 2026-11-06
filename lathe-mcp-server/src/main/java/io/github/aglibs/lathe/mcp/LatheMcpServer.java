@@ -12,10 +12,13 @@ import io.modelcontextprotocol.json.McpJsonDefaults;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
+import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
-import java.io.FilterInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
@@ -136,7 +139,7 @@ public final class LatheMcpServer {
       final McpJsonMapper mapper = McpJsonDefaults.getMapper();
       final var transport =
           new StdioServerTransportProvider(
-              mapper, new ClientInput(System.in, clientGone::countDown), protocolOut);
+              mapper, new ClientInput(System.in, mapper, clientGone::countDown), protocolOut);
       McpServer.sync(transport)
           .serverInfo("lathe", version())
           .capabilities(ServerCapabilities.builder().tools(true).build())
@@ -158,31 +161,79 @@ public final class LatheMcpServer {
   // An MCP client ends a stdio session by closing the server's stdin, and one that dies sends no
   // signal at all. The SDK's transport stops reading at end of input but leaves the process, and
   // the engine's threads, running: an orphan per session. So end of input ends the server.
-  private static final class ClientInput extends FilterInputStream {
+  // The transport also stops reading at the first line that is not a JSON-RPC message, which left
+  // the server running but deaf: such a line is dropped here, before the transport sees it.
+  private static final class ClientInput extends InputStream {
 
+    private final BufferedReader lines;
+    private final McpJsonMapper mapper;
     private final Runnable onEnd;
+    private byte[] line = new byte[0];
+    private int next;
 
-    ClientInput(final InputStream in, final Runnable onEnd) {
-      super(in);
+    ClientInput(final InputStream in, final McpJsonMapper mapper, final Runnable onEnd) {
+      this.lines = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+      this.mapper = mapper;
       this.onEnd = onEnd;
     }
 
     @Override
     public int read() throws IOException {
-      return ended(super.read());
+      if (!hasLine()) {
+        return -1;
+      }
+
+      return line[next++] & 0xff;
     }
 
     @Override
     public int read(final byte[] buffer, final int offset, final int length) throws IOException {
-      return ended(super.read(buffer, offset, length));
-    }
-
-    private int ended(final int read) {
-      if (read == -1) {
-        onEnd.run();
+      if (length == 0) {
+        return 0;
       }
 
-      return read;
+      if (!hasLine()) {
+        return -1;
+      }
+
+      final int count = Math.min(length, line.length - next);
+      System.arraycopy(line, next, buffer, offset, count);
+      next += count;
+      return count;
+    }
+
+    // Whether bytes are left to hand over, reading the next valid message line once the current one
+    // is used up.
+    private boolean hasLine() throws IOException {
+      while (next == line.length) {
+        final String text = lines.readLine();
+        if (text == null) {
+          onEnd.run();
+          return false;
+        }
+
+        if (isMessage(text)) {
+          line = (text + "\n").getBytes(StandardCharsets.UTF_8);
+          next = 0;
+        } else {
+          LOG.warning(
+              () ->
+                  "[stdin] dropped a %d-char line that is not a JSON-RPC message"
+                      .formatted(text.length()));
+        }
+      }
+
+      return true;
+    }
+
+    // The transport's own parse, so a line passes here exactly when the transport would take it.
+    private boolean isMessage(final String text) {
+      try {
+        McpSchema.deserializeJsonRpcMessage(mapper, text);
+        return true;
+      } catch (final IOException | RuntimeException e) {
+        return false;
+      }
     }
   }
 

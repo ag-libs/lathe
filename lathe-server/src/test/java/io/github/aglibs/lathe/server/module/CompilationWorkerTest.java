@@ -109,6 +109,44 @@ class CompilationWorkerTest {
     }
   }
 
+  // The idle wait tests rely on: not done while a request runs, nor until its result is delivered,
+  // which the worker thread does before the drain's own delivery.
+  @Test
+  void drained_requestStillRunning_completesOnlyAfterItsResultIsDelivered() throws Exception {
+    final var deliveries = new LinkedBlockingQueue<Runnable>();
+    final var draining =
+        new CompilationWorker("lathe-module-drain", () -> context, deliveries::add);
+    final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
+    final var entered = new CountDownLatch(1);
+    final var release = new CountDownLatch(1);
+    when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
+        .thenAnswer(
+            ignored -> {
+              entered.countDown();
+              await(release);
+              return List.of();
+            });
+    try {
+      final CompletableFuture<CompileResponse> compiled = draining.compile(request);
+      await(entered);
+      final CompletableFuture<Void> drained = draining.drained();
+      assertThat(drained).as("the request still runs").isNotDone();
+
+      release.countDown();
+      deliveries.poll(5, TimeUnit.SECONDS).run();
+      assertThat(compiled).isDone();
+      assertThat(drained).as("its result delivered, the drain not yet").isNotDone();
+      deliveries.poll(5, TimeUnit.SECONDS).run();
+
+      assertThat(drained).isDone();
+      assertThat(draining.submitted()).isEqualTo(1);
+    } finally {
+      draining.close();
+    }
+
+    assertThat(draining.drained()).as("a closed worker has nothing left").isDone();
+  }
+
   @Test
   void dropFromCache_initializedContext_dropsOnWorkerContext() {
     final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);

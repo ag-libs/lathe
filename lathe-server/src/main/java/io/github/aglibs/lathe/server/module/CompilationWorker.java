@@ -82,6 +82,9 @@ public final class CompilationWorker {
   // latest request was submitted.
   private boolean sessionLive;
   private Stopwatch lastRequest = Stopwatch.start();
+  // Requests ever submitted, counted on the event loop: an idle wait compares it before and after
+  // draining, so work a delivered result started is waited for too.
+  private long submitted;
 
   static CompilationWorker module(
       final ModuleSourceConfig config,
@@ -180,6 +183,28 @@ public final class CompilationWorker {
   // Has a session, and no request for at least ms.
   boolean idleFor(final long ms) {
     return sessionLive && lastRequest.elapsedMs() >= ms;
+  }
+
+  long submitted() {
+    return submitted;
+  }
+
+  // Completes through the delivery executor once every request queued before it has run and its
+  // result has been delivered: the worker thread delivers in order, so this comes after them.
+  CompletableFuture<Void> drained() {
+    final var drained = new CompletableFuture<Void>();
+    if (closed) {
+      drained.complete(null);
+      return drained;
+    }
+
+    try {
+      executor.execute(() -> delivery.execute(() -> drained.complete(null)));
+    } catch (final RejectedExecutionException e) {
+      drained.complete(null);
+    }
+
+    return drained;
   }
 
   public CompletableFuture<CompileResponse> compile(final CompileRequest request) {
@@ -557,6 +582,7 @@ public final class CompilationWorker {
 
     sessionLive = true;
     lastRequest = Stopwatch.start();
+    submitted++;
     try {
       executor.execute(
           () -> {
