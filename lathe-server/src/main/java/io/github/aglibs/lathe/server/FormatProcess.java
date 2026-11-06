@@ -22,12 +22,17 @@ final class FormatProcess {
       throw new IOException("formatter failed to start: %s".formatted(command), e);
     }
 
-    if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
-      // A cmd tool (mvn.cmd) can't exec, so the formatter JVM may be a descendant. Killing is
-      // asynchronous, and on Windows a process's files and working directory stay locked until it
-      // has exited, so the caller's scratch-file cleanup waits for that.
-      process.descendants().forEach(ProcessHandle::destroyForcibly);
-      process.destroyForcibly().waitFor(KILL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
+    final boolean finished;
+    try {
+      finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+    } catch (final InterruptedException e) {
+      // The server is closing: a formatter (a build, say) must not run on without it.
+      destroyTree(process);
+      throw e;
+    }
+
+    if (!finished) {
+      destroyTree(process);
       throw new IOException(
           "formatter timed out after %dms: %s".formatted(timeout.toMillis(), command));
     }
@@ -36,5 +41,13 @@ final class FormatProcess {
     if (exit != 0) {
       throw new IOException("formatter exited %d: %s".formatted(exit, command));
     }
+  }
+
+  // A cmd tool (mvn.cmd) can't exec, so the formatter JVM may be a descendant. Killing is
+  // asynchronous, and on Windows a process's files and working directory stay locked until it has
+  // exited, so the caller's scratch-file cleanup waits for that.
+  private static void destroyTree(final Process process) throws InterruptedException {
+    process.descendants().forEach(ProcessHandle::destroyForcibly);
+    process.destroyForcibly().waitFor(KILL_WAIT.toMillis(), TimeUnit.MILLISECONDS);
   }
 }

@@ -16,7 +16,7 @@ class ExternalCommandFormatEngineTest {
   private static String format(final List<String> command, final String source) throws Exception {
     return new ExternalCommandFormatEngine(
             command, ExternalCommandFormatEngine.DEFAULT_TIMEOUT, null)
-        .format(source, Path.of("Foo.java"));
+        .format(source, FormatterFixtures.target(Path.of("Foo.java")));
   }
 
   @Test
@@ -45,7 +45,7 @@ class ExternalCommandFormatEngineTest {
     final var engine =
         new ExternalCommandFormatEngine(TestProcess.command("sleep"), Duration.ofMillis(200), null);
 
-    assertThatThrownBy(() -> engine.format("x", Path.of("Foo.java")))
+    assertThatThrownBy(() -> engine.format("x", FormatterFixtures.target(Path.of("Foo.java"))))
         .isInstanceOf(IOException.class)
         .hasMessageContaining("timed out");
   }
@@ -56,7 +56,7 @@ class ExternalCommandFormatEngineTest {
         new ExternalCommandFormatEngine(
             TestProcess.command("cwd"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, dir);
 
-    assertThat(engine.format("x", Path.of("Foo.java")).strip())
+    assertThat(engine.format("x", FormatterFixtures.target(Path.of("Foo.java"))).strip())
         .isEqualTo(dir.toRealPath().toString());
   }
 

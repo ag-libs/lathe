@@ -19,7 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 class FormattingTest {
 
   private static final GjfFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
-  private static final Path FILE = Path.of("Sample.java");
+  private static final FormatTarget FILE = FormatterFixtures.target(Path.of("Sample.java"));
   // palantir-java-format 2.102.0 (the fixture) predates JDK 27's javac.
   private static final int PALANTIR_UNSUPPORTED_JDK = 27;
 

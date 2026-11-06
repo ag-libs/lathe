@@ -30,7 +30,7 @@ record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path 
   }
 
   @Override
-  public String format(final String source, final Path file)
+  public String format(final String source, final FormatTarget target)
       throws IOException, InterruptedException {
     final Path stdin = Files.createTempFile("lathe-format-in", ".java");
     final Path stdout = Files.createTempFile("lathe-format-out", ".java");

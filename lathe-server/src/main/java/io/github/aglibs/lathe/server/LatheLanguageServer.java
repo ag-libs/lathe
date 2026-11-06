@@ -214,7 +214,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
   private FormatEngine resolveFormatEngine(final InitializeParams params, final Path workingDir) {
     final FormatterSpec spec = FormatEngines.workspaceSpec(workingDir);
     if (spec != null) {
-      return FormatEngines.forSpec(spec, workingDir, textDocumentService);
+      return FormatEngines.forSpec(spec, workingDir);
     }
 
     return initOptionFormatEngine(params, workingDir);
@@ -235,9 +235,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     }
 
     return FormatEngines.forSpec(
-        new FormatterSpec(engine.getAsString(), commandOf(formatter)),
-        workingDir,
-        textDocumentService);
+        new FormatterSpec(engine.getAsString(), commandOf(formatter)), workingDir);
   }
 
   private static JsonObject initOptionFormatter(final InitializeParams params) {

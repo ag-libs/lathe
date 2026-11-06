@@ -17,6 +17,7 @@ import org.eclipse.lsp4j.CompletionList;
 import org.eclipse.lsp4j.CompletionParams;
 import org.eclipse.lsp4j.DeclarationParams;
 import org.eclipse.lsp4j.DefinitionParams;
+import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightParams;
 import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
@@ -177,6 +178,51 @@ class LspRoutesTest extends ServiceTestBase {
                     new DocumentOnTypeFormattingParams(use, options, new Position(5, 3), "}"))
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
+  }
+
+  // A formatter that runs a command (a build, say) waits on its process off the event loop: the
+  // server answers other requests meanwhile, and the edits arrive once the process ends.
+  @Test
+  void formatting_commandFormatterStillRunning_otherRequestsAnswered_editsArriveWhenItEnds()
+      throws Exception {
+    final ShopFixture shop = openShop();
+    final Path gate = tmp.resolve("gate");
+    service.setFormatEngine(
+        new FileCommandFormatEngine(
+            TestProcess.command("await", gate.toString(), "%FILE%"),
+            tmp,
+            FileCommandFormatEngine.DEFAULT_TIMEOUT));
+
+    final var formatting =
+        service.formatting(
+            new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
+    awaitWorkerIdle();
+
+    assertThat(formatting).as("the formatter waits for the gate").isNotDone();
+    Files.writeString(gate, "");
+    assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS))
+        .singleElement()
+        .satisfies(edit -> assertThat(edit.getNewText()).contains("SHOP"));
+  }
+
+  // Closing the server while a command formatter runs answers the request (no edits) instead of
+  // leaving it waiting, and stops the formatter's process.
+  @Test
+  void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
+    final ShopFixture shop = openShop();
+    service.setFormatEngine(
+        new FileCommandFormatEngine(
+            TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
+            tmp,
+            FileCommandFormatEngine.DEFAULT_TIMEOUT));
+    final var formatting =
+        service.formatting(
+            new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
+    awaitWorkerIdle();
+
+    service.close();
+
+    assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
   }
 
   private static List<String> files(

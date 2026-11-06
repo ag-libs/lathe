@@ -8,9 +8,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -20,14 +17,9 @@ import java.util.logging.Logger;
 // source directory (which still matches Spotless's src/**/*.java includes) and returns its content.
 // The name is a dotfile so file-trees/fuzzy-finders that hide dotfiles (neo-tree, oil, Telescope)
 // do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
-// Tokens: %MVN% -> buildTool, the tool that ran the last build (never searched for); %FILE% ->
-// the temp path; %MODULE% -> the file's module or ".", as moduleOf (the module registry) names it.
-record FileCommandFormatEngine(
-    List<String> command,
-    Path workspaceRoot,
-    Duration timeout,
-    Function<Path, Optional<String>> moduleOf,
-    Supplier<Optional<Path>> buildTool)
+// Tokens: %MVN% -> the tool that ran the last build (never searched for); %FILE% -> the temp
+// path; %MODULE% -> the file's module or ".". Both come in the FormatTarget the session reads.
+record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
     implements FormatEngine {
 
   private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
@@ -38,8 +30,6 @@ record FileCommandFormatEngine(
     ValidCheck.check()
         .notEmpty(command, "command")
         .notNull(workspaceRoot, "workspaceRoot")
-        .notNull(moduleOf, "moduleOf")
-        .notNull(buildTool, "buildTool")
         .assertTrue(
             timeout != null && timeout.compareTo(Duration.ZERO) > 0, "timeout must be positive")
         .validate();
@@ -47,13 +37,13 @@ record FileCommandFormatEngine(
   }
 
   @Override
-  public String format(final String source, final Path file)
+  public String format(final String source, final FormatTarget target)
       throws IOException, InterruptedException {
     final Path scratch =
-        Files.createTempFile(file.toAbsolutePath().getParent(), ".lathe-fmt-", ".java");
+        Files.createTempFile(target.file().toAbsolutePath().getParent(), ".lathe-fmt-", ".java");
     try {
       Files.writeString(scratch, source, StandardCharsets.UTF_8);
-      run(resolve(scratch));
+      run(resolve(scratch, target));
       return Files.readString(scratch, StandardCharsets.UTF_8);
     } finally {
       deleteQuietly(scratch);
@@ -68,16 +58,16 @@ record FileCommandFormatEngine(
     }
   }
 
-  private List<String> resolve(final Path file) throws IOException {
+  private List<String> resolve(final Path file, final FormatTarget target) throws IOException {
     final String absolute = file.toAbsolutePath().toString();
-    final String module = moduleOf.apply(file).orElse(".");
+    final String module = target.module();
     // Only a command that names %MVN% needs a recorded build tool.
     final boolean usesMaven =
         command.stream().anyMatch(arg -> arg.contains(LatheFlags.FORMAT_MVN_TOKEN));
     final String maven =
         usesMaven
-            ? buildTool
-                .get()
+            ? target
+                .recordedBuildTool()
                 .map(Path::toString)
                 .orElseThrow(
                     () ->

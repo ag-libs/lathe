@@ -44,9 +44,9 @@ final class EclipseFormatEngine implements FormatEngine {
   }
 
   @Override
-  public String format(final String source, final Path file) throws Exception {
+  public String format(final String source, final FormatTarget target) throws Exception {
     final Jdt loaded = jdt();
-    final boolean moduleInfo = file != null && MODULE_INFO.equals(file.getFileName().toString());
+    final boolean moduleInfo = MODULE_INFO.equals(target.file().getFileName().toString());
     final int kind = moduleInfo ? loaded.moduleInfoKind() : loaded.compilationUnitKind();
     return FormatEngine.converge(
         source,
