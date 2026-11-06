@@ -18,6 +18,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
+import io.github.aglibs.lathe.server.run.TestCounterparts;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;

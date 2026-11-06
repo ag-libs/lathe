@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
@@ -17,19 +17,19 @@ import java.util.stream.Stream;
 // A lathe.testCounterparts answer: for a main file the tests of its type, for a test file the type
 // it tests, best match first. Found by the names the build's test runs pick up by default
 // (Surefire's and Failsafe's), in any module, so a test in a separate test module is found too.
-record TestCounterparts(boolean fromTest, List<Target> targets) {
+public record TestCounterparts(boolean fromTest, List<Target> targets) {
 
   private static final List<String> SUFFIXES = List.of("Test", "Tests", "TestCase", "IT", "ITCase");
   private static final List<String> PREFIXES = List.of("Test", "IT");
 
-  TestCounterparts {
+  public TestCounterparts {
     ValidCheck.check().notNull(targets, "targets").validate();
     targets = List.copyOf(targets);
   }
 
-  record Target(String uri, String qualifiedName) {
+  public record Target(String uri, String qualifiedName) {
 
-    Target {
+    public Target {
       ValidCheck.check().notBlank(uri, "uri").notBlank(qualifiedName, "qualifiedName").validate();
     }
   }
@@ -39,7 +39,7 @@ record TestCounterparts(boolean fromTest, List<Target> targets) {
   // The counterparts of the file's top-level type (its file name), from the other tree: the test
   // trees for a main file, the main trees for a test file. Ranked by same package, then same
   // module, then the convention the name follows (FooTest before FooIT).
-  static TestCounterparts find(
+  public static TestCounterparts find(
       final Path file,
       final String pkg,
       final Function<Path, Optional<ModuleSourceConfig>> configOf,

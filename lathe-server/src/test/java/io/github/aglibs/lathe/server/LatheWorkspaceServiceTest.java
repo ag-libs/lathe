@@ -19,6 +19,8 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
+import io.github.aglibs.lathe.server.run.TestCounterparts;
+import io.github.aglibs.lathe.server.run.TestSource;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
