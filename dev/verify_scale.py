@@ -32,7 +32,7 @@ def verify(client, label):
     t0 = time.monotonic()
     out = text_of(client.call_tool("verify_change", {}))
     head = out.splitlines()[0] if out else ""
-    print("%-34s %6.1fs  %s  | %s" % (label, time.monotonic() - t0, memory(client.proc.pid), head[:90]), flush=True)
+    print("TIMING  %-34s %6.1fs  %s  | %s" % (label, time.monotonic() - t0, memory(client.proc.pid), head[:90]), flush=True)
     return out
 
 
@@ -41,7 +41,7 @@ try:
     client.initialize()
     t0 = time.monotonic()
     client.call_tool("get_diagnostics", {"file": str(TYPE)})
-    print("%-34s %6.1fs  %s" % ("warm-up (first query)", time.monotonic() - t0, memory(client.proc.pid)), flush=True)
+    print("TIMING  %-34s %6.1fs  %s" % ("warm-up (first query)", time.monotonic() - t0, memory(client.proc.pid)), flush=True)
     verify(client, "verify_change, nothing changed")
 
     TYPE.write_text(original.replace("    public static final GenericType<String> STRING",

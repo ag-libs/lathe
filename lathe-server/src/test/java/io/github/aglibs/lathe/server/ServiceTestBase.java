@@ -24,7 +24,6 @@ import java.util.regex.Pattern;
 import org.eclipse.lsp4j.DidChangeTextDocumentParams;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
 import org.eclipse.lsp4j.DidSaveTextDocumentParams;
-import org.eclipse.lsp4j.FoldingRangeRequestParams;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.ReferenceContext;
@@ -124,12 +123,11 @@ abstract class ServiceTestBase {
         .toList();
   }
 
-  // Force a round-trip through the event loop: a request submitted after initialize's load task
-  // completes only once that task (and its startup reconciliation) has run.
+  // The event loop and every module worker idle: what was queued has run, compiles included, and
+  // their diagnostics are published. A loop round-trip alone left a compile still running on its
+  // module's thread, whose publish then landed after the test's next step.
   protected void awaitWorkerIdle() throws Exception {
-    final var params = new FoldingRangeRequestParams();
-    params.setTextDocument(new TextDocumentIdentifier("file:///nonexistent.java"));
-    service.foldingRange(params).get(TIMEOUT_S, TimeUnit.SECONDS);
+    host.onLoopFuture(WorkspaceSession::workersDrained).get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // A reconcile pass runs after initialize on the event loop, so startup reconciliation is finished

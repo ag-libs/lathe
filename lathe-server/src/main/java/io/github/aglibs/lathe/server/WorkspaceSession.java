@@ -160,6 +160,12 @@ final class WorkspaceSession {
     return writePass;
   }
 
+  // Test seam: every module worker's queued work done and its results delivered.
+  CompletableFuture<Void> workersDrained() {
+    eventLoop.checkOnLoop();
+    return state.registry().drained();
+  }
+
   ChangeVerifier verifier() {
     return verifier;
   }

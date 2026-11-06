@@ -314,8 +314,8 @@ def negative_checks(b, ws, f):
 
 
 def lifecycle_checks(b, launcher):
-    """On a session of its own: a server deafened by the garbage line must not spoil the main
-    session's exit and log checks."""
+    """On a session of its own: a server the garbage line deafened would spoil the main session's
+    exit and log checks."""
     client = mcp.McpClient(launcher, b.ws, echo_stderr=False)
     b.last_ms = 0
     try:
@@ -326,10 +326,8 @@ def lifecycle_checks(b, launcher):
         answered = False
     finally:
         exited = client.close()
-    b.check("server answers after a garbage line", answered, "tools/list after an unparseable line",
-            known="an unparseable line on stdin leaves the MCP server running but deaf")
-    b.check("deafened server still exits on stdin close", exited, "exited" if exited else "still running after 5 s",
-            known="an unparseable line on stdin leaves the MCP server running but deaf")
+    b.check("server answers after a garbage line", answered, "tools/list after an unparseable line")
+    b.check("server still exits on stdin close", exited, "exited" if exited else "still running after 5 s")
 
 
 def health_checks(b, exited):
