@@ -40,9 +40,9 @@ jobs:
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Set up Maven 3.9.16
-        uses: stCarolas/setup-maven@v5
+        uses: ./.github/actions/maven
         with:
-          maven-version: 3.9.16
+          version: 3.9.16
 
       - name: Set up Gradle 9.8.2
         # Builds lathe-gradle-plugin, which the release build verifies with the rest.

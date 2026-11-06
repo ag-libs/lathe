@@ -1,0 +1,35 @@
+name: Maven
+description: >-
+  The Maven that builds Lathe, from the Actions cache: a version's distribution never changes, so
+  it is downloaded from Maven Central once per OS and then restored, under the key and path the
+  invoker jobs use for their Maven too. Fetching it on every run failed jobs whenever Central
+  refused or timed out (a 403).
+inputs:
+  version:
+    description: The Maven version.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Restore Maven ${{ inputs.version }}
+      id: maven-dist
+      uses: actions/cache@v6
+      with:
+        path: ${{ runner.temp }}/apache-maven-${{ inputs.version }}
+        key: maven-dist-${{ runner.os }}-${{ inputs.version }}
+
+    - name: Download Maven ${{ inputs.version }}
+      if: steps.maven-dist.outputs.cache-hit != 'true'
+      shell: bash
+      # Unpacked from inside the temp directory: Windows tar reads the D: of a path like D:\a\_temp
+      # as a remote host.
+      working-directory: ${{ runner.temp }}
+      run: |
+        curl -fsSL --retry 5 --retry-all-errors -o maven.tar.gz \
+          "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${{ inputs.version }}/apache-maven-${{ inputs.version }}-bin.tar.gz"
+        tar xzf maven.tar.gz
+        rm maven.tar.gz
+
+    - name: Put Maven ${{ inputs.version }} on the PATH
+      shell: bash
+      run: echo "$RUNNER_TEMP/apache-maven-${{ inputs.version }}/bin" >> "$GITHUB_PATH"
