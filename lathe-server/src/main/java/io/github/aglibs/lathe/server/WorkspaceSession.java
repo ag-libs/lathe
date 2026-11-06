@@ -1198,15 +1198,21 @@ final class WorkspaceSession {
       case SKIP -> {}
       case PAUSE -> {
         LOG.info(() -> "[watcher] paused, no request for %ds".formatted(eventLoop.idleMs() / 1000));
-        releaseSessionsOnTick();
+        releaseWhilePaused();
         returnFreeHeap();
       }
       case PAUSED -> {
-        if (releaseSessionsOnTick() > 0) {
+        if (releaseWhilePaused() > 0) {
           returnFreeHeap();
         }
       }
     }
+  }
+
+  // The engine keeps every file it has queried as an open document, so a paused server lets the
+  // sessions of their modules go too: no editor shows them, and the next query rebuilds one.
+  private int releaseWhilePaused() {
+    return logRelease("paused", state.registry().releaseSessions(Set.of(), IDLE_SESSION_MS));
   }
 
   // G1 hands freed heap back to the OS only after a full collection, so without one an idle server
