@@ -260,6 +260,11 @@ reused):
   Lathe MCP), over a moat-curated Dropwizard/Helidon corpus, against a pre-registered hypothesis.
   **Pilot run (2026-10-03)** in `dev/bench/`: on a cross-module overload rename, grep-only missed a site
   in 3 of 4 weaker-model runs and Lathe none, at 0.24–0.48× the cost; the scaled headline run is next.
+- [Measured Comparison with jdtls](planned/lathe-jdtls-comparison.md) — **planned (2026-11-06).** How to
+  answer "why Lathe and not jdtls?" with evidence: no claim without a measurement anyone can rerun, and a fix
+  wherever Lathe loses before anything is published. Pre-registered projects, queries and metrics; an LSP
+  benchmark harness beside `dev/jdtls_diff.py`; a catalogue of where each server disagrees with the build;
+  fixes for Lathe's losses; the comparison page last.
 
 ## Completed Designs
 
