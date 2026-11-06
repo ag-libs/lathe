@@ -80,7 +80,7 @@ A test that trips the new check is a real violation, fixed in the same commit.
 - `done/lathe-gradle-support.md` and `done/lathe-new-type-creation.md` still open with "Proposed".
 - Two docs link to `file:///home/...` paths; make them repo-relative.
 - Restructuring §7 ("`AGENTS.md` names the components; `WorkspaceSession` takes wiring only") never landed.
-  Add it, with the component list, once B1 lands (*not done in Group A*).
+  Added with B1 (Group B).
 
 ---
 
@@ -168,6 +168,10 @@ The JVM is the test JDK's own `java` (`TestProcess`), as `LauncherTest` already 
 ---
 
 ## Group B — stop `WorkspaceSession` from regrowing
+
+**B1 and B4 done on branch `refactor/session-components`** (one commit per step): `DocumentFeatures`, `FormatService`,
+`WorkspaceQueries`, `ReactorTypeIndex.withOpenEntries`, `run/TestDiscoveryStore`, `ClassOutputs`, `ResourceMirror`,
+the `run/` and `format/` packages, and the component rule in `AGENTS.md`. `WorkspaceSession` is down from 1,601 to about 1,050 lines.
 
 ### B1. Split `WorkspaceSession` further (1,621 lines, about six concerns)
 

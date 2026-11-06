@@ -63,7 +63,8 @@ import java.util.stream.Stream;
 
 // Runs and debugs tests and main classes by replaying their captured launches, discovers a module's
 // tests, and keeps the named run configurations. Event-loop state: the live runs and debug hosts,
-// and the discovery cache; launch and drain threads reach them only through the loop.
+// the discoveries (TestDiscoveryStore) and their queue; launch and drain threads reach them only
+// through the loop.
 final class RunCoordinator {
 
   private static final Logger LOG = Logger.getLogger(RunCoordinator.class.getName());

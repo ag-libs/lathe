@@ -36,7 +36,10 @@ import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 
-/** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
+// The workspace session: builds and wires the loop components, and keeps what ties them together:
+// the open documents' lifecycle (open, change, save, close), compile scheduling and publishing, the
+// rename transaction, the scan tick and a reload. A feature belongs in the component that owns it,
+// not here. Event-loop state: call it on the ServerEventLoop only.
 final class WorkspaceSession {
 
   private static final Logger LOG = Logger.getLogger(WorkspaceSession.class.getName());

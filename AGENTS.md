@@ -241,9 +241,25 @@ against the `multi-module` invoker workspace — both use the checkout build dir
     * **Loop-confined helpers call `eventLoop.checkOnLoop()`**, which fails fast off the loop; a new
       helper that reads or writes session state does too.
     * **Nothing waits on the loop**: no `get`/`join`, no waiting on a process or another thread;
-      return a future instead. Formatting runs on the session's format thread for this reason: read
+      return a future instead. Formatting runs on `FormatService`'s own thread for this reason: read
       what it needs on the loop (`FormatTarget`), then `rejoin` with the edits.
     * **No locks or concurrent collections for session state**: route the access through the loop.
+- **Server components** (`lathe-server`). New behaviour goes into the component that owns it;
+  `WorkspaceSession` takes wiring only (the document lifecycle, compile scheduling, the rename
+  transaction, the scan tick, reload). Callers reach a component through its session accessor
+  (`session.features()`, `session.runs()`), never through a session forwarder.
+    * `WorkspaceState`: the root, manifest, module registry and graph, swapped together on a reload.
+    * `DocumentRegistry`: the open documents. `FeatureRouter`: a file's module worker and the
+      analysis LRU.
+    * `DocumentFeatures`: what is asked about the code (hover, navigation, completion, code
+      actions, tokens, symbols, folds, type hierarchy, runnables).
+    * `ReferenceSearch`: references, implementations, callers. `RenameService`: rename checks and
+      the edit.
+    * `ReactorTypeIndex`: the workspace type index and its reactor shards.
+    * `WritePass`: keeps `.lathe/` current with the sources (with `ClassOutputs`,
+      `ResourceMirror`). `ChangeVerifier`: what `verify_change` and the MCP notes report.
+    * `RunCoordinator`: run, debug and test discovery (`run/`). `FormatService`: formatting, on its
+      own thread (engines in `format/`). `WorkspaceQueries`: workspace commands not about a document.
 
 ## Markdown style
 
