@@ -117,11 +117,12 @@ class SourceAnalysisSessionTest {
 
     try (final var session = new SourceAnalysisSession(compiler)) {
       assertThatThrownBy(
-              () -> session.searchReferences(uri, content, 1, target, false, cancelChecker))
+              () ->
+                  session.searchReferences(uri, content, 1, target, false, Set.of(), cancelChecker))
           .isInstanceOf(CancellationException.class);
       cancelled.set(false);
 
-      assertThat(session.searchReferences(uri, content, 1, target, false)).isEmpty();
+      assertThat(session.searchReferences(uri, content, 1, target, false).hits()).isEmpty();
       verify(compiler, times(2)).compile(eq(uri), eq(content), eq(CompileMode.OPEN), any());
     }
   }
@@ -390,6 +391,7 @@ class SourceAnalysisSessionTest {
               null,
               ReferenceTarget.SearchScope.DECLARING_FILE,
               List.of(),
+              false,
               false,
               -1);
 

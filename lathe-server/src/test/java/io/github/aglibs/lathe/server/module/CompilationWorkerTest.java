@@ -10,9 +10,11 @@ import static org.mockito.Mockito.when;
 import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
+import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -217,13 +219,16 @@ class CompilationWorkerTest {
     final ReferenceMatch match = mock(ReferenceMatch.class);
     final IntConsumer progress = hits -> {};
     final CancelChecker cancelChecker = () -> {};
-    when(context.searchReferencesTransient(sources, target, false, progress, cancelChecker))
-        .thenReturn(List.of(match));
+    when(context.searchReferencesTransient(
+            sources, target, false, Set.of(), progress, cancelChecker))
+        .thenReturn(new SearchHits<>(List.of(match), List.of()));
 
     final var result =
-        worker.searchReferencesTransient(sources, target, false, progress, cancelChecker).join();
+        worker
+            .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker)
+            .join();
 
-    assertThat(result).containsExactly(match);
+    assertThat(result.hits()).containsExactly(match);
   }
 
   @Test
@@ -253,8 +258,8 @@ class CompilationWorkerTest {
 
     final CompletableFuture<CompileResponse> blocker = worker.compile(request);
     await(entered);
-    final CompletableFuture<List<ReferenceMatch>> cancelledFuture =
-        worker.searchReferencesTransient(sources, target, false, progress, cancelChecker);
+    final CompletableFuture<SearchHits<ReferenceMatch>> cancelledFuture =
+        worker.searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
     cancelled.set(true);
     release.countDown();
 
@@ -267,7 +272,7 @@ class CompilationWorkerTest {
             thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
             thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
     verify(context, never())
-        .searchReferencesTransient(sources, target, false, progress, cancelChecker);
+        .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
   }
 
   private void assertTermination(final Throwable failure, final int expectedStatus) {

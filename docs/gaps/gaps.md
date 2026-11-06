@@ -1116,9 +1116,69 @@ On Hibernate ORM, references to `StringHelper.isEmpty` (`hibernate-core/.../inte
 The answer is right: 202 references in `hibernate-core`, `hibernate-envers`, `hibernate-jcache`, `hibernate-community-dialects` and `tooling`.
 Helidon's `Config.create()` took about 13 s warm in an earlier round, so this is the size of the codebase, not Gradle.
 
+### Profile (2026-11-05)
+
+Lathe 0.3.0 on JDK 26, `-Xmx4g`, two warm-up queries, then JFR over five identical queries:
+20.6 s for the first query, 11.4 s median warm, 201 references.
+jdtls 1.63 on the same checkout: no answer within 10 minutes on a fresh workspace (still indexing), then 20.9 s first and 4.8 s median warm, the same 201 references.
+
+- **One thread per module is the critical path.**
+  Each module's batches of 8 run one after another on its worker:
+  `hibernate-core`'s main sources took about 9.8 s of CPU per query, its tests 5.8 s in parallel, every other module under 1 s, while most of the machine's 16 hardware threads idled.
+- **Inside a batch:** attribution about 35%, loading classes 20–30% (repeated by every batch, each a fresh javac task), `ct.sym` about 5%, `ReferenceLocator` 2.5%, temp-file writes nothing measurable.
+- **The planner compiles every file that spells the method's name.**
+  1,150 files mention `isEmpty`; 170 of them also mention `StringHelper`, which every reference outside `StringHelper`'s own family has to name.
+
+On spring-petclinic the same profile showed `ct.sym` at 34% of a 60 ms query: `--release` below the server's JDK makes javac reopen it for every task, as `JDKPlatformProvider`'s cache does not outlive the task.
+Reusing it is out of scope: it would widen what Lathe uses from the compiler.
+
 ### Fix direction
 
-Profile a warm search on Hibernate ORM: candidate filtering against attribution, and how many files are attributed for a name this common.
+1. **Narrow static methods to their family, exactly.**
+   Compile first every file that names the declaring type or a subtype, or imports the method statically, whether or not it spells the method.
+   A file outside that set can reach the method only through an expression of a family type, whose type comes from a non-family type's non-private declaration naming the family, so in that set:
+   check those declarations (as javac's model of each type, so Lombok's and a record's generated members count), and compile the files spelling only the method's name when one exposes a family type, or when a class in the set extends a family type the type index does not know.
+   On this query 370 files name `StringHelper` and none uses it as a declared type, so 370 compiles answer exactly instead of 1,150.
+   Known limit: Lombok's `@Delegate` generates members from another type without the file naming it, so a type exposed only that way goes unseen.
+2. **Run a module's batches in parallel**, each on its own file manager.
+   A fresh file manager costs nothing measurable per task and about 6 MB once warm; a throwaway prototype on 160 `hibernate-core` files ran 2–4 times faster on 8–16 threads.
+   This touches the module worker's threading contract and needs its own design.
+3. **Cache answers until the workspace changes**, for repeated queries (agents repeat them); it does not help a first query.
+
+Rejected: reusing `ct.sym` (above), and replacing temp files (no measurable cost; module-system and patch-module compiles need a source's file to place it in its module).
+Body stripping is a last resort: it saved about 15% in the prototype, and implicit uses (`super()`, an enhanced `for`'s `iterator()`) need their bodies.
+
+### Regression targets
+
+None yet.
+
+---
+
+## FR-030 — A field reached through an expression that never names its type may be missed
+
+**Status: documented**
+
+**Value: unknown — Size: S to confirm**
+
+**Affects: references, rename and incoming calls for fields.**
+
+Found while designing the static-method narrowing of FR-029 (2026-11-05); not yet reproduced.
+
+### Suspected behaviour
+
+`ReferenceCandidatePlanner` narrows a field's candidates to the files that spell the field's name and a family type (the declaring type or a subtype), plus static imports.
+A file that reads the field through an expression whose type it never spells, such as `getOwner().name` or `var o = find(); o.name`, is not among them, so its use would be missed, and a rename would leave it.
+Methods were narrowed the same way until FR-011 widened them back to every file spelling the name, for exactly this reason; fields kept the narrowing.
+
+### Probe
+
+A reactor fixture with `class Owner { public String name; }`, an accessor `Owner owner()` in another class, and a third file that reads `holder.owner().name` without naming `Owner`: find references on `name` should list that read.
+
+### Fix direction
+
+Confirm with the probe first.
+If real: FR-029's exposure check closes it (keep the narrowed set when no non-private declaration exposes a family type), but an instance field's type is usually exposed, so most searches would fall back to every file spelling the name, slower than today.
+Weigh that against the gap.
 
 ### Regression targets
 

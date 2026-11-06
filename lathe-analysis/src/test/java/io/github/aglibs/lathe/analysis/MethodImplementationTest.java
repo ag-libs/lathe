@@ -131,6 +131,7 @@ class MethodImplementationTest {
             ReferenceTarget.SearchScope.REACTOR_MODULES,
             List.of(),
             false,
+            false,
             -1);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
@@ -157,6 +158,7 @@ class MethodImplementationTest {
             "()V",
             ReferenceTarget.SearchScope.REACTOR_MODULES,
             List.of(),
+            false,
             false,
             -1);
     final var compiler = new CountingJavaSourceCompiler();

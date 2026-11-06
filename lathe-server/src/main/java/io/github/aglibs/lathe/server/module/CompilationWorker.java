@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.RenameBindingCheck;
 import io.github.aglibs.lathe.analysis.RunTarget;
+import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
@@ -302,50 +303,62 @@ public final class CompilationWorker {
     return submit(ctx -> ctx.resolveContractTarget(request), cancelChecker);
   }
 
-  public CompletableFuture<List<ReferenceMatch>> searchReferences(
+  public CompletableFuture<SearchHits<ReferenceMatch>> searchReferences(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     return submit(
         ctx ->
-            ctx.searchReferences(uri, content, version, target, includeDeclaration, cancelChecker),
+            ctx.searchReferences(
+                uri, content, version, target, includeDeclaration, exposureFamily, cancelChecker),
         cancelChecker);
   }
 
-  public CompletableFuture<List<ReferenceMatch>> searchReferencesTransient(
+  public CompletableFuture<SearchHits<ReferenceMatch>> searchReferencesTransient(
       final List<TransientSource> sources,
       final ReferenceTarget target,
       final boolean includeDeclaration,
+      final Set<String> exposureFamily,
       final IntConsumer progressPerFile,
       final CancelChecker cancelChecker) {
     return submit(
         ctx ->
             ctx.searchReferencesTransient(
-                sources, target, includeDeclaration, progressPerFile, cancelChecker),
+                sources,
+                target,
+                includeDeclaration,
+                exposureFamily,
+                progressPerFile,
+                cancelChecker),
         cancelChecker);
   }
 
-  public CompletableFuture<List<CallHierarchyIncomingCall>> searchIncomingCalls(
+  public CompletableFuture<SearchHits<CallHierarchyIncomingCall>> searchIncomingCalls(
       final String uri,
       final String content,
       final int version,
       final ReferenceTarget target,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     return submit(
-        ctx -> ctx.searchIncomingCalls(uri, content, version, target, cancelChecker),
+        ctx ->
+            ctx.searchIncomingCalls(uri, content, version, target, exposureFamily, cancelChecker),
         cancelChecker);
   }
 
-  public CompletableFuture<List<CallHierarchyIncomingCall>> searchIncomingCallsTransient(
+  public CompletableFuture<SearchHits<CallHierarchyIncomingCall>> searchIncomingCallsTransient(
       final String uri,
       final String content,
       final ReferenceTarget target,
+      final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
     return submit(
-        ctx -> ctx.searchIncomingCallsTransient(uri, content, target, cancelChecker),
+        ctx ->
+            ctx.searchIncomingCallsTransient(uri, content, target, exposureFamily, cancelChecker),
         cancelChecker);
   }
 
