@@ -722,7 +722,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   private List<String> symbolNames(final String query) throws Exception {
     return service
-        .onLoop(session -> session.workspaceSymbol(query, false))
+        .onLoop(session -> session.features().workspaceSymbol(query, false))
         .get(TIMEOUT_S, TimeUnit.SECONDS)
         .stream()
         .map(SymbolInformation::getName)

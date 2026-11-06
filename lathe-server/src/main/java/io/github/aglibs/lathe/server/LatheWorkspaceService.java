@@ -68,7 +68,7 @@ final class LatheWorkspaceService implements WorkspaceService {
           Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>>
       symbol(final WorkspaceSymbolParams params) {
     return textDocumentService
-        .onLoop(session -> session.workspaceSymbol(params.getQuery(), false))
+        .onLoop(session -> session.features().workspaceSymbol(params.getQuery(), false))
         .thenApply(Either::forLeft);
   }
 
@@ -211,7 +211,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> listRunnables(final ExecuteCommandParams params) {
     final String uri = uriArgument(params.getArguments().get(0));
     return textDocumentService
-        .onLoopFuture(session -> session.runnablesFuture(uri))
+        .onLoopFuture(session -> session.features().runnablesFuture(uri))
         .thenApply(targets -> targets);
   }
 
@@ -239,8 +239,10 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .onLoopFuture(
             session ->
-                session.typeHierarchyExplorerFuture(
-                    LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition()))
+                session
+                    .features()
+                    .typeHierarchyExplorerFuture(
+                        LatheUri.canonical(at.getTextDocument().getUri()), at.getPosition()))
         .thenApply(result -> result);
   }
 
@@ -334,7 +336,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> testCounterparts(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .onLoop(session -> session.testCounterparts(uriArgument(json)))
+        .onLoop(session -> session.features().testCounterparts(uriArgument(json)))
         .thenApply(counterparts -> counterparts);
   }
 
@@ -351,7 +353,7 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<Object> missingImports(final ExecuteCommandParams params) {
     final var json = (JsonObject) params.getArguments().get(0);
     return textDocumentService
-        .onLoopFuture(session -> session.missingImportsFuture(uriArgument(json)))
+        .onLoopFuture(session -> session.features().missingImportsFuture(uriArgument(json)))
         .thenApply(result -> result);
   }
 
@@ -362,7 +364,7 @@ final class LatheWorkspaceService implements WorkspaceService {
     final List<String> chosen =
         json.getAsJsonArray("imports").asList().stream().map(JsonElement::getAsString).toList();
     return textDocumentService
-        .onLoopFuture(session -> session.missingImportsFuture(uriArgument(json)))
+        .onLoopFuture(session -> session.features().missingImportsFuture(uriArgument(json)))
         .thenApply(result -> result.edits(chosen));
   }
 

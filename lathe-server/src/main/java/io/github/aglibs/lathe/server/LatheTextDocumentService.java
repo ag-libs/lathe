@@ -213,7 +213,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop
-        .submitCompose(() -> session.completionFuture(uri, pos, context))
+        .submitCompose(() -> session.features().completionFuture(uri, pos, context))
         .thenApply(
             outcome -> {
               LOG.fine(
@@ -249,12 +249,14 @@ public final class LatheTextDocumentService implements TextDocumentService {
 
     return eventLoop.submitCompose(
         () ->
-            session.codeActionFuture(uri, params.getRange(), context, codeActionResolveSupported));
+            session
+                .features()
+                .codeActionFuture(uri, params.getRange(), context, codeActionResolveSupported));
   }
 
   @Override
   public CompletableFuture<CodeAction> resolveCodeAction(final CodeAction unresolved) {
-    return eventLoop.submitCompose(() -> session.resolveCodeActionFuture(unresolved));
+    return eventLoop.submitCompose(() -> session.features().resolveCodeActionFuture(unresolved));
   }
 
   @Override
@@ -264,7 +266,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(new SemanticTokens(List.of()));
     }
 
-    return eventLoop.submitCompose(() -> session.semanticTokensFuture(uri));
+    return eventLoop.submitCompose(() -> session.features().semanticTokensFuture(uri));
   }
 
   @Override
@@ -276,7 +278,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop
-        .submitCompose(() -> session.documentSymbolFuture(uri))
+        .submitCompose(() -> session.features().documentSymbolFuture(uri))
         .thenApply(LatheTextDocumentService::documentSymbolResult);
   }
 
@@ -293,7 +295,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submitCompose(() -> session.foldingRangeFuture(uri));
+    return eventLoop.submitCompose(() -> session.features().foldingRangeFuture(uri));
   }
 
   // Runs a progress-reporting request and always cleans up: opens a progress bound to the response,
@@ -403,7 +405,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return eventLoop.submitCompose(() -> session.signatureHelpFuture(uri, pos));
+    return eventLoop.submitCompose(() -> session.features().signatureHelpFuture(uri, pos));
   }
 
   @Override
@@ -414,19 +416,21 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(null);
     }
 
-    return eventLoop.submitCompose(() -> session.hoverFuture(uri, pos));
+    return eventLoop.submitCompose(() -> session.features().hoverFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definition(final DefinitionParams params) {
-    return locations("definition", params, (uri, pos) -> session.definitionFuture(uri, pos));
+    return locations(
+        "definition", params, (uri, pos) -> session.features().definitionFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declaration(final DeclarationParams params) {
-    return locations("declaration", params, (uri, pos) -> session.declarationFuture(uri, pos));
+    return locations(
+        "declaration", params, (uri, pos) -> session.features().declarationFuture(uri, pos));
   }
 
   @Override
@@ -440,7 +444,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
   public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       typeDefinition(final TypeDefinitionParams params) {
     return locations(
-        "typeDefinition", params, (uri, pos) -> session.typeDefinitionFuture(uri, pos));
+        "typeDefinition", params, (uri, pos) -> session.features().typeDefinitionFuture(uri, pos));
   }
 
   private CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -500,19 +504,21 @@ public final class LatheTextDocumentService implements TextDocumentService {
       return CompletableFuture.completedFuture(List.of());
     }
 
-    return eventLoop.submitCompose(() -> session.prepareTypeHierarchyFuture(uri, pos));
+    return eventLoop.submitCompose(() -> session.features().prepareTypeHierarchyFuture(uri, pos));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
       final TypeHierarchySupertypesParams params) {
-    return eventLoop.submitCompose(() -> session.typeHierarchySupertypesFuture(params.getItem()));
+    return eventLoop.submitCompose(
+        () -> session.features().typeHierarchySupertypesFuture(params.getItem()));
   }
 
   @Override
   public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
       final TypeHierarchySubtypesParams params) {
-    return eventLoop.submitCompose(() -> session.typeHierarchySubtypesFuture(params.getItem()));
+    return eventLoop.submitCompose(
+        () -> session.features().typeHierarchySubtypesFuture(params.getItem()));
   }
 
   @Override

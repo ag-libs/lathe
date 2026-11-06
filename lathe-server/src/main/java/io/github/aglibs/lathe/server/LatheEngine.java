@@ -208,7 +208,7 @@ public final class LatheEngine {
             file,
             line,
             column,
-            (session, uri, pos, cancel, progress) -> session.definitionFuture(uri, pos));
+            (session, uri, pos, cancel, progress) -> session.features().definitionFuture(uri, pos));
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     return locations.stream().map(this::toLatheLocation).toList();
   }
@@ -285,6 +285,7 @@ public final class LatheEngine {
         file,
         (session, uri, diagnostics, cancel, progress) ->
             session
+                .features()
                 .onNameFuture(uri, pos)
                 .thenCompose(
                     onName -> {
@@ -386,7 +387,7 @@ public final class LatheEngine {
             file,
             line,
             column,
-            (session, uri, pos, cancel, progress) -> session.hoverFuture(uri, pos)));
+            (session, uri, pos, cancel, progress) -> session.features().hoverFuture(uri, pos)));
   }
 
   private static String hoverText(final Hover hover) {
@@ -404,7 +405,7 @@ public final class LatheEngine {
     return fileRequest(
             file,
             (session, fileUri, diagnostics, cancel, progress) ->
-                session.documentSymbolFuture(fileUri))
+                session.features().documentSymbolFuture(fileUri))
         .stream()
         .flatMap(symbol -> outlineItems(uri, symbol, 0))
         .toList();
@@ -444,7 +445,7 @@ public final class LatheEngine {
             (session, cancel, progress) ->
                 session
                     .reconcileForVerify()
-                    .thenApply(outcome -> session.workspaceSymbol(name, reactorOnly)));
+                    .thenApply(outcome -> session.features().workspaceSymbol(name, reactorOnly)));
     return symbols.stream()
         .sorted(Comparator.comparingInt(this::rank))
         .limit(maxResults)
@@ -633,7 +634,7 @@ public final class LatheEngine {
         fileRequest(
             file,
             (session, fileUri, diagnostics, cancel, progress) ->
-                session.missingImportsFuture(fileUri));
+                session.features().missingImportsFuture(fileUri));
     final Map<Boolean, List<MissingImport>> byUnambiguous =
         missing.items().stream()
             .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
@@ -690,6 +691,7 @@ public final class LatheEngine {
             (session, uri, diagnostics, cancel, progress) -> {
               final Optional<String> failing = session.verifier().failingUnder(file);
               return session
+                  .features()
                   .runnablesFuture(uri)
                   .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
             });
@@ -903,6 +905,7 @@ public final class LatheEngine {
                 .map(
                     entry ->
                         session
+                            .features()
                             .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
                             .thenApply(
                                 diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics)))))
@@ -967,6 +970,7 @@ public final class LatheEngine {
             column,
             (session, uri, pos, cancel, progress) ->
                 session
+                    .features()
                     .hoverFuture(uri, pos)
                     .thenCompose(
                         hover ->
