@@ -51,6 +51,9 @@ class MavenSyncScriptTest {
         .isEqualTo(LatheLayout.Maven.SYNC_PHASE);
     assertThat(MavenSyncScript.phase(new Properties(), pom)).isEqualTo("package");
     assertThat(MavenSyncScript.phase(build, pom)).isEqualTo("install");
+    final var padded = new Properties();
+    padded.setProperty(LatheFlags.SYNC_PHASE, " package ");
+    assertThat(MavenSyncScript.phase(new Properties(), padded)).isEqualTo("package");
     for (final String phase : List.of("compile", "deploy", "pakage")) {
       final var invalid = new Properties();
       invalid.setProperty(LatheFlags.SYNC_PHASE, phase);
@@ -61,7 +64,7 @@ class MavenSyncScriptTest {
   }
 
   // From the test phase on, a plain sync skips the tests; past it, a --tests sync captures them on
-  // the way to the project's phase.
+  // the way to the project's phase, skipping Failsafe's integration tests, which it cannot capture.
   @Test
   void script_laterPhase_skipsTestsAndCapturesOnTheWayToIt() {
     final var properties = new Properties();
@@ -73,7 +76,8 @@ class MavenSyncScriptTest {
 
     assertThat(packaged.goals()).containsExactly("package", "-DskipTests");
     assertThat(packaged.testsGoals())
-        .containsExactly("package", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");
+        .containsExactly(
+            "package", "-Dlathe.capture.only=true", "-DfailIfNoTests=false", "-DskipITs");
     assertThat(tested.goals()).containsExactly("test", "-DskipTests");
     assertThat(tested.testsGoals())
         .containsExactly("test", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");

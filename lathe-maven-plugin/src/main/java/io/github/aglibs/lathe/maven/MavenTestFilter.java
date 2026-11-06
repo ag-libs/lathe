@@ -115,8 +115,9 @@ final class MavenTestFilter {
 
     final PluginExecution execution =
         plugin.getExecutionsAsMap().get(LatheLayout.Maven.SUREFIRE_TEST_EXECUTION_ID);
+    final Xpp3Dom own = execution == null ? null : (Xpp3Dom) execution.getConfiguration();
+    // Merged into a copy: mergeXpp3Dom changes its first argument, Maven's own model for the build.
     return Xpp3Dom.mergeXpp3Dom(
-        execution == null ? null : (Xpp3Dom) execution.getConfiguration(),
-        (Xpp3Dom) plugin.getConfiguration());
+        own == null ? null : new Xpp3Dom(own), (Xpp3Dom) plugin.getConfiguration());
   }
 }

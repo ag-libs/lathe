@@ -174,10 +174,37 @@ class ReactorProjectsTest {
                 shading("shade", null, "<shadedArtifactAttached>true</shadedArtifactAttached>")))
         .isFalse();
     assertThat(ReactorProjects.shadesMainJar(shading("help", null, null))).isFalse();
+    // A finalName of shade's own leaves the main jar as it is; the build's own name does not.
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                shading("shade", "<finalName>lib-1-uber</finalName>", null)))
+        .isFalse();
+    assertThat(
+            ReactorProjects.shadesMainJar(shading("shade", "<finalName>lib-1</finalName>", null)))
+        .isTrue();
+    // A child switching off its parent's shade execution.
+    final MavenProject disabled = shading("shade", null, null);
+    shadeExecution(disabled).setPhase("none");
+    assertThat(ReactorProjects.shadesMainJar(disabled)).isFalse();
     assertThat(
             ReactorProjects.shadesMainJar(
                 projectWithOutput("com.example", "plain", "1", tmp.resolve("plain"))))
         .isFalse();
+  }
+
+  // Reading the configuration leaves Maven's own model as it was, for shade to run with.
+  @Test
+  void shadesMainJar_executionAndPluginConfiguration_leavesTheModelUnchanged() throws Exception {
+    final MavenProject lib =
+        shading(
+            "shade",
+            "<relocations><relocation><pattern>a</pattern></relocation></relocations>",
+            "<minimizeJar>true</minimizeJar>");
+    final String before = shadeExecution(lib).getConfiguration().toString();
+
+    ReactorProjects.shadesMainJar(lib);
+
+    assertThat(shadeExecution(lib).getConfiguration()).hasToString(before);
   }
 
   // A shaded main jar holds the classes it relocated, which the mirror lacks: it is not listed as
@@ -202,9 +229,10 @@ class ReactorProjectsTest {
     final Map<MavenProject, List<MavenProject>> upstream =
         Map.of(lib, List.of(), core, List.of(lib), app, List.of(core, lib), other, List.of());
 
-    final var shaded =
+    final ReactorProjects.ShadedUpstreams shaded =
         ReactorProjects.shadedUpstreams(tmp, List.of(lib, core, app, other), upstream::get);
-    final var none = ReactorProjects.shadedUpstreams(tmp, List.of(other), project -> List.of(core));
+    final ReactorProjects.ShadedUpstreams none =
+        ReactorProjects.shadedUpstreams(tmp, List.of(other), project -> List.of(core));
 
     assertThat(shaded.shadingModules()).containsExactly("lib");
     assertThat(shaded.dependents()).isEqualTo(2);
@@ -287,6 +315,15 @@ class ReactorProjectsTest {
     plugin.setConfiguration(configuration(pluginConfiguration));
     project.getBuild().addPlugin(plugin);
     return project;
+  }
+
+  private static PluginExecution shadeExecution(final MavenProject project) {
+    return project
+        .getBuild()
+        .getPluginsAsMap()
+        .get(LatheLayout.Maven.SHADE_PLUGIN_KEY)
+        .getExecutions()
+        .get(0);
   }
 
   private static Xpp3Dom configuration(final String children) throws Exception {

@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -22,6 +23,7 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
@@ -239,9 +241,11 @@ public final class ReactorProjects {
                     output.getValue()));
   }
 
-  // Whether maven-shade-plugin replaces the module's main jar: a shade execution that neither
-  // attaches the shaded jar under a classifier nor writes it to an outputFile of its own. Each
-  // execution's configuration is read over the plugin-level one, as Maven applies them.
+  // Whether maven-shade-plugin replaces the module's main jar: an enabled shade execution that
+  // neither attaches the shaded jar under a classifier, nor writes it to an outputFile, nor names
+  // it
+  // with a finalName other than the build's. Each execution's configuration is read over the
+  // plugin-level one, merged into a copy: Maven's own model stays as it is for the build.
   static boolean shadesMainJar(final MavenProject project) {
     final Plugin shade =
         project.getBuild() == null
@@ -251,21 +255,47 @@ public final class ReactorProjects {
       return false;
     }
 
+    final String finalName = project.getBuild().getFinalName();
     return shade.getExecutions().stream()
         .filter(execution -> execution.getGoals().contains(LatheLayout.Maven.SHADE_GOAL))
-        .map(
-            execution ->
-                Xpp3Dom.mergeXpp3Dom(
-                    (Xpp3Dom) execution.getConfiguration(), (Xpp3Dom) shade.getConfiguration()))
-        .anyMatch(ReactorProjects::replacesMainJar);
+        .filter(execution -> !LatheLayout.Maven.NO_PHASE.equals(execution.getPhase()))
+        .map(execution -> mergedConfiguration(execution, shade))
+        .anyMatch(configuration -> replacesMainJar(configuration, finalName));
   }
 
-  // The shading modules (moduleRel) the projects compile against, through any number of modules,
-  // and how many of the projects do.
-  record ShadedUpstreams(Set<String> shadingModules, int dependents) {
+  private static Xpp3Dom mergedConfiguration(final PluginExecution execution, final Plugin plugin) {
+    final Xpp3Dom own = (Xpp3Dom) execution.getConfiguration();
+    return Xpp3Dom.mergeXpp3Dom(
+        own == null ? null : new Xpp3Dom(own), (Xpp3Dom) plugin.getConfiguration());
+  }
+
+  private static boolean replacesMainJar(final Xpp3Dom configuration, final String finalName) {
+    if (configuration == null) {
+      return true;
+    }
+
+    return !parameter(configuration, LatheLayout.Maven.SHADE_ATTACHED_PARAM)
+            .map(Boolean::parseBoolean)
+            .orElse(false)
+        && parameter(configuration, LatheLayout.Maven.SHADE_OUTPUT_FILE_PARAM).isEmpty()
+        && parameter(configuration, LatheLayout.Maven.SHADE_FINAL_NAME_PARAM)
+            .map(finalName::equals)
+            .orElse(true);
+  }
+
+  private static Optional<String> parameter(final Xpp3Dom configuration, final String name) {
+    return Optional.ofNullable(configuration.getChild(name))
+        .map(Xpp3Dom::getValue)
+        .map(String::trim)
+        .filter(value -> !value.isEmpty());
+  }
+
+  // The shading modules (moduleRel, sorted) the projects compile against, through any number of
+  // modules, and how many of the projects do.
+  record ShadedUpstreams(List<String> shadingModules, int dependents) {
 
     ShadedUpstreams {
-      shadingModules = Set.copyOf(shadingModules);
+      shadingModules = List.copyOf(shadingModules);
     }
   }
 
@@ -287,18 +317,7 @@ public final class ReactorProjects {
       }
     }
 
-    return new ShadedUpstreams(shading, dependents);
-  }
-
-  private static boolean replacesMainJar(final Xpp3Dom configuration) {
-    if (configuration == null) {
-      return true;
-    }
-
-    final Xpp3Dom attached = configuration.getChild(LatheLayout.Maven.SHADE_ATTACHED_PARAM);
-    final Xpp3Dom outputFile = configuration.getChild(LatheLayout.Maven.SHADE_OUTPUT_FILE_PARAM);
-    return (attached == null || !Boolean.parseBoolean(attached.getValue()))
-        && (outputFile == null || outputFile.getValue() == null || outputFile.getValue().isBlank());
+    return new ShadedUpstreams(List.copyOf(shading), dependents);
   }
 
   public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {

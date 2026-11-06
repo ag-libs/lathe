@@ -56,7 +56,7 @@ The build integration writes one executable script on every sync:
 .lathe/lathe-sync.sh [--tests] [module ...]
 ```
 
-- **No arguments** — refresh the whole workspace (Maven: `process-test-classes`).
+- **No arguments** — refresh the whole workspace (Maven: the project's `lathe.sync.phase`, `process-test-classes` by default).
 - **`--tests`** — also re-capture test launches, without running the tests (Maven: `test -Dlathe.capture.only=true -DfailIfNoTests=false`: the test fork starts and writes `test-launch.json`, but the capture-only filter excludes every test), the mode behind "Sync + capture tests".
 - **`module ...`** — a scoped sync of these workspace-relative module paths and what they need (see Scoped sync).
   A build that cannot scope runs a full sync and says so on stderr.

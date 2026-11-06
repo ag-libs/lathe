@@ -23,7 +23,6 @@ import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
@@ -176,7 +175,7 @@ final class SyncCoordinator {
         and cannot compile them\
         """
             .formatted(
-                String.join(", ", new TreeSet<>(shaded.shadingModules())),
+                String.join(", ", shaded.shadingModules()),
                 shaded.dependents(),
                 LatheLayout.Maven.PACKAGE_PHASE,
                 LatheFlags.SYNC_PHASE,

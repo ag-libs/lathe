@@ -33,6 +33,12 @@ If yours isn't here, [open an issue](https://github.com/ag-libs/lathe/issues) wi
   re-sync after adding it. The server stopping on open means the JDK is newer than the project's Lombok
   supports, which fails the build too: upgrade Lombok. See [Lombok](how-it-works.md#lombok) for what
   works and its limits.
+- **Errors like `package <relocated package> does not exist`, or Lathe's sync failing to compile a module,
+  on a Maven project that shades a library** — a module whose main jar `maven-shade-plugin` replaces holds
+  the relocated classes its dependents compile against, and only `package` builds that jar. Build with
+  `package` once, and have Lathe's sync build there too: `-Dlathe.sync.phase=package` in
+  `.mvn/maven.config`. The build warns with this line when it sees such a module; see
+  [Maven](maven.md#what-the-build-writes-to-lathe).
 - **A processor or plugin needs extra JVM access in the editor** — Lathe analyzes with an in-process
   javac. Sync carries the build's own module grants into `.lathe/jvm.args` automatically (on Maven, forked
   `-J--add-exports`/`--add-opens`, `.mvn/jvm.config`, and `jdk.compiler` grants in `MAVEN_OPTS`; on Gradle,

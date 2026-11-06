@@ -194,28 +194,35 @@ public final class LatheLayout {
     static final String MVN = "mvn";
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+    public static final String TEST_PHASE = "test";
+    public static final String PACKAGE_PHASE = "package";
     // The phases a project may have its sync build to (LatheFlags.SYNC_PHASE), in lifecycle order:
     // from SYNC_PHASE, which .lathe/ needs, to install; never deploy, which would publish.
     public static final List<String> SYNC_PHASES =
         List.of(
             SYNC_PHASE,
-            "test",
+            TEST_PHASE,
             "prepare-package",
-            "package",
+            PACKAGE_PHASE,
             "pre-integration-test",
             "integration-test",
             "post-integration-test",
             "verify",
             "install");
-    public static final String TEST_PHASE = "test";
-    public static final String PACKAGE_PHASE = "package";
     public static final String SKIP_TESTS_ARG = "-DskipTests";
+    // Failsafe's own switch: a capture-only sync past the test phase captures Surefire's tests
+    // only.
+    public static final String SKIP_ITS_ARG = "-DskipITs";
+    // The phase that switches off an inherited plugin execution.
+    public static final String NO_PHASE = "none";
     // maven-shade-plugin's shade goal replaces the module's main jar with the shaded one unless it
-    // attaches the shaded jar under a classifier or writes it to its own outputFile.
+    // attaches the shaded jar under a classifier, writes it to its own outputFile, or names it with
+    // a finalName of its own.
     public static final String SHADE_PLUGIN_KEY = "org.apache.maven.plugins:maven-shade-plugin";
     public static final String SHADE_GOAL = "shade";
     public static final String SHADE_ATTACHED_PARAM = "shadedArtifactAttached";
     public static final String SHADE_OUTPUT_FILE_PARAM = "outputFile";
+    public static final String SHADE_FINAL_NAME_PARAM = "finalName";
     // A test run that captures the tests without running them.
     public static final String CAPTURE_ONLY_ARG = "-D%s=true".formatted(LatheFlags.CAPTURE_ONLY);
     // A project's first build: clean, so every module compiles through Lathe, and a capture-only
