@@ -16,12 +16,14 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.PublishDiagnosticsParams;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.services.LanguageClient;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class DiagnosticPublisherTest {
 
+  private final TestLoop loop = new TestLoop();
   private LanguageClient client;
   private DocumentRegistry registry;
   private DiagnosticPublisher publisher;
@@ -29,17 +31,22 @@ class DiagnosticPublisherTest {
   @BeforeEach
   void setUp() {
     client = mock(LanguageClient.class);
-    registry = new DocumentRegistry();
+    registry = new DocumentRegistry(loop.eventLoop);
     publisher = new DiagnosticPublisher(client, registry);
   }
 
+  @AfterEach
+  void closeLoop() {
+    loop.close();
+  }
+
   @Test
-  void publishIfCurrent_currentSnapshot_publishesDiagnosticsAndRefreshesTokens() {
-    final var snapshot = registry.put("file:///A.java", "class A {}", 1);
+  void publishIfCurrent_currentSnapshot_publishesDiagnosticsAndRefreshesTokens() throws Exception {
+    final var snapshot = loop.call(() -> registry.put("file:///A.java", "class A {}", 1));
     final var result = new CompileResponse("file:///A.java", snapshot.generation(), List.of());
 
-    final boolean published = publisher.publishIfCurrent(snapshot, result);
-    publisher.refreshTokensIfCurrent(snapshot, result);
+    final boolean published = loop.call(() -> publisher.publishIfCurrent(snapshot, result));
+    loop.run(() -> publisher.refreshTokensIfCurrent(snapshot, result));
 
     assertThat(published).isTrue();
     verify(client).publishDiagnostics(new PublishDiagnosticsParams("file:///A.java", List.of()));
@@ -47,13 +54,13 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishIfCurrent_staleSnapshot_doesNotPublish() {
-    final var old = registry.put("file:///A.java", "v1", 1);
-    registry.put("file:///A.java", "v2", 2);
+  void publishIfCurrent_staleSnapshot_doesNotPublish() throws Exception {
+    final var old = loop.call(() -> registry.put("file:///A.java", "v1", 1));
+    loop.run(() -> registry.put("file:///A.java", "v2", 2));
     final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
 
-    final boolean published = publisher.publishIfCurrent(old, result);
-    publisher.refreshTokensIfCurrent(old, result);
+    final boolean published = loop.call(() -> publisher.publishIfCurrent(old, result));
+    loop.run(() -> publisher.refreshTokensIfCurrent(old, result));
 
     assertThat(published).isFalse();
     verify(client, never()).publishDiagnostics(any());
@@ -61,10 +68,11 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishEmptyIfCurrent_currentSnapshotWithDiagnostics_publishesEmptyAndRefreshesTokens() {
+  void publishEmptyIfCurrent_currentSnapshotWithDiagnostics_publishesEmptyAndRefreshesTokens()
+      throws Exception {
     // A read-only external source is compiled, but its real diagnostics must be suppressed: the
     // published list is empty even though the compile produced one (EG-041).
-    final var snapshot = registry.put("file:///A.java", "class A {}", 1);
+    final var snapshot = loop.call(() -> registry.put("file:///A.java", "class A {}", 1));
     final var realDiag =
         new Diagnostic(
             new Range(new Position(0, 0), new Position(0, 1)),
@@ -74,7 +82,7 @@ class DiagnosticPublisherTest {
     final var result =
         new CompileResponse("file:///A.java", snapshot.generation(), List.of(realDiag));
 
-    final boolean published = publisher.publishEmptyIfCurrent(snapshot, result);
+    final boolean published = loop.call(() -> publisher.publishEmptyIfCurrent(snapshot, result));
 
     assertThat(published).isTrue();
     verify(client).publishDiagnostics(new PublishDiagnosticsParams("file:///A.java", List.of()));
@@ -82,12 +90,12 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishEmptyIfCurrent_staleSnapshot_doesNotPublish() {
-    final var old = registry.put("file:///A.java", "v1", 1);
-    registry.put("file:///A.java", "v2", 2);
+  void publishEmptyIfCurrent_staleSnapshot_doesNotPublish() throws Exception {
+    final var old = loop.call(() -> registry.put("file:///A.java", "v1", 1));
+    loop.run(() -> registry.put("file:///A.java", "v2", 2));
     final var result = new CompileResponse("file:///A.java", old.generation(), List.of());
 
-    final boolean published = publisher.publishEmptyIfCurrent(old, result);
+    final boolean published = loop.call(() -> publisher.publishEmptyIfCurrent(old, result));
 
     assertThat(published).isFalse();
     verify(client, never()).publishDiagnostics(any());
@@ -95,14 +103,14 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishEmpty_sendsEmptyDiagnostics() {
+  void publishEmpty_sendsEmptyDiagnostics() throws Exception {
     publisher.publishEmpty("file:///A.java");
 
     verify(client).publishDiagnostics(new PublishDiagnosticsParams("file:///A.java", List.of()));
   }
 
   @Test
-  void publishMissing_sendsHintDiagnostic() {
+  void publishMissing_sendsHintDiagnostic() throws Exception {
     publisher.publishMissing("file:///A.java", "no module");
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
@@ -115,10 +123,11 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishError_currentSnapshot_sendsErrorDiagnostic() {
-    final var snapshot = registry.put("file:///A.java", "class A {}", 1);
+  void publishError_currentSnapshot_sendsErrorDiagnostic() throws Exception {
+    final var snapshot = loop.call(() -> registry.put("file:///A.java", "class A {}", 1));
 
-    publisher.publishError(snapshot, CompileMode.FULL, new RuntimeException("boom"));
+    loop.run(
+        () -> publisher.publishError(snapshot, CompileMode.FULL, new RuntimeException("boom")));
 
     final var captor = ArgumentCaptor.forClass(PublishDiagnosticsParams.class);
     verify(client).publishDiagnostics(captor.capture());
@@ -129,11 +138,11 @@ class DiagnosticPublisherTest {
   }
 
   @Test
-  void publishError_staleSnapshot_doesNotPublish() {
-    final var old = registry.put("file:///A.java", "v1", 1);
-    registry.put("file:///A.java", "v2", 2);
+  void publishError_staleSnapshot_doesNotPublish() throws Exception {
+    final var old = loop.call(() -> registry.put("file:///A.java", "v1", 1));
+    loop.run(() -> registry.put("file:///A.java", "v2", 2));
 
-    publisher.publishError(old, CompileMode.FULL, new RuntimeException("boom"));
+    loop.run(() -> publisher.publishError(old, CompileMode.FULL, new RuntimeException("boom")));
 
     verify(client, never()).publishDiagnostics(any());
   }

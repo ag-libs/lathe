@@ -130,7 +130,7 @@ final class WorkspaceSession {
   // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
   // reactor). Set at prompt time because the request fires later, on the user's response.
   private List<String> pendingSyncModules = List.of();
-  private final DocumentRegistry docs = new DocumentRegistry();
+  private final DocumentRegistry docs;
   // Set by the in-process engine: its documents are copies of the disk, not editor buffers, so a
   // change on disk replaces them.
   private boolean documentsFollowDisk;
@@ -155,6 +155,7 @@ final class WorkspaceSession {
     this.progressReporter = progressReporter;
     this.eventLoop = eventLoop;
     this.debounceMs = debounceMs;
+    this.docs = new DocumentRegistry(eventLoop);
     this.publisher = new DiagnosticPublisher(client, docs);
     this.state = new WorkspaceState(eventLoop);
     this.reactorIndex = new ReactorTypeIndex(eventLoop, state, this::openSourcePaths);
@@ -1358,7 +1359,7 @@ final class WorkspaceSession {
   }
 
   private void refreshOpenDocuments() {
-    for (final var uri : List.copyOf(docs.uris())) {
+    for (final var uri : docs.uris()) {
       final OpenDocument f = docs.get(uri);
       docs.put(uri, f.content(), f.version());
     }
