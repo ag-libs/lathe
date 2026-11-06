@@ -94,7 +94,7 @@ final class CandidateFactory {
   }
 
   // An array's clone() has no backing element (it is public with covariant return T[], unlike the
-  // protected Object.clone()), so synthesize the method candidate directly (CQ-0053).
+  // protected Object.clone()), so synthesize the method candidate directly.
   CompletionCandidate arrayCloneCandidate(final ArrayType arrayType) {
     final String arrayDisplay = typeDisplayFormatter.format(arrayType);
     return new CompletionCandidate(

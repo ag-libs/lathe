@@ -23,8 +23,6 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.launch.TestSelection;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
@@ -33,7 +31,6 @@ import io.github.aglibs.lathe.server.module.CompileResponse;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleRegistry;
-import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
@@ -76,7 +73,6 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 /** Not thread-safe. All methods must be called from the {@link ServerEventLoop} thread. */
 final class WorkspaceSession {
@@ -93,7 +89,7 @@ final class WorkspaceSession {
   // sync with the mirror in lua/lathe/neotest.lua. Also user-visible via vim.lsp.status().
   static final String WORKSPACE_PROGRESS_TITLE = "Lathe: indexing workspace";
 
-  private final LanguageClient client;
+  private final LatheLanguageClient client;
   private final ProgressReporter progressReporter;
   private final ServerEventLoop eventLoop;
   private final long debounceMs;
@@ -144,7 +140,7 @@ final class WorkspaceSession {
   private final Set<CompletableFuture<List<TextEdit>>> formatsInFlight = new HashSet<>();
 
   WorkspaceSession(
-      final LanguageClient client,
+      final LatheLanguageClient client,
       final ProgressReporter progressReporter,
       final ServerEventLoop eventLoop,
       final long debounceMs) {
@@ -303,17 +299,6 @@ final class WorkspaceSession {
         .map(uri -> state.registry().moduleSourceFor(LatheUri.toPath(uri)))
         .flatMap(Optional::stream)
         .collect(Collectors.toUnmodifiableSet());
-  }
-
-  RunConfigWriter.Saved saveRunConfig(
-      final String name,
-      final String moduleRel,
-      final RunKind kind,
-      final String mainClass,
-      final List<TestSelection> selectors,
-      final boolean overwrite)
-      throws IOException {
-    return runs.saveRunConfig(name, moduleRel, kind, mainClass, selectors, overwrite);
   }
 
   CreateTypeResult createType(final CreateTypeArgs args) {
@@ -1302,7 +1287,7 @@ final class WorkspaceSession {
 
   private void requestSync(final boolean captureTests) {
     LOG.info(() -> "[sync] requested capture=%b".formatted(captureTests));
-    ((LatheLanguageClient) client).sync(new LatheSyncParams(state.root().toString(), captureTests));
+    client.sync(new LatheSyncParams(state.root().toString(), captureTests));
   }
 
   private void reload() {
@@ -1366,8 +1351,8 @@ final class WorkspaceSession {
   /**
    * Publishes real diagnostics for a workspace ({@code Module}) source, but an empty list for a
    * read-only external (JDK/dependency) source, so the user is not shown compiler diagnostics on a
-   * file they cannot edit (EG-041). Returns whether the snapshot was still current, so callers gate
-   * their follow-up identically for both routes.
+   * file they cannot edit. Returns whether the snapshot was still current, so callers gate their
+   * follow-up identically for both routes.
    */
   private boolean publishDiagnostics(
       final CompilerRoute route, final OpenDocument snapshot, final CompileResponse result) {

@@ -95,7 +95,7 @@ final class CandidateGenerator {
   }
 
   // An array has no TypeElement, and length/clone are not modeled as elements, so synthesize them;
-  // the rest are exactly java.lang.Object's instance methods (CQ-0053).
+  // the rest are exactly java.lang.Object's instance methods.
   private List<CompletionCandidate> proposeArrayMemberCandidates(
       final ArrayType arrayType, final String prefix, final Scope scope) {
     final var candidates = new ArrayList<CompletionCandidate>();

@@ -894,11 +894,6 @@ public final class LatheEngine {
         null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
   }
 
-  // What verify_change checks, read in one go on the loop once the workspace is fresh. With no
-  // files: what changed on disk, what the tools wrote themselves (already stamped), and every
-  // earlier change not yet built, so a break stays reported until it is fixed. A file put back to
-  // what the last build compiled is no change.
-
   // Compiles every file as a transient check, side by side on their modules' workers, and answers
   // once all are done.
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
@@ -1040,10 +1035,6 @@ public final class LatheEngine {
     }
   }
 
-  // An agent edits files with its own tools, outside the editor's change events, and queries right
-  // after, before the idle reconcile tick has caught up: freshen the mirror first so cross-file
-  // answers see those edits. What the pass could not write (code that does not compile, a pending
-  // build-file sync, a running build) answers from the current mirror, as notes() reports.
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
   // and the file's runnable targets.
   private record TestFacts(String failure, List<RunTarget> targets) {

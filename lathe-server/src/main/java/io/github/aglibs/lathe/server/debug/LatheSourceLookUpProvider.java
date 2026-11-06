@@ -115,12 +115,12 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
 
   private String sourceUri(final String fullyQualifiedName) {
     return TypeSourceLocator.findSourceFile(fullyQualifiedName, frames.sourceRoots())
-        .map(path -> path.toUri().toString())
+        .map(LatheUri::fromPath)
         .orElse(null);
   }
 
   private static String toUri(final String pathOrUri) {
-    return toPath(pathOrUri).toUri().toString();
+    return LatheUri.fromPath(toPath(pathOrUri));
   }
 
   private static Path toPath(final String pathOrUri) {

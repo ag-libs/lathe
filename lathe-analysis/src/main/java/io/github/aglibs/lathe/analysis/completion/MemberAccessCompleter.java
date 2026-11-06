@@ -57,7 +57,7 @@ final class MemberAccessCompleter {
         initialResolved != null
             && (initialResolved.type().getKind() == TypeKind.ERROR
                 || initialResolved.type().getKind() == TypeKind.TYPEVAR);
-    // CQ-0051: expected-value inference reads the snapshot tree at the current cursor offset. When
+    // Expected-value inference reads the snapshot tree at the current cursor offset. When
     // the cached snapshot diverges from the current content before the completion token (e.g. the
     // just-typed `.` is not in the cache yet), that offset is misaligned and can land in an
     // unrelated following expression, wrongly marking the slot value-sensitive (which drops void
@@ -332,7 +332,7 @@ final class MemberAccessCompleter {
 
     final var scope = TypeResolver.resolveScope(snapshot, cursorOffset);
 
-    // CQ-0052: an unimported simple name may match several classpath types (e.g. two `Objects`).
+    // An unimported simple name may match several classpath types (e.g. two `Objects`).
     // Offer members from every candidate, each carrying its own import edit, rather than returning
     // only the first match's members.
     final var aggregated = new ArrayList<CompletionItem>();

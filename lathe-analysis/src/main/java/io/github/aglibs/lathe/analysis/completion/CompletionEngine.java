@@ -162,7 +162,7 @@ public final class CompletionEngine {
 
   // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
   // typically parsed as a type reference; offer override/implement stubs for the enclosing type's
-  // inherited methods alongside whatever the context produced (EG-015).
+  // inherited methods alongside whatever the context produced.
   private CompletionOutcome mergeOverrideCandidates(
       final CompletionOutcome outcome,
       final ParsedSentinel parsed,
@@ -294,7 +294,7 @@ public final class CompletionEngine {
             .toList();
 
     // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
-    // that would otherwise re-add each subtype as a plain type candidate (EG-022).
+    // that would otherwise re-add each subtype as a plain type candidate.
     if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !sealedCaseCandidates.isEmpty()) {
       return new CompletionOutcome(items, null);
     }
@@ -655,7 +655,7 @@ public final class CompletionEngine {
     }
 
     // A Class-typed value element (e.g. @ExtendWith's Class<? extends Extension>) expects a type
-    // name here, so offer type candidates alongside the value keywords (EG-038).
+    // name here, so offer type candidates alongside the value keywords.
     final var typeOutcome =
         typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
             injected, req, TypeReferenceRole.ORDINARY);

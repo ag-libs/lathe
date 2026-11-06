@@ -15,7 +15,7 @@ import javax.lang.model.util.Types;
 /**
  * Override/implement completion: at a class-body member-declaration slot, offers the inherited,
  * overridable methods of the enclosing type (supertypes plus {@code Object}) as {@code @Override}
- * stubs. Types render as simple names; automatic import of stub types is not yet done (EG-015 v1).
+ * stubs. Types render as simple names; automatic import of stub types is not yet done.
  */
 final class OverrideCompletionProvider {
 

@@ -33,7 +33,7 @@ final class CompletionEditApplier {
         .forEach(CompletionEditApplier::replaceWithMethodNameOnly);
   }
 
-  // A keyword's trailing space (CQ-0054) would double a space that already follows the token
+  // A keyword's trailing space would double a space that already follows the token
   // (`new§ ArrayList` -> `new  ArrayList`). When exactly one space follows, grow the edit to
   // overwrite it, keeping a single space with the caret after it. Absorbing (not stripping) stays
   // correct at an empty slot (`cla§ }`, where the name is still to be typed); only a literal space

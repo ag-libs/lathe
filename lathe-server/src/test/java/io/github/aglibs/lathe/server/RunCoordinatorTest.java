@@ -218,7 +218,7 @@ class RunCoordinatorTest extends ServiceTestBase {
     assertThat(run.exitCode()).isNotZero();
     assertThatThrownBy(() -> debug.get(TIMEOUT_S, TimeUnit.SECONDS))
         .hasMessageContaining("the debuggee ended before the debugger attached");
-    verify((LatheLanguageClient) client, timeout(TIMEOUT_MS))
+    verify(client, timeout(TIMEOUT_MS))
         .testFinished(argThat(finished -> finished.token().equals("debug-1")));
   }
 
@@ -243,7 +243,7 @@ class RunCoordinatorTest extends ServiceTestBase {
 
     assertThat(attached.dapPort()).isPositive();
     assertThat(attached.jdwpPort()).isPositive();
-    verify((LatheLanguageClient) client, timeout(TIMEOUT_MS))
+    verify(client, timeout(TIMEOUT_MS))
         .testFinished(argThat(finished -> finished.token().equals("debug-1")));
 
     writeMainLaunch(List.of("sleep"), List.of("-XX:+LatheNoSuchOption"));

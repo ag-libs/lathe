@@ -14,6 +14,7 @@ import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
 import io.github.aglibs.lathe.analysis.AttributedExpression;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -109,7 +110,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 file,
                 worker ->
                     worker.attributeReceiverExpression(
-                        file.toUri().toString(), receiverType, RECEIVER, expression))
+                        LatheUri.fromPath(file), receiverType, RECEIVER, expression))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
@@ -290,7 +291,7 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 file,
                 worker ->
                     worker.attributeExpression(
-                        file.toUri().toString(), content, location.lineNumber(), expression))
+                        LatheUri.fromPath(file), content, location.lineNumber(), expression))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));

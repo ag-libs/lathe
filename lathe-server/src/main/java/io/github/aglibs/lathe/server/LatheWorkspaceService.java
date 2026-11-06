@@ -186,13 +186,15 @@ final class LatheWorkspaceService implements WorkspaceService {
     return textDocumentService
         .onLoop(
             session ->
-                session.saveRunConfig(
-                    name,
-                    json.get("moduleRel").getAsString(),
-                    kind,
-                    optionalString(json, "mainClass"),
-                    selectors,
-                    json.has("overwrite") && json.get("overwrite").getAsBoolean()))
+                session
+                    .runs()
+                    .saveRunConfig(
+                        name,
+                        json.get("moduleRel").getAsString(),
+                        kind,
+                        optionalString(json, "mainClass"),
+                        selectors,
+                        json.has("overwrite") && json.get("overwrite").getAsBoolean()))
         .thenApply(saved -> (Object) saved)
         .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }

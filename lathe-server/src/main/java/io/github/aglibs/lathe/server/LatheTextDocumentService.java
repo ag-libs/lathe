@@ -20,7 +20,6 @@ import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.CompletableFutures;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.messages.Either3;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.eclipse.lsp4j.services.TextDocumentService;
 
 // The LSP document service, and the way onto the event loop for everything outside it. Two
@@ -59,7 +58,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     this.debounceMs = debounceMs;
   }
 
-  public void connect(final LanguageClient client) {
+  public void connect(final LatheLanguageClient client) {
     progressReporter = new ProgressReporter(client);
     eventLoop.execute(
         () -> session = new WorkspaceSession(client, progressReporter, eventLoop, debounceMs));

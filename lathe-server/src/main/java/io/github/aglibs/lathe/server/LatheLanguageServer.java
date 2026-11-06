@@ -50,7 +50,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   @Override
   public void connect(final LanguageClient client) {
-    textDocumentService.connect(client);
+    // Every client is a LatheLanguageClient: LatheServer's launcher and the in-process engine.
+    textDocumentService.connect((LatheLanguageClient) client);
   }
 
   @Override

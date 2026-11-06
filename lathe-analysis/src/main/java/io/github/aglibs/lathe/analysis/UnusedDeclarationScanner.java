@@ -158,7 +158,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
    * #localVars} bucket, so the hint labels each by its JLS §4.12.3 kind: a {@code CatchTree} child
    * is an exception parameter, a {@code LambdaExpressionTree} child is a (lambda) parameter, and
    * everything else — a block local, enhanced-for variable, or pattern binding — is a local
-   * variable (EG-039).
+   * variable.
    */
   private static Kind localVariableKind(final Tree parent) {
     if (parent instanceof CatchTree) {

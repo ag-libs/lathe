@@ -7,6 +7,7 @@ import com.sun.jdi.StackFrame;
 import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -100,7 +101,7 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
                 file,
                 worker ->
                     worker.completeTransient(
-                        file.toUri().toString(),
+                        LatheUri.fromPath(file),
                         content,
                         synthetic,
                         position,

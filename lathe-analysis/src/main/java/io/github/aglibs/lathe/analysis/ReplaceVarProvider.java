@@ -17,7 +17,7 @@ import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Request-driven (non-diagnostic) refactor: replace a `var` local declaration with its inferred
-// explicit type (CA-5). Invoked from the code-action range rather than a diagnostic.
+// explicit type. Invoked from the code-action range rather than a diagnostic.
 final class ReplaceVarProvider {
 
   private static final Logger LOG = Logger.getLogger(ReplaceVarProvider.class.getName());

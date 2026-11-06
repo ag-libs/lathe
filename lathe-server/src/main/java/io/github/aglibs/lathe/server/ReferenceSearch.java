@@ -699,7 +699,7 @@ final class ReferenceSearch {
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
     // Include the generated-sources root so a module's annotation-processor output (a record's
     // @Builder) is in scope; it references the record by simple name and never lives under a
-    // regular source root (FR-012/FR-013).
+    // regular source root.
     final List<Path> searchRoots = config.searchRoots();
     final var planner =
         new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());

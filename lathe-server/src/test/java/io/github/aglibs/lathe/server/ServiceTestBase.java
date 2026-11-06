@@ -32,7 +32,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,7 +48,7 @@ abstract class ServiceTestBase {
   // wait, unlike TIMEOUT_MS, so as short as still catches a late one on a busy machine.
   protected static final long QUIET_WINDOW_MS = 1_500;
 
-  protected LanguageClient client;
+  protected LatheLanguageClient client;
   protected LatheTextDocumentService service;
   @TempDir protected Path tmp;
 

@@ -17,7 +17,6 @@ import org.eclipse.lsp4j.ServerCapabilities;
 import org.eclipse.lsp4j.TextDocumentSyncKind;
 import org.eclipse.lsp4j.WorkDoneProgressCancelParams;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -137,7 +136,7 @@ class LatheLanguageServerTest {
   @Test
   void initialize_optionFormatterCommand_advertisesFormatting() throws Exception {
     final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
+    server.connect(mock(LatheLanguageClient.class));
     final var params = new InitializeParams();
     params.setInitializationOptions(
         JsonParser.parseString(
@@ -178,7 +177,7 @@ class LatheLanguageServerTest {
   void initialize_optionNoUsableFormatter_omitsFormatting(final Object initOptions)
       throws Exception {
     final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
+    server.connect(mock(LatheLanguageClient.class));
     final var params = new InitializeParams();
     params.setInitializationOptions(initOptions);
 
@@ -223,7 +222,7 @@ class LatheLanguageServerTest {
 
   private ServerCapabilities initializeWithRoot(final Object initOptions) throws Exception {
     final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
+    server.connect(mock(LatheLanguageClient.class));
     final var params = new InitializeParams();
     params.setRootUri(root.toUri().toString());
     params.setInitializationOptions(initOptions);
@@ -236,7 +235,7 @@ class LatheLanguageServerTest {
   @Test
   void initialize_always_advertisesServerInfoName() throws Exception {
     final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
+    server.connect(mock(LatheLanguageClient.class));
 
     final var serverInfo = server.initialize(new InitializeParams()).get().getServerInfo();
 
@@ -256,7 +255,7 @@ class LatheLanguageServerTest {
   @Test
   void cancelProgress_unknownToken_routesWithoutFailure() {
     final var server = new LatheLanguageServer();
-    server.connect(mock(LanguageClient.class));
+    server.connect(mock(LatheLanguageClient.class));
     final var params = new WorkDoneProgressCancelParams(Either.forLeft("unknown"));
 
     assertThatCode(() -> server.cancelProgress(params)).doesNotThrowAnyException();

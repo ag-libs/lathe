@@ -415,7 +415,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   private void addMatchAtIdentifier(final Tree node, final String name, final ReferenceRole role) {
     // Locate the selector by text from a reliable anchor instead of end-minus-name.length(): a
     // node's end position can be approximate in generated sources, slicing the range onto a
-    // neighbouring identifier (FR-010). Anchoring on the receiver end also avoids matching an
+    // neighbouring identifier. Anchoring on the receiver end also avoids matching an
     // earlier occurrence of the name inside the receiver (e.g. `amount.amount`).
     final long anchor = identifierAnchor(node);
     if (anchor < 0) {

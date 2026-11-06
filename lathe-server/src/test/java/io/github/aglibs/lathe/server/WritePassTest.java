@@ -39,7 +39,6 @@ import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 
 // The write pass: external changes, startup catch-up, reported files, failures, deletions and
@@ -403,7 +402,7 @@ class WritePassTest extends ServiceTestBase {
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
     final var otherServer = new LatheTextDocumentService(DEBOUNCE_MS);
     try {
-      otherServer.connect(mock(LanguageClient.class));
+      otherServer.connect(mock(LatheLanguageClient.class));
       otherServer.initialize(tmp);
 
       TestCompiler.writeAt(

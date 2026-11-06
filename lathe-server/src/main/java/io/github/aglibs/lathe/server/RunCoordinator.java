@@ -60,7 +60,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 // Runs and debugs tests and main classes by replaying their captured launches, discovers a module's
 // tests, and keeps the named run configurations. Event-loop state: the live runs and debug hosts,
@@ -71,7 +70,7 @@ final class RunCoordinator {
 
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
-  private final LanguageClient client;
+  private final LatheLanguageClient client;
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
@@ -86,7 +85,7 @@ final class RunCoordinator {
       CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
 
   RunCoordinator(
-      final LanguageClient client,
+      final LatheLanguageClient client,
       final ServerEventLoop eventLoop,
       final WorkspaceState state,
       final ReactorTypeIndex reactorIndex) {
@@ -648,7 +647,7 @@ final class RunCoordinator {
 
     final LaunchOutcome finished = finishedOutcome(outcome, error);
     LOG.fine(() -> "[debug] %s finished exit=%d".formatted(token, finished.exitCode()));
-    ((LatheLanguageClient) client).testFinished(new TestFinishedParams(token, finished));
+    client.testFinished(new TestFinishedParams(token, finished));
   }
 
   /**
@@ -869,7 +868,7 @@ final class RunCoordinator {
       return line -> {};
     }
 
-    return line -> ((LatheLanguageClient) client).testOutput(new TestOutputParams(token, line));
+    return line -> client.testOutput(new TestOutputParams(token, line));
   }
 
   /**
@@ -901,7 +900,7 @@ final class RunCoordinator {
       return result -> {};
     }
 
-    return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
+    return result -> client.testEvent(new TestEventParams(token, result));
   }
 
   // With the command that captures it, so a reader (an agent above all) knows the remedy. A class

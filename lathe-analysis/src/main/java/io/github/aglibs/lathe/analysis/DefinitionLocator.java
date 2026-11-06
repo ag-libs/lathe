@@ -138,9 +138,9 @@ public final class DefinitionLocator {
 
   /**
    * A synthetic record accessor has no declaration site, so it resolves to nothing; redirect it to
-   * the component's backing field, whose declaration is the component name in the record header
-   * (EG-047). Returns null unless {@code element} is a record's canonical accessor — an explicit
-   * accessor with a body resolves directly and never reaches this fallback.
+   * the component's backing field, whose declaration is the component name in the record header.
+   * Returns null unless {@code element} is a record's canonical accessor — an explicit accessor
+   * with a body resolves directly and never reaches this fallback.
    */
   private static Element recordComponentField(final Element element) {
     if (!(element instanceof final ExecutableElement accessor)

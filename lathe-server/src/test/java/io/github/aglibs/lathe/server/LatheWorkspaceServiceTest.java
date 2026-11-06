@@ -327,18 +327,17 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         .thenReturn(
             CompletableFuture.completedFuture(new MessageActionItem("Sync + capture tests")));
     openShop();
-    final var lathe = (LatheLanguageClient) client;
 
     Files.writeString(pom, "<project>edited</project>");
     service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
     verify(client).showMessageRequest(argThat(request -> request.getMessage().startsWith("Build")));
-    verify(lathe, never()).sync(any());
+    verify(client, never()).sync(any());
 
     Files.writeString(pom, "<project>edited again</project>");
     service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
-    verify(lathe).sync(new LatheSyncParams(tmp.toString(), true));
+    verify(client).sync(new LatheSyncParams(tmp.toString(), true));
   }
 
   // A sync that rewrites workspace.json reloads it: a module the sync added is there at once.

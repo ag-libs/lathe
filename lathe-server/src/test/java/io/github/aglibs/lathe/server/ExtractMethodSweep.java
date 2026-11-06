@@ -57,7 +57,6 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 // Dev tool, not a test: runs extract method over every candidate selection of a real repo through
 // the editor's own path (open, codeAction, codeAction/resolve) and reports crashes, false offers
@@ -471,10 +470,10 @@ public final class ExtractMethodSweep {
   }
 
   // A client that accepts every notification and answers every request with nothing.
-  private static LanguageClient noopClient() {
-    return (LanguageClient)
+  private static LatheLanguageClient noopClient() {
+    return (LatheLanguageClient)
         Proxy.newProxyInstance(
-            LanguageClient.class.getClassLoader(),
+            LatheLanguageClient.class.getClassLoader(),
             new Class<?>[] {LatheLanguageClient.class},
             (proxy, method, args) ->
                 method.getReturnType() == CompletableFuture.class
