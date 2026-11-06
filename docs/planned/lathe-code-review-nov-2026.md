@@ -88,7 +88,7 @@ A test that trips the new check is a real violation, fixed in the same commit.
 |---|---|---|
 | Run-config overlay read | loop | loop |
 | Launch JSON read, completeness gate, test filter | launch thread | **loop** |
-| Temp results sink, argfile, JDWP port | launch thread | **loop** |
+| Temp results sink, argfile | launch thread | **loop** |
 | Process spawn | launch thread | **loop** |
 | Register under the token | loop, via `eventLoop.execute` from the launch thread | loop |
 | Gate notes | streamed and added to the outcome | **dropped** |
@@ -105,8 +105,8 @@ Two races exist in both paths today:
 - **A debuggee that exits before its banner** (bad JVM option, missing class) is reported only after the
   15 s JDWP timeout, because the readiness wait does not watch the process.
 
-And one gap at shutdown: `WorkspaceSession.close` cancels formats but not runs or debug hosts,
-so a suspended debuggee outlives the server.
+Shutdown is not a gap: `ChildProcesses.destroyOnExit` kills every child of the server JVM when it exits,
+and a session is only closed on the way out.
 
 ### Decision
 
@@ -114,25 +114,27 @@ so a suspended debuggee outlives the server.
 
 1. **Snapshot — on the loop.**
    Everything the launch needs from session state is read here and handed on as immutable values:
-   workspace root, `ReactorRewrite`, runner classpath, and the resolved `RunItem` overlay.
+   workspace root, `ReactorRewrite`, runner classpath, the resolved `RunItem` overlay,
+   and for a debug the JDWP port (`PortUtil.free` binds and releases an ephemeral port: no wait).
    The run-config file stays read on the loop: it is a small JSON read like the other config reads,
    and an unknown config name keeps failing the request synchronously (`InvalidParams`).
    The token is registered as **pending** in the runs map before anything leaves the loop.
 2. **Prepare and spawn — on the launch's own thread** (`lathe-launch-<module>`, as runs use today).
    One static `prepareTest` / `prepareMain` builds a `Replay` value — the resolved launch, the results sink,
-   the gate notes, or the blocked reasons — taking `JdwpOptions.NONE` for a run and a fresh JDWP port for a debug.
+   the gate notes, or the blocked reasons — taking `JdwpOptions.NONE` for a run and the debug's `JdwpOptions`.
    The thread then spawns the process (with the JDWP-banner consumer for a debug) and its work ends.
    Nothing on this thread touches session state; it reads files and starts a process, nothing else.
    A thread per launch, not a shared executor: launches are rare, user-started, and each one should start at once,
    not queue behind a slow gate on another module.
 3. **Register and finish — back on the loop** (`eventLoop.rejoin` of the spawn future).
-   - If the token was cancelled while pending, the fresh session is cancelled at once and the request fails
-     (debug) or completes as cancelled (run). This closes the lost-cancel race for both.
+   - If the token was cancelled while pending, the fresh session is cancelled at once:
+     a run completes with the killed JVM's outcome, a debug fails the request.
+     This closes the lost-cancel race for both.
    - Otherwise the session replaces the pending entry.
    - **Run**: chain on `rejoin(session.onExit())`, so the run's result future completes on the loop
      (contract §4.1; today it completes on the reaper thread) and the entry is removed there.
    - **Debug**: wait for `jdwpReady` **or** the process exit, whichever comes first, with the 15 s timeout;
-     an exit first fails the request at once with the exit code instead of after 15 s.
+     an exit first fails the request at once instead of after 15 s.
      Then open the DAP host on the loop: it reads the registry, manifest and reactor index (loop state),
      and `DapHost.start` only binds a loopback socket and starts its own thread.
 
@@ -140,27 +142,23 @@ Blocked launches keep their current reporting: a run completes with `LaunchOutco
 a debug fails the request with the reasons. Gate notes are streamed and attached to the outcome for both,
 so a debug session's `testFinished` carries them too.
 
-`RunCoordinator` gains a `close()`, called from `WorkspaceSession.close`, that cancels every live run and closes
-every DAP host (the precedent is formatting, which kills its process trees on close since #107).
-Pending entries are marked cancelled, so a launch still in phase 2 is killed when it rejoins.
-
 ### Shape
 
 - The runs map becomes `Map<String, RunSlot>`, `RunSlot` a small record (`LaunchSession session` or none,
   `boolean cancelled`) replaced on each change; loop-confined like today.
-- `MainLaunchPlan` generalises into the `Replay` record shared by test and main, run and debug.
-- `launchTest` / `launchMain` / `startDebugTest` / `startDebugMain` collapse into one `spawnOnItsThread`
-  (phases 1–2) and two tails, `finishRun` and `attachDebugHost`.
-  The four public entry points and the named-config dispatch stay as they are.
-- Expected: `RunCoordinator` loses about 120 lines.
+- `MainLaunchPlan` generalises into the `Replay` record shared by test and main, run and debug;
+  `LaunchInputs` carries the phase-1 snapshot.
+- `launchTest` / `launchMain` / `startDebugTest` / `startDebugMain` collapse into one `spawn`
+  (phases 1–2) and two tails, `run` and `debug` (`attachDebugHost`).
+  The public entry points and the named-config dispatch stay as they are.
+- `RunCoordinator` stays about the same size: the copies go, the records and the readiness race come in.
 
 ### Tests
 
 The debug paths have no tests today because they need a debuggee.
 `RunCoordinatorTest` gains:
-cancel-while-pending kills the session on rejoin (a launch whose prepare step is held on a latch);
-a debug launch whose JVM exits before the banner fails fast with the exit code;
-`close()` cancels a live run.
+a run and a debug cancelled in the same loop task that started them (so still pending) are killed as they start;
+a debug launch attaches, and one whose JVM exits before the banner (a bad JVM option) fails at once.
 The JVM is the test JDK's own `java` (`TestProcess`), as `LauncherTest` already does.
 
 ---
