@@ -744,11 +744,14 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     awaitStartup();
 
     // On the loop, where the format engine that asks for it runs.
-    assertThat(service.onLoop(session -> session.moduleRelOf(api)).get(TIMEOUT_S, TimeUnit.SECONDS))
+    assertThat(
+            service
+                .onLoop(session -> session.formats().moduleRelOf(api))
+                .get(TIMEOUT_S, TimeUnit.SECONDS))
         .contains("platform/api");
     assertThat(
             service
-                .onLoop(session -> session.moduleRelOf(tmp.resolve("scripts/Tool.java")))
+                .onLoop(session -> session.formats().moduleRelOf(tmp.resolve("scripts/Tool.java")))
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
   }

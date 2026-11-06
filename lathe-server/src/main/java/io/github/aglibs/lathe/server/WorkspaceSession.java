@@ -23,10 +23,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.logging.Level;
@@ -37,7 +34,6 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.MessageActionItem;
 import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.ShowMessageRequestParams;
 import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
@@ -61,6 +57,7 @@ final class WorkspaceSession {
   private final RunCoordinator runs;
   private final FeatureRouter router;
   private final DocumentFeatures features;
+  private final FormatService formats;
   private final ReferenceSearch search;
   private final WritePass writePass;
   private final ChangeVerifier verifier;
@@ -93,16 +90,6 @@ final class WorkspaceSession {
   private boolean documentsFollowDisk;
   private final DiagnosticPublisher publisher;
 
-  // Loop state like the rest: a format failure is reported to the user once, then only logged.
-  private boolean formatFailureReported;
-  // Formatting runs here, off the event loop: an external command waits on its process, a build
-  // tool for up to a minute. One thread, so two formats never run a build in one module at once.
-  private final ExecutorService formatThread =
-      Executors.newSingleThreadExecutor(WorkspaceSession::newFormatThread);
-  // The formats queued or running there, so close() can cancel them: the thread's shutdown drops
-  // what is queued, and a caller would otherwise wait for an answer that cannot come.
-  private final Set<CompletableFuture<List<TextEdit>>> formatsInFlight = new HashSet<>();
-
   WorkspaceSession(
       final LatheLanguageClient client,
       final ProgressReporter progressReporter,
@@ -119,6 +106,7 @@ final class WorkspaceSession {
     this.runs = new RunCoordinator(client, eventLoop, state, reactorIndex);
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs);
+    this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
     this.search = new ReferenceSearch(eventLoop, state, reactorIndex, router, docs);
     this.writePass =
         new WritePass(
@@ -144,6 +132,10 @@ final class WorkspaceSession {
   // the engine): each one checks the loop itself.
   DocumentFeatures features() {
     return features;
+  }
+
+  FormatService formats() {
+    return formats;
   }
 
   RunCoordinator runs() {
@@ -212,15 +204,8 @@ final class WorkspaceSession {
       memoryPressure.close();
     }
 
-    formatThread.shutdownNow();
-    List.copyOf(formatsInFlight).forEach(format -> format.cancel(false));
+    formats.close();
     state.registry().close();
-  }
-
-  private static Thread newFormatThread(final Runnable task) {
-    final var thread = new Thread(task, "lathe-format");
-    thread.setDaemon(true);
-    return thread;
   }
 
   // The heap is still mostly full after a collection: the sessions of modules with no open document
@@ -305,16 +290,6 @@ final class WorkspaceSession {
     }
 
     return dest.toString();
-  }
-
-  // The registry module owning the file, as a command formatter's %MODULE% names it: "." for the
-  // root module.
-  Optional<String> moduleRelOf(final Path file) {
-    return state
-        .registry()
-        .moduleSourceFor(file)
-        .map(state.layout()::moduleRel)
-        .map(SourceLayout::displayed);
   }
 
   void setDocumentsFollowDisk(final boolean follow) {
@@ -468,125 +443,11 @@ final class WorkspaceSession {
     }
   }
 
-  CompletableFuture<List<TextEdit>> formatFuture(final String uri, final FormatEngine engine) {
-    return formatDocument(uri, (content, target) -> JavaFormatter.format(engine, content, target));
-  }
-
-  CompletableFuture<List<TextEdit>> formatRangesFuture(
-      final String uri, final List<Range> ranges, final FormatEngine engine) {
-    return formatDocument(
-        uri, (content, target) -> JavaFormatter.formatRanges(engine, content, ranges));
-  }
-
-  // For the agent, which must tell a failure from an already formatted file: a refusal that
-  // carries the formatter's reason.
-  CompletableFuture<List<TextEdit>> formatOrRefuseFuture(
-      final String uri, final FormatEngine engine) {
-    return formatted(uri, (content, target) -> JavaFormatter.format(engine, content, target))
-        .exceptionally(
-            failure -> {
-              throw FeatureAnswers.refused(
-                  "Could not format %s: %s"
-                      .formatted(
-                          LatheUri.toPath(uri).getFileName(),
-                          ExceptionUtil.rootCause(failure).getMessage()));
-            });
-  }
-
-  // Formats the open document's text, reporting the outcome once and answering no edits on a
-  // failure.
-  private CompletableFuture<List<TextEdit>> formatDocument(
-      final String uri, final DocumentFormat format) {
-    final var t = Stopwatch.start();
-    return formatted(uri, format)
-        .handle(
-            (result, failure) -> {
-              if (failure == null) {
-                // Formatting is a synchronous request (format-on-save blocks the editor), so a
-                // progress spinner would only paint after the edit; report the outcome once it is
-                // done instead. Stay quiet when nothing changed, so saving an already-formatted
-                // file does not nag.
-                if (!result.isEmpty()) {
-                  client.showMessage(
-                      new MessageParams(
-                          MessageType.Info, "Lathe: formatted in %dms".formatted(t.elapsedMs())));
-                }
-
-                return result;
-              }
-
-              final Throwable cause = ExceptionUtil.completionCause(failure);
-              if (cause instanceof CancellationException) {
-                LOG.fine(() -> "[format] %s cancelled: the server is closing".formatted(uri));
-                return List.of();
-              }
-
-              LOG.log(
-                  Level.SEVERE,
-                  cause,
-                  () -> "[format] %s failed %dms".formatted(uri, t.elapsedMs()));
-              // Format-on-save would repeat the same failure (a formatter that cannot run on this
-              // JDK, a file that does not parse) on every save; say why once, then only log.
-              if (!formatFailureReported) {
-                formatFailureReported = true;
-                client.showMessage(
-                    new MessageParams(
-                        MessageType.Warning,
-                        "Lathe: formatting failed: %s (further failures are only logged)"
-                            .formatted(ExceptionUtil.rootCause(cause).getMessage())));
-              }
-
-              return List.of();
-            });
-  }
-
-  // The open document's text and its FormatTarget are read on the loop; the format runs on the
-  // format thread, as an external command waits on its process; the result comes back on the loop,
-  // where a pending rename hears of it.
-  private CompletableFuture<List<TextEdit>> formatted(
-      final String uri, final DocumentFormat format) {
-    final var t = Stopwatch.start();
-    final OpenDocument openFile = docs.get(uri);
-    final String content = openFile != null ? openFile.content() : null;
-    final FormatTarget target = formatTarget(LatheUri.toPath(uri));
-    final CompletableFuture<List<TextEdit>> running =
-        CompletableFuture.supplyAsync(
-            () -> {
-              try {
-                return format.apply(content, target);
-              } catch (final Exception e) {
-                if (e instanceof InterruptedException) {
-                  Thread.currentThread().interrupt();
-                }
-
-                throw ExceptionUtil.asCompletion(e);
-              }
-            },
-            formatThread);
-    formatsInFlight.add(running);
-    return eventLoop
-        .rejoin(running)
-        .whenComplete((result, failure) -> formatsInFlight.remove(running))
-        .thenApply(
-            result -> {
-              LOG.info(
-                  () -> "[format] %s %dms edits=%d".formatted(uri, t.elapsedMs(), result.size()));
-              if (!result.isEmpty() && renameTransaction.isMember(uri)) {
-                renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, result));
-              }
-
-              return result;
-            });
-  }
-
-  private FormatTarget formatTarget(final Path file) {
-    return new FormatTarget(
-        file, moduleRelOf(file).orElse("."), state.manifest().buildTool().orElse(null));
-  }
-
-  @FunctionalInterface
-  private interface DocumentFormat {
-    List<TextEdit> apply(String content, FormatTarget target) throws Exception;
+  // A rename member's formatted text is what its commit compiles.
+  private void onFormatted(final String uri, final String content, final List<TextEdit> edits) {
+    if (renameTransaction.isMember(uri)) {
+      renameTransaction.onFormat(uri, SourceLocator.applyEdits(content, edits));
+    }
   }
 
   // The editor applies a rename's edit and saves its files; until the last save they are not

@@ -535,7 +535,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop.submitCompose(
-        () -> session.formatFuture(uri, engine).thenApply(edits -> edits));
+        () -> session.formats().formatFuture(uri, engine).thenApply(edits -> edits));
   }
 
   // The formatter the workspace style file pins, for a client that sends no initializationOptions.
@@ -560,7 +560,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     final String canonical = LatheUri.canonical(uri);
-    return eventLoop.submitCompose(() -> session.formatOrRefuseFuture(canonical, engine));
+    return eventLoop.submitCompose(() -> session.formats().formatOrRefuseFuture(canonical, engine));
   }
 
   @Override
@@ -620,7 +620,7 @@ public final class LatheTextDocumentService implements TextDocumentService {
     }
 
     return eventLoop.submitCompose(
-        () -> session.formatRangesFuture(uri, ranges, engine).thenApply(edits -> edits));
+        () -> session.formats().formatRangesFuture(uri, ranges, engine).thenApply(edits -> edits));
   }
 
   CompletableFuture<List<Location>> instantiationsFuture(final String uri, final Position pos) {
