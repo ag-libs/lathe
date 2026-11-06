@@ -153,6 +153,8 @@ file after your edit, with no build run:
   every tool call first runs a write pass that recompiles externally changed sources into the mirror in
   dependency order, so cross-module results — references and renames included — see them without
   a build. Deletions are cleaned up too.
+  Because every call catches up first, a server with no tool call for 5 minutes stops looking for changes
+  between calls and gives its unused memory back to the system; the next call wakes it.
 - **A build is still needed** only for build-file / dependency / module-structure changes and for
   build-bound code generation (annotation processors, non-javac generated sources) — Lathe does not fake those.
 

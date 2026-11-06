@@ -31,6 +31,24 @@ class ServerEventLoopTest {
     worker.close(() -> {});
   }
 
+  // The scan's pace reads it: a request makes the server busy, its own timers and the results its
+  // workers deliver do not.
+  @Test
+  void idleMs_requestResetsIt_timerAndDeliveryDoNot() {
+    final var onRequest = new CompletableFuture<Long>();
+    worker.execute(() -> onRequest.complete(worker.idleMs()));
+    assertThat(onRequest.join()).isLessThan(DELAY_MS);
+    assertThat(worker.submit(worker::idleMs).join()).isLessThan(DELAY_MS);
+
+    final var onTimer = new CompletableFuture<Long>();
+    worker.schedule(URI, DELAY_MS, () -> onTimer.complete(worker.idleMs()));
+    // Less a millisecond: the stopwatch reads the wall clock, which the executor's delay does not.
+    assertThat(onTimer.join()).isGreaterThanOrEqualTo(DELAY_MS - 1);
+    final var onDelivery = new CompletableFuture<Long>();
+    worker.deliver(() -> onDelivery.complete(worker.idleMs()));
+    assertThat(onDelivery.join()).isGreaterThanOrEqualTo(DELAY_MS - 1);
+  }
+
   @Test
   void schedule_singleTask_runsAfterDelay() throws InterruptedException {
     final var count = new AtomicInteger();

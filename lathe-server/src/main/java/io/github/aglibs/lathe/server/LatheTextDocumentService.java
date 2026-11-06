@@ -91,6 +91,12 @@ public final class LatheTextDocumentService implements TextDocumentService {
     eventLoop.execute(() -> session.setInteractive(interactive));
   }
 
+  // A server whose every query scans first (MCP) stops scanning after this long without one; zero
+  // never stops.
+  void setIdleScanPause(final long ms) {
+    eventLoop.execute(() -> session.setIdleScanPause(ms));
+  }
+
   void cancelProgress(final WorkDoneProgressCancelParams params) {
     progressReporter.cancel(params.getToken());
   }

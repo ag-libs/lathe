@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,9 @@ final class ServerEventLoop {
   // concurrent collection here: the loop's own plumbing, not session state.
   private final Set<Runnable> undelivered = ConcurrentHashMap.newKeySet();
   private final IntConsumer processTerminator;
+  // When the loop last ran a task handed in from outside it: a client's request or notification,
+  // or a run's or the JVM's event. Not its own timers, nor the results workers deliver.
+  private Stopwatch lastRequest = Stopwatch.start();
 
   ServerEventLoop() {
     this(status -> Runtime.getRuntime().halt(status));
@@ -51,7 +55,11 @@ final class ServerEventLoop {
 
   void execute(final Runnable task) {
     try {
-      executor.execute(() -> runLogged(task));
+      executor.execute(
+          () -> {
+            lastRequest = Stopwatch.start();
+            runLogged(task);
+          });
     } catch (final RejectedExecutionException ignored) {
       LOG.fine(() -> "[worker] execute rejected — executor shut down");
     }
@@ -63,6 +71,7 @@ final class ServerEventLoop {
       executor.execute(
           () -> {
             try {
+              lastRequest = Stopwatch.start();
               future.complete(task.call());
             } catch (final Throwable t) {
               future.completeExceptionally(t);
@@ -73,6 +82,12 @@ final class ServerEventLoop {
       future.cancel(false);
     }
     return future;
+  }
+
+  // How long the loop has gone without a request; on the loop.
+  long idleMs() {
+    checkOnLoop();
+    return lastRequest.elapsedMs();
   }
 
   // Runs a task that starts asynchronous work on the loop and completes with that work's result, on

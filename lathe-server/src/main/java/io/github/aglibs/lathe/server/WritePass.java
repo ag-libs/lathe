@@ -293,6 +293,11 @@ final class WritePass {
     }
   }
 
+  // The last scan found stale sources: the next tick writes those still settling.
+  boolean settling() {
+    return !pendingStale.isEmpty();
+  }
+
   // Test/tool seam: request a pass and complete once its writes finish. Must be invoked on the
   // event loop. eager mirrors the startup pass (no two-tick wait).
   CompletableFuture<Void> reconcileNow(final boolean eager) {
