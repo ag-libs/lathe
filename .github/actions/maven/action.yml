@@ -11,12 +11,20 @@ inputs:
 runs:
   using: composite
   steps:
+    # The cache's save at the end of the job cannot read this action's inputs (they are empty there),
+    # so everything it needs goes through the environment, which it can read.
+    - name: Name Maven ${{ inputs.version }}
+      shell: bash
+      run: |
+        echo "LATHE_MAVEN_VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+        echo "LATHE_MAVEN_HOME=$RUNNER_TEMP/apache-maven-${{ inputs.version }}" >> "$GITHUB_ENV"
+
     - name: Restore Maven ${{ inputs.version }}
       id: maven-dist
       uses: actions/cache@v6
       with:
-        path: ${{ runner.temp }}/apache-maven-${{ inputs.version }}
-        key: maven-dist-${{ runner.os }}-${{ inputs.version }}
+        path: ${{ env.LATHE_MAVEN_HOME }}
+        key: maven-dist-${{ runner.os }}-${{ env.LATHE_MAVEN_VERSION }}
 
     - name: Download Maven ${{ inputs.version }}
       if: steps.maven-dist.outputs.cache-hit != 'true'
@@ -26,10 +34,10 @@ runs:
       working-directory: ${{ runner.temp }}
       run: |
         curl -fsSL --retry 5 --retry-all-errors -o maven.tar.gz \
-          "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/${{ inputs.version }}/apache-maven-${{ inputs.version }}-bin.tar.gz"
+          "https://repo.maven.apache.org/maven2/org/apache/maven/apache-maven/$LATHE_MAVEN_VERSION/apache-maven-$LATHE_MAVEN_VERSION-bin.tar.gz"
         tar xzf maven.tar.gz
         rm maven.tar.gz
 
     - name: Put Maven ${{ inputs.version }} on the PATH
       shell: bash
-      run: echo "$RUNNER_TEMP/apache-maven-${{ inputs.version }}/bin" >> "$GITHUB_PATH"
+      run: echo "$LATHE_MAVEN_HOME/bin" >> "$GITHUB_PATH"

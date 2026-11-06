@@ -298,13 +298,14 @@ jobs:
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
 
       - name: Cache the fixtures' Gradle user home
-        # TestKit runs the fixtures with a Gradle user home of their own, ~/.gradle/lathe-testkit,
-        # which the Gradle cache above does not cover: each job regenerated the Gradle API jar
-        # (about 185 MB) and recompiled the fixtures' Kotlin scripts, slowest on Windows. Per OS,
-        # Gradle and JDK, since those generated files depend on all three.
+        # TestKit runs the fixtures with a Gradle user home of its own, lathe-testkit under Gradle's
+        # (GRADLE_USER_HOME, as setup-gradle sets it: D:\a\.gradle on Windows, not ~/.gradle), which
+        # the Gradle cache above does not cover: each job regenerated the Gradle API jar (about
+        # 185 MB) and recompiled the fixture scripts, slowest on Windows. Per OS, Gradle and JDK,
+        # since those generated files depend on all three.
         uses: actions/cache@v6
         with:
-          path: ~/.gradle/lathe-testkit/caches
+          path: ${{ env.GRADLE_USER_HOME }}/lathe-testkit/caches
           key: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-${{ hashFiles('lathe-gradle-plugin/build.gradle.kts', 'lathe-gradle-plugin/settings.gradle.kts', 'lathe-gradle-plugin/gradle.properties') }}
           restore-keys: gradle-testkit-${{ runner.os }}-${{ matrix.gradle }}-jdk${{ matrix.java }}-
 
