@@ -20,7 +20,6 @@ import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightParams;
-import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangesFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -171,13 +170,6 @@ class LspRoutesTest extends ServiceTestBase {
     assertThat(edits)
         .isNotEmpty()
         .allSatisfy(edit -> assertThat(edit.getRange().getStart().getLine()).isEqualTo(3));
-    // On-type formatting is not implemented: it answers no edits, so typing changes nothing.
-    assertThat(
-            service
-                .onTypeFormatting(
-                    new DocumentOnTypeFormattingParams(use, options, new Position(5, 3), "}"))
-                .get(TIMEOUT_S, TimeUnit.SECONDS))
-        .isEmpty();
   }
 
   // A formatter that runs a command (a build, say) waits on its process off the event loop: the

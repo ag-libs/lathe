@@ -618,22 +618,6 @@ public final class LatheTextDocumentService implements TextDocumentService {
         () -> session.formatRangesFuture(uri, ranges, engine).thenApply(edits -> edits));
   }
 
-  @Override
-  public CompletableFuture<List<? extends TextEdit>> onTypeFormatting(
-      final DocumentOnTypeFormattingParams params) {
-    final String uri = LatheUri.canonical(params.getTextDocument().getUri());
-    final var pos = params.getPosition();
-    final String ch = params.getCh();
-    final String chCode = ch == null || ch.isEmpty() ? "null" : "0x%X".formatted(ch.codePointAt(0));
-    LOG.info(
-        () ->
-            "[onTypeFormatting] %s line=%d character=%d ch=%s"
-                .formatted(uri, pos.getLine(), pos.getCharacter(), chCode));
-
-    // TODO Implement conservative indentation edits for supported on-type triggers.
-    return CompletableFuture.completedFuture(List.of());
-  }
-
   CompletableFuture<List<Location>> instantiationsFuture(final String uri, final Position pos) {
     return withProgress(
         null,

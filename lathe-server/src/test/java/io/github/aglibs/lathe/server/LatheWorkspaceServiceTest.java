@@ -338,7 +338,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     Files.writeString(pom, "<project>edited again</project>");
     service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
-    verify(lathe).sync(new LatheSyncParams(tmp.toString(), true, List.of()));
+    verify(lathe).sync(new LatheSyncParams(tmp.toString(), true));
   }
 
   // A sync that rewrites workspace.json reloads it: a module the sync added is there at once.

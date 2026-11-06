@@ -34,9 +34,6 @@ public final class LatheLayout {
   // use the per-workspace launcher instead.
   public static final String LATEST_DIR = "latest";
 
-  // Removed discovery pointer; kept only so sync can delete a leftover `current` and make an
-  // un-upgraded client fail loudly instead of silently running a stale server.
-  public static final String LEGACY_CURRENT_LINK = "current";
   // Generated scripts are in the host's dialect only: cmd batch files on Windows, POSIX sh
   // elsewhere.
   private static final String SYNC_SCRIPT_BASE = "lathe-sync";
@@ -344,10 +341,6 @@ public final class LatheLayout {
 
   public static Path latestDir() {
     return userCacheRoot().resolve(LATEST_DIR);
-  }
-
-  public static Path legacyCurrentLink() {
-    return userCacheRoot().resolve(LEGACY_CURRENT_LINK);
   }
 
   public static Path logsDir() {

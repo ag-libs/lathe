@@ -127,9 +127,6 @@ final class WorkspaceSession {
   // A rename the editor is applying and saving; its files compile together at the commit. Empty
   // when none is open.
   private RenameTransaction renameTransaction = new RenameTransaction();
-  // The -pl module selectors carried from the pending sync prompt to the sync request (empty = full
-  // reactor). Set at prompt time because the request fires later, on the user's response.
-  private List<String> pendingSyncModules = List.of();
   private final DocumentRegistry docs;
   // Set by the in-process engine: its documents are copies of the disk, not editor buffers, so a
   // change on disk replaces them.
@@ -1252,14 +1249,13 @@ final class WorkspaceSession {
         writePass.forgetPendingStale();
       }
       case BUILD_FILES_CHANGED -> {
-        promptForSync("Build files changed. Lathe will run a full refresh.", List.of());
+        promptForSync("Build files changed. Lathe will run a full refresh.");
         writePass.requestPass(false);
       }
       // A prompt already shown stays (answering it still syncs), but MCP stops asking for a sync
       // and the next change prompts again.
       case BUILD_FILES_RESTORED -> {
         buildFilesChanged = false;
-        pendingSyncModules = List.of();
         writePass.requestPass(false);
       }
       // Every tick: a pass with nothing stale only scans, about 25 ms on a 377-tree reactor.
@@ -1267,13 +1263,12 @@ final class WorkspaceSession {
     }
   }
 
-  private void promptForSync(final String message, final List<String> scope) {
+  private void promptForSync(final String message) {
     if (buildFilesChanged) {
       LOG.fine(() -> "[sync] prompt suppressed — already pending");
       return;
     }
 
-    pendingSyncModules = scope;
     buildFilesChanged = true;
     if (!interactive) {
       LOG.info(() -> "[sync] due, no prompt: nobody to answer it");
@@ -1306,10 +1301,8 @@ final class WorkspaceSession {
   }
 
   private void requestSync(final boolean captureTests) {
-    final Object scope = pendingSyncModules.isEmpty() ? "full" : pendingSyncModules;
-    LOG.info(() -> "[sync] requested scope=%s capture=%b".formatted(scope, captureTests));
-    ((LatheLanguageClient) client)
-        .sync(new LatheSyncParams(state.root().toString(), captureTests, pendingSyncModules));
+    LOG.info(() -> "[sync] requested capture=%b".formatted(captureTests));
+    ((LatheLanguageClient) client).sync(new LatheSyncParams(state.root().toString(), captureTests));
   }
 
   private void reload() {
