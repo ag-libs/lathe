@@ -147,6 +147,20 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     return allWorkers().anyMatch(worker -> worker.idleFor(idleMs));
   }
 
+  // Test seam, on the event loop: completes there once no worker has a request queued or a result
+  // undelivered, again until the results delivered meanwhile start no more requests.
+  public CompletableFuture<Void> drained() {
+    final long before = submitted();
+    return CompletableFuture.allOf(
+            allWorkers().map(CompilationWorker::drained).toArray(CompletableFuture[]::new))
+        .thenCompose(
+            done -> submitted() == before ? CompletableFuture.completedFuture(null) : drained());
+  }
+
+  private long submitted() {
+    return allWorkers().mapToLong(CompilationWorker::submitted).sum();
+  }
+
   private Stream<CompilationWorker> allWorkers() {
     return Stream.concat(workers.values().stream(), Stream.of(externalWorker));
   }
