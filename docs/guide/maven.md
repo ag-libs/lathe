@@ -194,6 +194,17 @@ A cache hit skips compilation, so Lathe would not see the real build and its cap
   command line.
   If your build always needs a flag (say, to skip a check that does not run on your JDK), put it in
   `.mvn/maven.config`, which Maven reads on every run, or in a profile activated by the JDK version.
+- **A module that shades its main jar.** When `maven-shade-plugin` replaces a module's jar with a
+  shaded one (no `shadedArtifactAttached`, no `outputFile`), the modules that depend on it compile
+  against the classes it relocated, which only that jar holds.
+  Lathe keeps the shaded jar on their classpath, so the editor sees the relocated classes after a
+  `package` build; the module's own classes then reach its dependents at its next `package`.
+  Only `package` makes that jar, so `process-test-classes` cannot compile the dependents, and the build
+  warns when it sees such a module: set the phase the sync builds to with `lathe.sync.phase`, in
+  `.mvn/maven.config` (`-Dlathe.sync.phase=package`) or as a root POM property
+  (`<lathe.sync.phase>package</lathe.sync.phase>`).
+  The sync then skips the tests on its way there, and `--tests` captures them without running them.
+  It accepts any phase from `process-test-classes` to `install`, never `deploy`.
 - `lathe:sync` also writes `lathe-launcher.sh` and `lathe-mcp-launcher.sh` (`.cmd` on Windows) here, with the argfiles
   they read (`lathe-server.args`, `lathe-mcp.args`) — copies of the launchers in the machine cache's
   `servers/<version>/` for the server version this project pins. These are what every

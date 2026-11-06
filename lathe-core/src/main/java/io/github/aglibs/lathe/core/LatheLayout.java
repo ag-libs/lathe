@@ -194,6 +194,28 @@ public final class LatheLayout {
     static final String MVN = "mvn";
     public static final String SYNC_PHASE = "process-test-classes";
     public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
+    // The phases a project may have its sync build to (LatheFlags.SYNC_PHASE), in lifecycle order:
+    // from SYNC_PHASE, which .lathe/ needs, to install; never deploy, which would publish.
+    public static final List<String> SYNC_PHASES =
+        List.of(
+            SYNC_PHASE,
+            "test",
+            "prepare-package",
+            "package",
+            "pre-integration-test",
+            "integration-test",
+            "post-integration-test",
+            "verify",
+            "install");
+    public static final String TEST_PHASE = "test";
+    public static final String PACKAGE_PHASE = "package";
+    public static final String SKIP_TESTS_ARG = "-DskipTests";
+    // maven-shade-plugin's shade goal replaces the module's main jar with the shaded one unless it
+    // attaches the shaded jar under a classifier or writes it to its own outputFile.
+    public static final String SHADE_PLUGIN_KEY = "org.apache.maven.plugins:maven-shade-plugin";
+    public static final String SHADE_GOAL = "shade";
+    public static final String SHADE_ATTACHED_PARAM = "shadedArtifactAttached";
+    public static final String SHADE_OUTPUT_FILE_PARAM = "outputFile";
     // A test run that captures the tests without running them.
     public static final String CAPTURE_ONLY_ARG = "-D%s=true".formatted(LatheFlags.CAPTURE_ONLY);
     // A project's first build: clean, so every module compiles through Lathe, and a capture-only

@@ -23,9 +23,11 @@ import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.execution.ProjectDependencyGraph;
 import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.languages.java.jpms.LocationManager;
@@ -50,6 +52,10 @@ final class SyncCoordinator {
     final List<MavenProject> projects =
         withinReactorRoot(workspaceRoot, ReactorProjects.sorted(session, workspaceRoot));
     logModules(workspaceRoot, projects);
+    final String syncPhase =
+        MavenSyncScript.phase(
+            session.getUserProperties(), session.getTopLevelProject().getProperties());
+    warnShadedJarsUnbuilt(workspaceRoot, projects, syncPhase);
     final List<RemoteRepository> remoteRepos = ReactorProjects.remoteRepositories(projects);
     final Map<String, Artifact> externalArtifacts = ReactorProjects.externalArtifacts(projects);
     final var resolver = new DependencySourceResolver(repositorySystem, session, log);
@@ -86,7 +92,7 @@ final class SyncCoordinator {
               .stream()
               .map(Path::toString)
               .toList();
-      final SyncScript syncScript = MavenSyncScript.of(session.getSystemProperties());
+      final SyncScript syncScript = MavenSyncScript.of(session.getSystemProperties(), syncPhase);
       WorkspaceManifestWriter.write(
           workspaceRoot,
           enrichedSources,
@@ -144,6 +150,38 @@ final class SyncCoordinator {
     log.warn(
         "[sync] %s at %s is outside the reactor root — Lathe cannot mirror it, skipping"
             .formatted(ReactorProjects.gav(project), project.getBasedir()));
+  }
+
+  // A module compiling against a sibling's shaded jar fails in a sync that stops before package,
+  // the phase that makes the jar: name the shading modules and the setting that fixes it.
+  private void warnShadedJarsUnbuilt(
+      final Path workspaceRoot, final List<MavenProject> projects, final String syncPhase) {
+    final List<String> phases = LatheLayout.Maven.SYNC_PHASES;
+    if (phases.indexOf(syncPhase) >= phases.indexOf(LatheLayout.Maven.PACKAGE_PHASE)) {
+      return;
+    }
+
+    final ProjectDependencyGraph graph = session.getProjectDependencyGraph();
+    final ReactorProjects.ShadedUpstreams shaded =
+        ReactorProjects.shadedUpstreams(
+            workspaceRoot, projects, project -> graph.getUpstreamProjects(project, true));
+    if (shaded.shadingModules().isEmpty()) {
+      return;
+    }
+
+    log.warn(
+        """
+        [sync] %s shade their main jar, which %d module(s) compile against and only %s builds: \
+        set -D%s=%s (in .mvn/maven.config, or as a root POM property), or Lathe's sync stops at %s \
+        and cannot compile them\
+        """
+            .formatted(
+                String.join(", ", new TreeSet<>(shaded.shadingModules())),
+                shaded.dependents(),
+                LatheLayout.Maven.PACKAGE_PHASE,
+                LatheFlags.SYNC_PHASE,
+                LatheLayout.Maven.PACKAGE_PHASE,
+                syncPhase));
   }
 
   private boolean isPartialReactor() {

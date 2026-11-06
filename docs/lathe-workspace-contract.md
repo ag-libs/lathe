@@ -147,7 +147,7 @@ Without it the server still compiles and navigates the workspace's own code, but
 
 - **Maven** writes it from `lathe:sync` on a full reactor only (a `-pl` build skips it), touching the mtime when the content is unchanged; each POM in `buildFiles` carries the fingerprint of the content Maven read.
   Its `outputs` are each non-`pom` module's output directories plus `<finalName>.jar` and `<finalName>-tests.jar`;
-  a custom test-jar classifier or another classified jar is not listed.
+  a custom test-jar classifier or another classified jar is not listed, nor a `<finalName>.jar` that `maven-shade-plugin` replaces with a shaded one, which holds classes the mirror lacks.
 - **OpenJDK** writes it with no `jdk` and empty dependency lists; its `buildFiles` are each synced module's and build tool's `_the.<batch>_batch` marker, which `make` touches after compiling that batch, so they carry no fingerprint: the touch is the signal.
 
 ### `<moduleRel>/lsp-stamps-<tree>.json`

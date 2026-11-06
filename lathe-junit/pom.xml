@@ -13,10 +13,6 @@
   <name>lathe-junit</name>
   <description>Lathe test-capture listener that records the Surefire fork launch.</description>
 
-  <properties>
-    <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
-  </properties>
-
   <dependencies>
     <dependency>
       <groupId>io.github.ag-libs</groupId>

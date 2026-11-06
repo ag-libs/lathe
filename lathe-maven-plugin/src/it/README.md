@@ -11,6 +11,7 @@ There are no Groovy or BeanShell verify scripts: a fixture proves what it tests 
 | `lombok` | A Lombok project as its users build it, checked against the real LSP and MCP servers (`LombokTest`); JDK 17 to 27 only. |
 | `multi-module` | The main fixture, a reactor of six modules (below), built twice: a full `test`, then a scoped sync with one `-pl` per module. |
 | `old-compiler` | A compiler plugin older than Lathe supports: the requirements check fails the build. |
+| `shaded` | A module shading Gson into its main jar and a module compiling against the relocated classes, with `lathe.sync.phase=package` in `.mvn/maven.config`: the editor sees the relocated classes (`ShadedTest`) and the sync script builds to `package`. |
 
 `multi-module` holds `core` and `app` (a plain dependency chain), `health` (a custom output directory), `jpms` (a named module), `shapes` (test shapes the editor replays, some failing on purpose) and `verify`.
 `verify` runs the checks: `MultiModuleTest` reads the sync output, `LspSmokeTest` drives the real language server and `McpSmokeTest` the MCP server.

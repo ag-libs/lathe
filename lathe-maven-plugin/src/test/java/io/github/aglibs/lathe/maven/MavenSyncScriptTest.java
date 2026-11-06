@@ -1,11 +1,15 @@
 package io.github.aglibs.lathe.maven;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
+import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +38,47 @@ class MavenSyncScriptTest {
         .isEqualTo(absolute("/opt/mvnd/bin/mvnd" + SUFFIX));
   }
 
+  // A -D on the build (maven.config included) wins over the root POM's property, which wins over
+  // the default; a phase that cannot refresh .lathe/, or that would publish, stops the build.
+  @Test
+  void phase_setOnTheBuildOrInThePom_followsItAndRejectsPhasesOutsideTheRange() {
+    final var pom = new Properties();
+    pom.setProperty(LatheFlags.SYNC_PHASE, "package");
+    final var build = new Properties();
+    build.setProperty(LatheFlags.SYNC_PHASE, "install");
+
+    assertThat(MavenSyncScript.phase(new Properties(), new Properties()))
+        .isEqualTo(LatheLayout.Maven.SYNC_PHASE);
+    assertThat(MavenSyncScript.phase(new Properties(), pom)).isEqualTo("package");
+    assertThat(MavenSyncScript.phase(build, pom)).isEqualTo("install");
+    for (final String phase : List.of("compile", "deploy", "pakage")) {
+      final var invalid = new Properties();
+      invalid.setProperty(LatheFlags.SYNC_PHASE, phase);
+      assertThatThrownBy(() -> MavenSyncScript.phase(invalid, new Properties()))
+          .isInstanceOf(SyncException.class)
+          .hasMessageContaining("lathe.sync.phase=%s".formatted(phase));
+    }
+  }
+
+  // From the test phase on, a plain sync skips the tests; past it, a --tests sync captures them on
+  // the way to the project's phase.
+  @Test
+  void script_laterPhase_skipsTestsAndCapturesOnTheWayToIt() {
+    final var properties = new Properties();
+    properties.setProperty("maven.home", absolute("/opt/maven").toString());
+    properties.setProperty("java.home", absolute("/opt/jdk").toString());
+
+    final SyncScript packaged = MavenSyncScript.of(properties, "package");
+    final SyncScript tested = MavenSyncScript.of(properties, "test");
+
+    assertThat(packaged.goals()).containsExactly("package", "-DskipTests");
+    assertThat(packaged.testsGoals())
+        .containsExactly("package", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");
+    assertThat(tested.goals()).containsExactly("test", "-DskipTests");
+    assertThat(tested.testsGoals())
+        .containsExactly("test", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");
+  }
+
   private static SyncScript script(final String mavenHome, final String mvndHome) {
     final var properties = new Properties();
     properties.setProperty("maven.home", absolute(mavenHome).toString());
@@ -42,7 +87,7 @@ class MavenSyncScriptTest {
       properties.setProperty("mvnd.home", absolute(mvndHome).toString());
     }
 
-    return MavenSyncScript.of(properties);
+    return MavenSyncScript.of(properties, LatheLayout.Maven.SYNC_PHASE);
   }
 
   // On Windows a path from '/' has no drive, so it is not absolute until it gains the current one.
