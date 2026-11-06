@@ -44,6 +44,10 @@ abstract class ServiceTestBase {
   protected static final long DEBOUNCE_MS = 50;
   // How long a test waits for the server's answer: a deadline for a busy machine, not a delay.
   protected static final long TIMEOUT_S = 5;
+  protected static final long TIMEOUT_MS = TimeUnit.SECONDS.toMillis(TIMEOUT_S);
+  // How long a test watches for a call that must not come, such as a duplicate publish: a fixed
+  // wait, unlike TIMEOUT_MS, so as short as still catches a late one on a busy machine.
+  protected static final long QUIET_WINDOW_MS = 1_500;
 
   protected LanguageClient client;
   protected LatheTextDocumentService service;
