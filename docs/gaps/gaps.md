@@ -1472,6 +1472,41 @@ None yet.
 
 ---
 
+## WS-31 — A module that depends on a shaded reactor module shows false errors
+
+**Status: documented**
+
+**Value: high — Size: M**
+
+**Affects: diagnostics and every feature that attributes the dependent module's files, in the editor and MCP.**
+
+Found by the jdtls comparison's setup check (2026-11-06) on OpenMetadata at `9a2ee8b124`, Lathe 0.3.0.
+
+### Observed behaviour
+
+`openmetadata-shaded-deps` relocates the Elasticsearch client into `es.co.elastic.*` with `maven-shade-plugin`, which runs in `package`; `openmetadata-service` compiles against those relocated classes.
+Maven compiles `ElasticSearchClient.java` cleanly, but Lathe reports 98 errors on it, starting with `package es.co.elastic.clients.elasticsearch does not exist`.
+The build records the right classpath: `openmetadata-service` compiles against the shaded `elasticsearch-deps-2.0.0-SNAPSHOT.jar` (7,518 entries under `es/co/elastic`).
+The Maven front-end (`ReactorProjects.outputs`) records every module's `<finalName>.jar` as standing for its compiled classes, so `ReactorRewrite.toLathe` swaps that jar for the module's `.lathe/` mirror, which holds only the module's own classes (one file here).
+For a normal jar the swap is right, and keeps a dependent on the fresh mirror; `maven-shade-plugin` replaces the main jar with the shaded one (keeping the original as `original-<finalName>.jar`), so the swap drops every relocated class.
+
+### Probe
+
+Build OpenMetadata with Lathe (`mvn package -DskipTests -pl '!openmetadata-ui,!openmetadata-ui-core-components,!openmetadata-dist,!openmetadata-clients'`), open `openmetadata-service/src/main/java/org/openmetadata/service/search/elasticsearch/ElasticSearchClient.java`, and count the errors.
+
+### Fix direction
+
+Design first.
+One candidate: when a module's main jar is shaded, rewrite it to the mirror followed by the jar, not the mirror alone, so the module's own classes come fresh from the mirror and the relocated ones from the jar (stale only until the next `package`).
+Telling a shaded jar apart: the shade plugin in the module's build, or the `original-<finalName>.jar` it leaves.
+Check how Maven resolves the reactor dependency when only `process-test-classes` ran (no jar yet), and what the Gradle front-end records for the shadow plugin's jar.
+
+### Regression targets
+
+None yet.
+
+---
+
 # Test Execution Gaps (TE)
 
 Capture/replay gaps involving the Maven test fork, the recorded launch template, and the standalone
