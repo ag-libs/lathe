@@ -25,7 +25,8 @@ final class ReferenceCandidatePlanner {
   }
 
   // The files to search first, and those to search only when one of them exposes the target's
-  // family (exposureFamily) to files that never name it; deferred is empty but for a static method.
+  // family (exposureFamily) to files that never name it; deferred is empty but for a field, an enum
+  // constant or a static method.
   record CandidatePlan(Set<String> primary, Set<String> deferred, Set<String> exposureFamily) {
 
     CandidatePlan {
@@ -59,14 +60,21 @@ final class ReferenceCandidatePlanner {
       return onePhase(planTypeCandidates(config, target, simpleCandidates));
     }
 
-    // Constructors and enum constants are not inherited, so they resolve only through their
-    // declaring type's simple name (plus any static-import spelling).
-    if (kind == ElementKind.CONSTRUCTOR || kind == ElementKind.ENUM_CONSTANT) {
+    // A constructor is called only by naming its type: `new Owner()`, `Owner::new`, or a
+    // subclass's super(...), whose file names the type it extends.
+    if (kind == ElementKind.CONSTRUCTOR) {
       return onePhase(narrowToFamily(Set.of(target.qualifiedName()), target, simpleCandidates));
     }
 
+    // A field is also read through an expression whose type the file never names
+    // (holder.owner().name), and an enum constant labels a switch over such an expression
+    // (case ALPHA): both are searched as a static method is, in two phases.
     if (kind == ElementKind.FIELD) {
-      return onePhase(narrowToFamily(overrideFamily(target), target, simpleCandidates));
+      return planTwoPhase(overrideFamily(target), target, simpleCandidates);
+    }
+
+    if (kind == ElementKind.ENUM_CONSTANT) {
+      return planTwoPhase(Set.of(target.qualifiedName()), target, simpleCandidates);
     }
 
     if (kind == ElementKind.METHOD && target.staticMember()) {
@@ -99,13 +107,21 @@ final class ReferenceCandidatePlanner {
       return onePhase(narrowToFamily(Set.of(owner), target, simpleCandidates));
     }
 
-    final Set<String> family =
+    return planTwoPhase(
         Stream.concat(Stream.of(owner), subtypeBinaryNames(owner))
-            .collect(Collectors.toUnmodifiableSet());
+            .collect(Collectors.toUnmodifiableSet()),
+        target,
+        simpleCandidates);
+  }
+
+  // Every file naming the family (or importing the member statically) first, checked for a
+  // declaration exposing the family; the files spelling only the member's name once one does.
+  private CandidatePlan planTwoPhase(
+      final Set<String> family, final ReferenceTarget target, final Set<String> simpleCandidates) {
     final Set<String> primary =
         Stream.concat(familyFiles(family).stream(), staticImportSites(target))
             .collect(Collectors.toUnmodifiableSet());
-    // A family named more widely than the method: the files spelling the method are fewer.
+    // A family named more widely than the member: the files spelling its name are fewer.
     if (primary.size() >= simpleCandidates.size()) {
       return onePhase(simpleCandidates);
     }

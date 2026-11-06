@@ -461,6 +461,91 @@ class ReferenceCandidatePlannerTest {
     assertThat(plan.exposureFamily()).isEmpty();
   }
 
+  // A field is also read through an expression whose type the file never names: the files naming
+  // its family come first, and those spelling only its name wait for an exposing declaration.
+  @Test
+  void planCandidates_field_searchesTheFamilyFirstAndDefersTheRest() throws IOException {
+    final Path owner =
+        write(
+            "Owner.java",
+            """
+            package com.example;
+            public class Owner { public String name; }
+            """);
+    final Path holder =
+        write(
+            "Holder.java",
+            """
+            package com.example;
+            class Holder { Owner owner() { return new Owner(); } }
+            """);
+    final Path reader =
+        write(
+            "Reader.java",
+            """
+            package com.example;
+            class Reader { String read(Holder h) { return h.owner().name; } }
+            """);
+    final Path other =
+        write(
+            "Other.java",
+            """
+            package com.example;
+            class Other { String name; }
+            """);
+
+    final var plan =
+        candidatePlan(reactorIndex(entry("com.example.Owner")), field("com.example.Owner", "name"));
+
+    assertThat(plan.primary()).containsExactlyInAnyOrder(uri(owner), uri(holder));
+    assertThat(plan.deferred()).containsExactlyInAnyOrder(uri(reader), uri(other));
+    assertThat(plan.exposureFamily()).containsExactly("com.example.Owner");
+  }
+
+  // An enum constant labels a switch over an expression whose type the file never names.
+  @Test
+  void planCandidates_enumConstant_searchesTheEnumsFilesFirstAndDefersTheRest() throws IOException {
+    final Path kind =
+        write(
+            "Kind.java",
+            """
+            package com.example;
+            public enum Kind { ALPHA, BETA }
+            """);
+    final Path holder =
+        write(
+            "Holder.java",
+            """
+            package com.example;
+            class Holder { Kind kind() { return Kind.BETA; } }
+            """);
+    final Path switcher =
+        write(
+            "Switcher.java",
+            """
+            package com.example;
+            class Switcher {
+              int f(Holder h) { switch (h.kind()) { case ALPHA: return 1; default: return 0; } }
+            }
+            """);
+    final Path other =
+        write(
+            "Other.java",
+            """
+            package com.example;
+            class Other { static final int ALPHA = 1; }
+            """);
+
+    final var plan =
+        candidatePlan(
+            reactorIndex(entry("com.example.Kind")),
+            target(ElementKind.ENUM_CONSTANT, "com.example.Kind", "ALPHA", null, List.of()));
+
+    assertThat(plan.primary()).containsExactlyInAnyOrder(uri(kind), uri(holder));
+    assertThat(plan.deferred()).containsExactlyInAnyOrder(uri(switcher), uri(other));
+    assertThat(plan.exposureFamily()).containsExactly("com.example.Kind");
+  }
+
   @Test
   void planCandidates_instanceMethod_defersNothing() throws IOException {
     final Path holder =

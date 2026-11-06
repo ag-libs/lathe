@@ -145,6 +145,38 @@ lambdas attributed; a failure there still leaves the named subtypes.
 
 ---
 
+## FR-030 — A field or enum constant reached through an expression that never names its type is missed — done
+
+**Status: done.**
+
+**Value: high — Size: S**
+
+**Affects: references, rename and incoming calls for fields and enum constants.**
+
+Found while designing the static-method narrowing of FR-029 (2026-11-05); reproduced 2026-11-06.
+
+### Observed behaviour
+
+`ReferenceCandidatePlanner` narrowed a field's candidates to the files spelling its name and a family type (the declaring type or a subtype), and an enum constant's to the files spelling its enum.
+A file reaching either through an expression whose type it never spells was not searched:
+with `Holder.owner()` returning an `Owner`, references to `Owner.name` missed `h.owner().name`, and renaming `name` left that read behind, so the build broke;
+with `Holder.kind()` returning a `Kind`, references to `Kind.ALPHA` missed `switch (h.kind()) { case ALPHA: ... }`, which names the constant and never the enum.
+
+### Resolution
+
+Fields and enum constants are now searched in FR-029's two phases, as a static method is:
+first every file naming the family, checked for a declaration exposing a family value to files that never name it (`FamilyExposure`), then, once one does, the files spelling only the member's name.
+A type that some non-family declaration hands out (a getter returning `Owner`) is the common case, so these searches usually take the second phase too: they cost what an instance method's search does, and answer exactly.
+Constructors keep the one-phase narrowing: `new Owner()`, `Owner::new` and a subclass's `super(...)` all name the type.
+
+### Regression targets
+
+`FieldAndEnumConstantSearchTest` (references and rename for a field read and an enum `case` through an unnamed type),
+`ReferenceCandidatePlannerTest.planCandidates_field_searchesTheFamilyFirstAndDefersTheRest`,
+`ReferenceCandidatePlannerTest.planCandidates_enumConstant_searchesTheEnumsFilesFirstAndDefersTheRest`.
+
+---
+
 ## FR-022 — A rename to a name a use already sees silently rebinds the use — done
 
 **Status: done.**
