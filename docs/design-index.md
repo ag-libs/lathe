@@ -39,6 +39,9 @@ Reliability, the triaged gaps, and rename — see the [roadmap](roadmap.md) for 
 - [Server Restructuring](planned/lathe-server-restructuring.md) — **approved direction (2026-11-04).**
   Split `WorkspaceSession` into event-loop components, make the threading contract executable, let MCP reach the core
   without the LSP adapter, then a `lathe-analysis` module. Same model; existing tests stay green.
+- [Code Review Findings (November 2026)](planned/lathe-code-review-nov-2026.md) — **planned (2026-11-06).**
+  Structural review after 0.3.1: debug launches off the loop, the remaining `WorkspaceSession` /
+  `SourceAnalysisSession` splits, front-end and build-side duplication, doc drift.
 - [Interactive Request Priority & Reaction Coalescing](planned/lathe-interactive-request-priority.md) —
   server-wide: stop multi-second background recompiles (the in-process-sync reaction) from blocking
   millisecond interactive requests on the single serial worker; prioritize/cancel, coalesce the reaction,
