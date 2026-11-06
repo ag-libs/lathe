@@ -84,9 +84,16 @@ final class ReactorTypeIndex {
   }
 
   // The shards as they stand, for a request that enriches the index off the loop.
-  List<List<TypeIndexEntry>> shards() {
+  // The index with the given types of open files added, for a code action that must see types no
+  // build has written yet.
+  CompletableFuture<WorkspaceTypeIndex> withOpenEntries(final List<TypeIndexEntry> openEntries) {
     eventLoop.checkOnLoop();
-    return List.copyOf(reactorShards.values());
+    if (openEntries.isEmpty()) {
+      return CompletableFuture.completedFuture(typeIndex);
+    }
+
+    return buildOffLoop(
+        typeIndex, Stream.concat(reactorShards.values().stream(), Stream.of(openEntries)).toList());
   }
 
   // The tree whose shard declares the type, if any.
@@ -168,8 +175,7 @@ final class ReactorTypeIndex {
     final long build = ++reactorIndexBuilds;
     final var rebuilt = new CompletableFuture<Void>();
     reactorIndexRebuilt = rebuilt;
-    eventLoop
-        .rejoin(CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards)))
+    buildOffLoop(base, shards)
         .whenComplete(
             (index, error) -> {
               if (error != null) {
@@ -180,6 +186,13 @@ final class ReactorTypeIndex {
 
               rebuilt.complete(null);
             });
+  }
+
+  // Built off the loop, as a build takes 100-200ms on a large reactor, and back on the loop with
+  // the result.
+  private CompletableFuture<WorkspaceTypeIndex> buildOffLoop(
+      final WorkspaceTypeIndex base, final List<List<TypeIndexEntry>> shards) {
+    return eventLoop.rejoin(CompletableFuture.supplyAsync(() -> base.withReactorEntries(shards)));
   }
 
   // Index types from dirty/open sources not yet built, so they show in symbols before their class

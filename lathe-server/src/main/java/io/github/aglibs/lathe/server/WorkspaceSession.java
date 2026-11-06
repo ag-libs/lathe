@@ -23,7 +23,6 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
@@ -743,8 +742,6 @@ final class WorkspaceSession {
             .filter(r -> r.payload().kind().offersTypeImport())
             .map(r -> r.payload().name())
             .collect(Collectors.toUnmodifiableSet());
-    final var baseIndex = reactorIndex.current();
-    final List<List<TypeIndexEntry>> reactorEntries = reactorIndex.shards();
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
     return router.routeFeature(
         "codeAction",
@@ -753,7 +750,7 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker
                 .cachedTypeEntries(neededTypeNames)
-                .thenCompose(openEntries -> enrichedIndex(baseIndex, reactorEntries, openEntries))
+                .thenCompose(reactorIndex::withOpenEntries)
                 .thenCompose(
                     enriched ->
                         moduleWorker.codeAction(
@@ -793,22 +790,6 @@ final class WorkspaceSession {
         moduleWorker ->
             moduleWorker.missingImports(
                 uri, openFile.content(), openFile.version(), indexSnapshot, staticImports));
-  }
-
-  // The index with the open files' types added. Built off the loop, as a rebuild takes 100-200ms on
-  // a large reactor (as ReactorTypeIndex's), and back on the loop with the result.
-  private CompletableFuture<WorkspaceTypeIndex> enrichedIndex(
-      final WorkspaceTypeIndex base,
-      final List<List<TypeIndexEntry>> reactorEntries,
-      final List<TypeIndexEntry> openFileEntries) {
-    if (openFileEntries.isEmpty()) {
-      return CompletableFuture.completedFuture(base);
-    }
-
-    final List<List<TypeIndexEntry>> allReactor =
-        Stream.concat(reactorEntries.stream(), Stream.of(openFileEntries)).toList();
-    return eventLoop.rejoin(
-        CompletableFuture.supplyAsync(() -> base.withReactorEntries(allReactor)));
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {
