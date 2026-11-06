@@ -164,16 +164,16 @@ with `Holder.kind()` returning a `Kind`, references to `Kind.ALPHA` missed `swit
 
 ### Resolution
 
-Fields and enum constants are now searched in FR-029's two phases, as a static method is:
-first every file naming the family, checked for a declaration exposing a family value to files that never name it (`FamilyExposure`), then, once one does, the files spelling only the member's name.
-A type that some non-family declaration hands out (a getter returning `Owner`) is the common case, so these searches usually take the second phase too: they cost what an instance method's search does, and answer exactly.
-Constructors keep the one-phase narrowing: `new Owner()`, `Owner::new` and a subclass's `super(...)` all name the type.
+Fields and enum constants are now searched, as instance methods are, in every file spelling their name, in one pass.
+FR-029's two phases (the files naming the family first, the rest once a declaration exposes it) were tried first and dropped in review:
+some declaration hands out the type of most fields and enums (a getter returning `Owner`), so the second phase nearly always ran, and the two phases then compiled more files than one pass, serially.
+Constructors keep their narrowing: `new Owner()`, `Owner::new` and a subclass's `super(...)` all name the type.
+The same review restricted the static-method two phases to reactor types (a library's type can be handed out by a declaration in a jar, which no phase checks) and decided them on the module's own files.
 
 ### Regression targets
 
-`FieldAndEnumConstantSearchTest` (references and rename for a field read and an enum `case` through an unnamed type),
-`ReferenceCandidatePlannerTest.planCandidates_field_searchesTheFamilyFirstAndDefersTheRest`,
-`ReferenceCandidatePlannerTest.planCandidates_enumConstant_searchesTheEnumsFilesFirstAndDefersTheRest`.
+`FieldAndEnumConstantSearchTest` (references and rename for a field read and an enum `case` through an unnamed type, and a same-named member of another type left alone),
+`ReferenceCandidatePlannerTest.planCandidates_fieldOrEnumConstant_searchesEveryFileSpellingItsNameInOnePhase`.
 
 ---
 

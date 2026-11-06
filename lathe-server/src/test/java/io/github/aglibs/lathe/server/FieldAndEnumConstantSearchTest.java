@@ -13,8 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 // A field read through an expression whose type the reading file never names, and an enum constant
-// labelling a switch over one: Holder exposes the type, so the files spelling only the member's
-// name are searched too.
+// labelling a switch over one, are found and renamed; a same-named member of another type is not.
 class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
 
   private static final String OWNER =
@@ -26,74 +25,91 @@ class FieldAndEnumConstantSearchTest extends LatheEngineTestBase {
       }
       """;
 
+  private static final String KIND =
+      """
+      package com.example;
+
+      public enum Kind { ALPHA, BETA }
+      """;
+
   @Test
-  void references_fieldReadThroughUnnamedType_findsTheRead() throws Exception {
-    final var sources = new LinkedHashMap<String, String>();
-    sources.put("com/example/Owner.java", OWNER);
-    sources.put(
-        "com/example/Holder.java",
-        "package com.example;\npublic class Holder { public Owner owner() { return new Owner(); } }\n");
-    sources.put(
-        "com/example/Reader.java",
-        "package com.example;\nclass Reader { String read(Holder h) { return h.owner().name; } }\n");
+  void referencesAndRename_fieldReadThroughUnnamedType_reachTheReadButNotOtherFields()
+      throws Exception {
     final List<Path> files =
-        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    engine = new LatheEngine(tmp);
+        writeModule(
+            "Owner.java",
+            OWNER,
+            "Holder.java",
+            "public class Holder { public Owner owner() { return new Owner(); } }",
+            "Reader.java",
+            "class Reader { String read(Holder h) { return h.owner().name; } }",
+            "Other.java",
+            "class Other { String name; String get() { return name; } }");
+    final Path owner = files.get(0);
+    final Path reader = files.get(2);
+    final Path other = files.get(3);
 
     final var pos = offsetToPosition(OWNER, OWNER.indexOf("name"));
     final LatheReferences references =
-        engine.references(files.get(0), pos.getLine(), pos.getCharacter(), 50);
+        engine.references(owner, pos.getLine(), pos.getCharacter(), 50);
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)
-        .anySatisfy(uri -> assertThat(uri).endsWith("Reader.java"));
-  }
-
-  @Test
-  void rename_fieldReadThroughUnnamedType_renamesTheRead() throws Exception {
-    final var sources = new LinkedHashMap<String, String>();
-    sources.put("com/example/Owner.java", OWNER);
-    sources.put(
-        "com/example/Holder.java",
-        "package com.example;\npublic class Holder { public Owner owner() { return new Owner(); } }\n");
-    sources.put(
-        "com/example/Reader.java",
-        "package com.example;\nclass Reader { String read(Holder h) { return h.owner().name; } }\n");
-    final List<Path> files =
-        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    engine = new LatheEngine(tmp);
-
-    final var rename = renameAt(files.get(0), OWNER, "name", "label");
-
-    assertThat(rename.files())
+        .anySatisfy(uri -> assertThat(uri).endsWith("Reader.java"))
+        .noneSatisfy(uri -> assertThat(uri).endsWith("Other.java"));
+    assertThat(renameAt(owner, OWNER, "name", "label").files())
         .extracting(LatheFileEdit::uri)
-        .anySatisfy(uri -> assertThat(uri).endsWith("Reader.java"));
-    assertThat(Files.readString(files.get(2))).contains("h.owner().label");
+        .noneSatisfy(uri -> assertThat(uri).endsWith("Other.java"));
+    assertThat(Files.readString(reader)).contains("h.owner().label");
+    assertThat(Files.readString(other)).contains("String name;").contains("return name;");
   }
 
   @Test
-  void referencesAndRename_enumConstantInSwitchOnUnnamedType_reachTheCase() throws Exception {
-    final String kind = "package com.example;\npublic enum Kind { ALPHA, BETA }\n";
-    final var sources = new LinkedHashMap<String, String>();
-    sources.put("com/example/Kind.java", kind);
-    sources.put(
-        "com/example/Holder.java",
-        "package com.example;\npublic class Holder { public Kind kind() { return Kind.ALPHA; } }\n");
-    sources.put(
-        "com/example/Switcher.java",
-        "package com.example;\nclass Switcher { int f(Holder h) { switch (h.kind()) { case ALPHA: return 1; default: return 0; } } }\n");
+  void referencesAndRename_enumConstantInSwitchOnUnnamedType_reachTheCaseButNotOtherConstants()
+      throws Exception {
     final List<Path> files =
-        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    engine = new LatheEngine(tmp);
+        writeModule(
+            "Kind.java",
+            KIND,
+            "Holder.java",
+            "public class Holder { public Kind kind() { return Kind.BETA; } }",
+            "Switcher.java",
+            "class Switcher { int f(Holder h) { switch (h.kind()) { case ALPHA: return 1;"
+                + " default: return 0; } } }",
+            "Other.java",
+            "class Other { static final int ALPHA = 1; int f() { return ALPHA; } }");
+    final Path kind = files.get(0);
+    final Path switcher = files.get(2);
+    final Path other = files.get(3);
 
-    final var pos = offsetToPosition(kind, kind.indexOf("ALPHA"));
+    final var pos = offsetToPosition(KIND, KIND.indexOf("ALPHA"));
     final LatheReferences references =
-        engine.references(files.get(0), pos.getLine(), pos.getCharacter(), 50);
+        engine.references(kind, pos.getLine(), pos.getCharacter(), 50);
 
     assertThat(references.references())
         .extracting(LatheLocation::uri)
-        .anySatisfy(uri -> assertThat(uri).endsWith("Switcher.java"));
-    renameAt(files.get(0), kind, "ALPHA", "FIRST");
-    assertThat(Files.readString(files.get(2))).contains("case FIRST:");
+        .anySatisfy(uri -> assertThat(uri).endsWith("Switcher.java"))
+        .noneSatisfy(uri -> assertThat(uri).endsWith("Other.java"));
+    renameAt(kind, KIND, "ALPHA", "FIRST");
+    assertThat(Files.readString(switcher)).contains("case FIRST:");
+    assertThat(Files.readString(other)).contains("int ALPHA = 1").contains("return ALPHA;");
+  }
+
+  // Each name and source in com.example, in the order given, compiled into the mirror; then the
+  // engine started. Returns the files in that order.
+  private List<Path> writeModule(final String... namesAndSources) throws Exception {
+    final var sources = new LinkedHashMap<String, String>();
+    for (int i = 0; i < namesAndSources.length; i += 2) {
+      sources.put("com/example/" + namesAndSources[i], withPackage(namesAndSources[i + 1]));
+    }
+
+    final List<Path> files =
+        TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
+    engine = new LatheEngine(tmp);
+    return files;
+  }
+
+  private static String withPackage(final String source) {
+    return source.startsWith("package") ? source : "package com.example;\n%s\n".formatted(source);
   }
 }

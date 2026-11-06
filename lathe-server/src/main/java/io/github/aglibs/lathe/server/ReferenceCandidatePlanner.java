@@ -9,6 +9,7 @@ import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
@@ -25,8 +26,7 @@ final class ReferenceCandidatePlanner {
   }
 
   // The files to search first, and those to search only when one of them exposes the target's
-  // family (exposureFamily) to files that never name it; deferred is empty but for a field, an enum
-  // constant or a static method.
+  // family (exposureFamily) to files that never name it; deferred is empty but for a static method.
   record CandidatePlan(Set<String> primary, Set<String> deferred, Set<String> exposureFamily) {
 
     CandidatePlan {
@@ -66,26 +66,17 @@ final class ReferenceCandidatePlanner {
       return onePhase(narrowToFamily(Set.of(target.qualifiedName()), target, simpleCandidates));
     }
 
-    // A field is also read through an expression whose type the file never names
-    // (holder.owner().name), and an enum constant labels a switch over such an expression
-    // (case ALPHA): both are searched as a static method is, in two phases.
-    if (kind == ElementKind.FIELD) {
-      return planTwoPhase(overrideFamily(target), target, simpleCandidates);
-    }
-
-    if (kind == ElementKind.ENUM_CONSTANT) {
-      return planTwoPhase(Set.of(target.qualifiedName()), target, simpleCandidates);
-    }
-
     if (kind == ElementKind.METHOD && target.staticMember()) {
-      return planStaticMethod(target, simpleCandidates);
+      return planStaticMethod(config, target, simpleCandidates);
     }
 
-    // Instance methods (and any other unhandled kind) use the broad simple-name candidate set.
-    // Override-family narrowing dropped call sites whose receiver type is never spelled in the file
-    // — a var bound from a getter chain, a chained call, or a generic type variable (FR-011).
-    // Reference search is explicit, batched, and cancellable, so compiling every file that spells
-    // the method name is an acceptable trade; the reference locator rejects the non-matches.
+    // Instance methods, fields and enum constants (and any other unhandled kind) use the broad
+    // simple-name candidate set. A use through an expression whose type the file never names
+    // escapes any narrowing by type: a var bound from a getter chain, a chained call or a generic
+    // type variable as receiver (FR-011), a field read as holder.owner().name, an enum constant as
+    // the label `case ALPHA` of a switch over one. Some declaration hands out such a type for most
+    // of them, so searching every file that spells the name is both exact and the cheaper plan; the
+    // reference locator rejects the non-matches.
     return onePhase(simpleCandidates);
   }
 
@@ -95,8 +86,11 @@ final class ReferenceCandidatePlanner {
   // first phase is every file naming the family, whether or not it spells the method: each is
   // checked for such a declaration (FamilyExposure), and the rest wait for one. An interface's
   // static method is not inherited and takes no receiver, so naming the interface is the only way.
+  // A library's type may be exposed by a declaration in a jar, which no phase checks: one phase.
   private CandidatePlan planStaticMethod(
-      final ReferenceTarget target, final Set<String> simpleCandidates) {
+      final ModuleSourceConfig config,
+      final ReferenceTarget target,
+      final Set<String> simpleCandidates) {
     final var owner = target.qualifiedName();
     final boolean interfaceMethod =
         typeIndex
@@ -107,30 +101,34 @@ final class ReferenceCandidatePlanner {
       return onePhase(narrowToFamily(Set.of(owner), target, simpleCandidates));
     }
 
-    return planTwoPhase(
-        Stream.concat(Stream.of(owner), subtypeBinaryNames(owner))
-            .collect(Collectors.toUnmodifiableSet()),
-        target,
-        simpleCandidates);
-  }
+    if (!typeIndex.isReactorType(owner)) {
+      return onePhase(simpleCandidates);
+    }
 
-  // Every file naming the family (or importing the member statically) first, checked for a
-  // declaration exposing the family; the files spelling only the member's name once one does.
-  private CandidatePlan planTwoPhase(
-      final Set<String> family, final ReferenceTarget target, final Set<String> simpleCandidates) {
+    final Set<String> family =
+        Stream.concat(Stream.of(owner), subtypeBinaryNames(owner))
+            .collect(Collectors.toUnmodifiableSet());
+    final Predicate<String> inModule = uri -> isUnder(LatheUri.toPath(uri), config.searchRoots());
     final Set<String> primary =
         Stream.concat(familyFiles(family).stream(), staticImportSites(target))
+            .filter(inModule)
             .collect(Collectors.toUnmodifiableSet());
-    // A family named more widely than the member: the files spelling its name are fewer.
-    if (primary.size() >= simpleCandidates.size()) {
+    final Set<String> moduleCandidates =
+        simpleCandidates.stream().filter(inModule).collect(Collectors.toUnmodifiableSet());
+    // A family named more widely than the method here: the files spelling it are fewer.
+    if (primary.size() >= moduleCandidates.size()) {
       return onePhase(simpleCandidates);
     }
 
     final Set<String> deferred =
-        simpleCandidates.stream()
+        moduleCandidates.stream()
             .filter(uri -> !primary.contains(uri))
             .collect(Collectors.toUnmodifiableSet());
     return new CandidatePlan(primary, deferred, family);
+  }
+
+  private static boolean isUnder(final Path path, final List<Path> roots) {
+    return roots.stream().anyMatch(path::startsWith);
   }
 
   private static CandidatePlan onePhase(final Set<String> candidates) {
@@ -182,18 +180,6 @@ final class ReferenceCandidatePlanner {
             importTokens.flatMap(token -> index.candidateUris(token).stream()),
             simpleCandidates.stream()
                 .filter(uri -> isInPackage(LatheUri.toPath(uri), packageRoots, packageRel)))
-        .collect(Collectors.toUnmodifiableSet());
-  }
-
-  /**
-   * The declaring type, the supertypes whose method the target overrides (empty for fields and
-   * non-overriding methods), and the declaring type's subtypes. Fields inherit down the hierarchy
-   * but are never overridden, so their family is simply declaring type plus subtypes.
-   */
-  private Set<String> overrideFamily(final ReferenceTarget target) {
-    return Stream.concat(
-            Stream.concat(Stream.of(target.qualifiedName()), target.overriddenDeclarers().stream()),
-            subtypeBinaryNames(target.qualifiedName()))
         .collect(Collectors.toUnmodifiableSet());
   }
 

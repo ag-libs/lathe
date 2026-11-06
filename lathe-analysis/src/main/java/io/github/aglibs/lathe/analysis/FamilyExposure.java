@@ -23,12 +23,11 @@ import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
-// A file that never names a member's family (its declaring type and subtypes) can still reach a
-// static method, a field or an enum constant through an expression of a family type (an enum
-// constant as a switch label over one), and that expression's type comes from a non-private
-// declaration naming the family. Only a non-family type's declaration counts: reaching a family
-// type's own member takes naming that type, or a family value already. So among the files naming
-// the family, these declarations are the ones a hidden reference needs: a non-family type's
+// A file that never names a static method's family (its declaring type and subtypes) can still
+// call it through an expression of a family type, and that expression's type comes from a
+// non-private declaration naming the family. Only a non-family type's declaration counts: reaching
+// a family type's own member takes naming that type, or a family value already. So among the files
+// naming the family, these declarations are the ones a hidden reference needs: a non-family type's
 // non-private member, supertype or type parameter handing out a family value, and a class extending
 // a family type the type index does not know yet, whose own subclasses the search would not see.
 // Members come from javac's model of each type, so Lombok's and a record's generated ones count.
