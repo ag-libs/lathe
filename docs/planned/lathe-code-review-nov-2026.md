@@ -23,7 +23,7 @@ duplication or states a boundary the code otherwise breaks. Every multi-class st
 
 ## Group A — cheap fixes for real defects and drift (one PR)
 
-**Done on branch `fix/code-review-group-a`**, one commit per item, except the two noted below.
+**Done on branch `fix/code-review-group-a`**, one commit per item, except the one noted below.
 
 ### A1. Debug launches run on the event loop, and copy the run path
 
@@ -66,8 +66,8 @@ A test that trips the new check is a real violation, fixed in the same commit.
   "An agent edits files… / What run_test reads").
 - Twelve comments carry gap IDs (`MemberAccessCompleter`, `CandidateFactory`, `DefinitionLocator`,
   `UnusedDeclarationScanner`, …).
-- `ZipFixture` exists in both `lathe-core` and `lathe-install` tests.
-  *Not done:* one copy needs a `lathe-core` test-jar that `lathe-install` depends on (a pom change); left for a decision.
+- `ZipFixture` exists in both `lathe-core` and `lathe-install` tests: one copy in `lathe-core`'s `core.testing`,
+  shared through a `lathe-core` test-jar (approved), as `lathe-analysis` shares its test helpers.
 
 ### A5. Docs that contradict the code
 

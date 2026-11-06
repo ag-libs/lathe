@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.testing.ZipFixture;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.FileSystemException;

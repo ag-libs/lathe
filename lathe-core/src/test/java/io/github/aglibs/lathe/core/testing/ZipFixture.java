@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.install;
+package io.github.aglibs.lathe.core.testing;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -9,19 +9,21 @@ import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+// Zips and jars for tests, shared through lathe-core's test-jar.
 public final class ZipFixture {
 
   private ZipFixture() {}
 
   public static Path create(final Path path, final String entry, final String content)
       throws IOException {
-    return create(path, Map.of(entry, content.getBytes(StandardCharsets.UTF_8)));
+    return create(path, Map.of(entry, content));
   }
 
-  public static Path create(final Path path, final Map<String, byte[]> entries) throws IOException {
+  // An entry whose name ends with "/" is written as a directory entry.
+  public static Path create(final Path path, final Map<String, String> entries) throws IOException {
     try (final ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(path))) {
-      for (final Map.Entry<String, byte[]> entry : entries.entrySet()) {
-        writeEntry(out, entry.getKey(), entry.getValue());
+      for (final Map.Entry<String, String> entry : entries.entrySet()) {
+        writeEntry(out, entry.getKey(), entry.getValue().getBytes(StandardCharsets.UTF_8));
       }
     }
     return path;

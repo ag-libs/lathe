@@ -5,15 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.testing.ZipFixture;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexFile;
 import io.github.aglibs.lathe.install.ResolvedJar;
-import io.github.aglibs.lathe.install.ZipFixture;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -99,7 +98,7 @@ class DependencyTypeIndexSyncTest extends AbstractCachePropertyTest {
     final String artifactId = "dep";
     final String version = "1.0";
     final Path jar = tmp.resolve("%s-%s.jar".formatted(artifactId, version));
-    ZipFixture.create(jar, Map.of("ignored.txt", new byte[] {1}));
+    ZipFixture.create(jar, "ignored.txt", "x");
     return new ResolvedJar(groupId, artifactId, version, "", jar);
   }
 }
