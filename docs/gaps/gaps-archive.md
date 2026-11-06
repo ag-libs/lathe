@@ -9605,6 +9605,49 @@ Regression:
 
 # Workspace lifecycle (resolved)
 
+## WS-31 — A module that depends on a shaded reactor module shows false errors — done
+
+**Status: done.**
+
+**Value: high — Size: M**
+
+**Affects: diagnostics and every feature that attributes the dependent module's files, in the editor and MCP.**
+
+Found by the jdtls comparison's setup check (2026-11-06) on OpenMetadata at `9a2ee8b124`, Lathe 0.3.0.
+
+### Observed behaviour
+
+`openmetadata-shaded-deps` relocates the Elasticsearch client into `es.co.elastic.*` with `maven-shade-plugin`, which runs in `package`; `openmetadata-service` compiles against those relocated classes.
+Maven compiles `ElasticSearchClient.java` cleanly, but Lathe reports 98 errors on it, starting with `package es.co.elastic.clients.elasticsearch does not exist`.
+The build records the right classpath: `openmetadata-service` compiles against the shaded `elasticsearch-deps-2.0.0-SNAPSHOT.jar` (7,518 entries under `es/co/elastic`).
+The Maven front-end (`ReactorProjects.outputs`) records every module's `<finalName>.jar` as standing for its compiled classes, so `ReactorRewrite.toLathe` swaps that jar for the module's `.lathe/` mirror, which holds only the module's own classes (one file here).
+For a normal jar the swap is right, and keeps a dependent on the fresh mirror; `maven-shade-plugin` replaces the main jar with the shaded one (keeping the original as `original-<finalName>.jar`), so the swap drops every relocated class.
+
+### Probe
+
+Build OpenMetadata with Lathe (`mvn package -DskipTests -pl '!openmetadata-ui,!openmetadata-ui-core-components,!openmetadata-dist,!openmetadata-clients'`), open `openmetadata-service/src/main/java/org/openmetadata/service/search/elasticsearch/ElasticSearchClient.java`, and count the errors.
+
+### Resolution
+
+The Maven front-end no longer lists a shaded main jar as standing for its module's mirror: `ReactorProjects.shadesMainJar` recognizes a `maven-shade-plugin` execution of `shade` that neither attaches the shaded jar under a classifier nor writes it to an `outputFile`, reading each execution's configuration over the plugin-level one.
+The jar then stays on a dependent's classpath as itself, for analysis and for run, test and debug launches; the module's own classes reach its dependents at its next `package`, as the jar holds them.
+
+Only `package` makes the shaded jar, so a sync that stops at `process-test-classes` cannot compile the dependents.
+A project chooses the phase its sync builds to with `lathe.sync.phase` (a `-D` on the build, `.mvn/maven.config`, or a root POM property), from `process-test-classes` to `install`; from `test` on, the sync skips the tests, and `--tests` captures them on its way to the phase.
+The build warns when it sees a module compiling against a sibling's shaded jar while the phase is before `package`, naming the setting.
+The Gradle front-end needs nothing: it lists only the `jar` task's archive, and the Shadow plugin's jar is a separate one.
+
+### Regression targets
+
+`ReactorProjectsTest.shadesMainJar_shadeExecutionReplacingTheMainJar_trueUnlessAttachedOrWrittenElsewhere`,
+`ReactorProjectsTest.outputs_moduleShadingItsMainJar_listsNoMainJar`,
+`ReactorProjectsTest.shadedUpstreams_modulesCompilingAgainstAShadedJar_namesItAndCountsThem`,
+`MavenSyncScriptTest.phase_setOnTheBuildOrInThePom_followsItAndRejectsPhasesOutsideTheRange`,
+`MavenSyncScriptTest.script_laterPhase_skipsTestsAndCapturesOnTheWayToIt`,
+and the `shaded` invoker fixture's `ShadedTest`, which fails without the fix.
+
+---
+
 ## WS-29 — On Gradle, the workspace merges facts a build did not refresh — done
 
 **Status: done.**

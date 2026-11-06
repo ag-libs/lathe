@@ -12,15 +12,21 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import org.eclipse.aether.repository.RemoteRepository;
 
@@ -203,25 +209,115 @@ public final class ReactorProjects {
         .filter(project -> !escapesReactorRoot(workspaceRoot, project));
   }
 
+  // A shaded main jar is not the module's classes: it also holds the classes it relocated, which
+  // its mirror lacks, so it stays on a dependent's classpath as itself rather than as the mirror.
   private static Stream<OutputData> outputs(final Path workspaceRoot, final MavenProject project) {
     final Build build = project.getBuild();
     final String module = FileUtil.slashed(workspaceRoot.relativize(project.getBasedir().toPath()));
     final Path buildDir = Path.of(build.getDirectory());
     final String finalName = build.getFinalName();
+    final Stream<Map.Entry<Path, String>> mainJar =
+        shadesMainJar(project)
+            ? Stream.empty()
+            : Stream.of(
+                Map.entry(
+                    buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR));
     return Stream.of(
-            Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
-            Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR),
-            Map.entry(buildDir.resolve("%s.jar".formatted(finalName)), LatheLayout.CLASSES_DIR),
-            Map.entry(
-                buildDir.resolve(
-                    "%s-%s.jar".formatted(finalName, LatheLayout.Maven.TEST_JAR_CLASSIFIER)),
-                LatheLayout.TEST_CLASSES_DIR))
+            Stream.of(
+                Map.entry(Path.of(build.getOutputDirectory()), LatheLayout.CLASSES_DIR),
+                Map.entry(Path.of(build.getTestOutputDirectory()), LatheLayout.TEST_CLASSES_DIR)),
+            mainJar,
+            Stream.of(
+                Map.entry(
+                    buildDir.resolve(
+                        "%s-%s.jar".formatted(finalName, LatheLayout.Maven.TEST_JAR_CLASSIFIER)),
+                    LatheLayout.TEST_CLASSES_DIR)))
+        .flatMap(entries -> entries)
         .map(
             output ->
                 new OutputData(
                     FileUtil.slashed(workspaceRoot.relativize(output.getKey())),
                     module,
                     output.getValue()));
+  }
+
+  // Whether maven-shade-plugin replaces the module's main jar: an enabled shade execution that
+  // neither attaches the shaded jar under a classifier, nor writes it to an outputFile, nor names
+  // it
+  // with a finalName other than the build's. Each execution's configuration is read over the
+  // plugin-level one, merged into a copy: Maven's own model stays as it is for the build.
+  static boolean shadesMainJar(final MavenProject project) {
+    final Plugin shade =
+        project.getBuild() == null
+            ? null
+            : project.getBuild().getPluginsAsMap().get(LatheLayout.Maven.SHADE_PLUGIN_KEY);
+    if (shade == null) {
+      return false;
+    }
+
+    final String finalName = project.getBuild().getFinalName();
+    return shade.getExecutions().stream()
+        .filter(execution -> execution.getGoals().contains(LatheLayout.Maven.SHADE_GOAL))
+        .filter(execution -> !LatheLayout.Maven.NO_PHASE.equals(execution.getPhase()))
+        .map(execution -> mergedConfiguration(execution, shade))
+        .anyMatch(configuration -> replacesMainJar(configuration, finalName));
+  }
+
+  private static Xpp3Dom mergedConfiguration(final PluginExecution execution, final Plugin plugin) {
+    final Xpp3Dom own = (Xpp3Dom) execution.getConfiguration();
+    return Xpp3Dom.mergeXpp3Dom(
+        own == null ? null : new Xpp3Dom(own), (Xpp3Dom) plugin.getConfiguration());
+  }
+
+  private static boolean replacesMainJar(final Xpp3Dom configuration, final String finalName) {
+    if (configuration == null) {
+      return true;
+    }
+
+    return !parameter(configuration, LatheLayout.Maven.SHADE_ATTACHED_PARAM)
+            .map(Boolean::parseBoolean)
+            .orElse(false)
+        && parameter(configuration, LatheLayout.Maven.SHADE_OUTPUT_FILE_PARAM).isEmpty()
+        && parameter(configuration, LatheLayout.Maven.SHADE_FINAL_NAME_PARAM)
+            .map(finalName::equals)
+            .orElse(true);
+  }
+
+  private static Optional<String> parameter(final Xpp3Dom configuration, final String name) {
+    return Optional.ofNullable(configuration.getChild(name))
+        .map(Xpp3Dom::getValue)
+        .map(String::trim)
+        .filter(value -> !value.isEmpty());
+  }
+
+  // The shading modules (moduleRel, sorted) the projects compile against, through any number of
+  // modules, and how many of the projects do.
+  record ShadedUpstreams(List<String> shadingModules, int dependents) {
+
+    ShadedUpstreams {
+      shadingModules = List.copyOf(shadingModules);
+    }
+  }
+
+  static ShadedUpstreams shadedUpstreams(
+      final Path workspaceRoot,
+      final List<MavenProject> projects,
+      final Function<MavenProject, List<MavenProject>> upstream) {
+    final Set<String> shading = new TreeSet<>();
+    int dependents = 0;
+    for (final MavenProject project : projects) {
+      final List<String> shaded =
+          upstream.apply(project).stream()
+              .filter(ReactorProjects::shadesMainJar)
+              .map(module -> moduleRel(workspaceRoot, module))
+              .toList();
+      if (!shaded.isEmpty()) {
+        shading.addAll(shaded);
+        dependents++;
+      }
+    }
+
+    return new ShadedUpstreams(List.copyOf(shading), dependents);
   }
 
   public static List<RemoteRepository> remoteRepositories(final List<MavenProject> projects) {

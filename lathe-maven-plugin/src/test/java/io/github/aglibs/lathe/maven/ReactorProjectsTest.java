@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.entry;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -14,7 +15,11 @@ import java.util.Set;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DefaultArtifact;
 import org.apache.maven.model.Build;
+import org.apache.maven.model.Plugin;
+import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
+import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
 import org.eclipse.aether.repository.RemoteRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -150,6 +155,92 @@ class ReactorProjectsTest {
   }
 
   @Test
+  void shadesMainJar_shadeExecutionReplacingTheMainJar_trueUnlessAttachedOrWrittenElsewhere()
+      throws Exception {
+    assertThat(ReactorProjects.shadesMainJar(shading("shade", null, null))).isTrue();
+    assertThat(ReactorProjects.shadesMainJar(shading("shade", "<relocations/>", null))).isTrue();
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                shading("shade", "<shadedArtifactAttached>true</shadedArtifactAttached>", null)))
+        .isFalse();
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                shading(
+                    "shade", "<outputFile>${project.build.directory}/all.jar</outputFile>", null)))
+        .isFalse();
+    // The plugin-level configuration applies to every execution.
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                shading("shade", null, "<shadedArtifactAttached>true</shadedArtifactAttached>")))
+        .isFalse();
+    assertThat(ReactorProjects.shadesMainJar(shading("help", null, null))).isFalse();
+    // A finalName of shade's own leaves the main jar as it is; the build's own name does not.
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                shading("shade", "<finalName>lib-1-uber</finalName>", null)))
+        .isFalse();
+    assertThat(
+            ReactorProjects.shadesMainJar(shading("shade", "<finalName>lib-1</finalName>", null)))
+        .isTrue();
+    // A child switching off its parent's shade execution.
+    final MavenProject disabled = shading("shade", null, null);
+    shadeExecution(disabled).setPhase("none");
+    assertThat(ReactorProjects.shadesMainJar(disabled)).isFalse();
+    assertThat(
+            ReactorProjects.shadesMainJar(
+                projectWithOutput("com.example", "plain", "1", tmp.resolve("plain"))))
+        .isFalse();
+  }
+
+  // Reading the configuration leaves Maven's own model as it was, for shade to run with.
+  @Test
+  void shadesMainJar_executionAndPluginConfiguration_leavesTheModelUnchanged() throws Exception {
+    final MavenProject lib =
+        shading(
+            "shade",
+            "<relocations><relocation><pattern>a</pattern></relocation></relocations>",
+            "<minimizeJar>true</minimizeJar>");
+    final String before = shadeExecution(lib).getConfiguration().toString();
+
+    ReactorProjects.shadesMainJar(lib);
+
+    assertThat(shadeExecution(lib).getConfiguration()).hasToString(before);
+  }
+
+  // A shaded main jar holds the classes it relocated, which the mirror lacks: it is not listed as
+  // standing for the mirror, so a dependent keeps it on its classpath.
+  @Test
+  void outputs_moduleShadingItsMainJar_listsNoMainJar() throws Exception {
+    final MavenProject lib = shading("shade", null, null);
+
+    assertThat(ReactorProjects.outputs(tmp, List.of(lib)))
+        .containsExactly(
+            new OutputData("lib/target/classes", "lib", LatheLayout.CLASSES_DIR),
+            new OutputData("lib/target/test-classes", "lib", LatheLayout.TEST_CLASSES_DIR),
+            new OutputData("lib/target/lib-1-tests.jar", "lib", LatheLayout.TEST_CLASSES_DIR));
+  }
+
+  @Test
+  void shadedUpstreams_modulesCompilingAgainstAShadedJar_namesItAndCountsThem() throws Exception {
+    final MavenProject lib = shading("shade", null, null);
+    final MavenProject core = projectWithOutput("com.example", "core", "1", tmp.resolve("core"));
+    final MavenProject app = projectWithOutput("com.example", "app", "1", tmp.resolve("app"));
+    final MavenProject other = projectWithOutput("com.example", "other", "1", tmp.resolve("other"));
+    final Map<MavenProject, List<MavenProject>> upstream =
+        Map.of(lib, List.of(), core, List.of(lib), app, List.of(core, lib), other, List.of());
+
+    final ReactorProjects.ShadedUpstreams shaded =
+        ReactorProjects.shadedUpstreams(tmp, List.of(lib, core, app, other), upstream::get);
+    final ReactorProjects.ShadedUpstreams none =
+        ReactorProjects.shadedUpstreams(tmp, List.of(other), project -> List.of(core));
+
+    assertThat(shaded.shadingModules()).containsExactly("lib");
+    assertThat(shaded.dependents()).isEqualTo(2);
+    assertThat(none.shadingModules()).isEmpty();
+    assertThat(none.dependents()).isZero();
+  }
+
+  @Test
   void remoteRepositories_deduplicatesByIdAndUrl() {
     final MavenProject first = project("com.example", "first", "1", tmp.resolve("first"));
     final MavenProject second = project("com.example", "second", "1", tmp.resolve("second"));
@@ -205,6 +296,41 @@ class ReactorProjectsTest {
     build.setFinalName("%s-%s".formatted(artifactId, version));
     project.setBuild(build);
     return project;
+  }
+
+  // Module lib with maven-shade-plugin running the given goal, its execution and plugin-level
+  // configuration given as the children of <configuration>, or none.
+  private MavenProject shading(
+      final String goal, final String executionConfiguration, final String pluginConfiguration)
+      throws Exception {
+    final MavenProject project = projectWithOutput("com.example", "lib", "1", tmp.resolve("lib"));
+    final var execution = new PluginExecution();
+    execution.setId("default");
+    execution.addGoal(goal);
+    execution.setConfiguration(configuration(executionConfiguration));
+    final var plugin = new Plugin();
+    plugin.setGroupId("org.apache.maven.plugins");
+    plugin.setArtifactId("maven-shade-plugin");
+    plugin.addExecution(execution);
+    plugin.setConfiguration(configuration(pluginConfiguration));
+    project.getBuild().addPlugin(plugin);
+    return project;
+  }
+
+  private static PluginExecution shadeExecution(final MavenProject project) {
+    return project
+        .getBuild()
+        .getPluginsAsMap()
+        .get(LatheLayout.Maven.SHADE_PLUGIN_KEY)
+        .getExecutions()
+        .get(0);
+  }
+
+  private static Xpp3Dom configuration(final String children) throws Exception {
+    return children == null
+        ? null
+        : Xpp3DomBuilder.build(
+            new StringReader("<configuration>%s</configuration>".formatted(children)));
   }
 
   private Artifact artifact(final String groupId, final String artifactId, final String version) {

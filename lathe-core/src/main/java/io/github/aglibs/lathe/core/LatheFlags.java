@@ -8,6 +8,9 @@ public final class LatheFlags {
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
+  // The Maven phase the sync script builds to, process-test-classes by default: a project whose
+  // module compiles against a sibling's shaded jar, which only package makes, sets package.
+  public static final String SYNC_PHASE = "lathe.sync.phase";
   // Set by CI services; Lathe stays out of a CI build unless lathe.disabled=false says otherwise.
   public static final String CI_ENV = "CI";
   // JUnit Platform's own switch (1.10+) for discovering tests and reporting them skipped, unrun:
