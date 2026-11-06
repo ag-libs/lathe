@@ -41,7 +41,7 @@ class SaveTest extends ServiceTestBase {
     // Edited, the buffer no longer holds what was written, so the write's warning no longer
     // applies.
     change(note, "package com.example; class Note { private int marker; }", 2);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(
             argThat(
                 p ->
@@ -116,7 +116,7 @@ class SaveTest extends ServiceTestBase {
 
     TestCompiler.writeAt(note, Files.readString(note), 5_000L);
     save(note);
-    verify(client, timeout(5_000))
+    verify(client, timeout(TIMEOUT_MS))
         .publishDiagnostics(argThat(p -> isFor(p, note) && hasMessage(p, "noted by processor")));
     return note;
   }
@@ -129,7 +129,7 @@ class SaveTest extends ServiceTestBase {
     openDoc(fx.dep(), Files.readString(fx.dep()));
     for (final Path user : fx.users()) {
       openDoc(user, Files.readString(user));
-      verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
+      verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, user)));
     }
 
     awaitWorkerIdle();
@@ -141,7 +141,7 @@ class SaveTest extends ServiceTestBase {
       // analysis task for their tree.
       save(fx.dep());
       for (final Path user : fx.users()) {
-        verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
+        verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, user)));
       }
 
       awaitWorkerIdle();
@@ -156,11 +156,11 @@ class SaveTest extends ServiceTestBase {
       burst.addAll(fx.users());
       saveAsOneBurst(burst);
       for (final Path user : fx.users()) {
-        verify(client, timeout(5_000)).publishDiagnostics(argThat(p -> isFor(p, user)));
+        verify(client, timeout(TIMEOUT_MS)).publishDiagnostics(argThat(p -> isFor(p, user)));
       }
 
       // One quiet window, not one per file, for a duplicate refresh to show before counting.
-      verify(client, after(1_500).atLeastOnce()).publishDiagnostics(any());
+      verify(client, after(QUIET_WINDOW_MS).times(fx.users().size() + 1)).publishDiagnostics(any());
 
       awaitWorkerIdle();
       assertRefreshedOnce(compiles, fx.users());
@@ -193,7 +193,7 @@ class SaveTest extends ServiceTestBase {
 
     // At least once: under load the refresh may re-analyze the edited file after its own compile,
     // publishing the same error again; the last publish is what matters.
-    verify(client, timeout(5_000).atLeastOnce())
+    verify(client, timeout(TIMEOUT_MS).atLeastOnce())
         .publishDiagnostics(
             argThat(
                 p ->
@@ -232,12 +232,12 @@ class SaveTest extends ServiceTestBase {
 
       saveAsOneBurst(files);
       for (final Path file : files) {
-        verify(client, timeout(10_000))
+        verify(client, timeout(TIMEOUT_MS))
             .publishDiagnostics(argThat(p -> isFor(p, file) && p.getDiagnostics().isEmpty()));
       }
 
       // One quiet window, not one per file, for a duplicate publish to show before counting.
-      verify(client, after(1_500).atLeastOnce()).publishDiagnostics(any());
+      verify(client, after(QUIET_WINDOW_MS).times(files.size())).publishDiagnostics(any());
 
       awaitWorkerIdle();
       for (final Path file : files) {
