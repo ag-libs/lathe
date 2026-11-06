@@ -22,6 +22,8 @@ import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
+import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
+import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;

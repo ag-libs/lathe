@@ -1,7 +1,7 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
-import static io.github.aglibs.lathe.server.FormatterLoader.get;
-import static io.github.aglibs.lathe.server.FormatterLoader.invoke;
+import static io.github.aglibs.lathe.server.format.FormatterLoader.get;
+import static io.github.aglibs.lathe.server.format.FormatterLoader.invoke;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.validcheck.ValidCheck;

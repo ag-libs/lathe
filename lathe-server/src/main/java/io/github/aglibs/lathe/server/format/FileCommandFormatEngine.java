@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -19,14 +19,14 @@ import java.util.logging.Logger;
 // do not flash it during a slow in-place build; it still ends in .java, so Spotless formats it.
 // Tokens: %MVN% -> the tool that ran the last build (never searched for); %FILE% -> the temp
 // path; %MODULE% -> the file's module or ".". Both come in the FormatTarget the session reads.
-record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
+public record FileCommandFormatEngine(List<String> command, Path workspaceRoot, Duration timeout)
     implements FormatEngine {
 
   private static final Logger LOG = Logger.getLogger(FileCommandFormatEngine.class.getName());
 
-  static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
+  public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
 
-  FileCommandFormatEngine {
+  public FileCommandFormatEngine {
     ValidCheck.check()
         .notEmpty(command, "command")
         .notNull(workspaceRoot, "workspaceRoot")

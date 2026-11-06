@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import java.io.IOException;
 import java.time.Duration;

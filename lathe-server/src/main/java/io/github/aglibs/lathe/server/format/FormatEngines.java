@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -14,13 +14,13 @@ import java.util.logging.Logger;
 
 // Builds the format engine a formatter spec names, for the editor's server and the agent engine
 // alike; null when the spec names none or its formatter cannot run yet.
-final class FormatEngines {
+public final class FormatEngines {
 
   private static final Logger LOG = Logger.getLogger(FormatEngines.class.getName());
 
   private FormatEngines() {}
 
-  static FormatterSpec workspaceSpec(final Path workingDir) {
+  public static FormatterSpec workspaceSpec(final Path workingDir) {
     if (workingDir == null) {
       return null;
     }
@@ -34,7 +34,7 @@ final class FormatEngines {
     }
   }
 
-  static FormatEngine forSpec(final FormatterSpec spec, final Path workingDir) {
+  public static FormatEngine forSpec(final FormatterSpec spec, final Path workingDir) {
     return switch (spec.engine()) {
       case LatheFlags.FORMATTER_GOOGLE, LatheFlags.FORMATTER_AOSP ->
           pinned(

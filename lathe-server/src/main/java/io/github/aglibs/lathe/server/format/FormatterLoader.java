@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.LatheLayout;
 import java.lang.reflect.InvocationTargetException;

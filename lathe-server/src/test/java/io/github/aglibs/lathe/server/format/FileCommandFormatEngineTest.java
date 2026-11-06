@@ -1,8 +1,9 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.aglibs.lathe.server.TestProcess;
 import io.github.aglibs.validcheck.ValidationException;
 import java.io.IOException;
 import java.nio.file.Files;

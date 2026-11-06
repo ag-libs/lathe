@@ -8,6 +8,8 @@ import static org.mockito.Mockito.mock;
 import com.google.gson.JsonParser;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
+import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

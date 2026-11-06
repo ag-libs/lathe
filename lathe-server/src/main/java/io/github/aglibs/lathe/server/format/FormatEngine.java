@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import java.util.List;
 
@@ -6,7 +6,7 @@ import java.util.List;
 // (GjfFormatEngine, EclipseFormatEngine), or an external command. `file` is the document's path,
 // used by engines that format in place (FileCommandFormatEngine) or by file kind; the others ignore
 // it. Throws its native failure type; JavaFormatter catches late.
-sealed interface FormatEngine
+public sealed interface FormatEngine
     permits GjfFormatEngine,
         EclipseFormatEngine,
         ExternalCommandFormatEngine,

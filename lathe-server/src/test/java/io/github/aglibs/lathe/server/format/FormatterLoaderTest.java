@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 

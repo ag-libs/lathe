@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -18,7 +18,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class FormattingTest {
 
-  private static final GjfFormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
+  private static final FormatEngine ENGINE = FormatterFixtures.googleJavaFormat();
   private static final FormatTarget FILE = FormatterFixtures.target(Path.of("Sample.java"));
   // palantir-java-format 2.102.0 (the fixture) predates JDK 27's javac.
   private static final int PALANTIR_UNSUPPORTED_JDK = 27;
@@ -174,7 +174,7 @@ class FormattingTest {
   @Test
   @EnabledForJreRange(maxVersion = PALANTIR_UNSUPPORTED_JDK - 1)
   void format_palantirJavaFormat_followsSpotlessPalantirStepAndFormatsRanges() throws Exception {
-    final GjfFormatEngine palantir = FormatterFixtures.palantirJavaFormat();
+    final FormatEngine palantir = FormatterFixtures.palantirJavaFormat();
     final var source =
         """
         import java.util.Map;
@@ -267,7 +267,7 @@ class FormattingTest {
            }
         }
         """;
-    final EclipseFormatEngine eclipse = FormatterFixtures.eclipseJdt(xml.toString());
+    final FormatEngine eclipse = FormatterFixtures.eclipseJdt(xml.toString());
     final Range range = lineRange(source, "int b(");
     final List<TextEdit> ranged = JavaFormatter.formatRanges(eclipse, source, List.of(range));
 

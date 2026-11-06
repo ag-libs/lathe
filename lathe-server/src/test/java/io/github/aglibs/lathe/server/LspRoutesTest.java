@@ -3,6 +3,8 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
+import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;

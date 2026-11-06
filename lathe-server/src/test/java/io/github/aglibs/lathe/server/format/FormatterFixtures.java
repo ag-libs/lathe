@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
@@ -23,11 +23,11 @@ public final class FormatterFixtures {
     return classpath("google-java-format");
   }
 
-  static GjfFormatEngine googleJavaFormat() {
+  public static FormatEngine googleJavaFormat() {
     return googleJavaFormat(Map.of());
   }
 
-  static GjfFormatEngine googleJavaFormat(final Map<String, String> options) {
+  static FormatEngine googleJavaFormat(final Map<String, String> options) {
     return new GjfFormatEngine(
         GjfFormatEngine.Family.GOOGLE,
         LatheFlags.FORMAT_STYLE_GOOGLE,
@@ -35,7 +35,7 @@ public final class FormatterFixtures {
         googleJavaFormatClasspath());
   }
 
-  static GjfFormatEngine palantirJavaFormat() {
+  static FormatEngine palantirJavaFormat() {
     return new GjfFormatEngine(
         GjfFormatEngine.Family.PALANTIR,
         LatheFlags.FORMAT_STYLE_PALANTIR,
@@ -44,7 +44,7 @@ public final class FormatterFixtures {
   }
 
   // profile is an Eclipse formatter settings file, or empty for Eclipse's defaults.
-  static EclipseFormatEngine eclipseJdt(final String profile) {
+  static FormatEngine eclipseJdt(final String profile) {
     return new EclipseFormatEngine(profile, classpath("eclipse-jdt"));
   }
 

@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.Stopwatch;
@@ -9,7 +9,7 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
-final class JavaFormatter {
+public final class JavaFormatter {
 
   private static final Logger LOG = Logger.getLogger(JavaFormatter.class.getName());
 
@@ -17,13 +17,13 @@ final class JavaFormatter {
 
   // Builds the minimal edit, or empty when already formatted. Throws the engine's native failure;
   // WorkspaceSession catches it to log and notify the client.
-  static List<TextEdit> format(
+  public static List<TextEdit> format(
       final FormatEngine engine, final String content, final FormatTarget target) throws Exception {
     return edits(engine, content, () -> engine.format(content, target));
   }
 
   // Formats only the given ranges (LSP positions) of content; text outside them is not touched.
-  static List<TextEdit> formatRanges(
+  public static List<TextEdit> formatRanges(
       final FormatEngine engine, final String content, final List<Range> ranges) throws Exception {
     return edits(
         engine,

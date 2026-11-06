@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.server;
+package io.github.aglibs.lathe.server.format;
 
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
@@ -13,14 +13,14 @@ import java.util.logging.Logger;
 // Formats via a user command. Source/output go through temp files (no pipe to drain); stderr is
 // inherited to server stderr, so it reaches lsp.log. Runs in workingDir (the workspace root), where
 // project config and repo-relative commands resolve; null inherits the server's cwd.
-record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path workingDir)
+public record ExternalCommandFormatEngine(List<String> command, Duration timeout, Path workingDir)
     implements FormatEngine {
 
   private static final Logger LOG = Logger.getLogger(ExternalCommandFormatEngine.class.getName());
 
-  static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
+  public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(10);
 
-  ExternalCommandFormatEngine {
+  public ExternalCommandFormatEngine {
     ValidCheck.check()
         .notEmpty(command, "command")
         .assertTrue(
