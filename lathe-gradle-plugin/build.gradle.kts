@@ -126,8 +126,15 @@ val functionalTestTask =
       systemProperty("lathe.gradle.fixturesRepo", fixturesRepo.get().asFile.path)
       systemProperty("lathe.gradle.latheRepo", latheRepo)
       systemProperty("lathe.version", project.version)
+      // Both kept out of the build directory, so a clean build starts the fixtures warm. TestKit's
+      // Gradle home (generated Gradle API jars, compiled fixture scripts) is shared by every
+      // checkout: a Gradle user home, which Gradle locks. The fixtures' Lathe cache stays one per
+      // checkout, since each sync installs that checkout's own SNAPSHOT server into it.
       systemProperty(
-          "lathe.gradle.fixturesCache", layout.buildDirectory.dir("lathe-cache").get().asFile.path)
+          "lathe.gradle.testKitDir", gradle.gradleUserHomeDir.resolve("lathe-testkit").path)
+      systemProperty(
+          "lathe.gradle.fixturesCache",
+          layout.projectDirectory.dir(".gradle/lathe-cache").asFile.path)
       enabled = !flag("skipTests")
       systemProperty(
           "lathe.gradle.fixturesHome",

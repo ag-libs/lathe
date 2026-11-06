@@ -27,7 +27,7 @@ final class GradleFixture {
   static final String JAVA = "plugins { id 'java' }\n";
 
   // A sync installs the server and extracts the JDK sources into Lathe's cache: one for every
-  // fixture build, under the build directory, not the user's.
+  // fixture build of this checkout, not the user's.
   private static final String LATHE_CACHE =
       "-Dlathe.cache=%s".formatted(System.getProperty("lathe.gradle.fixturesCache"));
 
@@ -175,6 +175,7 @@ final class GradleFixture {
     final var runner =
         GradleRunner.create()
             .withGradleInstallation(new File(System.getProperty("lathe.gradle.fixturesHome")))
+            .withTestKitDir(new File(System.getProperty("lathe.gradle.testKitDir")))
             .withProjectDir(dir.toFile())
             .withPluginClasspath()
             .withEnvironment(outsideCi())
