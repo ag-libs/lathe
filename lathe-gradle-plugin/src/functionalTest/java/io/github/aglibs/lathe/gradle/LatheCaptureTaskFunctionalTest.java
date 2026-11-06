@@ -74,6 +74,71 @@ class LatheCaptureTaskFunctionalTest {
         .contains(fixture.path("build/classes/java/main"));
   }
 
+  // A build that points every compile, the test one too, at one generated-sources directory, as
+  // Apache Fineract does: the main capture reads that directory, which the test compile also
+  // writes, so it must not be one of the capture's tracked inputs, or Gradle stops the build.
+  @Test
+  void capture_testCompileSharingMainsGeneratedSourcesDir_buildsAndCapturesBoth() throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + """
+                    tasks.withType(JavaCompile).configureEach {
+                      options.generatedSourceOutputDirectory =
+                          layout.buildDirectory.dir('generated/sources/annotationProcessor/java/main')
+                    }
+                    """)
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
+            .file(
+                "src/test/java/com/example/AppTest.java",
+                "package com.example; class AppTest {}\n");
+
+    final var build = fixture.runner("testClasses").build();
+
+    assertThat(build.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(build.task(":latheCaptureTest").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(params("", LatheLayout.CLASSES_DIR).generatedSourcesDir())
+        .isEqualTo(fixture.path("build/generated/sources/annotationProcessor/java/main"));
+  }
+
+  // A task that runs after the classes and writes into the processed-resources directory, as Apache
+  // Fineract's OpenAPI spec does: the capture reads that directory without tracking it, and tracks
+  // the source resources instead, so an edited resource is still captured and nothing else reruns.
+  @Test
+  void capture_taskWritingIntoProcessedResourcesAfterClasses_buildsAndTracksSourceResources()
+      throws Exception {
+    final var fixture =
+        new GradleFixture(dir)
+            .file("settings.gradle", SETTINGS)
+            .file(
+                "build.gradle",
+                GradleFixture.JAVA
+                    + """
+                    def spec = tasks.register('spec') {
+                      dependsOn 'classes'
+                      def out = layout.buildDirectory.dir('resources/main/static')
+                      outputs.dir(out)
+                      doLast { out.get().file('api.json').asFile.text = '{}' }
+                    }
+                    tasks.named('jar') { dependsOn spec }
+                    """)
+            .file("src/main/java/com/example/App.java", "package com.example; class App {}\n")
+            .file("src/main/resources/app.properties", "name=first\n");
+
+    final var first = fixture.runner("jar").build();
+    final var unchanged = fixture.runner("jar").build();
+    fixture.file("src/main/resources/app.properties", "name=second\n");
+    final var edited = fixture.runner("jar").build();
+
+    assertThat(first.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(unchanged.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.UP_TO_DATE);
+    assertThat(edited.task(":latheCaptureMain").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(dir.resolve(".lathe/classes/app.properties")).content().isEqualTo("name=second\n");
+  }
+
   // A processor built in the same build: its output is mirrored for the editor, and a library
   // sibling reaches the app's classpath as its classes directory.
   @Test

@@ -64,15 +64,24 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @PathSensitive(PathSensitivity.RELATIVE)
   public abstract DirectoryProperty getClassesDir();
 
-  @InputFiles
-  @Optional
-  @PathSensitive(PathSensitivity.RELATIVE)
+  // Read, not tracked: a build may point its test compile at this directory too (Apache Fineract
+  // points every compile at main's), which Gradle would see as a second writer with no order. The
+  // classes, an input, change whenever the compile writes new sources here.
+  @Internal
   public abstract DirectoryProperty getGeneratedSourcesDir();
 
   // The source set's processed resources, mirrored with the classes as Maven's output holds them.
+  // Read, not tracked: another task may write into it after the classes (Apache Fineract's OpenAPI
+  // spec), which Gradle would see as a second writer with no order; getResourceSources() is
+  // tracked instead.
+  @Internal
+  public abstract DirectoryProperty getResourcesDir();
+
+  // The source set's resources as written, which processResources copies into getResourcesDir():
+  // an edited resource reruns the capture.
   @InputFiles
   @PathSensitive(PathSensitivity.RELATIVE)
-  public abstract DirectoryProperty getResourcesDir();
+  public abstract ConfigurableFileCollection getResourceSources();
 
   @Classpath
   public abstract ConfigurableFileCollection getClasspath();
