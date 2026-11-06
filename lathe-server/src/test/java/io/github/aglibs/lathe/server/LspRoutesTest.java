@@ -154,7 +154,7 @@ class LspRoutesTest extends ServiceTestBase {
   void formattingRequests_withAFormatter_rangeFormatsItsLinesOnly_onTypeAnswersNothingYet()
       throws Exception {
     final ShopFixture shop = openShop();
-    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    useFormatter(FormatterFixtures.googleJavaFormat());
     final String misindented =
         "package com.example;\nclass Use {\n  int run() {\n final Shop shop = new Shop();\n"
             + "    return shop.sell(1) + shop.sell(2);\n  }\n}\n";
@@ -181,7 +181,7 @@ class LspRoutesTest extends ServiceTestBase {
       throws Exception {
     final ShopFixture shop = openShop();
     final Path gate = tmp.resolve("gate");
-    service.setFormatEngine(
+    useFormatter(
         new FileCommandFormatEngine(
             TestProcess.command("await", gate.toString(), "%FILE%"),
             tmp,
@@ -204,7 +204,7 @@ class LspRoutesTest extends ServiceTestBase {
   @Test
   void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
     final ShopFixture shop = openShop();
-    service.setFormatEngine(
+    useFormatter(
         new FileCommandFormatEngine(
             TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
             tmp,
@@ -214,7 +214,7 @@ class LspRoutesTest extends ServiceTestBase {
             new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
     awaitWorkerIdle();
 
-    service.close();
+    host.close();
 
     assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
   }

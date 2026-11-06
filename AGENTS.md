@@ -248,6 +248,8 @@ against the `multi-module` invoker workspace — both use the checkout build dir
   `WorkspaceSession` takes wiring only (the document lifecycle, compile scheduling, the rename
   transaction, the scan tick, reload). Callers reach a component through its session accessor
   (`session.features()`, `session.runs()`), never through a session forwarder.
+    * `SessionHost`: the way onto the loop for the LSP services and `LatheEngine` (MCP); it owns
+      the loop and the session. The LSP services are adapters over it.
     * `WorkspaceState`: the root, manifest, module registry and graph, swapped together on a reload.
     * `DocumentRegistry`: the open documents. `FeatureRouter`: a file's module worker and the
       analysis LRU.

@@ -145,7 +145,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     // A virtual-scheme buffer (e.g. Neovim diffview) whose didOpen we drop can still receive
     // requests; the request handler must short-circuit before routing into LatheUri.toPath, which
     // throws FileSystemNotFoundException for a non-file scheme (EG-050).
-    service.initialize(tmp);
+    host.initialize(tmp);
     final var params = new FoldingRangeRequestParams();
     params.setTextDocument(new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"));
 
@@ -156,7 +156,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   @Test
   void hover_nonFileUri_returnsNullWithoutThrowing() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     final Hover hover =
         service
@@ -190,8 +190,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void formatting_enabled_delegatesToFormatter() throws Exception {
-    service.initialize(tmp);
-    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    host.initialize(tmp);
+    useFormatter(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\n}\n")));
@@ -208,8 +208,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   @Test
   void formatting_engineFailsRepeatedly_notifiesClientOnceWithReason() throws Exception {
-    service.initialize(tmp);
-    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    host.initialize(tmp);
+    useFormatter(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(new TextDocumentItem(URI, "java", 1, "class { broken")));
 
@@ -232,8 +232,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   @Test
   @EnabledForJreRange(minVersion = FormatterFixtures.GOOGLE_JAVA_FORMAT_MIN_JDK)
   void rangeFormatting_inProcessEngine_formatsOnlyTheRange() throws Exception {
-    service.initialize(tmp);
-    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    host.initialize(tmp);
+    useFormatter(FormatterFixtures.googleJavaFormat());
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(URI, "java", 1, "class Foo {\nint x;\nint   y;\n}\n")));
@@ -248,7 +248,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   @Test
   void rangeFormatting_wholeFileEngine_returnsEmptyEdits() throws Exception {
-    service.setFormatEngine(
+    useFormatter(
         new ExternalCommandFormatEngine(
             List.of("cat"), ExternalCommandFormatEngine.DEFAULT_TIMEOUT, tmp));
 
@@ -269,8 +269,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final Path source = writeWorkspaceSource();
     final var content = Files.readString(source);
     final var token = Either.<String, Integer>forLeft("refs-token");
-    service.setWorkDoneProgressSupported(true);
-    service.initialize(tmp);
+    host.setWorkDoneProgressSupported(true);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
@@ -298,11 +298,11 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     Files.writeString(source, "package com.example; class Foo {}");
     TestCompiler.writeModuleParams(
         tmp, "module", List.of(sourceRoot), null, List.of(), List.of(), List.of("-Xno-such-flag"));
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     final String content = Files.readString(source);
     final var diagnostics =
-        service.onLoopFuture(
+        host.onLoopFuture(
             session -> session.diagnosticsFuture(source.toUri().toString(), content, 1));
 
     assertThatThrownBy(() -> diagnostics.get(TIMEOUT_S, TimeUnit.SECONDS))
@@ -320,7 +320,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final var content = "package com.example;\nclass Widget { void run() {} }\n";
     Files.writeString(source, content);
     TestCompiler.writeModuleParams(root, "module", sourceRoot, null);
-    service.initialize(root);
+    host.initialize(root);
     final var serverForm = source.toUri().toString();
     service.didOpen(
         new DidOpenTextDocumentParams(
@@ -350,8 +350,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         """;
     Files.writeString(source, content);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    service.setWorkDoneProgressSupported(true);
-    service.initialize(tmp);
+    host.setWorkDoneProgressSupported(true);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
@@ -359,9 +359,16 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     // Two constructors => two overload searches sharing one progress; the leak was that it never
     // ended. Regression: whatever it reports, its final value must be an End.
     final List<Location> sites =
-        service
-            .instantiationsFuture(
-                source.toUri().toString(), offsetToPosition(content, content.indexOf("Widget {")))
+        host.onLoopCompose(
+                null,
+                (session, cancelChecker, progress) ->
+                    session
+                        .search()
+                        .instantiationsFuture(
+                            source.toUri().toString(),
+                            offsetToPosition(content, content.indexOf("Widget {")),
+                            cancelChecker,
+                            progress))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
 
     final var progressCaptor = ArgumentCaptor.forClass(ProgressParams.class);
@@ -376,15 +383,15 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final Path source = writeWorkspaceSource();
     final var content = Files.readString(source);
     final var token = Either.<String, Integer>forLeft("refs-token");
-    service.setWorkDoneProgressSupported(true);
-    service.initialize(tmp);
+    host.setWorkDoneProgressSupported(true);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
 
     final var response =
         service.references(referenceParams(source, content, content.indexOf("target"), token));
-    service.cancelProgress(new WorkDoneProgressCancelParams(token));
+    host.cancelProgress(new WorkDoneProgressCancelParams(token));
 
     assertThat(response).isCancelled();
     assertThatThrownBy(() -> response.get(TIMEOUT_S, TimeUnit.SECONDS))
@@ -407,7 +414,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final var content =
         "package com.example; class Foo { static class Inner {} Object target() { return null; } }";
     Files.writeString(source, content);
-    service.initialize(tmp);
+    host.initialize(tmp);
     openDoc(source, content);
 
     // A nested type is found by its canonical name, unlike a member's binary one.
@@ -457,7 +464,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   void prepareCallHierarchy_onMethodDeclaration_returnsItem() throws Exception {
     final Path source = writeWorkspaceSource();
     final var content = Files.readString(source);
-    service.initialize(tmp);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
@@ -477,7 +484,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   void prepareCallHierarchy_notOnMethod_returnsEmpty() throws Exception {
     final Path source = writeWorkspaceSource();
     final var content = Files.readString(source);
-    service.initialize(tmp);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
@@ -505,7 +512,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         """;
     Files.writeString(callerFile, callerContent);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    service.initialize(tmp);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(callerFile.toUri().toString(), "java", 1, callerContent)));
@@ -535,7 +542,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         "package com.example; class Foo { private void target() {} void caller() { target(); } }";
     Files.writeString(source, content);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    service.initialize(tmp);
+    host.initialize(tmp);
     service.didOpen(
         new DidOpenTextDocumentParams(
             new TextDocumentItem(source.toUri().toString(), "java", 1, content)));
@@ -558,11 +565,10 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   @Test
   void runTestFuture_freshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     final var outcome =
-        service
-            .onLoopFuture(
+        host.onLoopFuture(
                 session ->
                     session
                         .runs()
@@ -580,7 +586,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   void runTestFuture_moduleWithoutACapturedLaunch_blockedWithTheCommandThatCapturesIt()
       throws Exception {
     writeManifest();
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     assertThat(blockedReasons("com.example.Foo"))
         .containsExactly(
@@ -597,7 +603,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         new TestFilterData(List.of("(.*\\.)?[^.]*Test"), List.of()),
         Files.createDirectories(tmp.resolve(LatheLayout.LATHE_DIR).resolve("app"))
             .resolve(LatheLayout.TEST_FILTER_FILE));
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     assertThat(blockedReasons("com.example.SignedJarIT#signs()"))
         .singleElement()
@@ -618,7 +624,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .resolve(LatheLayout.WORKSPACE_JSON),
         "{\"schemaVersion\": \"0\", \"workspaceRoot\": \".\"}");
 
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     verify(client, timeout(5_000))
         .showMessage(
@@ -650,8 +656,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     final TestSelectionKind kind =
         selected.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS;
     final var outcome =
-        service
-            .onLoopFuture(
+        host.onLoopFuture(
                 session ->
                     session
                         .runs()
@@ -688,7 +693,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     // Compile both into the module's reactor classes dir so the reactor scan indexes Impl <: Api.
     TestJavac.compileToDir(tmp.resolve(".lathe/module/classes"), api, impl);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     // Item for Api whose routingUri is Api.java — which is never opened (only usages would be).
     final var data = new TypeHierarchyItemData("com.example.Api", api.toUri().toString());
@@ -715,7 +720,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         tmp,
         "com/example/Restored.java",
         "package com.example;\npublic class Restored { Missing m; }\n");
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     assertThat(symbolNames("Restored")).contains("Restored");
@@ -723,7 +728,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   private List<String> symbolNames(final String query) throws Exception {
-    return service
+    return host
         .onLoop(session -> session.features().workspaceSymbol(query, false))
         .get(TIMEOUT_S, TimeUnit.SECONDS)
         .stream()
@@ -742,18 +747,16 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
                 1_000L)
             .get(0);
 
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     // On the loop, where the format engine that asks for it runs.
     assertThat(
-            service
-                .onLoop(session -> session.formats().moduleRelOf(api))
+            host.onLoop(session -> session.formats().moduleRelOf(api))
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .contains("platform/api");
     assertThat(
-            service
-                .onLoop(session -> session.formats().moduleRelOf(tmp.resolve("scripts/Tool.java")))
+            host.onLoop(session -> session.formats().moduleRelOf(tmp.resolve("scripts/Tool.java")))
                 .get(TIMEOUT_S, TimeUnit.SECONDS))
         .isEmpty();
   }
@@ -799,7 +802,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             1_000L);
     final Path useFile =
         files.stream().filter(file -> file.endsWith("Use.java")).findFirst().orElseThrow();
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     openDoc(useFile, use);
     awaitWorkerIdle();

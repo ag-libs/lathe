@@ -1,9 +1,12 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
@@ -32,6 +35,10 @@ final class FormatService {
   private final WorkspaceState state;
   private final DocumentRegistry docs;
   private final Formatted onFormatted;
+  // The workspace's formatter, null for none, and whether the project pins one (whose jars a sync
+  // may not have resolved yet).
+  private FormatEngine engine;
+  private boolean pinned;
 
   // Loop state like the rest: a format failure is reported to the user once, then only logged.
   private boolean formatFailureReported;
@@ -54,6 +61,18 @@ final class FormatService {
     this.state = state;
     this.docs = docs;
     this.onFormatted = onFormatted;
+  }
+
+  // The formatter the client's settings or the workspace style file name, before the first format.
+  void use(final FormatEngine engine) {
+    this.engine = engine;
+  }
+
+  // The formatter the workspace style file pins, for a client that sends no settings (the agent).
+  void useWorkspaceFormatter(final Path root) {
+    final FormatterSpec spec = FormatEngines.workspaceSpec(root);
+    pinned = spec != null;
+    engine = spec == null ? null : FormatEngines.forSpec(spec, root);
   }
 
   void close() {
@@ -84,20 +103,43 @@ final class FormatService {
         .map(SourceLayout::displayed);
   }
 
-  CompletableFuture<List<TextEdit>> formatFuture(final String uri, final FormatEngine engine) {
+  // No edits without a formatter.
+  CompletableFuture<List<TextEdit>> formatFuture(final String uri) {
+    final FormatEngine engine = this.engine;
+    if (engine == null) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return formatDocument(uri, (content, target) -> JavaFormatter.format(engine, content, target));
   }
 
-  CompletableFuture<List<TextEdit>> formatRangesFuture(
-      final String uri, final List<Range> ranges, final FormatEngine engine) {
+  // Only in-process engines format ranges; whole-file ones do not advertise the capability, so a
+  // stray request gets no edits.
+  CompletableFuture<List<TextEdit>> formatRangesFuture(final String uri, final List<Range> ranges) {
+    final FormatEngine engine = this.engine;
+    if (engine == null || !engine.formatsRanges()) {
+      return CompletableFuture.completedFuture(List.of());
+    }
+
     return formatDocument(
         uri, (content, target) -> JavaFormatter.formatRanges(engine, content, ranges));
   }
 
   // For the agent, which must tell a failure from an already formatted file: a refusal that
-  // carries the formatter's reason.
-  CompletableFuture<List<TextEdit>> formatOrRefuseFuture(
-      final String uri, final FormatEngine engine) {
+  // carries the formatter's reason, or why there is no formatter. Only a pinned formatter whose
+  // jars are missing is one a sync can supply.
+  CompletableFuture<List<TextEdit>> formatOrRefuseFuture(final String uri) {
+    final FormatEngine engine = this.engine;
+    if (engine == null) {
+      final String reason =
+          pinned
+              ? "The project's formatter is not resolved yet: run `%s`."
+                  .formatted(LatheLayout.SYNC_SCRIPT_COMMAND)
+              : "No formatter for this workspace: the project pins none (no Spotless Java step), so a sync does not add one; name one in %s to format here."
+                  .formatted(LatheLayout.STYLE_SHARED_FILE);
+      return CompletableFuture.failedFuture(FeatureAnswers.refused(reason));
+    }
+
     return formatted(uri, (content, target) -> JavaFormatter.format(engine, content, target))
         .exceptionally(
             failure -> {

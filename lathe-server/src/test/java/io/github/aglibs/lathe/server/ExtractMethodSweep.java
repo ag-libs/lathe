@@ -81,7 +81,8 @@ public final class ExtractMethodSweep {
   private final Path out;
   private final double resolveFraction;
   private final Random random;
-  private final LatheTextDocumentService service = new LatheTextDocumentService();
+  private final SessionHost host = new SessionHost();
+  private final LatheTextDocumentService service = new LatheTextDocumentService(host);
   private final ConcurrentLinkedQueue<LogRecord> records = new ConcurrentLinkedQueue<>();
   private final Map<String, Integer> outcomes = new TreeMap<>();
   private final Map<String, Integer> refusals = new TreeMap<>();
@@ -123,7 +124,7 @@ public final class ExtractMethodSweep {
               .filter(name -> !name.isBlank())
               .toList());
     } finally {
-      sweep.service.close();
+      sweep.host.close();
     }
 
     System.exit(0);
@@ -131,12 +132,12 @@ public final class ExtractMethodSweep {
 
   private void run(final int maxFiles, final List<String> only) throws Exception {
     captureLogs();
-    service.connect(noopClient());
-    service.setDocumentsFollowDisk(true);
+    host.connect(noopClient());
+    host.setDocumentsFollowDisk(true);
     service.setCodeActionResolveSupported(true);
-    service.initialize(repo);
+    host.initialize(repo);
     // As LatheEngine does before its first compile: bring the mirror up to date.
-    service.reconcileForVerify().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    host.onLoopFuture(WorkspaceSession::reconcileForVerify).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     final List<Path> files =
         new ArrayList<>(FileUtil.walkFiles(repo, ExtractMethodSweep::isSource));
@@ -196,7 +197,7 @@ public final class ExtractMethodSweep {
     final String uri = LatheUri.fromPath(file);
     // A file that does not compile as it is makes every compile check fail: counted apart.
     fileHasErrors =
-        service
+        host
             .onLoopFuture(session -> session.diagnosticsFuture(uri, content, 1))
             .get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .stream()

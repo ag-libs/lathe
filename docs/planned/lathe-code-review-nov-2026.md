@@ -183,6 +183,8 @@ the `run/` and `format/` packages, and the component rule in `AGENTS.md`. `Works
 
 ### B2. A session host apart from `LatheTextDocumentService`
 
+**Done on branch `refactor/session-components`.**
+
 `LatheTextDocumentService` is both the LSP adapter and the way onto the loop for everything else
 (`onLoop`, `onLoopFuture`, `onLoopCompose`; `LatheEngine` builds a `TextDocumentService` to reach the session).
 That keeps forwarders alive (`formatFuture`, `instantiationsFuture`, the reconcile test seams)

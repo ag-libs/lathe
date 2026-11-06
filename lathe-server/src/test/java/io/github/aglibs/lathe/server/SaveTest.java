@@ -112,7 +112,7 @@ class SaveTest extends ServiceTestBase {
         classpath,
         processorPath,
         List.of("-processor", "proc.NoteProcessor"));
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     openDoc(note, Files.readString(note));
     awaitWorkerIdle();
@@ -127,7 +127,7 @@ class SaveTest extends ServiceTestBase {
   @Test
   void didSave_singleSaveThenBurstAcrossFiles_recompilesEachOpenDependentOnce() throws Exception {
     final DepFixture fx = depWithUsers(3);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     openDoc(fx.dep(), Files.readString(fx.dep()));
     for (final Path user : fx.users()) {
@@ -174,7 +174,7 @@ class SaveTest extends ServiceTestBase {
   @Test
   void didSave_dependentEditedDuringRefreshBatch_lastPublishReflectsTheEdit() throws Exception {
     final DepFixture fx = depWithUsers(3);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     openDoc(fx.dep(), Files.readString(fx.dep()));
     for (final Path user : fx.users()) {
@@ -218,7 +218,7 @@ class SaveTest extends ServiceTestBase {
   void didSave_savesArrivingDuringASaveCompile_compileAsOneBatch_eachRepublished()
       throws Exception {
     final DepFixture fx = depWithUsers(3);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final var files = new ArrayList<Path>(fx.users());
     files.add(fx.dep());

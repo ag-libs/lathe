@@ -175,11 +175,10 @@ class RunCoordinatorTest extends ServiceTestBase {
   @Test
   void runAndDebugMain_cancelledBeforeTheJvmStarts_killedAsItStarts() throws Exception {
     writeMainLaunch(List.of("sleep"), List.of());
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     final LaunchOutcome run =
-        service
-            .onLoopFuture(
+        host.onLoopFuture(
                 session -> {
                   final var started = session.runs().runMainFuture("app", MAIN, "run-1");
                   session.runs().cancelRun("run-1");
@@ -187,7 +186,7 @@ class RunCoordinatorTest extends ServiceTestBase {
                 })
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     final CompletableFuture<DebugStartResult> debug =
-        service.onLoopFuture(
+        host.onLoopFuture(
             session -> {
               final var started = session.runs().debugMainFuture("app", MAIN, "debug-1");
               session.runs().cancelRun("debug-1");
@@ -207,14 +206,12 @@ class RunCoordinatorTest extends ServiceTestBase {
   @Test
   void debugMainFuture_agentListensOrJvmExitsFirst_attachesOrFailsAtOnce() throws Exception {
     writeMainLaunch(List.of("sleep"), List.of());
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     final DebugStartResult attached =
-        service
-            .onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-1"))
+        host.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-1"))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
-    service
-        .onLoop(
+    host.onLoop(
             session -> {
               session.runs().cancelRun("debug-1");
               return true;
@@ -228,7 +225,7 @@ class RunCoordinatorTest extends ServiceTestBase {
 
     writeMainLaunch(List.of("sleep"), List.of("-XX:+LatheNoSuchOption"));
     final CompletableFuture<DebugStartResult> failed =
-        service.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-2"));
+        host.onLoopFuture(session -> session.runs().debugMainFuture("app", MAIN, "debug-2"));
 
     assertThatThrownBy(() -> failed.get(TIMEOUT_S, TimeUnit.SECONDS))
         .hasMessageContaining("the debuggee ended before the debugger attached");

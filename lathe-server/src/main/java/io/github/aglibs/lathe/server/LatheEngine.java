@@ -110,7 +110,7 @@ public final class LatheEngine {
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
 
-  private final LatheTextDocumentService service = new LatheTextDocumentService();
+  private final SessionHost host = new SessionHost();
   private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
   private final Path latheDir;
@@ -177,17 +177,15 @@ public final class LatheEngine {
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    service.connect(new NoopLanguageClient());
-    // The engine moves files itself, so a public type's rename can move its declaring file.
-    service.setFileRenameSupported(true);
+    host.connect(new NoopLanguageClient());
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
-    service.setDocumentsFollowDisk(true);
+    host.setDocumentsFollowDisk(true);
     // An agent cannot answer a prompt: a due sync stays in every answer's notes until a reload.
-    service.setInteractive(false);
+    host.setInteractive(false);
     // Every query scans first, so between them the scan only costs CPU.
-    service.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
-    service.useWorkspaceFormatter(workspaceRoot);
-    service.initialize(workspaceRoot);
+    host.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
+    host.execute(session -> session.formats().useWorkspaceFormatter(workspaceRoot));
+    host.initialize(workspaceRoot);
   }
 
   /** Compiler diagnostics for {@code file} at its current on-disk content. */
@@ -609,10 +607,13 @@ public final class LatheEngine {
   // like a rename. Empty when the file was already formatted.
   public Optional<LatheFormat> format(final Path file) {
     requireReactorFile(file);
-    diagnostics(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
-    // Through the LSP service, which holds the formatter the workspace resolved.
-    final List<TextEdit> edits = await(service.formatFuture(uri));
+    // The formatter reads the file's document, which the file request registers.
+    final List<TextEdit> edits =
+        fileRequest(
+            file,
+            (session, fileUri, diagnostics, cancel, progress) ->
+                session.formats().formatOrRefuseFuture(fileUri));
     if (edits.isEmpty()) {
       return Optional.empty();
     }
@@ -1058,7 +1059,7 @@ public final class LatheEngine {
   }
 
   public void close() {
-    service.close();
+    host.close();
   }
 
   private LatheLocation toLatheLocation(final Location location) {
@@ -1097,8 +1098,8 @@ public final class LatheEngine {
   }
 
   // One request: the work runs on the event loop as a single composed chain.
-  private <T> T request(final LatheTextDocumentService.LoopWork<T> work) {
-    return await(service.onLoopCompose(work));
+  private <T> T request(final SessionHost.LoopWork<T> work) {
+    return await(host.onLoopCompose(null, work));
   }
 
   private static <T> T await(final CompletableFuture<T> future) {

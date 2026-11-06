@@ -50,7 +50,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @BeforeEach
   void connectWorkspace() {
-    workspace = new LatheWorkspaceService(service);
+    workspace = new LatheWorkspaceService(host);
   }
 
   @Test
@@ -86,7 +86,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @Test
   void executeCommand_cancelUnknownToken_completesWithoutError() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
     final var argument = new JsonObject();
     argument.addProperty("token", "no-such-token");
     final var params = new ExecuteCommandParams("lathe.run.cancel", List.of(argument));
@@ -98,7 +98,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @Test
   void executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
     final var selection = new JsonObject();
     selection.addProperty("selectorKind", "CLASS");
     selection.addProperty("selectorValue", "com.example.Foo");
@@ -168,7 +168,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         }
         """);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null, TestJavac.JUNIT_CLASSPATH);
-    service.initialize(tmp);
+    host.initialize(tmp);
     return source;
   }
 
@@ -331,13 +331,13 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     openShop();
 
     Files.writeString(pom, "<project>edited</project>");
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
     verify(client).showMessageRequest(argThat(request -> request.getMessage().startsWith("Build")));
     verify(client, never()).sync(any());
 
     Files.writeString(pom, "<project>edited again</project>");
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
     verify(client).sync(new LatheSyncParams(tmp.toString(), true));
   }
@@ -355,7 +355,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         Map.of("com/lib/Lib.java", "package com.lib;\npublic class Lib {}\n"),
         List.of(),
         1_000L);
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("lib", "module"));
     verify(client).showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
