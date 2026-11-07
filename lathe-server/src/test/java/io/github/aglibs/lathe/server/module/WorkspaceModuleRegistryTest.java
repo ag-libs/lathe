@@ -118,7 +118,10 @@ class WorkspaceModuleRegistryTest {
       final List<ModuleSourceConfig> configs = registry.allConfigs();
       configs.forEach(
           config ->
-              registry.workerFor(config).documentSymbol("file:///A.java", "class A {}").join());
+              registry
+                  .workerFor(config)
+                  .submit(session -> session.documentSymbol("file:///A.java", "class A {}"))
+                  .join());
 
       assertThat(registry.releaseSessions(Set.of(), 60_000)).as("not idle long enough").isZero();
       assertThat(registry.releaseSessions(Set.of(configs.get(0)), 0)).isEqualTo(1);

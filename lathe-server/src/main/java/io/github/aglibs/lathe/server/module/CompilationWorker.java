@@ -1,33 +1,13 @@
 package io.github.aglibs.lathe.server.module;
 
-import io.github.aglibs.lathe.analysis.AttributedExpression;
-import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.analysis.BatchWrite;
-import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
-import io.github.aglibs.lathe.analysis.LearnedStaticImports;
-import io.github.aglibs.lathe.analysis.MissingImportsResult;
-import io.github.aglibs.lathe.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.analysis.RenameBindingCheck;
-import io.github.aglibs.lathe.analysis.RunTarget;
-import io.github.aglibs.lathe.analysis.SearchHits;
-import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
-import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TransientSource;
-import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
-import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -40,23 +20,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
-import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.Command;
-import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DocumentSymbol;
-import org.eclipse.lsp4j.FoldingRange;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SignatureHelp;
-import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 /** Called from the server event loop; executes all compilation work on its own module thread. */
 public final class CompilationWorker {
@@ -263,298 +228,6 @@ public final class CompilationWorker {
         () -> {});
   }
 
-  public CompletableFuture<List<Diagnostic>> diagnosticsTransient(
-      final String uri, final String content) {
-    return submit(ctx -> ctx.diagnosticsTransient(uri, content));
-  }
-
-  public CompletableFuture<BatchWrite> compileBatch(final List<TransientSource> sources) {
-    return submit(ctx -> ctx.compileBatch(sources, () -> {}));
-  }
-
-  public CompletableFuture<SignatureHelp> signatureHelp(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.signatureHelp(request));
-  }
-
-  public CompletableFuture<Hover> hover(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.hover(request));
-  }
-
-  public CompletableFuture<Boolean> onName(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.onName(request));
-  }
-
-  public CompletableFuture<ReferenceTarget> resolveTarget(
-      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
-    return submit(ctx -> ctx.resolveTarget(request), cancelChecker);
-  }
-
-  public CompletableFuture<List<ReferenceTarget>> generatedAccessorTargets(
-      final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.generatedAccessorTargets(request));
-  }
-
-  public CompletableFuture<ReferenceTarget> resolveTarget(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.resolveTarget(request));
-  }
-
-  public CompletableFuture<ReferenceTarget> resolveRenameTarget(
-      final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.resolveRenameTarget(request));
-  }
-
-  public CompletableFuture<Optional<String>> renameConflict(
-      final SourceFeatureRequest request, final String newName) {
-    return submit(ctx -> ctx.renameConflict(request, newName));
-  }
-
-  public CompletableFuture<Optional<String>> renameBindingConflict(
-      final RenameBindingCheck.RenameCheck check,
-      final List<RenameBindingCheck.CheckedFile> visibleEdits,
-      final List<RenameBindingCheck.CheckedFile> checked,
-      final CancelChecker cancelChecker) {
-    return submit(
-        ctx -> ctx.renameBindingConflict(check, visibleEdits, checked, cancelChecker),
-        cancelChecker);
-  }
-
-  public CompletableFuture<List<ReferenceTarget>> instantiationTargets(
-      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
-    return submit(ctx -> ctx.instantiationTargets(request), cancelChecker);
-  }
-
-  public CompletableFuture<ReferenceTarget> resolveContractTarget(
-      final SourceFeatureRequest request, final CancelChecker cancelChecker) {
-    return submit(ctx -> ctx.resolveContractTarget(request), cancelChecker);
-  }
-
-  public CompletableFuture<SearchHits<ReferenceMatch>> searchReferences(
-      final String uri,
-      final String content,
-      final int version,
-      final ReferenceTarget target,
-      final boolean includeDeclaration,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    return submit(
-        ctx ->
-            ctx.searchReferences(
-                uri, content, version, target, includeDeclaration, exposureFamily, cancelChecker),
-        cancelChecker);
-  }
-
-  public CompletableFuture<SearchHits<ReferenceMatch>> searchReferencesTransient(
-      final List<TransientSource> sources,
-      final ReferenceTarget target,
-      final boolean includeDeclaration,
-      final Set<String> exposureFamily,
-      final IntConsumer progressPerFile,
-      final CancelChecker cancelChecker) {
-    return submit(
-        ctx ->
-            ctx.searchReferencesTransient(
-                sources,
-                target,
-                includeDeclaration,
-                exposureFamily,
-                progressPerFile,
-                cancelChecker),
-        cancelChecker);
-  }
-
-  public CompletableFuture<SearchHits<CallHierarchyIncomingCall>> searchIncomingCalls(
-      final String uri,
-      final String content,
-      final int version,
-      final ReferenceTarget target,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    return submit(
-        ctx ->
-            ctx.searchIncomingCalls(uri, content, version, target, exposureFamily, cancelChecker),
-        cancelChecker);
-  }
-
-  public CompletableFuture<SearchHits<CallHierarchyIncomingCall>> searchIncomingCallsTransient(
-      final String uri,
-      final String content,
-      final ReferenceTarget target,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    return submit(
-        ctx ->
-            ctx.searchIncomingCallsTransient(uri, content, target, exposureFamily, cancelChecker),
-        cancelChecker);
-  }
-
-  public <T> CompletableFuture<List<T>> queryFile(
-      final String uri,
-      final String content,
-      final int version,
-      final Function<AttributedFileAnalysis, List<T>> query) {
-    return submit(ctx -> ctx.queryFile(uri, content, version, query));
-  }
-
-  public <T> CompletableFuture<List<T>> queryFileTransient(
-      final String uri,
-      final String content,
-      final Function<AttributedFileAnalysis, List<T>> query) {
-    return submit(ctx -> ctx.queryFileTransient(uri, content, query));
-  }
-
-  public CompletableFuture<Optional<String>> functionalInterfaceName(
-      final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.functionalInterfaceName(request));
-  }
-
-  public CompletableFuture<Optional<Location>> definition(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.definition(request));
-  }
-
-  public CompletableFuture<Optional<Location>> declaration(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.declaration(request));
-  }
-
-  public CompletableFuture<Optional<Location>> typeDefinition(final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.typeDefinition(request));
-  }
-
-  public CompletableFuture<List<Location>> typeImplementations(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.typeImplementations(request, typeIndex));
-  }
-
-  public CompletableFuture<List<CallHierarchyItem>> prepareCallHierarchy(
-      final SourceFeatureRequest request) {
-    return submit(ctx -> ctx.prepareCallHierarchy(request));
-  }
-
-  public CompletableFuture<List<CallHierarchyOutgoingCall>> outgoingCalls(
-      final CallHierarchyItem item,
-      final String uri,
-      final String content,
-      final int version,
-      final List<Path> sourceRoots) {
-    return submit(ctx -> ctx.outgoingCalls(item, uri, content, version, sourceRoots));
-  }
-
-  public CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchy(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    return submit(ctx -> ctx.prepareTypeHierarchy(request, typeIndex));
-  }
-
-  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return submit(ctx -> ctx.typeHierarchySupertypes(item, typeIndex, sourceRoots));
-  }
-
-  public CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return submit(ctx -> ctx.typeHierarchySubtypes(item, typeIndex, sourceRoots));
-  }
-
-  public CompletableFuture<TypeHierarchyExplorerResult> typeHierarchyExplore(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots,
-      final int nodeCap) {
-    return submit(ctx -> ctx.typeHierarchyExplore(item, typeIndex, sourceRoots, nodeCap));
-  }
-
-  public CompletableFuture<List<TypeIndexEntry>> cachedTypeEntries(
-      final Set<String> neededSimpleNames) {
-    return submit(ctx -> ctx.cachedTypeEntries(neededSimpleNames));
-  }
-
-  public CompletableFuture<List<DocumentSymbol>> documentSymbol(
-      final String uri, final String content) {
-    return submit(ctx -> ctx.documentSymbol(uri, content));
-  }
-
-  public CompletableFuture<List<RunTarget>> runnables(
-      final String uri, final String content, final int expectedVersion, final String moduleRel) {
-    return submit(ctx -> ctx.runnables(uri, content, expectedVersion, moduleRel));
-  }
-
-  public CompletableFuture<Optional<String>> enclosingBinaryName(
-      final String uri, final int oneBasedLine) {
-    return submit(ctx -> ctx.enclosingBinaryName(uri, oneBasedLine));
-  }
-
-  public CompletableFuture<Optional<AttributedExpression>> attributeExpression(
-      final String uri, final String content, final int oneBasedLine, final String expression) {
-    return submit(ctx -> ctx.attributeExpression(uri, content, oneBasedLine, expression));
-  }
-
-  public CompletableFuture<Optional<AttributedExpression>> attributeReceiverExpression(
-      final String uri, final String receiverType, final String receiver, final String expression) {
-    return submit(ctx -> ctx.attributeReceiverExpression(uri, receiverType, receiver, expression));
-  }
-
-  public CompletableFuture<List<FoldingRange>> foldingRange(
-      final String uri, final String content) {
-    return submit(ctx -> ctx.foldingRange(uri, content));
-  }
-
-  public CompletableFuture<CompletionOutcome> complete(
-      final String uri,
-      final String content,
-      final int version,
-      final Position position,
-      final CompletionContext context,
-      final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames,
-      final LearnedStaticImports staticImports) {
-    return submit(
-        ctx ->
-            ctx.complete(
-                uri, content, version, position, context, typeIndex, moduleNames, staticImports));
-  }
-
-  public CompletableFuture<CompletionOutcome> completeTransient(
-      final String uri,
-      final String baseline,
-      final String content,
-      final Position position,
-      final CompletionContext context,
-      final WorkspaceTypeIndex typeIndex,
-      final List<String> moduleNames) {
-    return submit(
-        ctx ->
-            ctx.completeTransient(
-                uri, baseline, content, position, context, typeIndex, moduleNames));
-  }
-
-  public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(
-      final String uri,
-      final String content,
-      final int version,
-      final Range range,
-      final List<CodeActionRequest> requests,
-      final WorkspaceTypeIndex typeIndex,
-      final LearnedStaticImports staticImports) {
-    return submit(
-        ctx -> ctx.codeAction(uri, content, version, range, requests, typeIndex, staticImports));
-  }
-
-  public CompletableFuture<MissingImportsResult> missingImports(
-      final String uri,
-      final String content,
-      final int version,
-      final WorkspaceTypeIndex typeIndex,
-      final LearnedStaticImports staticImports) {
-    return submit(ctx -> ctx.missingImports(uri, content, version, typeIndex, staticImports));
-  }
-
-  public CompletableFuture<List<SemanticToken>> semanticTokens(
-      final String uri, final String content, final int expectedVersion) {
-    return submit(ctx -> ctx.semanticTokens(uri, content, expectedVersion));
-  }
-
   public void dropFromCache(final String uri) {
     if (closed) {
       return;
@@ -568,11 +241,14 @@ public final class CompilationWorker {
         });
   }
 
-  private <T> CompletableFuture<T> submit(final Function<SourceAnalysisSession, T> fn) {
+  // Runs fn on this module's thread against its analysis session; the result is delivered on the
+  // event loop.
+  public <T> CompletableFuture<T> submit(final Function<SourceAnalysisSession, T> fn) {
     return submit(fn, () -> {});
   }
 
-  private <T> CompletableFuture<T> submit(
+  // As submit(fn), skipped once cancelChecker reports the request cancelled.
+  public <T> CompletableFuture<T> submit(
       final Function<SourceAnalysisSession, T> fn, final CancelChecker cancelChecker) {
     final var future = new CompletableFuture<T>();
     if (closed) {

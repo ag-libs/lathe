@@ -99,7 +99,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
-        .resolveTarget(request, cancelChecker)
+        .submit(session -> session.resolveTarget(request), cancelChecker)
         .thenCompose(
             target -> {
               cancelChecker.checkCanceled();
@@ -177,7 +177,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
 
     return cursorWorker
-        .instantiationTargets(request, cancelChecker)
+        .submit(session -> session.instantiationTargets(request), cancelChecker)
         .thenCompose(
             targets -> {
               cancelChecker.checkCanceled();
@@ -227,7 +227,7 @@ final class ReferenceSearch {
     }
 
     return cursorWorker
-        .resolveContractTarget(request, cancelChecker)
+        .submit(session -> session.resolveContractTarget(request), cancelChecker)
         .thenApply(contract -> contract != null ? contract : target);
   }
 
@@ -242,7 +242,7 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     return cursorWorker
-        .generatedAccessorTargets(request)
+        .submit(session -> session.generatedAccessorTargets(request))
         .thenCompose(
             accessors -> {
               CompletableFuture<List<ReferenceMatch>> all =
@@ -496,13 +496,16 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     router.touchAnalysisCache(doc.uri());
     return worker
-        .searchReferences(
-            doc.uri(),
-            doc.content(),
-            doc.version(),
-            target,
-            includeDeclaration,
-            exposureFamily,
+        .submit(
+            session ->
+                session.searchReferences(
+                    doc.uri(),
+                    doc.content(),
+                    doc.version(),
+                    target,
+                    includeDeclaration,
+                    exposureFamily,
+                    cancelChecker),
             cancelChecker)
         .whenComplete(advancing(progress, false));
   }
@@ -518,12 +521,15 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     final List<TransientSource> sources =
         chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
-    return worker.searchReferencesTransient(
-        sources,
-        target,
-        includeDeclaration,
-        exposureFamily,
-        hits -> progress.advance(true, hits),
+    return worker.submit(
+        session ->
+            session.searchReferencesTransient(
+                sources,
+                target,
+                includeDeclaration,
+                exposureFamily,
+                hits -> progress.advance(true, hits),
+                cancelChecker),
         cancelChecker);
   }
 
@@ -585,7 +591,7 @@ final class ReferenceSearch {
           final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
-              .resolveTarget(request)
+              .submit(session -> session.resolveTarget(request))
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
               .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
@@ -598,7 +604,11 @@ final class ReferenceSearch {
     }
 
     return worker
-        .searchReferences(doc.uri(), doc.content(), doc.version(), target, true, Set.of(), () -> {})
+        .submit(
+            session ->
+                session.searchReferences(
+                    doc.uri(), doc.content(), doc.version(), target, true, Set.of(), () -> {}),
+            () -> {})
         .thenApply(found -> toHighlights(found.hits()));
   }
 
@@ -749,7 +759,7 @@ final class ReferenceSearch {
 
     final var t = Stopwatch.start();
     return cursorWorker
-        .resolveTarget(request)
+        .submit(session -> session.resolveTarget(request))
         .thenCompose(
             target ->
                 implementationForTarget(
@@ -781,7 +791,7 @@ final class ReferenceSearch {
     // Only an interface, or its method, can be implemented by lambdas.
     final CompletableFuture<Optional<String>> samInterface =
         target.kind().isInterface() || target.kind() == ElementKind.METHOD
-            ? cursorWorker.functionalInterfaceName(request)
+            ? cursorWorker.submit(session -> session.functionalInterfaceName(request))
             : CompletableFuture.completedFuture(Optional.empty());
     // Reading the workspace to plan the search runs on the event loop: the worker delivers there.
     return samInterface.thenCompose(
@@ -806,7 +816,7 @@ final class ReferenceSearch {
       final Map<String, List<String>> lambdaSnapshot) {
     return FeatureAnswers.concatAll(
         Stream.of(
-            cursorWorker.typeImplementations(request, indexSnapshot),
+            cursorWorker.submit(session -> session.typeImplementations(request, indexSnapshot)),
             implementationsIn(
                     target,
                     samInterface,
@@ -942,7 +952,9 @@ final class ReferenceSearch {
     final OpenDocument openFile = docs.get(uri);
     if (openFile != null) {
       router.touchAnalysisCache(openFile.uri());
-      return worker.get().queryFile(uri, openFile.content(), openFile.version(), query);
+      return worker
+          .get()
+          .submit(session -> session.queryFile(uri, openFile.content(), openFile.version(), query));
     }
 
     return eventLoop
@@ -954,7 +966,12 @@ final class ReferenceSearch {
                             state
                                 .registry()
                                 .moduleWorkerFor(sourceFile)
-                                .map(w -> w.queryFileTransient(uri, file.content(), query)))
+                                .map(
+                                    w ->
+                                        w.submit(
+                                            session ->
+                                                session.queryFileTransient(
+                                                    uri, file.content(), query))))
                     .orElseGet(() -> CompletableFuture.completedFuture(List.of())));
   }
 
@@ -966,14 +983,17 @@ final class ReferenceSearch {
     }
 
     final var t = Stopwatch.start();
+    final List<Path> sourceDirs = state.typeSourceDirs();
     return router
         .openDocFeature(
             "callHierarchy:outgoing",
             data.routingUri(),
             List.of(),
             (worker, doc) ->
-                worker.outgoingCalls(
-                    item, doc.uri(), doc.content(), doc.version(), state.typeSourceDirs()))
+                worker.<List<CallHierarchyOutgoingCall>>submit(
+                    session ->
+                        session.outgoingCalls(
+                            item, doc.uri(), doc.content(), doc.version(), sourceDirs)))
         .thenApply(
             FeatureAnswers.logged(LOG, "callHierarchy:outgoing", data.routingUri(), t, "calls"));
   }
@@ -1077,8 +1097,16 @@ final class ReferenceSearch {
                   cancelChecker.checkCanceled();
                   router.touchAnalysisCache(doc.uri());
                   return worker
-                      .searchIncomingCalls(
-                          doc.uri(), doc.content(), doc.version(), target, family, cancelChecker)
+                      .submit(
+                          session ->
+                              session.searchIncomingCalls(
+                                  doc.uri(),
+                                  doc.content(),
+                                  doc.version(),
+                                  target,
+                                  family,
+                                  cancelChecker),
+                          cancelChecker)
                       .whenComplete(advancing(progress, false));
                 }),
         inputs.diskCandidates().stream()
@@ -1086,8 +1114,11 @@ final class ReferenceSearch {
                 d -> {
                   cancelChecker.checkCanceled();
                   return worker
-                      .searchIncomingCallsTransient(
-                          d.uri(), d.content(), target, family, cancelChecker)
+                      .submit(
+                          session ->
+                              session.searchIncomingCallsTransient(
+                                  d.uri(), d.content(), target, family, cancelChecker),
+                          cancelChecker)
                       .whenComplete(advancing(progress, true));
                 }));
   }
@@ -1102,7 +1133,8 @@ final class ReferenceSearch {
             List.of(),
             (worker, doc) -> {
               final var request = router.featureRequest(doc, pos);
-              return worker.prepareCallHierarchy(request);
+              return worker.<List<CallHierarchyItem>>submit(
+                  session -> session.prepareCallHierarchy(request));
             })
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }

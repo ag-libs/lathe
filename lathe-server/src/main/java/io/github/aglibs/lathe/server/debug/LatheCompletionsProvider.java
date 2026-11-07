@@ -100,14 +100,16 @@ final class LatheCompletionsProvider implements ICompletionsProvider {
             .onWorker(
                 file,
                 worker ->
-                    worker.completeTransient(
-                        LatheUri.fromPath(file),
-                        content,
-                        synthetic,
-                        position,
-                        new CompletionContext(CompletionTriggerKind.Invoked),
-                        typeIndex,
-                        List.of()))
+                    worker.submit(
+                        session ->
+                            session.completeTransient(
+                                LatheUri.fromPath(file),
+                                content,
+                                synthetic,
+                                position,
+                                new CompletionContext(CompletionTriggerKind.Invoked),
+                                typeIndex,
+                                List.of())))
             .join();
     if (completed.isEmpty()) {
       return List.of();

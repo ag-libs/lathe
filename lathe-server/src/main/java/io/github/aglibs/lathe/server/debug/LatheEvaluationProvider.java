@@ -109,8 +109,10 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .onWorker(
                 file,
                 worker ->
-                    worker.attributeReceiverExpression(
-                        LatheUri.fromPath(file), receiverType, RECEIVER, expression))
+                    worker.submit(
+                        session ->
+                            session.attributeReceiverExpression(
+                                LatheUri.fromPath(file), receiverType, RECEIVER, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
@@ -285,13 +287,16 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .fileFor(location)
             .orElseThrow(() -> new EvaluationException("source not found for " + location));
     final String content = Files.readString(file);
+    final int line = location.lineNumber();
     final AttributedExpression attributed =
         frames
             .onWorker(
                 file,
                 worker ->
-                    worker.attributeExpression(
-                        LatheUri.fromPath(file), content, location.lineNumber(), expression))
+                    worker.submit(
+                        session ->
+                            session.attributeExpression(
+                                LatheUri.fromPath(file), content, line, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));

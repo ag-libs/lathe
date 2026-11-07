@@ -6,6 +6,7 @@ import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
@@ -16,7 +17,6 @@ import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleNameDiscovery;
 import io.github.aglibs.lathe.server.run.TestCounterparts;
 import java.nio.file.Path;
@@ -98,9 +98,10 @@ final class DocumentFeatures {
     final var t = Stopwatch.start();
     if (router.routeCompiler(uri) instanceof final CompilerRoute.Module module) {
       router.touchAnalysisCache(uri);
+      final String moduleRel = state.layout().moduleRel(module.config());
       return module
           .worker()
-          .runnables(uri, doc.content(), doc.version(), state.layout().moduleRel(module.config()))
+          .submit(session -> session.runnables(uri, doc.content(), doc.version(), moduleRel))
           .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
@@ -112,20 +113,32 @@ final class DocumentFeatures {
   CompletableFuture<List<Diagnostic>> diagnosticsTransientFuture(
       final String uri, final String content) {
     return router.routeCompiler(uri) instanceof final CompilerRoute.Module module
-        ? module.worker().diagnosticsTransient(uri, content)
+        ? module.worker().submit(session -> session.diagnosticsTransient(uri, content))
         : CompletableFuture.completedFuture(List.of());
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        "hover", uri, null, (worker, doc) -> worker.hover(router.featureRequest(doc, pos)));
+        "hover",
+        uri,
+        null,
+        (worker, doc) -> {
+          final SourceFeatureRequest request = router.featureRequest(doc, pos);
+          return worker.submit(session -> session.hover(request));
+        });
   }
 
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
     return router.openDocFeature(
-        "onName", uri, true, (worker, doc) -> worker.onName(router.featureRequest(doc, pos)));
+        "onName",
+        uri,
+        true,
+        (worker, doc) -> {
+          final SourceFeatureRequest request = router.featureRequest(doc, pos);
+          return worker.submit(session -> session.onName(request));
+        });
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
@@ -133,22 +146,25 @@ final class DocumentFeatures {
         "signatureHelp",
         uri,
         null,
-        (worker, doc) -> worker.signatureHelp(router.featureRequest(doc, pos)));
+        (worker, doc) -> {
+          final SourceFeatureRequest request = router.featureRequest(doc, pos);
+          return worker.submit(session -> session.signatureHelp(request));
+        });
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    return locationFuture("definition", uri, pos, CompilationWorker::definition);
+    return locationFuture("definition", uri, pos, SourceAnalysisSession::definition);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declarationFuture(final String uri, final Position pos) {
-    return locationFuture("declaration", uri, pos, CompilationWorker::declaration);
+    return locationFuture("declaration", uri, pos, SourceAnalysisSession::declaration);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       typeDefinitionFuture(final String uri, final Position pos) {
-    return locationFuture("typeDefinition", uri, pos, CompilationWorker::typeDefinition);
+    return locationFuture("typeDefinition", uri, pos, SourceAnalysisSession::typeDefinition);
   }
 
   // One location for the open document's position, found by the document's module worker.
@@ -157,9 +173,7 @@ final class DocumentFeatures {
           final String operation,
           final String uri,
           final Position pos,
-          final BiFunction<
-                  CompilationWorker, SourceFeatureRequest, CompletableFuture<Optional<Location>>>
-              find) {
+          final BiFunction<SourceAnalysisSession, SourceFeatureRequest, Optional<Location>> find) {
     LOG.info(
         () ->
             "[%s] %s line=%d character=%d"
@@ -168,12 +182,14 @@ final class DocumentFeatures {
         operation,
         uri,
         Either.forLeft(List.of()),
-        (worker, doc) ->
-            find.apply(worker, router.featureRequest(doc, pos))
-                .thenApply(
-                    location ->
-                        FeatureAnswers.definitionResult(
-                            location.map(List::of).orElseGet(List::of))));
+        (worker, doc) -> {
+          final SourceFeatureRequest request = router.featureRequest(doc, pos);
+          return worker
+              .submit(session -> find.apply(session, request))
+              .thenApply(
+                  location ->
+                      FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)));
+        });
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
@@ -187,7 +203,8 @@ final class DocumentFeatures {
             List.of(),
             (worker, doc) -> {
               final var request = router.featureRequest(doc, pos);
-              return worker.prepareTypeHierarchy(request, indexSnapshot);
+              return worker.<List<TypeHierarchyItem>>submit(
+                  session -> session.prepareTypeHierarchy(request, indexSnapshot));
             })
         .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
@@ -195,13 +212,13 @@ final class DocumentFeatures {
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
       final TypeHierarchyItem item) {
     return typeHierarchyLevel(
-        "typeHierarchy:supertypes", item, CompilationWorker::typeHierarchySupertypes);
+        "typeHierarchy:supertypes", item, SourceAnalysisSession::typeHierarchySupertypes);
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
       final TypeHierarchyItem item) {
     return typeHierarchyLevel(
-        "typeHierarchy:subtypes", item, CompilationWorker::typeHierarchySubtypes);
+        "typeHierarchy:subtypes", item, SourceAnalysisSession::typeHierarchySubtypes);
   }
 
   // One level of a type's hierarchy, answered by the worker of the module that holds it.
@@ -220,14 +237,16 @@ final class DocumentFeatures {
             operation,
             data.routingUri(),
             List.of(),
-            worker -> step.apply(worker, item, indexSnapshot, sourceDirs))
+            worker ->
+                worker.<List<TypeHierarchyItem>>submit(
+                    session -> step.apply(session, item, indexSnapshot, sourceDirs)))
         .thenApply(FeatureAnswers.logged(LOG, operation, data.binaryName(), t, "items"));
   }
 
   @FunctionalInterface
   private interface TypeHierarchyStep {
-    CompletableFuture<List<TypeHierarchyItem>> apply(
-        CompilationWorker worker,
+    List<TypeHierarchyItem> apply(
+        SourceAnalysisSession session,
         TypeHierarchyItem item,
         WorkspaceTypeIndex index,
         List<Path> sourceDirs);
@@ -252,8 +271,10 @@ final class DocumentFeatures {
                   data.routingUri(),
                   TypeHierarchyExplorerResult.empty(),
                   worker ->
-                      worker.typeHierarchyExplore(
-                          self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP));
+                      worker.submit(
+                          session ->
+                              session.typeHierarchyExplore(
+                                  self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP)));
             })
         .thenApply(
             result -> {
@@ -275,20 +296,23 @@ final class DocumentFeatures {
     final var indexSnapshot = reactorIndex.current();
     final var route = router.routeCompiler(uri);
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
+    final List<String> moduleNames = completionModuleNames(route, uri);
     return router.openDocFeature(
         "completion",
         uri,
         CompletionOutcome.of(List.of()),
         (worker, doc) ->
-            worker.complete(
-                uri,
-                doc.content(),
-                doc.version(),
-                pos,
-                context,
-                indexSnapshot,
-                completionModuleNames(route, uri),
-                staticImports));
+            worker.submit(
+                session ->
+                    session.complete(
+                        uri,
+                        doc.content(),
+                        doc.version(),
+                        pos,
+                        context,
+                        indexSnapshot,
+                        moduleNames,
+                        staticImports)));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
@@ -324,18 +348,20 @@ final class DocumentFeatures {
         List.of(),
         moduleWorker ->
             moduleWorker
-                .cachedTypeEntries(neededTypeNames)
+                .submit(session -> session.cachedTypeEntries(neededTypeNames))
                 .thenCompose(reactorIndex::withOpenEntries)
                 .thenCompose(
                     enriched ->
-                        moduleWorker.codeAction(
-                            uri,
-                            openFile.content(),
-                            openFile.version(),
-                            range,
-                            requests,
-                            enriched,
-                            staticImports))
+                        moduleWorker.submit(
+                            session ->
+                                session.codeAction(
+                                    uri,
+                                    openFile.content(),
+                                    openFile.version(),
+                                    range,
+                                    requests,
+                                    enriched,
+                                    staticImports)))
                 .thenApply(
                     actions ->
                         resolveSupported
@@ -363,8 +389,14 @@ final class DocumentFeatures {
         uri,
         MissingImportsResult.empty(),
         moduleWorker ->
-            moduleWorker.missingImports(
-                uri, openFile.content(), openFile.version(), indexSnapshot, staticImports));
+            moduleWorker.submit(
+                session ->
+                    session.missingImports(
+                        uri,
+                        openFile.content(),
+                        openFile.version(),
+                        indexSnapshot,
+                        staticImports)));
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {
@@ -379,7 +411,7 @@ final class DocumentFeatures {
         null,
         (worker, doc) ->
             worker
-                .semanticTokens(uri, doc.content(), doc.version())
+                .submit(session -> session.semanticTokens(uri, doc.content(), doc.version()))
                 .thenApply(DocumentFeatures::encodeTokensOrNull));
   }
 
@@ -388,7 +420,7 @@ final class DocumentFeatures {
         "documentSymbol",
         uri,
         List.of(),
-        (worker, doc) -> worker.documentSymbol(uri, doc.content()));
+        (worker, doc) -> worker.submit(session -> session.documentSymbol(uri, doc.content())));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
@@ -399,7 +431,10 @@ final class DocumentFeatures {
     }
 
     return router.routeFeature(
-        "foldingRange", uri, List.of(), worker -> worker.foldingRange(uri, doc.content()));
+        "foldingRange",
+        uri,
+        List.of(),
+        worker -> worker.submit(session -> session.foldingRange(uri, doc.content())));
   }
 
   List<SymbolInformation> workspaceSymbol(final String query, final boolean reactorOnly) {

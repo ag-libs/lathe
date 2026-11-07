@@ -662,10 +662,11 @@ final class WritePass {
         stamps.keySet().stream()
             .filter(reported::containsKey)
             .collect(Collectors.toUnmodifiableMap(source -> source, reported::get));
+    final List<TransientSource> batch = List.copyOf(transientSources);
     return state
         .registry()
         .workerFor(config)
-        .compileBatch(List.copyOf(transientSources))
+        .submit(session -> session.compileBatch(batch, () -> {}))
         .handle(
             (written, error) -> {
               reports.forEach(reported::remove);

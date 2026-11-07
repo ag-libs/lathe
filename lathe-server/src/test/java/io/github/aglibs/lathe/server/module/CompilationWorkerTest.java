@@ -167,7 +167,7 @@ class CompilationWorkerTest {
     final var symbol = new DocumentSymbol();
     when(context.documentSymbol(uri, content)).thenReturn(List.of(symbol));
 
-    final var result = worker.documentSymbol(uri, content).join();
+    final var result = worker.submit(session -> session.documentSymbol(uri, content)).join();
 
     assertThat(result).containsExactly(symbol);
   }
@@ -179,7 +179,7 @@ class CompilationWorkerTest {
     final var range = new FoldingRange(0, 1);
     when(context.foldingRange(uri, content)).thenReturn(List.of(range));
 
-    final var result = worker.foldingRange(uri, content).join();
+    final var result = worker.submit(session -> session.foldingRange(uri, content)).join();
 
     assertThat(result).containsExactly(range);
   }
@@ -217,14 +217,15 @@ class CompilationWorkerTest {
     try {
       assertThat(releasing.idleFor(0)).as("no session before a request").isFalse();
 
-      final var queued = releasing.documentSymbol(uri, content);
+      final var queued = releasing.submit(session -> session.documentSymbol(uri, content));
       assertThat(releasing.idleFor(0)).isTrue();
       assertThat(releasing.idleFor(60_000)).as("just asked").isFalse();
       releasing.releaseSession();
 
       assertThat(queued.join()).containsExactly(symbol);
       assertThat(releasing.idleFor(0)).as("released").isFalse();
-      assertThat(releasing.documentSymbol(uri, content).join()).containsExactly(symbol);
+      assertThat(releasing.submit(session -> session.documentSymbol(uri, content)).join())
+          .containsExactly(symbol);
       verify(first).close();
       verify(second, never()).close();
       assertThat(sessions).hasValue(2);
@@ -263,7 +264,11 @@ class CompilationWorkerTest {
 
     final var result =
         worker
-            .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker)
+            .submit(
+                session ->
+                    session.searchReferencesTransient(
+                        sources, target, false, Set.of(), progress, cancelChecker),
+                cancelChecker)
             .join();
 
     assertThat(result.hits()).containsExactly(match);
@@ -297,7 +302,11 @@ class CompilationWorkerTest {
     final CompletableFuture<CompileResponse> blocker = worker.compile(request);
     await(entered);
     final CompletableFuture<SearchHits<ReferenceMatch>> cancelledFuture =
-        worker.searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
+        worker.submit(
+            session ->
+                session.searchReferencesTransient(
+                    sources, target, false, Set.of(), progress, cancelChecker),
+            cancelChecker);
     cancelled.set(true);
     release.countDown();
 
@@ -328,7 +337,9 @@ class CompilationWorkerTest {
       final CompletableFuture<CompileResponse> future = failingWorker.compile(request);
 
       assertThatThrownBy(future::join).hasCause(failure);
-      failingWorker.documentSymbol(request.uri(), request.content()).join();
+      failingWorker
+          .submit(session -> session.documentSymbol(request.uri(), request.content()))
+          .join();
       assertThat(status).hasValue(expectedStatus);
     } finally {
       failingWorker.close();
