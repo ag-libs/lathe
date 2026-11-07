@@ -107,22 +107,14 @@ public final class OpenJdkSync {
     final CmdlineReader.Parsed parsed = CmdlineReader.read(Files.readString(cmdlineFile), module);
     final List<Path> sourceRoots = existingRoots(parsed.sourceRootPatterns());
     final var config =
-        new ModuleConfigData(
+        ModuleConfigData.external(
             SOURCE_TREE,
             moduleOut.toString(),
-            null,
             sourceRoots.stream().map(Path::toString).toList(),
             List.of(),
-            List.of(),
-            List.of(),
-            "",
             parsed.encoding(),
-            false,
-            false,
-            null,
             parsed.compilerArgs(),
-            AnalysisMode.MODULE_SYSTEM,
-            true);
+            AnalysisMode.MODULE_SYSTEM);
     final List<Path> sources = readFilelist(batchFile(cmdlineFile, ".filelist"));
     writeConfig(latheDir(workspaceRoot).resolve(module), config, sources, sourceRoots);
     return sourceRoots;
@@ -153,22 +145,14 @@ public final class OpenJdkSync {
 
       final CmdlineReader.ToolParsed parsed = CmdlineReader.readTool(content);
       final var config =
-          new ModuleConfigData(
+          ModuleConfigData.external(
               SOURCE_TREE,
               outputDir.toString(),
-              null,
               sourceRoots.stream().map(Path::toString).toList(),
               parsed.classpath(),
-              List.of(),
-              List.of(),
-              "",
               parsed.encoding(),
-              false,
-              false,
-              null,
               parsed.compilerArgs(),
-              AnalysisMode.CLASSPATH,
-              true);
+              AnalysisMode.CLASSPATH);
       writeConfig(
           latheDir(workspaceRoot).resolve(batchName(cmdline)), config, sources, sourceRoots);
       synced.add(cmdline);
