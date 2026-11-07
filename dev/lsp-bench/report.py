@@ -106,8 +106,9 @@ def method_of(runs, name):
 
 def keys(answer):
     locations = Q.location_keys(answer)
-    # jdtls labels a call hierarchy item with its signature, Lathe with its name only.
-    return locations if locations else sorted({n.split("(")[0].strip() for n in answer["names"]})
+    # jdtls labels a call hierarchy item with its signature, Lathe with its name only; jdtls names a
+    # nested type Outer$Inner, Lathe Inner.
+    return locations if locations else sorted({n.split("(")[0].strip().rsplit("$", 1)[-1] for n in answer["names"]})
 
 
 def diff_section(runs):
@@ -165,8 +166,10 @@ def main():
         "",
     ] + server_table(runs) + [
         "",
-        "Build is Lathe's build with its capture, on cold runs; import is jdtls's own project import, "
-        "inside its ready time. Ready runs from the server's start to the first right answer to the probe query.",
+        "Build is what a cold run builds before the server starts: Lathe's build and sync (on Gradle with "
+        "its test capture), and for jdtls only where it needs the project installed first. Import is "
+        "jdtls's own project import, inside its ready time. Ready runs from the server's start to the "
+        "first right answer to the probe query.",
         "",
         "## Queries (warm runs, medians)",
         "",

@@ -98,3 +98,10 @@ Then every row with its raw results and the command that reproduces it, the rows
   the rules under [Queries](#queries) name "the main module" without saying which; each project's is now named in `projects.py` before its first run:
   the module its other modules build on (`dropwizard-core`, Helidon's `webserver/webserver`, `hibernate-core`, `fineract-core`, `openmetadata-service`).
   How the rules are applied by text search, and the base class for the kinds without a rule of their own, are in `pick.py`'s description.
+- **2026-11-07, during the unmeasured priming runs, before any measured run of the projects named:**
+  - The build row of a Maven project holds no test capture: `process-test-classes` stops before Surefire runs, and Maven captures a launch only when tests run. The Gradle rows (`latheSync -Plathe.capture.only=true`) do capture. [Metrics](#metrics) said "with its capture" for both.
+  - jdtls cannot import Helidon from a fresh checkout: its Maven integration resolves the compiler plugin's dependencies (Helidon's own annotation processors, `28.0.0-SNAPSHOT`) only from a repository. jdtls's cold Helidon runs therefore run `mvn install -DskipTests` first, into a repository of their own under `.work/`, and that install is timed as jdtls's build row.
+  - Dropwizard's `pgpverify` rejects an unsigned artifact. Lathe's releases are signed; the pinned local build is not, so Lathe's Dropwizard build allows the `io.github.ag-libs` group unsigned (`pgp-keys-map.list`) and verifies everything else.
+  - The readiness probe must be a query whose right answer no server disputes. Hibernate ORM's was a constructor call, where Lathe answers the class and jdtls the constructor; its probe is now a method call, and the constructor call a query of its own.
+  - The getter rule now requires the getter's body to be `return field;`: it had matched a local variable beside a static method of the getter's name.
+  - Dropwizard's checks of two queries were wrong (Jetty's `setHandler` is `Handler.Wrapper`'s; `MigrationsBundle` does not override `run`); both servers answered alike, and the checks were corrected.

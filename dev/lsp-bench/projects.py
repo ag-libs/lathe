@@ -29,6 +29,9 @@ PROJECTS = {
         "jdk": CORRETTO_25,
         "cases": "dropwizard",
         "main_module": "dropwizard-core",
+        # Its pgpverify check rejects an unsigned artifact; Lathe's releases are signed, the pinned
+        # local build is not, so Lathe's build allows its group unsigned and verifies all the rest.
+        "lathe_appends": {"pgp-keys-map.list": "io.github.ag-libs = noSig\n"},
     },
     "helidon": {
         "url": GIT_HOME / "helidon",
@@ -37,6 +40,10 @@ PROJECTS = {
         "jdk": CORRETTO_27,
         "cases": "helidon",
         "main_module": "webserver/webserver",
+        # jdtls's Maven integration resolves the compiler plugin's dependencies (Helidon's own
+        # annotation processors) only from a repository, so its runs install Helidon first, into a
+        # repository of their own; the install is timed as jdtls's build.
+        "jdtls_install": True,
     },
     "hibernate-orm": {
         "url": GIT_HOME / "hibernate-orm",

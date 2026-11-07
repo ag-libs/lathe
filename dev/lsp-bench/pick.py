@@ -15,8 +15,8 @@ as a reference search returns them:
   whose methods are all static;
 - the interface is the main-module interface named in the most `implements` clauses, and its method
   the one declared in the most of those implementing files;
-- the field is the main-module field whose getter (`getX()`/`isX()`, declared in the same file) is
-  called in the most other files;
+- the field is the main-module field whose getter (`getX()`/`isX()` declared in the same file,
+  its body `return x;`) is called in the most other files;
 - the enum constant is the main-module constant spelled `case NAME` in the most other files.
 Kinds without a rule of their own take positions around these: the base class is the main-module
 class named in the most `extends` clauses (implementations, subtypes; a subclass for supertypes).
@@ -73,6 +73,11 @@ def declarations(source):
 def declaring_type(source):
     found = TYPE_DECL.search(source)
     return found.group(2) if found else None
+
+
+def returns_field(source, getter, field):
+    """Whether a no-argument getter's body is `return field;` or `return this.field;`."""
+    return re.search(r"\b%s\s*\(\s*\)\s*\{\s*return\s+(?:this\.)?%s\s*;\s*\}" % (getter, field), source) is not None
 
 
 def report(title, counter, where, top=5):
@@ -158,7 +163,8 @@ def main():
         for method, _mods, line in declarations(sources[path]):
             for prefix in ("get", "is"):
                 field = method[len(prefix):][:1].lower() + method[len(prefix) + 1:]
-                if method.startswith(prefix) and len(method) > len(prefix) and field in fields:
+                if method.startswith(prefix) and len(method) > len(prefix) and field in fields \
+                        and returns_field(sources[path], method, field):
                     key = "%s.%s (%s)" % (top_type[path], field, method)
                     getters[key] = sum(1 for p in files if p != path and calls[p][method] and sees(p, path))
                     getter_where[key] = "%s:%d" % (path.relative_to(repo), line)
