@@ -66,7 +66,11 @@ CONFIGS = {
         test=("common/media-type/src/test/java/io/helidon/common/media/type/MediaTypesTest.java", "testCustom",
               "MediaTypesTest"),
         probe=("common/media-type/src/main/java/io/helidon/common/media/type", "io.helidon.common.media.type"),
-        module_info="common/media-type/src/main/java/module-info.java"),
+        module_info="common/media-type/src/main/java/module-info.java",
+        # Implemented in many modules (about 50 implementations in 14), as the checks of a listing's
+        # modules need: a method implemented in a few cannot show what they look for.
+        wide=("webserver/webserver/src/main/java/io/helidon/webserver/http/Handler.java",
+              "void handle(ServerRequest", "handle")),
 }
 
 # Every tool the server lists must have a check here, so a new tool cannot ship untested.
@@ -185,7 +189,8 @@ def workspace_checks(b, ws, cfg, f, pos, tests_captured):
     ref_modules = {mc.module_of(ws, p) for p, _, _ in mc.locations(refs)} - {None}
     b.check("find_references: uses in several modules", mc.count(refs) >= 3 and len(ref_modules) >= 2,
             "%d reference(s) in %d module(s)" % (mc.count(refs), len(ref_modules)))
-    mc.list_shape(b, ws, refs, "find_references")
+    mc.list_shape(b, ws, refs, "find_references",
+                  duplicates_known="two hits on one line show as identical rows with no column")
 
     incoming = b.raw("call_hierarchy", dict(pos, direction="incoming"))[0]
     if cfg["is_method"]:
@@ -243,8 +248,16 @@ def consistency_checks(b, ws, cfg, f, pos):
     method_pos = {"file": str(method), "line": locate(method, cfg["method"][1])[0], "symbol": cfg["method"][2]}
     mc.implementations_agree(b, type_pos, method_pos, "impls(%s) cover impls(%s)" % (cfg["iface"][2], cfg["method"][2]))
     mc.override_family_present(b, method_pos, "override family of %s" % cfg["method"][2])
-    mc.analyze_modules_cover(b, ws, method_pos, "analyze_change modules cover its locations",
-                             known="analyze_change names too few affected modules")
+    mc.analyze_modules_cover(b, ws, method_pos, "analyze_change modules cover its locations")
+    if cfg.get("wide"):
+        wide = ws / cfg["wide"][0]
+        wide_pos = {"file": str(wide), "line": locate(wide, cfg["wide"][1])[0], "symbol": cfg["wide"][2]}
+        mc.analyze_modules_cover_implementations(
+            b, ws, wide_pos, "analyze_change modules cover the implementations",
+            known="analyze_change names too few affected modules: not the implementations' modules")
+        impls = b.raw("find_implementations", wide_pos)[0]
+        mc.list_shape(b, ws, impls, "find_implementations",
+                      grouped_known="locations come back in discovery order, modules mixed")
     mc.references_round_trip(b, ws, f, pos, cfg["symbol"].rstrip("()"), "references lead back to the declaration")
     mc.family_covers_definitions(b, ws, f, pos, cfg["symbol"].rstrip("()"), "override family covers what references reach",
                                  known="analyze_change's override family leaves out abstract redeclarations")
