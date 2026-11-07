@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.junit;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheWorkspace;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
@@ -52,8 +53,15 @@ final class LaunchCapture {
             ownJarLocation().orElse(null),
             FileUtil.slashed(moduleRel));
     Files.createDirectories(moduleDir);
-    final Path target = moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE);
+    final Path target = moduleDir.resolve(launchFile(System.getenv(LatheFlags.CAPTURE_TREE_ENV)));
     FileUtil.writeAtomically(moduleDir, target, Json.toJson(data), false);
+  }
+
+  // The tree the build names (a Gradle test task of a source set beyond test), else the module's
+  // test tree.
+  static String launchFile(final String captureTree) {
+    return LatheLayout.testLaunchFile(
+        captureTree == null || captureTree.isBlank() ? LatheLayout.TEST_CLASSES_DIR : captureTree);
   }
 
   private static Optional<Path> ownJarLocation() throws URISyntaxException {

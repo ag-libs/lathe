@@ -25,6 +25,8 @@ class CapturePrunerTest {
     capture("a", LatheLayout.TEST_CLASSES_DIR);
     capture("a", LatheLayout.sourceSetTree("integrationTest"));
     capture("a", LatheLayout.sourceSetTree("jmh"));
+    write(".lathe/a/" + LatheLayout.testLaunchFile(LatheLayout.sourceSetTree("integrationTest")));
+    write(".lathe/a/" + LatheLayout.testLaunchFile(LatheLayout.sourceSetTree("jmh")));
     capture("a/b", LatheLayout.CLASSES_DIR);
     capture("gone", LatheLayout.CLASSES_DIR);
     write(".lathe/a/" + LatheLayout.TEST_LAUNCH_FILE);
@@ -48,6 +50,8 @@ class CapturePrunerTest {
     assertCaptured("a", LatheLayout.TEST_CLASSES_DIR, false);
     assertCaptured("a", LatheLayout.sourceSetTree("integrationTest"), true);
     assertCaptured("a", LatheLayout.sourceSetTree("jmh"), false);
+    assertThat(lathe("a").resolve("test-launch-classes-integrationTest.json")).exists();
+    assertThat(lathe("a").resolve("test-launch-classes-jmh.json")).doesNotExist();
     assertCaptured("a/b", LatheLayout.CLASSES_DIR, true);
     assertCaptured("gone", LatheLayout.CLASSES_DIR, false);
     assertThat(lathe("a").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();

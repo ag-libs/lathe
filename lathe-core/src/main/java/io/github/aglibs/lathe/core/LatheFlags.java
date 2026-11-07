@@ -8,6 +8,9 @@ public final class LatheFlags {
   public static final String DISABLED = "lathe.disabled";
   public static final String FORCE_SYNC = "lathe.sync.force";
   public static final String CAPTURE_ONLY = "lathe.capture.only";
+  // The tree whose launch a test JVM captures, when it is not the module's test tree: set by the
+  // Gradle plugin on a test task of another source set, in its environment, which is no task input.
+  public static final String CAPTURE_TREE_ENV = "LATHE_CAPTURE_TREE";
   // The Maven phase the sync script builds to, process-test-classes by default: a project whose
   // module compiles against a sibling's shaded jar, which only package makes, sets package.
   public static final String SYNC_PHASE = "lathe.sync.phase";

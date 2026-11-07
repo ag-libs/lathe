@@ -10,6 +10,16 @@ import org.junit.jupiter.api.Test;
 
 final class LaunchCaptureTest {
 
+  // A Gradle test task of a source set beyond test names its tree; without one, or with an empty
+  // value, the launch is the module's test launch.
+  @Test
+  void launchFile_treeNamedOrNot_namedTreesOwnFileElseTheTestLaunch() {
+    assertThat(LaunchCapture.launchFile("classes-integrationTest"))
+        .isEqualTo("test-launch-classes-integrationTest.json");
+    assertThat(LaunchCapture.launchFile(null)).isEqualTo("test-launch.json");
+    assertThat(LaunchCapture.launchFile(" ")).isEqualTo("test-launch.json");
+  }
+
   @Test
   void toLaunchData_classpathFork_excludesOwnJar() {
     final Path ownJar = Path.of("/repo/lathe-junit.jar");
