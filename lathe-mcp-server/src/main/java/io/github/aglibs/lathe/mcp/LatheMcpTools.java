@@ -104,66 +104,41 @@ final class LatheMcpTools {
   static List<SyncToolSpecification> all(
       final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
     return List.of(
-        diagnostics(engine, mapper),
-        definition(engine, mapper),
-        references(engine, mapper),
-        rename(engine, mapper),
-        runTest(engine, mapper),
-        callHierarchy(engine, mapper),
-        describeSymbol(engine, mapper),
-        searchSymbols(engine, mapper),
-        findImplementations(engine, mapper),
-        analyzeChange(engine, mapper),
-        verifyChange(engine, mapper),
-        formatFile(engine, mapper),
-        fixImports(engine, mapper),
-        outline(engine, mapper),
-        workspaceSummary(engine, mapper));
-  }
-
-  private static SyncToolSpecification diagnostics(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("get_diagnostics", mapper, FILE_SCHEMA)
-            .description(
-                """
+        tool(
+            engine,
+            mapper,
+            "get_diagnostics",
+            FILE_SCHEMA,
+            READ_ONLY,
+            """
                 Compiler-accurate errors and warnings (plus unused-code hints) for a Java file, \
                 exactly as javac sees them on the real build classpath. Call after editing a file to check whether \
                 it compiles — no whole-project build.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleDiagnostics(engine.get(), request));
-  }
-
-  private static SyncToolSpecification definition(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("get_definition", mapper, positionSchema(""))
-            .description(
-                """
+                """,
+            LatheMcpTools::handleDiagnostics),
+        tool(
+            engine,
+            mapper,
+            "get_definition",
+            positionSchema(""),
+            READ_ONLY,
+            """
                 Resolve the symbol at a position to its definition — across modules and into \
                 dependency, JDK, and generated sources — returning each target as \
                 `path:line: code`, its source line included.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleDefinition(engine.get(), request));
-  }
-
-  private static SyncToolSpecification references(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "find_references",
-                mapper,
-                positionSchema(
-                    """
+                """,
+            LatheMcpTools::handleDefinition),
+        tool(
+            engine,
+            mapper,
+            "find_references",
+            positionSchema(
+                """
                     ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max references to return (default 50)."}\
-                    """))
-            .description(
-                """
+                    """),
+            READ_ONLY,
+            """
                 Find every real use of the symbol at a position across the whole reactor — \
                 javac-accurate, not text search: resolves overloads and inheritance, spans all \
                 modules, and returns each use as one `path:line: code` line. It finds uses a plain grep \
@@ -173,25 +148,19 @@ final class LatheMcpTools {
                 especially a method \
                 with overrides/implementations or a common/overloaded name; for a rare, distinctive \
                 name a plain grep is fine.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleReferences(engine.get(), request));
-  }
-
-  private static SyncToolSpecification rename(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "rename_symbol",
-                mapper,
-                """
+                """,
+            LatheMcpTools::handleReferences),
+        tool(
+            engine,
+            mapper,
+            "rename_symbol",
+            """
                 {"type":"object","required":["file","line","newName"],
                  "properties":{%s,
                    "newName":{"type":"string","description":"The new identifier."}}}"""
-                    .formatted(POSITION_PROPERTIES))
-            .description(
-                """
+                .formatted(POSITION_PROPERTIES),
+            REWRITES_SOURCE,
+            """
                 Rename the symbol at a position across the whole reactor and apply the edits to \
                 disk — javac-accurate, so it renames only the true declaration and its uses \
                 (respecting overloads and shadowing locals) across every module, never a text \
@@ -207,19 +176,13 @@ final class LatheMcpTools {
                 queries see the new names. Then \
                 call verify_change with no arguments to check the rewritten files and their callers, \
                 and run the sync it suggests for other modules.\
-                """)
-            .annotations(REWRITES_SOURCE)
-            .build();
-    return spec(tool, request -> handleRename(engine.get(), request));
-  }
-
-  private static SyncToolSpecification runTest(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "run_test",
-                mapper,
-                """
+                """,
+            LatheMcpTools::handleRename),
+        tool(
+            engine,
+            mapper,
+            "run_test",
+            """
                 {"type":"object","required":["file"],
                  "properties":{
                    "file":{"type":"string","description":"Absolute path to a test .java file."},
@@ -227,140 +190,110 @@ final class LatheMcpTools {
                      "description":"What to run (default class)."},
                    "method":{"type":"string",
                      "description":"Test method name (required when scope=method)."}}}\
-                """)
-            .description(
-                """
+                """,
+            RUNS_CODE,
+            """
                 Replay a test against the compiled classpath — no full build. Runs one method, \
                 the whole test class, or its package; prefer it over the build's own test command \
                 for a single target after an edit. Returns pass/fail/skip counts and each failure's \
                 message, line and last printed lines (the run's last lines when no test ran). Needs a captured test-launch.json (run `%s` once); it reports \
                 that if missing.\
                 """
-                    .formatted(LatheLayout.captureTestsCommand("<module>")))
-            .annotations(RUNS_CODE)
-            .build();
-    return spec(tool, request -> handleRunTest(engine.get(), request));
-  }
-
-  private static SyncToolSpecification callHierarchy(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "call_hierarchy",
-                mapper,
-                positionSchema(
-                    """
+                .formatted(LatheLayout.captureTestsCommand("<module>")),
+            LatheMcpTools::handleRunTest),
+        tool(
+            engine,
+            mapper,
+            "call_hierarchy",
+            positionSchema(
+                """
                     ,"direction":{"type":"string","enum":["incoming","outgoing"],
                      "description":"incoming = callers of the symbol (default); outgoing = what it calls."},
                     "scope":{"type":"string","enum":["reactor","all"],
                      "description":"reactor (default) leaves out calls into the JDK and dependencies; all keeps them."},
                     "maxResults":{"type":"integer","minimum":1,"description":"Max calls to return (default 50)."}\
-                    """))
-            .description(
-                """
+                    """),
+            READ_ONLY,
+            """
                 Trace the symbol's callers (incoming) or the methods it calls (outgoing) across the \
                 whole reactor — javac-accurate, following the real call graph (resolving overrides \
                 and cross-module edges), one `path:line: code` line per call site: for outgoing, \
                 where the method makes each call, in source order. Use to scope the impact of a \
                 change; text search cannot follow calls.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleCallHierarchy(engine.get(), request));
-  }
-
-  private static SyncToolSpecification describeSymbol(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("describe_symbol", mapper, positionSchema(""))
-            .description(
-                """
+                """,
+            LatheMcpTools::handleCallHierarchy),
+        tool(
+            engine,
+            mapper,
+            "describe_symbol",
+            positionSchema(""),
+            READ_ONLY,
+            """
                 Describe the symbol at a position — its rendered signature, type, and javadoc as \
                 markdown — exactly as the compiler sees it, without opening the file. Use to \
                 understand an API before calling it.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleDescribe(engine.get(), request));
-  }
-
-  private static SyncToolSpecification searchSymbols(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "search_symbols",
-                mapper,
-                """
+                """,
+            LatheMcpTools::handleDescribe),
+        tool(
+            engine,
+            mapper,
+            "search_symbols",
+            """
                 {"type":"object","required":["query"],
                  "properties":{
                    "query":{"type":"string","description":"Type name or prefix, simple or qualified (java.util.Map.Entry, util.Duration); reactor types also match by CamelHumps (ASF finds AbstractServerFactory)."},
                    "scope":{"type":"string","enum":["reactor","all"],"description":"all (default) also finds JDK and dependency types, listed after the reactor's; reactor finds only the project's own."},
                    "maxResults":{"type":"integer","minimum":1,"description":"Max symbols to return (default 50)."}}}\
-                """)
-            .description(
-                """
+                """,
+            READ_ONLY,
+            """
                 Find a type by name across the whole reactor, its dependencies, and the \
                 JDK (the reactor's first, never JDK internals no project code can use) — \
                 returning each with its kind, container, and `path:line`. Use to locate a type \
                 when you know its name but not its file.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleSearchSymbols(engine.get(), request));
-  }
-
-  private static SyncToolSpecification findImplementations(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "find_implementations",
-                mapper,
-                positionSchema(
-                    """
+                """,
+            LatheMcpTools::handleSearchSymbols),
+        tool(
+            engine,
+            mapper,
+            "find_implementations",
+            positionSchema(
+                """
                     ,"maxResults":{"type":"integer","minimum":1,
                      "description":"Max implementations to return (default 50)."}\
-                    """))
-            .description(
-                """
+                    """),
+            READ_ONLY,
+            """
                 Find the implementations of the interface — or the overrides of the method — at a \
                 position, across the whole reactor, javac-accurate, one `path:line: code` line each. This is \
                 the "who implements X / what overrides this" question text search cannot answer: it \
                 follows the type hierarchy across modules and includes anonymous and nested \
                 implementers a name grep cannot find.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleFindImplementations(engine.get(), request));
-  }
-
-  private static SyncToolSpecification analyzeChange(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("analyze_change", mapper, positionSchema(""))
-            .description(
-                """
+                """,
+            LatheMcpTools::handleFindImplementations),
+        tool(
+            engine,
+            mapper,
+            "analyze_change",
+            positionSchema(""),
+            READ_ONLY,
+            """
                 Before editing a symbol, preview its blast radius — javac-accurate and cross-module: \
                 its override/implementation family, how many production vs test references it has, \
                 which reactor modules use it, and the relevant test classes. Use it to scope a rename \
-                or signature change before making it.""")
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleAnalyzeChange(engine.get(), request));
-  }
-
-  private static SyncToolSpecification verifyChange(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "verify_change",
-                mapper,
-                """
+                or signature change before making it.""",
+            LatheMcpTools::handleAnalyzeChange),
+        tool(
+            engine,
+            mapper,
+            "verify_change",
+            """
                 {"type":"object",
                  "properties":{"files":{"type":"array","items":{"type":"string"},
                    "description":"Optional absolute paths of changed .java files; omit to check what changed on disk plus what Lathe's tools wrote (e.g. rename_symbol) since the last check."}}}\
-                """)
-            .description(
-                """
+                """,
+            READ_ONLY,
+            """
                 After editing Java files, recompile the changed files and their callers, in their \
                 module and in dependent modules, in-process against the real classpath — no full \
                 build — and report one list, errors first, each path starting with its module: \
@@ -369,103 +302,106 @@ final class LatheMcpTools {
                 own tools wrote, such as a rename. When the change reaches other modules it names them and returns the sync \
                 command that builds them, optional when no errors were found. Use it to confirm \
                 your edits still compile before a build.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleVerifyChange(engine.get(), request));
-  }
-
-  private static SyncToolSpecification formatFile(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("format_file", mapper, FILE_SCHEMA)
-            .description(
-                """
+                """,
+            LatheMcpTools::handleVerifyChange),
+        tool(
+            engine,
+            mapper,
+            "format_file",
+            FILE_SCHEMA,
+            EDITS_IN_PLACE,
+            """
                 Format a Java file in place with the formatter the project pins (its Spotless \
                 step: google-java-format, palantir, Eclipse), so your edits pass the build's \
                 formatting check. Returns the lines it rewrote, or says the file was already \
                 formatted. Call after editing a file, before verify_change.\
-                """)
-            .annotations(EDITS_IN_PLACE)
-            .build();
-    return spec(tool, request -> handleFormatFile(engine.get(), request));
-  }
-
-  private static SyncToolSpecification fixImports(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("fix_imports", mapper, FILE_SCHEMA)
-            .description(
-                """
+                """,
+            LatheMcpTools::handleFormatFile),
+        tool(
+            engine,
+            mapper,
+            "fix_imports",
+            FILE_SCHEMA,
+            EDITS_IN_PLACE,
+            """
                 Add the missing imports of a Java file in place — every unresolved type name that \
                 matches exactly one type in the reactor, its dependencies, or the JDK. A name with \
                 several matches (List: java.util.List, java.awt.List) is listed with its \
                 candidates for you to choose, and a name with none is listed too. Each import goes \
                 to its sorted place among the file's imports. Call after writing code that uses \
                 new types.\
-                """)
-            .annotations(EDITS_IN_PLACE)
-            .build();
-    return spec(tool, request -> handleFixImports(engine.get(), request));
-  }
-
-  private static SyncToolSpecification outline(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder("outline", mapper, FILE_SCHEMA)
-            .description(
-                """
+                """,
+            LatheMcpTools::handleFixImports),
+        tool(
+            engine,
+            mapper,
+            "outline",
+            FILE_SCHEMA,
+            READ_ONLY,
+            """
                 A Java file's structure without reading it: every type, field, constructor and \
                 method in source order, indented by nesting, each with the line and column of its \
                 name and its declaration (`method sell  8:7: int sell(int count) {`), the position \
                 the other tools take. Use it to find a member before reading or editing that part \
                 of a large file.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleOutline(engine.get(), request));
-  }
-
-  private static SyncToolSpecification workspaceSummary(
-      final Supplier<LatheEngine> engine, final McpJsonMapper mapper) {
-    final var tool =
-        Tool.builder(
-                "workspace_summary",
-                mapper,
-                """
-                {"type":"object","properties":{}}""")
-            .description(
-                """
+                """,
+            LatheMcpTools::handleOutline),
+        tool(
+            engine,
+            mapper,
+            "workspace_summary",
+            """
+                {"type":"object","properties":{}}""",
+            READ_ONLY,
+            """
                 The reactor at a glance: every module, the reactor modules it depends on, \
                 and whether its test launch is captured (which run_test needs), plus the sync \
                 command that builds them. Call it first in an unfamiliar project, instead of \
                 reading the build files.\
-                """)
-            .annotations(READ_ONLY)
-            .build();
-    return spec(tool, request -> handleWorkspaceSummary(engine.get()));
+                """,
+            LatheMcpTools::handleWorkspaceSummary));
   }
 
-  private static CallToolResult handleWorkspaceSummary(final LatheEngine engine) {
+  private static CallToolResult handleWorkspaceSummary(
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return guarded(
-        "workspace_summary",
-        "workspace",
-        () -> modulesResult(engine.modules(), engine.notes(List.of())));
+        tool, "workspace", () -> modulesResult(engine.modules(), engine.notes(List.of())));
   }
 
-  private static SyncToolSpecification spec(
-      final Tool tool, final Function<CallToolRequest, CallToolResult> handler) {
+  // A tool's handler, given the engine, the call, and the tool's name for its answers and logs.
+  @FunctionalInterface
+  private interface ToolHandler {
+    CallToolResult handle(LatheEngine engine, CallToolRequest request, String tool);
+  }
+
+  private static SyncToolSpecification tool(
+      final Supplier<LatheEngine> engine,
+      final McpJsonMapper mapper,
+      final String name,
+      final String schema,
+      final ToolAnnotations annotations,
+      final String description,
+      final ToolHandler handler) {
+    final var tool =
+        Tool.builder(name, mapper, schema)
+            .description(description)
+            .annotations(annotations)
+            .build();
     return SyncToolSpecification.builder()
         .tool(tool)
         .callHandler(
-            (exchange, request) -> logged(tool.name(), request, () -> answer(handler, request)))
+            (exchange, request) ->
+                logged(name, request, () -> answer(engine, request, name, handler)))
         .build();
   }
 
   private static CallToolResult answer(
-      final Function<CallToolRequest, CallToolResult> handler, final CallToolRequest request) {
+      final Supplier<LatheEngine> engine,
+      final CallToolRequest request,
+      final String tool,
+      final ToolHandler handler) {
     try {
-      return handler.apply(request);
+      return handler.handle(engine.get(), request, tool);
     } catch (final NoWorkspaceException e) {
       return error(e.getMessage());
     }
@@ -510,28 +446,28 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleDiagnostics(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
-        "get_diagnostics",
+        tool,
         request,
         file -> diagnosticsResult(file, engine.diagnostics(file), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleDefinition(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atPosition(
         engine,
-        "get_definition",
+        tool,
         request,
         (file, line, column) ->
             definitionResult(engine.definition(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleReferences(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atPosition(
         engine,
-        "find_references",
+        tool,
         request,
         (file, line, column) ->
             referencesResult(
@@ -540,10 +476,10 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleFindImplementations(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atPosition(
         engine,
-        "find_implementations",
+        tool,
         request,
         (file, line, column) ->
             implementationsResult(
@@ -552,11 +488,11 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleRename(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     final String newName = stringArg(request, "newName");
     return atPosition(
         engine,
-        "rename_symbol",
+        tool,
         request,
         (file, line, column) -> {
           final LatheRename rename = engine.rename(file, line, column, newName);
@@ -566,7 +502,7 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleRunTest(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     final TestScope scope = testScope(stringArg(request, "scope"));
     if (scope == null) {
       return error("run_test 'scope' must be one of class, method, package");
@@ -578,23 +514,23 @@ final class LatheMcpTools {
     }
 
     return atFile(
-        "run_test",
+        tool,
         request,
         file -> testRunResult(engine.runTest(file, scope, method), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleAnalyzeChange(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atPosition(
         engine,
-        "analyze_change",
+        tool,
         request,
         (file, line, column) ->
             analyzeResult(engine.analyzeChange(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleVerifyChange(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     final List<Path> files = fileListArg(request);
     final Optional<Path> notJava =
         files.stream().filter(file -> !FileUtil.isJavaFile(file)).findFirst();
@@ -604,7 +540,7 @@ final class LatheMcpTools {
 
     // Only which named files went unchecked: verify_change reports its own failures and deferral.
     return guarded(
-        "verify_change",
+        tool,
         "files",
         () ->
             verifyChangeResult(
@@ -613,25 +549,23 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleFormatFile(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
-        "format_file",
+        tool,
         request,
         file -> formatResult(file, engine.format(file), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleFixImports(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
-        "fix_imports",
-        request,
-        file -> importsResult(engine.fixImports(file), engine.notes(List.of(file))));
+        tool, request, file -> importsResult(engine.fixImports(file), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleOutline(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atFile(
-        "outline",
+        tool,
         request,
         file -> outlineResult(file, engine.outline(file), engine.notes(List.of(file))));
   }
@@ -656,7 +590,7 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleCallHierarchy(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     final String directionArg = stringArg(request, "direction");
     final CallDirection direction =
         directionArg == null
@@ -673,7 +607,7 @@ final class LatheMcpTools {
 
     return atPosition(
         engine,
-        "call_hierarchy",
+        tool,
         request,
         (file, line, column) ->
             callHierarchyResult(
@@ -683,17 +617,17 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult handleDescribe(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     return atPosition(
         engine,
-        "describe_symbol",
+        tool,
         request,
         (file, line, column) ->
             describeResult(engine.describe(file, line, column), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleSearchSymbols(
-      final LatheEngine engine, final CallToolRequest request) {
+      final LatheEngine engine, final CallToolRequest request, final String tool) {
     final String query = stringArg(request, "query");
     if (query == null || query.isBlank()) {
       return error("search_symbols requires a 'query' argument");
@@ -705,7 +639,7 @@ final class LatheMcpTools {
     }
 
     return guarded(
-        "search_symbols",
+        tool,
         query,
         () ->
             searchResult(
