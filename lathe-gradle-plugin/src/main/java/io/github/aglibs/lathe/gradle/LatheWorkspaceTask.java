@@ -13,7 +13,7 @@ import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncScript;
-import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
 import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
@@ -110,7 +110,6 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             .sorted(Comparator.comparing(ProjectFacts::module))
             .toList();
     final JdkSource jdk = compilingJdk(facts);
-    JdkSourceSync.extract(jdk);
     final List<ResourceRootData> resourceRoots =
         facts.stream().flatMap(fact -> fact.resourceRoots().stream()).toList();
     // Only a tree with Java sources has a mirror to stand in for its outputs: a project without
@@ -127,34 +126,31 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             Path.of(getDaemonJavaHome().get()),
             getInitScripts().get());
     final List<Map.Entry<DependencyFact, List<String>>> libraries = libraries(facts);
-    final List<DependencySource> librarySources =
-        DependencySourceSync.prepare(
+    WorkspaceSync.write(
+        new WorkspaceSync.Inputs(
+            root,
             libraries.stream().map(LatheWorkspaceTask::source).toList(),
-            libraries.stream().map(library -> jar(library.getKey())).toList());
-    WorkspaceManifestWriter.write(
-        root,
-        librarySources,
-        JdkTypeIndexSync.index(jdk),
-        PluginProps.version(),
-        runnerClasspath(
-            facts,
-            module ->
-                getLogger()
-                    .warn(
-                        "[lathe] {}: the test runner its last build recorded is gone, so it is not"
-                            + " used; build that project again to refresh it",
-                        module.isEmpty() ? "the root project" : module)),
-        buildFiles(root),
-        resourceRoots,
-        outputs,
-        script.tool());
+            libraries.stream().map(library -> jar(library.getKey())).toList(),
+            jdk,
+            PluginProps.version(),
+            runnerClasspath(
+                facts,
+                module ->
+                    getLogger()
+                        .warn(
+                            "[lathe] {}: the test runner its last build recorded is gone, so it is"
+                                + " not used; build that project again to refresh it",
+                            module.isEmpty() ? "the root project" : module)),
+            buildFiles(root),
+            resourceRoots,
+            outputs,
+            script));
     JvmArgsWriter.write(
         root,
         Stream.concat(
                 facts.stream().flatMap(fact -> fact.accessFlags().stream()),
                 Stream.of(getDaemonJvmArgs().getOrElse("").split("\\s+")))
             .toList());
-    script.write(root);
     CapturePruner.prune(root, currentTrees(facts));
   }
 

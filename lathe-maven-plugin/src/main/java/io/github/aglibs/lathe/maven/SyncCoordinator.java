@@ -10,15 +10,10 @@ import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
-import io.github.aglibs.lathe.install.SyncScript;
-import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
-import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
-import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
-import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
-import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import java.nio.file.Path;
 import java.util.List;
@@ -63,11 +58,6 @@ final class SyncCoordinator {
             externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
     final List<ResolvedJar> externalJars =
         externalArtifacts.values().stream().map(ReactorProjects::resolvedJar).toList();
-    final List<DependencySource> enrichedSources =
-        DependencySourceSync.prepare(dependencySources, externalJars);
-    final JdkSource jdkSource = JdkSourceResolver.resolve();
-    JdkSourceSync.extract(jdkSource);
-    final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource);
     final var serverInstaller =
         new ServerInstaller(
             new MavenArtifactResolver(
@@ -91,17 +81,18 @@ final class SyncCoordinator {
               .stream()
               .map(Path::toString)
               .toList();
-      final SyncScript syncScript = MavenSyncScript.of(session.getSystemProperties(), syncPhase);
-      WorkspaceManifestWriter.write(
-          workspaceRoot,
-          enrichedSources,
-          enrichedJdkSource,
-          PluginProps.version(),
-          runnerClasspath,
-          buildFiles,
-          ModuleResourcesReader.read(workspaceRoot, projects),
-          ReactorProjects.outputs(workspaceRoot, projects),
-          syncScript.tool());
+      WorkspaceSync.write(
+          new WorkspaceSync.Inputs(
+              workspaceRoot,
+              dependencySources,
+              externalJars,
+              JdkSourceResolver.resolve(),
+              PluginProps.version(),
+              runnerClasspath,
+              buildFiles,
+              ModuleResourcesReader.read(workspaceRoot, projects),
+              ReactorProjects.outputs(workspaceRoot, projects),
+              MavenSyncScript.of(session.getSystemProperties(), syncPhase)));
       // The whole reactor only: a forced sync under -pl sees part of it.
       if (!isPartialReactor()) {
         CapturePruner.prune(workspaceRoot, ReactorProjects.sourceTrees(workspaceRoot, projects));
@@ -126,7 +117,6 @@ final class SyncCoordinator {
           projects,
           session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
           style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
-      syncScript.write(workspaceRoot);
     }
   }
 
