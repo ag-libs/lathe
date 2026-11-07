@@ -227,6 +227,7 @@ any test run writes it, and `lathe-sync.sh --tests` writes it without running te
 A Gradle source set beyond `test` has a launch of its own, `test-launch-<tree>.json` (`test-launch-classes-integrationTest.json`), captured by the test task that runs its classes:
 the plugin names the tree in that task's environment (`LATHE_CAPTURE_TREE`), and `lathe-junit` writes the named tree's file.
 A class or method run, and a `main` in such a tree, replay from the launch of the tree the class is in; package, directory and module runs from the test tree's.
+A replay loads the run's own tree from the build's output while its stamps say the build's output is what its sources compile to (`CompiledStamps.builtCurrent`), and from the mirror once a source changes; every other entry from its mirror.
 
 ### `<moduleRel>/main-launch.json`
 
