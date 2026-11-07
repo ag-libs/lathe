@@ -2557,7 +2557,7 @@ Test: a method implemented in a module that never calls it counts that module as
 
 ### Regression targets
 
-None yet.
+`dev/mcp_battery.py`'s check "analyze_change modules cover the implementations" on Helidon's `Handler.handle`, known until fixed (on 2026-11-07: 5 modules named, implementations in 14).
 
 ---
 
@@ -2582,7 +2582,7 @@ Sort listed locations by module, then file, then line, in one shared place the t
 
 ### Regression targets
 
-None yet.
+`dev/mcp_battery.py`'s check "find_implementations: modules grouped" on Helidon's `Handler.handle`, known until fixed (on 2026-11-07: 2 modules scattered in 50 rows).
 
 ---
 
@@ -2636,33 +2636,6 @@ more on very large files.
 Reuse the last analysis when the file's content equals what was last compiled for it and nothing it depends
 on changed since (the compile stamps and the stale scan know); otherwise compile as today.
 Coalesce concurrent requests for one file onto one compile.
-
-### Regression targets
-
-None yet.
-
----
-
-## MC-73 — A file that does not compile gives an empty answer from stale classes, without saying so
-
-**Status: documented**
-
-**Value: medium — Size: S**
-
-**Affects: MCP `find_implementations` (and other tools that fall back to the mirror).**
-
-Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
-
-### Observed behaviour
-
-`find_implementations` answered "No implementations found" for a sealed interface with two records while
-the file had a compile error: it fell back to stale classes. After the fix it found both.
-`find_references` worked in the same state.
-
-### Fix direction
-
-When the answer comes from the last good classes, say so with the compile error, as the "Not compiled"
-note does elsewhere; or answer from the file's parse where it suffices.
 
 ### Regression targets
 

@@ -205,8 +205,7 @@ def stale_answer_check(b, probe):
     probe.file.write_bytes(original.replace(b"return list;", b"return listBroken;"))
     text = b.raw("find_implementations", probe.pos("sealed interface Node", "Node"))[0]
     current = has_line(text, probe.line("record Leaf("))
-    b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text),
-            known="a file that does not compile gives an empty answer from stale classes, without saying so")
+    b.check("probe: broken file answers or says so", current or "Not compiled" in text, first(text))
     probe.file.write_bytes(original)
     b.raw("get_diagnostics", {"file": str(probe.file)})
 

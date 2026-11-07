@@ -12240,6 +12240,38 @@ nothing (WARN) when the list is empty.
 
 # MCP / Agent Facade (resolved)
 
+## MC-73 — A file that does not compile gives an empty answer from stale classes, without saying so — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: MCP `find_implementations` (and other tools that fall back to the mirror).**
+
+Found by an agent's review of the MCP tools on Dropwizard (2026-11-01).
+
+### Observed behaviour
+
+`find_implementations` answered "No implementations found" for a sealed interface with two records while
+the file had a compile error: it fell back to stale classes. After the fix it found both.
+`find_references` worked in the same state.
+
+### Fix direction
+
+When the answer comes from the last good classes, say so with the compile error, as the "Not compiled"
+note does elsewhere; or answer from the file's parse where it suffices.
+
+### Resolution
+
+Fixed by the server's own changes since (found 2026-11-07, when the release battery's probe of it passed on every clone): with the probe file broken (`return listBroken;`), `find_implementations` on the sealed interface still lists both records.
+Before closing it, the battery's other gap checks were checked against their gaps too: the checks marked as MC-69's and MC-70's passed for reasons of their own, so those gaps stay open with checks that reproduce them.
+
+### Regression targets
+
+`dev/mcp_battery.py`'s probe check "probe: broken file answers or says so", a regular check now.
+
+---
+
 ## MC-79 — `verify_change` reports a broken change once; the next call says the callers compile — done
 
 **Status: done.**

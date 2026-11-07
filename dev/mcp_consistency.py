@@ -115,6 +115,19 @@ def analyze_modules_cover(b, ws: Path, pos, label, known=None):
             % (len(named_set), len(listed), ", ".join(missing[:5]) or "none"), known=known)
 
 
+def analyze_modules_cover_implementations(b, ws: Path, pos, label, known=None):
+    """The modules analyze_change names include the module of every implementation of the method:
+    a signature change breaks each of them."""
+    text = b.raw("analyze_change", pos)[0]
+    named = re.search(r"affected modules: (.*)", text)
+    named_set = {m.strip() for m in named.group(1).split(",")} if named else set()
+    impls = b.raw("find_implementations", pos)[0]
+    impl_modules = {module_of(ws, p) for p, _, _ in locations(impls)} - {None}
+    missing = sorted(impl_modules - named_set)
+    b.check(label, not missing, "names %d module(s); implementations span %d; missing: %s"
+            % (len(named_set), len(impl_modules), ", ".join(missing[:5]) or "none"), known=known)
+
+
 def diagnostics_agree_with_notes(b, file: Path, label, known=None):
     """A clean diagnostics answer carries no note saying the file did not compile."""
     text, result = b.raw("get_diagnostics", {"file": str(file)})
@@ -164,13 +177,13 @@ def family_covers_definitions(b, ws: Path, decl_file: Path, pos, name, label, li
             % (len(family), ", ".join(sorted(missing)[:3]) or "none"), known=known)
 
 
-def list_shape(b, ws: Path, text, label):
+def list_shape(b, ws: Path, text, label, duplicates_known=None, grouped_known=None):
     """A location list has no duplicate rows and keeps each module's rows together."""
     rows = locations(text)
     keys = [(p, line, s) for p, line, s in rows]
     duplicates = len(keys) - len(set(keys))
     b.check("%s: no duplicate rows" % label, duplicates == 0, "%d duplicate(s) in %d row(s)" % (duplicates, len(rows)),
-            known="two hits on one line show as identical rows with no column")
+            known=duplicates_known)
     order = [module_of(ws, p) for p, _, _ in rows]
     seen, scattered = set(), set()
     for i, module in enumerate(order):
@@ -178,4 +191,4 @@ def list_shape(b, ws: Path, text, label):
             scattered.add(module)
         seen.add(module)
     b.check("%s: modules grouped" % label, not scattered, "%d module(s) scattered" % len(scattered),
-            known="locations come back in discovery order, modules mixed")
+            known=grouped_known)
