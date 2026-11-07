@@ -53,6 +53,22 @@ final class ReactorRewriteTest {
         .isEqualTo(os("/workspace/.lathe/lib/classes-testFixtures"));
   }
 
+  // A replay that needs the build's own layout keeps one output as the build wrote it; the others
+  // still rewrite to their mirrors.
+  @Test
+  void keeping_oneOutput_leavesItAndRewritesTheRest() {
+    final ReactorRewrite keeping =
+        REWRITE.keeping(Path.of(os("/workspace/app/target/test-classes/../test-classes")));
+
+    assertThat(keeping.toLathe(os("/workspace/app/target/test-classes")))
+        .isEqualTo(os("/workspace/app/target/test-classes"));
+    assertThat(keeping.toLathe(os("/workspace/app/target/classes")))
+        .isEqualTo(os("/workspace/.lathe/app/classes"));
+    assertThat(REWRITE.toLathe(os("/workspace/app/target/test-classes")))
+        .as("the rewrite it came from is unchanged")
+        .isEqualTo(os("/workspace/.lathe/app/test-classes"));
+  }
+
   @Test
   void toLathe_unlistedPaths_passThroughUnchanged() {
     assertThat(REWRITE.toLathe(os("/home/user/.m2/repo/lib.jar")))

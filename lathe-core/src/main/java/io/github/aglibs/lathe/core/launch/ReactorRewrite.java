@@ -45,6 +45,16 @@ public final class ReactorRewrite {
     return mirrors;
   }
 
+  // The same, but for one build output, which stays as the build wrote it: a test that finds its
+  // sources from where its class file lies needs the build's layout around it.
+  public ReactorRewrite keeping(final Path buildOutput) {
+    final Path kept = buildOutput.normalize();
+    return new ReactorRewrite(
+        mirrors.entrySet().stream()
+            .filter(entry -> !entry.getKey().equals(kept))
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)));
+  }
+
   public Path toLathe(final Path path) {
     return mirrors.getOrDefault(path.normalize(), path);
   }
