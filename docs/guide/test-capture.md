@@ -21,6 +21,13 @@ Because these are read *after* the JVM expanded its launch, the captured templat
 interpreted** launch — the module graph the tests actually ran under — rather than a guess reconstructed
 from build files.
 
+That launch includes the options the test JVM took from `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and
+`_JAVA_OPTIONS`, so a replay does not inherit those variables from the editor's environment: each option
+applies once, as in the build.
+Main-class runs are built from the build's paths, not a captured JVM, so they still inherit them.
+To give a replay one the build did not have, set the variable in the
+[run configuration's `env`](run-configuration.md).
+
 ## On Maven
 
 `lathe-junit` is a small `test`-scoped dependency in every module that compiles Java (injected by the

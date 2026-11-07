@@ -11123,6 +11123,37 @@ With Predictive Test Selection off, `jupiter-tests` captures and skips its tests
 
 ---
 
+## TE-15 — A captured test launch keeps the options `JAVA_TOOL_OPTIONS` added, so a replay gets them twice — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: editor test runs, test discovery and MCP `run_test`, on Maven and Gradle, for anyone whose environment sets `JAVA_TOOL_OPTIONS` (or `JDK_JAVA_OPTIONS`), e.g. a corporate or profiling agent.**
+
+Found while measuring coverage across the whole reactor (2026-11-05), with the JaCoCo agent given to every JVM through `JAVA_TOOL_OPTIONS`.
+
+### Observed behaviour
+
+`LaunchCapture` records the test fork's `RuntimeMXBean.getInputArguments()`, which includes the options the JVM read from `JAVA_TOOL_OPTIONS` as if they were on the command line.
+The replayed JVM inherits the same environment, so it gets each of those options twice.
+For a Java agent the second load is fatal: the replay exits 134 with `duplicate class definition for java.lang.$JaCoCo`, and the run reports that no test ran.
+In the reactor build this failed `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses`, 20 Neovim end-to-end checks (discovery, run status, streamed output) and the Gradle `LatheSyncTaskFunctionalTest.build_plainBuild_refreshesTheWorkspaceAndCapturesTestRuns`, which asserts that no `-javaagent` is captured.
+
+### Resolution
+
+A replay no longer inherits the variables, rather than the capture dropping their options.
+A build can set them itself (a Gradle test task's `environment`, Surefire's `<environmentVariables>`; the Gradle plugin keeps the build's own `JDK_JAVA_OPTIONS` and appends `lathe-junit`), so dropping them at capture would lose build configuration.
+The captured launch already holds everything the build's test JVM ran with, so a launch built from it (test runs and debug, discovery, a test-source `main`, MCP `run_test`) does not inherit `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and `_JAVA_OPTIONS`: `RunOverlay` lists them in the `ResolvedLaunch`'s `unsetEnv`, and `Launcher` removes them before applying the run configuration's `env`, so a variable set there on purpose still applies.
+A main-class launch is built from the build's paths, not a captured JVM, so it keeps inheriting them.
+A launch captured with the JaCoCo agent in `JAVA_TOOL_OPTIONS`, replayed by MCP `run_test` with the same variable set, failed with exit 134 before and passes after.
+
+### Regression targets
+
+`LauncherTest.environment_unsetVariables_inheritedDropped_setOnesKept`, `LauncherTest.environment_nothingUnset_keepsTheInheritedVariables`, `LauncherTest.launch_jvmOptionVariableInTheRunConfiguration_reachesTheProgram`, `RunOverlayTest.applyToTestMain_capturedLaunch_unsetsTheJvmOptionVariables`.
+
+---
+
 ## TE-8 — Failsafe integration tests are never captured, yet the remedy says to capture them — done
 
 **Status: done — Target: next.**

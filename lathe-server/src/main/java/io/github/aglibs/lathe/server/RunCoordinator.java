@@ -216,13 +216,11 @@ final class RunCoordinator {
               jdwp);
       final var session =
           Launcher.launch(
-              resolved.argv(),
+              resolved,
               overlay.configLabel(),
               resultsSink,
               jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
-              resultConsumer(token),
-              resolved.env(),
-              resolved.cwd());
+              resultConsumer(token));
       return attachDebugHost(
           moduleRel, token, session, jdwpPort, jdwpReady, selectionLabel(selections));
     } catch (final IOException e) {
@@ -255,13 +253,11 @@ final class RunCoordinator {
       final ResolvedLaunch resolved = plan.launch();
       final var session =
           Launcher.launch(
-              resolved.argv(),
+              resolved,
               overlay.configLabel(),
               null,
               jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
-              ignored -> {},
-              resolved.env(),
-              resolved.cwd());
+              ignored -> {});
       return attachDebugHost(moduleRel, token, session, jdwpPort, jdwpReady, mainClass);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
@@ -798,14 +794,7 @@ final class RunCoordinator {
               overlay,
               JdwpOptions.NONE);
       final var session =
-          Launcher.launch(
-              resolved.argv(),
-              overlay.configLabel(),
-              resultsSink,
-              onLine,
-              onResult,
-              resolved.env(),
-              resolved.cwd());
+          Launcher.launch(resolved, overlay.configLabel(), resultsSink, onLine, onResult);
       onStart.accept(session);
       final String label = selectionLabel(selections);
       session
@@ -904,14 +893,7 @@ final class RunCoordinator {
       // consumer; the resolved module/class path is all replay needs.
       final ResolvedLaunch resolved = plan.launch();
       final var session =
-          Launcher.launch(
-              resolved.argv(),
-              overlay.configLabel(),
-              null,
-              onLine,
-              ignored -> {},
-              resolved.env(),
-              resolved.cwd());
+          Launcher.launch(resolved, overlay.configLabel(), null, onLine, ignored -> {});
       onStart.accept(session);
       session
           .onExit()

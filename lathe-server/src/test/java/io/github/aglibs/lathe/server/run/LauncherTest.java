@@ -1,11 +1,14 @@
 package io.github.aglibs.lathe.server.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.TestProcess;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -20,7 +23,7 @@ class LauncherTest {
   void launch_shortCommandLine_runsItAsIs() throws Exception {
     final List<String> argv = TestProcess.command("echo", "out:hello");
 
-    final List<TranscriptLine> transcript = launch(argv);
+    final List<TranscriptLine> transcript = launch(argv, Map.of());
 
     assertThat(transcript)
         .containsExactly(
@@ -38,7 +41,7 @@ class LauncherTest {
     final List<String> argv =
         Stream.concat(Stream.of(command.get(0), padding), command.stream().skip(1)).toList();
 
-    final List<TranscriptLine> transcript = launch(argv);
+    final List<TranscriptLine> transcript = launch(argv, Map.of());
 
     final String shown = transcript.get(1).text();
     assertThat(shown).startsWith("%s @".formatted(argv.get(0))).hasSizeLessThan(1_000);
@@ -50,15 +53,60 @@ class LauncherTest {
   // A run never writes to the program's input, so a read of it ends instead of waiting forever.
   @Test
   void launch_programReadingStdin_getsEndOfInput() throws Exception {
-    final List<TranscriptLine> transcript = launch(TestProcess.command("read"));
+    final List<TranscriptLine> transcript = launch(TestProcess.command("read"), Map.of());
 
     assertThat(transcript).last().isEqualTo(new TranscriptLine(TranscriptLine.Stream.STDOUT, "-1"));
   }
 
-  private static List<TranscriptLine> launch(final List<String> argv) throws Exception {
+  // What the launch unsets goes, what it sets wins, and the rest is the server's own.
+  @Test
+  void environment_unsetVariables_inheritedDropped_setOnesKept() {
+    final var environment = new HashMap<String, String>();
+    LatheLayout.JVM_OPTIONS_VARIABLES.forEach(name -> environment.put(name, "-javaagent:a.jar"));
+    environment.put("PATH", "/bin");
+
+    Launcher.environment(
+        environment,
+        new ResolvedLaunch(
+            List.of("java"),
+            Map.of("JDK_JAVA_OPTIONS", "-Dconfigured=1"),
+            LatheLayout.JVM_OPTIONS_VARIABLES,
+            null));
+
+    assertThat(environment)
+        .containsOnly(entry("PATH", "/bin"), entry("JDK_JAVA_OPTIONS", "-Dconfigured=1"));
+  }
+
+  @Test
+  void environment_nothingUnset_keepsTheInheritedVariables() {
+    final var environment = new HashMap<String, String>(Map.of("JAVA_TOOL_OPTIONS", "-Dx=1"));
+
+    Launcher.environment(
+        environment, new ResolvedLaunch(List.of("java"), Map.of(), List.of(), null));
+
+    assertThat(environment).containsOnly(entry("JAVA_TOOL_OPTIONS", "-Dx=1"));
+  }
+
+  @Test
+  void launch_jvmOptionVariableInTheRunConfiguration_reachesTheProgram() throws Exception {
+    final List<TranscriptLine> transcript =
+        launch(
+            TestProcess.command("prop", "lathe.probe"),
+            Map.of("JAVA_TOOL_OPTIONS", "-Dlathe.probe=configured"));
+
+    assertThat(transcript).contains(new TranscriptLine(TranscriptLine.Stream.STDOUT, "configured"));
+  }
+
+  private static List<TranscriptLine> launch(final List<String> argv, final Map<String, String> env)
+      throws Exception {
     final List<TranscriptLine> transcript = Collections.synchronizedList(new ArrayList<>());
     final LaunchSession session =
-        Launcher.launch(argv, "test", null, transcript::add, result -> {}, Map.of(), null);
+        Launcher.launch(
+            new ResolvedLaunch(argv, env, LatheLayout.JVM_OPTIONS_VARIABLES, null),
+            "test",
+            null,
+            transcript::add,
+            result -> {});
     assertThat(session.onExit().get(TIMEOUT_SECONDS, TimeUnit.SECONDS).exitCode()).isZero();
     return List.copyOf(transcript);
   }
