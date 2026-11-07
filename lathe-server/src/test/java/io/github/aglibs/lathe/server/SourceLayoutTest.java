@@ -56,6 +56,66 @@ class SourceLayoutTest {
         .containsExactly("com.verify");
   }
 
+  // The user's package leads, then the rest of their module, then the kind's scope; a typed
+  // package keeps only its rows, the user's module first, then the kind's scope.
+  @Test
+  void destinations_rankedForTheUsersFileAndKind_typedPackageFiltered() throws Exception {
+    final List<ModuleSourceConfig> configs = twoModules();
+    final var layout = new SourceLayout(configs, tmp);
+    final var context = new ContextInfo("app", "main", "com.app");
+
+    assertThat(layout.destinations(context, TypeKind.CLASS, ""))
+        .containsExactly(
+            new TypeDestination("app", "main", "com.app"),
+            new TypeDestination("app", "test", "com.app"),
+            new TypeDestination("app", "main", "com.shared"),
+            new TypeDestination("app", "test", "com.shared"),
+            new TypeDestination("core", "main", "com.core"),
+            new TypeDestination("core", "main", "com.shared"));
+    assertThat(layout.destinations(null, TypeKind.TEST, "").get(0))
+        .as("no file: the kind's scope leads")
+        .isEqualTo(new TypeDestination("app", "test", "com.app"));
+    assertThat(layout.destinations(context, TypeKind.CLASS, "com.shared"))
+        .containsExactly(
+            new TypeDestination("app", "main", "com.shared"),
+            new TypeDestination("app", "test", "com.shared"),
+            new TypeDestination("core", "main", "com.shared"));
+    assertThat(layout.destinations(context, TypeKind.TEST, "com.shared").get(0))
+        .isEqualTo(new TypeDestination("app", "test", "com.shared"));
+    assertThat(layout.destinations(context, TypeKind.CLASS, "com.none")).isEmpty();
+  }
+
+  @Test
+  void basePackage_commonPrefixOfMainPackages_emptyWithoutAny() throws Exception {
+    final var layout = new SourceLayout(twoModules(), tmp);
+
+    assertThat(layout.basePackage("app")).as("com.app and com.shared").isEqualTo("com");
+    assertThat(layout.basePackage("core")).isEqualTo("com");
+    assertThat(layout.basePackage("missing")).isEmpty();
+  }
+
+  // app: main com.app and com.shared, test com.app and com.shared; core: main com.core and
+  // com.shared, and a default-package source, which is no destination.
+  private List<ModuleSourceConfig> twoModules() throws Exception {
+    source("app/src/main/java/com/app/App.java");
+    source("app/src/main/java/com/shared/Util.java");
+    source("app/src/test/java/com/app/AppTest.java");
+    source("app/src/test/java/com/shared/UtilTest.java");
+    source("core/src/main/java/com/core/Core.java");
+    source("core/src/main/java/com/shared/Common.java");
+    source("core/src/main/java/Loose.java");
+    return List.of(
+        TestCompiler.mainTreeConfig(tmp, "app"),
+        TestCompiler.testTreeConfig(tmp, "app", "src/test/java"),
+        TestCompiler.mainTreeConfig(tmp, "core"));
+  }
+
+  private void source(final String relative) throws Exception {
+    final Path file = tmp.resolve(relative);
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, "class X {}");
+  }
+
   @Test
   void modules_distinctSortedModuleRels() {
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");

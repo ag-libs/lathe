@@ -226,6 +226,29 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "Cart"));
     assertThat(Path.of(cart.path())).isEqualTo(shop.shop().resolveSibling("Cart.java"));
     assertThat(cart.content()).contains("class Cart");
+    final var moduleInfo =
+        (CreateTypeResult)
+            command(
+                LatheCommands.TYPES_CREATE,
+                json(
+                    "moduleRel",
+                    "module",
+                    "kind",
+                    "main",
+                    "pkg",
+                    "",
+                    "type",
+                    "module-info",
+                    "name",
+                    ""));
+    assertThat(moduleInfo.content())
+        .as("a module-info sent without a name is named after the base package")
+        .contains("module com.example");
+    assertThat(
+            command(
+                LatheCommands.TYPES_DESTINATIONS,
+                json("uri", shop.shop().toUri().toString(), "kind", "class")))
+        .isEqualTo(List.of(new TypeDestination("module", "main", "com.example")));
 
     assertThat(command(LatheCommands.TESTS_MODULES))
         .as("the module has no test tree")

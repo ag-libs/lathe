@@ -31,11 +31,35 @@ final class WorkspaceQueries {
     // module-info.java always belongs to the main source root, whatever scope the client sent.
     final var scope = args.type() == TypeKind.MODULE_INFO ? SourceScope.MAIN : args.kind();
     final var sourceRoot = state.layout().sourceRootFor(args.moduleRel(), scope);
+    final String name = typeName(args);
     LOG.info(
         () ->
             "[createType] %s %s.%s kind=%s type=%s"
-                .formatted(args.moduleRel(), args.pkg(), args.name(), args.kind(), args.type()));
-    return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), args.name());
+                .formatted(args.moduleRel(), args.pkg(), name, args.kind(), args.type()));
+    return NewTypeTemplates.render(sourceRoot, args.pkg(), args.type(), name);
+  }
+
+  // A module-info sent without a name is named after the module's base package (the JPMS
+  // convention); a module with no package yet has none to give, and the client asks for one.
+  private String typeName(final CreateTypeArgs args) {
+    if (args.type() != TypeKind.MODULE_INFO || !args.name().isBlank()) {
+      return args.name();
+    }
+
+    final String base = state.layout().basePackage(args.moduleRel());
+    if (base.isEmpty()) {
+      throw new IllegalArgumentException(
+          "%s has no package to name its module after; give the module a name"
+              .formatted(SourceLayout.displayed(args.moduleRel())));
+    }
+
+    return base;
+  }
+
+  // Ranked for the file the user is in; a null file (no buffer) ranks by the kind's scope alone.
+  List<TypeDestination> destinations(final Path file, final TypeKind kind, final String pkg) {
+    final SourceLayout layout = state.layout();
+    return layout.destinations(file == null ? null : layout.resolveContext(file), kind, pkg);
   }
 
   List<ResourceEntry> resources() {

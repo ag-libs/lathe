@@ -18,10 +18,33 @@ local spec = helper.new()
 local new = require("lathe.new")
 local pick = require("lathe.pick")
 
--- A fake Lathe client answering executeCommand from `responses` (keyed by command); returns the
+-- A fake Lathe client answering executeCommand from `responses` (keyed by command); a function
+-- answer gets the request's argument and returns the result, or nil and an error. Returns the
 -- ordered list of requests it received.
 local function stub_server(responses)
-  return helper.fake_client(responses)
+  return helper.fake_client(function(_, _, params, callback, _)
+    local answer = responses[params.command]
+    if type(answer) == "function" then
+      local value, err = answer(params.arguments and params.arguments[1])
+      return callback(err, value)
+    end
+
+    callback(nil, answer)
+  end)
+end
+
+-- lathe.types.destinations over `rows`, given in the server's rank order: every row, or a typed
+-- package's rows.
+local function destinations(rows)
+  return function(args)
+    if not args.pkg or args.pkg == "" then
+      return rows
+    end
+
+    return vim.tbl_filter(function(row)
+      return row.pkg == args.pkg
+    end, rows)
+  end
 end
 
 local function request_for(requests, command)
@@ -30,6 +53,16 @@ local function request_for(requests, command)
       return request.arguments[1]
     end
   end
+end
+
+local function last_request_for(requests, command)
+  local found
+  for _, request in ipairs(requests) do
+    if request.command == command then
+      found = request.arguments[1]
+    end
+  end
+  return found
 end
 
 local function item_by(items, predicate)
@@ -81,18 +114,6 @@ do
   spec.check("lines drop the trailing empty", table.concat(new._lines("a\nb\n"), "|"), "a|b")
   spec.check("lines keep interior blanks", table.concat(new._lines("a\n\nb\n"), "|"), "a||b")
 
-  local pkgs = {
-    { pkg = "com.example.a", scope = "main" },
-    { pkg = "com.example.b", scope = "main" },
-    { pkg = "com.other", scope = "test" },
-  }
-  spec.check("base package is the common main prefix", new._base_package(pkgs), "com.example")
-  spec.check(
-    "base package empty with no main packages",
-    new._base_package({ { pkg = "com.t", scope = "test" } }),
-    ""
-  )
-
   spec.check(
     "float_module leads with the context module",
     table.concat(new._float_module({ "a", "b", "c" }, "c"), ","),
@@ -109,43 +130,6 @@ do
   vim.cmd.edit(vim.fn.tempname() .. "/BarTest.java")
   spec.check("test seed keeps an existing suffix", new._test_seed(0), "BarTest")
 
-  -- ordering: context package leads, then its module, then the kind's natural scope
-  local dests = {
-    { module = "core", scope = "main", pkg = "com.b" },
-    { module = "app", scope = "main", pkg = "com.a" },
-    { module = "app", scope = "test", pkg = "com.a" },
-  }
-  new._order_destinations(dests, { moduleRel = "app", pkg = "com.a" }, "class")
-  spec.check(
-    "order: context package + module leads",
-    dests[1].module .. "/" .. dests[1].scope .. "/" .. dests[1].pkg,
-    "app/main/com.a"
-  )
-  spec.check("order: same package's other scope follows", dests[2].scope, "test")
-  spec.check("order: other module trails", dests[3].module, "core")
-
-  -- typed resolution: prefer the buffer's module, then the kind's scope
-  local pkgpick = {
-    { module = "core", scope = "main", pkg = "com.x" },
-    { module = "app", scope = "main", pkg = "com.x" },
-    { module = "app", scope = "test", pkg = "com.x" },
-  }
-  spec.check(
-    "resolve typed prefers the context module",
-    new._resolve_typed(pkgpick, "com.x", { moduleRel = "app" }, "class").module,
-    "app"
-  )
-  spec.check(
-    "resolve typed for a test kind prefers the test scope",
-    new._resolve_typed(pkgpick, "com.x", { moduleRel = "app" }, "test").scope,
-    "test"
-  )
-  spec.check(
-    "resolve typed nil when the package is unknown",
-    new._resolve_typed(pkgpick, "com.none", nil, "class") == nil,
-    true
-  )
-
   spec.check(
     "cmd completes kinds by prefix",
     table.concat(new._cmd_complete("pa", "LatheNew pa", 11), ","),
@@ -155,11 +139,10 @@ do
 
   -- prime the flat package cache, then assert fuzzy package completion at the second argument
   stub_server({
-    ["lathe.workspace.modules"] = { "core", "app" },
-    ["lathe.workspace.packages"] = {
-      { pkg = "com.example.app.batch", scope = "main" },
-      { pkg = "com.example.core.util", scope = "main" },
-    },
+    ["lathe.types.destinations"] = destinations({
+      { module = "app", scope = "main", pkg = "com.example.app.batch" },
+      { module = "core", scope = "main", pkg = "com.example.core.util" },
+    }),
   })
   new._refresh_async()
   spec.check(
@@ -223,11 +206,13 @@ do -- anchored: :LatheNew <kind> in a buffer fills the destination from context;
   spec.check("anchored: file created", vim.fn.filereadable(path), 1)
 end
 
-do -- typed: a fuzzy-completed package resolves to a destination (context module, kind scope); no picker
+do -- typed: a fuzzy-completed package goes to the server's best destination for it; no picker
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
-    ["lathe.workspace.modules"] = { "core", "app" },
-    ["lathe.workspace.packages"] = { { pkg = "com.example.foo", scope = "main" } },
+    ["lathe.types.destinations"] = destinations({
+      { module = "core", scope = "main", pkg = "com.example.foo" },
+      { module = "app", scope = "main", pkg = "com.example.foo" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/Bar.java"),
   })
   local where_opened = false
@@ -243,7 +228,12 @@ do -- typed: a fuzzy-completed package resolves to a destination (context module
   new.create("class", "com.example.foo")
 
   local args = request_for(requests, "lathe.types.create") or {}
-  spec.check("typed: moduleRel prefers the context module", args.moduleRel, "core")
+  spec.check("typed: the server's best destination", args.moduleRel, "core")
+  spec.check(
+    "typed: the package is sent to the server",
+    (request_for(requests, "lathe.types.destinations") or {}).pkg,
+    "com.example.foo"
+  )
   spec.check("typed: package", args.pkg, "com.example.foo")
   spec.check("typed: scope", args.kind, "main")
   spec.check("typed: name from the prompt", args.name, "Bar")
@@ -253,8 +243,9 @@ end
 do -- typed but unknown package: falls back to the destination picker rather than a source-root default
   local requests = stub_server({
     ["lathe.workspace.context"] = nil,
-    ["lathe.workspace.modules"] = { "only" },
-    ["lathe.workspace.packages"] = { { pkg = "com.only", scope = "main" } },
+    ["lathe.types.destinations"] = destinations({
+      { module = "only", scope = "main", pkg = "com.only" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/U.java"),
   })
   stub_ui({ package = "com.only", name = "U" })
@@ -266,15 +257,14 @@ do -- typed but unknown package: falls back to the destination picker rather tha
   spec.check("typed-miss: name", args.name, "U")
 end
 
-do -- guided: bare :LatheNew -> kind -> destination picker (context floated) -> name
+do -- guided: bare :LatheNew -> kind -> destination picker (in the server's order) -> name
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "app", scope = "main", pkg = "com.app.batch" },
-    ["lathe.workspace.modules"] = { "core", "app" },
-    ["lathe.workspace.packages"] = {
-      { pkg = "com.app", scope = "main" },
-      { pkg = "com.app.batch", scope = "main" },
-      { pkg = "com.app.util", scope = "test" },
-    },
+    ["lathe.types.destinations"] = destinations({
+      { module = "app", scope = "main", pkg = "com.app.batch" },
+      { module = "app", scope = "main", pkg = "com.app" },
+      { module = "app", scope = "test", pkg = "com.app.util" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/G.java"),
   })
   stub_ui({ kind = "Class", package = "com.app.batch", name = "G" })
@@ -292,7 +282,12 @@ do -- guided: bare :LatheNew -> kind -> destination picker (context floated) -> 
 
   new.create()
 
-  spec.check("guided: context package is item 1", order[1], "com.app.batch (app · main)")
+  spec.check("guided: the server's first row is item 1", order[1], "com.app.batch (app · main)")
+  spec.check(
+    "guided: destinations asked for this buffer and kind",
+    (request_for(requests, "lathe.types.destinations") or {}).kind,
+    "class"
+  )
   local args = request_for(requests, "lathe.types.create") or {}
   spec.check("guided: package from the pick", args.pkg, "com.app.batch")
   spec.check("guided: scope from the picked row", args.kind, "main")
@@ -302,11 +297,10 @@ end
 do -- class in the test root: pick a `· test` destination row -> the class lands in test
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
-    ["lathe.workspace.modules"] = { "app" },
-    ["lathe.workspace.packages"] = {
-      { pkg = "com.app", scope = "main" },
-      { pkg = "com.app.support", scope = "test" },
-    },
+    ["lathe.types.destinations"] = destinations({
+      { module = "app", scope = "main", pkg = "com.app" },
+      { module = "app", scope = "test", pkg = "com.app.support" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/Support.java"),
   })
   stub_ui({ kind = "Class", package = "com.app.support", pick_scope = "test", name = "Support" })
@@ -321,8 +315,9 @@ end
 do -- new package via a qualified name: `jobs.Scheduler` nests the class under the picked package
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
-    ["lathe.workspace.modules"] = { "app" },
-    ["lathe.workspace.packages"] = { { pkg = "com.app", scope = "main" } },
+    ["lathe.types.destinations"] = destinations({
+      { module = "app", scope = "main", pkg = "com.app" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/Scheduler.java"),
   })
   stub_ui({ kind = "Class", package = "com.app", name = "jobs.batch.Scheduler" })
@@ -341,8 +336,9 @@ end
 do -- a qualified name in a test-scope destination keeps the test scope for the new sub-package
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "app", scope = "main", pkg = "com.app" },
-    ["lathe.workspace.modules"] = { "app" },
-    ["lathe.workspace.packages"] = { { pkg = "com.app.support", scope = "test" } },
+    ["lathe.types.destinations"] = destinations({
+      { module = "app", scope = "test", pkg = "com.app.support" },
+    }),
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/Fixture.java"),
   })
   stub_ui({
@@ -413,13 +409,9 @@ do -- package-info: no name prompt, the fixed stem is sent, package from context
   spec.check("package-info: no name prompt", name_prompted, false)
 end
 
-do -- module-info: only the module -- name auto-derived from the base package, main root, no prompt
+do -- module-info: only the module -- sent without a name, the server names it; main root, no prompt
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "core", scope = "main", pkg = "com.example.core" },
-    ["lathe.workspace.packages"] = {
-      { pkg = "com.example.core", scope = "main" },
-      { pkg = "com.example.util", scope = "main" },
-    },
     ["lathe.types.create"] = result(vim.fn.tempname() .. "/module-info.java"),
   })
   local prompted = false
@@ -435,15 +427,21 @@ do -- module-info: only the module -- name auto-derived from the base package, m
   spec.check("module-info: type", args.type, "module-info")
   spec.check("module-info: scope forced to main", args.kind, "main")
   spec.check("module-info: no package in the request", args.pkg, "")
-  spec.check("module-info: name auto-derived from the base package", args.name, "com.example")
+  spec.check("module-info: the name is left to the server", args.name, "")
   spec.check("module-info: no prompt when a base package exists", prompted, false)
 end
 
-do -- module-info: falls back to a name prompt only when nothing can be derived
+do -- module-info: the server refuses a module with no package to name it after; the name is asked
+  local path = vim.fn.tempname() .. "/module-info.java"
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "core", scope = "main", pkg = "" },
-    ["lathe.workspace.packages"] = { { pkg = "", scope = "main" } },
-    ["lathe.types.create"] = result(vim.fn.tempname() .. "/module-info.java"),
+    ["lathe.types.create"] = function(args)
+      if args.name == "" then
+        return nil, { code = -32602, message = "core has no package to name its module after" }
+      end
+
+      return result(path)
+    end,
   })
   pick.pick = function(_) end
   vim.ui.input = function(_, cb)
@@ -452,7 +450,7 @@ do -- module-info: falls back to a name prompt only when nothing can be derived
 
   new.create("module-info")
 
-  local args = request_for(requests, "lathe.types.create") or {}
+  local args = last_request_for(requests, "lathe.types.create") or {}
   spec.check("module-info fallback: prompted name is used", args.name, "com.manual")
 end
 

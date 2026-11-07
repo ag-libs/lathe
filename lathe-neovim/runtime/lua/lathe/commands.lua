@@ -26,6 +26,7 @@ return {
   TYPES_CREATE = "lathe.types.create",
   TYPES_HIERARCHY = "lathe.types.hierarchy",
   TYPES_INSTANTIATIONS = "lathe.types.instantiations",
+  TYPES_DESTINATIONS = "lathe.types.destinations",
   IMPORTS_MISSING = "lathe.imports.missing",
   IMPORTS_EDITS = "lathe.imports.edits",
   STACK_RESOLVE = "lathe.stack.resolve",

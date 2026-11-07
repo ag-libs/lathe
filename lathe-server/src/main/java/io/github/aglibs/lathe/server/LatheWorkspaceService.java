@@ -12,6 +12,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.run.RunKind;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -112,6 +113,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case LatheCommands.IMPORTS_MISSING -> missingImports(params);
       case LatheCommands.IMPORTS_EDITS -> importEdits(params);
       case LatheCommands.STACK_RESOLVE -> stackResolve(params);
+      case LatheCommands.TYPES_DESTINATIONS -> typeDestinations(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -274,6 +276,15 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<?> packages(final ExecuteCommandParams params) {
     final String moduleRel = moduleRelArgument(params);
     return host.onLoop(session -> session.layout().packages(moduleRel));
+  }
+
+  private CompletableFuture<?> typeDestinations(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    final String uri = optionalString(json, "uri");
+    final Path file = uri == null ? null : LatheUri.toPath(LatheUri.canonical(uri));
+    final TypeKind kind = TypeKind.fromWire(json.get("kind").getAsString());
+    final String pkg = Objects.requireNonNullElse(optionalString(json, "pkg"), "");
+    return host.onLoop(session -> session.queries().destinations(file, kind, pkg));
   }
 
   private CompletableFuture<?> stackResolve(final ExecuteCommandParams params) {

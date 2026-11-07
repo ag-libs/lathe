@@ -31,6 +31,7 @@ public final class LatheCommands {
   public static final String TYPES_CREATE = "lathe.types.create";
   public static final String TYPES_HIERARCHY = "lathe.types.hierarchy";
   public static final String TYPES_INSTANTIATIONS = "lathe.types.instantiations";
+  public static final String TYPES_DESTINATIONS = "lathe.types.destinations";
   public static final String IMPORTS_MISSING = "lathe.imports.missing";
   public static final String IMPORTS_EDITS = "lathe.imports.edits";
   public static final String STACK_RESOLVE = "lathe.stack.resolve";
@@ -62,6 +63,7 @@ public final class LatheCommands {
           TYPES_CREATE,
           TYPES_HIERARCHY,
           TYPES_INSTANTIATIONS,
+          TYPES_DESTINATIONS,
           IMPORTS_MISSING,
           IMPORTS_EDITS,
           STACK_RESOLVE);
