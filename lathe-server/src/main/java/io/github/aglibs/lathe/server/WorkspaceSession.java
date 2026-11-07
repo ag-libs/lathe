@@ -6,11 +6,11 @@ import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.CompileRequest;
 import io.github.aglibs.lathe.server.module.CompileResponse;
@@ -293,7 +293,7 @@ final class WorkspaceSession {
     state.candidateIndex().update(uri, content);
     // An editor may open a buffer restored with unsaved changes.
     if (LatheUri.isFileUri(uri)
-        && FileUtil.readIfPresent(LatheUri.toPath(uri)).filter(content::equals).isPresent()) {
+        && ServerFiles.readIfPresent(LatheUri.toPath(uri)).filter(content::equals).isPresent()) {
       unsaved.remove(uri);
     } else {
       unsaved.add(uri);
@@ -422,7 +422,8 @@ final class WorkspaceSession {
     final String uri = LatheUri.fromPath(source);
     final OpenDocument open = docs.get(uri);
     if (open != null) {
-      FileUtil.readIfPresent(source).ifPresent(content -> docs.put(uri, content, open.version()));
+      ServerFiles.readIfPresent(source)
+          .ifPresent(content -> docs.put(uri, content, open.version()));
     }
   }
 
@@ -453,7 +454,7 @@ final class WorkspaceSession {
           final Optional<String> original =
               open != null
                   ? Optional.of(open.content())
-                  : FileUtil.readIfPresent(LatheUri.toPath(uri));
+                  : ServerFiles.readIfPresent(LatheUri.toPath(uri));
           original.ifPresent(
               text ->
                   tx.add(moves.getOrDefault(uri, uri), text, Positions.applyEdits(text, edits)));

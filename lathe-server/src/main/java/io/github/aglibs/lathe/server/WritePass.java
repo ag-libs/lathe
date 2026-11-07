@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.analysis.BatchWrite;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.core.CompiledStamps;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -12,6 +11,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -623,7 +623,7 @@ final class WritePass {
     final var stamps = new LinkedHashMap<Path, SourceStamp>();
     for (final var source : sources) {
       final long mtime = mtimeMillis(source);
-      final Optional<String> read = FileUtil.readIfPresent(source);
+      final Optional<String> read = ServerFiles.readIfPresent(source);
       if (read.isEmpty()) {
         reported.remove(source);
         continue;

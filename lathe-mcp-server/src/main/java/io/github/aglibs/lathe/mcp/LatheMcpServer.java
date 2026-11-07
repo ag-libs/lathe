@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.mcp;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheBuildInfo;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -23,10 +22,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -243,14 +244,31 @@ public final class LatheMcpServer {
   // pruning.
   private static void pruneSessionLogs() {
     try {
-      FileUtil.deleteAllButLast(
-          LatheLayout.logsDir(), LatheLayout::isMcpSessionLog, KEPT_SESSION_LOGS);
-      FileUtil.deleteAllButLast(LatheLayout.logsDir(), LatheMcpServer::isOrphanLock, 0);
+      deleteAllButLast(LatheLayout.logsDir(), LatheLayout::isMcpSessionLog, KEPT_SESSION_LOGS);
+      deleteAllButLast(LatheLayout.logsDir(), LatheMcpServer::isOrphanLock, 0);
     } catch (final IOException e) {
       LOG.log(
           Level.WARNING,
           e,
           () -> "[startup] old session logs not pruned in %s".formatted(LatheLayout.logsDir()));
+    }
+  }
+
+  // Deletes the files directly in dir that match, all but the last count in name order: the newest,
+  // for names that start with a sortable timestamp.
+  static void deleteAllButLast(final Path dir, final Predicate<Path> matching, final int count)
+      throws IOException {
+    if (!Files.isDirectory(dir)) {
+      return;
+    }
+
+    final List<Path> files;
+    try (final var list = Files.list(dir)) {
+      files = list.filter(Files::isRegularFile).filter(matching).sorted().toList();
+    }
+
+    for (final Path file : files.subList(0, Math.max(0, files.size() - count))) {
+      Files.deleteIfExists(file);
     }
   }
 

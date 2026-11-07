@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -110,4 +111,31 @@ class LatheMcpServerTest {
       this is not json {
       {"jsonrpc":"2.0","id":2,"method":"tools/list"}
       """;
+
+  // MCP session logs are named for their start time, so the last in name order are the newest.
+  @Test
+  void deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone() throws IOException {
+    for (final String name :
+        List.of(
+            "mcp-20261001-090000-11.log",
+            "mcp-20261002-090000-12.log",
+            "mcp-20261003-090000-13.log",
+            "lsp.log",
+            "mcp-notes.txt")) {
+      Files.writeString(logs.resolve(name), "x");
+    }
+
+    LatheMcpServer.deleteAllButLast(logs, LatheLayout::isMcpSessionLog, 2);
+
+    try (final var left = Files.list(logs)) {
+      assertThat(left.map(path -> path.getFileName().toString()))
+          .containsExactlyInAnyOrder(
+              "mcp-20261002-090000-12.log",
+              "mcp-20261003-090000-13.log",
+              "lsp.log",
+              "mcp-notes.txt");
+    }
+
+    LatheMcpServer.deleteAllButLast(logs.resolve("absent"), LatheLayout::isMcpSessionLog, 2);
+  }
 }

@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.typeindex.ClassSourceFile;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,7 +46,7 @@ final class ClassOutputs {
               .filter(
                   path ->
                       !keptBinaryNames.contains(
-                          FileUtil.classBinaryName(config.latheClassesDir(), path)))
+                          ServerFiles.classBinaryName(config.latheClassesDir(), path)))
               .filter(path -> classOutputOf(source, path))
               .toList();
       deletedClassFiles.forEach(path -> IOUtil.unchecked(() -> Files.deleteIfExists(path)));

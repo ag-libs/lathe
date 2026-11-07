@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.LibrarySources;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -70,7 +71,7 @@ public final class ExternalCompiler implements JavaSourceCompiler {
     }
 
     try {
-      final var tempFile = FileUtil.writeTempSourceFile(td, sourceRoot.get(), filePath, content);
+      final var tempFile = ServerFiles.writeTempSourceFile(td, sourceRoot.get(), filePath, content);
 
       final var classpath = libraries.dependencyClasspathForFile(filePath);
       fm.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);

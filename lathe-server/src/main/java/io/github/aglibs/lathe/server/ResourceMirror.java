@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -79,7 +80,7 @@ final class ResourceMirror {
 
   private Map<Path, Long> resourceMtimesUnder(final Path sourceDir) {
     try {
-      return FileUtil.fileMtimes(sourceDir, file -> true);
+      return ServerFiles.fileMtimes(sourceDir, file -> true);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[resource] scan failed under %s".formatted(sourceDir));
       return Map.of();

@@ -17,10 +17,10 @@ import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
@@ -684,7 +684,7 @@ final class ReferenceSearch {
   }
 
   private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
-    return FileUtil.readIfPresent(LatheUri.toPath(uri))
+    return ServerFiles.readIfPresent(LatheUri.toPath(uri))
         .map(content -> new DiskCandidate(uri, content));
   }
 
