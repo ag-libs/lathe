@@ -11,8 +11,6 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
-import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 
 // The type and call hierarchies around a cursor: a type's supertypes and subtypes (one level, or
@@ -69,54 +67,24 @@ public final class HierarchyFeatures {
       return List.of();
     }
 
-    final var displayName = SourceLocator.declarationName(element).toString();
-
     final TreePath methodPath = cur.analysis().trees().getPath(element);
     if (methodPath != null) {
-      final var cu = cur.analysis().tree();
-      final var positions = cur.analysis().trees().getSourcePositions();
-      final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
-      final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
-      final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
-      final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
-      final var range = new Range(rangeStart, rangeEnd);
-      Position selStart;
-      try {
-        selStart =
-            SourceLocator.declarationNamePosition(
-                    cur.analysis().trees(), cu, methodPath, displayName)
-                .orElse(rangeStart);
-      } catch (final IOException e) {
-        selStart = rangeStart;
-      }
-      final var selEnd =
-          new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
-      final var selectionRange = new Range(selStart, selEnd);
       return List.of(
-          CallHierarchyItemDataCodec.buildItem(
+          CallHierarchyItemDataCodec.itemAt(
               element,
               request.uri(),
-              range,
-              selectionRange,
+              methodPath,
+              cur.analysis().trees(),
               cur.analysis().types(),
               cur.analysis().elements()));
     }
 
-    return DefinitionLocator.findSourceFile(element, request.allSourceRoots())
-        .map(
-            file -> {
-              final var pos =
-                  definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
-              final var pointRange = new Range(pos, pos);
-              final var uri = file.toUri().toString();
-              return CallHierarchyItemDataCodec.buildItem(
-                  element,
-                  uri,
-                  pointRange,
-                  pointRange,
-                  cur.analysis().types(),
-                  cur.analysis().elements());
-            })
+    return CallHierarchyItemDataCodec.itemFromSource(
+            element,
+            request.allSourceRoots(),
+            definitionLocator,
+            cur.analysis().types(),
+            cur.analysis().elements())
         .map(List::of)
         .orElseGet(List::of);
   }

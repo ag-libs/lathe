@@ -24,7 +24,6 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 final class CallHierarchyIncomingLocator extends SourceTreeLocator {
@@ -180,23 +179,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
       return null;
     }
-    final var displayName = SourceLocator.declarationName(callerElement).toString();
-    final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
-    final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
-    final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
-    final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
-    final var range = new Range(rangeStart, rangeEnd);
-    Position selStart;
-    try {
-      selStart =
-          SourceLocator.declarationNamePosition(trees, cu, methodPath, displayName)
-              .orElse(rangeStart);
-    } catch (final IOException e) {
-      selStart = rangeStart;
-    }
-    final var selEnd =
-        new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
-    return CallHierarchyItemDataCodec.buildItem(
-        callerElement, fileUri, range, new Range(selStart, selEnd), types, elements);
+    return CallHierarchyItemDataCodec.itemAt(
+        callerElement, fileUri, methodPath, trees, types, elements);
   }
 }

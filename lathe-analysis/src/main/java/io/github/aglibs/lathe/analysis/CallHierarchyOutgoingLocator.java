@@ -19,7 +19,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
@@ -143,18 +142,11 @@ final class CallHierarchyOutgoingLocator extends SourceTreeLocator {
     for (final var entry : callSites.entrySet()) {
       final var calleeElement = entry.getKey();
       final var ranges = entry.getValue();
-      DefinitionLocator.findSourceFile(calleeElement, sourceRoots)
+      CallHierarchyItemDataCodec.itemFromSource(
+              calleeElement, sourceRoots, definitionLocator, types, elements)
           .ifPresent(
-              file -> {
-                final var pos =
-                    definitionLocator.parsePosition(file, calleeElement).orElse(new Position(0, 0));
-                final var pointRange = new Range(pos, pos);
-                final var uri = file.toUri().toString();
-                final var calleeItem =
-                    CallHierarchyItemDataCodec.buildItem(
-                        calleeElement, uri, pointRange, pointRange, types, elements);
-                results.add(new CallHierarchyOutgoingCall(calleeItem, List.copyOf(ranges)));
-              });
+              calleeItem ->
+                  results.add(new CallHierarchyOutgoingCall(calleeItem, List.copyOf(ranges))));
     }
     return List.copyOf(results);
   }
