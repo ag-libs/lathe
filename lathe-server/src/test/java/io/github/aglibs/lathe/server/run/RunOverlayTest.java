@@ -2,11 +2,13 @@ package io.github.aglibs.lathe.server.run;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
 import io.github.aglibs.lathe.core.schema.RunKind;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -113,6 +115,40 @@ final class RunOverlayTest {
     // No overlay cwd → default to the module basedir from the template's workingDir.
     assertThat(resolved.cwd()).isEqualTo(Path.of("/workspace/app"));
     assertThat(resolved.env()).isEmpty();
+    assertThat(resolved.unsetEnv()).as("built from the build's paths, not a JVM").isEmpty();
+  }
+
+  // A captured test launch already holds the options the JVM-option variables gave the build's test
+  // JVM, so the launch does not inherit them again.
+  @Test
+  void applyToTestMain_capturedLaunch_unsetsTheJvmOptionVariables() {
+    final var template =
+        new TestLaunchData(
+            "junit-platform",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of("/workspace/app/target/test-classes"),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of("-javaagent:/agent.jar"),
+            "app");
+
+    final ResolvedLaunch resolved =
+        RunOverlay.applyToTestMain(
+            template,
+            WORKSPACE,
+            ReactorRewrite.none(),
+            "com.example.app.TestMain",
+            RunItem.empty("app", RunKind.MAIN),
+            JdwpOptions.NONE);
+
+    assertThat(resolved.argv()).containsOnlyOnce("-javaagent:/agent.jar");
+    assertThat(resolved.unsetEnv()).isEqualTo(LatheLayout.JVM_OPTIONS_VARIABLES);
   }
 
   @Test

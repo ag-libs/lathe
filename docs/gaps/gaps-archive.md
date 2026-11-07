@@ -11004,6 +11004,57 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-16 — A capture-only sync runs every test class, and on Gradle other test tasks, to capture one launch — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor's sync with tests and the first build, on Maven and Gradle, most on large modules, builds that fork several test JVMs, and Gradle builds whose test task depends on other test tasks.**
+
+Found while checking the Gradle plugin on the public Gradle projects (2026-11-06): the capture-only `latheSync` of Hibernate ORM ran 17 test JVMs at once and saturated a 16-core machine.
+
+### Observed behaviour
+
+A capture-only run captures the launch the moment JUnit's session opens in the test JVM, then lets the test task do all its usual work.
+The build starts every test JVM its fork settings ask for (Hibernate ORM's `maxParallelForks`, a Surefire `forkCount`) and hands them every test class; JUnit discovers each, dry run reports each test as skipped, and the build writes its reports.
+In Hibernate ORM's `hibernate-core` that was 94 s, 4,953 classes, 16,043 skipped tests, 25 MB of XML results and a 121 MB HTML report, which replaced the last real report.
+Each test JVM wrote the same `test-launch.json`.
+
+### Fix direction
+
+Give a capture-only run one test class: the launch is the same whichever classes run, and any class starts the test JVM, one without tests too.
+Both tools filter by class name before they start a test JVM, and start one only for a class they hand out, so one class means one JVM, one discovery and a one-class report.
+
+### Resolution
+
+On Gradle, the capture-only test task filters itself, as it starts, to the first top-level class in name order among those it scans (`Test.getCandidateClassFiles()`, so the task's own includes and excludes keep none out), replacing the build's own test filter and not failing for matching no tests.
+On Maven, the extension sets each module's `test` property to the simple name of the first top-level Java test source, and `surefire.failIfNoSpecifiedTests` to `false`; nothing is compiled when it runs, hence the sources.
+A `-Dtest` the user passes, or a `test` property the module sets, is kept; a module without Java test sources keeps running every class.
+
+Measured with the plugin built into Lathe 0.3.1, compiles up to date, the recorded `test-launch.json` identical before and after:
+
+| Capture-only sync | Before | After |
+|---|---|---|
+| Hibernate ORM, whole `latheSync` | 114.7 s | 76.7 s |
+| Hibernate ORM, `hibernate-core`'s test task | 94 s, 4,953 report files | no report file |
+| Micronaut, whole `latheSync` | stopped after more than 3½ minutes | 131.9 s |
+| Dropwizard `dropwizard-jersey` (Maven, `-Dtest` by hand) | 4.6 s, 23.6 s CPU, 55 report files | 3.9 s, 18.8 s CPU, none |
+
+On Maven the class picked can be abstract (`AbstractJerseyTest`), and Surefire still starts the JVM; on a JUnit `@Suite` the suite's members are still discovered and skipped.
+
+Most of Hibernate ORM's remaining time was test tasks other than `test` that its `test` depends on (`jakartaDataTest`, `legacyTest` and two integration-test tasks, about 70 s), which ran their tests in full, since only `test` gets the capture-only treatment.
+Their launches are not captured ([TE-12](gaps.md#te-12--on-gradle-only-each-projects-test-task-is-captured)), so a capture-only sync now skips every test task other than `test`, saying why; a plain build still runs them.
+The figures above predate this skip.
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.captureOnlySync_manyTestClassesAndForks_runsOneClassInOneTestJvm`,
+`LatheModelInjectorTest.injectCaptureClass_testSourcesInSeveralRoots_selectsTheFirstClassOnly`,
+`LatheModelInjectorTest.injectCaptureClass_noJavaSourcesOrOwnSelection_leavesTheSelection`.
+
+---
+
 ## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure — done
 
 **Status: done.**
@@ -11120,6 +11171,37 @@ With Predictive Test Selection off, `jupiter-tests` captures and skips its tests
 
 `LatheSyncTaskFunctionalTest.captureOnlySync_testJvmWithoutTheAgent_warnsThatNothingWasCaptured`,
 `LatheTestCaptureTest.temporaryJar_launcherCopyOrGone_namesIt_buildCachesAndDirectoriesNot`.
+
+---
+
+## TE-15 — A captured test launch keeps the options `JAVA_TOOL_OPTIONS` added, so a replay gets them twice — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: editor test runs, test discovery and MCP `run_test`, on Maven and Gradle, for anyone whose environment sets `JAVA_TOOL_OPTIONS` (or `JDK_JAVA_OPTIONS`), e.g. a corporate or profiling agent.**
+
+Found while measuring coverage across the whole reactor (2026-11-05), with the JaCoCo agent given to every JVM through `JAVA_TOOL_OPTIONS`.
+
+### Observed behaviour
+
+`LaunchCapture` records the test fork's `RuntimeMXBean.getInputArguments()`, which includes the options the JVM read from `JAVA_TOOL_OPTIONS` as if they were on the command line.
+The replayed JVM inherits the same environment, so it gets each of those options twice.
+For a Java agent the second load is fatal: the replay exits 134 with `duplicate class definition for java.lang.$JaCoCo`, and the run reports that no test ran.
+In the reactor build this failed `McpSmokeTest.runTest_reactorTestClass_replaysAndPasses`, 20 Neovim end-to-end checks (discovery, run status, streamed output) and the Gradle `LatheSyncTaskFunctionalTest.build_plainBuild_refreshesTheWorkspaceAndCapturesTestRuns`, which asserts that no `-javaagent` is captured.
+
+### Resolution
+
+A replay no longer inherits the variables, rather than the capture dropping their options.
+A build can set them itself (a Gradle test task's `environment`, Surefire's `<environmentVariables>`; the Gradle plugin keeps the build's own `JDK_JAVA_OPTIONS` and appends `lathe-junit`), so dropping them at capture would lose build configuration.
+The captured launch already holds everything the build's test JVM ran with, so a launch built from it (test runs and debug, discovery, a test-source `main`, MCP `run_test`) does not inherit `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and `_JAVA_OPTIONS`: `RunOverlay` lists them in the `ResolvedLaunch`'s `unsetEnv`, and `Launcher` removes them before applying the run configuration's `env`, so a variable set there on purpose still applies.
+A main-class launch is built from the build's paths, not a captured JVM, so it keeps inheriting them.
+A launch captured with the JaCoCo agent in `JAVA_TOOL_OPTIONS`, replayed by MCP `run_test` with the same variable set, failed with exit 134 before and passes after.
+
+### Regression targets
+
+`LauncherTest.environment_unsetVariables_inheritedDropped_setOnesKept`, `LauncherTest.environment_nothingUnset_keepsTheInheritedVariables`, `LauncherTest.launch_jvmOptionVariableInTheRunConfiguration_reachesTheProgram`, `RunOverlayTest.applyToTestMain_capturedLaunch_unsetsTheJvmOptionVariables`.
 
 ---
 

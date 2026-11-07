@@ -60,6 +60,10 @@ public final class LatheLayout {
   // A run/test launch too long for one command line passes its arguments in a temp argfile.
   public static final String LAUNCH_ARGFILE_PREFIX = "lathe-launch-";
   public static final String ARGFILE_SUFFIX = ".args";
+  // The environment variables a JVM or the java launcher adds options from. A captured launch
+  // already holds what they gave the build's test JVM, so a launch from it does not inherit them.
+  public static final List<String> JVM_OPTIONS_VARIABLES =
+      List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS");
   // Distinct names so the root module, whose module dir is .lathe/ itself, cannot alias the
   // reactor lock: releasing its module lock would otherwise end the build's lock mid-build.
   public static final String REACTOR_LOCK_FILE = "lathe.lock";
@@ -70,6 +74,7 @@ public final class LatheLayout {
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String PACKAGE_INFO_JAVA = "package-info.java";
+  public static final String PACKAGE_INFO_CLASS = "package-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -176,6 +181,11 @@ public final class LatheLayout {
     public static final List<String> SUREFIRE_DEFAULT_INCLUDES =
         List.of("**/Test*.java", "**/*Test.java", "**/*Tests.java", "**/*TestCase.java");
     public static final List<String> SUREFIRE_DEFAULT_EXCLUDES = List.of("**/*$*");
+    // Surefire's test selection, which replaces its includes and excludes, and the switch that lets
+    // a module with no class matching it pass.
+    public static final String SUREFIRE_TEST_PROPERTY = "test";
+    public static final String SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY =
+        "surefire.failIfNoSpecifiedTests";
     // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
     // says why. maven.version is the system property Maven sets to its own version.
     public static final String MIN_MAVEN_VERSION = "3.6.3";

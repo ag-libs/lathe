@@ -1,9 +1,14 @@
 package io.github.aglibs.lathe.maven.extension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.entry;
 import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import org.apache.maven.model.Build;
 import org.apache.maven.model.Dependency;
@@ -13,6 +18,7 @@ import org.apache.maven.model.PluginExecution;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LatheModelInjectorTest {
 
@@ -151,6 +157,50 @@ class LatheModelInjectorTest {
     assertThat(project.getDependencies())
         .extracting(Dependency::getArtifactId, Dependency::getVersion)
         .containsExactly(tuple("lathe-junit", VERSION));
+  }
+
+  @Test
+  void injectCaptureClass_testSourcesInSeveralRoots_selectsTheFirstClassOnly(
+      @TempDir final Path dir) throws IOException {
+    final MavenProject project = project();
+    write(dir.resolve("main/com/example/Gamma.java"));
+    write(dir.resolve("main/com/example/package-info.java"));
+    write(dir.resolve("generated/module-info.java"));
+    write(dir.resolve("generated/com/example/Beta.java"));
+    write(dir.resolve("generated/com/example/Notes.txt"));
+    project.addTestCompileSourceRoot(dir.resolve("main").toString());
+    project.addTestCompileSourceRoot(dir.resolve("generated").toString());
+    project.addTestCompileSourceRoot(dir.resolve("missing").toString());
+
+    new LatheModelInjector(VERSION).injectCaptureClass(project);
+
+    assertThat(project.getProperties())
+        .containsOnly(entry("test", "Beta"), entry("surefire.failIfNoSpecifiedTests", "false"));
+  }
+
+  // Without Java test sources the module keeps running every class; a selection the module makes
+  // itself is kept.
+  @Test
+  void injectCaptureClass_noJavaSourcesOrOwnSelection_leavesTheSelection(@TempDir final Path dir)
+      throws IOException {
+    final MavenProject withoutSources = project();
+    write(dir.resolve("groovy/com/example/AppSpec.groovy"));
+    withoutSources.addTestCompileSourceRoot(dir.resolve("groovy").toString());
+    final MavenProject ownSelection = project();
+    write(dir.resolve("java/com/example/AppTest.java"));
+    ownSelection.addTestCompileSourceRoot(dir.resolve("java").toString());
+    ownSelection.getProperties().setProperty("test", "SmokeTest");
+
+    new LatheModelInjector(VERSION).injectCaptureClass(withoutSources);
+    new LatheModelInjector(VERSION).injectCaptureClass(ownSelection);
+
+    assertThat(withoutSources.getProperties()).isEmpty();
+    assertThat(ownSelection.getProperties()).containsOnly(entry("test", "SmokeTest"));
+  }
+
+  private static void write(final Path file) throws IOException {
+    Files.createDirectories(file.getParent());
+    Files.writeString(file, "", StandardCharsets.UTF_8);
   }
 
   @Test

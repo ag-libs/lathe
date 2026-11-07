@@ -21,14 +21,13 @@ public final class Launcher {
   private Launcher() {}
 
   public static LaunchSession launch(
-      final List<String> argv,
+      final ResolvedLaunch launch,
       final String configLabel,
       final Path resultsSink,
       final Consumer<TranscriptLine> onLine,
-      final Consumer<TestResult> onResult,
-      final Map<String, String> env,
-      final Path cwd)
+      final Consumer<TestResult> onResult)
       throws IOException {
+    final List<String> argv = launch.argv();
     LOG.fine(() -> "[launch] argv=%s".formatted(argv));
     final List<String> command = commandLine(argv);
     // The config, then the command on its own line (copy-pasteable: an argfile stays on disk),
@@ -36,9 +35,9 @@ public final class Launcher {
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, "config: " + configLabel));
     onLine.accept(new TranscriptLine(TranscriptLine.Stream.COMMAND, String.join(" ", command)));
     final var processBuilder = new ProcessBuilder(command);
-    processBuilder.environment().putAll(env);
-    if (cwd != null) {
-      processBuilder.directory(cwd.toFile());
+    environment(processBuilder.environment(), launch);
+    if (launch.cwd() != null) {
+      processBuilder.directory(launch.cwd().toFile());
     }
 
     final Process process = processBuilder.start();
@@ -46,6 +45,12 @@ public final class Launcher {
     // of waiting until the run is cancelled.
     process.getOutputStream().close();
     return new LaunchSession(process, resultsSink, onLine, onResult);
+  }
+
+  // The server's environment, less what the launch does not inherit, plus what it sets.
+  static void environment(final Map<String, String> environment, final ResolvedLaunch launch) {
+    launch.unsetEnv().forEach(environment::remove);
+    environment.putAll(launch.env());
   }
 
   private static List<String> commandLine(final List<String> argv) throws IOException {

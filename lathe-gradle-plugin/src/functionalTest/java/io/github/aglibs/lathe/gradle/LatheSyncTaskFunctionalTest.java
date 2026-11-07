@@ -484,6 +484,70 @@ class LatheSyncTaskFunctionalTest {
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).doesNotExist();
   }
 
+  // A capture-only sync runs one class, the first in name order, which starts one test JVM however
+  // many forks the build allows: the launch is the same whichever classes run. That class has no
+  // tests and the build's own filter excludes it, and it still starts the JVM. Another test task
+  // the test task depends on is skipped, as its launch is not captured. A plain test run keeps the
+  // build's selection and runs every test, the other task's too.
+  @Test
+  void captureOnlySync_manyTestClassesAndForks_runsOneClassInOneTestJvm() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "app/build.gradle",
+                appTests(
+                        """
+                    maxParallelForks = 4
+                    filter { excludeTestsMatching '*AFixture' }
+                    beforeSuite { suite -> if (suite.name.startsWith('Gradle Test Executor')) {
+                      println "[fork] ${suite.name}"
+                    } }
+                    """)
+                    + """
+                    def other = tasks.register('otherTest', Test) {
+                      testClassesDirs = sourceSets.test.output.classesDirs
+                      classpath = sourceSets.test.runtimeClasspath
+                      useJUnitPlatform()
+                    }
+                    test.dependsOn other
+                    """)
+            .file(
+                "app/src/test/java/com/example/app/AFixture.java",
+                "package com.example.app;\n\nclass AFixture {}\n");
+    for (final String name : List.of("BTest", "CTest", "DTest")) {
+      fixture.file(
+          "app/src/test/java/com/example/app/%s.java".formatted(name),
+          """
+          package com.example.app;
+
+          class %s {
+            @org.junit.jupiter.api.Test
+            void runs() throws Exception {
+              java.nio.file.Files.writeString(java.nio.file.Path.of("%s.ran"), "ran");
+            }
+          }
+          """
+              .formatted(name, name));
+    }
+
+    final var capture = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+
+    assertThat(capture.getOutput().lines().filter(line -> line.startsWith("[fork] "))).hasSize(1);
+    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
+    assertThat(dir.resolve("app/build/test-results/test/TEST-com.example.app.BTest.xml"))
+        .doesNotExist();
+    assertThat(capture.task(":app:otherTest").getOutcome()).isEqualTo(TaskOutcome.SKIPPED);
+    assertThat(dir.resolve("app/BTest.ran")).doesNotExist();
+
+    final var plain = fixture.runner(":app:test").build();
+
+    assertThat(plain.task(":app:otherTest").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+
+    assertThat(dir.resolve("app/BTest.ran")).exists();
+    assertThat(dir.resolve("app/CTest.ran")).exists();
+    assertThat(dir.resolve("app/DTest.ran")).exists();
+  }
+
   private static String appTests(final String testConfiguration) {
     return """
         plugins { id 'java' }

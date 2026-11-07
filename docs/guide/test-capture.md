@@ -21,6 +21,13 @@ Because these are read *after* the JVM expanded its launch, the captured templat
 interpreted** launch — the module graph the tests actually ran under — rather than a guess reconstructed
 from build files.
 
+That launch includes the options the test JVM took from `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and
+`_JAVA_OPTIONS`, so a replay does not inherit those variables from the editor's environment: each option
+applies once, as in the build.
+Main-class runs are built from the build's paths, not a captured JVM, so they still inherit them.
+To give a replay one the build did not have, set the variable in the
+[run configuration's `env`](run-configuration.md).
+
 ## On Maven
 
 `lathe-junit` is a small `test`-scoped dependency in every module that compiles Java (injected by the
@@ -41,8 +48,12 @@ JVM as real arguments, so they are captured too.
 
 To refresh the launch templates without paying for a test run, set `lathe.capture.only`: each module still
 starts its test JVM and writes its `test-launch.json`, but no test runs.
-On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the tests are discovered as usual
-(a `@Suite` included) and reported as skipped.
+The launch is the same whichever tests run, so Lathe gives the run a single test class, the first in name order,
+and each module starts one test JVM that discovers that class only, instead of a JVM per fork discovering every class.
+On Maven the class comes from the test sources, and a `-Dtest` you pass is kept;
+a module whose test sources are not Java (or are all generated) runs every class, as before.
+On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the class's tests are discovered as usual
+(a `@Suite`'s included) and reported as skipped.
 On older JUnit, a post-discovery filter excludes every test instead.
 
 ```bash
@@ -58,6 +69,8 @@ mvn test -Dlathe.capture.only=true                    # Maven
 - **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
   up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
   too (`./gradlew test -Plathe.capture.only=true`).
+  Lathe captures each project's `test` task only, so a capture-only run skips the project's other test tasks,
+  which would otherwise run their tests in full when `test` depends on them.
 
 ## Resources
 

@@ -335,15 +335,7 @@ final class RunCoordinator {
         .forEach(note -> onLine.accept(new TranscriptLine(TranscriptLine.Stream.STDERR, note)));
     final ResolvedLaunch resolved = replay.launch();
     return new Spawned(
-        replay,
-        Launcher.launch(
-            resolved.argv(),
-            configLabel,
-            replay.resultsSink(),
-            onLine,
-            onResult,
-            resolved.env(),
-            resolved.cwd()));
+        replay, Launcher.launch(resolved, configLabel, replay.resultsSink(), onLine, onResult));
   }
 
   private void register(final String token, final Spawned spawned, final Throwable error) {
