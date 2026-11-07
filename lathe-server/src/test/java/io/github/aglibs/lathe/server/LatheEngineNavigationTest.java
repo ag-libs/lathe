@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.LatheEngine.CallDirection;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
+import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheImplementations;
 import io.github.aglibs.lathe.server.engine.LatheLocation;
 import io.github.aglibs.lathe.server.engine.LatheOutlineItem;
@@ -25,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
-import org.eclipse.lsp4j.Diagnostic;
 import org.junit.jupiter.api.Test;
 
 // The read-only tools: diagnostics, definition, references, call hierarchy, implementations,
@@ -38,7 +38,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
     engine = new LatheEngine(tmp);
 
-    final List<Diagnostic> diagnostics = engine.diagnostics(source);
+    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source);
 
     assertThat(diagnostics).isEmpty();
   }
@@ -52,11 +52,10 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             "package com.example; class Sample { int n = \"nope\"; }");
     engine = new LatheEngine(tmp);
 
-    final List<Diagnostic> diagnostics = engine.diagnostics(source);
+    final List<LatheDiagnostic> diagnostics = engine.diagnostics(source);
 
     assertThat(diagnostics).isNotEmpty();
-    assertThat(diagnostics)
-        .anyMatch(d -> d.getMessage().getLeft().toLowerCase().contains("incompatible types"));
+    assertThat(diagnostics).anyMatch(d -> d.message().toLowerCase().contains("incompatible types"));
   }
 
   @Test
@@ -128,8 +127,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             call -> {
               assertThat(call.name()).contains("greet");
               assertThat(call.location().uri()).endsWith("Caller.java");
-              assertThat(call.location().range().getStart().getCharacter())
-                  .isEqualTo(fx.callerSource().indexOf("greet()"));
+              assertThat(call.location().column()).isEqualTo(fx.callerSource().indexOf("greet()"));
             });
   }
 
@@ -190,9 +188,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
               .map(
                   location ->
                       "%s:%d"
-                          .formatted(
-                              Path.of(location.path()).getFileName(),
-                              location.range().getStart().getLine() + 1))
+                          .formatted(Path.of(location.path()).getFileName(), location.line() + 1))
               .sorted()
               .toList();
         };
@@ -221,9 +217,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
       assertThat(engine.definition(file, pos.getLine(), pos.getCharacter()))
           .as(name)
           .singleElement()
-          .satisfies(
-              location ->
-                  assertThat(location.range().getStart().getLine()).isEqualTo(pos.getLine()));
+          .satisfies(location -> assertThat(location.line()).isEqualTo(pos.getLine()));
     }
   }
 
@@ -478,7 +472,7 @@ class LatheEngineNavigationTest extends LatheEngineTestBase {
             LatheOutlineItem::kind,
             LatheOutlineItem::name,
             LatheOutlineItem::depth,
-            item -> item.location().range().getStart().getLine() + 1,
+            item -> item.location().line() + 1,
             item -> item.location().snippet())
         .containsExactly(
             tuple("class", "Shop", 0, 3, "public class Shop {"),

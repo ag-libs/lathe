@@ -47,8 +47,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 
 /**
  * The MCP tool surface over a {@link LatheEngine}. Bad input or an engine failure becomes an {@code
@@ -967,7 +965,7 @@ final class LatheMcpTools {
             item.kind(),
             item.name(),
             line(item.location()),
-            toWire(item.location().range().getStart().getCharacter()),
+            toWire(item.location().column()),
             item.location().snippet());
   }
 
@@ -1204,7 +1202,7 @@ final class LatheMcpTools {
   private static long errorCount(final LatheVerifyChange verify) {
     return verify.perModule().stream()
         .flatMap(module -> module.diagnostics().stream())
-        .filter(located -> located.diagnostic().getSeverity() == DiagnosticSeverity.Error)
+        .filter(located -> located.severity() == LatheDiagnostic.Severity.ERROR)
         .count();
   }
 
@@ -1236,21 +1234,20 @@ final class LatheMcpTools {
   private static String verifyDiagnosticLines(final List<LatheModuleDiagnostics> perModule) {
     return perModule.stream()
         .flatMap(module -> module.diagnostics().stream())
-        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
+        .sorted(Comparator.comparing(LatheDiagnostic::severity))
         .map(located -> System.lineSeparator() + locatedDiagnosticLine(located))
         .collect(Collectors.joining());
   }
 
   // grep-style, like a location: path:line:column: severity: message.
   static String locatedDiagnosticLine(final LatheDiagnostic located) {
-    final Diagnostic d = located.diagnostic();
     return "%s:%d:%d: %s: %s"
         .formatted(
             located.path(),
-            toWire(d.getRange().getStart().getLine()),
-            toWire(d.getRange().getStart().getCharacter()),
-            d.getSeverity(),
-            messageText(d));
+            toWire(located.line()),
+            toWire(located.column()),
+            located.severity().label(),
+            located.message());
   }
 
   private static String deferralText(final ReconcileOutcome.DeferReason reason) {
@@ -1263,14 +1260,14 @@ final class LatheMcpTools {
   }
 
   private static CallToolResult diagnosticsResult(
-      final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
+      final Path file, final List<LatheDiagnostic> diagnostics, final LatheNotes notes) {
     return result(diagnosticsText(file, diagnostics, notes), notes);
   }
 
   // Never "compiles cleanly": no module may compile the file, and the analysis is not the write
   // (whose failure the "Not compiled:" note reports).
   static String diagnosticsText(
-      final Path file, final List<Diagnostic> diagnostics, final LatheNotes notes) {
+      final Path file, final List<LatheDiagnostic> diagnostics, final LatheNotes notes) {
     if (!notes.notChecked().isEmpty()) {
       return "%s was not checked.".formatted(file.getFileName());
     }
@@ -1309,7 +1306,7 @@ final class LatheMcpTools {
   }
 
   private static int line(final LatheLocation location) {
-    return toWire(location.range().getStart().getLine());
+    return toWire(location.line());
   }
 
   // Most answers are reactor code, so only the exceptions are tagged.
@@ -1352,13 +1349,9 @@ final class LatheMcpTools {
     return "  %s%s — %d edit(s)".formatted(f.path(), originTag(f.origin()), f.editCount());
   }
 
-  private static String diagnosticLine(final Diagnostic d) {
+  private static String diagnosticLine(final LatheDiagnostic d) {
     return "  %s [%d:%d] %s"
-        .formatted(
-            d.getSeverity(),
-            toWire(d.getRange().getStart().getLine()),
-            toWire(d.getRange().getStart().getCharacter()),
-            messageText(d));
+        .formatted(d.severity().label(), toWire(d.line()), toWire(d.column()), d.message());
   }
 
   // Agents read and give 1-based lines and columns; the server's positions are 0-based. These two
@@ -1369,11 +1362,6 @@ final class LatheMcpTools {
 
   private static int toWire(final int zeroBased) {
     return zeroBased + 1;
-  }
-
-  private static String messageText(final Diagnostic d) {
-    final var message = d.getMessage();
-    return message.isLeft() ? message.getLeft() : message.getRight().getValue();
   }
 
   // The file tools read a Java source; anything else would get an answer about a file never

@@ -103,8 +103,6 @@ public final class LatheEngine {
               descriptor.exports().stream()
                   .filter(exports -> !exports.isQualified())
                   .map(ModuleDescriptor.Exports::source));
-  private static final Comparator<Position> SOURCE_ORDER =
-      Comparator.comparingInt(Position::getLine).thenComparingInt(Position::getCharacter);
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -180,11 +178,13 @@ public final class LatheEngine {
   }
 
   /** Compiler diagnostics for {@code file} at its current on-disk content. */
-  public List<Diagnostic> diagnostics(final Path file) {
-    return fileRequest(
-        file,
-        (session, uri, diagnostics, cancel, progress) ->
-            CompletableFuture.completedFuture(diagnostics));
+  public List<LatheDiagnostic> diagnostics(final Path file) {
+    final List<Diagnostic> diagnostics =
+        fileRequest(
+            file,
+            (session, uri, found, cancel, progress) -> CompletableFuture.completedFuture(found));
+    final String path = displayPath(file, LatheUri.fromPath(file));
+    return diagnostics.stream().map(diagnostic -> LatheDiagnostic.of(path, diagnostic)).toList();
   }
 
   /**
@@ -812,7 +812,9 @@ public final class LatheEngine {
         .stream()
         .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
-        .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
+        .sorted(
+            Comparator.comparingInt((LatheCall call) -> call.location().line())
+                .thenComparingInt(call -> call.location().column()))
         .toList();
   }
 
@@ -932,7 +934,7 @@ public final class LatheEngine {
     return files.stream()
         .flatMap(
             file -> reportedIn(file, changed.contains(file), analyses.get(LatheUri.fromPath(file))))
-        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
+        .sorted(Comparator.comparing(LatheDiagnostic::severity))
         .toList();
   }
 
@@ -941,7 +943,7 @@ public final class LatheEngine {
     final String path = displayPath(file, LatheUri.fromPath(file));
     return diagnostics.stream()
         .filter(diagnostic -> reported(diagnostic, changedFile))
-        .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
+        .map(diagnostic -> LatheDiagnostic.of(path, diagnostic));
   }
 
   private static boolean reported(final Diagnostic diagnostic, final boolean changedFile) {
@@ -1059,7 +1061,8 @@ public final class LatheEngine {
     return new LatheLocation(
         location.getUri(),
         displayPath(targetPath, location.getUri()),
-        location.getRange(),
+        location.getRange().getStart().getLine(),
+        location.getRange().getStart().getCharacter(),
         origin(targetPath),
         snippet(targetPath, location.getRange()));
   }

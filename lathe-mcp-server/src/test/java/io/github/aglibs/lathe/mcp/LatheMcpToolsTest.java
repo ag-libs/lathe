@@ -314,7 +314,7 @@ class LatheMcpToolsTest {
 
     assertThat(
             LatheMcpTools.locatedDiagnosticLine(
-                new LatheDiagnostic("jetty/src/main/java/Http.java", diagnostic)))
+                LatheDiagnostic.of("jetty/src/main/java/Http.java", diagnostic)))
         .isEqualTo(
             "jetty/src/main/java/Http.java:758:9: Warning: setMinResponseDataRate(long) has been deprecated");
   }
@@ -544,8 +544,7 @@ class LatheMcpToolsTest {
   // A location at a 1-based line, as the tools print it.
   private static LatheLocation location(
       final String path, final int line, final LatheLocation.Origin origin, final String code) {
-    final var at = new Position(line - 1, 0);
-    return new LatheLocation("file:///w/%s".formatted(path), path, new Range(at, at), origin, code);
+    return new LatheLocation("file:///w/%s".formatted(path), path, line - 1, 0, origin, code);
   }
 
   private static String lines(final String... lines) {
@@ -676,14 +675,14 @@ class LatheMcpToolsTest {
   // A reactor file carries no tag (most answers are reactor code); anything else says where it is.
   @Test
   void locationLine_reactorAndExternal_oneGrepStyleLineTaggedOnlyOutsideTheReactor() {
-    final var line = new Range(new Position(411, 8), new Position(411, 20));
 
     assertThat(
             LatheMcpTools.locationLine(
                 new LatheLocation(
                     "file:///ws/app/src/main/java/App.java",
                     "app/src/main/java/App.java",
-                    line,
+                    411,
+                    8,
                     LatheLocation.Origin.REACTOR,
                     "client.connect();")))
         .isEqualTo("app/src/main/java/App.java:412: client.connect();");
@@ -692,7 +691,8 @@ class LatheMcpToolsTest {
                 new LatheLocation(
                     "jar:file:///repo/lib-sources.jar!/Lib.java",
                     "jar:file:///repo/lib-sources.jar!/Lib.java",
-                    line,
+                    411,
+                    8,
                     LatheLocation.Origin.EXTERNAL,
                     "void connect() {")))
         .isEqualTo("jar:file:///repo/lib-sources.jar!/Lib.java:412 [EXTERNAL]: void connect() {");
@@ -954,18 +954,26 @@ class LatheMcpToolsTest {
                 "override family: none"));
   }
 
+  private static LatheDiagnostic diagnostic(
+      final Range range,
+      final String message,
+      final DiagnosticSeverity severity,
+      final String source) {
+    return LatheDiagnostic.of("Shop.java", new Diagnostic(range, message, severity, source));
+  }
+
   // Never "compiles cleanly": a file no module checked says so, and a clean one says no problems.
   @Test
   void diagnosticsText_notCheckedCleanAndDiagnostics_saysWhichWithOneLinePerDiagnostic() {
     final Path file = tmp.resolve("Shop.java");
     final var error =
-        new Diagnostic(
+        diagnostic(
             new Range(new Position(4, 9), new Position(4, 12)),
             "cannot find symbol",
             DiagnosticSeverity.Error,
             "javac");
     final var warning =
-        new Diagnostic(
+        diagnostic(
             new Range(new Position(0, 0), new Position(0, 1)),
             "unchecked call",
             DiagnosticSeverity.Warning,

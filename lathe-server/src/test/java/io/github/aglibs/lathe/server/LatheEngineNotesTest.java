@@ -170,7 +170,7 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
     assertThat(engine.diagnostics(fx.caller()))
         .as("the agent's edits are still compiled while the sync is pending")
-        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+        .anyMatch(d -> d.message().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
     assertThat(engine.verifyChange(List.of()).deferral())
         .isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
