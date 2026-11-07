@@ -2,7 +2,7 @@
 
 **Status: planned (2026-11-06).**
 A structural review of the whole codebase after the 0.3.1 release,
-which shipped the [Server Restructuring](lathe-server-restructuring.md) (phases 0–3).
+which shipped the [Server Restructuring](../planned/lathe-server-restructuring.md) (phases 0–3).
 Five read-only reviewers covered the server core, `lathe-analysis`, the front ends (LSP, `LatheEngine`, MCP),
 the build side (core, install, the Maven, OpenJDK and Gradle front-ends) and the clients, tests and docs.
 Each finding below was checked against the code at `dfba186d`.
@@ -49,7 +49,7 @@ A test that trips the new check is a real violation, fixed in the same commit.
 - `WorkspaceSession.pendingSyncModules`: the only caller of `promptForSync` passes `List.of()`,
   so the module-scoped sync it feeds can never happen. Remove it (the scope parameter too).
 - `LatheTextDocumentService.onTypeFormatting`: a `TODO` stub that returns no edits, is never advertised,
-  and would log at `INFO` per keystroke. Remove it; the design stays in [Google Indentation](lathe-google-indent.md).
+  and would log at `INFO` per keystroke. Remove it; the design stays in [Google Indentation](../planned/lathe-google-indent.md).
 - `LatheLayout.LEGACY_CURRENT_LINK` and its cleanup in `ServerInstaller`: migration code, against the
   no-backward-compatibility rule.
 - `core.typeindex`: `ReactorTypeIndexOrigin`, `TypeIndexOriginKind.REACTOR` and the `SourceTree` enum have no
@@ -75,7 +75,7 @@ A test that trips the new check is a real violation, fixed in the same commit.
 - Shipped designs still under `planned/`: type definition, MCP trust (PR #73),
   and the restructuring doc's "on branch" wording (merged as PR #93).
   Re-run failed tests stays planned: its option 2 is still open, and its status already says option 1 shipped.
-- [Lightweight Watcher](lathe-lightweight-watcher.md) describes a `Files.walk` the current `WorkspaceWatcher`
+- [Lightweight Watcher](../planned/lathe-lightweight-watcher.md) describes a `Files.walk` the current `WorkspaceWatcher`
   no longer does: mark it obsolete or move it to `potential/`.
 - `done/lathe-gradle-support.md` and `done/lathe-new-type-creation.md` still open with "Proposed".
 - Two docs link to `file:///home/...` paths; make them repo-relative.
@@ -390,13 +390,12 @@ one Lua table of names. `lathe.tests.modules` has no client yet (built ahead for
 
 ### F3. Tests
 
-**Done in part**: `LatheMcpToolsTest` split (`McpTextTest`), `ExtractMethodSweep` already says it is a tool, gap IDs gone
-from test comments. The Gradle LSP smoke test needs a new shared test module: deferred.
-
-- No Gradle LSP smoke test: the session helpers live in `lathe-maven-plugin/src/it/setup-support`.
-  Sharing them needs a new test artifact (a new module or dependency: ask first).
-- `ExtractMethodSweep` is a tool living in `lathe-server/src/test`; document it as one.
-- `LatheMcpToolsTest` splits with D1.
+**Done**: `LatheMcpToolsTest` split (`McpTextTest`), `ExtractMethodSweep` says it is a tool, gap IDs gone from test
+comments, and a Gradle LSP smoke test. The session helpers moved from the `setup-support` invoker project into the
+`lathe-it-support` module (test-only, never published), which the invoker fixtures and the Gradle plugin's functional
+tests share; `setup-support` now only warms the fixtures' Lathe cache. `LatheLspSmokeFunctionalTest` starts the server
+on a workspace a Gradle sync wrote: diagnostics, a cross-project definition, a source set's own classpath, and a
+captured test replayed through `lathe.run.test`.
 
 ---
 
@@ -409,4 +408,4 @@ from test comments. The Gradle LSP smoke test needs a new shared test module: de
 5. **E1 + E2**.
 6. Decisions first: **E3** (rule change), **F1** (design), **F2** (rename scheme), **F3** (new test artifact).
 
-All done except **F3**'s Gradle LSP smoke test, which waits for the Gradle test-capture work.
+All done. Deferred: C5's `navigation/` subpackage (it would widen the exported API; see C5).

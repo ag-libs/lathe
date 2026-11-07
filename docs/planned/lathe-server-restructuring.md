@@ -1,7 +1,7 @@
 # Lathe — Server Restructuring
 
 **Status: Phases 0–3 and the test phase shipped (PRs #93, #96, #98, #103; released in 0.3.1).**
-What is left is tracked in the [November 2026 code review](lathe-code-review-nov-2026.md).
+What is left is tracked in the [November 2026 code review](../done/lathe-code-review-nov-2026.md).
 
 ## 1. Why
 

@@ -34,6 +34,7 @@
     <module>lathe-analysis</module>
     <module>lathe-server</module>
     <module>lathe-mcp-server</module>
+    <module>lathe-it-support</module>
     <module>lathe-maven-extension</module>
     <module>lathe-install</module>
     <module>lathe-install-maven</module>
@@ -492,7 +493,8 @@
                 The Neovim and VS Code clients and the Gradle plugin are not
                 library artifacts: they are distributed through their own channels
                 (the lathe.nvim mirror, the VS Code Marketplace / Open VSX, and the
-                Gradle Plugin Portal), not Maven Central. They are pom-only modules
+                Gradle Plugin Portal), not Maven Central. lathe-it-support is the
+                fixtures' test helpers, never published. They are pom-only modules
                 whose presence in the aggregated bundle breaks the Central
                 deployment. Exclude them by artifactId so the last module still
                 drives the final publish of the rest.
@@ -501,6 +503,7 @@
                 <excludeArtifact>lathe-neovim</excludeArtifact>
                 <excludeArtifact>lathe-vscode</excludeArtifact>
                 <excludeArtifact>lathe-gradle-plugin</excludeArtifact>
+                <excludeArtifact>lathe-it-support</excludeArtifact>
               </excludeArtifacts>
             </configuration>
           </plugin>

@@ -59,12 +59,13 @@ Which file answers which question:
 | `lathe-analysis`     | javac-backed analysis (`io.github.aglibs.lathe.analysis`): what the server's features compute from a compile; no session state; JPMS, multi-release jar        |
 | `lathe-server`       | LSP server; reads the `.lathe/` files the build front-ends write; JPMS module; drives `lathe-analysis` from its module workers                                  |
 | `lathe-mcp-server`   | MCP server exposing Lathe's code intelligence to AI coding agents; runs `lathe-server` in process                                                                |
+| `lathe-it-support`   | Test-only helpers the invoker fixtures and the Gradle functional tests share (the real servers as a client starts them); never published                         |
 | `lathe-neovim`       | Neovim client (Lua), source of truth mirrored to `ag-libs/lathe.nvim`; `mvn` runs its headless specs. No reactor-code dep.                                       |
 | `lathe-vscode`       | VS Code extension (TypeScript); `frontend-maven-plugin` fetches Node and packages the `.vsix`. No reactor-code dep.                                              |
 | `lathe-gradle-plugin`| Gradle plugin, built by Gradle: this `pom` module fills `target/lathe-repo` with the reactor-built jars and runs `gradle build` (TestKit fixtures) against it.   |
 
 Build order: `lathe-core` → `lathe-junit` → `lathe-test-runner` → `lathe-install` → `lathe-compiler` →
-`lathe-analysis` → `lathe-server` → `lathe-mcp-server` → `lathe-maven-extension` → `lathe-install-maven` →
+`lathe-analysis` → `lathe-server` → `lathe-mcp-server` → `lathe-it-support` → `lathe-maven-extension` → `lathe-install-maven` →
 `lathe-maven-plugin` → `lathe-openjdk-maven-plugin` → `lathe-neovim` → `lathe-vscode` →
 `lathe-gradle-plugin` (listed last).
 
