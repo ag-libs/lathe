@@ -26,7 +26,7 @@ The callers and their limits:
 
 | Caller | Limit | Feature |
 |---|---|---|
-| `ImportCandidates.resolve` | 100 | import quick fix + `lathe.missingImports` |
+| `ImportCandidates.resolve` | 100 | import quick fix + `lathe.imports.missing` |
 | `CompletionEngine` | 200 | type-name completion popup |
 | `MemberAccessCompleter` | 200 | member completion |
 | `WorkspaceSymbolResolver` (`SEARCH_LIMIT`) | 100 | `workspace/symbol` |
@@ -43,7 +43,7 @@ public record Order(List<String> lines) {}   // List unresolved, no import
 ```
 
 detects `List` correctly as an unresolved **type** (`resolveKind` returns `TYPE_REF`; it appears in
-`lathe.missingImports`), but the import quick fix offers **nothing**, so no code action shows.
+`lathe.imports.missing`), but the import quick fix offers **nothing**, so no code action shows.
 
 The cause is a mismatch between what `ImportCandidates.resolve` needs and what `search` provides.
 `resolve` wants the *exact* set of types simple-named `List` (a handful), but it asks `search` for the
@@ -85,7 +85,7 @@ Result on the example: candidates become `{java.awt.List, java.util.List}` — j
 both, ambiguous, and the client prompts the user to choose.
 This is the same behavior the small multi-module fixture already exhibits.
 
-This fixes both the single-name import quick fix and the whole-file `lathe.missingImports` command,
+This fixes both the single-name import quick fix and the whole-file `lathe.imports.missing` command,
 and the guarantee no longer depends on the dependency count.
 
 ### A — test plan

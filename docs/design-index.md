@@ -404,7 +404,7 @@ reused):
 - [Batching](done/lathe-batching.md) — **partly implemented** (batch write, save coalescing, dependents-refresh
   analysis). Two server primitives for multi-file bursts: chained batch writes (reconcile, the rename commit, save coalescing) and in-memory batch analysis (dependents refresh, open bursts, reload),
   coalescing by load rather than timers; plus narrowing the dependents refresh.
-- [Find Instantiations of a Type](done/lathe-find-instantiations.md) — **implemented.** The `lathe.instantiations`
+- [Find Instantiations of a Type](done/lathe-find-instantiations.md) — **implemented.** The `lathe.types.instantiations`
   command (`:LatheInstances`) lists where the type under the cursor is instantiated (`new X(...)`), including
   classes and records with synthesized constructors.
 - [Per-Test Output Attribution](done/lathe-per-test-output-attribution.md) — **superseded** spike plan (in-JVM

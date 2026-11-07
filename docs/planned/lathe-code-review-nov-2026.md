@@ -333,8 +333,8 @@ whole sync.
 
 ### E2. Maven and Gradle repeat the sync pipeline, in different orders
 
-**Done**: `WorkspaceSync`. The capture-under-lock sequences stay apart (Maven locks around javac, Gradle around the copy);
-the OpenJDK `ModuleConfigData` factory is not done.
+**Done**: `WorkspaceSync`, and the OpenJDK sync's configs come from `ModuleConfigData.external`.
+The capture-under-lock sequences stay apart (Maven locks around javac, Gradle around the copy).
 
 `SyncCoordinator` and `LatheWorkspaceTask` call the same eight steps (dependency sources, JDK sources,
 JDK type index, server install, manifest, JVM args, sync script, capture prune).
@@ -367,8 +367,9 @@ changing this means relaxing them to "the lowest module that uses it". Needs a d
 
 ### F1. Neovim holds logic VS Code will need (editor-neutral first)
 
-**Deferred, deliberately**: it changes the client protocol, and the working-tree Neovim client runs against the
-published server, so it ships with a server release; do it before the VS Code features that need it.
+**Done** (protocol 2, with F2): `lathe.stack.resolve` reads and resolves stack frames exactly (`StackFrames`, by binary
+name over the reactor, JDK and dependency sources); `lathe.types.destinations` ranks new-type destinations; and
+`lathe.types.create` names a module-info itself and writes and compiles the new file, retiring the save-on-attach.
 
 - New type: destination ranking and package derivation (`new.lua`), and a save-on-attach workaround for the
   server's staleness check on a type it just created.
@@ -379,7 +380,9 @@ VS Code features copy them. Needs a design of its own.
 
 ### F2. Command names and calls
 
-**Deferred**, with F1 and for the same reason: renaming the commands breaks the published server and its clients.
+**Done** (protocol 2, with F1): every command is `lathe.<area>.<action>`, named once per side (`LatheCommands`,
+`lua/lathe/commands.lua`, kept equal by a drift test), and every Neovim call goes through `util.exec` / `util.exec_nio`.
+`status.md` notes that `lathe.tests.modules` has no Neovim caller.
 
 The 26 commands mix `lathe.run.test`, `lathe.resourceOpen` and `runconfig`/`runconfigs`;
 about eighteen Neovim call sites bypass `util.exec`. Pick one scheme (no external adopters, so a clean rename),
@@ -405,3 +408,5 @@ from test comments. The Gradle LSP smoke test needs a new shared test module: de
 4. **D1–D3**.
 5. **E1 + E2**.
 6. Decisions first: **E3** (rule change), **F1** (design), **F2** (rename scheme), **F3** (new test artifact).
+
+All done except **F3**'s Gradle LSP smoke test, which waits for the Gradle test-capture work.

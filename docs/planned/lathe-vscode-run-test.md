@@ -34,12 +34,12 @@ The server spawns the replay JVM, so the client never starts a Java process or b
 
 | Purpose | Server API (`workspace/executeCommand` unless noted) |
 |---|---|
-| Runnables in one open file | `lathe.runnables.list {uri}` → `RunTarget[]` `{id, parentId, kind, label, moduleRel, uri, range}` |
+| Runnables in one open file | `lathe.runnables.file {uri}` → `RunTarget[]` `{id, parentId, kind, label, moduleRel, uri, range}` |
 | What a directory runs as | `lathe.runnables.dir {uri}` → `{moduleRel, selections}` |
-| Class name → source path | `lathe.testSources {moduleRel, classNames}` → `[{className, path}]` (path math, no analysis) |
+| Class name → source path | `lathe.tests.sources {moduleRel, classNames}` → `[{className, path}]` (path math, no analysis) |
 | Run tests | `lathe.run.test {moduleRel, selections, token}` → `LaunchOutcome` |
 | Run a main | `lathe.run.main {moduleRel, mainClass, token}` → `LaunchOutcome` |
-| Run a saved config | `lathe.run.named {name, token}`; list with `lathe.runconfigs.list {}`; save with `lathe.runconfig.save` |
+| Run a saved config | `lathe.run.named {name, token}`; list with `lathe.runConfigs.list {}`; save with `lathe.runConfigs.save` |
 | Cancel | `lathe.run.cancel {token}` |
 | Per-test result (notification) | `lathe/testEvent {token, result}`, where `result` = `{className, methodName, methodParameterTypes, status, failureMessage, failureLine, positionId}` and `status` ∈ `passed`/`failed`/`skipped` |
 | Output line (notification) | `lathe/testOutput {token, line: {stream, text}}`, where `stream` is the `TranscriptLine.Stream` ordinal (below) |
@@ -89,7 +89,7 @@ The ids come from the same `MethodSource` → `TestId.positionId` mapping as run
 One exception: a `@Nested` class declared in a parent and inherited by two outer classes is two JUnit tests but one Lathe id (S7 found one in Dropwizard).
 The tree shows it once, and both runs' results land on that one item, worst-wins.
 Parameterized, repeated and factory methods are listed once, as their template, which is how §5.1 shows them.
-`uri` is resolved like `lathe.testSources` (the outer class's source path).
+`uri` is resolved like `lathe.tests.sources` (the outer class's source path).
 There is no `range`: positions need javac, and an opened file supplies them (§5.2).
 
 The selection is the module's, as a module run selects it: one package selector per test package (`WorkspaceSession.moduleRun`), filtered by the build's own test-class filter (F).
@@ -280,11 +280,11 @@ With that feature and the folder-scoped selector, S5 saw both clients start (19 
 The extension's own user-facing commands use a separate prefix, `lathe.editor.*`, e.g. `lathe.editor.runMain`.
 
 **"Add missing imports…" needs a handler of its own.**
-The one server command VS Code itself invokes is `lathe.missingImports`, returned by the "Add missing imports…" code action.
+The one server command VS Code itself invokes is `lathe.imports.missing`, returned by the "Add missing imports…" code action.
 It answers with candidates, not an edit:
 `{insertionRange, items: [{name: "List", candidates: ["java.awt.List", "java.util.List"]}]}`.
 The command `vscode-languageclient` registers today sends the request and drops that answer, so the action does nothing visible in VS Code, even with one folder.
-The extension registers `lathe.missingImports` once, sends it to the client that owns `args[0].uri`, asks with a QuickPick for every name with more than one candidate, and applies the import lines as a `WorkspaceEdit` at `insertionRange`.
+The extension registers `lathe.imports.missing` once, sends it to the client that owns `args[0].uri`, asks with a QuickPick for every name with more than one candidate, and applies the import lines as a `WorkspaceEdit` at `insertionRange`.
 S5 checked the routing in both folders of a two-folder window.
 
 ## 5. Test Explorer
@@ -318,7 +318,7 @@ Two sources fill one tree, and both speak the same ids.
   `blockedReasons` becomes the module item's `error`, e.g. "no test capture, sync with `--tests`".
 - `lathe/testsChanged` re-queries a module the user has already expanded; a module never expanded stays unexpanded.
 
-**Open files, live** (`lathe.runnables.list`):
+**Open files, live** (`lathe.runnables.file`):
 
 - The server answers `runnables.list` only for a document it has open.
   The client asks **right after sending `didOpen`**: in `LanguageClientOptions.middleware.didOpen`, after `await next(document)`.
@@ -367,11 +367,11 @@ One `Run` profile (`TestRunProfileKind.Run`, default); a `Debug` profile comes w
      Without them it is a plain `TestMessage(message)`.
      Its `location` is the `failureLine` (1-based, `-1` = none, as S6 confirmed) in the item's file.
      The `stackTrace` follows the message as Markdown, each reactor frame a link to its file and line
-     (class → file through `lathe.testSources`); `TestMessageStackFrame` needs a newer VS Code than 1.84.
+     (class → file through `lathe.tests.sources`); `TestMessageStackFrame` needs a newer VS Code than 1.84.
    - A container failure (empty `methodName`) marks the class `errored` with the message,
      and its methods that got no result `errored` with "class failed: …".
    - A result for an id the tree doesn't have — a test in a file nobody opened while the module was never expanded,
-     or a signature `TestId` still can't match after §3.2 E — gets its items created on the spot from the id (package and class from the class name, `uri` through `lathe.testSources`).
+     or a signature `TestId` still can't match after §3.2 E — gets its items created on the spot from the id (package and class from the class name, `uri` through `lathe.tests.sources`).
      A run never drops a result.
 8. When the `lathe.run.test` response arrives:
    - `launched == false` → every enqueued item is `errored` with `blockedReasons` (e.g. "capture is stale, sync"),
@@ -431,14 +431,14 @@ Typing into the terminal shows a one-line notice "input is not supported" the fi
 The terminal is chosen for display, not for interactivity.
 
 **Named configs.**
-`Lathe: Run Config…` is a QuickPick over `lathe.runconfigs.list` (`name · module · target`) → `lathe.run.named`, output in a `Run: <name>` terminal.
+`Lathe: Run Config…` is a QuickPick over `lathe.runConfigs.list` (`name · module · target`) → `lathe.run.named`, output in a `Run: <name>` terminal.
 `Lathe: Run Last Config` repeats the last one.
-`Lathe: Save Run Config` saves the runnable under the cursor through `lathe.runconfig.save` (an optional name from an input box) and opens the file at the new entry.
+`Lathe: Save Run Config` saves the runnable under the cursor through `lathe.runConfigs.save` (an optional name from an input box) and opens the file at the new entry.
 This ports Neovim's `_save_target_for`.
 
 ## 7. Contributions (`package.json`)
 
-- Commands: `lathe.editor.runMain`, `lathe.editor.runConfig`, `lathe.editor.runLastConfig`, `lathe.editor.saveRunConfig`, `lathe.editor.stopRun`, and the internal `lathe.missingImports` (§4).
+- Commands: `lathe.editor.runMain`, `lathe.editor.runConfig`, `lathe.editor.runLastConfig`, `lathe.editor.saveRunConfig`, `lathe.editor.stopRun`, and the internal `lathe.imports.missing` (§4).
 - Menus: `lathe.editor.runMain` in `editor/title/run` and `editor/context`, when the file is Java.
 - Settings: `lathe.codeLens.run` (default `true`).
 - `activationEvents` don't change: Test Explorer and CodeLens are registered in `activate`, which already runs on `onLanguage:java` / `workspaceContains:**/.lathe`.
@@ -599,7 +599,7 @@ so Neovim users gain from every phase and the server work is proven by an existi
 
 **Phase 3: VS Code.**
 
-7. Groundwork: folder-scoped selector, the command-registration feature, and the `lathe.missingImports` handler that builds the import edit (§4). This fixes multi-root and "Add missing imports…" on their own.
+7. Groundwork: folder-scoped selector, the command-registration feature, and the `lathe.imports.missing` handler that builds the import edit (§4). This fixes multi-root and "Add missing imports…" on their own.
 8. Test Explorer: lazy and open-file discovery, run at every level, live results, diffs, stack traces, per-test output, cancel; unit and canned-event tests, E2E scenarios 1–5.
 9. Run `main()`: CodeLens, run button and menu, run terminals, stop; E2E scenarios 6–7.
 10. Named run configs: run, run last, save.

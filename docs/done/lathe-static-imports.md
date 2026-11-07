@@ -27,7 +27,7 @@ Writing a new test means typing every static import by hand.
      from; accepting it inserts the call and the `import static` line.
   2. **Quick fix.** An unresolved call `assertThat(x)` offers "Import static
      org.assertj.core.api.Assertions.assertThat", one action per class that declares the name.
-  3. **Add missing imports** (`lathe.missingImports`, `:LatheMissingImports` in Neovim, the MCP
+  3. **Add missing imports** (`lathe.imports.missing`, `:LatheMissingImports` in Neovim, the MCP
      `fix_imports` tool). Unresolved calls are fixed alongside unresolved types: one candidate is
      added, several are offered for a choice, as types are today.
 
@@ -143,7 +143,7 @@ The quick fix adds "Import static `owner.member`" for each candidate of the exac
 
 ### Add missing imports
 
-`lathe.missingImports` today lists each unresolved **type** name with its import candidates; the client
+`lathe.imports.missing` today lists each unresolved **type** name with its import candidates; the client
 adds unambiguous ones and asks about the rest.
 It also lists each unresolved **call** name with its candidates from the lookup.
 

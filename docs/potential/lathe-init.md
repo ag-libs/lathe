@@ -256,12 +256,12 @@ Personal and plain modes promise no project changes, so `.lathe/` ignores itself
 [Spiked](#spike-results-2026-10-28) on a plain project:
 - `lathe:sync` writes `main-launch.json`; runs execute from `.lathe/classes`, which the server keeps current, with the project root as the working directory.
 - `RunnableScanner` finds the classic `main`, a default-package class, and Java 25's compact `void main()` file; all ran.
-- Every non-`.java` file in `src/` is a resource: Maven copies it at init, the server copies edits and new files afterwards (`lathe.resource.refresh`); `Main.class.getResourceAsStream(...)` read it at run time.
+- Every non-`.java` file in `src/` is a resource: Maven copies it at init, the server copies edits and new files afterwards (`lathe.resources.refresh`); `Main.class.getResourceAsStream(...)` read it at run time.
 - **Keyboard input does not work** ([issue 2](#open-issues)).
 
 ### Creating classes and packages (`:LatheNew`)
 
-The server is layout-neutral (`lathe.createType`, `lathe.packages` and `lathe.resolveContext` use each module's first source root), so new files land in `src/<package>/` and `createType` handles the default package.
+The server is layout-neutral (`lathe.types.create`, `lathe.workspace.packages` and `lathe.workspace.context` use each module's first source root), so new files land in `src/<package>/` and `createType` handles the default package.
 The Neovim client (`lathe/new.lua`) needs three changes:
 1. **Offer the default package**: `collect_destinations` drops entries with an empty package, so with only `src/Main.java`, or an empty `src/`, the "Where:" picker is empty. Offer a "(default package)" row for a module with default-package files or no packages yet.
 2. **No test kinds in plain mode**: `Test` fails with the raw "no test source root for module ''"; hide `Test` and `module-info` when the root has `.lathe-pom.xml`, and make the server's message readable for any project without a test tree.
@@ -328,7 +328,7 @@ Run on Maven 3.9.11 (the plain Maven inside the local mvnd 1.0.3), JDK 21 and 25
 | **Plain mode, first build** | `.lathe-pom.xml` with no Lathe, `-f`, activation: 39 s and 25 MB of plugins and Lathe jars on a fresh repository (Maven itself not included: the wrapper download was not run). The Lathe cache took 245 MB, 236 MB of it the JDK's sources, unpacked once per JDK and shared by every project, as on the Maven path today. A warm re-run took 2 s. |
 | **Plain mode, output** | `.lathe/` at the root, Maven's output under `.lathe/build/`, `.lathe-pom.xml` listed and fingerprinted as the build file, the Spotless step read into `style.json`. `lathe-sync.sh` had no `-f`, so the replay change is required. |
 | **Plain mode, compile error** | With `failOnError=false`: the build succeeded, `lathe:sync` ran, the shim "kept the last good capture"; the server filled the mirror within about a second, reported the error on the broken file, and ran `Main`. |
-| **Run and resources** | Default-package `Main` and a Java 25 compact `void main()` file detected and run; a resource in `src/` loaded at run time; a resource added later copied by `lathe.resource.refresh`. The server's resource copy also copied the `.java` files, so the server rule is required. |
+| **Run and resources** | Default-package `Main` and a Java 25 compact `void main()` file detected and run; a resource in `src/` loaded at run time; a resource added later copied by `lathe.resources.refresh`. The server's resource copy also copied the `.java` files, so the server rule is required. |
 | **stdin** | `Scanner(System.in).nextLine()` in a run: `NoSuchElementException: No line found`. |
 
 **Not run:** Maven 3.6.3 and 3.10.0 (fetching the distributions was declined in the session), the wrapper's own Maven download, mvnd, and Windows.

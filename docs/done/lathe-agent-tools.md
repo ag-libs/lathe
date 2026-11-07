@@ -53,7 +53,7 @@ Do not claim client behaviour in the guide that is not confirmed (the review's s
 
 ### MC-23 — `fix_imports`
 
-- Engine `fixImports(Path)`: `missingImportsFuture` (the engine behind `lathe.missingImports`, CA-7)
+- Engine `fixImports(Path)`: `missingImportsFuture` (the engine behind `lathe.imports.missing`, CA-7)
   gives each unresolved name with its candidates.
   Add the **unambiguous** imports, with the import-edit code of the existing import quick fix
   (`ImportQuickFixProvider` / `ImportCandidates`), written as above.

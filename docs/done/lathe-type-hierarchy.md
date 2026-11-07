@@ -109,11 +109,11 @@ Behaviour for common anchors:
 
 ### 5.1 Server — new custom `executeCommand`
 
-Mirror the existing `lathe.instantiations` path (a position-anchored, workspace-wide query returning
+Mirror the existing `lathe.types.instantiations` path (a position-anchored, workspace-wide query returning
 locations).
 
 - **Command constant** in `LatheWorkspaceService`:
-  `static final String TYPE_HIERARCHY_COMMAND = "lathe.typeHierarchy";`
+  `static final String TYPE_HIERARCHY_COMMAND = "lathe.types.hierarchy";`
 - **Advertise** it in `LatheLanguageServer.createCapabilities()`'s `ExecuteCommandOptions` list.
 - **Dispatch** in `LatheWorkspaceService.executeCommand(...)` to a private `typeHierarchy(params)` that
   deserializes the argument as a standard `TextDocumentPositionParams` (the client's
@@ -164,7 +164,7 @@ project record rules.
 
 A thin picker shell; no Java knowledge.
 
-1. `:LatheTypeHierarchy` → `workspace/executeCommand{ command = 'lathe.typeHierarchy', arguments = { make_position_params() } }`.
+1. `:LatheTypeHierarchy` → `workspace/executeCommand{ command = 'lathe.types.hierarchy', arguments = { make_position_params() } }`.
 2. On the result, open a Telescope picker: entry `display` = `<glyph>  <SimpleName>  «package»`,
    `ordinal` = fully-qualified name; an optional file previewer showing the declaration; `<CR>` →
    `vim.lsp.util.jump_to_location` (or notify when `uri` is nil). Append the `… (N more, truncated)`
@@ -178,7 +178,7 @@ A thin picker shell; no Java knowledge.
 
 | Concern | Reused component |
 |---|---|
-| Command wiring / dispatch | `LatheWorkspaceService` (mirror `lathe.instantiations`) |
+| Command wiring / dispatch | `LatheWorkspaceService` (mirror `lathe.types.instantiations`) |
 | Capability advertisement | `LatheLanguageServer.createCapabilities()` |
 | Position-anchored future | `WorkspaceSession` (mirror `instantiationsFuture`) |
 | Cursor → type resolution | existing `prepareTypeHierarchy` path / `TypeHierarchyItemData` |

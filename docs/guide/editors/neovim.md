@@ -424,7 +424,7 @@ Named configs, overlays, and the config picker are described in
 
 Lathe ships an adapter for [neotest](https://github.com/nvim-neotest/neotest): gutter signs for
 discovered tests, run-under-cursor, and pass/fail status. Discovery and execution both go through the
-running Lathe server (`lathe.runnables.list` / `lathe.run.test`), replaying from `.lathe/` bytecode.
+running Lathe server (`lathe.runnables.file` / `lathe.run.test`), replaying from `.lathe/` bytecode.
 It is **optional** — configured separately from `require('lathe').setup()`, like any neotest adapter.
 
 ```lua
@@ -572,34 +572,35 @@ without the source-link navigation.
 ## Custom server commands
 
 Several `:Lathe*` surfaces are **not** standard LSP endpoints — they are thin clients over Lathe's
-own `workspace/executeCommand` commands.
+own `workspace/executeCommand` commands, all named `lathe.<area>.<action>`.
 The table lists them so you can rebind, script, or drive the same behavior from a non-Neovim client.
 Each command takes a **single object** passed as the sole element of the request's `arguments` array.
 
 | User surface | `executeCommand` | Argument object |
 |---|---|---|
-| `:LatheTypeHierarchy` | `lathe.typeHierarchy` | position params |
-| `:LatheInstances` | `lathe.instantiations` | position params |
-| `:LatheGoToTest` | `lathe.testCounterparts` | `{ uri }` |
-| `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.missingImports` | `{ uri }` |
-| `:LatheMissingImports` — the edits for the chosen imports, placed by the server | `lathe.importEdits` | `{ uri, imports }` (the chosen candidates) |
-| `:LatheRun` / neotest / `:LatheDebug` — runnables of a file | `lathe.runnables.list` | `{ uri }` |
+| `:LatheTypeHierarchy` | `lathe.types.hierarchy` | position params |
+| `:LatheInstances` | `lathe.types.instantiations` | position params |
+| `:LatheGoToTest` | `lathe.tests.counterparts` | `{ uri }` |
+| `:LatheMissingImports` (and the "Add missing imports…" code action) | `lathe.imports.missing` | `{ uri }` |
+| `:LatheMissingImports` — the edits for the chosen imports, placed by the server | `lathe.imports.edits` | `{ uri, imports }` (the chosen candidates) |
+| `:LatheRun` / neotest / `:LatheDebug` — runnables of a file | `lathe.runnables.file` | `{ uri }` |
 | neotest — runnables of a directory (package run) | `lathe.runnables.dir` | `{ uri }` |
-| neotest — modules with tests | `lathe.tests.modules` | none |
 | neotest — a module's tests (JUnit Platform discovery) | `lathe.tests.discover` | `{ moduleRel }` |
-| neotest — source files of test classes | `lathe.testSources` | `{ moduleRel, classNames }` |
+| neotest — source files of test classes | `lathe.tests.sources` | `{ moduleRel, classNames }` |
 | `:LatheRun` | `lathe.run.main` | `{ moduleRel, mainClass, token }` |
 | neotest run | `lathe.run.test` | `{ moduleRel, selections, token }` |
 | `:LatheRun {name}` / `:LatheDebug {name}` | `lathe.run.named` / `lathe.debug.named` | `{ name, token }` |
 | `:LatheRunStop` / neotest stop | `lathe.run.cancel` | `{ token }` |
 | `:LatheDebug` (a `main`) | `lathe.debug.main` | `{ moduleRel, mainClass, token }` |
 | `:LatheDebug` (a test) | `lathe.debug.test` | `{ moduleRel, selections, token }` |
-| run-config completion and picker | `lathe.runconfigs.list` | none |
-| `:LatheRunSave[!]` | `lathe.runconfig.save` | `{ name?, moduleRel, kind, mainClass?, selectors?, overwrite? }` |
-| `:LatheNew` — module list / packages / current context | `lathe.modules` / `lathe.packages` / `lathe.resolveContext` | none / `{ moduleRel }` / `{ uri }` |
-| `:LatheNew` — create the file | `lathe.createType` | `{ moduleRel, kind, pkg, type, name }` |
-| `:LatheResourceFind` — list / open a dependency entry | `lathe.resources` / `lathe.resourceOpen` | none / `{ jar, entry }` |
-| non-Java save inside a workspace | `lathe.resource.refresh` | `{ uri }` |
+| run-config completion and picker | `lathe.runConfigs.list` | none |
+| `:LatheRunSave[!]` | `lathe.runConfigs.save` | `{ name?, moduleRel, kind, mainClass?, selectors?, overwrite? }` |
+| `:LatheNew` — module list / packages / current context | `lathe.workspace.modules` / `lathe.workspace.packages` / `lathe.workspace.context` | none / `{ moduleRel }` / `{ uri }` |
+| `:LatheNew` — where a new type may go, ranked for the buffer | `lathe.types.destinations` | `{ uri?, kind, pkg? }` |
+| `:LatheNew` — write, compile and open the file | `lathe.types.create` | `{ moduleRel, kind, pkg, type, name }` (a module-info's `name` may be empty: the server names it) |
+| run output — the stack frames among its lines, resolved to their sources | `lathe.stack.resolve` | `{ lines }` |
+| `:LatheResourceFind` — list / open a dependency entry | `lathe.resources.list` / `lathe.resources.open` | none / `{ jar, entry }` |
+| non-Java save inside a workspace | `lathe.resources.refresh` | `{ uri }` |
 
 Argument conventions:
 

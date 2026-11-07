@@ -564,12 +564,12 @@ One key on a main class (or anywhere in its file):
 - one test found: open it;
 - several (`FooTest`, `FooIT`, `FooTests`): pick from a list;
 - none: offer "Create test `FooTest`", prefilled with the class's package in the module's test root, then open it
-  with the caret in the new test (what `lathe.createType` already renders for a Test);
+  with the caret in the new test (what `lathe.types.create` already renders for a Test);
 - on a test class, the same key goes to the class it tests.
 
 ### Fix direction
 
-Editor-neutral first: a server command (beside `lathe.testSources` and `lathe.createType`) that, for a file,
+Editor-neutral first: a server command (beside `lathe.tests.sources` and `lathe.types.create`) that, for a file,
 returns its counterparts and the create arguments when there are none.
 Candidates come from the module's real source roots, not path strings: test classes in the same package named
 by the build's own conventions (Surefire's and Failsafe's default includes, or the captured `test-filter.json`
@@ -579,7 +579,7 @@ Then a Neovim mapping and command over it, and the same in VS Code.
 
 ### Delivered — server and Neovim
 
-`lathe.testCounterparts { uri }` answers the counterparts of the file's top-level type, best first: from a main file
+`lathe.tests.counterparts { uri }` answers the counterparts of the file's top-level type, best first: from a main file
 its tests, from a test file the type it tests. They are found by Surefire's and Failsafe's default test names
 (`FooTest`, `FooTests`, `FooTestCase`, `FooIT`, `FooITCase`, `TestFoo`, `ITFoo`) through the type index, so a test in
 a separate test module is found too, ranked same package, then same module, then name convention.
@@ -1169,20 +1169,20 @@ in turn.
 
 ### Delivered — whole-file "add missing imports" (slice 1)
 
-`:LatheMissingImports` (server command `lathe.missingImports`, also surfaced as the "Add missing
+`:LatheMissingImports` (server command `lathe.imports.missing`, also surfaced as the "Add missing
 imports…" code action when the cursor is on an unresolved type) resolves every unresolved type in the
 buffer in one pass. It works off the live buffer's debounce compile — no save round-trip needed, since
 a syntactically-valid paste already yields `cant.resolve` diagnostics on change. The server enumerates
 those TYPE_REF names and resolves each against the type index via a shared `ImportCandidates` helper
 (extracted from `ImportQuickFixProvider`), returning each name with its candidate FQNs. The Neovim
 client auto-adds unambiguous names, prompts one at a time (`vim.ui.select`) for ambiguous ones,
-asks the server to place the chosen imports (`lathe.importEdits`, each at its sorted place in its group), applies those edits,
+asks the server to place the chosen imports (`lathe.imports.edits`, each at its sorted place in its group), applies those edits,
 and summarises what was added and any name it could not resolve.
 The candidates include statically imported names, and the MCP `fix_imports` tool shares the same path.
 
 No `source.*` capability is claimed: `source.organizeImports` would over-promise (it implies unused
 removal + sorting) and `source.addMissingImports` is non-standard, so the feature is an
-`executeCommand`, consistent with `lathe.typeHierarchy` / `lathe.createType`.
+`executeCommand`, consistent with `lathe.types.hierarchy` / `lathe.types.create`.
 
 Regression targets: `QuickFixCodeActionTest.missingImports_mixedNames_partitionsCandidatesByAmbiguity`,
 `QuickFixCodeActionTest.missingImports_allTypesResolved_returnsNoItems`,

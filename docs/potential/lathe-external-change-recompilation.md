@@ -51,7 +51,7 @@ the editor's save path is invisible until the next Maven build:
 - The dominant agent workflow is *edit-then-open*: a tool changes files while Lathe is **down**, then
   Lathe starts against an already-stale mirror. Nothing observed those edits, so nothing recompiled.
 - Resource edits are only carried into `.lathe/` when the editor saves them (a `BufWritePost` autocmd
-  forwards non-Java saves to the `lathe.resource.refresh` command); an external resource change is
+  forwards non-Java saves to the `lathe.resources.refresh` command); an external resource change is
   missed.
 
 The expectation, stated plainly: if a tool edits a `.java` file or a resource in the workspace, Lathe
@@ -128,7 +128,7 @@ amortizing javac's per-invocation cost.
 triggers drive it: D2 for a stale resource at startup, the live watch on `Created`/`Changed`. Once the
 watch drives it, the editor `BufWritePost` autocmd — whose own comment notes
 "`workspace/didChangeWatchedFiles` can drive the same server command later" — becomes redundant for
-watched paths and is removed to avoid a double fire; the `lathe.resource.refresh` command stays for
+watched paths and is removed to avoid a double fire; the `lathe.resources.refresh` command stays for
 manual/other-client use.
 
 ### 3. Startup reconciliation (D2, cold-start delta)
