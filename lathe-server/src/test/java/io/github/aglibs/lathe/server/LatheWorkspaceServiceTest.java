@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
@@ -16,6 +17,8 @@ import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.LatheCommands;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -27,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.assertj.core.api.InstanceOfAssertFactories;
@@ -79,16 +83,15 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     openShop();
 
     assertInvalidParams(
-        commandError(LatheWorkspaceService.PACKAGES_COMMAND, json("module", "x")),
-        "invalid arguments for %s".formatted(LatheWorkspaceService.PACKAGES_COMMAND));
+        commandError(LatheCommands.WORKSPACE_PACKAGES, json("module", "x")),
+        "invalid arguments for %s".formatted(LatheCommands.WORKSPACE_PACKAGES));
     assertInvalidParams(
-        commandError(LatheWorkspaceService.RUN_TEST_COMMAND, json("moduleRel", "module")),
-        "invalid arguments for %s".formatted(LatheWorkspaceService.RUN_TEST_COMMAND));
+        commandError(LatheCommands.RUN_TEST, json("moduleRel", "module")),
+        "invalid arguments for %s".formatted(LatheCommands.RUN_TEST));
     assertInvalidParams(
-        commandError(LatheWorkspaceService.MISSING_IMPORTS_COMMAND, "not an object"),
-        "invalid arguments for %s".formatted(LatheWorkspaceService.MISSING_IMPORTS_COMMAND));
-    assertThat(command(LatheWorkspaceService.PACKAGES_COMMAND, json("moduleRel", "module")))
-        .isNotNull();
+        commandError(LatheCommands.IMPORTS_MISSING, "not an object"),
+        "invalid arguments for %s".formatted(LatheCommands.IMPORTS_MISSING));
+    assertThat(command(LatheCommands.WORKSPACE_PACKAGES, json("moduleRel", "module"))).isNotNull();
   }
 
   private static void assertInvalidParams(final ResponseError error, final String reason) {
@@ -98,7 +101,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   private ResponseError createTypeError(final String kind, final String type, final String name) {
     return commandError(
-        LatheWorkspaceService.CREATE_TYPE_COMMAND,
+        LatheCommands.TYPES_CREATE,
         json(
             "moduleRel", "module", "kind", kind, "pkg", "com.example", "type", type, "name", name));
   }
@@ -195,7 +198,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     final var argument = new JsonObject();
     argument.addProperty("uri", uri);
     return workspace.executeCommand(
-        new ExecuteCommandParams("lathe.runnables.list", List.of(argument)));
+        new ExecuteCommandParams(LatheCommands.RUNNABLES_FILE, List.of(argument)));
   }
 
   // The commands the editor's pickers and test tree use, answered from the workspace layout.
@@ -203,14 +206,15 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   void executeCommand_projectCommands_answerFromTheModulesAndTheirTrees() throws Exception {
     final ShopFixture shop = openShop();
 
-    assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("module"));
-    assertThat(command(LatheWorkspaceService.PACKAGES_COMMAND, json("moduleRel", "module")))
+    assertThat(command(LatheCommands.WORKSPACE_MODULES)).isEqualTo(List.of("module"));
+    assertThat(command(LatheCommands.WORKSPACE_PACKAGES, json("moduleRel", "module")))
         .asInstanceOf(InstanceOfAssertFactories.list(PackageEntry.class))
         .containsExactly(new PackageEntry("com.example", "main"));
+    final Path cartFile = shop.shop().resolveSibling("Cart.java");
     final var cart =
-        (CreateTypeResult)
+        (CreatedType)
             command(
-                LatheWorkspaceService.CREATE_TYPE_COMMAND,
+                LatheCommands.TYPES_CREATE,
                 json(
                     "moduleRel",
                     "module",
@@ -222,30 +226,64 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "class",
                     "name",
                     "Cart"));
-    assertThat(Path.of(cart.path())).isEqualTo(shop.shop().resolveSibling("Cart.java"));
-    assertThat(cart.content()).contains("class Cart");
+    assertThat(cart.uri()).isEqualTo(LatheUri.fromPath(cartFile));
+    assertThat(cart.existed()).isFalse();
+    assertThat(Files.readString(cartFile)).contains("class Cart");
+    writeReported(Set.of()).get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(tmp.resolve(".lathe/module/classes/com/example/Cart.class"))
+        .as("reported to the write pass, which compiles it, so it never reads as unbuilt")
+        .exists();
+    assertThat(
+            command(
+                LatheCommands.TYPES_CREATE,
+                json(
+                    "moduleRel",
+                    "module",
+                    "kind",
+                    "main",
+                    "pkg",
+                    "com.example",
+                    "type",
+                    "class",
+                    "name",
+                    "Cart")))
+        .as("an existing file is opened, never overwritten")
+        .isEqualTo(new CreatedType(cart.uri(), null, true));
+    assertThat(
+            command(
+                LatheCommands.TYPES_DESTINATIONS,
+                json("uri", shop.shop().toUri().toString(), "kind", "class")))
+        .isEqualTo(List.of(new TypeDestination("module", "main", "com.example")));
 
-    assertThat(command(LatheWorkspaceService.TEST_MODULES_COMMAND))
+    assertThat(command(LatheCommands.TESTS_MODULES))
         .as("the module has no test tree")
         .isEqualTo(List.of());
     final var classNames = new JsonArray();
     classNames.add("com.example.ShopTest");
     final var sources = json("moduleRel", "module");
     sources.add("classNames", classNames);
-    assertThat(command(LatheWorkspaceService.TEST_SOURCES_COMMAND, sources))
+    assertThat(command(LatheCommands.TESTS_SOURCES, sources))
         .isEqualTo(List.of(new TestSource("com.example.ShopTest", "")));
     assertThat(
-            command(
-                LatheWorkspaceService.TEST_COUNTERPARTS_COMMAND,
-                json("uri", shop.shop().toUri().toString())))
+            command(LatheCommands.TESTS_COUNTERPARTS, json("uri", shop.shop().toUri().toString())))
         .as("a main file with no test yet")
         .isEqualTo(new TestCounterparts(false, List.of()));
+    final var frames = new JsonArray();
+    frames.add("\tat com.example.Shop.total(Shop.java:3)");
+    frames.add("\tat com.example.Gone.call(Gone.java:1)");
+    final var trace = new JsonObject();
+    trace.add("lines", frames);
+    assertThat(command(LatheCommands.STACK_RESOLVE, trace))
+        .as("a frame of the module's class resolves to its source; one of no class does not")
+        .asInstanceOf(InstanceOfAssertFactories.list(StackFrames.Resolved.class))
+        .extracting(StackFrames.Resolved::index, StackFrames.Resolved::uri)
+        .containsExactly(tuple(0, LatheUri.fromPath(shop.shop())));
 
-    assertThat(command(LatheWorkspaceService.RESOURCES_COMMAND)).isEqualTo(List.of());
+    assertThat(command(LatheCommands.RESOURCES_LIST)).isEqualTo(List.of());
     final var manifest =
         (String)
             command(
-                LatheWorkspaceService.RESOURCE_OPEN_COMMAND,
+                LatheCommands.RESOURCES_OPEN,
                 json(
                     "jar",
                     TestJavac.jarOf(Test.class).toString(),
@@ -253,11 +291,29 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "META-INF/MANIFEST.MF"));
     assertThat(Files.readString(Path.of(manifest))).startsWith("Manifest-Version");
     assertThat(
-            command(
-                LatheWorkspaceService.RESOURCE_REFRESH_COMMAND,
-                json("uri", shop.shop().toUri().toString())))
+            command(LatheCommands.RESOURCES_REFRESH, json("uri", shop.shop().toUri().toString())))
         .as("a source is not a tracked resource")
         .isNull();
+
+    // Last: a module-info makes the module modular for whatever follows.
+    final var moduleInfo =
+        (CreatedType)
+            command(
+                LatheCommands.TYPES_CREATE,
+                json(
+                    "moduleRel",
+                    "module",
+                    "kind",
+                    "main",
+                    "pkg",
+                    "",
+                    "type",
+                    "module-info",
+                    "name",
+                    ""));
+    assertThat(Files.readString(LatheUri.toPath(moduleInfo.uri())))
+        .as("a module-info sent without a name is named after the base package")
+        .contains("module com.example");
   }
 
   @Test
@@ -273,24 +329,24 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     awaitWorkerIdle();
     final JsonObject onShop = positionArgument(shop.shop(), "Shop implements");
 
-    assertThat(command(LatheWorkspaceService.INSTANTIATIONS_COMMAND, onShop))
+    assertThat(command(LatheCommands.TYPES_INSTANTIATIONS, onShop))
         .asInstanceOf(InstanceOfAssertFactories.list(Location.class))
         .extracting(location -> Path.of(URI.create(location.getUri())).getFileName().toString())
         .containsExactly("Use.java");
     final var hierarchy =
-        (TypeHierarchyExplorerResult) command(LatheWorkspaceService.TYPE_HIERARCHY_COMMAND, onShop);
+        (TypeHierarchyExplorerResult) command(LatheCommands.TYPES_HIERARCHY, onShop);
     assertThat(hierarchy.self().getName()).isEqualTo("Shop");
     assertThat(hierarchy.supertypes()).extracting(TypeHierarchyItem::getName).contains("Api");
 
     final JsonObject onBuyer = json("uri", buyer.toUri().toString());
-    assertThat(command(LatheWorkspaceService.MISSING_IMPORTS_COMMAND, onBuyer))
+    assertThat(command(LatheCommands.IMPORTS_MISSING, onBuyer))
         .asInstanceOf(InstanceOfAssertFactories.type(MissingImportsResult.class))
         .extracting(MissingImportsResult::items)
         .isEqualTo(List.of(new MissingImport("Shop", List.of("com.example.Shop"))));
     final var chosen = new JsonArray();
     chosen.add("com.example.Shop");
     onBuyer.add("imports", chosen);
-    assertThat(command(LatheWorkspaceService.IMPORT_EDITS_COMMAND, onBuyer))
+    assertThat(command(LatheCommands.IMPORTS_EDITS, onBuyer))
         .asInstanceOf(InstanceOfAssertFactories.list(TextEdit.class))
         .extracting(TextEdit::getNewText)
         .anyMatch(text -> text.contains("import com.example.Shop;"));
@@ -306,7 +362,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     final var saved =
         (RunConfigWriter.Saved)
             command(
-                LatheWorkspaceService.SAVE_RUN_CONFIG_COMMAND,
+                LatheCommands.RUN_CONFIGS_SAVE,
                 json(
                     "name",
                     "shop",
@@ -317,21 +373,19 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
                     "mainClass",
                     "com.example.Use"));
     assertThat(saved.name()).isEqualTo("shop");
-    assertThat(command(LatheWorkspaceService.LIST_RUN_CONFIGS_COMMAND))
+    assertThat(command(LatheCommands.RUN_CONFIGS_LIST))
         .asInstanceOf(InstanceOfAssertFactories.list(RunConfigInfo.class))
         .extracting(RunConfigInfo::name)
         .containsExactly("shop");
 
-    for (final String unknown :
-        List.of(
-            LatheWorkspaceService.RUN_NAMED_COMMAND, LatheWorkspaceService.DEBUG_NAMED_COMMAND)) {
+    for (final String unknown : List.of(LatheCommands.RUN_NAMED, LatheCommands.DEBUG_NAMED)) {
       assertInvalidParams(commandError(unknown, json("name", "nosuchconfig")), "nosuchconfig");
     }
 
     final var outcome =
         (LaunchOutcome)
             command(
-                LatheWorkspaceService.RUN_MAIN_COMMAND,
+                LatheCommands.RUN_MAIN,
                 json("moduleRel", "module", "mainClass", "com.example.Use"));
     assertThat(outcome.launched()).isFalse();
     assertThat(outcome.blockedReasons()).containsExactly("no derived main-launch.json for module");
@@ -366,7 +420,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
   void reconcileForVerify_workspaceJsonRewritten_reloadsWithTheNewModuleAndSaysSo()
       throws Exception {
     openShop();
-    assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("module"));
+    assertThat(command(LatheCommands.WORKSPACE_MODULES)).isEqualTo(List.of("module"));
 
     TestCompiler.writeMirroredModule(
         tmp,
@@ -376,7 +430,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         1_000L);
     reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
 
-    assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("lib", "module"));
+    assertThat(command(LatheCommands.WORKSPACE_MODULES)).isEqualTo(List.of("lib", "module"));
     verify(client).showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));
   }
 

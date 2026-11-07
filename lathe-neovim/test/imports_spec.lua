@@ -1,6 +1,6 @@
--- Verifies lathe.imports (:LatheMissingImports): dispatches the lathe.missingImports command, then
+-- Verifies lathe.imports (:LatheMissingImports): dispatches the lathe.imports.missing command, then
 -- auto-adds unambiguous names, prompts one at a time for ambiguous ones, reports unresolvable names,
--- applies the edits lathe.importEdits returns for the chosen imports, warns when an older server has no
+-- applies the edits lathe.imports.edits returns for the chosen imports, warns when an older server has no
 -- such command, notifies with no client / no missing imports, and registers the command plus the
 -- client-side "Add missing imports…" handler.
 --
@@ -32,11 +32,11 @@ local SERVER_EDITS = {
   },
 }
 
--- Answers lathe.missingImports with result and lathe.importEdits with edits, recording each request.
+-- Answers lathe.imports.missing with result and lathe.imports.edits with edits, recording each request.
 local requests
 local function stub_client(result, edits)
   requests =
-    helper.fake_client({ ["lathe.missingImports"] = result, ["lathe.importEdits"] = edits })
+    helper.fake_client({ ["lathe.imports.missing"] = result, ["lathe.imports.edits"] = edits })
 end
 
 -- Auto-select the given candidate index for every ambiguous prompt (nil = pick "Skip").
@@ -69,9 +69,9 @@ do -- unambiguous auto-added, ambiguous prompted, unresolved reported; the serve
   imports.run(0)
 
   spec.check("dispatch method", requests[1].method, "workspace/executeCommand")
-  spec.check("dispatch command", requests[1].command, "lathe.missingImports")
+  spec.check("dispatch command", requests[1].command, "lathe.imports.missing")
   spec.check("argument uri", requests[1].arguments[1].uri, "file:///X.java")
-  spec.check("edits requested", requests[2].command, "lathe.importEdits")
+  spec.check("edits requested", requests[2].command, "lathe.imports.edits")
   spec.check("edits for this buffer", requests[2].arguments[1].uri, "file:///X.java")
   spec.check(
     "edits for the chosen imports",
@@ -102,7 +102,7 @@ do -- skipping an ambiguous name leaves it out; only the unambiguous one is requ
   )
 end
 
-do -- a server without lathe.importEdits answers nothing: warn, apply nothing, claim nothing added
+do -- a server without lathe.imports.edits answers nothing: warn, apply nothing, claim nothing added
   applied = nil
   local seen = capture_notify()
   stub_client({ items = { { name = "Instant", candidates = { "java.time.Instant" } } } }, nil)
@@ -149,7 +149,7 @@ do -- setup registers the command and the client-side code-action handler
   spec.check("LatheMissingImports registered", vim.fn.exists(":LatheMissingImports"), 2)
   spec.check(
     "code-action handler registered",
-    type(vim.lsp.commands["lathe.missingImports"]),
+    type(vim.lsp.commands["lathe.imports.missing"]),
     "function"
   )
 end

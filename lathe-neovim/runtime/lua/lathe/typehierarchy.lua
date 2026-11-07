@@ -1,6 +1,6 @@
 -- :LatheTypeHierarchy -- the full type hierarchy of the type under the cursor (all transitive
 -- supertypes up to Object + all transitive subtypes) in one flat, fuzzy-searchable picker, via the
--- server's `lathe.typeHierarchy` command. Each row is tagged by its relation to the anchor. Uses
+-- server's `lathe.types.hierarchy` command. Each row is tagged by its relation to the anchor. Uses
 -- Telescope when installed, otherwise the built-in `lathe.pick` fuzzy picker.
 
 local M = {}
@@ -8,6 +8,7 @@ local M = {}
 local GLYPH = { supertype = "▲", ["self"] = "●", subtype = "▼" }
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local notify = util.notify
 
 -- A server TypeHierarchyItem + its relation -> a picker entry. Fuzzy-matched on the fully-qualified
@@ -52,7 +53,7 @@ function M.show(bufnr)
   end
 
   local params = vim.lsp.util.make_position_params(0, client.offset_encoding)
-  util.exec(client, bufnr, "lathe.typeHierarchy", { params }, function(result)
+  util.exec(client, bufnr, commands.TYPES_HIERARCHY, { params }, function(result)
     if not result or not result.self then
       notify("no type under the cursor", vim.log.levels.INFO)
       return

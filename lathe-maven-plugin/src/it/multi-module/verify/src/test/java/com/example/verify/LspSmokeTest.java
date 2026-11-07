@@ -619,7 +619,7 @@ class LspSmokeTest {
     session.openDoc(suite.toUri().toString(), Files.readString(suite));
 
     final List<JsonObject> targets =
-        objects(session.execute("lathe.runnables.list", uri).getAsJsonArray());
+        objects(session.execute("lathe.runnables.file", uri).getAsJsonArray());
     final JsonObject outcome =
         session
             .execute(
@@ -766,7 +766,7 @@ class LspSmokeTest {
 
   private static List<String> methodIds(final Path file) throws Exception {
     final var uri = Map.of("uri", file.toUri().toString());
-    return objects(session.execute("lathe.runnables.list", uri).getAsJsonArray()).stream()
+    return objects(session.execute("lathe.runnables.file", uri).getAsJsonArray()).stream()
         .filter(target -> target.get("kind").getAsInt() == TEST_METHOD)
         .map(target -> target.get("id").getAsString())
         .toList();

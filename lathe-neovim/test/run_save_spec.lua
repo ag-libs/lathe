@@ -1,5 +1,5 @@
 -- Verifies lathe.run._save_target_for: the pure resolution of which runnable :LatheRunSave turns
--- into a config save request for a given cursor line, over the flat lathe.runnables.list list.
+-- into a config save request for a given cursor line, over the flat lathe.runnables.file list.
 -- Exercises the main, test-method, test-class, class-gutter, single-main-fallback, and nothing cases.
 --
 -- Self-contained like run_spec.lua; run-specs.sh runs every *_spec.lua unconditionally.

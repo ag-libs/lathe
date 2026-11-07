@@ -40,7 +40,7 @@ POM changes, for a good experience.**
   survives only as the empty stub `WorkspaceService` requires). Detection is server-only (see
   *Detection mechanism*).
 - **Resources** are copied into `.lathe/` only when the **editor saves** them (a `BufWritePost` autocmd
-  → `lathe.resource.refresh` → `refreshResource`). An external resource change is missed.
+  → `lathe.resources.refresh` → `refreshResource`). An external resource change is missed.
 
 **The gap:** nothing compares **source-root or resource-root contents** against the last sync. POM and
 structural changes are caught; ordinary source and resource edits made outside the editor (or while

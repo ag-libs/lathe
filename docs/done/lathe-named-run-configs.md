@@ -14,7 +14,7 @@ and completes the deferred slice sketched in
 
 It builds directly on the **shipped** run-config overlay machinery (`RunItem`, `RunConfigReader`,
 `RunOverlaySet`, `RunOverlay`) and the run/debug launch paths (`lathe.run.*`, `lathe.debug.*`,
-`lathe.runnables.list`). Nothing here changes how a launch is *built*; it adds a **name** as an
+`lathe.runnables.file`). Nothing here changes how a launch is *built*; it adds a **name** as an
 explicit selection handle and a **pinned target** so a run is no longer only cursor-derived.
 
 **No backward compatibility.** The tool has no external adopters. The overlay files change shape as a
@@ -173,8 +173,8 @@ Added to `LatheWorkspaceService` → `WorkspaceSession`, alongside the existing 
 |---|---|---|
 | `lathe.run.named` | `{name, token}` | Resolve `byName(name)`, build the launch from its pinned target + composed overlay, run it. |
 | `lathe.debug.named` | `{name, token}` | Same, in debug launch mode (reuses the `lathe.debug.*` path). |
-| `lathe.runconfigs.list` | `{}` | Return `[{name, kind, module, target, summary}]` (the `configs` entries) for completion. |
-| `lathe.runconfig.save` | `{name?, moduleRel, kind, mainClass?, selectors?, overwrite}` | Write a config under `.lathe/run.json` `configs` (§6). |
+| `lathe.runConfigs.list` | `{}` | Return `[{name, kind, module, target, summary}]` (the `configs` entries) for completion. |
+| `lathe.runConfigs.save` | `{name?, moduleRel, kind, mainClass?, selectors?, overwrite}` | Write a config under `.lathe/run.json` `configs` (§6). |
 
 A config is **launch-mode-agnostic**: the same `dev` entry is runnable by both `:LatheRun dev` and
 `:LatheDebug dev`. There is no separate "debug configuration".
@@ -254,7 +254,7 @@ Four surfaces, so the answer to "which config?" is always available:
    run, `Running <name>` for a named config), and the exit status on completion.
 
 3. **Completion detail** — `:LatheRun <Tab>` / `:LatheDebug <Tab>` list each config's name plus a
-   short summary (module, target, key jvmArgs) from `lathe.runconfigs.list`.
+   short summary (module, target, key jvmArgs) from `lathe.runConfigs.list`.
 
 4. **Server run log** — the run's INFO log line carries the resolved config label, so the applied
    overlay is visible in the log as well. No separate telemetry.
@@ -263,9 +263,9 @@ Four surfaces, so the answer to "which config?" is always available:
 
 | Command | Behavior |
 |---|---|
-| `:LatheRun` | no arg → today's cursor run (unchanged); arg → `lathe.run.named`; completion via `lathe.runconfigs.list`. |
+| `:LatheRun` | no arg → today's cursor run (unchanged); arg → `lathe.run.named`; completion via `lathe.runConfigs.list`. |
 | `:LatheDebug` | no arg → today's cursor debug (unchanged); arg → `lathe.debug.named`; same completion. |
-| `:LatheRunSave[!] [name]` | resolve the cursor target (§6.3), call `lathe.runconfig.save` (bang → overwrite; name optional), open the returned file at the new entry. |
+| `:LatheRunSave[!] [name]` | resolve the cursor target (§6.3), call `lathe.runConfigs.save` (bang → overwrite; name optional), open the returned file at the new entry. |
 | `:LatheRunOutput` | toggle the run-output console (`output.open()`); reopens the last run's buffer without rerunning. |
 
 `:LatheRunOutput` fills a current gap: the console buffer persists (`bufhidden = hide`) but nothing
@@ -278,7 +278,7 @@ binds `output.open()` to a user command today, so a closed console can only be r
 | Build a MAIN / TEST launch | existing `WorkspaceSession` main/test launch builders (`lathe.run.*`) |
 | Debug launch mode | existing `lathe.debug.*` path |
 | Cursor → runnable target | existing `run.lua` `_main_target_for`, `dap.lua` `_test_target_for` |
-| Runnable ranges | existing `lathe.runnables.list` |
+| Runnable ranges | existing `lathe.runnables.file` |
 | Overlay apply | existing `RunOverlay.applyToMain` / `applyToTest` |
 | Layer merge | existing `RunItem.mergedWith` |
 | Test selector shape | existing `{selectorKind, selectorValue}` record |
@@ -294,8 +294,8 @@ binds `output.open()` to a user command today, so a closed console can only be r
 - `RunOverlaySet` `defaultFor` (baselines) + `byName` (compose over baseline).
 - `RunConfigWriter` → `.lathe/run.json` `configs`, preserving `defaults`; optional-name derivation,
   bang overwrite, atomic replace, cursor-target ladder.
-- Server commands `lathe.run.named`, `lathe.debug.named`, `lathe.runconfigs.list`,
-  `lathe.runconfig.save`.
+- Server commands `lathe.run.named`, `lathe.debug.named`, `lathe.runConfigs.list`,
+  `lathe.runConfigs.save`.
 - Console header config line + run-start `vim.notify` + config on the run INFO log.
 - Client commands `:LatheRun {name}`, `:LatheDebug {name}`, `:LatheRunSave[!] [name]`,
   `:LatheRunOutput` + completion.
@@ -308,7 +308,7 @@ binds `output.open()` to a user command today, so a closed console can only be r
 - **Temporary configs / per-run writes** — nothing is generated or persisted on a run. Gutter runs
   are ephemeral (resolve cursor → apply baseline → launch); a config exists only after an explicit
   `:LatheRunSave`.
-- **A VS Code / other-editor picker** — the server side (`lathe.runconfigs.list`) is editor-agnostic;
+- **A VS Code / other-editor picker** — the server side (`lathe.runConfigs.list`) is editor-agnostic;
   a future client swaps the `:LatheRun` completion for a QuickPick with no server change (design §8.5).
 - **Changing launch-correctness fields** — unchanged from §8.4; overlays remain additive-only.
 
@@ -332,8 +332,8 @@ force mechanical updates.
 - **`RunConfigWriter`** (new) — create / upsert-by-name / atomic-replace in `@TempDir`; **preserves
   `defaults`** and sibling configs; name derivation per kind/selector; refuse-vs-`!` overwrite; only
   `.lathe/run.json` is touched.
-- **Command dispatch** — `lathe.run.named` / `lathe.debug.named` / `lathe.runconfigs.list` /
-  `lathe.runconfig.save` per the existing `LatheWorkspaceService` command-test pattern.
+- **Command dispatch** — `lathe.run.named` / `lathe.debug.named` / `lathe.runConfigs.list` /
+  `lathe.runConfigs.save` per the existing `LatheWorkspaceService` command-test pattern.
 - **Client (headless Lua)** — `:LatheRun` / `:LatheDebug` completion, `:LatheRunSave[!]` (target
   ladder + refuse/overwrite), `:LatheRunOutput` toggle.
 - **Invoker** — run `mvn verify` for `LspSmokeTest` / `MultiModuleTest` after the server-visible

@@ -73,7 +73,7 @@ eager-discover-before-attach check, plus a headless run of the **real lazy.nvim 
 Adding, renaming, or removing a test updates the runnable set.
 *As built:* satisfied by construction, no dedicated code. neotest core re-runs discovery on
 `BufWritePost` (client/init.lua's `{BufAdd, BufWritePost}` autocmd → `_update_positions` →
-`adapter.discover_positions`), and our `discover_positions` is a live `lathe.runnables.list` LSP
+`adapter.discover_positions`), and our `discover_positions` is a live `lathe.runnables.file` LSP
 round-trip rather than a cached parse: the server scans the attributed AST of the exact document
 content it currently tracks. So every save-triggered re-discovery reflects server-side truth, and
 because `runnables` attributes the requested content+version there is no ordering race with the

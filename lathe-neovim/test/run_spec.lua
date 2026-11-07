@@ -1,5 +1,5 @@
 -- Verifies lathe.run.main_target_for: the pure selection of which MAIN runnable a :LatheRun
--- should launch for a given cursor line, over the flat lathe.runnables.list target list.
+-- should launch for a given cursor line, over the flat lathe.runnables.file target list.
 -- Exercises the cursor-in-range, single-main fallback, no-main, and ambiguous-multiple cases.
 --
 -- Self-contained: lathe.run requires only lathe.output, which uses core Neovim APIs (no

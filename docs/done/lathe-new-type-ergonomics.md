@@ -7,6 +7,11 @@ kind → fuzzy `module · scope · package` pick → a validated type-name promp
 a final prompt, the package never defaults by omission, and `module-info` / `package-info` are special
 kinds. This document is the authoritative "why/how"; it supersedes the v4 interaction model below.
 
+Since Nov 2026 the server does the editor-neutral part, so every client shares it:
+`lathe.types.destinations` ranks the destination rows (this document's ordering), `lathe.types.create`
+names a module-info after the module's base package, and it writes and compiles the new file itself,
+which retires the client's save-on-attach.
+
 ## Motivation — why rethink v4
 
 v4 replaced the original free-text target with a typed `[module:][scope:]package` location plus
@@ -113,8 +118,8 @@ prompt; the only fallback is a module with no derivable base package, which asks
   name. Keeps the flat destination collector (`collect_destinations`, shared by the picker and the
   cmdline completion cache), destination ordering/typed-resolution, and the special-kind branches.
   Command-line completion offers the kind at the first argument and a `matchfuzzy` package at the
-  second. The server surface (`lathe.modules` / `lathe.packages` / `lathe.resolveContext` /
-  `lathe.createType`) is unchanged.
+  second. The server surface (`lathe.workspace.modules` / `lathe.workspace.packages` / `lathe.workspace.context` /
+  `lathe.types.create`) is unchanged.
 
 ## Decisions (settled)
 

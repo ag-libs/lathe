@@ -17,6 +17,7 @@ import io.github.aglibs.lathe.analysis.refactor.MissingMethodImplProvider;
 import io.github.aglibs.lathe.analysis.refactor.ReplaceVarProvider;
 import io.github.aglibs.lathe.analysis.refactor.TryCatchWrapProvider;
 import io.github.aglibs.lathe.analysis.refactor.TryWithResourcesProvider;
+import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.Stopwatch;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -248,7 +249,9 @@ public final class FileFeatures {
       actions.add(
           Either.forLeft(
               new Command(
-                  "Add missing imports…", "lathe.missingImports", List.of(Map.of("uri", uri)))));
+                  "Add missing imports…",
+                  LatheCommands.IMPORTS_MISSING,
+                  List.of(Map.of("uri", uri)))));
     }
 
     addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));

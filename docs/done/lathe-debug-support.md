@@ -231,7 +231,7 @@ in-process hosting.
 
 ## 10. Server command surface
 
-Sibling of the existing run commands (`lathe.run.test`, `lathe.run.cancel`, `lathe.runnables.list`).
+Sibling of the existing run commands (`lathe.run.test`, `lathe.run.cancel`, `lathe.runnables.file`).
 
 - **`lathe.debug.test`** — args `{ moduleRel, selections, token }`; returns `{ dapPort, jdwpPort }`.
   Reads the test template, gates completeness, allocates ports, launches the suspended JVM, opens the

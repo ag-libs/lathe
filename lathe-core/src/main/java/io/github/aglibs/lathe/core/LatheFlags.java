@@ -97,7 +97,7 @@ public final class LatheFlags {
   // Maven-pinned server can drift. Bump ONLY on a breaking contract change (executeCommand names,
   // init_options shape, custom notifications such as lathe/sync) -- not on every release. A
   // drift-guard test keeps this in lockstep with version.lua's PROTOCOL.
-  public static final int LATHE_PROTOCOL = 1;
+  public static final int LATHE_PROTOCOL = 2;
 
   // Key under InitializeResult capabilities.experimental that carries LATHE_PROTOCOL to the client.
   public static final String PROTOCOL_CAPABILITY = "latheProtocol";

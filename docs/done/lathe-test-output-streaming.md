@@ -6,6 +6,11 @@
 > split). Its non-goals "no live output buffer / no custom `lathe/testOutput` notification" are
 > **reversed** by that spec (behaviors O1–O3); its shipped navigation (O6) and docked split
 > (O4/O5) stand.
+>
+> **Frame resolution moved to the server** (Nov 2026): the client sends the output lines to
+> `lathe.stack.resolve`, which reads the frames and resolves each class exactly by its binary name
+> over the reactor, JDK and dependency sources (`StackFrames`). The `workspace/symbol` lookup of §4
+> and `lua/lathe/stacktrace.lua` are gone.
 
 Design for making Lathe test failures feel natural in Neovim while keeping the standard neotest
 output workflow.
@@ -81,7 +86,7 @@ correlation entirely and resolves purely from the stack-frame text already sitti
 This needs **no new server-side command, no new notification type, and no metadata registered at
 output-write time** — `neotest.lua`'s existing `results()` / `write_output_file` path is completely
 untouched. The only new pieces are a Neovim-side `FileType neotest-output` autocommand and an LSP
-`workspace/symbol` request, made the same way `discover_positions` already makes `lathe.runnables.list`
+`workspace/symbol` request, made the same way `discover_positions` already makes `lathe.runnables.file`
 requests against `lathe_client()`.
 
 Copying the stack trace still copies exactly the original test output.

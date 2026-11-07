@@ -1,4 +1,4 @@
--- Verifies lathe.typehierarchy (:LatheTypeHierarchy): dispatches the lathe.typeHierarchy command and
+-- Verifies lathe.typehierarchy (:LatheTypeHierarchy): dispatches the lathe.types.hierarchy command and
 -- feeds a tagged, ordered entry list (supertypes ▲, self ●, subtypes ▼) into the picker; warns with
 -- no client, notifies when the cursor resolves to no type, warns on a truncated result, jumps on
 -- select, and registers the command. Telescope is absent headlessly, so the built-in `lathe.pick`
@@ -35,7 +35,7 @@ local function item(name, line)
   }
 end
 
-do -- dispatches lathe.typeHierarchy and feeds tagged, ordered entries into the picker
+do -- dispatches lathe.types.hierarchy and feeds tagged, ordered entries into the picker
   local requested
   stub_client(function(_, method, params, callback, _)
     requested = { method = method, command = params.command }
@@ -50,7 +50,7 @@ do -- dispatches lathe.typeHierarchy and feeds tagged, ordered entries into the 
   typehierarchy.show(0)
 
   spec.check("dispatch method", requested and requested.method, "workspace/executeCommand")
-  spec.check("dispatch command", requested and requested.command, "lathe.typeHierarchy")
+  spec.check("dispatch command", requested and requested.command, "lathe.types.hierarchy")
   spec.check("entry count", picked and #picked.items, 4)
   spec.check("supertype tagged first", vim.startswith(picked.items[1].display, "▲"), true)
   spec.check("self tagged second", vim.startswith(picked.items[2].display, "●"), true)

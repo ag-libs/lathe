@@ -5,5 +5,5 @@
 -- init_options shape, custom notifications) -- not on every release.
 return {
   VERSION = "0.0.0-dev",
-  PROTOCOL = 1,
+  PROTOCOL = 2,
 }

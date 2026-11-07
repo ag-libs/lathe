@@ -44,6 +44,7 @@ end, KINDS)
 local cache = { packages = {} }
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local notify = util.notify
 
 local function warn(message)
@@ -58,107 +59,24 @@ local function execute(client, bufnr, command, argument, cb)
   util.exec(client, bufnr, command, { argument }, cb, { level = vim.log.levels.WARN })
 end
 
--- ── file IO ──────────────────────────────────────────────────────────────────
+-- ── opening ──────────────────────────────────────────────────────────────────
 
--- The server content always ends with "\n"; drop the trailing empty split element so writefile
--- reproduces it exactly rather than appending a second newline.
-function M._lines(content)
-  local lines = vim.split(content, "\n")
-  if lines[#lines] == "" then
-    table.remove(lines)
-  end
-  return lines
-end
-
--- Write the server-rendered file, open it, and drop the caret where the server asked (LSP 0-based
--- line -> Neovim 1-based row). Never overwrites: if the target already exists, just open it.
+-- Open the file the server created (and already compiled, so it never reads as unbuilt), the caret
+-- where the server asked (LSP 0-based line -> Neovim 1-based row). A file that already existed was
+-- left as it was: just open it.
 function M._open(result)
-  if vim.fn.filereadable(result.path) == 1 then
-    notify(
-      vim.fn.fnamemodify(result.path, ":t") .. " already exists — opening it",
-      vim.log.levels.INFO
-    )
-    vim.cmd.edit(vim.fn.fnameescape(result.path))
+  local path = vim.uri_to_fname(result.uri)
+  if result.existed then
+    notify(vim.fn.fnamemodify(path, ":t") .. " already exists — opening it", vim.log.levels.INFO)
+    vim.cmd.edit(vim.fn.fnameescape(path))
     return
   end
 
-  vim.fn.mkdir(vim.fn.fnamemodify(result.path, ":h"), "p")
-  vim.fn.writefile(M._lines(result.content), result.path)
-  vim.cmd.edit(vim.fn.fnameescape(result.path))
+  vim.cmd.edit(vim.fn.fnameescape(path))
   pcall(vim.api.nvim_win_set_cursor, 0, { result.caret.line + 1, result.caret.character })
-  M._compile_on_attach(vim.api.nvim_get_current_buf())
-end
-
--- Opening a file only analyzes it; the .class is produced by a FULL compile on save. So save the
--- freshly-created buffer once the Lathe server attaches -- otherwise the new type has no bytecode in
--- .lathe/ and reads as an unbuilt "stale" source, triggering a spurious sync prompt.
-function M._compile_on_attach(bufnr)
-  local function save()
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      return
-    end
-
-    pcall(function()
-      vim.api.nvim_buf_call(bufnr, function()
-        vim.cmd("silent keepalt write")
-      end)
-    end)
-  end
-
-  -- Defer onto the main loop: the save fires format_on_save (a blocking format request) and didSave,
-  -- neither of which is safe to run nested inside the LspAttach callback we may be in.
-  if lathe_client(bufnr) then
-    return vim.schedule(save)
-  end
-
-  vim.api.nvim_create_autocmd("LspAttach", {
-    buffer = bufnr,
-    callback = function(args)
-      local client = vim.lsp.get_client_by_id(args.data.client_id)
-      if client and client.name == "lathe" then
-        vim.schedule(save)
-        return true
-      end
-    end,
-  })
 end
 
 -- ── naming helpers ───────────────────────────────────────────────────────────
-
--- The longest package prefix common to a and b, on dot boundaries (com.x.a & com.x.b -> com.x).
-local function common_prefix(a, b)
-  local sa, sb = vim.split(a, ".", { plain = true }), vim.split(b, ".", { plain = true })
-  local out = {}
-  for i = 1, math.min(#sa, #sb) do
-    if sa[i] ~= sb[i] then
-      break
-    end
-
-    out[i] = sa[i]
-  end
-  return table.concat(out, ".")
-end
-
--- The module's base package: the longest common prefix of its main packages, used to seed a
--- module-info name (JPMS convention: module name = root package) and a new-package input.
-function M._base_package(packages)
-  local mains = {}
-  for _, entry in ipairs(packages or {}) do
-    if entry.scope == "main" and entry.pkg ~= "" then
-      mains[#mains + 1] = entry.pkg
-    end
-  end
-
-  if #mains == 0 then
-    return ""
-  end
-
-  local prefix = mains[1]
-  for i = 2, #mains do
-    prefix = common_prefix(prefix, mains[i])
-  end
-  return prefix
-end
 
 -- <Stem>Test derived from the buffer's file name, leaving an already-Test-suffixed stem alone.
 function M._test_seed(bufnr)
@@ -253,85 +171,17 @@ end
 
 -- ── destination gathering + ordering ─────────────────────────────────────────
 
--- Every `{ module, scope, pkg }` in the reactor (each package once per scope it exists in, so a
--- package in both roots offers a main row and a test row) plus the module list. Silent: callers
--- decide what an empty reactor means (a prompt warns; completion priming ignores it).
-local function collect_destinations(client, bufnr, cb)
-  execute(client, bufnr, "lathe.modules", {}, function(modules)
-    modules = modules or {}
-    local dests = {}
-    local pending = #modules
-    if pending == 0 then
-      return cb(dests, modules)
-    end
-
-    for _, module in ipairs(modules) do
-      execute(client, bufnr, "lathe.packages", { moduleRel = module }, function(packages)
-        for _, entry in ipairs(packages or {}) do
-          if entry.pkg ~= "" then
-            dests[#dests + 1] = { module = module, scope = entry.scope, pkg = entry.pkg }
-          end
-        end
-
-        pending = pending - 1
-        if pending == 0 then
-          cb(dests, modules)
-        end
-      end)
-    end
+-- The `{ module, scope, pkg }` rows a new `kind` may go to, ranked by the server for this buffer
+-- (its package, then its module, then the kind's scope); only `pkg`'s rows when one is given.
+local function destinations(client, bufnr, kind, pkg, cb)
+  local name = vim.api.nvim_buf_get_name(bufnr)
+  execute(client, bufnr, commands.TYPES_DESTINATIONS, {
+    uri = name ~= "" and vim.uri_from_fname(name) or nil,
+    kind = kind,
+    pkg = pkg,
+  }, function(dests)
+    cb(dests or {})
   end)
-end
-
--- Rank so the buffer's package leads, then its module, then the kind's natural scope; a stable
--- module/pkg/scope tie-break keeps the list deterministic.
-function M._order_destinations(dests, ctx, kind)
-  local prefScope = pref_scope(kind)
-  local ctxPkg = ctx and ctx.pkg
-  local ctxMod = ctx and ctx.moduleRel
-  local function rank(d)
-    if ctxPkg and ctxPkg ~= "" and d.pkg == ctxPkg and d.module == ctxMod then
-      return 0
-    end
-    if ctxMod and d.module == ctxMod then
-      return 1
-    end
-    if d.scope == prefScope then
-      return 2
-    end
-    return 3
-  end
-
-  table.sort(dests, function(a, b)
-    local ra, rb = rank(a), rank(b)
-    if ra ~= rb then
-      return ra < rb
-    end
-    if a.module ~= b.module then
-      return a.module < b.module
-    end
-    if a.pkg ~= b.pkg then
-      return a.pkg < b.pkg
-    end
-    return a.scope < b.scope
-  end)
-  return dests
-end
-
--- The best destination for a typed package word: prefer the buffer's module, then the kind's scope.
-function M._resolve_typed(dests, pkg, ctx, kind)
-  local prefScope = pref_scope(kind)
-  local ctxMod = ctx and ctx.moduleRel
-  local function score(d)
-    return (ctxMod and d.module == ctxMod and 2 or 0) + (d.scope == prefScope and 1 or 0)
-  end
-
-  local best
-  for _, d in ipairs(dests) do
-    if d.pkg == pkg and (not best or score(d) > score(best)) then
-      best = d
-    end
-  end
-  return best
 end
 
 -- ── flow ─────────────────────────────────────────────────────────────────────
@@ -357,14 +207,18 @@ local submit, name_step, open_where, create_module_info, module_info_flow
 
 -- package-info sends the fixed stem as name (ignored by the server); module-info sends the JPMS module
 -- name and always the main root.
-submit = function(client, bufnr, kind, dest, scope, name)
-  execute(client, bufnr, "lathe.createType", {
+local function create_request(kind, dest, scope, name)
+  return {
     moduleRel = dest.module,
     kind = scope,
     pkg = kind == "module-info" and "" or (dest.pkg or ""),
     type = kind,
     name = name,
-  }, M._open)
+  }
+end
+
+submit = function(client, bufnr, kind, dest, scope, name)
+  execute(client, bufnr, commands.TYPES_CREATE, create_request(kind, dest, scope, name), M._open)
 end
 
 -- test forces the test scope; a plain kind takes the scope of the picked destination (so a class can
@@ -389,9 +243,7 @@ name_step = function(client, bufnr, kind, dest)
   end)
 end
 
-open_where = function(client, bufnr, kind, ctx, dests)
-  M._order_destinations(dests, ctx, kind)
-
+open_where = function(client, bufnr, kind, dests)
   pick.pick({
     title = "Where:",
     items = dests,
@@ -409,22 +261,33 @@ open_where = function(client, bufnr, kind, ctx, dests)
   })
 end
 
--- module-info takes no package, scope, or type name — only the module. Its JPMS name is derived from
--- the module's base package and it always lands at the main source root, so there is no prompt. The
--- rare case where nothing can be derived (a module with no packages yet) falls back to asking.
-create_module_info = function(client, bufnr, module)
-  execute(client, bufnr, "lathe.packages", { moduleRel = module }, function(packages)
-    local dest = { module = module, pkg = "" }
-    local name = M._base_package(packages)
-    if name ~= "" then
-      submit(client, bufnr, "module-info", dest, "main", name)
-      return
-    end
+-- The JSON-RPC code of the server's refusal of a request it cannot serve as sent.
+local INVALID_PARAMS = vim.lsp.protocol.ErrorCodes.InvalidParams
 
-    input_nonempty({ prompt = "Module name: " }, function(entered)
-      submit(client, bufnr, "module-info", dest, "main", entered)
-    end)
-  end)
+-- module-info takes no package, scope, or type name — only the module. Sent without a name, the
+-- server names it after the module's base package and puts it at the main source root, so there is
+-- no prompt; a module with no package yet has none to give, and the server's refusal asks for it.
+create_module_info = function(client, bufnr, module)
+  local dest = { module = module, pkg = "" }
+  util.exec(
+    client,
+    bufnr,
+    commands.TYPES_CREATE,
+    { create_request("module-info", dest, "main", "") },
+    M._open,
+    {
+      on_error = function(err)
+        if err.code ~= INVALID_PARAMS then
+          warn(err.message)
+          return
+        end
+
+        input_nonempty({ prompt = "Module name: " }, function(entered)
+          submit(client, bufnr, "module-info", dest, "main", entered)
+        end)
+      end,
+    }
+  )
 end
 
 module_info_flow = function(client, bufnr, ctx, guided)
@@ -432,7 +295,7 @@ module_info_flow = function(client, bufnr, ctx, guided)
     return create_module_info(client, bufnr, ctx.moduleRel)
   end
 
-  execute(client, bufnr, "lathe.modules", {}, function(modules)
+  execute(client, bufnr, commands.WORKSPACE_MODULES, {}, function(modules)
     modules = modules or {}
     if #modules == 0 then
       warn("no modules found — run a build first")
@@ -462,20 +325,27 @@ local function dispatch(client, bufnr, kind, ctx, pkg_arg, guided)
     )
   end
 
-  collect_destinations(client, bufnr, function(dests, modules)
-    if #modules == 0 then
-      warn("no modules found — run a build first")
-      return
-    end
-
-    if pkg_arg and pkg_arg ~= "" then
-      local resolved = M._resolve_typed(dests, pkg_arg, ctx, kind)
-      if resolved then
-        return name_step(client, bufnr, kind, resolved)
+  local function pick_where()
+    destinations(client, bufnr, kind, "", function(dests)
+      if #dests == 0 then
+        warn("no packages found — run a build first")
+        return
       end
+
+      open_where(client, bufnr, kind, dests)
+    end)
+  end
+
+  if not pkg_arg or pkg_arg == "" then
+    return pick_where()
+  end
+
+  destinations(client, bufnr, kind, pkg_arg, function(dests)
+    if dests[1] then
+      return name_step(client, bufnr, kind, dests[1])
     end
 
-    open_where(client, bufnr, kind, ctx, dests)
+    pick_where()
   end)
 end
 
@@ -493,23 +363,29 @@ function M.create(kind_arg, pkg_arg)
     return
   end
 
-  execute(client, bufnr, "lathe.resolveContext", { uri = vim.uri_from_bufnr(bufnr) }, function(ctx)
-    if kind_arg and kind_arg ~= "" then
-      dispatch(client, bufnr, kind_arg, ctx, pkg_arg, false)
-      return
-    end
+  execute(
+    client,
+    bufnr,
+    commands.WORKSPACE_CONTEXT,
+    { uri = vim.uri_from_bufnr(bufnr) },
+    function(ctx)
+      if kind_arg and kind_arg ~= "" then
+        dispatch(client, bufnr, kind_arg, ctx, pkg_arg, false)
+        return
+      end
 
-    pick.pick({
-      title = "New:",
-      items = KINDS,
-      format = label_of,
-      on_choice = function(item)
-        if item then
-          dispatch(client, bufnr, item.type, ctx, nil, true)
-        end
-      end,
-    })
-  end)
+      pick.pick({
+        title = "New:",
+        items = KINDS,
+        format = label_of,
+        on_choice = function(item)
+          if item then
+            dispatch(client, bufnr, item.type, ctx, nil, true)
+          end
+        end,
+      })
+    end
+  )
 end
 
 -- ── :LatheGoToTest ───────────────────────────────────────────────────────────
@@ -532,7 +408,7 @@ local function offer_test(client, bufnr)
       execute(
         client,
         bufnr,
-        "lathe.resolveContext",
+        commands.WORKSPACE_CONTEXT,
         { uri = vim.uri_from_bufnr(bufnr) },
         function(ctx)
           if not ctx then
@@ -565,7 +441,7 @@ function M.go_to_test()
   execute(
     client,
     bufnr,
-    "lathe.testCounterparts",
+    commands.TESTS_COUNTERPARTS,
     { uri = vim.uri_from_bufnr(bufnr) },
     function(found)
       local targets = found and found.targets or {}
@@ -619,7 +495,7 @@ function M._refresh_async()
     return
   end
 
-  collect_destinations(client, bufnr, function(dests)
+  destinations(client, bufnr, "class", "", function(dests)
     local seen, list = {}, {}
     for _, dest in ipairs(dests) do
       if not seen[dest.pkg] then

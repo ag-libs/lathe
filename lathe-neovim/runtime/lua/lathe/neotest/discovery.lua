@@ -2,6 +2,8 @@
 -- runnables for an open file or its module discovery for one nobody opened, and which directories
 -- neotest skips.
 local common = require("lathe.neotest.common")
+local util = require("lathe.util")
+local commands = require("lathe.commands")
 local readiness = require("lathe.neotest.readiness")
 
 local M = {}
@@ -129,7 +131,7 @@ local function to_range(lsp_range)
 end
 
 --- Builds the nested-list forest shape Tree.from_list expects (head = node data,
---- following elements = child subtrees) from lathe.runnables.list's flat,
+--- following elements = child subtrees) from lathe.runnables.file's flat,
 --- parentId-linked result. Pure data transformation, no neotest/nio dependency --
 --- kept separate from build_tree specifically so it's testable without either
 --- being installed. Any position whose parent isn't itself a node in this file (an
@@ -202,10 +204,8 @@ end
 
 -- The module a file belongs to, from the server's reactor layout; nil when it resolves to none.
 function M.module_of(client, file_path)
-  local err, context = client.request.workspace_executeCommand({
-    command = "lathe.resolveContext",
-    arguments = { { uri = vim.uri_from_fname(file_path) } },
-  })
+  local err, context =
+    util.exec_nio(client, commands.WORKSPACE_CONTEXT, { { uri = vim.uri_from_fname(file_path) } })
   -- A file in no module answers JSON null (vim.NIL), which cannot be indexed.
   return not err and type(context) == "table" and context.moduleRel or nil
 end
@@ -213,7 +213,7 @@ end
 -- Discovery knows no positions, so a file's tests sit at its top until the file is opened.
 local TOP_OF_FILE = { start = { line = 0, character = 0 }, ["end"] = { line = 0, character = 0 } }
 
---- The tests discovery found in one file, as the targets lathe.runnables.list returns for an open
+--- The tests discovery found in one file, as the targets lathe.runnables.file returns for an open
 --- file: a test per method, and its class and every class it is nested in (read off the id), so the
 --- same forest builder nests them. Pure, for the specs.
 function M._targets_from_discovery(tests, file_path, module_rel)
@@ -257,10 +257,8 @@ local function discovered_targets(file_path)
     return nil
   end
 
-  local err, discovery = client.request.workspace_executeCommand({
-    command = "lathe.tests.discover",
-    arguments = { { moduleRel = module_rel } },
-  })
+  local err, discovery =
+    util.exec_nio(client, commands.TESTS_DISCOVER, { { moduleRel = module_rel } })
   if err or not discovery then
     return nil
   end
@@ -294,10 +292,12 @@ local function request_targets(file_path, bufnr)
   end
 
   local tick = vim.api.nvim_buf_is_loaded(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or nil
-  local err, targets = client.request.workspace_executeCommand({
-    command = "lathe.runnables.list",
-    arguments = { { uri = vim.uri_from_fname(file_path) } },
-  }, bufnr)
+  local err, targets = util.exec_nio(
+    client,
+    commands.RUNNABLES_FILE,
+    { { uri = vim.uri_from_fname(file_path) } },
+    bufnr
+  )
   if err or not targets or #targets == 0 then
     return nil
   end

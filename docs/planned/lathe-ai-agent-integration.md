@@ -517,7 +517,7 @@ results tells it when a re-sync is needed before trusting them).
 
 | Tool | Maps to | Kind | In → Out |
 |---|---|---|---|
-| `list_runnables` | `lathe.runnables.list` | read | `{file?}` → `{runnables[]{id, kind, module, displayName}}` |
+| `list_runnables` | `lathe.runnables.file` | read | `{file?}` → `{runnables[]{id, kind, module, displayName}}` |
 | `run_test` ✅ | `lathe.run.test` replay | **action** | `{file, scope: class\|method\|package, method?}` → `{launched, passed, failed, skipped, failures[]}`. Resolves the target from the file's runnables and reuses the editor's `{kind, RunTarget.id}` selection mapping. **method / class / package** shipped; **module** deferred (no module-run path yet). Blocked outcome (no `test-launch.json` / runner jar) returned as an actionable result; `Stale:` advisory rides along. |
 
 An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a headline agent verb).
@@ -528,8 +528,8 @@ An optional sibling `run_main` → `lathe.run.main` is deprioritized (not a head
 |---|---|---|---|
 | `document_symbols` | documentSymbol | read | `{file}` → `{symbols[] tree}` — grok a large file without reading it whole. |
 | `call_hierarchy` ✅ | call hierarchy | read | `{file,line,column, direction: incoming\|outgoing, maxResults?}` → `{incoming, total, calls[]{name, snippet}}`. One level; transitive depth deferred. |
-| `type_hierarchy` | typeHierarchy / `lathe.typeHierarchy` | read | `{file,line,column, direction: super\|sub\|both}` → `{types[]{…, relation}}` |
-| `add_missing_imports` | `lathe.missingImports` | **write** | `{file}` → `{added[], ambiguous[]{name, candidates[]}, unresolved[]}` |
+| `type_hierarchy` | typeHierarchy / `lathe.types.hierarchy` | read | `{file,line,column, direction: super\|sub\|both}` → `{types[]{…, relation}}` |
+| `add_missing_imports` | `lathe.imports.missing` | **write** | `{file}` → `{added[], ambiguous[]{name, candidates[]}, unresolved[]}` |
 
 ### Change impact & verification (paired pre-/post-edit)
 
@@ -595,7 +595,7 @@ useful.
 
 Driven through the existing Python LSP driver (`dev/lsp.py` / `dev/explore.py`), which spawns the
 published `lathe-launcher.sh` over stdio and issues `initialize`, `didOpen`,
-`textDocument/definition`, diagnostics, `lathe.runnables.list`, and `lathe.run.test` — a working
+`textDocument/definition`, diagnostics, `lathe.runnables.file`, and `lathe.run.test` — a working
 reference for what the MCP server must do. Validated end-to-end against the published launcher on the
 in-repo `multi-module` invoker workspace and a large private multi-module workspace: clean
 diagnostics, cross-file `definition`, runnables discovered, and a replay → `[PASSED] exit=0`.

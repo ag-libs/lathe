@@ -1,6 +1,6 @@
 -- Verifies lathe.dap:
 --   * _test_target_for: the pure selection of which TEST runnable a :LatheDebug should attach to
---     for a given cursor line, over the flat lathe.runnables.list target list -- method-in-range,
+--     for a given cursor line, over the flat lathe.runnables.file target list -- method-in-range,
 --     class fallback, package fallback, innermost precedence, and the no-test case.
 --   * _decorate_on_session_end: the DAP session-end guard that hyperlinks the streamed stack frames
 --     only for a Lathe session (dap.listeners are global, so other adapters must not trigger it).

@@ -14,8 +14,8 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
-// A lathe.testCounterparts answer: for a main file the tests of its type, for a test file the type
-// it tests, best match first. Found by the names the build's test runs pick up by default
+// A lathe.tests.counterparts answer: for a main file the tests of its type, for a test file the
+// type it tests, best match first. Found by the names the build's test runs pick up by default
 // (Surefire's and Failsafe's), in any module, so a test in a separate test module is found too.
 public record TestCounterparts(boolean fromTest, List<Target> targets) {
 

@@ -896,7 +896,7 @@ It inherits the same-name-local over-match limitation of the single-file referen
 
 ### Instantiation sites
 
-`lathe.instantiations` (an `executeCommand` query) reports where the type under the cursor is
+`lathe.types.instantiations` (an `executeCommand` query) reports where the type under the cursor is
 constructed. It matches `NewClassTree` sites across the reactor — including synthetic default and
 record constructors — rather than filtering `references` by a constructor symbol.
 
@@ -993,10 +993,10 @@ Feature-specific provider coverage is tracked in the roadmap and code-action des
 The server owns every Java/Maven decision behind `:LatheNew` through a small `executeCommand` surface,
 so editor clients stay thin pickers:
 
-- `lathe.createType` — resolve placement (module, source root, package, main/test scope), render the
+- `lathe.types.create` — resolve placement (module, source root, package, main/test scope), render the
   `class`/`interface`/`record`/`enum`/`test`/`package-info`/`module-info` skeleton, write the file, and
   return the caret.
-- `lathe.modules`, `lathe.packages`, `lathe.resolveContext` — workspace queries that back the guided
+- `lathe.workspace.modules`, `lathe.workspace.packages`, `lathe.workspace.context` — workspace queries that back the guided
   module → package pick and the current-file context default.
 
 These read the same module registry and source-root model as the compiler-backed features; no client

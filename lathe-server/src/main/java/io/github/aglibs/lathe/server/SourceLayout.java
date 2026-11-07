@@ -9,6 +9,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -67,6 +68,86 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
         .toList();
+  }
+
+  // Where a new type of the kind may go: each package of each module, once per scope it exists in,
+  // ranked for the file the user is in -- its own package, then the rest of its module, then the
+  // scope the kind targets (a test lands in the test root) -- then by module, package and scope.
+  // With a package, only that package's destinations, best first. The context may be null. A
+  // source set's own tree is left out, as from packages(). It walks every module's source trees, so
+  // it is not for the event loop.
+  List<TypeDestination> destinations(
+      final ContextInfo context, final TypeKind kind, final String pkg) {
+    final String scope = (kind == TypeKind.TEST ? SourceScope.TEST : SourceScope.MAIN).wire;
+    final Comparator<TypeDestination> order =
+        Comparator.comparing(TypeDestination::module)
+            .thenComparing(TypeDestination::pkg)
+            .thenComparing(TypeDestination::scope);
+    final Comparator<TypeDestination> ranked =
+        pkg.isEmpty()
+            ? Comparator.comparingInt(
+                    (TypeDestination destination) -> rank(destination, context, scope))
+                .thenComparing(order)
+            : Comparator.comparingInt(
+                    (TypeDestination destination) -> -preference(destination, context, scope))
+                .thenComparing(order);
+    return configs.stream()
+        .filter(config -> !isSourceSetTree(config))
+        .flatMap(
+            config ->
+                packageEntries(config)
+                    .filter(entry -> !entry.pkg().isEmpty())
+                    .map(
+                        entry ->
+                            new TypeDestination(moduleRel(config), entry.scope(), entry.pkg())))
+        .filter(destination -> pkg.isEmpty() || destination.pkg().equals(pkg))
+        .distinct()
+        .sorted(ranked)
+        .toList();
+  }
+
+  private static int rank(
+      final TypeDestination destination, final ContextInfo context, final String scope) {
+    final boolean inModule = context != null && destination.module().equals(context.moduleRel());
+    if (inModule && !context.pkg().isEmpty() && destination.pkg().equals(context.pkg())) {
+      return 0;
+    }
+
+    if (inModule) {
+      return 1;
+    }
+
+    return destination.scope().equals(scope) ? 2 : 3;
+  }
+
+  // For a typed package: the user's module counts more than the kind's scope.
+  private static int preference(
+      final TypeDestination destination, final ContextInfo context, final String scope) {
+    final int module = context != null && destination.module().equals(context.moduleRel()) ? 2 : 0;
+    return module + (destination.scope().equals(scope) ? 1 : 0);
+  }
+
+  // A module's base package, the JPMS convention's module name: the longest common prefix, on dot
+  // boundaries, of its main packages; empty when it has none.
+  String basePackage(final String moduleRel) {
+    final List<String> mains =
+        packages(moduleRel).stream()
+            .filter(entry -> entry.scope().equals(SourceScope.MAIN.wire))
+            .map(PackageEntry::pkg)
+            .filter(pkg -> !pkg.isEmpty())
+            .toList();
+    return mains.stream().reduce(SourceLayout::commonPackage).orElse("");
+  }
+
+  private static String commonPackage(final String first, final String second) {
+    final String[] a = first.split("\\.");
+    final String[] b = second.split("\\.");
+    int shared = 0;
+    while (shared < Math.min(a.length, b.length) && a[shared].equals(b[shared])) {
+      shared++;
+    }
+
+    return String.join(".", Arrays.asList(a).subList(0, shared));
   }
 
   // A source set's own tree has no place in the create-type scopes yet, so a file there has no

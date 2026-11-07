@@ -92,7 +92,7 @@ Two server commands plus a thin client; all data already exists in the manifest.
 
 ### 5.1 Server — list and open
 
-- `lathe.resources` → a unified, deduped list of `ResourceEntry`:
+- `lathe.resources.list` → a unified, deduped list of `ResourceEntry`:
   - **reactor**: `{ name, origin: "reactor:<moduleRel>", kind: FILE, path }` — walk each dir in
     `ResourceRootIndex.sourceDirs()`, skipping directories (real files, so `path` is editable).
   - **dependency**: `{ name, origin: "dep:<gav>", kind: JAR, jar, entry }` — read each dependency
@@ -100,7 +100,7 @@ Two server commands plus a thin client; all data already exists in the manifest.
   - Filter: a `.class` + directory **denylist** (so `.graphql`/`.graphqls` and any unusual extension
     surface); applied to both sources.
   - Same name from several origins is kept as distinct rows (origin disambiguates).
-- `lathe.resourceOpen { jar, entry }` → extract exactly that entry to `~/.cache/lathe/deps/<gav>/…`,
+- `lathe.resources.open { jar, entry }` → extract exactly that entry to `~/.cache/lathe/deps/<gav>/…`,
   read-only, and return its path (reusing `ZipCache`/`FileUtil` for the single-entry extract).
   Reactor resources need no command — the list already carries their real `path`.
 
@@ -112,9 +112,9 @@ slow it can be cached and invalidated on manifest change (see [Open questions](#
 
 Thin, no jar/Java knowledge; registered from `lathe.lua` (mirroring `typehierarchy`/`instances`).
 
-- `:LatheResourceFind [name]` → request `lathe.resources`, drive a Telescope **custom finder** over
+- `:LatheResourceFind [name]` → request `lathe.resources.list`, drive a Telescope **custom finder** over
   the returned rows, displaying `name  ⟨origin⟩` and prefilling `name`.
-- On select: `kind == FILE` → `:edit <path>`; `kind == JAR` → request `lathe.resourceOpen`, then
+- On select: `kind == FILE` → `:edit <path>`; `kind == JAR` → request `lathe.resources.open`, then
   `:edit` the returned path and set it read-only (`nomodifiable`/`readonly`).
 - Telescope is a soft dependency (`pcall`); absent → `lathe.pick` over the name+origin list (no
   content in either path).
@@ -140,8 +140,8 @@ Thin, no jar/Java knowledge; registered from `lathe.lua` (mirroring `typehierarc
 | Change | File | Notes |
 |---|---|---|
 | `ResourceEntry` record (name, origin, kind, path/jar/entry) | `lathe-server` | wire type for the list |
-| `lathe.resources` list (reactor walk + jar central-dir scan, denylist) | `WorkspaceSession` / `LatheTextDocumentService` | no extraction |
-| `lathe.resourceOpen` single-entry extract | `WorkspaceSession` / `LatheTextDocumentService` | reuse `ZipCache` |
+| `lathe.resources.list` list (reactor walk + jar central-dir scan, denylist) | `WorkspaceSession` / `LatheTextDocumentService` | no extraction |
+| `lathe.resources.open` single-entry extract | `WorkspaceSession` / `LatheTextDocumentService` | reuse `ZipCache` |
 | Command constants + registration | `LatheWorkspaceService`, `LatheLanguageServer` | two new commands |
 | Central-dir list + single-entry extract helpers | `FileUtil`/`ZipCache` (`lathe-core`) if not already present | keep util-owned, per "no ad-hoc zip loops" |
 | Client finder + command | `lua/lathe/resources.lua` (new) + `lathe.lua` | Telescope soft dep, `lathe.pick` fallback |
@@ -162,13 +162,13 @@ Read neighbouring tests first (per the testing rules); mirror `WorkspaceSessionT
 - `resourceOpen_extractsSingleEntryReadOnly` — only the requested entry lands on disk, read-only.
 - `resourceOpen_unknownEntry_returnsEmpty` — negative.
 
-**Client** (`resources_spec.lua`; stub Telescope + a fake `lathe.resources` reply):
+**Client** (`resources_spec.lua`; stub Telescope + a fake `lathe.resources.list` reply):
 - `latheResourceFind_withArg_prefillsPrompt`.
 - `latheResourceFind_fileEntry_opensPathEditable`.
 - `latheResourceFind_jarEntry_callsResourceOpenThenOpensReadOnly`.
 - `latheResourceFind_noTelescope_fallsBackToLathePick`.
 
-**Invoker** (`mvn verify`, `multi-module`): after sync, `lathe.resources` returns a known reactor
+**Invoker** (`mvn verify`, `multi-module`): after sync, `lathe.resources.list` returns a known reactor
 resource and a known dependency resource with correct origins, and `resourceOpen` extracts a single
 entry (and no `.class`).
 

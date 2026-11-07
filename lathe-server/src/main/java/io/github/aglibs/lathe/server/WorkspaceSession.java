@@ -110,7 +110,6 @@ final class WorkspaceSession {
     this.router = new FeatureRouter(eventLoop, state, docs);
     this.features = new DocumentFeatures(state, reactorIndex, router, docs);
     this.formats = new FormatService(eventLoop, client, state, docs, this::onFormatted);
-    this.queries = new WorkspaceQueries(state);
     this.search = new ReferenceSearch(eventLoop, state, reactorIndex, router, docs);
     this.resourceMirror = new ResourceMirror(state);
     this.writePass =
@@ -130,6 +129,7 @@ final class WorkspaceSession {
                 this::keepWriteDiagnostics,
                 () -> renameTransaction.memberPaths()),
             resourceMirror);
+    this.queries = new WorkspaceQueries(state, writePass);
     this.verifier = new ChangeVerifier(state, router, writePass);
     this.renames = new RenameService(eventLoop, state, reactorIndex, router, search, docs);
   }

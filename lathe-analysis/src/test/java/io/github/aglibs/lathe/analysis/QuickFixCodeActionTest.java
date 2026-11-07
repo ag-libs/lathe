@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
+import io.github.aglibs.lathe.core.LatheCommands;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
 import java.io.IOException;
@@ -254,7 +255,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     assertThat(actions)
         .filteredOn(Either::isLeft)
         .extracting(action -> action.getLeft().getCommand())
-        .containsExactly("lathe.missingImports");
+        .containsExactly(LatheCommands.IMPORTS_MISSING);
   }
 
   // Missing imports lists each qualifier with every candidate of either kind: a single one is
@@ -464,7 +465,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
             .toList();
 
     assertThat(commands).hasSize(1);
-    assertThat(commands.get(0).getCommand()).isEqualTo("lathe.missingImports");
+    assertThat(commands.get(0).getCommand()).isEqualTo(LatheCommands.IMPORTS_MISSING);
     assertThat(commands.get(0).getTitle()).isEqualTo("Add missing imports…");
   }
 

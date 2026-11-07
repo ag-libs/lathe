@@ -1,36 +1,35 @@
 -- :LatheMissingImports -- add an import for every unresolved type in the buffer, via the server's
--- `lathe.missingImports` command. Unambiguous names (one candidate) are added automatically; a name
+-- `lathe.imports.missing` command. Unambiguous names (one candidate) are added automatically; a name
 -- with several candidates is presented one at a time with vim.ui.select so the user picks (or skips).
--- The chosen imports go in with the edits `lathe.importEdits` returns, then a summary is shown. Also
+-- The chosen imports go in with the edits `lathe.imports.edits` returns, then a summary is shown. Also
 -- wired as the client-side handler for the "Add missing imports…" code action.
 
 local M = {}
 
 local util = require("lathe.util")
+local commands = require("lathe.commands")
 local notify = util.notify
 
 -- Apply the chosen imports with the edits the server places (each at its sorted spot in its group),
--- then call on_added. A server without lathe.importEdits answers nothing: warn, add nothing.
+-- then call on_added. A server without lathe.imports.edits answers nothing: warn, add nothing.
 local function insert_imports(bufnr, client, fqns, on_added)
   if #fqns == 0 then
     on_added()
     return
   end
-  client:request("workspace/executeCommand", {
-    command = "lathe.importEdits",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr), imports = fqns } },
-  }, function(err, edits)
-    if err or edits == nil or edits == vim.NIL then
+  util.exec(client, bufnr, commands.IMPORTS_EDITS, {
+    { uri = vim.uri_from_bufnr(bufnr), imports = fqns },
+  }, function(edits)
+    if edits == nil or edits == vim.NIL then
       notify(
-        err and err.message
-          or "this server cannot add imports -- update the Lathe build plugin and sync again",
+        "this server cannot add imports -- update the Lathe build plugin and sync again",
         vim.log.levels.WARN
       )
       return
     end
     vim.lsp.util.apply_text_edits(edits, bufnr, client.offset_encoding)
     on_added()
-  end, bufnr)
+  end, { level = vim.log.levels.WARN })
 end
 
 -- Partition items into auto-add (one candidate), needs-choice (several), and unresolved (none),
@@ -107,16 +106,15 @@ function M.run(bufnr)
     return
   end
 
-  client:request("workspace/executeCommand", {
-    command = "lathe.missingImports",
-    arguments = { { uri = vim.uri_from_bufnr(bufnr) } },
-  }, function(err, result)
-    if err then
-      notify(err.message, vim.log.levels.ERROR)
-      return
+  util.exec(
+    client,
+    bufnr,
+    commands.IMPORTS_MISSING,
+    { { uri = vim.uri_from_bufnr(bufnr) } },
+    function(result)
+      resolve(bufnr, client, result)
     end
-    resolve(bufnr, client, result)
-  end, bufnr)
+  )
 end
 
 function M.setup()
@@ -126,7 +124,7 @@ function M.setup()
 
   -- The "Add missing imports…" code action carries this command; intercept it client-side so the
   -- selection wizard runs instead of a bare server round-trip.
-  vim.lsp.commands["lathe.missingImports"] = function(_, ctx)
+  vim.lsp.commands[commands.IMPORTS_MISSING] = function(_, ctx)
     M.run(ctx.bufnr)
   end
 end

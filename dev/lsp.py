@@ -734,7 +734,7 @@ class LatheClient(LspClient):
     def runnables(self, file: str | Path) -> list[dict]:
         """List discovered run targets (main/test methods/classes/packages) in a file."""
         uri = Path(file).resolve().as_uri()
-        result = self.execute_command("lathe.runnables.list", [{"uri": uri}])
+        result = self.execute_command("lathe.runnables.file", [{"uri": uri}])
         return result or []
 
     def run_test(self, module_rel: str, selector_kind: str, selector_value: str) -> dict:
@@ -789,10 +789,10 @@ class LatheClient(LspClient):
         }, timeout=timeout)
 
     def refresh_resource(self, file: str | Path) -> str | None:
-        """Trigger lathe.resource.refresh for a changed resource file. Returns the .lathe/
+        """Trigger lathe.resources.refresh for a changed resource file. Returns the .lathe/
         destination the server copied it to, or None if it maps to no resource root."""
         uri = Path(file).resolve().as_uri()
-        return self.execute_command("lathe.resource.refresh", [{"uri": uri}])
+        return self.execute_command("lathe.resources.refresh", [{"uri": uri}])
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

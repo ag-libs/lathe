@@ -1,4 +1,4 @@
--- Verifies lathe.instances (:LatheInstances): dispatches the lathe.instantiations command and fills
+-- Verifies lathe.instances (:LatheInstances): dispatches the lathe.types.instantiations command and fills
 -- the quickfix from the returned locations, warns with no client, notifies on an empty result, and
 -- registers the command. The LSP request and quickfix-item conversion are stubbed, so this loads
 -- headlessly like the other specs.
@@ -17,7 +17,7 @@ local function stub_client(handler)
   helper.fake_client(handler, { position = true })
 end
 
-do -- dispatches lathe.instantiations and fills the quickfix from the locations
+do -- dispatches lathe.types.instantiations and fills the quickfix from the locations
   local requested
   stub_client(function(_, method, params, callback, _)
     requested = { method = method, command = params.command }
@@ -30,7 +30,7 @@ do -- dispatches lathe.instantiations and fills the quickfix from the locations
   instances.find(0)
 
   spec.check("dispatch method", requested and requested.method, "workspace/executeCommand")
-  spec.check("dispatch command", requested and requested.command, "lathe.instantiations")
+  spec.check("dispatch command", requested and requested.command, "lathe.types.instantiations")
   local qf = vim.fn.getqflist({ title = true, items = true })
   spec.check("quickfix title", qf.title, "Lathe: instantiation sites")
   spec.check("quickfix item count", #qf.items, 1)
