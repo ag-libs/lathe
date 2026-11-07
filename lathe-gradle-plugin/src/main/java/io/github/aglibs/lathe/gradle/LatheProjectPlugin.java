@@ -312,10 +312,16 @@ public class LatheProjectPlugin implements Plugin<Project> {
           task.getMainSources().from(main.getJava());
           task.getTestSources().from(test.getJava());
         });
+    // A build may point the test compile at main's generated-sources directory (Apache Fineract
+    // does), which that compile cleans and refills: the main capture copies it first.
     project
         .getTasks()
         .named(test.getCompileJavaTaskName())
-        .configure(task -> task.finalizedBy(facts));
+        .configure(
+            task -> {
+              task.mustRunAfter(mainCapture);
+              task.finalizedBy(facts);
+            });
     LatheTestCapture.register(
         project,
         facts,
@@ -574,6 +580,13 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.getInferModulePath().set(javac.getModularity().getInferModulePath());
                 });
     compile.configure(javac -> javac.finalizedBy(capture));
+    // Part of building the classes: a task that runs after them and writes into what the capture
+    // reads (Apache Fineract's OpenAPI spec, into the resources) then runs after the capture,
+    // never alongside it.
+    project
+        .getTasks()
+        .named(sourceSet.getClassesTaskName())
+        .configure(classes -> classes.dependsOn(capture));
     return capture;
   }
 }

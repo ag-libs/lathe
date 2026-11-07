@@ -64,12 +64,16 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @PathSensitive(PathSensitivity.RELATIVE)
   public abstract DirectoryProperty getClassesDir();
 
-  @InputFiles
-  @Optional
-  @PathSensitive(PathSensitivity.RELATIVE)
+  // Read, not tracked: a build may point its test compile at this directory too (Apache Fineract
+  // points every compile at main's), which Gradle would see as a second writer of an input; the
+  // plugin orders that compile after the main capture instead. The classes, an input, change
+  // whenever the compile writes new sources here.
+  @Internal
   public abstract DirectoryProperty getGeneratedSourcesDir();
 
   // The source set's processed resources, mirrored with the classes as Maven's output holds them.
+  // A task that writes into it after the classes runs after the capture, which the classes task
+  // depends on.
   @InputFiles
   @PathSensitive(PathSensitivity.RELATIVE)
   public abstract DirectoryProperty getResourcesDir();
