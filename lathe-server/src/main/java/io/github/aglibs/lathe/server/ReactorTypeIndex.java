@@ -83,7 +83,6 @@ final class ReactorTypeIndex {
     return reactorLambdaImplementors;
   }
 
-  // The shards as they stand, for a request that enriches the index off the loop.
   // The index with the given types of open files added, for a code action that must see types no
   // build has written yet.
   CompletableFuture<WorkspaceTypeIndex> withOpenEntries(final List<TypeIndexEntry> openEntries) {
