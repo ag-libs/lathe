@@ -35,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -531,19 +532,20 @@ final class ReferenceSearch {
                 target,
                 includeDeclaration,
                 exposureFamily,
-                progress,
+                hits -> progress.advance(true, hits),
                 cancelChecker),
         cancelChecker);
   }
 
-  // Attributes the files together, then searches each; on the module's worker.
-  private static SearchHits<ReferenceMatch> searchBatch(
+  // Attributes the files together, then searches each, reporting each file's hit count; on the
+  // module's worker.
+  static SearchHits<ReferenceMatch> searchBatch(
       final SourceAnalysisSession session,
       final List<TransientSource> sources,
       final ReferenceTarget target,
       final boolean includeDeclaration,
       final Set<String> exposureFamily,
-      final ProgressReporter.Task progress,
+      final IntConsumer hitsPerFile,
       final CancelChecker cancelChecker) {
     final List<TransientAnalysis> analyses = session.transientAnalyses(sources, cancelChecker);
     cancelChecker.checkCanceled();
@@ -556,7 +558,7 @@ final class ReferenceSearch {
               .references(
                   analysis.analysis(), analysis.uri(), target, includeDeclaration, exposureFamily);
       results.add(found);
-      progress.advance(true, found.hits().size());
+      hitsPerFile.accept(found.hits().size());
     }
 
     return SearchHits.merge(results);
