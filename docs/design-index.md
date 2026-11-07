@@ -274,6 +274,10 @@ reused):
   through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
   Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
   `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
+- [Gradle Source Sets Beyond `main` and `test`](planned/lathe-gradle-source-sets.md) — **proposed (2026-11-07).**
+  A tree per source set (`classes-<name>`), each compiled against its own class path, a `testCode` flag in `lsp-params`
+  set by Gradle's own test convention, visibility between trees by class path; compares jdtls's folding (Buildship's Eclipse model).
+  Step 1 editor features, step 2 runs (TE-12).
 - [One Write Pass: Simplifying Recompilation](done/lathe-recompile-simplification.md) — every trigger (save,
   external change, rename commit, MCP query, startup) requests one pass that writes stale files a dependency
   level at a time and re-analyzes the affected open files once; removed the 50-file bulk threshold, the save
