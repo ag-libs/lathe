@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.server.run;
 
 import io.github.aglibs.lathe.core.launch.TestSelection;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import java.util.List;
 import java.util.Map;
 

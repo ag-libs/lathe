@@ -4,6 +4,7 @@ import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CachedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.StaticImportCandidates;
@@ -162,7 +163,7 @@ public final class CompletionEngine {
 
   // At a class-body member-declaration slot (inside a class, not inside a method body), the slot is
   // typically parsed as a type reference; offer override/implement stubs for the enclosing type's
-  // inherited methods alongside whatever the context produced (EG-015).
+  // inherited methods alongside whatever the context produced.
   private CompletionOutcome mergeOverrideCandidates(
       final CompletionOutcome outcome,
       final ParsedSentinel parsed,
@@ -204,7 +205,7 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var scope = TypeResolver.resolveScope(analysis, req.cursorOffset());
+    final var scope = ReceiverResolver.resolveScope(analysis, req.cursorOffset());
     final var candidates =
         new ImportCompletionProvider(analysis, scope)
             .proposeCandidates(parsed.receiverText(), injected.prefix());
@@ -294,7 +295,7 @@ public final class CompletionEngine {
             .toList();
 
     // Sealed `case` labels are the permitted subtypes only; skip the uppercase type-index merge
-    // that would otherwise re-add each subtype as a plain type candidate (EG-022).
+    // that would otherwise re-add each subtype as a plain type candidate.
     if (parsed.sentinelContext() == SentinelContext.CASE_LABEL && !sealedCaseCandidates.isEmpty()) {
       return new CompletionOutcome(items, null);
     }
@@ -319,7 +320,7 @@ public final class CompletionEngine {
       return withTypes;
     }
 
-    final var scope = TypeResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
+    final var scope = ReceiverResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
     final var staticFitCandidates =
         staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex(), scope);
     if (staticFitCandidates.isEmpty()) {
@@ -415,7 +416,7 @@ public final class CompletionEngine {
     }
 
     final TypeMirror type =
-        TypeResolver.resolvePrecedingExpressionType(
+        ReceiverResolver.resolvePrecedingExpressionType(
             injected.tokenStart(), semanticContext.analysis());
     return isReferenceTypeForInstanceof(type)
         ? List.of(KeywordProvider.keywordCandidate(INSTANCEOF_KEYWORD))
@@ -655,7 +656,7 @@ public final class CompletionEngine {
     }
 
     // A Class-typed value element (e.g. @ExtendWith's Class<? extends Extension>) expects a type
-    // name here, so offer type candidates alongside the value keywords (EG-038).
+    // name here, so offer type candidates alongside the value keywords.
     final var typeOutcome =
         typeReferenceCompleter.completeSimpleNameTypeReferenceWithLang(
             injected, req, TypeReferenceRole.ORDINARY);

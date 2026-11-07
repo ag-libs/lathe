@@ -252,8 +252,8 @@ class DefinitionLocatorTest extends SampleFixture {
       final var constantPath = pathAt(parsed.trees(), parsed.cu(), expression, "ACTIVE");
       final var typeLocation = definitionAt(parsed, typePath);
       final var constantLocation = definitionAt(parsed, constantPath);
-      final var typeParameter = SourceLocator.parameterElementAt(parsed.trees(), typePath);
-      final var constantParameter = SourceLocator.parameterElementAt(parsed.trees(), constantPath);
+      final var typeParameter = CursorElements.parameterElementAt(parsed.trees(), typePath);
+      final var constantParameter = CursorElements.parameterElementAt(parsed.trees(), constantPath);
 
       assertThat(typeLocation).isPresent();
       assertThat(typeLocation.get().getUri()).endsWith("EnumArgument.java");
@@ -293,8 +293,8 @@ class DefinitionLocatorTest extends SampleFixture {
   void locate_syntheticMember_sourceFileButNoDeclaration_returnsEmpty(@TempDir final Path tempDir)
       throws IOException {
     // A generated member (a record's synthetic toString) resolves to a source file but has no
-    // declaration site in it; definition must return no result rather than a file-top (0,0) jump
-    // (EG-049). toString is used rather than an accessor, which EG-047 redirects to its component.
+    // declaration site in it; definition must return no result rather than a file-top (0,0) jump.
+    // toString is used rather than an accessor, which definition redirects to its component.
     final var location =
         locateExternalMember(tempDir, "public record Point(int x, int y) {}", "Point", "toString");
 
@@ -405,7 +405,7 @@ class DefinitionLocatorTest extends SampleFixture {
   void locate_recordAccessor_externalFile_redirectsToComponent(@TempDir final Path tempDir)
       throws IOException {
     // A synthetic record accessor has no declaration site of its own; go-to-definition redirects it
-    // to the component in the record header rather than returning no result (EG-047).
+    // to the component in the record header rather than returning no result.
     final var location =
         locateExternalElement(
             tempDir,
@@ -423,9 +423,9 @@ class DefinitionLocatorTest extends SampleFixture {
   @Test
   void locate_explicitRecordAccessor_externalFile_returnsAccessorNotComponent(
       @TempDir final Path tempDir) throws IOException {
-    // A user-written accessor body has its own declaration site and resolves there; the EG-047
-    // redirect only fires for synthetic accessors (whose direct resolution is empty). The explicit
-    // "x()" is on line 1, distinct from the header component on line 0.
+    // A user-written accessor body has its own declaration site and resolves there; the
+    // record-accessor redirect only fires for synthetic accessors (whose direct resolution is
+    // empty). The explicit "x()" is on line 1, distinct from the header component on line 0.
     final var source =
         """
         public record Point(int x, int y) {
@@ -518,7 +518,7 @@ class DefinitionLocatorTest extends SampleFixture {
   }
 
   private Optional<Location> definitionAt(final TreePath path) {
-    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    final var element = CursorElements.elementAt(compiled.trees(), path);
     return new DefinitionLocator(compiled.parser())
         .locate(
             element, compiled.trees(), List.of(), compiled.cu().getSourceFile().toUri().toString());
@@ -526,7 +526,7 @@ class DefinitionLocatorTest extends SampleFixture {
 
   private static Optional<Location> definitionAt(
       final TestJavac.ParsedSource parsed, final TreePath path) {
-    final var element = SourceLocator.elementAt(parsed.trees(), path);
+    final var element = CursorElements.elementAt(parsed.trees(), path);
     return new DefinitionLocator(parsed.parser())
         .locate(element, parsed.trees(), List.of(), parsed.cu().getSourceFile().toUri().toString());
   }

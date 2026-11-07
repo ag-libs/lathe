@@ -10,6 +10,6 @@ abstract class WrittenSourceScanner extends TreePathScanner<Void, Void> {
 
   @Override
   public Void scan(final Tree tree, final Void unused) {
-    return SourceLocator.isGenerated(tree) ? null : super.scan(tree, unused);
+    return GeneratedCode.isGenerated(tree) ? null : super.scan(tree, unused);
   }
 }

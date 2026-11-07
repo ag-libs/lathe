@@ -32,19 +32,18 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("run");
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).hasSize(1);
@@ -72,7 +71,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("Box");
 
@@ -82,13 +81,12 @@ class CallHierarchyIncomingLocatorTest {
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls)
@@ -112,18 +110,17 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).isEmpty();
@@ -139,26 +136,24 @@ class CallHierarchyIncomingLocatorTest {
         class Runner { void run(Feature f) { f.setup(); } }
         """;
     // caret on the override 'setup' declaration in FeatureImpl
-    final var caret =
-        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var caret = Positions.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
     final var request = request(content, caret);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("setup");
 
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).hasSize(1);
@@ -176,27 +171,25 @@ class CallHierarchyIncomingLocatorTest {
         class Runner { void run(Unrelated u) { u.setup(); } }
         """;
     // caret on the override 'setup' declaration in FeatureImpl
-    final var caret =
-        SourceLocator.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
+    final var caret = Positions.offsetToPosition(content, content.indexOf("void setup() {}") + 5);
     final var request = request(content, caret);
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       // u.setup() targets Unrelated.setup(), which neither overrides nor is overridden by
       // FeatureImpl.setup(); it must not be reported.
       final List<CallHierarchyIncomingCall> calls =
           session
-              .searchIncomingCalls(
+              .references()
+              .incomingCalls(
+                  session.analysis(TempSourceCompiler.TEST_URI, content, 1, () -> {}),
                   TempSourceCompiler.TEST_URI,
-                  content,
-                  1,
                   targetFrom(items.get(0)),
-                  Set.of(),
-                  () -> {})
+                  Set.of())
               .hits();
 
       assertThat(calls).isEmpty();

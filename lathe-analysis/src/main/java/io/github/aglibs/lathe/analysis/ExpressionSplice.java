@@ -21,7 +21,7 @@ final class ExpressionSplice {
 
   /** The frame source with {@code var __LATHE_EVAL__ = (expression);} inserted at {@code line}. */
   static String at(final String content, final int oneBasedLine, final String expression) {
-    final int lineStart = SourceLocator.toOffset(content, oneBasedLine - 1, 0);
+    final int lineStart = Positions.toOffset(content, oneBasedLine - 1, 0);
     final String statement = "var %s = (%s);".formatted(SENTINEL, expression);
     return content.substring(0, lineStart) + statement + content.substring(lineStart);
   }

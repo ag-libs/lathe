@@ -1,21 +1,21 @@
 package io.github.aglibs.lathe.server;
 
+import io.github.aglibs.lathe.analysis.DeclarationNames;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.MissingImportsResult.MissingImport;
 import io.github.aglibs.lathe.analysis.RenameProvider;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.RunnableKind;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.TextMentions;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
-import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -34,6 +34,9 @@ import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
+import io.github.aglibs.lathe.server.engine.Noted;
+import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.Serial;
 import java.lang.module.ModuleDescriptor;
@@ -41,7 +44,6 @@ import java.lang.module.ModuleFinder;
 import java.lang.module.ModuleReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -100,8 +102,6 @@ public final class LatheEngine {
               descriptor.exports().stream()
                   .filter(exports -> !exports.isQualified())
                   .map(ModuleDescriptor.Exports::source));
-  private static final Comparator<Position> SOURCE_ORDER =
-      Comparator.comparingInt(Position::getLine).thenComparingInt(Position::getCharacter);
 
   // analyze_change classifies every reference, so it needs the full set, not a page. The cap is a
   // safety bound; LatheChangeImpact.referencesTruncated flags when it is exceeded.
@@ -110,10 +110,11 @@ public final class LatheEngine {
   // Every put creates a fresh generation, so the LSP version is irrelevant to freshness here.
   private static final int VERSION = 1;
 
-  private final LatheTextDocumentService service = new LatheTextDocumentService();
+  private final SessionHost host = new SessionHost();
   private final AtomicLong runToken = new AtomicLong();
   private final Path workspaceRoot;
   private final Path latheDir;
+  private final DiskEdits diskEdits;
 
   /**
    * What a {@link #runTest} call replays — the adapter between the MCP {@code scope} wire value and
@@ -139,24 +140,12 @@ public final class LatheEngine {
     public TestSelectionKind selectionKind() {
       return selectionKind;
     }
-
-    public String wireName() {
-      return name().toLowerCase(Locale.ROOT);
-    }
-
-    public static Optional<TestScope> from(final String wireName) {
-      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
-    }
   }
 
   /** Which way {@link #callHierarchy} walks: callers of the symbol, or callees it invokes. */
   public enum CallDirection {
     INCOMING,
-    OUTGOING;
-
-    public static Optional<CallDirection> from(final String wireName) {
-      return Arrays.stream(values()).filter(d -> d.name().equalsIgnoreCase(wireName)).findFirst();
-    }
+    OUTGOING
   }
 
   // Which code an answer covers: the reactor's own (generated sources included), or also the JDK
@@ -164,10 +153,6 @@ public final class LatheEngine {
   public enum SymbolScope {
     REACTOR,
     ALL;
-
-    public static Optional<SymbolScope> from(final String wireName) {
-      return Arrays.stream(values()).filter(s -> s.name().equalsIgnoreCase(wireName)).findFirst();
-    }
 
     public boolean includes(final LatheLocation.Origin origin) {
       return this == ALL || origin != LatheLocation.Origin.EXTERNAL;
@@ -177,38 +162,60 @@ public final class LatheEngine {
   public LatheEngine(final Path workspaceRoot) {
     this.workspaceRoot = workspaceRoot;
     this.latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    service.connect(new NoopLanguageClient());
-    // The engine moves files itself, so a public type's rename can move its declaring file.
-    service.setFileRenameSupported(true);
+    this.diskEdits =
+        new DiskEdits(
+            latheDir,
+            changed ->
+                request((session, cancel, progress) -> session.writePass().writeReported(changed)));
+    host.connect(new NoopLanguageClient());
     // Only the agent's tools touch the files, and they write the disk: no editor buffer to keep.
-    service.setDocumentsFollowDisk(true);
+    host.setDocumentsFollowDisk(true);
     // An agent cannot answer a prompt: a due sync stays in every answer's notes until a reload.
-    service.setInteractive(false);
+    host.setInteractive(false);
     // Every query scans first, so between them the scan only costs CPU.
-    service.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
-    service.useWorkspaceFormatter(workspaceRoot);
-    service.initialize(workspaceRoot);
+    host.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
+    // Resolved here, off the loop: it reads the style file and builds the formatter.
+    final FormatterSpec formatterSpec = FormatEngines.workspaceSpec(workspaceRoot);
+    final FormatEngine formatter =
+        formatterSpec == null ? null : FormatEngines.forSpec(formatterSpec, workspaceRoot);
+    host.execute(session -> session.formats().use(formatter, formatterSpec != null));
+    host.initialize(workspaceRoot);
   }
 
   /** Compiler diagnostics for {@code file} at its current on-disk content. */
-  public List<Diagnostic> diagnostics(final Path file) {
-    return fileRequest(
-        file,
-        (session, uri, diagnostics, cancel, progress) ->
-            CompletableFuture.completedFuture(diagnostics));
+  public Noted<List<LatheDiagnostic>> diagnostics(final Path file) {
+    final String path = displayPath(file, LatheUri.fromPath(file));
+    return noted(
+            List.of(file),
+            fileWork(
+                file,
+                (session, uri, found, cancel, progress) ->
+                    CompletableFuture.completedFuture(found)))
+        .map(
+            diagnostics ->
+                diagnostics.stream()
+                    .map(diagnostic -> LatheDiagnostic.of(path, diagnostic))
+                    .toList());
   }
 
   /**
    * Definition target(s) for the symbol at {@code line}/{@code column} (0-based), each enriched
    * with a source snippet and where it resolved.
    */
-  public List<LatheLocation> definition(final Path file, final int line, final int column) {
-    final var either =
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) -> session.definitionFuture(uri, pos));
+  public Noted<List<LatheLocation>> definition(final Path file, final int line, final int column) {
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.features().definitionFuture(uri, pos)))
+        .map(this::definitionLocations);
+  }
+
+  private List<LatheLocation> definitionLocations(
+      final Either<List<? extends Location>, List<? extends LocationLink>> either) {
     final List<? extends Location> locations = either.isLeft() ? either.getLeft() : List.of();
     return locations.stream().map(this::toLatheLocation).toList();
   }
@@ -217,16 +224,17 @@ public final class LatheEngine {
    * References to the symbol at {@code line}/{@code column} (0-based) across the reactor, each
    * enriched with a snippet, capped to {@code maxResults} with the true total for pagination.
    */
-  public LatheReferences references(
+  public Noted<LatheReferences> references(
       final Path file, final int line, final int column, final int maxResults) {
-    return capReferences(
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) ->
-                session.search().referencesFuture(uri, pos, true, cancel, progress)),
-        maxResults);
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.search().referencesFuture(uri, pos, true, cancel, progress)))
+        .map(locations -> capReferences(locations, maxResults));
   }
 
   private LatheReferences capReferences(
@@ -240,16 +248,17 @@ public final class LatheEngine {
    * Implementations of the interface (or overrides of the method) at {@code line}/{@code column}
    * (0-based) across the reactor, each enriched with a snippet, capped to {@code maxResults}.
    */
-  public LatheImplementations findImplementations(
+  public Noted<LatheImplementations> findImplementations(
       final Path file, final int line, final int column, final int maxResults) {
-    return capImplementations(
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) ->
-                session.search().implementationFuture(uri, pos)),
-        maxResults);
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.search().implementationFuture(uri, pos)))
+        .map(either -> capImplementations(either, maxResults));
   }
 
   private LatheImplementations capImplementations(
@@ -277,14 +286,15 @@ public final class LatheEngine {
   // class past a line's end, the enclosing method for a word in a comment. So the position tools
   // answer only on a name, and the tool goes on with the analysis that checked it, so the file is
   // compiled once.
-  private <T> T positionRequest(
+  private <T> SessionHost.LoopWork<T> positionWork(
       final Path file, final int line, final int column, final PositionWork<T> work) {
     requireWord(file, line, column);
     final var pos = new Position(line, column);
-    return fileRequest(
+    return fileWork(
         file,
         (session, uri, diagnostics, cancel, progress) ->
             session
+                .features()
                 .onNameFuture(uri, pos)
                 .thenCompose(
                     onName -> {
@@ -309,16 +319,23 @@ public final class LatheEngine {
 
   // One request for a file tool: freshen the workspace (what the agent wrote outside the editor),
   // compile the file as it is on disk, then the tool's work, chained.
-  private <T> T fileRequest(final Path file, final FileWork<T> work) {
+  private <T> SessionHost.LoopWork<T> fileWork(final Path file, final FileWork<T> work) {
     final String uri = LatheUri.fromPath(file);
     final String content = read(file);
+    return (session, cancel, progress) ->
+        session
+            .reconcileForVerify()
+            .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION))
+            .thenCompose(diagnostics -> work.start(session, uri, diagnostics, cancel, progress));
+  }
+
+  // A read tool's answer and the notes on the files it is about, in one request: the notes are
+  // read once the answer is computed, from the same state.
+  private <T> Noted<T> noted(final List<Path> files, final SessionHost.LoopWork<T> work) {
     return request(
         (session, cancel, progress) ->
-            session
-                .reconcileForVerify()
-                .thenCompose(outcome -> session.diagnosticsFuture(uri, content, VERSION))
-                .thenCompose(
-                    diagnostics -> work.start(session, uri, diagnostics, cancel, progress)));
+            work.start(session, cancel, progress)
+                .thenApply(value -> new Noted<T>(value, session.notes(files))));
   }
 
   // A read of session state as one request.
@@ -358,8 +375,8 @@ public final class LatheEngine {
         .map(
             text ->
                 text.substring(
-                    SourceLocator.identifierStart(text, column),
-                    SourceLocator.identifierEnd(text, column)))
+                    DeclarationNames.identifierStart(text, column),
+                    DeclarationNames.identifierEnd(text, column)))
         .filter(word -> Character.isJavaIdentifierStart(word.charAt(0)))
         .filter(word -> !SourceVersion.isKeyword(word));
   }
@@ -380,13 +397,15 @@ public final class LatheEngine {
    * The hover markdown for the symbol at {@code line}/{@code column} (0-based) — rendered signature
    * and javadoc — or empty when there is nothing to describe.
    */
-  public String describe(final Path file, final int line, final int column) {
-    return hoverText(
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) -> session.hoverFuture(uri, pos)));
+  public Noted<String> describe(final Path file, final int line, final int column) {
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) -> session.features().hoverFuture(uri, pos)))
+        .map(LatheEngine::hoverText);
   }
 
   private static String hoverText(final Hover hover) {
@@ -398,16 +417,16 @@ public final class LatheEngine {
   }
 
   // The file's types and their members in source order, each at its nesting depth.
-  public List<LatheOutlineItem> outline(final Path file) {
+  public Noted<List<LatheOutlineItem>> outline(final Path file) {
     final String uri = LatheUri.fromPath(file);
     // The file is registered and its analysis warmed before it is scanned.
-    return fileRequest(
-            file,
-            (session, fileUri, diagnostics, cancel, progress) ->
-                session.documentSymbolFuture(fileUri))
-        .stream()
-        .flatMap(symbol -> outlineItems(uri, symbol, 0))
-        .toList();
+    return noted(
+            List.of(file),
+            fileWork(
+                file,
+                (session, fileUri, diagnostics, cancel, progress) ->
+                    session.features().documentSymbolFuture(fileUri)))
+        .map(symbols -> symbols.stream().flatMap(symbol -> outlineItems(uri, symbol, 0)).toList());
   }
 
   private Stream<LatheOutlineItem> outlineItems(
@@ -429,27 +448,29 @@ public final class LatheEngine {
    * per-file warmup), each hit enriched with a snippet and where it lives, capped to {@code
    * maxResults}.
    */
-  public List<LatheSymbol> searchSymbols(
+  public Noted<List<LatheSymbol>> searchSymbols(
       final String query, final SymbolScope scope, final int maxResults) {
     // Agents write globs by habit; the search already matches a prefix.
     final String name = query.replaceAll("^\\*+|\\*+$", "");
     if (name.isBlank()) {
-      return List.of();
+      return new Noted<>(List.of(), notes(List.of()));
     }
 
     final boolean reactorOnly = scope == SymbolScope.REACTOR;
     // Freshened first, so types the agent just wrote are found.
-    final List<SymbolInformation> symbols =
-        request(
+    return noted(
+            List.of(),
             (session, cancel, progress) ->
                 session
                     .reconcileForVerify()
-                    .thenApply(outcome -> session.workspaceSymbol(name, reactorOnly)));
-    return symbols.stream()
-        .sorted(Comparator.comparingInt(this::rank))
-        .limit(maxResults)
-        .map(this::toLatheSymbol)
-        .toList();
+                    .thenApply(outcome -> session.features().workspaceSymbol(name, reactorOnly)))
+        .map(
+            symbols ->
+                symbols.stream()
+                    .sorted(Comparator.comparingInt(this::rank))
+                    .limit(maxResults)
+                    .map(this::toLatheSymbol)
+                    .toList());
   }
 
   // The reactor's types first, then the JDK's and dependencies', then JDK internals: hidden from a
@@ -505,12 +526,13 @@ public final class LatheEngine {
       final Path file, final int line, final int column, final String newName) {
     // The engine moves files itself, so a type's rename may move its file.
     final WorkspaceEdit edit =
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) ->
-                session.renames().renameFuture(uri, pos, newName, true, cancel, progress));
+        request(
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.renames().renameFuture(uri, pos, newName, true, cancel, progress)));
     final String oldName = wordAt(file, line, column).orElseThrow();
     final Map<String, List<TextEdit>> textEdits = RenameProvider.textEdits(edit);
     if (textEdits.isEmpty()) {
@@ -539,7 +561,12 @@ public final class LatheEngine {
                 })
             .sorted(Comparator.comparing(LatheFileEdit::uri))
             .toList();
-    writeAndCommit(textEdits, moves, files);
+    diskEdits.apply(
+        textEdits,
+        moves,
+        files.stream()
+            .map(written -> LatheUri.toPath(written.uri()))
+            .collect(Collectors.toUnmodifiableSet()));
     final int total = files.stream().mapToInt(LatheFileEdit::editCount).sum();
     // A rename changes only what resolves to the symbol: the name left as text is the agent's to
     // review, never edited here.
@@ -571,47 +598,19 @@ public final class LatheEngine {
 
   // Holds the reactor lock while writing, so an editor's server on the same workspace never
   // reconciles a half-written rename, and returns once the mirror holds the whole change.
-  private void writeAndCommit(
-      final Map<String, List<TextEdit>> textEdits,
-      final Map<String, String> moves,
-      final List<LatheFileEdit> files) {
-    IOUtil.unchecked(() -> LatheLock.acquire(LatheLayout.reactorLockFile(latheDir)));
-    try {
-      textEdits.forEach(LatheEngine::applyFileEdits);
-      moves.forEach(
-          (oldUri, newUri) ->
-              IOUtil.unchecked(() -> Files.move(LatheUri.toPath(oldUri), LatheUri.toPath(newUri))));
-      final Set<Path> changed =
-          files.stream()
-              .map(file -> LatheUri.toPath(file.uri()))
-              .collect(Collectors.toUnmodifiableSet());
-      request((session, cancel, progress) -> session.writePass().writeReported(changed));
-      // An editor's server on this workspace sees the files freshly stamped, so it would never
-      // re-index the renamed types; the touch makes it re-scan the mirror, as after a Maven sync.
-      final Path manifest = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
-      if (Files.exists(manifest)) {
-        IOUtil.unchecked(() -> FileUtil.touch(manifest));
-      }
-
-    } finally {
-      IOUtil.unchecked(() -> LatheLock.release(LatheLayout.reactorLockFile(latheDir)));
-    }
-  }
-
-  private static void applyFileEdits(final String uri, final List<TextEdit> edits) {
-    final var path = LatheUri.toPath(uri);
-    final String updated = SourceLocator.applyEdits(read(path), edits);
-    IOUtil.unchecked(() -> Files.writeString(path, updated));
-  }
 
   // Runs the formatter the project pins, as the editor's format-on-save does, and writes the result
   // like a rename. Empty when the file was already formatted.
   public Optional<LatheFormat> format(final Path file) {
     requireReactorFile(file);
-    diagnostics(file); // the formatter reads the file's document, so register it
     final String uri = LatheUri.fromPath(file);
-    // Through the LSP service, which holds the formatter the workspace resolved.
-    final List<TextEdit> edits = await(service.formatFuture(uri));
+    // The formatter reads the file's document, which the file request registers.
+    final List<TextEdit> edits =
+        request(
+            fileWork(
+                file,
+                (session, fileUri, diagnostics, cancel, progress) ->
+                    session.formats().formatOrRefuseFuture(fileUri)));
     if (edits.isEmpty()) {
       return Optional.empty();
     }
@@ -630,10 +629,11 @@ public final class LatheEngine {
     final String uri = LatheUri.fromPath(file);
     // Missing imports are read from the file's document, so it is registered first.
     final MissingImportsResult missing =
-        fileRequest(
-            file,
-            (session, fileUri, diagnostics, cancel, progress) ->
-                session.missingImportsFuture(fileUri));
+        request(
+            fileWork(
+                file,
+                (session, fileUri, diagnostics, cancel, progress) ->
+                    session.features().missingImportsFuture(fileUri)));
     final Map<Boolean, List<MissingImport>> byUnambiguous =
         missing.items().stream()
             .collect(Collectors.partitioningBy(item -> item.candidates().size() == 1));
@@ -652,10 +652,8 @@ public final class LatheEngine {
   }
 
   private String writeFile(final Path file, final String uri, final List<TextEdit> edits) {
-    final var edit =
-        new LatheFileEdit(uri, displayPath(file, uri), LatheLocation.Origin.REACTOR, edits.size());
-    writeAndCommit(Map.of(uri, edits), Map.of(), List.of(edit));
-    return edit.path();
+    diskEdits.apply(Map.of(uri, edits), Map.of(), Set.of(file));
+    return displayPath(file, uri);
   }
 
   // The formatter answers with one edit spanning what changed; its lines in the formatted file.
@@ -683,16 +681,20 @@ public final class LatheEngine {
    * against the compiled classpath, no reactor build. Resolves the target from the file's runnables
    * so it reuses the editor's selection mapping.
    */
-  public LatheTestRun runTest(final Path file, final TestScope scope, final String method) {
-    final TestFacts facts =
-        fileRequest(
-            file,
-            (session, uri, diagnostics, cancel, progress) -> {
-              final Optional<String> failing = session.verifier().failingUnder(file);
-              return session
-                  .runnablesFuture(uri)
-                  .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
-            });
+  public Noted<LatheTestRun> runTest(final Path file, final TestScope scope, final String method) {
+    final Noted<TestFacts> read =
+        noted(
+            List.of(file),
+            fileWork(
+                file,
+                (session, uri, diagnostics, cancel, progress) -> {
+                  final Optional<String> failing = session.verifier().failingUnder(file);
+                  return session
+                      .features()
+                      .runnablesFuture(uri)
+                      .thenApply(targets -> new TestFacts(failing.orElse(null), targets));
+                }));
+    final TestFacts facts = read.value();
     // Replaying the last good classes would answer for code that is no longer there.
     facts
         .failing()
@@ -704,7 +706,7 @@ public final class LatheEngine {
             });
     final List<RunTarget> targets = facts.targets();
     if (targets.isEmpty()) {
-      throw new Refused(noTests(file));
+      throw new Refused(noTests(file, read.notes()));
     }
 
     final List<RunTarget> selected = selectTargets(targets, scope, method, file);
@@ -714,23 +716,26 @@ public final class LatheEngine {
             .toList();
     final String token = "mcp-run-%d".formatted(runToken.incrementAndGet());
     final String moduleRel = selected.get(0).moduleRel();
-    return LatheTestRun.from(
-        request(
-            (session, cancel, progress) ->
-                session.runs().runTestFuture(moduleRel, selections, token)),
-        selected.stream().map(RunTarget::id).toList());
+    return new Noted<>(
+        LatheTestRun.from(
+            request(
+                (session, cancel, progress) ->
+                    session.runs().runTestFuture(moduleRel, selections, token)),
+            selected.stream().map(RunTarget::id).toList()),
+        read.notes());
   }
 
   // Why a file runs nothing: no module compiles it (the note says why), or it holds no test, and
   // then its test class when the reactor has one by the usual name.
-  private String noTests(final Path file) {
+  private String noTests(final Path file, final LatheNotes notes) {
     final String name = FileUtil.javaTypeName(file);
     final Set<String> testNames = Set.of("%sTest".formatted(name), "%sTests".formatted(name));
-    return notes(List.of(file)).notChecked().stream()
+    return notes.notChecked().stream()
         .findFirst()
         .orElseGet(
             () ->
                 searchSymbols("%sTest".formatted(name), SymbolScope.REACTOR, TEST_CLASS_CANDIDATES)
+                    .value()
                     .stream()
                     .filter(symbol -> testNames.contains(symbol.name()))
                     .findFirst()
@@ -755,7 +760,8 @@ public final class LatheEngine {
       throw new Refused(
           scope == TestScope.METHOD
               ? "no test method '%s' in %s".formatted(method, file.getFileName())
-              : "no %s test target in %s".formatted(scope.wireName(), file.getFileName()));
+              : "no %s test target in %s"
+                  .formatted(scope.name().toLowerCase(Locale.ROOT), file.getFileName()));
     }
 
     final long outermost =
@@ -774,29 +780,36 @@ public final class LatheEngine {
    * callers ({@code INCOMING}) or the methods it calls ({@code OUTGOING}), each with a snippet.
    * Follows the real cross-module call graph, not text.
    */
-  public LatheCallHierarchy callHierarchy(
+  public Noted<LatheCallHierarchy> callHierarchy(
       final Path file,
       final int line,
       final int column,
       final CallDirection direction,
       final SymbolScope scope,
       final int maxResults) {
-    final List<CallHierarchyItem> items =
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) ->
-                session.search().prepareCallHierarchyFuture(uri, pos));
     final boolean incoming = direction == CallDirection.INCOMING;
-    if (items.isEmpty()) {
-      return new LatheCallHierarchy(incoming, 0, false, List.of());
-    }
+    return noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session.search().prepareCallHierarchyFuture(uri, pos)))
+        .map(
+            items -> {
+              if (items.isEmpty()) {
+                return new LatheCallHierarchy(incoming, 0, false, List.of());
+              }
 
-    final List<LatheCall> all =
-        incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0), scope);
-    return new LatheCallHierarchy(
-        incoming, all.size(), all.size() > maxResults, all.stream().limit(maxResults).toList());
+              final List<LatheCall> all =
+                  incoming ? incomingCalls(items.get(0)) : outgoingCalls(items.get(0), scope);
+              return new LatheCallHierarchy(
+                  incoming,
+                  all.size(),
+                  all.size() > maxResults,
+                  all.stream().limit(maxResults).toList());
+            });
   }
 
   // One LatheCall per call site (a caller may invoke the symbol at several ranges).
@@ -817,7 +830,9 @@ public final class LatheEngine {
         .stream()
         .filter(call -> scope.includes(origin(LatheUri.toPath(call.getTo().getUri()))))
         .flatMap(call -> callSites(call.getTo().getName(), item.getUri(), call.getFromRanges()))
-        .sorted(Comparator.comparing(call -> call.location().range().getStart(), SOURCE_ORDER))
+        .sorted(
+            Comparator.comparingInt((LatheCall call) -> call.location().line())
+                .thenComparingInt(call -> call.location().column()))
         .toList();
   }
 
@@ -828,8 +843,11 @@ public final class LatheEngine {
   }
 
   // The reactor's modules, each with the reactor modules it depends on and its test-launch capture.
-  public List<LatheModuleSummary> modules() {
-    return query(session -> session.verifier().moduleSummaries());
+  public Noted<List<LatheModuleSummary>> modules() {
+    return noted(
+        List.of(),
+        (session, cancel, progress) ->
+            CompletableFuture.completedFuture(session.verifier().moduleSummaries()));
   }
 
   // Recompiles the change set and its callers in-process; Lathe never runs the build, it names the
@@ -849,7 +867,7 @@ public final class LatheEngine {
           outcome.deferral() == ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING
               ? null
               : LatheLayout.SYNC_SCRIPT_COMMAND;
-      return new LatheVerifyChange(outcome.deferral().name(), List.of(), List.of(), sync);
+      return new LatheVerifyChange(outcome.deferral(), List.of(), List.of(), sync);
     }
 
     if (plan.changed().isEmpty()) {
@@ -894,11 +912,6 @@ public final class LatheEngine {
         null, perModule, plan.downstream(), syncFor(plan.downstream(), plan.moduleCount()));
   }
 
-  // What verify_change checks, read in one go on the loop once the workspace is fresh. With no
-  // files: what changed on disk, what the tools wrote themselves (already stamped), and every
-  // earlier change not yet built, so a break stays reported until it is fixed. A file put back to
-  // what the last build compiled is no change.
-
   // Compiles every file as a transient check, side by side on their modules' workers, and answers
   // once all are done.
   private static CompletableFuture<Map<String, List<Diagnostic>>> checkAll(
@@ -908,6 +921,7 @@ public final class LatheEngine {
                 .map(
                     entry ->
                         session
+                            .features()
                             .diagnosticsTransientFuture(entry.getKey(), entry.getValue())
                             .thenApply(
                                 diagnostics -> List.of(Map.entry(entry.getKey(), diagnostics)))))
@@ -941,7 +955,7 @@ public final class LatheEngine {
     return files.stream()
         .flatMap(
             file -> reportedIn(file, changed.contains(file), analyses.get(LatheUri.fromPath(file))))
-        .sorted(Comparator.comparing(located -> located.diagnostic().getSeverity()))
+        .sorted(Comparator.comparing(LatheDiagnostic::severity))
         .toList();
   }
 
@@ -950,7 +964,7 @@ public final class LatheEngine {
     final String path = displayPath(file, LatheUri.fromPath(file));
     return diagnostics.stream()
         .filter(diagnostic -> reported(diagnostic, changedFile))
-        .map(diagnostic -> new LatheDiagnostic(path, diagnostic));
+        .map(diagnostic -> LatheDiagnostic.of(path, diagnostic));
   }
 
   private static boolean reported(final Diagnostic diagnostic, final boolean changedFile) {
@@ -964,29 +978,35 @@ public final class LatheEngine {
    * family, production vs test reference counts, the reactor modules that use it, and the relevant
    * test classes. Read-only — composes definition/reference analysis, no compile of the change.
    */
-  public LatheChangeImpact analyzeChange(final Path file, final int line, final int column) {
-    final ChangeFacts facts =
-        positionRequest(
-            file,
-            line,
-            column,
-            (session, uri, pos, cancel, progress) ->
-                session
-                    .hoverFuture(uri, pos)
-                    .thenCompose(
-                        hover ->
-                            session
-                                .search()
-                                .implementationFuture(uri, pos)
-                                .thenCompose(
-                                    implementations ->
-                                        session
-                                            .search()
-                                            .referencesFuture(uri, pos, true, cancel, progress)
-                                            .thenApply(
-                                                references ->
-                                                    new ChangeFacts(
-                                                        hover, implementations, references)))));
+  public Noted<LatheChangeImpact> analyzeChange(final Path file, final int line, final int column) {
+    final Noted<ChangeFacts> read =
+        noted(
+            List.of(file),
+            positionWork(
+                file,
+                line,
+                column,
+                (session, uri, pos, cancel, progress) ->
+                    session
+                        .features()
+                        .hoverFuture(uri, pos)
+                        .thenCompose(
+                            hover ->
+                                session
+                                    .search()
+                                    .implementationFuture(uri, pos)
+                                    .thenCompose(
+                                        implementations ->
+                                            session
+                                                .search()
+                                                .referencesFuture(uri, pos, true, cancel, progress)
+                                                .thenApply(
+                                                    references ->
+                                                        new ChangeFacts(
+                                                            hover,
+                                                            implementations,
+                                                            references))))));
+    final ChangeFacts facts = read.value();
     final String signature = hoverText(facts.hover());
     final List<LatheLocation> overrideFamily =
         capImplementations(facts.implementations(), IMPACT_MAX_RESULTS).implementations();
@@ -1015,14 +1035,16 @@ public final class LatheEngine {
       }
     }
 
-    return new LatheChangeImpact(
-        signature,
-        overrideFamily,
-        production,
-        test,
-        refs.truncated(),
-        List.copyOf(affectedModules),
-        List.copyOf(relevantTests));
+    return new Noted<>(
+        new LatheChangeImpact(
+            signature,
+            overrideFamily,
+            production,
+            test,
+            refs.truncated(),
+            List.copyOf(affectedModules),
+            List.copyOf(relevantTests)),
+        read.notes());
   }
 
   // What analyze_change reads about the symbol, in one request: its hover, its override family and
@@ -1040,10 +1062,6 @@ public final class LatheEngine {
     }
   }
 
-  // An agent edits files with its own tools, outside the editor's change events, and queries right
-  // after, before the idle reconcile tick has caught up: freshen the mirror first so cross-file
-  // answers see those edits. What the pass could not write (code that does not compile, a pending
-  // build-file sync, a running build) answers from the current mirror, as notes() reports.
   // What run_test reads before it picks the tests: whether code the file runs fails to compile,
   // and the file's runnable targets.
   private record TestFacts(String failure, List<RunTarget> targets) {
@@ -1063,7 +1081,7 @@ public final class LatheEngine {
   }
 
   public void close() {
-    service.close();
+    host.close();
   }
 
   private LatheLocation toLatheLocation(final Location location) {
@@ -1071,7 +1089,8 @@ public final class LatheEngine {
     return new LatheLocation(
         location.getUri(),
         displayPath(targetPath, location.getUri()),
-        location.getRange(),
+        location.getRange().getStart().getLine(),
+        location.getRange().getStart().getCharacter(),
         origin(targetPath),
         snippet(targetPath, location.getRange()));
   }
@@ -1102,8 +1121,8 @@ public final class LatheEngine {
   }
 
   // One request: the work runs on the event loop as a single composed chain.
-  private <T> T request(final LatheTextDocumentService.LoopWork<T> work) {
-    return await(service.onLoopCompose(work));
+  private <T> T request(final SessionHost.LoopWork<T> work) {
+    return await(host.onLoopCompose(null, work));
   }
 
   private static <T> T await(final CompletableFuture<T> future) {

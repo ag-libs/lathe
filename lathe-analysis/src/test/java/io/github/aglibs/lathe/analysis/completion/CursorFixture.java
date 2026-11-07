@@ -1,5 +1,6 @@
 package io.github.aglibs.lathe.analysis.completion;
 
+import io.github.aglibs.lathe.analysis.Cursor;
 import org.eclipse.lsp4j.Position;
 
 final class CursorFixture {

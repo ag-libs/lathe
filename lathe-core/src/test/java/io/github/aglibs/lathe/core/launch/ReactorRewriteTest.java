@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.core.launch;
 
-import static io.github.aglibs.lathe.core.launch.TestPaths.os;
+import static io.github.aglibs.lathe.core.testing.TestPaths.os;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.schema.OutputData;

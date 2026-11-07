@@ -87,7 +87,6 @@ public final class ServerInstaller {
     }
 
     updateLatest();
-    removeLegacyCurrentLink();
     return versionDir;
   }
 
@@ -96,20 +95,6 @@ public final class ServerInstaller {
       LauncherCopier.copyNewestToLatest(LatheLayout.serversDir(), LatheLayout.latestDir());
     } catch (final IOException e) {
       LOG.debug("[server] could not update latest: %s".formatted(e.getMessage()));
-    }
-  }
-
-  // Deletes a leftover `current` symlink so an un-upgraded client fails loudly rather than silently
-  // running a stale server. Guarded to a symlink so a real directory is never removed.
-  private void removeLegacyCurrentLink() {
-    final Path currentLink = LatheLayout.legacyCurrentLink();
-    try {
-      if (Files.isSymbolicLink(currentLink)) {
-        Files.delete(currentLink);
-        LOG.info("[server] removed stale current symlink");
-      }
-    } catch (final IOException e) {
-      LOG.debug("[server] could not remove stale current symlink: %s".formatted(e.getMessage()));
     }
   }
 

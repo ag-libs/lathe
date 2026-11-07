@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
@@ -85,7 +85,7 @@ class SourceLocatorTest extends SampleFixture {
   void declarationPath_resolves_correct_overload() {
     // String overload of "overloaded" (0-based line 62)
     final var stringElement = elementAt(62, 16);
-    final var stringPath = SourceLocator.declarationPath(compiled.cu(), stringElement);
+    final var stringPath = SourceParser.declarationPath(compiled.cu(), stringElement);
     assertThat(stringPath).isNotNull();
     assertThat(
             compiled
@@ -100,7 +100,7 @@ class SourceLocatorTest extends SampleFixture {
 
     // int overload of "overloaded" (0-based line 66)
     final var intElement = elementAt(66, 13);
-    final var intPath = SourceLocator.declarationPath(compiled.cu(), intElement);
+    final var intPath = SourceParser.declarationPath(compiled.cu(), intElement);
     assertThat(intPath).isNotNull();
     assertThat(
             compiled
@@ -360,8 +360,8 @@ class SourceLocatorTest extends SampleFixture {
 
       for (final String name : List.of("RED", "GREEN")) {
         final var path =
-            SourceLocator.pathAt(analysis.trees(), analysis.tree(), source.indexOf(name) + 1);
-        final var element = SourceLocator.elementAt(analysis.trees(), path);
+            CursorElements.pathAt(analysis.trees(), analysis.tree(), source.indexOf(name) + 1);
+        final var element = CursorElements.elementAt(analysis.trees(), path);
 
         assertThat(element).as(name).isNotNull();
         assertThat(element.getKind()).as(name).isEqualTo(ElementKind.ENUM_CONSTANT);
@@ -377,10 +377,10 @@ class SourceLocatorTest extends SampleFixture {
       final int nameColumn,
       final String name) {
     final long declared = REPEATED_NAMES.indexOf(context) + nameColumn;
-    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), declared);
+    final var path = CursorElements.pathAt(analysis.trees(), analysis.tree(), declared);
 
     assertThat(
-            SourceLocator.declarationNameOffset(
+            DeclarationNames.declarationNameOffset(
                 REPEATED_NAMES,
                 analysis.trees().getSourcePositions(),
                 analysis.tree(),
@@ -452,9 +452,9 @@ class SourceLocatorTest extends SampleFixture {
       final int column,
       final boolean expected) {
     final long offset = WORDS.indexOf(context) + column;
-    final var path = SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset);
+    final var path = CursorElements.pathAt(analysis.trees(), analysis.tree(), offset);
 
-    assertThat(IOUtil.unchecked(() -> SourceLocator.onName(analysis, path, offset)))
+    assertThat(IOUtil.unchecked(() -> DeclarationNames.onName(analysis, path, offset)))
         .as("%s at %d", context, column)
         .isEqualTo(expected);
   }
@@ -502,7 +502,7 @@ class SourceLocatorTest extends SampleFixture {
     final long start = positions.getStartPosition(compiled.cu(), classTree);
     final long end = positions.getEndPosition(compiled.cu(), classTree);
 
-    final var range = SourceLocator.range(compiled.trees(), compiled.cu(), classTree);
+    final var range = Positions.range(compiled.trees(), compiled.cu(), classTree);
 
     assertThat(range.getStart()).isEqualTo(offsetToPosition(compiled.cu(), start));
     assertThat(range.getEnd()).isEqualTo(offsetToPosition(compiled.cu(), end));

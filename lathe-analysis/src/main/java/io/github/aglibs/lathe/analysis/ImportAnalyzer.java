@@ -33,17 +33,15 @@ public final class ImportAnalyzer {
                 imp ->
                     new ImportLayout.ImportLine(
                         spelling(imp),
-                        SourceLocator.offsetToPosition(cu, positions.getStartPosition(cu, imp)),
-                        SourceLocator.offsetToPosition(cu, positions.getEndPosition(cu, imp))))
+                        Positions.offsetToPosition(cu, positions.getStartPosition(cu, imp)),
+                        Positions.offsetToPosition(cu, positions.getEndPosition(cu, imp))))
             .toList();
     final long packageEnd =
         cu.getPackage() == null ? -1 : positions.getEndPosition(cu, cu.getPackage());
     return Optional.of(
         new ImportLayout(
             lines,
-            packageEnd < 0
-                ? ImportLayout.NO_PACKAGE
-                : SourceLocator.offsetToPosition(cu, packageEnd)));
+            packageEnd < 0 ? ImportLayout.NO_PACKAGE : Positions.offsetToPosition(cu, packageEnd)));
   }
 
   private static String spelling(final ImportTree imp) {

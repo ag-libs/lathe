@@ -94,9 +94,9 @@ class MavenJvmArgsTest {
   }
 
   private void writeJvmConfig(final String content) throws Exception {
-    final var mvnDir = workspaceRoot.resolve(LatheLayout.Maven.MVN_DIR);
+    final var mvnDir = workspaceRoot.resolve(MavenJvmArgs.MVN_DIR);
     Files.createDirectories(mvnDir);
-    Files.writeString(mvnDir.resolve(LatheLayout.Maven.MVN_JVM_CONFIG_FILE), content);
+    Files.writeString(mvnDir.resolve(MavenJvmArgs.MVN_JVM_CONFIG_FILE), content);
   }
 
   // The first configuration is plugin-level; any further ones become executions.

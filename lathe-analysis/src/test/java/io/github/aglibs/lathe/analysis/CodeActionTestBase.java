@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
+import static io.github.aglibs.lathe.analysis.Positions.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -81,8 +81,8 @@ abstract class CodeActionTestBase {
     final int start = marked.indexOf('«');
     final int end = marked.indexOf('»') - 1;
     final String source = unmarked(marked);
-    final Position from = SourceLocator.offsetToPosition(source, start);
-    final Position to = SourceLocator.offsetToPosition(source, end);
+    final Position from = Positions.offsetToPosition(source, start);
+    final Position to = Positions.offsetToPosition(source, end);
     return extractActionsSpanning(
         source, from.getLine(), from.getCharacter(), to.getLine(), to.getCharacter());
   }
@@ -136,14 +136,16 @@ abstract class CodeActionTestBase {
       final int endChar) {
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var range = new Range(new Position(startLine, startChar), new Position(endLine, endChar));
-    return session.codeAction(
-        TempSourceCompiler.TEST_URI,
-        source,
-        1,
-        range,
-        List.of(),
-        typeIndex,
-        LearnedStaticImports.empty());
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            range,
+            List.of(),
+            typeIndex,
+            LearnedStaticImports.empty());
   }
 
   protected static List<TextEdit> editsOfActionStartingWith(
@@ -168,14 +170,16 @@ abstract class CodeActionTestBase {
 
   protected List<Either<Command, CodeAction>> diagnosticActions(
       final String source, final List<Diagnostic> diags) {
-    return session.codeAction(
-        TempSourceCompiler.TEST_URI,
-        source,
-        1,
-        rangeAt(0, 0),
-        toRequests(diags),
-        typeIndex,
-        LearnedStaticImports.empty());
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            typeIndex,
+            LearnedStaticImports.empty());
   }
 
   protected static Range rangeAt(final int line, final int character) {

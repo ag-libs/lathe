@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.LatheLock;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
@@ -113,5 +114,27 @@ class OpenJdkSyncTest {
   private static void write(final Path file, final String content) throws IOException {
     Files.createDirectories(file.getParent());
     Files.writeString(file, content);
+  }
+
+  // The whole sync runs under .lathe/'s build lock, which a first sync creates .lathe/ to hold,
+  // and which is released after, the sync failing or not.
+  @Test
+  void underBuildLock_firstSync_holdsTheLockThroughTheWorkAndReleasesIt() throws Exception {
+    final Path lock = LatheLayout.reactorLockFile(root.resolve(LatheLayout.LATHE_DIR));
+    final var heldDuringWork = new boolean[1];
+
+    OpenJdkSync.underBuildLock(root, () -> heldDuringWork[0] = LatheLock.isBuilding(lock));
+    assertThat(heldDuringWork[0]).isTrue();
+    assertThat(LatheLock.isBuilding(lock)).isFalse();
+
+    assertThatThrownBy(
+            () ->
+                OpenJdkSync.underBuildLock(
+                    root,
+                    () -> {
+                      throw new IOException("make failed");
+                    }))
+        .hasMessage("make failed");
+    assertThat(LatheLock.isBuilding(lock)).isFalse();
   }
 }

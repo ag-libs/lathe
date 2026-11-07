@@ -1,7 +1,6 @@
 package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.install.SyncException;
 import javax.inject.Inject;
 import org.apache.maven.execution.MavenSession;
@@ -22,6 +21,8 @@ import org.eclipse.aether.RepositorySystem;
     threadSafe = true)
 public final class SyncMojo extends AbstractMojo {
 
+  private static final String SYNC_COMMAND = "mvn %s".formatted(MavenSyncScript.SYNC_PHASE);
+
   @Inject private RepositorySystem repositorySystem;
 
   @Parameter(defaultValue = "${session}", readonly = true, required = true)
@@ -32,8 +33,7 @@ public final class SyncMojo extends AbstractMojo {
     if (session.getRequest().getGoals().stream().anyMatch(g -> g.contains("lathe:sync"))) {
       getLog()
           .warn(
-              "[sync] direct invocation is not supported — run %s instead"
-                  .formatted(LatheLayout.Maven.SYNC_COMMAND));
+              "[sync] direct invocation is not supported — run %s instead".formatted(SYNC_COMMAND));
       return;
     }
 

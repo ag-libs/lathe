@@ -219,6 +219,6 @@ final class RunnableScanner extends TreePathScanner<Void, Void> {
   }
 
   private Range range(final Tree node) {
-    return SourceLocator.range(analysis.trees(), analysis.tree(), node);
+    return Positions.range(analysis.trees(), analysis.tree(), node);
   }
 }

@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.run.TestSource;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.nio.file.Files;

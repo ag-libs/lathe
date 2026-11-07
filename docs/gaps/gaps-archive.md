@@ -12946,7 +12946,7 @@ Claude Code, Codex CLI and VS Code Copilot give the model the structured content
 Gemini CLI and Cursor give it only the text (Codex, VS Code and Gemini checked in their sources).
 The spec says nothing about which part reaches the model, so text is the only form every client shows alike,
 and no client relies on the structured form without an `outputSchema`.
-Survey: [MCP answers an agent can trust](../planned/lathe-mcp-trust.md).
+Survey: [MCP answers an agent can trust](../done/lathe-mcp-trust.md).
 
 ### Resolution
 

@@ -140,7 +140,8 @@ public final class TokenScanner extends WrittenSourceScanner {
     }
     final long annotationStart = positions.getStartPosition(cu, node);
     if (annotationStart >= 0) {
-      final long namePos = SourceLocator.findIdentifierFrom(content, annotationStart, simpleName);
+      final long namePos =
+          DeclarationNames.findIdentifierFrom(content, annotationStart, simpleName);
       if (namePos >= 0) {
         addToken(namePos, simpleName.length(), "annotation", Set.of());
       }
@@ -212,7 +213,7 @@ public final class TokenScanner extends WrittenSourceScanner {
       final String type,
       final Set<String> baseModifiers) {
     final long namePos =
-        SourceLocator.declarationNameOffset(content, positions, cu, declaration, name);
+        DeclarationNames.declarationNameOffset(content, positions, cu, declaration, name);
     if (namePos < 0) {
       return;
     }
@@ -239,7 +240,7 @@ public final class TokenScanner extends WrittenSourceScanner {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    // The exact element of this selector — not SourceLocator.elementAt, which climbs a package
+    // The exact element of this selector — not CursorElements.elementAt, which climbs a package
     // qualifier up to the enclosing type and would mislabel `java.util` in `java.util.List` as a
     // type. A package selector resolves to a PACKAGE here and emits no token.
     final var element = trees.getElement(getCurrentPath());
@@ -323,7 +324,7 @@ public final class TokenScanner extends WrittenSourceScanner {
     if (absoluteOffset < 0 || length <= 0) {
       return;
     }
-    final var lspPos = SourceLocator.offsetToPosition(cu, absoluteOffset);
+    final var lspPos = Positions.offsetToPosition(cu, absoluteOffset);
     tokens.add(new SemanticToken(lspPos.getLine(), lspPos.getCharacter(), length, type, modifiers));
   }
 }

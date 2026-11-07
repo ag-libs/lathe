@@ -53,13 +53,17 @@ public final class SyncMojo extends AbstractMojo {
         getLog().info("[discover] build %s selected".formatted(buildPath));
       }
 
-      OpenJdkSync.sync(
-          buildPath,
+      OpenJdkSync.underBuildLock(
           Path.of(workspaceRoot),
-          PluginProps.version(),
-          session.getSystemProperties(),
-          getLog()::info);
-      installServer();
+          () -> {
+            OpenJdkSync.sync(
+                buildPath,
+                Path.of(workspaceRoot),
+                PluginProps.version(),
+                session.getSystemProperties(),
+                getLog()::info);
+            installServer();
+          });
     } catch (final IOException e) {
       throw new MojoExecutionException("lathe openjdk sync failed", e);
     } catch (final SyncException e) {

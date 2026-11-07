@@ -37,15 +37,7 @@ class TypeIndexFileTest {
         new DependencyTypeIndexOrigin("com.example:lib:1", "/repo/lib.jar", 1, 2);
     final var jdk = new JdkTypeIndexOrigin("/jdk", "Vendor", "21");
 
-    assertThatThrownBy(
-            () -> new TypeIndexOrigin(TypeIndexOriginKind.DEPENDENCY, dependency, jdk, null))
+    assertThatThrownBy(() -> new TypeIndexOrigin(TypeIndexOriginKind.DEPENDENCY, dependency, jdk))
         .hasMessageContaining("jdk");
-  }
-
-  @Test
-  void constructor_reactorOrigin_requiresSourceTree() {
-    assertThatThrownBy(
-            () -> new ReactorTypeIndexOrigin("app", null, "/workspace/.lathe/app/classes"))
-        .hasMessageContaining("sourceTree");
   }
 }

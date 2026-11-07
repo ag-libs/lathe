@@ -285,7 +285,7 @@ class WorkspaceSymbolTest {
     assertThat(SymbolKinds.fromTypeIndex(TypeKind.UNKNOWN)).isEqualTo(SymbolKind.Class);
   }
 
-  // --- EG-033: declaration position ---
+  // --- declaration position ---
 
   @Test
   void resolve_class_rangePointsToDeclaration() throws IOException {

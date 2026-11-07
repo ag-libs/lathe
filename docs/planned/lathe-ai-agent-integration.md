@@ -244,7 +244,7 @@ MC-21 to MC-25 shipped on 2026-10-24 ([Agent Tools](../done/lathe-agent-tools.md
 | EG-064 | Code lens (reference counts, run/debug) | jdtls / vscode-java |
 
 Already planned elsewhere, and confirmed as table stakes by the review: `textDocument/typeDefinition`
-([lathe-type-definition.md](lathe-type-definition.md)), inlay hints and `selectionRange`
+([lathe-type-definition.md](../done/lathe-type-definition.md)), inlay hints and `selectionRange`
 ([EG-018](../gaps/gaps.md#eg-018--textdocumentselectionrange-not-implemented)) in the
 [roadmap](../roadmap.md).
 

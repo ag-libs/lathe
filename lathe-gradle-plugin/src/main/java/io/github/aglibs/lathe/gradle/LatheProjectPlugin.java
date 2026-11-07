@@ -62,6 +62,10 @@ import org.gradle.util.GradleVersion;
 // project's latheWorkspace merges.
 public class LatheProjectPlugin implements Plugin<Project> {
 
+  private static final String BUILD_SRC_DIR = "buildSrc";
+  // The daemon's JVM options; module-access flags there reach a compile that runs in the daemon.
+  private static final String DAEMON_JVM_ARGS_PROPERTY = "org.gradle.jvmargs";
+
   static final String WORKSPACE_TASK = "latheWorkspace";
   static final String FACTS_TASK = "latheFacts";
   private static final String FACTS_USAGE = "io.github.ag-libs.lathe-facts";
@@ -196,10 +200,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                               .map(File::getPath)
                               .toList());
                   task.getDaemonJvmArgs()
-                      .set(
-                          project
-                              .getProviders()
-                              .gradleProperty(LatheLayout.Gradle.DAEMON_JVM_ARGS_PROPERTY));
+                      .set(project.getProviders().gradleProperty(DAEMON_JVM_ARGS_PROPERTY));
                 });
     project
         .getTasks()
@@ -222,7 +223,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
 
   // buildSrc/ and every included build: where Gradle builds keep their compiler settings.
   private static List<String> buildLogicDirs(final Project project) {
-    final File buildSrc = new File(project.getRootDir(), LatheLayout.Gradle.BUILD_SRC_DIR);
+    final File buildSrc = new File(project.getRootDir(), BUILD_SRC_DIR);
     return Stream.concat(
             Stream.of(buildSrc).filter(File::isDirectory),
             project.getGradle().getIncludedBuilds().stream().map(IncludedBuild::getProjectDir))

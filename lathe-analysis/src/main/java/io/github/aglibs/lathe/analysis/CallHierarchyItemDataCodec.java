@@ -1,6 +1,13 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.google.gson.JsonObject;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.Trees;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -8,12 +15,65 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyItem;
+import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.SymbolKind;
 
 public final class CallHierarchyItemDataCodec {
 
   private CallHierarchyItemDataCodec() {}
+
+  // The item for a method or constructor declared in an attributed file: its whole declaration as
+  // the range, its name as the selection (the declaration's start when the name is not found).
+  static CallHierarchyItem itemAt(
+      final Element element,
+      final String uri,
+      final TreePath declaration,
+      final Trees trees,
+      final Types types,
+      final Elements elements) {
+    final CompilationUnitTree cu = declaration.getCompilationUnit();
+    final var positions = trees.getSourcePositions();
+    final var rangeStart =
+        Positions.offsetToPosition(cu, positions.getStartPosition(cu, declaration.getLeaf()));
+    final var rangeEnd =
+        Positions.offsetToPosition(cu, positions.getEndPosition(cu, declaration.getLeaf()));
+    final var displayName = DeclarationNames.declarationName(element).toString();
+    Position nameStart;
+    try {
+      nameStart =
+          DeclarationNames.declarationNamePosition(trees, cu, declaration, displayName)
+              .orElse(rangeStart);
+    } catch (final IOException e) {
+      nameStart = rangeStart;
+    }
+
+    return buildItem(
+        element,
+        uri,
+        new Range(rangeStart, rangeEnd),
+        Positions.nameRange(nameStart, displayName),
+        types,
+        elements);
+  }
+
+  // The item for a method or constructor in a source file outside the analysis (a dependency's):
+  // a point at its parsed name position. Empty when no root holds its source.
+  static Optional<CallHierarchyItem> itemFromSource(
+      final Element element,
+      final List<Path> sourceRoots,
+      final DefinitionLocator definitionLocator,
+      final Types types,
+      final Elements elements) {
+    return DefinitionLocator.findSourceFile(element, sourceRoots)
+        .map(
+            file -> {
+              final var pos =
+                  definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
+              final var point = new Range(pos, pos);
+              return buildItem(element, file.toUri().toString(), point, point, types, elements);
+            });
+  }
 
   static CallHierarchyItem buildItem(
       final Element element,
@@ -25,7 +85,7 @@ public final class CallHierarchyItemDataCodec {
     final var kind = element.getKind();
     final var ee = (ExecutableElement) element;
     final var owner = (TypeElement) ee.getEnclosingElement();
-    final var displayName = SourceLocator.declarationName(element).toString();
+    final var displayName = DeclarationNames.declarationName(element).toString();
     final var ownerBinaryName = elements.getBinaryName(owner).toString();
     final var symbolKind =
         kind == ElementKind.CONSTRUCTOR ? SymbolKind.Constructor : SymbolKind.Function;

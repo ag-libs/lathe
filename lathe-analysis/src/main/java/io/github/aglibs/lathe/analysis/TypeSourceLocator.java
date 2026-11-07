@@ -16,7 +16,6 @@ import java.util.List;
 import java.util.Optional;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
 
 public final class TypeSourceLocator {
 
@@ -88,13 +87,12 @@ public final class TypeSourceLocator {
       final String name) {
     try {
       final Position start =
-          SourceLocator.declarationNamePosition(trees, tree, path, name).orElse(null);
+          DeclarationNames.declarationNamePosition(trees, tree, path, name).orElse(null);
       if (start == null) {
         return null;
       }
 
-      final var end = new Position(start.getLine(), start.getCharacter() + name.length());
-      return new Location(sourceFile.toUri().toString(), new Range(start, end));
+      return new Location(sourceFile.toUri().toString(), Positions.nameRange(start, name));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

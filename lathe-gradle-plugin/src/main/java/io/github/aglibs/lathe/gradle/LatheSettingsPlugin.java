@@ -25,6 +25,10 @@ import org.gradle.util.GradleVersion;
 // configured.
 public class LatheSettingsPlugin implements Plugin<Settings> {
 
+  // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
+  // applies Lathe to each project without cross-project configuration (Isolated Projects).
+  private static final String MIN_GRADLE_VERSION = "8.8";
+
   // Only the root build: an init script reaches buildSrc and every included build too, and each of
   // those would write a .lathe/ of its own.
   @Override
@@ -94,7 +98,7 @@ public class LatheSettingsPlugin implements Plugin<Settings> {
   }
 
   static List<String> unmet(final GradleVersion version) {
-    final var minimum = GradleVersion.version(LatheLayout.Gradle.MIN_GRADLE_VERSION);
+    final var minimum = GradleVersion.version(MIN_GRADLE_VERSION);
     if (version.getBaseVersion().compareTo(minimum) >= 0) {
       return List.of();
     }

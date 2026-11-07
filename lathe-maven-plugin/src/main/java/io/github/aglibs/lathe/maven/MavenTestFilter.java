@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.maven;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.install.TestFilterWriter;
 import java.nio.file.Path;
@@ -17,16 +16,23 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 // Surefire's defaults.
 final class MavenTestFilter {
 
+  private static final String MAVEN_SUREFIRE_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
+  private static final String MAVEN_SUREFIRE_PLUGIN_ARTIFACT_ID = "maven-surefire-plugin";
+  // The execution `mvn test` runs, whose configuration overrides the plugin-level one.
+  private static final String SUREFIRE_TEST_EXECUTION_ID = "default-test";
+  // Surefire's class-file patterns when a module configures none.
+  private static final List<String> SUREFIRE_DEFAULT_INCLUDES =
+      List.of("**/Test*.java", "**/*Test.java", "**/*Tests.java", "**/*TestCase.java");
+  private static final List<String> SUREFIRE_DEFAULT_EXCLUDES = List.of("**/*$*");
+
   private static final String SUREFIRE_PLUGIN_KEY =
-      Plugin.constructKey(
-          LatheLayout.Maven.MAVEN_SUREFIRE_PLUGIN_GROUP_ID,
-          LatheLayout.Maven.MAVEN_SUREFIRE_PLUGIN_ARTIFACT_ID);
+      Plugin.constructKey(MAVEN_SUREFIRE_PLUGIN_GROUP_ID, MAVEN_SUREFIRE_PLUGIN_ARTIFACT_ID);
   private static final String REGEX_PREFIX = "%regex[";
 
   private MavenTestFilter() {}
 
   static void write(final Path workspaceRoot, final MavenProject project) {
-    if (LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging())) {
+    if (ReactorProjects.POM_PACKAGING.equals(project.getPackaging())) {
       return;
     }
 
@@ -38,8 +44,8 @@ final class MavenTestFilter {
 
   static TestFilterData filter(final Xpp3Dom configuration) {
     return new TestFilterData(
-        regexes(patterns(configuration, "includes", LatheLayout.Maven.SUREFIRE_DEFAULT_INCLUDES)),
-        regexes(patterns(configuration, "excludes", LatheLayout.Maven.SUREFIRE_DEFAULT_EXCLUDES)));
+        regexes(patterns(configuration, "includes", SUREFIRE_DEFAULT_INCLUDES)),
+        regexes(patterns(configuration, "excludes", SUREFIRE_DEFAULT_EXCLUDES)));
   }
 
   // Surefire matches a pattern against a class file's path under the test output, and a class name
@@ -113,8 +119,7 @@ final class MavenTestFilter {
       return null;
     }
 
-    final PluginExecution execution =
-        plugin.getExecutionsAsMap().get(LatheLayout.Maven.SUREFIRE_TEST_EXECUTION_ID);
+    final PluginExecution execution = plugin.getExecutionsAsMap().get(SUREFIRE_TEST_EXECUTION_ID);
     final Xpp3Dom own = execution == null ? null : (Xpp3Dom) execution.getConfiguration();
     // Merged into a copy: mergeXpp3Dom changes its first argument, Maven's own model for the build.
     return Xpp3Dom.mergeXpp3Dom(

@@ -21,6 +21,12 @@ import java.util.stream.Stream;
 
 final class LaunchCapture {
 
+  // What Gradle's test worker adds to a test JVM's launch, not the build: its own jar (on the
+  // class or module path), its -D properties, and, on a modular run, itself as the main module.
+  private static final String TEST_WORKER_JAR = "gradle-worker.jar";
+  private static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
+  private static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
+
   private static final String KIND = "junit-platform";
   private static final String AGENT_OPTION = "-javaagent:";
 
@@ -180,15 +186,15 @@ final class LaunchCapture {
   // A class or module path without the build tool's own worker jar: replay starts its own runner.
   private static List<String> launchEntries(final String path) {
     return splitPath(path).stream()
-        .filter(entry -> !LatheLayout.Gradle.TEST_WORKER_JAR.equals(fileName(entry)))
+        .filter(entry -> !TEST_WORKER_JAR.equals(fileName(entry)))
         .toList();
   }
 
   // An argument the build tool adds, not the build: Gradle's worker properties and main module,
   // and this jar when the build loads it as an agent.
   private static boolean isBuildToolArgument(final String arg, final Path ownJarLocation) {
-    return arg.startsWith(LatheLayout.Gradle.TEST_WORKER_PROPERTY_PREFIX)
-        || arg.equals(LatheLayout.Gradle.TEST_WORKER_MAIN_MODULE)
+    return arg.startsWith(TEST_WORKER_PROPERTY_PREFIX)
+        || arg.equals(TEST_WORKER_MAIN_MODULE)
         || (arg.startsWith(AGENT_OPTION) && samePath(agentJar(arg), ownJarLocation));
   }
 

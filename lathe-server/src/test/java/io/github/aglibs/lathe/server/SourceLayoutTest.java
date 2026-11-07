@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
+import io.github.aglibs.lathe.server.run.TestSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

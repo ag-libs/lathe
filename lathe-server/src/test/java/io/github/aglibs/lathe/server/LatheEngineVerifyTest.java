@@ -7,6 +7,7 @@ import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.server.LatheEngine.SymbolScope;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
+import io.github.aglibs.lathe.server.engine.LatheDiagnostic;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import java.nio.file.Files;
@@ -14,8 +15,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
-import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
 
@@ -35,7 +34,8 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     engine = new LatheEngine(tmp);
 
     final var pos = positionOf(ifaceSource, "greet");
-    final LatheChangeImpact impact = engine.analyzeChange(iface, pos.getLine(), pos.getCharacter());
+    final LatheChangeImpact impact =
+        engine.analyzeChange(iface, pos.getLine(), pos.getCharacter()).value();
 
     assertThat(impact.signature()).contains("greet");
     assertThat(impact.overrideFamily())
@@ -63,7 +63,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                     .anyMatch(
                         d ->
                             d.path().equals(FileUtil.slashed(tmp.relativize(fx.caller())))
-                                && d.diagnostic().getMessage().getLeft().contains("greet")));
+                                && d.message().contains("greet")));
   }
 
   @Test
@@ -71,13 +71,13 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     final GreetFixture fx = greetFixture();
     stampModule(fx.callee(), fx.caller());
     engine = new LatheEngine(tmp);
-    engine.diagnostics(fx.caller()); // the session is warm and idle before the agent's edit
+    engine.diagnostics(fx.caller()).value(); // the session is warm and idle before the agent's edit
 
     // An agent renames greet() with its own file tool, then queries the caller at once.
     writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
 
-    assertThat(engine.diagnostics(fx.caller()))
-        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+    assertThat(engine.diagnostics(fx.caller()).value())
+        .anyMatch(d -> d.message().contains("greet"));
   }
 
   // A caller's warnings predate the change, and its hints say nothing about whether it compiles:
@@ -104,18 +104,18 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                 + " private void unused() {} }");
     compileIntoMirror(old, callee, caller);
     engine = new LatheEngine(tmp);
-    assertThat(engine.diagnostics(caller))
+    assertThat(engine.diagnostics(caller).value())
         .as("the caller has a removal warning and an unused-method hint")
-        .extracting(Diagnostic::getSeverity)
-        .contains(DiagnosticSeverity.Warning, DiagnosticSeverity.Hint);
+        .extracting(LatheDiagnostic::severity)
+        .contains(LatheDiagnostic.Severity.WARNING, LatheDiagnostic.Severity.HINT);
 
     assertThat(engine.verifyChange(List.of(callee)).perModule())
         .singleElement()
         .satisfies(
             module ->
                 assertThat(module.diagnostics())
-                    .extracting(d -> d.diagnostic().getSeverity())
-                    .containsExactly(DiagnosticSeverity.Warning));
+                    .extracting(d -> d.severity())
+                    .containsExactly(LatheDiagnostic.Severity.WARNING));
 
     writeNewer(callee, "package com.example; class Callee { void welcome() { Old.old(); } }");
     assertThat(engine.verifyChange(List.of(callee)).perModule())
@@ -123,10 +123,10 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         .satisfies(
             module -> {
               assertThat(module.diagnostics())
-                  .extracting(d -> d.diagnostic().getSeverity())
-                  .containsExactly(DiagnosticSeverity.Error, DiagnosticSeverity.Warning);
-              assertThat(module.diagnostics().get(0).diagnostic().getMessage().getLeft())
-                  .contains("greet");
+                  .extracting(d -> d.severity())
+                  .containsExactly(
+                      LatheDiagnostic.Severity.ERROR, LatheDiagnostic.Severity.WARNING);
+              assertThat(module.diagnostics().get(0).message()).contains("greet");
             });
   }
 
@@ -152,8 +152,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
     assertThat(verify.perModule())
         .anySatisfy(
             module ->
-                assertThat(module.diagnostics())
-                    .anyMatch(d -> d.diagnostic().getMessage().getLeft().contains("welcome")));
+                assertThat(module.diagnostics()).anyMatch(d -> d.message().contains("welcome")));
   }
 
   @Test
@@ -172,8 +171,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
             module -> {
               assertThat(module.module()).isEqualTo("app");
               assertThat(module.diagnostics())
-                  .anyMatch(
-                      d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol"));
+                  .anyMatch(d -> d.message().contains("cannot find symbol"));
             });
     assertThat(verify.affectedModules()).containsExactly("app");
     assertThat(verify.suggestedSync())
@@ -182,18 +180,17 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
 
     // Another such edit, but compiled by an unrelated query before verify_change is asked.
     TestCompiler.writeAt(api, API_SOURCE.replace("a()", "c()"), 20_000L);
-    engine.diagnostics(api);
+    engine.diagnostics(api).value();
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .anySatisfy(
             module ->
                 assertThat(module.diagnostics())
-                    .anyMatch(
-                        d -> d.diagnostic().getMessage().getLeft().contains("cannot find symbol")));
+                    .anyMatch(d -> d.message().contains("cannot find symbol")));
 
     // A deleted type: nothing left to diagnose in its file, but its callers break.
     Files.delete(api);
-    engine.searchSymbols("Api", SymbolScope.ALL, 10);
+    engine.searchSymbols("Api", SymbolScope.ALL, 10).value();
 
     assertThat(engine.verifyChange(List.of()).perModule())
         .singleElement()
@@ -215,12 +212,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
                     module ->
                         module.module().equals("app")
                             && module.diagnostics().stream()
-                                .anyMatch(
-                                    d ->
-                                        d.diagnostic()
-                                            .getMessage()
-                                            .getLeft()
-                                            .contains("cannot find symbol")));
+                                .anyMatch(d -> d.message().contains("cannot find symbol")));
 
     assertThat(engine.verifyChange(List.of())).matches(breaksApp, "first check");
     assertThat(engine.verifyChange(List.of())).matches(breaksApp, "second check");
@@ -296,7 +288,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         "{}");
     engine = new LatheEngine(tmp);
 
-    assertThat(engine.modules())
+    assertThat(engine.modules().value())
         .extracting(
             LatheModuleSummary::module,
             LatheModuleSummary::dependsOn,
@@ -379,7 +371,7 @@ class LatheEngineVerifyTest extends LatheEngineTestBase {
         .satisfies(
             module ->
                 assertThat(module.diagnostics())
-                    .extracting(located -> located.diagnostic().getMessage().getLeft())
+                    .extracting(located -> located.message())
                     .anySatisfy(message -> assertThat(message).contains("getCount()")));
   }
 

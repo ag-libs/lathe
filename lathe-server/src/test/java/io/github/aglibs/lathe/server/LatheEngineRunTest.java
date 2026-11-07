@@ -68,18 +68,21 @@ class LatheEngineRunTest extends LatheEngineTestBase {
             1_000L);
     engine = new LatheEngine(tmp);
 
-    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+    assertThatThrownBy(
+            () -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null).value())
         .as("a location's path, written with / on every OS")
         .hasMessage(
             "no test in Shop.java; its test class may be module/src/main/java/com/example/ShopTest.java");
-    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Lone"), TestScope.CLASS, null))
+    assertThatThrownBy(
+            () -> engine.runTest(sourceNamed(sources, "Lone"), TestScope.CLASS, null).value())
         .hasMessage("no test in Lone.java");
-    assertThatThrownBy(() -> engine.runTest(outsideTheBuild, TestScope.CLASS, null))
+    assertThatThrownBy(() -> engine.runTest(outsideTheBuild, TestScope.CLASS, null).value())
         .hasMessageContaining("is outside the modules the last build compiled");
 
     Files.writeString(
         sourceNamed(sources, "Lone"), "package com.example; class Lone { Missing m; }");
-    assertThatThrownBy(() -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null))
+    assertThatThrownBy(
+            () -> engine.runTest(sourceNamed(sources, "Shop"), TestScope.CLASS, null).value())
         .as("another file of its module does not compile")
         .hasMessageStartingWith("Shop.java was not run: code it runs does not compile: ")
         .hasMessageContaining("Lone.java")

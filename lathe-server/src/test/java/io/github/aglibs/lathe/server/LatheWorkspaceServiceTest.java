@@ -19,6 +19,8 @@ import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
+import io.github.aglibs.lathe.server.run.TestCounterparts;
+import io.github.aglibs.lathe.server.run.TestSource;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -48,7 +50,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @BeforeEach
   void connectWorkspace() {
-    workspace = new LatheWorkspaceService(service);
+    workspace = new LatheWorkspaceService(host);
   }
 
   @Test
@@ -70,6 +72,25 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertInvalidParams(createTypeError("bogus", "class", "Foo"), "unknown source scope");
   }
 
+  // A command whose argument lacks a field, or has one of the wrong kind, answers InvalidParams
+  // naming the command; one it reads well enough does not.
+  @Test
+  void executeCommand_malformedArguments_invalidParamsNamingTheCommand() throws Exception {
+    openShop();
+
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.PACKAGES_COMMAND, json("module", "x")),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.PACKAGES_COMMAND));
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.RUN_TEST_COMMAND, json("moduleRel", "module")),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.RUN_TEST_COMMAND));
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.MISSING_IMPORTS_COMMAND, "not an object"),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.MISSING_IMPORTS_COMMAND));
+    assertThat(command(LatheWorkspaceService.PACKAGES_COMMAND, json("moduleRel", "module")))
+        .isNotNull();
+  }
+
   private static void assertInvalidParams(final ResponseError error, final String reason) {
     assertThat(error.getCode()).isEqualTo(ResponseErrorCode.InvalidParams.getValue());
     assertThat(error.getMessage()).contains(reason);
@@ -84,7 +105,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @Test
   void executeCommand_cancelUnknownToken_completesWithoutError() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
     final var argument = new JsonObject();
     argument.addProperty("token", "no-such-token");
     final var params = new ExecuteCommandParams("lathe.run.cancel", List.of(argument));
@@ -96,7 +117,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
 
   @Test
   void executeCommand_runTestFreshWorkspace_returnsBlockedOnMissingRunnerJar() throws Exception {
-    service.initialize(tmp);
+    host.initialize(tmp);
     final var selection = new JsonObject();
     selection.addProperty("selectorKind", "CLASS");
     selection.addProperty("selectorValue", "com.example.Foo");
@@ -166,7 +187,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         }
         """);
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null, TestJavac.JUNIT_CLASSPATH);
-    service.initialize(tmp);
+    host.initialize(tmp);
     return source;
   }
 
@@ -327,18 +348,17 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         .thenReturn(
             CompletableFuture.completedFuture(new MessageActionItem("Sync + capture tests")));
     openShop();
-    final var lathe = (LatheLanguageClient) client;
 
     Files.writeString(pom, "<project>edited</project>");
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
     verify(client).showMessageRequest(argThat(request -> request.getMessage().startsWith("Build")));
-    verify(lathe, never()).sync(any());
+    verify(client, never()).sync(any());
 
     Files.writeString(pom, "<project>edited again</project>");
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
     awaitWorkerIdle();
-    verify(lathe).sync(new LatheSyncParams(tmp.toString(), true, List.of()));
+    verify(client).sync(new LatheSyncParams(tmp.toString(), true));
   }
 
   // A sync that rewrites workspace.json reloads it: a module the sync added is there at once.
@@ -354,7 +374,7 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
         Map.of("com/lib/Lib.java", "package com.lib;\npublic class Lib {}\n"),
         List.of(),
         1_000L);
-    service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(command(LatheWorkspaceService.MODULES_COMMAND)).isEqualTo(List.of("lib", "module"));
     verify(client).showMessage(new MessageParams(MessageType.Info, "Lathe: workspace reloaded."));

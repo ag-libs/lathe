@@ -118,11 +118,24 @@ class SourceAnalysisSessionTest {
     try (final var session = new SourceAnalysisSession(compiler)) {
       assertThatThrownBy(
               () ->
-                  session.searchReferences(uri, content, 1, target, false, Set.of(), cancelChecker))
+                  session
+                      .references()
+                      .references(
+                          session.analysis(uri, content, 1, cancelChecker),
+                          uri,
+                          target,
+                          false,
+                          Set.of()))
           .isInstanceOf(CancellationException.class);
       cancelled.set(false);
 
-      assertThat(session.searchReferences(uri, content, 1, target, false).hits()).isEmpty();
+      assertThat(
+              session
+                  .references()
+                  .references(
+                      session.analysis(uri, content, 1, () -> {}), uri, target, false, Set.of())
+                  .hits())
+          .isEmpty();
       verify(compiler, times(2)).compile(eq(uri), eq(content), eq(CompileMode.OPEN), any());
     }
   }
@@ -133,15 +146,15 @@ class SourceAnalysisSessionTest {
     final String cachedContent = "class Test { String value; }";
     final String currentContent = "class Test { Integer value; }";
     final var libraries = LibrarySources.none();
-    final var pos =
-        SourceLocator.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
+    final var pos = Positions.offsetToPosition(currentContent, currentContent.indexOf("Integer"));
 
     try (var ctx = new SourceAnalysisSession(new TempSourceCompiler())) {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
       assertThat(
-              ctx.hover(
-                  new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), libraries)))
+              ctx.navigation()
+                  .hover(
+                      new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), libraries)))
           .isNotNull();
     }
   }
@@ -156,7 +169,7 @@ class SourceAnalysisSessionTest {
       ctx.compile(uri, content, 1, CompileMode.OPEN);
       ctx.dropFromCache(uri);
 
-      assertThat(ctx.semanticTokens(uri, content, 1)).isNotNull();
+      assertThat(ctx.files().semanticTokens(uri, content, 1)).isNotNull();
       assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(2);
     }
   }
@@ -170,7 +183,7 @@ class SourceAnalysisSessionTest {
     try (var ctx = new SourceAnalysisSession(compiler)) {
       ctx.compile(uri, content, 1, CompileMode.OPEN);
 
-      assertThat(ctx.semanticTokens(uri, content, 2)).isNotNull();
+      assertThat(ctx.files().semanticTokens(uri, content, 2)).isNotNull();
       assertThat(compiler.count(CompileMode.OPEN)).isEqualTo(2);
     }
   }
@@ -183,7 +196,7 @@ class SourceAnalysisSessionTest {
     final String source = "class Test { String field; void method() {} }";
 
     final var session = new SourceAnalysisSession(compiler);
-    final var symbols = session.documentSymbol(TempSourceCompiler.TEST_URI, source);
+    final var symbols = session.files().documentSymbol(TempSourceCompiler.TEST_URI, source);
 
     assertThat(symbols).extracting(DocumentSymbol::getKind).containsExactly(SymbolKind.Class);
     assertThat(symbols.get(0).getChildren())
@@ -210,7 +223,7 @@ class SourceAnalysisSessionTest {
         """;
 
     final var session = new SourceAnalysisSession(compiler);
-    final var ranges = session.foldingRange(TempSourceCompiler.TEST_URI, source);
+    final var ranges = session.files().foldingRange(TempSourceCompiler.TEST_URI, source);
 
     assertThat(ranges).extracting(FoldingRange::getKind).contains(FoldingRangeKind.Imports);
     verify(compiler, never()).compile(TempSourceCompiler.TEST_URI, source, CompileMode.OPEN);
@@ -224,10 +237,10 @@ class SourceAnalysisSessionTest {
     final String source = "class Test { void method() {";
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
-      assertThat(session.documentSymbol(TempSourceCompiler.TEST_URI, source))
+      assertThat(session.files().documentSymbol(TempSourceCompiler.TEST_URI, source))
           .extracting(DocumentSymbol::getName)
           .contains("Test");
-      assertThat(session.foldingRange(TempSourceCompiler.TEST_URI, source)).isNotNull();
+      assertThat(session.files().foldingRange(TempSourceCompiler.TEST_URI, source)).isNotNull();
     }
   }
 
@@ -285,16 +298,16 @@ class SourceAnalysisSessionTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(uri, source, 1, CompileMode.OPEN);
 
-      assertThat(session.enclosingBinaryName(uri, 5)).contains("Outer$1");
-      assertThat(session.enclosingBinaryName(uri, 11)).contains("Outer");
-      assertThat(session.enclosingBinaryName(uri, 16)).contains("Outer$Inner");
+      assertThat(session.files().enclosingBinaryName(uri, 5)).contains("Outer$1");
+      assertThat(session.files().enclosingBinaryName(uri, 11)).contains("Outer");
+      assertThat(session.files().enclosingBinaryName(uri, 16)).contains("Outer$Inner");
     }
   }
 
   @Test
   void enclosingBinaryName_fileNotAttributed_returnsEmpty() {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
-      assertThat(session.enclosingBinaryName(TempSourceCompiler.TEST_URI, 1)).isEmpty();
+      assertThat(session.files().enclosingBinaryName(TempSourceCompiler.TEST_URI, 1)).isEmpty();
     }
   }
 
@@ -319,8 +332,9 @@ class SourceAnalysisSessionTest {
       final String expression, final Consumer<AttributedExpression> assertions) {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final var attr =
-          session.attributeExpression(
-              TempSourceCompiler.TEST_URI, EVAL_SAMPLE, EVAL_LINE, expression);
+          session
+              .files()
+              .attributeExpression(TempSourceCompiler.TEST_URI, EVAL_SAMPLE, EVAL_LINE, expression);
       assertThat(attr).isPresent();
       assertions.accept(attr.get());
     }
@@ -399,7 +413,16 @@ class SourceAnalysisSessionTest {
       final Path sourceFile = Path.of(analysis.tree().getSourceFile().toUri());
       Files.delete(sourceFile);
 
-      assertThatThrownBy(() -> session.searchReferences(uri, content, 1, target, false))
+      assertThatThrownBy(
+              () ->
+                  session
+                      .references()
+                      .references(
+                          session.analysis(uri, content, 1, () -> {}),
+                          uri,
+                          target,
+                          false,
+                          Set.of()))
           .isInstanceOf(UncheckedIOException.class);
     }
   }

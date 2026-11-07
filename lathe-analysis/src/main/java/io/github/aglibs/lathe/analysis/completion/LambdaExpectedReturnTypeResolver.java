@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis.completion;
 import com.sun.source.tree.*;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.IntStream;
@@ -111,14 +112,9 @@ final class LambdaExpectedReturnTypeResolver {
       return snapshot.trees().getTypeMirror(receiverPath);
     }
 
-    for (TreePath current = invocationPath; current != null; current = current.getParentPath()) {
-      if (current.getLeaf() instanceof ClassTree) {
-        final Element classEl = snapshot.trees().getElement(current);
-        return classEl != null ? classEl.asType() : null;
-      }
-    }
-
-    return null;
+    final TreePath classPath = TreePaths.enclosingClass(invocationPath);
+    final Element classEl = classPath != null ? snapshot.trees().getElement(classPath) : null;
+    return classEl != null ? classEl.asType() : null;
   }
 
   private static boolean isSubtypeOf(

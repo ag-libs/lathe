@@ -54,8 +54,7 @@ public final class RenameBindingCheck {
       final List<Span> renamed = ranges.stream().map(range -> span(content, range)).toList();
       final List<TextEdit> edits =
           ranges.stream().map(range -> new TextEdit(range, newName)).toList();
-      return new EditedFile(
-          uri, SourceLocator.applyEdits(content, edits), renamed, newName.length());
+      return new EditedFile(uri, Positions.applyEdits(content, edits), renamed, newName.length());
     }
 
     // Where an offset of the text before the rename lands after it.
@@ -83,7 +82,7 @@ public final class RenameBindingCheck {
     }
 
     private static int offset(final String content, final Position position) {
-      return SourceLocator.toOffset(content, position.getLine(), position.getCharacter());
+      return Positions.toOffset(content, position.getLine(), position.getCharacter());
     }
   }
 
@@ -304,7 +303,7 @@ public final class RenameBindingCheck {
           .collect(
               Collectors.toMap(
                   match ->
-                      SourceLocator.toOffset(
+                      Positions.toOffset(
                           file.content(),
                           match.range().getStart().getLine(),
                           match.range().getStart().getCharacter()),
@@ -344,12 +343,11 @@ public final class RenameBindingCheck {
       }
 
       try {
-        return SourceLocator.declarationNamePosition(
+        return DeclarationNames.declarationNamePosition(
                 trees, path.getCompilationUnit(), path, newName)
             .map(
                 position ->
-                    SourceLocator.toOffset(
-                        file.content(), position.getLine(), position.getCharacter()))
+                    Positions.toOffset(file.content(), position.getLine(), position.getCharacter()))
             .filter(file.renamedStarts()::contains)
             .isPresent();
       } catch (final IOException e) {
@@ -374,12 +372,12 @@ public final class RenameBindingCheck {
 
   private static Optional<Element> elementAt(
       final AttributedFileAnalysis analysis, final int offset) {
-    return Optional.ofNullable(SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset))
-        .map(path -> SourceLocator.elementAt(analysis.trees(), path));
+    return Optional.ofNullable(CursorElements.pathAt(analysis.trees(), analysis.tree(), offset))
+        .map(path -> CursorElements.elementAt(analysis.trees(), path));
   }
 
   private static String place(final EditedFile file, final int offset) {
-    final var position = SourceLocator.offsetToPosition(file.content(), offset);
+    final var position = Positions.offsetToPosition(file.content(), offset);
     return "%s:%d".formatted(Path.of(URI.create(file.uri())).getFileName(), position.getLine() + 1);
   }
 

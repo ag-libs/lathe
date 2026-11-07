@@ -7,7 +7,7 @@ import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompilerResult;
 import io.github.aglibs.lathe.analysis.JavaSourceCompiler;
 import io.github.aglibs.lathe.analysis.TokenScanner;
-import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
@@ -168,7 +168,7 @@ final class JavacRunner {
         fm.getLocationAsPaths(StandardLocation.CLASS_OUTPUT).iterator().next().toRealPath();
     final Set<String> names = new HashSet<>();
     for (final var jfo : generated) {
-      names.add(FileUtil.classBinaryName(root, Path.of(jfo.toUri()).toRealPath()));
+      names.add(ServerFiles.classBinaryName(root, Path.of(jfo.toUri()).toRealPath()));
     }
 
     return Set.copyOf(names);

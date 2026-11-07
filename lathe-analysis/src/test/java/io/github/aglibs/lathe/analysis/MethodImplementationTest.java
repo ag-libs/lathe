@@ -40,14 +40,16 @@ class MethodImplementationTest {
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
       targetSession.compile(TempSourceCompiler.TEST_URI, serviceContent, 1, CompileMode.OPEN);
       target =
-          targetSession.resolveTarget(
-              new SourceFeatureRequest(
-                  TempSourceCompiler.TEST_URI,
-                  serviceContent,
-                  0,
-                  new Position(0, 27),
-                  List.of(tempDir),
-                  LibrarySources.none()));
+          targetSession
+              .references()
+              .resolveTarget(
+                  new SourceFeatureRequest(
+                      TempSourceCompiler.TEST_URI,
+                      serviceContent,
+                      0,
+                      new Position(0, 27),
+                      List.of(tempDir),
+                      LibrarySources.none()));
     }
 
     try (var candidateSession =
@@ -81,14 +83,16 @@ class MethodImplementationTest {
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
       targetSession.compile(TempSourceCompiler.TEST_URI, serviceContent, 1, CompileMode.OPEN);
       target =
-          targetSession.resolveTarget(
-              new SourceFeatureRequest(
-                  TempSourceCompiler.TEST_URI,
-                  serviceContent,
-                  0,
-                  new Position(0, 27),
-                  List.of(tempDir),
-                  LibrarySources.none()));
+          targetSession
+              .references()
+              .resolveTarget(
+                  new SourceFeatureRequest(
+                      TempSourceCompiler.TEST_URI,
+                      serviceContent,
+                      0,
+                      new Position(0, 27),
+                      List.of(tempDir),
+                      LibrarySources.none()));
     }
 
     try (var candidateSession =
@@ -116,7 +120,7 @@ class MethodImplementationTest {
               new Position(9999, 0),
               List.of(tempDir),
               LibrarySources.none());
-      assertThat(session.resolveTarget(request)).isNull();
+      assertThat(session.references().resolveTarget(request)).isNull();
     }
   }
 
@@ -165,11 +169,8 @@ class MethodImplementationTest {
 
     try (var session = new SourceAnalysisSession(compiler)) {
       assertThat(
-              session.queryFileTransient(
-                  uri,
-                  content,
-                  analysis ->
-                      MethodImplementationLocator.locate(analysis, target, Set.of("Impl"), uri)))
+              MethodImplementationLocator.locate(
+                  session.transientAnalysis(uri, content, () -> {}), target, Set.of("Impl"), uri))
           .isEmpty();
       assertThat(implementations(session, uri, content, target, Set.of("Impl"))).isEmpty();
 
@@ -254,12 +255,15 @@ class MethodImplementationTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final String sam = "interface Transformer { String apply(String input); }\n";
       session.compile(TempSourceCompiler.TEST_URI, sam, 1, CompileMode.OPEN);
-      assertThat(session.functionalInterfaceName(samRequest(sam, new Position(0, 32))))
+      assertThat(session.navigation().functionalInterfaceName(samRequest(sam, new Position(0, 32))))
           .contains("Transformer");
 
       final String twoAbstract = "interface Two { void a(); void b(); }\n";
       session.compile(TempSourceCompiler.TEST_URI, twoAbstract, 2, CompileMode.OPEN);
-      assertThat(session.functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
+      assertThat(
+              session
+                  .navigation()
+                  .functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
           .isEmpty();
     }
   }
@@ -352,8 +356,10 @@ class MethodImplementationTest {
       try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
         targetSession.compile(TempSourceCompiler.TEST_URI, SUBTYPE_SOURCE, 1, CompileMode.OPEN);
         target =
-            targetSession.resolveTarget(
-                samRequest(SUBTYPE_SOURCE, SourceLocator.offsetToPosition(SUBTYPE_SOURCE, at)));
+            targetSession
+                .references()
+                .resolveTarget(
+                    samRequest(SUBTYPE_SOURCE, Positions.offsetToPosition(SUBTYPE_SOURCE, at)));
       }
 
       assertThat(
@@ -375,8 +381,10 @@ class MethodImplementationTest {
         at + (token.startsWith("interface ") ? "interface ".length() : token.indexOf(' ') + 1);
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
       targetSession.compile(TempSourceCompiler.TEST_URI, ANONYMOUS_SOURCE, 1, CompileMode.OPEN);
-      return targetSession.resolveTarget(
-          samRequest(ANONYMOUS_SOURCE, SourceLocator.offsetToPosition(ANONYMOUS_SOURCE, name)));
+      return targetSession
+          .references()
+          .resolveTarget(
+              samRequest(ANONYMOUS_SOURCE, Positions.offsetToPosition(ANONYMOUS_SOURCE, name)));
     }
   }
 
@@ -386,18 +394,16 @@ class MethodImplementationTest {
       final String content,
       final ReferenceTarget target,
       final Set<String> candidateBinaryNames) {
-    return session.queryFile(
-        uri,
-        content,
-        1,
-        analysis ->
-            MethodImplementationLocator.locate(analysis, target, candidateBinaryNames, uri));
+    return MethodImplementationLocator.locate(
+        session.analysis(uri, content, 1, () -> {}), target, candidateBinaryNames, uri);
   }
 
   private ReferenceTarget samTarget(final String interfaceContent) {
     try (var targetSession = new SourceAnalysisSession(new TempSourceCompiler())) {
       targetSession.compile(TempSourceCompiler.TEST_URI, interfaceContent, 1, CompileMode.OPEN);
-      return targetSession.resolveTarget(samRequest(interfaceContent, new Position(0, 32)));
+      return targetSession
+          .references()
+          .resolveTarget(samRequest(interfaceContent, new Position(0, 32)));
     }
   }
 

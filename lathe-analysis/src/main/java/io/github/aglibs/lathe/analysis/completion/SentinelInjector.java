@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.analysis.completion;
 
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.DeclarationNames;
 
 final class SentinelInjector {
 
@@ -31,7 +31,7 @@ final class SentinelInjector {
     final BackwardResult back = backwardScan(cursorOffset);
     final ForwardResult fwd = forwardScan();
 
-    final int suffixStart = SourceLocator.identifierEnd(content, cursorOffset);
+    final int suffixStart = DeclarationNames.identifierEnd(content, cursorOffset);
 
     final boolean parenFollows =
         suffixStart < content.length() && content.charAt(suffixStart) == '(';
@@ -63,7 +63,7 @@ final class SentinelInjector {
   }
 
   private BackwardResult backwardScan(final int cursorOffset) {
-    final int tokenStart = SourceLocator.identifierStart(content, cursorOffset);
+    final int tokenStart = DeclarationNames.identifierStart(content, cursorOffset);
 
     final var prefix = content.substring(tokenStart, cursorOffset);
 
@@ -255,7 +255,7 @@ final class SentinelInjector {
       return false;
     }
 
-    i = SourceLocator.identifierEnd(content, i);
+    i = DeclarationNames.identifierEnd(content, i);
 
     while (i < content.length() && Character.isWhitespace(content.charAt(i))) {
       i++;

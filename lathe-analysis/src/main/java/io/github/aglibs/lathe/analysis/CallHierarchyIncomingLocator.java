@@ -24,7 +24,6 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 final class CallHierarchyIncomingLocator extends SourceTreeLocator {
@@ -90,13 +89,14 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+    final var element = CursorElements.elementAt(trees, getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
       final var parent = getCurrentPath().getParentPath().getLeaf();
       if (parent instanceof final MethodInvocationTree inv && inv.getMethodSelect() == node) {
         final String idName = node.getIdentifier().toString();
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), idName);
+            DeclarationNames.findIdentifierFrom(
+                content, positions.getStartPosition(cu, node), idName);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, idName));
         }
@@ -116,7 +116,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
               : id instanceof final IdentifierTree it ? it.getName().toString() : null;
       if (name != null) {
         final long startOff =
-            SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
+            DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, id), name);
         if (startOff >= 0) {
           addCallSite(rangeFor(startOff, name));
         }
@@ -130,9 +130,9 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
     if (target.matchesWithOverrides(element, types, elements, targetMethod)) {
-      final String name = SourceLocator.referenceName(node);
+      final String name = DeclarationNames.referenceName(node);
       final long startOff =
-          SourceLocator.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
+          DeclarationNames.findIdentifierFrom(content, positions.getStartPosition(cu, node), name);
       if (startOff >= 0) {
         addCallSite(rangeFor(startOff, name));
       }
@@ -153,23 +153,12 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     callerRanges.computeIfAbsent(callerElement, k -> new ArrayList<>()).add(callSite);
   }
 
-  private static TreePath enclosingMethod(TreePath path) {
-    path = path.getParentPath();
-    while (path != null) {
-      if (path.getLeaf() instanceof MethodTree) {
-        return path;
-      }
-      if (path.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      path = path.getParentPath();
-    }
-    return null;
+  private static TreePath enclosingMethod(final TreePath path) {
+    return TreePaths.nearest(path.getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
   }
 
   private Range rangeFor(final long startOff, final String name) {
-    final var start = SourceLocator.offsetToPosition(cu, startOff);
-    return new Range(start, new Position(start.getLine(), start.getCharacter() + name.length()));
+    return Positions.nameRange(Positions.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {
@@ -191,23 +180,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
       return null;
     }
-    final var displayName = SourceLocator.declarationName(callerElement).toString();
-    final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
-    final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
-    final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
-    final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
-    final var range = new Range(rangeStart, rangeEnd);
-    Position selStart;
-    try {
-      selStart =
-          SourceLocator.declarationNamePosition(trees, cu, methodPath, displayName)
-              .orElse(rangeStart);
-    } catch (final IOException e) {
-      selStart = rangeStart;
-    }
-    final var selEnd =
-        new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
-    return CallHierarchyItemDataCodec.buildItem(
-        callerElement, fileUri, range, new Range(selStart, selEnd), types, elements);
+    return CallHierarchyItemDataCodec.itemAt(
+        callerElement, fileUri, methodPath, trees, types, elements);
   }
 }

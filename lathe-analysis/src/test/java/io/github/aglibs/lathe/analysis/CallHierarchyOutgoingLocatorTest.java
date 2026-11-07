@@ -40,11 +40,13 @@ class CallHierarchyOutgoingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
       assertThat(calls.get(0).getTo().getName()).isEqualTo("doStuff");
@@ -73,11 +75,13 @@ class CallHierarchyOutgoingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).hasSize(1);
       assertThat(calls.get(0).getTo().getName()).isEqualTo("Box");
@@ -110,10 +114,12 @@ class CallHierarchyOutgoingLocatorTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls)
           .singleElement()
@@ -149,10 +155,12 @@ class CallHierarchyOutgoingLocatorTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls)
           .singleElement()
@@ -182,11 +190,13 @@ class CallHierarchyOutgoingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyOutgoingCall> calls =
-          session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
+          session
+              .hierarchy()
+              .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot));
 
       assertThat(calls).noneMatch(c -> c.getTo().getName().isEmpty());
     }
@@ -200,11 +210,13 @@ class CallHierarchyOutgoingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       assertThat(
-              session.outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot)))
+              session
+                  .hierarchy()
+                  .outgoingCalls(items.get(0), request.uri(), content, 1, List.of(sourceRoot)))
           .isEmpty();
     }
   }

@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.server;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
@@ -31,7 +31,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 final class CompileCheckedActions {
 
   private static final Logger LOG = Logger.getLogger(CompileCheckedActions.class.getName());
-  private static final Set<String> CHECKED_KINDS = Set.of(ExtractionSupport.METHOD_KIND);
+  private static final Set<String> CHECKED_KINDS = Set.of(ExtractKinds.METHOD_KIND);
   private static final Gson GSON = new Gson();
 
   private CompileCheckedActions() {}
@@ -82,7 +82,7 @@ final class CompileCheckedActions {
 
     final var t = Stopwatch.start();
     return compile
-        .apply(pending.uri(), SourceLocator.applyEdits(document.content(), pending.edits()))
+        .apply(pending.uri(), Positions.applyEdits(document.content(), pending.edits()))
         .thenApply(CompileCheckedActions::errors)
         .thenCompose(
             rewritten ->

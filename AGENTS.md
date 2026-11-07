@@ -47,7 +47,7 @@ Which file answers which question:
 
 | Module               | Role                                                                                                                                                             |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `lathe-core`         | Shared utilities (property file helpers, future shared code); no external deps; has `module-info.java`                                                           |
+| `lathe-core`         | What several modules share (layout, flags, schema records, file helpers); depends only on Gson and ValidCheck; has `module-info.java`; shaded into `lathe-junit` |
 | `lathe-junit`        | Test-capture JUnit Platform listener that records the Surefire fork launch inside the fork                                                                       |
 | `lathe-test-runner`  | Standalone runner that replays captured tests and main methods outside the build                                                                                 |
 | `lathe-compiler`     | Plexus compiler SPI (`hint=lathe`)                                                                                                                               |
@@ -81,6 +81,9 @@ layout and property-file helpers.
 - `lathe-analysis` never reaches into `lathe-server`; the compiler enforces it. Shared test helpers
   (`TestJavac`, `TempSourceCompiler`, `JavacCrashFixtures`, `LoggingConfig`) live in its
   `io.github.aglibs.lathe.analysis.testing` package, which its test-jar carries to `lathe-server`'s tests.
+- `lathe-analysis` exports only its root package, the API the server calls. `completion` and `refactor` (the
+  code-action providers) are not exported, and `internal` holds what more than one of them shares, so a
+  helper they need is public there without widening the API.
 - Repo root: this directory
 
 ---
@@ -166,8 +169,9 @@ against the `multi-module` invoker workspace — both use the checkout build dir
       requested.
     * **NEVER** nest `if/else` statements more than 2 levels deep. You **MUST** use early returns (
       guard clauses).
-    * **NEVER** hardcode directory names, file names, or shared configuration keys. They **MUST** be
-      defined as constants exclusively inside `LatheLayout.java` or `LatheFlags.java`.
+    * **NEVER** hardcode directory names, file names, or shared configuration keys. A name more
+      than one module reads **MUST** be a constant in `LatheLayout.java` or `LatheFlags.java`; one
+      that a single module owns is a constant in that module.
     * **NEVER** put business logic directly inside Maven Mojo `execute()` methods.
     * **No ad hoc Java parsing:** LSP feature implementations **MUST NOT** parse Java code using
       regex, manual brace matching, string slicing, or custom token scanners. Java syntax and
@@ -195,7 +199,8 @@ against the `multi-module` invoker workspace — both use the checkout build dir
       `Stopwatch`.
     * **NEVER** write raw `try-catch` blocks for simple IO closures if `IOUtil` can handle it.
     * **NEVER** write custom file-walking or path-manipulation logic in local classes. You **MUST**
-      use or extend `FileUtil`.
+      use `FileUtil`, or a file helper of the module that needs it: `lathe-core` holds only what
+      several modules share, as it is shaded into the user's test fork.
 - **Strings**:
     * **NEVER** use chained `+` concatenation for more than two parts. You **MUST** use
       `"%s.%s".formatted(...)`.
@@ -238,12 +243,33 @@ against the `multi-module` invoker workspace — both use the checkout build dir
     * **Reach the loop from outside** with `eventLoop.submit` or `eventLoop.submitCompose` (a task
       that starts async work); never a `session::x` method reference, which reads `session` on the
       caller's thread.
+    * **A `CompilationWorker.submit` lambda runs on the module's thread**: it reads no session
+      state. Compute its inputs on the loop first (a position feature goes through
+      `FeatureRouter.positionFeature`, which builds the request there).
     * **Loop-confined helpers call `eventLoop.checkOnLoop()`**, which fails fast off the loop; a new
       helper that reads or writes session state does too.
     * **Nothing waits on the loop**: no `get`/`join`, no waiting on a process or another thread;
-      return a future instead. Formatting runs on the session's format thread for this reason: read
+      return a future instead. Formatting runs on `FormatService`'s own thread for this reason: read
       what it needs on the loop (`FormatTarget`), then `rejoin` with the edits.
     * **No locks or concurrent collections for session state**: route the access through the loop.
+- **Server components** (`lathe-server`). New behaviour goes into the component that owns it;
+  `WorkspaceSession` takes wiring only (the document lifecycle, compile scheduling, the rename
+  transaction, the scan tick, reload). Callers reach a component through its session accessor
+  (`session.features()`, `session.runs()`), never through a session forwarder.
+    * `SessionHost`: the way onto the loop for the LSP services and `LatheEngine` (MCP); it owns
+      the loop and the session. The LSP services are adapters over it.
+    * `WorkspaceState`: the root, manifest, module registry and graph, swapped together on a reload.
+    * `DocumentRegistry`: the open documents. `FeatureRouter`: a file's module worker and the
+      analysis LRU.
+    * `DocumentFeatures`: what is asked about the code (hover, navigation, completion, code
+      actions, tokens, symbols, folds, type hierarchy, runnables).
+    * `ReferenceSearch`: references, implementations, callers. `RenameService`: rename checks and
+      the edit.
+    * `ReactorTypeIndex`: the workspace type index and its reactor shards.
+    * `WritePass`: keeps `.lathe/` current with the sources (with `ClassOutputs`,
+      `ResourceMirror`). `ChangeVerifier`: what `verify_change` and the MCP notes report.
+    * `RunCoordinator`: run, debug and test discovery (`run/`). `FormatService`: formatting, on its
+      own thread (engines in `format/`). `WorkspaceQueries`: workspace commands not about a document.
 
 ## Markdown style
 

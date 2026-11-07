@@ -616,10 +616,10 @@ class SignatureHelpTest {
     final var source = rawSource.replace(MARKER, "");
     final int markerOffset = rawSource.indexOf(MARKER);
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-    final var pos = SourceLocator.offsetToPosition(source, markerOffset);
+    final var pos = Positions.offsetToPosition(source, markerOffset);
     final var request =
         new SourceFeatureRequest(
             TempSourceCompiler.TEST_URI, source, 0, pos, List.of(), LibrarySources.none());
-    return session.signatureHelp(request);
+    return session.navigation().signatureHelp(request);
   }
 }

@@ -1,17 +1,19 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.mockito.Mockito.mock;
 
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
+import io.github.aglibs.lathe.server.format.FormatEngine;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Queue;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Handler;
@@ -31,7 +33,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.TextDocumentItem;
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
@@ -48,20 +49,41 @@ abstract class ServiceTestBase {
   // wait, unlike TIMEOUT_MS, so as short as still catches a late one on a busy machine.
   protected static final long QUIET_WINDOW_MS = 1_500;
 
-  protected LanguageClient client;
+  protected LatheLanguageClient client;
+  protected SessionHost host;
   protected LatheTextDocumentService service;
   @TempDir protected Path tmp;
 
   @BeforeEach
   void setUp() {
     client = mock(LatheLanguageClient.class);
-    service = new LatheTextDocumentService(DEBOUNCE_MS);
-    service.connect(client);
+    host = new SessionHost(DEBOUNCE_MS);
+    host.connect(client);
+    service = new LatheTextDocumentService(host);
   }
 
   @AfterEach
   void close() {
-    service.close();
+    host.close();
+  }
+
+  // One write pass, complete once its recompiles finish; eager writes what is still settling.
+  protected CompletableFuture<Void> reconcileNow(final boolean eager) {
+    return host.onLoopFuture(session -> session.writePass().reconcileNow(eager));
+  }
+
+  // The freshen step the engine runs before each tool: what recompiled, or why it was deferred.
+  protected CompletableFuture<ReconcileOutcome> reconcileForVerify() {
+    return host.onLoopFuture(WorkspaceSession::reconcileForVerify);
+  }
+
+  // Writes files the test changed on disk itself, complete once the mirror has them.
+  protected CompletableFuture<Void> writeReported(final Set<Path> changed) {
+    return host.onLoopFuture(session -> session.writePass().writeReported(changed));
+  }
+
+  protected void useFormatter(final FormatEngine engine) {
+    host.execute(session -> session.formats().use(engine, false));
   }
 
   protected void change(final Path file, final String content, final int version) {
@@ -105,13 +127,13 @@ abstract class ServiceTestBase {
   // their diagnostics are published. A loop round-trip alone left a compile still running on its
   // module's thread, whose publish then landed after the test's next step.
   protected void awaitWorkerIdle() throws Exception {
-    service.awaitIdle().get(TIMEOUT_S, TimeUnit.SECONDS);
+    host.onLoopFuture(WorkspaceSession::workersDrained).get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // A reconcile pass runs after initialize on the event loop, so startup reconciliation is finished
   // before the test mutates sources.
   protected void awaitStartup() throws Exception {
-    service.reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
   }
 
   // Dep plus userCount callers of Dep.v(), compiled into the mirror and stamped, so the workspace
@@ -171,7 +193,7 @@ abstract class ServiceTestBase {
         """);
     final List<Path> files =
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final var fixture = new ShopFixture(files.get(0), files.get(1), files.get(2));
     openDoc(fixture.use(), Files.readString(fixture.use()));

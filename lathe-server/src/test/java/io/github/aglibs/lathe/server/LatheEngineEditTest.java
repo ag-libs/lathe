@@ -13,6 +13,7 @@ import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.server.engine.LatheFormat;
 import io.github.aglibs.lathe.server.engine.LatheImports;
+import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

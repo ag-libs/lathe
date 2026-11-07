@@ -2,11 +2,13 @@ package io.github.aglibs.lathe.server;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.FormatterSpec;
+import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,7 +44,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   static final String SERVER_NAME = "lathe";
 
-  private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService();
+  private final SessionHost host = new SessionHost();
+  private final LatheTextDocumentService textDocumentService = new LatheTextDocumentService(host);
 
   // Loaded in initialized(), not initialize(): the load's progress is a server→client request the
   // spec forbids before the handshake (clients reject it as unhandled).
@@ -50,7 +53,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   @Override
   public void connect(final LanguageClient client) {
-    textDocumentService.connect(client);
+    // Every client is a LatheLanguageClient: LatheServer's launcher and the in-process engine.
+    host.connect((LatheLanguageClient) client);
   }
 
   @Override
@@ -64,10 +68,11 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
             "[initialize] rootUri=%s client=%s formatting=%s"
                 .formatted(rootUri, params.getClientInfo(), formattingEnabled));
 
-    textDocumentService.setWorkDoneProgressSupported(workDoneProgressSupported(params));
+    host.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
-    textDocumentService.setFormatEngine(formatEngine);
+    // An editor's formatting answers no edits without a formatter; only the agent asks why.
+    host.execute(session -> session.formats().use(formatEngine, false));
     workspaceRoot = rootPath;
     if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");
@@ -124,7 +129,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     codeActionKinds.add(CodeActionKind.Refactor);
     codeActionKinds.add(CodeActionKind.RefactorExtract);
     codeActionKinds.add(CodeActionKind.RefactorRewrite);
-    codeActionKinds.addAll(ExtractionSupport.KINDS);
+    codeActionKinds.addAll(ExtractKinds.KINDS);
     final var codeActionOptions = new CodeActionOptions(codeActionKinds);
     codeActionOptions.setResolveProvider(true);
     capabilities.setCodeActionProvider(codeActionOptions);
@@ -168,14 +173,14 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     // Load now (deferred from initialize): its progress create is a server→client request clients
     // only accept post-handshake.
     if (workspaceRoot != null) {
-      textDocumentService.initialize(workspaceRoot);
+      host.initialize(workspaceRoot);
     }
   }
 
   @Override
   public CompletableFuture<Object> shutdown() {
     LOG.info(() -> "[shutdown] shutdown requested");
-    textDocumentService.close();
+    host.close();
     return CompletableFuture.completedFuture(null);
   }
 
@@ -187,7 +192,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   @Override
   public void cancelProgress(final WorkDoneProgressCancelParams params) {
-    textDocumentService.cancelProgress(params);
+    host.cancelProgress(params);
   }
 
   @Override
@@ -197,7 +202,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
 
   @Override
   public WorkspaceService getWorkspaceService() {
-    return new LatheWorkspaceService(textDocumentService);
+    return new LatheWorkspaceService(host);
   }
 
   private static String rootUri(final InitializeParams params) {

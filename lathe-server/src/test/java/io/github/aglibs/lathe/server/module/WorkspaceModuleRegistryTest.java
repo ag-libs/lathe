@@ -31,7 +31,7 @@ class WorkspaceModuleRegistryTest {
 
   @Test
   void allSourceRoots_withGeneratedSources_includesLatheMirrorNotMavenTarget() throws Exception {
-    // EG-052: the searched generated root is the fresh .lathe mirror, not the stale Maven target/.
+    // The searched generated root is the fresh .lathe mirror, not the stale Maven target/.
     final var src = tmp.resolve("module-a/src/main/java");
     final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);
@@ -187,7 +187,10 @@ class WorkspaceModuleRegistryTest {
       final List<ModuleSourceConfig> configs = registry.allConfigs();
       configs.forEach(
           config ->
-              registry.workerFor(config).documentSymbol("file:///A.java", "class A {}").join());
+              registry
+                  .workerFor(config)
+                  .submit(session -> session.files().documentSymbol("file:///A.java", "class A {}"))
+                  .join());
 
       assertThat(registry.releaseSessions(Set.of(), 60_000)).as("not idle long enough").isZero();
       assertThat(registry.releaseSessions(Set.of(configs.get(0)), 0)).isEqualTo(1);

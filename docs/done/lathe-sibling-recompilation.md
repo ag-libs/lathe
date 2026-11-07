@@ -21,7 +21,7 @@ These callers will not show compilation errors until they are explicitly opened,
 
 Resolve the boundary gap by introducing **Reference-Index Guided Sibling Recompilation**:
 * Detect when a compilation/save pass changes the public or package-private API signature of an open file.
-* Query the in-memory [ReferenceCandidateIndex](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/ReferenceCandidateIndex.java) to find sibling caller files within the same module.
+* Query the in-memory [ReferenceCandidateIndex](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/ReferenceCandidateIndex.java) to find sibling caller files within the same module.
 * Asynchronously recompile and publish updated diagnostics for those affected sibling files.
 * Keep the recompilation debounced and asynchronous to protect the 500ms p95 editing latency goal.
 
@@ -41,18 +41,18 @@ To avoid unnecessary recompilations, Lathe must detect if the public-facing API 
   - Class, interface, record, or enum declarations (including type parameters, extends/implements clauses).
   - Public, protected, and package-private method signatures (name, parameter types, return type).
   - Public, protected, and package-private field declarations (name, type).
-* Save this representation (or a hash of it) inside [AttributedFileAnalysis](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/AttributedFileAnalysis.java).
+* Save this representation (or a hash of it) inside [AttributedFileAnalysis](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/AttributedFileAnalysis.java).
 * When a compile finishes:
-  - Compare the new signature hash against the previously cached [AttributedFileAnalysis](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/AttributedFileAnalysis.java) for the file.
+  - Compare the new signature hash against the previously cached [AttributedFileAnalysis](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/AttributedFileAnalysis.java) for the file.
   - If they differ, trigger the sibling recompilation pipeline.
 
 ### 2. Finding Affected Siblings
 
 If an API signature change is detected:
 
-* Query the [ReferenceCandidateIndex](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/ReferenceCandidateIndex.java) using the name of the modified class or members.
+* Query the [ReferenceCandidateIndex](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/ReferenceCandidateIndex.java) using the name of the modified class or members.
 * Filter the returned candidate file paths:
-  - Restrict files to the current file's [ModuleSourceConfig](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ModuleSourceConfig.java) (intra-module only).
+  - Restrict files to the current file's [ModuleSourceConfig](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ModuleSourceConfig.java) (intra-module only).
   - Exclude the modified file itself and any other open documents (open documents compile on their own fast/full flow).
 
 ### 3. Background Recompilation Pipeline

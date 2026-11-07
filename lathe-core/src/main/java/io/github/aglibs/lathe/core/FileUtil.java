@@ -11,23 +11,17 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileSystemException;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -51,16 +45,6 @@ public final class FileUtil {
     return Path.of(path).toAbsolutePath().normalize();
   }
 
-  // A file's text, or empty when it cannot be read (deleted, moved, a directory): for a source a
-  // caller treats as absent rather than as an error.
-  public static Optional<String> readIfPresent(final Path file) {
-    try {
-      return Optional.of(Files.readString(file, StandardCharsets.UTF_8));
-    } catch (final IOException e) {
-      return Optional.empty();
-    }
-  }
-
   public static boolean isJavaFile(final Path path) {
     return path.getFileName().toString().endsWith(".java");
   }
@@ -73,26 +57,8 @@ public final class FileUtil {
     return path.getFileName().toString().endsWith(".jar");
   }
 
-  // A class file's binary name: its path below the class-output root, dotted, without .class.
-  public static String classBinaryName(final Path root, final Path classFile) {
-    final var relative = root.relativize(classFile).toString();
-    return relative
-        .substring(0, relative.length() - ".class".length())
-        .replace(classFile.getFileSystem().getSeparator(), ".");
-  }
-
   public static ContentFingerprint fingerprint(final Path file) throws IOException {
     return ContentFingerprint.of(Files.readAllBytes(file));
-  }
-
-  // Whether the file still holds the content the fingerprint recorded: never for no record, nor for
-  // a file that cannot be read (deleted, say).
-  public static boolean hasContent(final Path file, final ContentFingerprint fingerprint) {
-    try {
-      return fingerprint != null && fingerprint.equals(fingerprint(file));
-    } catch (final IOException e) {
-      return false;
-    }
   }
 
   // The top-level type name of a .java source — its file name without the .java suffix.
@@ -109,24 +75,6 @@ public final class FileUtil {
 
     try (final var walk = Files.walk(root)) {
       return walk.filter(Files::isDirectory).filter(path -> !path.equals(root)).sorted().toList();
-    }
-  }
-
-  // Deletes the files directly in dir that match, all but the last count in name order: the newest,
-  // for names that start with a sortable timestamp.
-  public static void deleteAllButLast(
-      final Path dir, final Predicate<Path> matching, final int count) throws IOException {
-    if (!Files.isDirectory(dir)) {
-      return;
-    }
-
-    final List<Path> files;
-    try (final var list = Files.list(dir)) {
-      files = list.filter(Files::isRegularFile).filter(matching).sorted().toList();
-    }
-
-    for (final Path file : files.subList(0, Math.max(0, files.size() - count))) {
-      Files.deleteIfExists(file);
     }
   }
 
@@ -154,37 +102,6 @@ public final class FileUtil {
     }
   }
 
-  // Every regular file below root matching keep, with its mtime read from the walk's own attributes
-  // -- one stat per entry, not a walk plus a stat per file, which matters for a scan repeated every
-  // few seconds (file-system calls are costly on macOS). Empty when root is not a directory; a file
-  // that vanishes during the walk is skipped.
-  public static Map<Path, Long> fileMtimes(final Path root, final Predicate<Path> keep)
-      throws IOException {
-    if (!Files.isDirectory(root)) {
-      return Map.of();
-    }
-
-    final var mtimes = new HashMap<Path, Long>();
-    Files.walkFileTree(
-        root,
-        new SimpleFileVisitor<>() {
-          @Override
-          public FileVisitResult visitFile(final Path file, final BasicFileAttributes attrs) {
-            if (attrs.isRegularFile() && keep.test(file)) {
-              mtimes.put(file, attrs.lastModifiedTime().toMillis());
-            }
-
-            return FileVisitResult.CONTINUE;
-          }
-
-          @Override
-          public FileVisitResult visitFileFailed(final Path file, final IOException e) {
-            return FileVisitResult.CONTINUE;
-          }
-        });
-    return Map.copyOf(mtimes);
-  }
-
   // Dotted names of every package that contains at least one .class file below root, sorted and
   // deduped; empty when root is not a directory. The default (root) package is excluded — a named
   // module never has default-package classes.
@@ -207,34 +124,6 @@ public final class FileUtil {
   private static String toPackageName(final Path root, final Path classFile) {
     final Path packageDir = root.relativize(classFile.getParent());
     return packageDir.toString().replace(packageDir.getFileSystem().getSeparator(), ".");
-  }
-
-  // Where writeTempSourceFile puts a source file's copy: its path below its root, under tempDir.
-  public static Path tempSourceFile(
-      final Path tempDir, final Path sourceRoot, final Path filePath) {
-    return tempDir.resolve(sourceRoot.relativize(filePath));
-  }
-
-  public static Path writeTempSourceFile(
-      final Path tempDir, final Path sourceRoot, final Path filePath, final String content)
-      throws IOException {
-    final Path tempFile = tempSourceFile(tempDir, sourceRoot, filePath);
-    Files.createDirectories(tempFile.getParent());
-    Files.writeString(tempFile, content);
-    return tempFile;
-  }
-
-  // The files called name in dir and in each of its ancestors, nearest first.
-  public static List<Path> ancestorFiles(final Path dir, final String name) {
-    final List<Path> found = new ArrayList<>();
-    for (Path current = dir; current != null; current = current.getParent()) {
-      final Path candidate = current.resolve(name);
-      if (Files.isRegularFile(candidate)) {
-        found.add(candidate);
-      }
-    }
-
-    return List.copyOf(found);
   }
 
   // Bumps an existing file's mtime to now, signalling a watcher without changing its content.
@@ -501,24 +390,6 @@ public final class FileUtil {
       ValidCheck.check()
           .assertTrue(!skipped || failure == null, "a skipped entry has no failure")
           .validate();
-    }
-  }
-
-  // Entry names of a zip whose name passes `keep`, read from the central directory only (no
-  // decompression), directories excluded. Used to list jar resources without unpacking the jar.
-  public static List<String> listEntries(final Path zipFile, final Predicate<String> keep)
-      throws IOException {
-    try (final var zip = new ZipFile(zipFile.toFile())) {
-      final var names = new ArrayList<String>();
-      final var entries = zip.entries();
-      while (entries.hasMoreElements()) {
-        final ZipEntry entry = entries.nextElement();
-        if (!entry.isDirectory() && keep.test(entry.getName())) {
-          names.add(entry.getName());
-        }
-      }
-
-      return List.copyOf(names);
     }
   }
 

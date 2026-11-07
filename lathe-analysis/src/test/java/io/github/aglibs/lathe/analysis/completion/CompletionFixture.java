@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.analysis.completion;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CachedFileAnalysis;
 import io.github.aglibs.lathe.analysis.CompileMode;
+import io.github.aglibs.lathe.analysis.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.SourceParser;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;

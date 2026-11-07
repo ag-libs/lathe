@@ -59,7 +59,7 @@ class ReferenceLocatorTest {
   private ReferenceTarget targetAt(
       final AttributedFileAnalysis analysis, final String context, final String token) {
     final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
-    final var element = Objects.requireNonNull(SourceLocator.elementAt(analysis.trees(), path));
+    final var element = Objects.requireNonNull(CursorElements.elementAt(analysis.trees(), path));
     return ReferenceTarget.from(element, analysis.trees(), analysis.types(), analysis.elements());
   }
 
@@ -996,11 +996,17 @@ class ReferenceLocatorTest {
     try (final var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final List<ReferenceMatch> results =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
 
       assertThat(results).hasSize(1);
-      assertThat(session.resolveTarget(request)).isNotNull();
+      assertThat(session.references().resolveTarget(request)).isNotNull();
     }
   }
 
@@ -1015,15 +1021,33 @@ class ReferenceLocatorTest {
     try (final var session = new SourceAnalysisSession(countingCompiler)) {
       final List<ReferenceMatch> first =
           session
-              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .references()
+              .references(
+                  session.transientAnalyses(sources, () -> {}).get(0).analysis(),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
       final List<ReferenceMatch> second =
           session
-              .searchReferencesTransient(sources, target, false, Set.of(), hits -> {}, () -> {})
+              .references()
+              .references(
+                  session.transientAnalyses(sources, () -> {}).get(0).analysis(),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
       final List<ReferenceMatch> cached =
           session
-              .searchReferences(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, target, false)
+              .references()
+              .references(
+                  session.analysis(TempSourceCompiler.TEST_URI, METHOD_SOURCE, 0, () -> {}),
+                  TempSourceCompiler.TEST_URI,
+                  target,
+                  false,
+                  Set.of())
               .hits();
 
       assertThat(first).hasSize(1);
@@ -1115,7 +1139,7 @@ class ReferenceLocatorTest {
     assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 
-  // --- EG-027: out-of-range positions ---
+  // --- out-of-range positions ---
 
   @Test
   void references_outOfRangePosition_returnsEmpty() {
@@ -1130,11 +1154,11 @@ class ReferenceLocatorTest {
               new Position(9999, 0),
               List.of(),
               LibrarySources.none());
-      assertThat(session.resolveTarget(request)).isNull();
+      assertThat(session.references().resolveTarget(request)).isNull();
     }
   }
 
-  // --- constructors at new-class sites (FR-015) ---
+  // --- constructors at new-class sites ---
 
   private static final String NEW_CLASS_SOURCE =
       """
@@ -1199,7 +1223,7 @@ class ReferenceLocatorTest {
     final var bareTypePath =
         SampleFixture.pathAt(analysis.trees(), analysis.tree(), "Widget c", "Widget");
     // a non-`new` type usage stays a type target: no constructor is preferred here
-    assertThat(SourceLocator.constructorAtNewClassType(analysis.trees(), bareTypePath)).isNull();
+    assertThat(CursorElements.constructorAtNewClassType(analysis.trees(), bareTypePath)).isNull();
 
     final var target = targetAt(analysis, "Widget field", "Widget");
     final List<ReferenceMatch> result = refs(analysis, target, false);
@@ -1216,12 +1240,12 @@ class ReferenceLocatorTest {
     final var path = SampleFixture.pathAt(analysis.trees(), analysis.tree(), context, token);
     final var constructor =
         Objects.requireNonNull(
-            SourceLocator.constructorAtNewClassType(analysis.trees(), path),
+            CursorElements.constructorAtNewClassType(analysis.trees(), path),
             "expected a constructor at the new-class site");
     return ReferenceTarget.from(constructor, analysis.types(), analysis.elements());
   }
 
-  // --- instantiation sites of a type (FR-016) ---
+  // --- instantiation sites of a type ---
 
   /**
    * The `new XXX(...)` sites found for the type at {@code context}/{@code token} in {@code source}.
@@ -1238,11 +1262,17 @@ class ReferenceLocatorTest {
               posOf(source, context, token),
               List.of(),
               LibrarySources.none());
-      return session.instantiationTargets(request).stream()
+      return session.references().instantiationTargets(request).stream()
           .flatMap(
               target ->
                   session
-                      .searchReferences(TempSourceCompiler.TEST_URI, source, 1, target, false)
+                      .references()
+                      .references(
+                          session.analysis(TempSourceCompiler.TEST_URI, source, 1, () -> {}),
+                          TempSourceCompiler.TEST_URI,
+                          target,
+                          false,
+                          Set.of())
                       .hits()
                       .stream())
           .map(match -> match.range().getStart())

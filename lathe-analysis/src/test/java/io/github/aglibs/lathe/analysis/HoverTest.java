@@ -32,10 +32,10 @@ class HoverTest extends SampleFixture {
               TempSourceCompiler.TEST_URI,
               source,
               0,
-              SourceLocator.offsetToPosition(source, offset),
+              Positions.offsetToPosition(source, offset),
               List.of(),
               LibrarySources.none());
-      final Hover hover = session.hover(request);
+      final Hover hover = session.navigation().hover(request);
       return hover == null ? null : hover.getContents().getRight().getValue();
     }
   }
@@ -206,11 +206,11 @@ class HoverTest extends SampleFixture {
     assertThat(md.get()).contains("List");
   }
 
-  // --- argument param-hint (EG-045, EG-046) ---
+  // --- argument param-hint ---
 
   @Test
   void hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter() {
-    // EG-045: hovering the bare component reference inside the compact constructor must show the
+    // Hovering the bare component reference inside the compact constructor must show the
     // component itself, not the callee's parameter (`Object value`). Mirrors the FIELD-read case.
     final var source =
         """
@@ -249,7 +249,7 @@ class HoverTest extends SampleFixture {
   @Test
   void hover_classFileDependencyArgument_showsSourceParameterName(@TempDir final Path tmpDir)
       throws Exception {
-    // EG-046: hovering an argument whose callee is a class-file dependency compiled without
+    // Hovering an argument whose callee is a class-file dependency compiled without
     // -parameters must show the resolved source name, not the synthetic `arg0`.
     try (final var fixture = new ClassFileFixture(tmpDir)) {
       final var source =
@@ -259,7 +259,7 @@ class HoverTest extends SampleFixture {
           }
           """;
       fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("\"hello\""));
+      final var pos = Positions.offsetToPosition(source, source.indexOf("\"hello\""));
       final var request =
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
@@ -268,7 +268,7 @@ class HoverTest extends SampleFixture {
               pos,
               List.of(fixture.srcDir()),
               LibrarySources.none());
-      final var hover = fixture.session().hover(request);
+      final var hover = fixture.session().navigation().hover(request);
 
       assertThat(hover).isNotNull();
       final var md = hover.getContents().getRight().getValue();
@@ -289,7 +289,7 @@ class HoverTest extends SampleFixture {
           }
           """;
       fixture.session().compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
-      final var pos = SourceLocator.offsetToPosition(source, source.indexOf("greet"));
+      final var pos = Positions.offsetToPosition(source, source.indexOf("greet"));
       final var request =
           new SourceFeatureRequest(
               TempSourceCompiler.TEST_URI,
@@ -298,7 +298,7 @@ class HoverTest extends SampleFixture {
               pos,
               List.of(fixture.srcDir()),
               LibrarySources.none());
-      final var hover = fixture.session().hover(request);
+      final var hover = fixture.session().navigation().hover(request);
 
       assertThat(hover).isNotNull();
       assertThat(hover.getContents().getRight().getValue()).contains("String name", "int count");
@@ -307,7 +307,7 @@ class HoverTest extends SampleFixture {
 
   private Optional<String> hoverAt(final int line, final int character) {
     final var path = pathAt(line, character);
-    final var element = SourceLocator.elementAt(compiled.trees(), path);
+    final var element = CursorElements.elementAt(compiled.trees(), path);
     final var type = path != null ? compiled.trees().getTypeMirror(path) : null;
     final var javadoc =
         new JavadocLocator(compiled.parser())

@@ -1,20 +1,15 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
-import io.github.aglibs.lathe.core.PortUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.launch.JdwpOptions;
 import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
-import io.github.aglibs.lathe.core.schema.RunKind;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.debug.DapHost;
@@ -23,73 +18,75 @@ import io.github.aglibs.lathe.server.debug.FrameSources;
 import io.github.aglibs.lathe.server.debug.LatheProviderContext;
 import io.github.aglibs.lathe.server.run.CompletenessGate;
 import io.github.aglibs.lathe.server.run.CompletenessResult;
+import io.github.aglibs.lathe.server.run.DiscoveredTest;
+import io.github.aglibs.lathe.server.run.JdwpOptions;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.LaunchReader;
 import io.github.aglibs.lathe.server.run.LaunchSession;
 import io.github.aglibs.lathe.server.run.Launcher;
 import io.github.aglibs.lathe.server.run.MainClassScope;
+import io.github.aglibs.lathe.server.run.PortUtil;
 import io.github.aglibs.lathe.server.run.ResolvedLaunch;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigReader;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
 import io.github.aglibs.lathe.server.run.RunItem;
+import io.github.aglibs.lathe.server.run.RunKind;
 import io.github.aglibs.lathe.server.run.RunOverlay;
 import io.github.aglibs.lathe.server.run.RunOverlaySet;
 import io.github.aglibs.lathe.server.run.SourceSetScope;
+import io.github.aglibs.lathe.server.run.TestDiscovery;
+import io.github.aglibs.lathe.server.run.TestDiscoveryStore;
 import io.github.aglibs.lathe.server.run.TestEventParams;
 import io.github.aglibs.lathe.server.run.TestFinishedParams;
 import io.github.aglibs.lathe.server.run.TestOutputParams;
 import io.github.aglibs.lathe.server.run.TestResult;
+import io.github.aglibs.lathe.server.run.TestSource;
 import io.github.aglibs.lathe.server.run.TranscriptLine;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.FileTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 // Runs and debugs tests and main classes by replaying their captured launches, discovers a module's
 // tests, and keeps the named run configurations. Event-loop state: the live runs and debug hosts,
-// and the discovery cache; launch and drain threads reach them only through the loop.
+// the discoveries (TestDiscoveryStore) and their queue; launch and drain threads reach them only
+// through the loop.
 final class RunCoordinator {
 
   private static final Logger LOG = Logger.getLogger(RunCoordinator.class.getName());
 
   private static final long JDWP_READY_TIMEOUT_MS = 15_000;
 
-  private final LanguageClient client;
+  private final LatheLanguageClient client;
   private final ServerEventLoop eventLoop;
   private final WorkspaceState state;
   private final ReactorTypeIndex reactorIndex;
-  // In-flight replays keyed by run token, so a cancel can reach the right LaunchSession. A plain
-  // map, not a concurrent one: it is mutated only on the event loop. The run and exit threads
-  // marshal put/remove via eventLoop.execute (see runTestFuture) rather than touching it directly.
-  private final Map<String, LaunchSession> activeRuns = new HashMap<>();
+  // In-flight replays keyed by run token, from the moment a launch leaves the loop, so a cancel
+  // reaches the right one. Loop-only: launch threads hand their JVM back through a rejoin.
+  private final Map<String, RunSlot> activeRuns = new HashMap<>();
   private final Map<String, DapHost> activeDebugHosts = new HashMap<>();
-  // Test discoveries per module, valid while the module's test-classes stamp is unchanged, and the
-  // last one queued: discovery JVMs run one at a time. Both touched on the event loop only.
-  private final Map<String, CachedDiscovery> discoveries = new HashMap<>();
+  // The modules' test discoveries, and the last one queued: discovery JVMs run one at a time.
+  private final TestDiscoveryStore discoveries = new TestDiscoveryStore();
   private CompletableFuture<TestDiscovery> lastDiscovery =
       CompletableFuture.completedFuture(new TestDiscovery("", List.of(), List.of()));
 
   RunCoordinator(
-      final LanguageClient client,
+      final LatheLanguageClient client,
       final ServerEventLoop eventLoop,
       final WorkspaceState state,
       final ReactorTypeIndex reactorIndex) {
@@ -105,79 +102,17 @@ final class RunCoordinator {
     return startTestRun(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
-  private CompletableFuture<LaunchOutcome> startTestRun(
-      final String moduleRel,
-      final List<TestSelection> selections,
-      final String token,
-      final RunItem overlay) {
-    final List<Path> runnerClasspath = state.manifest().runnerClasspath();
-    if (runnerClasspath.isEmpty()) {
-      LOG.warning(
-          () ->
-              "[launch] %s %s blocked no lathe-test-runner jar recorded"
-                  .formatted(moduleRel, selectionLabel(selections)));
-      return CompletableFuture.completedFuture(
-          LaunchOutcome.blocked(List.of("no lathe-test-runner jar recorded — run a build first")));
-    }
-
-    final Consumer<TranscriptLine> onLine = streamConsumer(token);
-    final Consumer<TestResult> onResult = resultConsumer(token);
-    final Path root = state.root();
-    final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
-    final var t = Stopwatch.start();
-    return launchOnItsThread(
-        moduleRel,
-        token,
-        (onStart, result) ->
-            launchTest(
-                root,
-                reactorRewrite,
-                runnerClasspath,
-                moduleRel,
-                selections,
-                overlay,
-                onLine,
-                onResult,
-                onStart,
-                t,
-                result));
-  }
-
-  // Launches on a thread of its own, so the loop never waits for the JVM. While it runs, the run is
-  // registered by token, on the event loop like every other field, so a cancel reaches it; it is
-  // unregistered when it ends, blocked or not (removing an unregistered token is a no-op).
-  private CompletableFuture<LaunchOutcome> launchOnItsThread(
-      final String moduleRel,
-      final String token,
-      final BiConsumer<Consumer<LaunchSession>, CompletableFuture<LaunchOutcome>> launch) {
-    final var result = new CompletableFuture<LaunchOutcome>();
-    eventLoop.rejoin(result).whenComplete((outcome, error) -> activeRuns.remove(token));
-    final Consumer<LaunchSession> onStart =
-        session -> eventLoop.execute(() -> activeRuns.put(token, session));
-    final var thread =
-        new Thread(() -> launch.accept(onStart, result), "lathe-launch-" + moduleRel);
-    thread.setDaemon(true);
-    thread.start();
-    return result;
-  }
-
-  void cancelRun(final String token) {
+  CompletableFuture<LaunchOutcome> runMainFuture(
+      final String moduleRel, final String mainClass, final String token) {
     eventLoop.checkOnLoop();
-    final LaunchSession session = activeRuns.get(token);
-    if (session == null) {
-      LOG.fine(() -> "[cancel] %s no active run".formatted(token));
-      return;
-    }
-
-    LOG.info(() -> "[cancel] %s pid=%d".formatted(token, session.pid()));
-    session.cancel();
+    return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
   /**
    * Launches the selected test suspended under a JDWP agent and opens an in-process DAP host wired
-   * to the module's source model, returning the ports the editor's debug client attaches to. Runs
-   * on the event loop; the launched JVM is tracked by {@code token} so {@link #cancelRun} kills it,
-   * and the DAP host is closed when the debuggee exits.
+   * to the module's source model, returning the ports the editor's debug client attaches to. The
+   * launched JVM is tracked by {@code token} so {@link #cancelRun} kills it, and the DAP host is
+   * closed when the debuggee exits.
    */
   CompletableFuture<DebugStartResult> debugTestFuture(
       final String moduleRel, final List<TestSelection> selections, final String token) {
@@ -185,54 +120,9 @@ final class RunCoordinator {
     return startDebugTest(moduleRel, selections, token, baselineOverlay(moduleRel, RunKind.TEST));
   }
 
-  private CompletableFuture<DebugStartResult> startDebugTest(
-      final String moduleRel,
-      final List<TestSelection> selections,
-      final String token,
-      final RunItem overlay) {
-    final List<Path> runnerClasspath = state.manifest().runnerClasspath();
-    if (runnerClasspath.isEmpty()) {
-      throw new IllegalStateException("no lathe-test-runner jar recorded — run a build first");
-    }
-
-    try {
-      final CheckedTestLaunch captured =
-          checkedTestLaunch(state.root(), state.manifest().reactorRewrite(), moduleRel, selections);
-      requireLaunchable(captured.gate().reasons());
-      final TestLaunchData template = captured.template();
-
-      final int jdwpPort = PortUtil.free();
-      final var jdwp = new JdwpOptions(jdwpPort);
-      final var jdwpReady = new CompletableFuture<Void>();
-      final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-      final ResolvedLaunch resolved =
-          RunOverlay.applyToTest(
-              template,
-              state.root(),
-              state.manifest().reactorRewrite(),
-              runnerClasspath,
-              withTestFilter(state.root(), moduleRel, selections),
-              resultsSink,
-              overlay,
-              jdwp);
-      final var session =
-          Launcher.launch(
-              resolved,
-              overlay.configLabel(),
-              resultsSink,
-              jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
-              resultConsumer(token));
-      return attachDebugHost(
-          moduleRel, token, session, jdwpPort, jdwpReady, selectionLabel(selections));
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
-    }
-  }
-
   /**
    * Launches the module's {@code mainClass} suspended under a JDWP agent and opens a DAP host — the
-   * main-class twin of {@link #debugTestFuture}. A main run has no JUnit result stream, so it
-   * spawns with a null sink and a no-op result consumer.
+   * main-class twin of {@link #debugTestFuture}.
    */
   CompletableFuture<DebugStartResult> debugMainFuture(
       final String moduleRel, final String mainClass, final String token) {
@@ -240,48 +130,295 @@ final class RunCoordinator {
     return startDebugMain(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
   }
 
+  void cancelRun(final String token) {
+    eventLoop.checkOnLoop();
+    final RunSlot slot = activeRuns.get(token);
+    if (slot == null) {
+      LOG.fine(() -> "[cancel] %s no active run".formatted(token));
+      return;
+    }
+
+    activeRuns.put(token, slot.cancel());
+    if (slot.session() == null) {
+      LOG.info(() -> "[cancel] %s before its JVM started".formatted(token));
+      return;
+    }
+
+    LOG.info(() -> "[cancel] %s pid=%d".formatted(token, slot.session().pid()));
+    slot.session().cancel();
+  }
+
+  private CompletableFuture<LaunchOutcome> startTestRun(
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String token,
+      final RunItem overlay) {
+    final LaunchInputs inputs = launchInputs();
+    return run(
+        moduleRel,
+        selectionLabel(selections),
+        token,
+        overlay,
+        () -> prepareTest(inputs, moduleRel, selections, overlay, JdwpOptions.NONE));
+  }
+
+  private CompletableFuture<LaunchOutcome> startMainRun(
+      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
+    final LaunchInputs inputs = launchInputs();
+    return run(
+        moduleRel,
+        mainClass,
+        token,
+        overlay,
+        () -> prepareMain(inputs, moduleRel, mainClass, overlay, JdwpOptions.NONE));
+  }
+
+  private CompletableFuture<DebugStartResult> startDebugTest(
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String token,
+      final RunItem overlay) {
+    final LaunchInputs inputs = launchInputs();
+    final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
+    return debug(
+        moduleRel,
+        selectionLabel(selections),
+        token,
+        overlay,
+        jdwp,
+        () -> prepareTest(inputs, moduleRel, selections, overlay, jdwp));
+  }
+
   private CompletableFuture<DebugStartResult> startDebugMain(
       final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
-    try {
-      final int jdwpPort = PortUtil.free();
-      final var jdwp = new JdwpOptions(jdwpPort);
-      final MainLaunchPlan plan =
-          resolveMainLaunch(
-              state.root(), state.manifest().reactorRewrite(), moduleRel, mainClass, overlay, jdwp);
-      requireLaunchable(plan.blockedReasons());
+    final LaunchInputs inputs = launchInputs();
+    final var jdwp = new JdwpOptions(IOUtil.unchecked(PortUtil::free));
+    return debug(
+        moduleRel,
+        mainClass,
+        token,
+        overlay,
+        jdwp,
+        () -> prepareMain(inputs, moduleRel, mainClass, overlay, jdwp));
+  }
 
-      final var jdwpReady = new CompletableFuture<Void>();
-      final ResolvedLaunch resolved = plan.launch();
-      final var session =
-          Launcher.launch(
-              resolved,
-              overlay.configLabel(),
-              null,
-              jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
-              ignored -> {});
-      return attachDebugHost(moduleRel, token, session, jdwpPort, jdwpReady, mainClass);
-    } catch (final IOException e) {
-      throw new UncheckedIOException(e);
+  private LaunchInputs launchInputs() {
+    return new LaunchInputs(
+        state.root(), state.manifest().reactorRewrite(), state.manifest().runnerClasspath());
+  }
+
+  // A run's outcome, with the launch's notes, once its JVM exits.
+  private CompletableFuture<LaunchOutcome> run(
+      final String moduleRel,
+      final String label,
+      final String token,
+      final RunItem overlay,
+      final IOUtil.IOSupplier<Replay> prepare) {
+    requireFreeToken(token);
+    final var t = Stopwatch.start();
+    return spawn(moduleRel, label, token, overlay, streamConsumer(token), prepare)
+        .thenCompose(this::outcome)
+        .whenComplete(
+            (outcome, error) ->
+                endRun(moduleRel, label, overlay.configLabel(), token, t, outcome, error));
+  }
+
+  // Before the launch's end is chained: that end drops the token's slot, which here is another
+  // launch's, and with it the way to cancel that one.
+  private void requireFreeToken(final String token) {
+    if (activeRuns.containsKey(token)) {
+      throw new IllegalArgumentException(
+          "a launch under token %s is still running".formatted(token));
     }
   }
 
-  /**
-   * A resolved main launch, or the reasons it is blocked — returned so run and debug report it
-   * their own way.
-   */
-  private record MainLaunchPlan(ResolvedLaunch launch, List<String> blockedReasons) {
+  private CompletableFuture<LaunchOutcome> outcome(final Spawned spawned) {
+    if (spawned.replay().blocked()) {
+      return CompletableFuture.completedFuture(
+          LaunchOutcome.blocked(spawned.replay().blockedReasons()));
+    }
 
-    // A null launch is the blocked plan.
-    MainLaunchPlan {
+    return eventLoop
+        .rejoin(spawned.session().onExit())
+        .thenApply(outcome -> outcome.withNotes(spawned.replay().notes()));
+  }
+
+  private void endRun(
+      final String moduleRel,
+      final String label,
+      final String configLabel,
+      final String token,
+      final Stopwatch t,
+      final LaunchOutcome outcome,
+      final Throwable error) {
+    activeRuns.remove(token);
+    if (error != null) {
+      LOG.log(
+          Level.WARNING,
+          ExceptionUtil.completionCause(error),
+          () -> "[launch] %s %s failed %dms".formatted(moduleRel, label, t.elapsedMs()));
+      return;
+    }
+
+    if (outcome.launched()) {
+      LOG.info(
+          () ->
+              "[launch] %s %s config=%s exit=%d %dms"
+                  .formatted(moduleRel, label, configLabel, outcome.exitCode(), t.elapsedMs()));
+    }
+  }
+
+  // A debug: its JVM spawned suspended under a JDWP agent, then a DAP host once the agent listens.
+  private CompletableFuture<DebugStartResult> debug(
+      final String moduleRel,
+      final String label,
+      final String token,
+      final RunItem overlay,
+      final JdwpOptions jdwp,
+      final IOUtil.IOSupplier<Replay> prepare) {
+    requireFreeToken(token);
+    final var jdwpReady = new CompletableFuture<Void>();
+    return spawn(
+            moduleRel,
+            label,
+            token,
+            overlay,
+            jdwpReadyConsumer(jdwp, jdwpReady, streamConsumer(token)),
+            prepare)
+        .thenCompose(
+            spawned -> attachDebugHost(moduleRel, label, token, spawned, jdwp.port(), jdwpReady));
+  }
+
+  // Prepares and spawns the launch on a thread of its own, so the loop never reads a launch file,
+  // waits on a module lock or starts a process. The token is registered first: a cancel that comes
+  // before the JVM exists is kept, and the JVM is cancelled as soon as it is back on the loop. A
+  // blank token (test discovery, a caller with no surface listening) is not registered: nothing
+  // can cancel it, and two such launches would share one slot.
+  private CompletableFuture<Spawned> spawn(
+      final String moduleRel,
+      final String label,
+      final String token,
+      final RunItem overlay,
+      final Consumer<TranscriptLine> onLine,
+      final IOUtil.IOSupplier<Replay> prepare) {
+    if (!token.isBlank()) {
+      activeRuns.put(token, RunSlot.PENDING);
+    }
+
+    final Consumer<TestResult> onResult = resultConsumer(token);
+    final CompletableFuture<Spawned> spawned =
+        CompletableFuture.supplyAsync(
+            () ->
+                IOUtil.unchecked(
+                    () ->
+                        spawnPrepared(
+                            moduleRel, label, overlay.configLabel(), onLine, onResult, prepare)),
+            task -> launchThread(moduleRel, task).start());
+    return eventLoop
+        .rejoin(spawned)
+        .whenComplete((result, error) -> register(token, result, error));
+  }
+
+  private static Thread launchThread(final String moduleRel, final Runnable task) {
+    final var thread = new Thread(task, "lathe-launch-" + moduleRel);
+    thread.setDaemon(true);
+    return thread;
+  }
+
+  private static Spawned spawnPrepared(
+      final String moduleRel,
+      final String label,
+      final String configLabel,
+      final Consumer<TranscriptLine> onLine,
+      final Consumer<TestResult> onResult,
+      final IOUtil.IOSupplier<Replay> prepare)
+      throws IOException {
+    final Replay replay = prepare.get();
+    if (replay.blocked()) {
+      LOG.warning(
+          () ->
+              "[launch] %s %s blocked reasons=%s"
+                  .formatted(moduleRel, label, replay.blockedReasons()));
+      return new Spawned(replay, null);
+    }
+
+    replay
+        .notes()
+        .forEach(note -> onLine.accept(new TranscriptLine(TranscriptLine.Stream.STDERR, note)));
+    final ResolvedLaunch resolved = replay.launch();
+    return new Spawned(
+        replay, Launcher.launch(resolved, configLabel, replay.resultsSink(), onLine, onResult));
+  }
+
+  private void register(final String token, final Spawned spawned, final Throwable error) {
+    final RunSlot slot = activeRuns.get(token);
+    if (error != null || spawned.replay().blocked() || token.isBlank()) {
+      activeRuns.remove(token);
+      return;
+    }
+
+    final boolean cancelled = slot != null && slot.cancelled();
+    activeRuns.put(token, new RunSlot(spawned.session(), cancelled));
+    if (cancelled) {
+      LOG.info(
+          () ->
+              "[cancel] %s pid=%d cancelled before it started"
+                  .formatted(token, spawned.session().pid()));
+      spawned.session().cancel();
+    }
+  }
+
+  // Whether nobody cancelled the launch under the token, nor did it end; a blank-token launch is
+  // never registered, and nothing can cancel it.
+  private boolean isLive(final String token) {
+    final RunSlot slot = activeRuns.get(token);
+    return token.isBlank() || slot != null && !slot.cancelled();
+  }
+
+  // A launch registered under its token: no session while it is still being prepared, and whether
+  // a cancel came for it.
+  private record RunSlot(LaunchSession session, boolean cancelled) {
+
+    static final RunSlot PENDING = new RunSlot(null, false);
+
+    // Nothing to check: pending or started, cancelled or not, every combination occurs.
+    RunSlot {}
+
+    RunSlot cancel() {
+      return new RunSlot(session, true);
+    }
+  }
+
+  // What a launch reads from the session: read on the loop, handed to the launch thread.
+  private record LaunchInputs(
+      Path root, ReactorRewrite reactorRewrite, List<Path> runnerClasspath) {
+
+    LaunchInputs {
+      ValidCheck.check().notNull(root, "root").validate();
+      runnerClasspath = List.copyOf(runnerClasspath);
+    }
+  }
+
+  // A resolved launch with the completeness gate's notes, or the reasons it is blocked. A main has
+  // no results sink: it reports no test results.
+  private record Replay(
+      ResolvedLaunch launch, Path resultsSink, List<String> notes, List<String> blockedReasons) {
+
+    Replay {
+      notes = List.copyOf(notes);
       blockedReasons = List.copyOf(blockedReasons);
+      ValidCheck.check()
+          .assertTrue((launch == null) != blockedReasons.isEmpty(), "blockedReasons")
+          .validate();
     }
 
-    static MainLaunchPlan ready(final ResolvedLaunch launch) {
-      return new MainLaunchPlan(launch, List.of());
+    static Replay ready(
+        final ResolvedLaunch launch, final Path resultsSink, final List<String> notes) {
+      return new Replay(launch, resultsSink, notes, List.of());
     }
 
-    static MainLaunchPlan blocked(final List<String> reasons) {
-      return new MainLaunchPlan(null, List.copyOf(reasons));
+    static Replay blocked(final List<String> reasons) {
+      return new Replay(null, null, List.of(), reasons);
     }
 
     boolean blocked() {
@@ -289,75 +426,126 @@ final class RunCoordinator {
     }
   }
 
+  // The launched JVM of a replay, or none when the replay is blocked.
+  private record Spawned(Replay replay, LaunchSession session) {
+
+    Spawned {
+      ValidCheck.check()
+          .notNull(replay, "replay")
+          .assertTrue(replay.blocked() == (session == null), "session")
+          .validate();
+    }
+  }
+
+  private static Replay prepareTest(
+      final LaunchInputs inputs,
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final RunItem overlay,
+      final JdwpOptions jdwp)
+      throws IOException {
+    if (inputs.runnerClasspath().isEmpty()) {
+      return Replay.blocked(List.of("no lathe-test-runner jar recorded — run a build first"));
+    }
+
+    final CheckedTestLaunch captured =
+        checkedTestLaunch(inputs.root(), inputs.reactorRewrite(), moduleRel, selections);
+    if (!captured.gate().complete()) {
+      return Replay.blocked(captured.gate().reasons());
+    }
+
+    final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
+    return Replay.ready(
+        RunOverlay.applyToTest(
+            captured.template(),
+            inputs.root(),
+            inputs.reactorRewrite(),
+            inputs.runnerClasspath(),
+            withTestFilter(inputs.root(), moduleRel, selections),
+            resultsSink,
+            overlay,
+            jdwp),
+        resultsSink,
+        captured.gate().notes());
+  }
+
   /**
-   * Resolves the launch for a {@code main} run/debug, choosing the template by the class's source
-   * scope: a {@code main} in the module's test sources runs against the captured test template (its
-   * test-classes patched into the module, the full test-scope graph), with the user's class as the
-   * entry point instead of the JUnit runner; a main-scope class uses the derived main template.
-   * Blocked (missing template / incomplete capture) is returned, not thrown, so each caller reports
-   * it its own way.
+   * Prepares a {@code main} run/debug, choosing the template by the class's source scope: a {@code
+   * main} in the module's test sources runs against the captured test template (its test-classes
+   * patched into the module, the full test-scope graph), with the user's class as the entry point
+   * instead of the JUnit runner; a main-scope class uses the derived main template.
    */
-  private static MainLaunchPlan resolveMainLaunch(
-      final Path workspaceRoot,
-      final ReactorRewrite reactorRewrite,
+  private static Replay prepareMain(
+      final LaunchInputs inputs,
       final String moduleRel,
       final String mainClass,
       final RunItem overlay,
       final JdwpOptions jdwp)
       throws IOException {
-    final Optional<String> uncaptured =
-        SourceSetScope.uncapturedReason(workspaceRoot, moduleRel, mainClass);
+    final Path root = inputs.root();
+    final ReactorRewrite reactorRewrite = inputs.reactorRewrite();
+    final Optional<String> uncaptured = SourceSetScope.uncapturedReason(root, moduleRel, mainClass);
     if (uncaptured.isPresent()) {
-      return MainLaunchPlan.blocked(List.of(uncaptured.get()));
+      return Replay.blocked(List.of(uncaptured.get()));
     }
 
-    if (MainClassScope.isTestScope(workspaceRoot, moduleRel, mainClass)) {
+    if (MainClassScope.isTestScope(root, moduleRel, mainClass)) {
       final CheckedTestLaunch captured =
-          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, List.of());
+          checkedTestLaunch(root, reactorRewrite, moduleRel, List.of());
       if (!captured.gate().complete()) {
-        return MainLaunchPlan.blocked(captured.gate().reasons());
+        return Replay.blocked(captured.gate().reasons());
       }
 
-      return MainLaunchPlan.ready(
+      return Replay.ready(
           RunOverlay.applyToTestMain(
-              captured.template(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
+              captured.template(), root, reactorRewrite, mainClass, overlay, jdwp),
+          null,
+          captured.gate().notes());
     }
 
-    final Optional<MainLaunchData> template = new LaunchReader(workspaceRoot).main(moduleRel);
+    final Optional<MainLaunchData> template = new LaunchReader(root).main(moduleRel);
     if (template.isEmpty()) {
-      return MainLaunchPlan.blocked(List.of("no derived main-launch.json for " + moduleRel));
+      return Replay.blocked(List.of("no derived main-launch.json for " + moduleRel));
     }
 
-    final CompletenessResult gate =
-        CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite);
+    final CompletenessResult gate = CompletenessGate.verify(template.get(), root, reactorRewrite);
     if (!gate.complete()) {
-      return MainLaunchPlan.blocked(gate.reasons());
+      return Replay.blocked(gate.reasons());
     }
 
-    return MainLaunchPlan.ready(
-        RunOverlay.applyToMain(
-            template.get(), workspaceRoot, reactorRewrite, mainClass, overlay, jdwp));
+    return Replay.ready(
+        RunOverlay.applyToMain(template.get(), root, reactorRewrite, mainClass, overlay, jdwp),
+        null,
+        gate.notes());
   }
 
   /**
-   * Shared debug tail: track the launched JVM under {@code token}, wait for its JDWP agent to start
-   * listening, open the DAP host wired to the workspace's source routing, and return the ports. The
-   * host is closed when the debuggee exits.
+   * Shared debug tail: wait for the launched JVM's JDWP agent to start listening, open the DAP host
+   * wired to the workspace's source routing, and return the ports. The host is closed when the
+   * debuggee exits.
    */
   private CompletableFuture<DebugStartResult> attachDebugHost(
       final String moduleRel,
+      final String label,
       final String token,
-      final LaunchSession session,
+      final Spawned spawned,
       final int jdwpPort,
-      final CompletableFuture<Void> jdwpReady,
-      final String label) {
-    activeRuns.put(token, session);
+      final CompletableFuture<Void> jdwpReady) {
+    if (spawned.replay().blocked()) {
+      throw new IllegalStateException(
+          "debug launch incomplete: " + spawned.replay().blockedReasons());
+    }
+
+    // One future: onExit() builds a new one, and reads the results file, on every call.
+    final CompletableFuture<LaunchOutcome> exited = spawned.session().onExit();
     eventLoop
-        .rejoin(session.onExit())
+        .rejoin(exited)
         .whenComplete(
             (outcome, error) -> {
               publishTestFinished(
-                  token, outcome, error == null ? null : ExceptionUtil.completionCause(error));
+                  token,
+                  outcome == null ? null : outcome.withNotes(spawned.replay().notes()),
+                  error == null ? null : ExceptionUtil.completionCause(error));
               endDebugSession(token);
             });
 
@@ -367,12 +555,18 @@ final class RunCoordinator {
     // throwaway TCP connect, which the agent reports as a failed debugger handshake. The DapHost's
     // java-debug connection is then the only connection the agent ever sees, so the editor's attach
     // (once, no retry) never races a probe. suspend=y guarantees the banner prints shortly, then
-    // parks. The wait rejoins the loop instead of blocking it while the JVM starts.
+    // parks; a JVM that exits first (a bad JVM option, say) ends the wait at once. The wait rejoins
+    // the loop instead of blocking it while the JVM starts.
     return eventLoop
-        .rejoin(jdwpReady.orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
+        .rejoin(
+            CompletableFuture.anyOf(jdwpReady, exited)
+                .orTimeout(JDWP_READY_TIMEOUT_MS, TimeUnit.MILLISECONDS))
         .handle(
-            (ready, failure) -> {
-              if (failure != null) {
+            (first, failure) -> {
+              // A suspended debuggee nobody will attach to would stay parked: it is cancelled,
+              // and its exit then publishes the outcome and clears the token.
+              if (!jdwpReady.isDone() && !exited.isDone()) {
+                spawned.session().cancel();
                 throw new IllegalStateException(
                     "jdwp agent did not start listening on port %d within %dms"
                         .formatted(jdwpPort, JDWP_READY_TIMEOUT_MS),
@@ -380,10 +574,11 @@ final class RunCoordinator {
               }
 
               // The debuggee may have exited, or been cancelled, while this waited for the loop:
-              // a host opened now would never be closed.
-              if (!activeRuns.containsKey(token)) {
+              // a host opened now would be closed at once, and the editor's one attach refused.
+              if (!jdwpReady.isDone() || exited.isDone() || !isLive(token)) {
+                spawned.session().cancel();
                 throw new IllegalStateException(
-                    "the debuggee exited before the debugger attached on port %d"
+                    "the debuggee ended before the debugger attached on port %d"
                         .formatted(jdwpPort));
               }
 
@@ -427,12 +622,6 @@ final class RunCoordinator {
     LOG.info(
         () -> "[debug] %s %s dap=%d jdwp=%d".formatted(moduleRel, label, host.port(), jdwpPort));
     return new DebugStartResult(host.port(), jdwpPort);
-  }
-
-  private static void requireLaunchable(final List<String> blockedReasons) {
-    if (!blockedReasons.isEmpty()) {
-      throw new IllegalStateException("debug launch incomplete: " + blockedReasons);
-    }
   }
 
   // The module's captured test launch, checked by the completeness gate. A module with no capture
@@ -496,7 +685,7 @@ final class RunCoordinator {
 
     final LaunchOutcome finished = finishedOutcome(outcome, error);
     LOG.fine(() -> "[debug] %s finished exit=%d".formatted(token, finished.exitCode()));
-    ((LatheLanguageClient) client).testFinished(new TestFinishedParams(token, finished));
+    client.testFinished(new TestFinishedParams(token, finished));
   }
 
   /**
@@ -562,51 +751,22 @@ final class RunCoordinator {
         .toList();
   }
 
-  private record CachedDiscovery(FileTime stamp, CompletableFuture<TestDiscovery> result) {
-
-    CachedDiscovery {
-      ValidCheck.check().notNull(result, "result").validate();
-    }
-  }
-
-  // A module's discovery on disk with the test-classes stamp it was found for, so a new session
-  // reuses it instead of launching a JVM per module again.
-  private record PersistedDiscovery(long stampMillis, TestDiscovery discovery) {
-
-    PersistedDiscovery {
-      ValidCheck.check().notNull(discovery, "discovery").validate();
-    }
-  }
-
   // The tests a run of the module would execute, found by a discover-mode launch that runs none of
   // them. Answered from the cache until the module's test classes change (sync and save compiles
   // rewrite its test-classes stamp); a client asking for many modules gets a queue, not a JVM each.
   CompletableFuture<TestDiscovery> discoverTestsFuture(final String moduleRel) {
     eventLoop.checkOnLoop();
-    final FileTime stamp = testClassesStamp(moduleRel);
-    final CachedDiscovery cached = discoveries.get(moduleRel);
-    if (cached != null && Objects.equals(cached.stamp(), stamp)) {
-      return cached.result();
-    }
+    return discoveries.discovery(state.root(), moduleRel, () -> queuedDiscovery(moduleRel));
+  }
 
-    final Path persisted =
-        SourceLayout.moduleLatheDir(state.root(), moduleRel)
-            .resolve(LatheLayout.TEST_DISCOVERY_FILE);
-    final Optional<TestDiscovery> stored = readDiscovery(persisted, stamp);
-    if (stored.isPresent()) {
-      final var result = CompletableFuture.completedFuture(stored.get());
-      discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
-      return result;
-    }
-
+  // Discovery JVMs run one at a time: each starts once the one queued before it ends.
+  private CompletableFuture<TestDiscovery> queuedDiscovery(final String moduleRel) {
     final CompletableFuture<TestDiscovery> result =
         eventLoop
             .rejoin(lastDiscovery)
             .handle((previous, error) -> moduleRel)
-            .thenCompose(this::launchDiscovery)
-            .thenApply(discovery -> writeDiscovery(persisted, stamp, discovery));
+            .thenCompose(this::launchDiscovery);
     lastDiscovery = result;
-    discoveries.put(moduleRel, new CachedDiscovery(stamp, result));
     return result;
   }
 
@@ -626,8 +786,7 @@ final class RunCoordinator {
     final RunItem overlay =
         baselineOverlay(moduleRel, RunKind.TEST)
             .withJvmArg("-D%s=true".formatted(LatheFlags.DISCOVER));
-    return eventLoop
-        .rejoin(startTestRun(moduleRel, selections, "", overlay))
+    return startTestRun(moduleRel, selections, "", overlay)
         .thenApply(outcome -> discovery(moduleRel, outcome));
   }
 
@@ -663,44 +822,8 @@ final class RunCoordinator {
         .toList();
   }
 
-  // The stored discovery, when it was found for the module's current test classes.
-  static Optional<TestDiscovery> readDiscovery(final Path file, final FileTime stamp) {
-    if (stamp == null || !Files.exists(file)) {
-      return Optional.empty();
-    }
-
-    final PersistedDiscovery persisted =
-        IOUtil.unchecked(() -> Json.read(file, PersistedDiscovery.class));
-    return persisted.stampMillis() == stamp.toMillis()
-        ? Optional.of(persisted.discovery())
-        : Optional.empty();
-  }
-
-  // Stores a complete discovery; a blocked one (no capture yet) is not worth keeping.
-  static TestDiscovery writeDiscovery(
-      final Path file, final FileTime stamp, final TestDiscovery discovery) {
-    if (stamp != null && discovery.blockedReasons().isEmpty()) {
-      IOUtil.unchecked(
-          () ->
-              FileUtil.writeIfChanged(
-                  file.getParent(),
-                  file,
-                  Json.toJson(new PersistedDiscovery(stamp.toMillis(), discovery)),
-                  false));
-    }
-
-    return discovery;
-  }
-
   private static String sourceUri(final String path) {
     return path.isEmpty() ? "" : LatheUri.fromPath(Path.of(path));
-  }
-
-  private FileTime testClassesStamp(final String moduleRel) {
-    final Path stamps =
-        SourceLayout.moduleLatheDir(state.root(), moduleRel)
-            .resolve(LatheLayout.compiledStampsFileName(LatheLayout.TEST_CLASSES_DIR));
-    return Files.exists(stamps) ? IOUtil.unchecked(() -> Files.getLastModifiedTime(stamps)) : null;
   }
 
   private static String selectionLabel(final List<TestSelection> selections) {
@@ -718,7 +841,7 @@ final class RunCoordinator {
       return line -> {};
     }
 
-    return line -> ((LatheLanguageClient) client).testOutput(new TestOutputParams(token, line));
+    return line -> client.testOutput(new TestOutputParams(token, line));
   }
 
   /**
@@ -750,7 +873,7 @@ final class RunCoordinator {
       return result -> {};
     }
 
-    return result -> ((LatheLanguageClient) client).testEvent(new TestEventParams(token, result));
+    return result -> client.testEvent(new TestEventParams(token, result));
   }
 
   // With the command that captures it, so a reader (an agent above all) knows the remedy. A class
@@ -776,163 +899,6 @@ final class RunCoordinator {
 
     return "no captured test launch for %s; run `%s` to capture it"
         .formatted(moduleRel, LatheLayout.captureTestsCommand(moduleRel));
-  }
-
-  private static void launchTest(
-      final Path workspaceRoot,
-      final ReactorRewrite reactorRewrite,
-      final List<Path> runnerClasspath,
-      final String moduleRel,
-      final List<TestSelection> selections,
-      final RunItem overlay,
-      final Consumer<TranscriptLine> onLine,
-      final Consumer<TestResult> onResult,
-      final Consumer<LaunchSession> onStart,
-      final Stopwatch t,
-      final CompletableFuture<LaunchOutcome> result) {
-    try {
-      final CheckedTestLaunch captured =
-          checkedTestLaunch(workspaceRoot, reactorRewrite, moduleRel, selections);
-      final CompletenessResult gate = captured.gate();
-      if (!gate.complete()) {
-        LOG.warning(
-            () ->
-                "[launch] %s %s blocked reasons=%s"
-                    .formatted(moduleRel, selectionLabel(selections), gate.reasons()));
-        result.complete(LaunchOutcome.blocked(gate.reasons()));
-        return;
-      }
-
-      gate.notes()
-          .forEach(note -> onLine.accept(new TranscriptLine(TranscriptLine.Stream.STDERR, note)));
-      final Path resultsSink = Files.createTempFile("lathe-results-", ".ndjson");
-      final ResolvedLaunch resolved =
-          RunOverlay.applyToTest(
-              captured.template(),
-              workspaceRoot,
-              reactorRewrite,
-              runnerClasspath,
-              withTestFilter(workspaceRoot, moduleRel, selections),
-              resultsSink,
-              overlay,
-              JdwpOptions.NONE);
-      final var session =
-          Launcher.launch(resolved, overlay.configLabel(), resultsSink, onLine, onResult);
-      onStart.accept(session);
-      final String label = selectionLabel(selections);
-      session
-          .onExit()
-          .whenComplete(
-              (outcome, error) ->
-                  completeRun(
-                      moduleRel,
-                      label,
-                      overlay.configLabel(),
-                      t,
-                      result,
-                      outcome == null ? null : outcome.withNotes(gate.notes()),
-                      error));
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () ->
-              "[launch] %s %s failed to launch %dms"
-                  .formatted(moduleRel, selectionLabel(selections), t.elapsedMs()));
-      result.completeExceptionally(e);
-    }
-  }
-
-  // Shared completion for both test and main replay: propagate a spawn/exit failure, or log the
-  // exit code and hand the outcome back to the caller's run future.
-  private static void completeRun(
-      final String moduleRel,
-      final String label,
-      final String configLabel,
-      final Stopwatch t,
-      final CompletableFuture<LaunchOutcome> result,
-      final LaunchOutcome outcome,
-      final Throwable error) {
-    if (error != null) {
-      LOG.log(
-          Level.WARNING,
-          error,
-          () -> "[launch] %s %s failed %dms".formatted(moduleRel, label, t.elapsedMs()));
-      result.completeExceptionally(error);
-      return;
-    }
-
-    LOG.info(
-        () ->
-            "[launch] %s %s config=%s exit=%d %dms"
-                .formatted(moduleRel, label, configLabel, outcome.exitCode(), t.elapsedMs()));
-    result.complete(outcome);
-  }
-
-  CompletableFuture<LaunchOutcome> runMainFuture(
-      final String moduleRel, final String mainClass, final String token) {
-    eventLoop.checkOnLoop();
-    return startMainRun(moduleRel, mainClass, token, baselineOverlay(moduleRel, RunKind.MAIN));
-  }
-
-  private CompletableFuture<LaunchOutcome> startMainRun(
-      final String moduleRel, final String mainClass, final String token, final RunItem overlay) {
-    final Consumer<TranscriptLine> onLine = streamConsumer(token);
-    final Path root = state.root();
-    final ReactorRewrite reactorRewrite = state.manifest().reactorRewrite();
-    final var t = Stopwatch.start();
-    return launchOnItsThread(
-        moduleRel,
-        token,
-        (onStart, result) ->
-            launchMain(
-                root, reactorRewrite, moduleRel, mainClass, overlay, onLine, onStart, t, result));
-  }
-
-  private static void launchMain(
-      final Path workspaceRoot,
-      final ReactorRewrite reactorRewrite,
-      final String moduleRel,
-      final String mainClass,
-      final RunItem overlay,
-      final Consumer<TranscriptLine> onLine,
-      final Consumer<LaunchSession> onStart,
-      final Stopwatch t,
-      final CompletableFuture<LaunchOutcome> result) {
-    try {
-      final MainLaunchPlan plan =
-          resolveMainLaunch(
-              workspaceRoot, reactorRewrite, moduleRel, mainClass, overlay, JdwpOptions.NONE);
-      if (plan.blocked()) {
-        LOG.warning(
-            () ->
-                "[launch] %s %s blocked reasons=%s"
-                    .formatted(moduleRel, mainClass, plan.blockedReasons()));
-        result.complete(LaunchOutcome.blocked(plan.blockedReasons()));
-        return;
-      }
-
-      // A main run has no JUnit result stream, so it spawns with a null sink and a no-op result
-      // consumer; the resolved module/class path is all replay needs.
-      final ResolvedLaunch resolved = plan.launch();
-      final var session =
-          Launcher.launch(resolved, overlay.configLabel(), null, onLine, ignored -> {});
-      onStart.accept(session);
-      session
-          .onExit()
-          .whenComplete(
-              (outcome, error) ->
-                  completeRun(
-                      moduleRel, mainClass, overlay.configLabel(), t, result, outcome, error));
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING,
-          e,
-          () ->
-              "[launch] %s %s failed to launch %dms"
-                  .formatted(moduleRel, mainClass, t.elapsedMs()));
-      result.completeExceptionally(e);
-    }
   }
 
   CompletableFuture<LaunchOutcome> runNamedFuture(final String name, final String token) {

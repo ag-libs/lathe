@@ -9,7 +9,7 @@ final class KeywordProvider {
 
   // Keywords that can legally stand alone or precede punctuation (`.`, `(`, `;`); their insertText
   // stays bare. Every other offered keyword must be followed by a further construct, so its
-  // insertText carries a single trailing space (IntelliJ/JDT parity -- CQ-0054).
+  // insertText carries a single trailing space (IntelliJ/JDT parity).
   private static final Set<String> STANDALONE_KEYWORDS =
       Set.of("this", "super", "true", "false", "null", "break", "continue");
 

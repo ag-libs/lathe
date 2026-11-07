@@ -88,7 +88,7 @@ public final class TextMentions {
       public Void visitLiteral(final LiteralTree node, final Void ignored) {
         if (node.getValue() instanceof final String text && namesIt(text, name)) {
           final long start = trees.getSourcePositions().getStartPosition(cu, node);
-          final Position at = SourceLocator.offsetToPosition(cu, start);
+          final Position at = Positions.offsetToPosition(cu, start);
           found.add(new Location(cu.getSourceFile().toUri().toString(), new Range(at, at)));
         }
 
@@ -144,7 +144,7 @@ public final class TextMentions {
   public static IntStream wordStarts(final String text, final String name) {
     return IntStream.rangeClosed(0, text.length() - name.length())
         .filter(at -> text.startsWith(name, at))
-        .filter(at -> SourceLocator.identifierStart(text, at) == at)
-        .filter(at -> SourceLocator.identifierEnd(text, at) == at + name.length());
+        .filter(at -> DeclarationNames.identifierStart(text, at) == at)
+        .filter(at -> DeclarationNames.identifierEnd(text, at) == at + name.length());
   }
 }

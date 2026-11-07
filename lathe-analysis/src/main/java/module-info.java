@@ -11,7 +11,6 @@ module io.github.aglibs.lathe.analysis {
   requires io.github.aglibs.validcheck;
 
   exports io.github.aglibs.lathe.analysis;
-  exports io.github.aglibs.lathe.analysis.completion;
 
   // TypeHierarchyExplorerResult (the lathe.typeHierarchy command result) and RunTarget cross the
   // JSON-RPC boundary as raw records; Gson reflects on their accessors.

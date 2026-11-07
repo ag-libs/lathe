@@ -49,13 +49,14 @@ record SemanticCompletionContext(
       final ParsedSentinel parsed,
       final AttributedFileAnalysis analysis) {
     final var expectedValue =
-        TypeResolver.resolveExpectedValue(site, request.pos().getLine(), analysis);
+        ExpectedValueResolver.resolveExpectedValue(site, request.pos().getLine(), analysis);
     return new SemanticCompletionContext(
         analysis,
         expectedValue,
         site.injectorContext() == SentinelInjector.Context.EXPRESSION,
         parsed.inEqualityComparison(),
-        TypeResolver.isNonVoidMethod(site.enclosingClass(), site.enclosingMethod(), analysis),
-        TypeResolver.resolveStaticMemberResultContext(site, parsed, analysis));
+        ExpectedValueResolver.isNonVoidMethod(
+            site.enclosingClass(), site.enclosingMethod(), analysis),
+        ExpectedValueResolver.resolveStaticMemberResultContext(site, parsed, analysis));
   }
 }

@@ -40,4 +40,34 @@ public record ModuleConfigData(
     testCode =
         Objects.requireNonNullElse(testCode, LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
+
+  // A compile Lathe reads in place (externalOutput): the OpenJDK build's modules and build tools,
+  // with no generated sources, module path, processor path, release, parameters, preview or
+  // processing setting of their own.
+  public static ModuleConfigData external(
+      final String sourceTree,
+      final String outputDir,
+      final List<String> sourceRoots,
+      final List<String> classpath,
+      final String encoding,
+      final List<String> compilerArgs,
+      final AnalysisMode analysisMode) {
+    return new ModuleConfigData(
+        sourceTree,
+        outputDir,
+        null,
+        sourceRoots,
+        classpath,
+        List.of(),
+        List.of(),
+        "",
+        encoding,
+        false,
+        false,
+        null,
+        compilerArgs,
+        analysisMode,
+        true,
+        false);
+  }
 }

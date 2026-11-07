@@ -6,11 +6,11 @@ import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.FamilyExposure;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.LibrarySources;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.server.LombokFixtures;
 import java.nio.file.Files;
@@ -78,11 +78,17 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
       final var request = requestAt(SOURCE, position(SOURCE, "private String name", "name"));
 
-      assertThat(session.hover(request).getContents().getRight().getValue())
+      assertThat(session.navigation().hover(request).getContents().getRight().getValue())
           .contains("String name");
       assertThat(
               session
-                  .searchReferences(uri(), SOURCE, 1, session.resolveTarget(request), true)
+                  .references()
+                  .references(
+                      session.analysis(uri(), SOURCE, 1, () -> {}),
+                      uri(),
+                      session.references().resolveTarget(request),
+                      true,
+                      Set.of())
                   .hits()
                   .stream()
                   .map(match -> match.range().getStart()))
@@ -98,7 +104,7 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
       final Position field = position(SOURCE, "private String name", "name");
 
-      final List<SemanticToken> tokens = session.semanticTokens(uri(), SOURCE, 1);
+      final List<SemanticToken> tokens = session.files().semanticTokens(uri(), SOURCE, 1);
 
       assertThat(tokens)
           .as("one token on the field's name: the field's, not its generated getter's")
@@ -143,13 +149,17 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.generatedAccessorTargets(
-                  requestAt(SOURCE, position(SOURCE, "private String name", "name"))))
+              session
+                  .references()
+                  .generatedAccessorTargets(
+                      requestAt(SOURCE, position(SOURCE, "private String name", "name"))))
           .extracting(ReferenceTarget::simpleName)
           .containsExactlyInAnyOrder("getName", "setName");
       assertThat(
-              session.generatedAccessorTargets(
-                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting"))))
+              session
+                  .references()
+                  .generatedAccessorTargets(
+                      requestAt(SOURCE, position(SOURCE, "String greeting", "greeting"))))
           .isEmpty();
     }
   }
@@ -161,19 +171,25 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
 
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "private String name", "name")), "label"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "private String name", "name")), "label"))
           .hasValueSatisfying(
               reason ->
                   assertThat(reason).contains("Lombok generates getName(), setName() from it"));
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "+ getName()", "getName")), "label"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "+ getName()", "getName")), "label"))
           .hasValueSatisfying(
               reason -> assertThat(reason).contains("Lombok generates it from `name`"));
       assertThat(
-              session.renameConflict(
-                  requestAt(SOURCE, position(SOURCE, "String greeting", "greeting")), "hello"))
+              session
+                  .references()
+                  .renameConflict(
+                      requestAt(SOURCE, position(SOURCE, "String greeting", "greeting")), "hello"))
           .isEmpty();
     }
   }
@@ -204,15 +220,16 @@ class LombokAnalysisTest {
       session.compile(uri(), source, 1, CompileMode.OPEN);
       final var field = requestAt(source, position(source, "private int fCount", "fCount"));
 
-      assertThat(session.generatedAccessorTargets(field))
+      assertThat(session.references().generatedAccessorTargets(field))
           .extracting(ReferenceTarget::simpleName)
           .containsExactlyInAnyOrder("getCount", "setCount");
-      assertThat(session.renameConflict(field, "fTotal"))
+      assertThat(session.references().renameConflict(field, "fTotal"))
           .hasValueSatisfying(
               reason ->
                   assertThat(reason).contains("Lombok generates getCount(), setCount() from it"));
       assertThat(
               session
+                  .navigation()
                   .definition(requestAt(source, position(source, "return getCount", "getCount")))
                   .orElseThrow()
                   .getRange()
@@ -236,7 +253,7 @@ class LombokAnalysisTest {
               uri(),
               typing,
               2,
-              SourceLocator.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
+              Positions.offsetToPosition(typing, typing.indexOf("p.get") + "p.get".length()),
               null,
               WorkspaceTypeIndex.build(List.of(), List.of()),
               List.of(),
@@ -252,6 +269,7 @@ class LombokAnalysisTest {
   private Position definitionAt(
       final SourceAnalysisSession session, final String context, final String token) {
     return session
+        .navigation()
         .definition(requestAt(SOURCE, position(SOURCE, context, token)))
         .orElseThrow()
         .getRange()
@@ -309,6 +327,6 @@ class LombokAnalysisTest {
   }
 
   private static Position position(final String source, final String context, final String token) {
-    return SourceLocator.offsetToPosition(source, source.indexOf(token, source.indexOf(context)));
+    return Positions.offsetToPosition(source, source.indexOf(token, source.indexOf(context)));
   }
 }
