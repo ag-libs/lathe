@@ -238,6 +238,9 @@ against the `multi-module` invoker workspace — both use the checkout build dir
     * **Reach the loop from outside** with `eventLoop.submit` or `eventLoop.submitCompose` (a task
       that starts async work); never a `session::x` method reference, which reads `session` on the
       caller's thread.
+    * **A `CompilationWorker.submit` lambda runs on the module's thread**: it reads no session
+      state. Compute its inputs on the loop first (a position feature goes through
+      `FeatureRouter.positionFeature`, which builds the request there).
     * **Loop-confined helpers call `eventLoop.checkOnLoop()`**, which fails fast off the loop; a new
       helper that reads or writes session state does too.
     * **Nothing waits on the loop**: no `get`/`join`, no waiting on a process or another thread;

@@ -120,38 +120,24 @@ final class DocumentFeatures {
   }
 
   CompletableFuture<Hover> hoverFuture(final String uri, final Position pos) {
-    return router.openDocFeature(
-        "hover",
-        uri,
-        null,
-        (worker, doc) -> {
-          final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.navigation().hover(request));
-        });
+    return router.positionFeature(
+        "hover", uri, pos, null, (session, request) -> session.navigation().hover(request));
   }
 
   // Whether the position is on a name. What cannot be checked (a file no module compiles, a failed
   // check) passes, and the tool gives its own answer.
   CompletableFuture<Boolean> onNameFuture(final String uri, final Position pos) {
-    return router.openDocFeature(
-        "onName",
-        uri,
-        true,
-        (worker, doc) -> {
-          final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.navigation().onName(request));
-        });
+    return router.positionFeature(
+        "onName", uri, pos, true, (session, request) -> session.navigation().onName(request));
   }
 
   CompletableFuture<SignatureHelp> signatureHelpFuture(final String uri, final Position pos) {
-    return router.openDocFeature(
+    return router.positionFeature(
         "signatureHelp",
         uri,
+        pos,
         null,
-        (worker, doc) -> {
-          final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.navigation().signatureHelp(request));
-        });
+        (session, request) -> session.navigation().signatureHelp(request));
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
@@ -180,18 +166,16 @@ final class DocumentFeatures {
         () ->
             "[%s] %s line=%d character=%d"
                 .formatted(operation, uri, pos.getLine(), pos.getCharacter()));
-    return router.openDocFeature(
-        operation,
-        uri,
-        Either.forLeft(List.of()),
-        (worker, doc) -> {
-          final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker
-              .submit(session -> find.apply(session.navigation(), request))
-              .thenApply(
-                  location ->
-                      FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)));
-        });
+    return router
+        .positionFeature(
+            operation,
+            uri,
+            pos,
+            Optional.<Location>empty(),
+            (session, request) -> find.apply(session.navigation(), request))
+        .thenApply(
+            location ->
+                FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)));
   }
 
   CompletableFuture<List<TypeHierarchyItem>> prepareTypeHierarchyFuture(
@@ -199,15 +183,12 @@ final class DocumentFeatures {
     final var indexSnapshot = reactorIndex.current();
     final var t = Stopwatch.start();
     return router
-        .openDocFeature(
+        .positionFeature(
             "typeHierarchy:prepare",
             uri,
-            List.of(),
-            (worker, doc) -> {
-              final var request = router.featureRequest(doc, pos);
-              return worker.<List<TypeHierarchyItem>>submit(
-                  session -> session.hierarchy().prepareTypeHierarchy(request, indexSnapshot));
-            })
+            pos,
+            List.<TypeHierarchyItem>of(),
+            (session, request) -> session.hierarchy().prepareTypeHierarchy(request, indexSnapshot))
         .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
 

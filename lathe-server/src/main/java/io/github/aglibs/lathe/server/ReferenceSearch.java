@@ -1176,15 +1176,12 @@ final class ReferenceSearch {
       final String uri, final Position pos) {
     final var t = Stopwatch.start();
     return router
-        .openDocFeature(
+        .positionFeature(
             "callHierarchy:prepare",
             uri,
-            List.of(),
-            (worker, doc) -> {
-              final var request = router.featureRequest(doc, pos);
-              return worker.<List<CallHierarchyItem>>submit(
-                  session -> session.hierarchy().prepareCallHierarchy(request));
-            })
+            pos,
+            List.<CallHierarchyItem>of(),
+            (session, request) -> session.hierarchy().prepareCallHierarchy(request))
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }
 }
