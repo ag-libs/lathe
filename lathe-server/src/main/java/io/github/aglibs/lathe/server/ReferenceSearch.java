@@ -791,7 +791,7 @@ final class ReferenceSearch {
     // Only an interface, or its method, can be implemented by lambdas.
     final CompletableFuture<Optional<String>> samInterface =
         target.kind().isInterface() || target.kind() == ElementKind.METHOD
-            ? cursorWorker.submit(session -> session.functionalInterfaceName(request))
+            ? cursorWorker.submit(session -> session.navigation().functionalInterfaceName(request))
             : CompletableFuture.completedFuture(Optional.empty());
     // Reading the workspace to plan the search runs on the event loop: the worker delivers there.
     return samInterface.thenCompose(
@@ -816,7 +816,8 @@ final class ReferenceSearch {
       final Map<String, List<String>> lambdaSnapshot) {
     return FeatureAnswers.concatAll(
         Stream.of(
-            cursorWorker.submit(session -> session.typeImplementations(request, indexSnapshot)),
+            cursorWorker.submit(
+                session -> session.navigation().typeImplementations(request, indexSnapshot)),
             implementationsIn(
                     target,
                     samInterface,

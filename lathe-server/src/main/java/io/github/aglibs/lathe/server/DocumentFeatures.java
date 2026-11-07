@@ -4,6 +4,7 @@ import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.DiagnosticPayload;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
+import io.github.aglibs.lathe.analysis.NavigationFeatures;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
@@ -124,7 +125,7 @@ final class DocumentFeatures {
         null,
         (worker, doc) -> {
           final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.hover(request));
+          return worker.submit(session -> session.navigation().hover(request));
         });
   }
 
@@ -137,7 +138,7 @@ final class DocumentFeatures {
         true,
         (worker, doc) -> {
           final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.onName(request));
+          return worker.submit(session -> session.navigation().onName(request));
         });
   }
 
@@ -148,23 +149,23 @@ final class DocumentFeatures {
         null,
         (worker, doc) -> {
           final SourceFeatureRequest request = router.featureRequest(doc, pos);
-          return worker.submit(session -> session.signatureHelp(request));
+          return worker.submit(session -> session.navigation().signatureHelp(request));
         });
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       definitionFuture(final String uri, final Position pos) {
-    return locationFuture("definition", uri, pos, SourceAnalysisSession::definition);
+    return locationFuture("definition", uri, pos, NavigationFeatures::definition);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       declarationFuture(final String uri, final Position pos) {
-    return locationFuture("declaration", uri, pos, SourceAnalysisSession::declaration);
+    return locationFuture("declaration", uri, pos, NavigationFeatures::declaration);
   }
 
   CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>>
       typeDefinitionFuture(final String uri, final Position pos) {
-    return locationFuture("typeDefinition", uri, pos, SourceAnalysisSession::typeDefinition);
+    return locationFuture("typeDefinition", uri, pos, NavigationFeatures::typeDefinition);
   }
 
   // One location for the open document's position, found by the document's module worker.
@@ -173,7 +174,7 @@ final class DocumentFeatures {
           final String operation,
           final String uri,
           final Position pos,
-          final BiFunction<SourceAnalysisSession, SourceFeatureRequest, Optional<Location>> find) {
+          final BiFunction<NavigationFeatures, SourceFeatureRequest, Optional<Location>> find) {
     LOG.info(
         () ->
             "[%s] %s line=%d character=%d"
@@ -185,7 +186,7 @@ final class DocumentFeatures {
         (worker, doc) -> {
           final SourceFeatureRequest request = router.featureRequest(doc, pos);
           return worker
-              .submit(session -> find.apply(session, request))
+              .submit(session -> find.apply(session.navigation(), request))
               .thenApply(
                   location ->
                       FeatureAnswers.definitionResult(location.map(List::of).orElseGet(List::of)));

@@ -35,7 +35,7 @@ class HoverTest extends SampleFixture {
               SourceLocator.offsetToPosition(source, offset),
               List.of(),
               LibrarySources.none());
-      final Hover hover = session.hover(request);
+      final Hover hover = session.navigation().hover(request);
       return hover == null ? null : hover.getContents().getRight().getValue();
     }
   }
@@ -268,7 +268,7 @@ class HoverTest extends SampleFixture {
               pos,
               List.of(fixture.srcDir()),
               LibrarySources.none());
-      final var hover = fixture.session().hover(request);
+      final var hover = fixture.session().navigation().hover(request);
 
       assertThat(hover).isNotNull();
       final var md = hover.getContents().getRight().getValue();
@@ -298,7 +298,7 @@ class HoverTest extends SampleFixture {
               pos,
               List.of(fixture.srcDir()),
               LibrarySources.none());
-      final var hover = fixture.session().hover(request);
+      final var hover = fixture.session().navigation().hover(request);
 
       assertThat(hover).isNotNull();
       assertThat(hover.getContents().getRight().getValue()).contains("String name", "int count");

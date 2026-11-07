@@ -78,7 +78,7 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
       final var request = requestAt(SOURCE, position(SOURCE, "private String name", "name"));
 
-      assertThat(session.hover(request).getContents().getRight().getValue())
+      assertThat(session.navigation().hover(request).getContents().getRight().getValue())
           .contains("String name");
       assertThat(
               session
@@ -213,6 +213,7 @@ class LombokAnalysisTest {
                   assertThat(reason).contains("Lombok generates getCount(), setCount() from it"));
       assertThat(
               session
+                  .navigation()
                   .definition(requestAt(source, position(source, "return getCount", "getCount")))
                   .orElseThrow()
                   .getRange()
@@ -252,6 +253,7 @@ class LombokAnalysisTest {
   private Position definitionAt(
       final SourceAnalysisSession session, final String context, final String token) {
     return session
+        .navigation()
         .definition(requestAt(SOURCE, position(SOURCE, context, token)))
         .orElseThrow()
         .getRange()

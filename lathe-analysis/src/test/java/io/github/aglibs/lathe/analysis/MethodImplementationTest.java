@@ -254,12 +254,15 @@ class MethodImplementationTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final String sam = "interface Transformer { String apply(String input); }\n";
       session.compile(TempSourceCompiler.TEST_URI, sam, 1, CompileMode.OPEN);
-      assertThat(session.functionalInterfaceName(samRequest(sam, new Position(0, 32))))
+      assertThat(session.navigation().functionalInterfaceName(samRequest(sam, new Position(0, 32))))
           .contains("Transformer");
 
       final String twoAbstract = "interface Two { void a(); void b(); }\n";
       session.compile(TempSourceCompiler.TEST_URI, twoAbstract, 2, CompileMode.OPEN);
-      assertThat(session.functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
+      assertThat(
+              session
+                  .navigation()
+                  .functionalInterfaceName(samRequest(twoAbstract, new Position(0, 21))))
           .isEmpty();
     }
   }

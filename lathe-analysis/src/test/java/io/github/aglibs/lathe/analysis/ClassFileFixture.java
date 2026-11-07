@@ -67,7 +67,7 @@ final class ClassFileFixture implements AutoCloseable {
     final var request =
         new SourceFeatureRequest(
             TempSourceCompiler.TEST_URI, source, 0, pos, List.of(srcDir), LibrarySources.none());
-    return session.signatureHelp(request);
+    return session.navigation().signatureHelp(request);
   }
 
   Path srcDir() {

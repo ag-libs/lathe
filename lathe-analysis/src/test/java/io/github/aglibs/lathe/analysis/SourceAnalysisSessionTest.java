@@ -140,8 +140,9 @@ class SourceAnalysisSessionTest {
       ctx.compile(uri, cachedContent, 1, CompileMode.OPEN);
 
       assertThat(
-              ctx.hover(
-                  new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), libraries)))
+              ctx.navigation()
+                  .hover(
+                      new SourceFeatureRequest(uri, currentContent, 0, pos, List.of(), libraries)))
           .isNotNull();
     }
   }

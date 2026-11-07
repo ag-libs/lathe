@@ -6,7 +6,6 @@ import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.completion.CompletionRequest;
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
@@ -30,13 +29,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
-import javax.lang.model.util.Types;
 import org.eclipse.lsp4j.CallHierarchyIncomingCall;
 import org.eclipse.lsp4j.CallHierarchyItem;
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
@@ -47,12 +41,8 @@ import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
 import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SignatureHelp;
 import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
@@ -71,6 +61,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final Map<String, String> cleanParses = new HashMap<>();
   private final SourceParser parser;
   private final TypeHierarchyResolver typeHierarchyResolver;
+  private final NavigationFeatures navigation;
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -79,6 +70,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
     this.typeHierarchyResolver = new TypeHierarchyResolver(parser);
+    this.navigation =
+        new NavigationFeatures(
+            this, compiler, parser, definitionLocator, javadocLocator, typeHierarchyResolver);
+  }
+
+  public NavigationFeatures navigation() {
+    return navigation;
   }
 
   public List<Diagnostic> compile(
@@ -409,86 +407,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cache.get(uri);
   }
 
-  public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return null;
-    }
-
-    final Cursor cur = at.get();
-    final long offset =
-        SourceLocator.toOffset(
-            cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
-    return SignatureHelpResolver.resolve(
-        cur.analysis(), cur.path(), offset, parser, allRoots(request), javadocLocator);
-  }
-
-  // Whether the request's position is on a name, not on a word of a comment or a literal; true
-  // when the file has no analysis to check against.
-  public boolean onName(final SourceFeatureRequest request) {
-    return cursor(request)
-        .map(
-            cur ->
-                IOUtil.unchecked(
-                    () -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset())))
-        .orElse(true);
-  }
-
-  public Hover hover(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return null;
-    }
-
-    final Cursor cur = at.get();
-    final VariableElement param =
-        SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
-    if (param != null) {
-      final var callee = (ExecutableElement) param.getEnclosingElement();
-      final int index = callee.getParameters().indexOf(param);
-      final List<String> paramNames = parser.resolveParamNames(callee, allRoots(request));
-      final var fmt = new TypeDisplayFormatter(cur.analysis().types());
-      final String label =
-          HoverFormatter.formatParam(
-              param,
-              fmt,
-              paramNames,
-              index,
-              callee.isVarArgs() && index == callee.getParameters().size() - 1);
-      LOG.fine(() -> "[hover] param=%s %dms".formatted(param, t.elapsedMs()));
-      return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
-    }
-
-    final Element element = cur.elementOrJavadocReference();
-    final TypeMirror type =
-        cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
-    final List<Path> allRoots = allRoots(request);
-    final var javadoc =
-        javadocLocator
-            .locate(element, cur.analysis().trees(), allRoots)
-            .map(JavadocMarkdownPrinter::format)
-            .orElse(null);
-    final var origin =
-        request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
-    final var fmt = new TypeDisplayFormatter(cur.analysis().types());
-    final List<String> sourceParamNames =
-        element instanceof ExecutableElement exe ? parser.resolveParamNames(exe, allRoots) : null;
-    LOG.fine(
-        () ->
-            "[hover] %dms element=%s type=%s doc=%s origin=%s"
-                .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
-    return HoverFormatter.format(element, type, javadoc, origin, fmt, sourceParamNames)
-        .map(md -> new Hover(new MarkupContent("markdown", md)))
-        .orElse(null);
-  }
-
-  private static List<Path> allRoots(final SourceFeatureRequest request) {
-    return Stream.concat(
-            request.sourceRoots().stream(), request.libraries().externalSourceDirs().stream())
-        .toList();
-  }
-
   // The accessors Lombok generated from the field at the cursor, as reference targets: their calls
   // use the field. None for anything else.
   public List<ReferenceTarget> generatedAccessorTargets(final SourceFeatureRequest request) {
@@ -792,201 +710,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return analysis != null ? query.apply(analysis) : List.of();
   }
 
-  // The simple name of the functional interface under the cursor, or whose single abstract method
-  // is; empty otherwise. Lets the workspace widen an implementation search to the lambdas and
-  // method references that implement it.
-  public Optional<String> functionalInterfaceName(final SourceFeatureRequest request) {
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return Optional.empty();
-    }
-
-    final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element == null) {
-      return Optional.empty();
-    }
-
-    final var owner =
-        element instanceof final TypeElement type ? type : element.getEnclosingElement();
-    if (!(owner instanceof final TypeElement ownerType)
-        || ownerType.getKind() != ElementKind.INTERFACE) {
-      return Optional.empty();
-    }
-
-    final var sam = FunctionalInterfaces.singleAbstractMethod(ownerType, cur.analysis().elements());
-    return sam != null && (element == ownerType || sam.equals(element))
-        ? Optional.of(ownerType.getSimpleName().toString())
-        : Optional.empty();
-  }
-
   // A query over a file that is not open, attributed once and not cached.
   public <T> List<T> queryFileTransient(
       final String uri,
       final String content,
       final Function<AttributedFileAnalysis, List<T>> query) {
     return query.apply(transientAnalysis(uri, content, () -> {}));
-  }
-
-  private Optional<Location> findDefinitionLocation(
-      final SourceFeatureRequest request, final Cursor cur, final Element element) {
-    Optional<Location> result =
-        definitionLocator.locate(
-            element, cur.analysis().trees(), request.sourceRoots(), request.uri());
-    if (result.isEmpty()) {
-      result =
-          request
-              .libraries()
-              .externalSourceRoot(element, compiler.fileManager())
-              .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
-              .flatMap(
-                  file ->
-                      definitionLocator
-                          .parsePosition(file, element)
-                          .map(
-                              lspPos ->
-                                  new Location(
-                                      file.toUri().toString(), new Range(lspPos, lspPos))));
-    }
-
-    return result;
-  }
-
-  public Optional<Location> definition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return Optional.empty();
-    }
-
-    final Cursor cur = at.get();
-    final var element = cur.elementOrJavadocReference();
-    final var result = findDefinitionLocation(request, cur, element);
-
-    LOG.fine(
-        () ->
-            "[definition] %dms element=%s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    result.map(SourceAnalysisSession::where).orElse("not found")));
-    return result;
-  }
-
-  // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
-  // method's return type, a constructor's class, a type itself; an array's element type, a
-  // generic's
-  // declared type. Nothing for a primitive or void.
-  public Optional<Location> typeDefinition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return Optional.empty();
-    }
-
-    final Cursor cur = at.get();
-    final var element = cur.elementOrJavadocReference();
-    final Optional<Location> result =
-        typeOf(element, cur.analysis().types())
-            .flatMap(type -> findDefinitionLocation(request, cur, type));
-    LOG.fine(
-        () ->
-            "[typeDefinition] %dms element=%s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    result.map(SourceAnalysisSession::where).orElse("not found")));
-    return result;
-  }
-
-  private static Optional<Element> typeOf(final Element element, final Types types) {
-    if (element == null || element instanceof TypeElement) {
-      return Optional.ofNullable(element);
-    }
-
-    TypeMirror type =
-        element instanceof final ExecutableElement method
-            ? method.getKind() == ElementKind.CONSTRUCTOR
-                ? method.getEnclosingElement().asType()
-                : method.getReturnType()
-            : element.asType();
-    while (type instanceof final ArrayType array) {
-      type = array.getComponentType();
-    }
-
-    return Optional.ofNullable(types.asElement(type));
-  }
-
-  private static String where(final Location location) {
-    return "%s:%d".formatted(location.getUri(), location.getRange().getStart().getLine());
-  }
-
-  public Optional<Location> declaration(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return Optional.empty();
-    }
-
-    final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element != null) {
-      final var contractOpt =
-          DeclarationLocator.findContract(
-              element, cur.analysis().types(), cur.analysis().elements());
-      if (contractOpt.isPresent()) {
-        final var contract = contractOpt.get();
-        final var result = findDefinitionLocation(request, cur, contract);
-
-        LOG.fine(
-            () ->
-                "[declaration] %dms element=%s contract=%s → %s"
-                    .formatted(
-                        t.elapsedMs(),
-                        element,
-                        contract,
-                        result.map(SourceAnalysisSession::where).orElse("not found")));
-        return result;
-      }
-    }
-
-    final var fallback = findDefinitionLocation(request, cur, element);
-
-    LOG.fine(
-        () ->
-            "[declaration] %dms fallback to definition %s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    fallback.map(SourceAnalysisSession::where).orElse("not found")));
-    return fallback;
-  }
-
-  public List<Location> typeImplementations(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final var t = Stopwatch.start();
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return List.of();
-    }
-
-    final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final TypeElement typeElement)) {
-      return List.of();
-    }
-
-    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    final List<Path> sourceRoots = typeSourceRoots(request);
-    final List<Location> results =
-        typeIndex.transitiveSubtypes(binaryName).stream()
-            .flatMap(entry -> typeHierarchyResolver.locateSource(entry, sourceRoots).stream())
-            .toList();
-    LOG.fine(
-        () ->
-            "[implementation:type] %s %dms hits=%d"
-                .formatted(request.uri(), t.elapsedMs(), results.size()));
-    return results;
   }
 
   public List<TypeHierarchyItem> prepareTypeHierarchy(
@@ -1003,7 +732,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
 
     final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    return typeHierarchyResolver.prepare(binaryName, typeIndex, typeSourceRoots(request));
+    return typeHierarchyResolver.prepare(binaryName, typeIndex, request.typeSourceRoots());
   }
 
   public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
@@ -1056,7 +785,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
               cur.analysis().elements()));
     }
 
-    return DefinitionLocator.findSourceFile(element, allRoots(request))
+    return DefinitionLocator.findSourceFile(element, request.allSourceRoots())
         .map(
             file -> {
               final var pos =
@@ -1131,15 +860,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final List<Path> sourceRoots,
       final int nodeCap) {
     return typeHierarchyResolver.explore(item, typeIndex, sourceRoots, nodeCap);
-  }
-
-  private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
-    return Stream.of(
-            request.sourceRoots().stream(),
-            request.libraries().dependencySourceDirs().stream(),
-            request.libraries().jdkModuleSourceDirs().stream())
-        .flatMap(stream -> stream)
-        .toList();
   }
 
   public List<TypeIndexEntry> cachedTypeEntries(final Set<String> neededSimpleNames) {

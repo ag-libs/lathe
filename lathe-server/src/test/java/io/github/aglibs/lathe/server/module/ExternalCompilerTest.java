@@ -58,9 +58,15 @@ class ExternalCompilerTest {
           SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
       final var definition =
-          ctx.definition(
-              new SourceFeatureRequest(
-                  usesSource.toUri().toString(), usesContent, 0, helperPos, List.of(), libraries));
+          ctx.navigation()
+              .definition(
+                  new SourceFeatureRequest(
+                      usesSource.toUri().toString(),
+                      usesContent,
+                      0,
+                      helperPos,
+                      List.of(),
+                      libraries));
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
@@ -101,11 +107,15 @@ class ExternalCompilerTest {
       // Hover over Helper: JavadocLocator finds helperSource via libraries.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      ctx.hover(new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
+      ctx.navigation()
+          .hover(
+              new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
 
       final var definition =
-          ctx.definition(
-              new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
+          ctx.navigation()
+              .definition(
+                  new SourceFeatureRequest(
+                      usesUri, usesContent, 0, helperPos, List.of(), libraries));
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());
