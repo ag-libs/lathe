@@ -60,9 +60,15 @@ def enable_lathe_maven(repo):
                           encoding="utf-8")
 
 
-def gradle_init_script():
+def gradle_init_script(project):
     script = WORK / "lathe.init.gradle.kts"
     repo = LATHE_GRADLE_REPO.as_uri()
+    # A build that declares its repositories per project ignores the settings' ones; a released
+    # Lathe comes from Maven Central, which such a build declares, the pinned local one does not.
+    per_project = """allprojects {
+  repositories { maven { url = uri("%s"); content { includeGroup("io.github.ag-libs") } } }
+}
+""" % repo if project.get("lathe_project_repository") else ""
     script.write_text("""initscript {
   repositories { maven { url = uri("%s") }; mavenCentral(); gradlePluginPortal() }
   dependencies { classpath("io.github.ag-libs:lathe-gradle-plugin:%s") }
@@ -73,14 +79,14 @@ settingsEvaluated {
     pluginManager.apply(io.github.aglibs.lathe.gradle.LatheSettingsPlugin::class.java)
   }
 }
-""" % (repo, LATHE_VERSION, repo), encoding="utf-8")
+""" % (repo, LATHE_VERSION, repo) + per_project, encoding="utf-8")
     return script
 
 
 def lathe_build_command(project, repo):
     if project["build"] == "gradle":
         return ["./gradlew", "--no-daemon", "-Pkotlin.compiler.execution.strategy=in-process",
-                "--init-script", str(gradle_init_script()), "latheSync", "-Plathe.capture.only=true"]
+                "--init-script", str(gradle_init_script(project)), "latheSync", "-Plathe.capture.only=true"]
     maven = "./mvnw" if (repo / "mvnw").exists() else MAVEN
     return [maven, "-B", "-q"] + project.get("maven_goals", ["process-test-classes"])
 
@@ -109,7 +115,7 @@ def lathe_server_version(repo):
     return json.loads(manifest.read_text(encoding="utf-8")).get("serverVersion") if manifest.exists() else None
 
 
-def lathe_spec(name, project, state, heap):
+def lathe_spec(name, project, state, heap, overrides=None):
     repo = repo_of(name)
     env = dict(os.environ)
     env.pop("LATHE_DEBUG", None)
@@ -168,8 +174,30 @@ def jdtls_prepare(name, project, mode, state, log):
     return (time.monotonic() - start) * 1000
 
 
-def jdtls_spec(name, project, state, heap):
-    settings = jdtls_settings(name, project)
+def lombok_jar(version):
+    """The project's own Lombok jar, from the Maven or Gradle cache its build filled."""
+    candidates = [Path.home() / ".m2/repository/org/projectlombok/lombok" / version / ("lombok-%s.jar" % version)]
+    candidates += sorted((Path.home() / ".gradle/caches/modules-2/files-2.1/org.projectlombok/lombok" / version)
+                         .glob("*/lombok-%s.jar" % version))
+    found = next((c for c in candidates if c.exists()), None)
+    if found is None:
+        raise SystemExit("no lombok-%s.jar in the Maven or Gradle cache: build the project first" % version)
+    return found
+
+
+def merge(settings, overrides):
+    """Settings with dotted keys (java.import.gradle.enabled=false) set, for a labelled variant."""
+    for key, value in overrides.items():
+        node = settings
+        parts = key.split(".")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+    return settings
+
+
+def jdtls_spec(name, project, state, heap, overrides=None):
+    settings = merge(jdtls_settings(name, project), overrides or {})
     launcher = glob.glob(str(JDTLS / "plugins" / "org.eclipse.equinox.launcher_*.jar"))[0]
     # vscode-java's default VM arguments (java.jdt.ls.vmargs) and its launch of the product.
     cmd = [
@@ -187,6 +215,12 @@ def jdtls_spec(name, project, state, heap):
         "--add-modules=ALL-SYSTEM",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+    ]
+    # vscode-java starts jdtls with a Lombok agent (java.jdt.ls.lombokSupport.enabled, on by default),
+    # the project's own Lombok where the project depends on it.
+    if project.get("lombok"):
+        cmd.append("-javaagent:%s" % lombok_jar(project["lombok"]))
+    cmd += [
         "-jar", launcher,
         "-configuration", str(state / "config"),
         "-data", str(state / "workspace"),
