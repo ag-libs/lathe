@@ -116,12 +116,12 @@ in `gradle.properties`.
 
 ## Known limits
 
-- **Every Java source set gets editor features, but only each project's `test` task is captured.**
-  A source set beyond `main` and `test` (test fixtures, a JVM test suite, an `integrationTest`, `jmh`) is a tree of its
-  own, compiled against its own classpath, so diagnostics, navigation and references there match the build;
-  a sync compiles it.
-  Its tests and main methods can't be run from the editor yet: a run there is refused with the reason, and a
-  capture-only sync skips the test tasks other than `test`; see
+- **Every Java source set is a tree of its own.**
+  A source set beyond `main` and `test` (test fixtures, a JVM test suite, an `integrationTest`, `jmh`) is compiled
+  against its own classpath, so diagnostics, navigation and references there match the build; a sync compiles it.
+  The test task that runs its classes captures its launch, so its tests run and debug from the editor too;
+  package, folder and module runs there are not offered yet, and a test task of no source set Lathe captures (a
+  second task on `test`'s classes) is skipped by a capture-only sync; see
   [Test capture](test-capture.md#requirements-and-current-limits).
 - **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
   captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests)

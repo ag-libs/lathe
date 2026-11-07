@@ -9633,7 +9633,7 @@ Every Java source set is captured as a tree of its own, `classes-<name>`, with i
 `lsp-params` says whether a tree is test code (`testCode`), by Gradle's own convention: a JVM test suite's source set, or a name containing `test`.
 The facts list each tree with its outputs, its jar when it has one (test fixtures), and its libraries.
 The server reads test code from the flag, decides what rename's trees see from their class paths, searches the asking file's tree first when it maps a class to its source
-(two source sets can declare the same class), and refuses to run a test or main method that only a source set's tree holds, until [TE-12](gaps.md#te-12--on-gradle-only-each-projects-test-task-is-captured) captures their launches.
+(two source sets can declare the same class), and refuses to run a test or main method that only a source set's tree holds, until [TE-12](#te-12--on-gradle-only-each-projects-test-task-is-captured--done) captured their launches.
 
 Checked on Hibernate ORM and Caffeine: files of `jakartaData`, `integrationTest` and a fuzz suite compile, navigate and find references;
 an `integrationTest` file using a `test` class gets the error Gradle's compile reports.
@@ -11090,6 +11090,46 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-12 — On Gradle, only each project's `test` task is captured — done
+
+**Status: done.**
+
+**Value: medium — Size: L**
+
+**Affects: run, debug and replay on Gradle builds with more than one test task or source set.**
+
+Found while documenting the Gradle plugin (2026-10-30), from its design notes.
+
+### Observed behaviour
+
+The plugin loaded `lathe-junit` into each project's `test` task only.
+Tests of other test tasks (an `integrationTest` task, a JVM test suite, Hibernate ORM's `jakartaDataTest`) were never captured, so they could not be run or debugged from the editor or an agent;
+since [WS-33](#ws-33--gradle-source-sets-beyond-main-and-test-get-no-editor-features--done) their source sets had editor features, and a run in them was refused with the reason.
+
+### Fix direction
+
+Step 2 of [Gradle Source Sets](../planned/lathe-gradle-source-sets.md#49-runs): a launch per source set's tree, captured by the test task that runs its classes, and runs routed by the tree a class is in.
+
+### Resolution
+
+Once a build script has run, each `Test` task is matched to the source set whose classes it runs.
+A match loads `lathe-junit` as `test` does, with its tree named in its environment (`LATHE_CAPTURE_TREE`), so it writes `test-launch-<tree>.json`;
+in a capture-only sync it runs as `test` does, after the facts and on one class, dry, where it was skipped before.
+A class or method run, and a `main` in such a tree, replay from that tree's launch; package, directory and module runs stay with the `test` tree.
+
+On Hibernate ORM a capture-only sync captures `jakartaData`, `integrationTest`, `dataIntegrationTest` and `legacyTest`, and a test of `integrationTest` run through the server passes.
+Many of Hibernate ORM's processor tests still fail when replayed, `test`'s too, for a reason of their own: [TE-17](gaps.md#te-17--a-test-that-locates-its-sources-from-its-own-class-file-fails-when-replayed).
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.captureOnlySync_sourceSetTestTask_capturesItsTreesOwnLaunch`,
+`LatheTextDocumentServiceTest.runTestFuture_classesOfSourceSetTrees_blockedNamingTheSourceSet`,
+`LaunchReaderTest.read_presentLaunchFiles_returnsData`,
+`SourceSetScopeTest.treeOf_classOnlyInASourceSetTree_namesThatTree`,
+`LaunchCaptureTest.launchFile_treeNamedOrNot_namedTreesOwnFileElseTheTestLaunch`.
+
+---
+
 ## TE-16 — A capture-only sync runs every test class, and on Gradle other test tasks, to capture one launch — done
 
 **Status: done.**
@@ -11130,7 +11170,7 @@ Measured with the plugin built into Lathe 0.3.1, compiles up to date, the record
 On Maven the class picked can be abstract (`AbstractJerseyTest`), and Surefire still starts the JVM; on a JUnit `@Suite` the suite's members are still discovered and skipped.
 
 Most of Hibernate ORM's remaining time was test tasks other than `test` that its `test` depends on (`jakartaDataTest`, `legacyTest` and two integration-test tasks, about 70 s), which ran their tests in full, since only `test` gets the capture-only treatment.
-Their launches are not captured ([TE-12](gaps.md#te-12--on-gradle-only-each-projects-test-task-is-captured)), so a capture-only sync now skips every test task other than `test`, saying why; a plain build still runs them.
+Their launches are not captured ([TE-12](#te-12--on-gradle-only-each-projects-test-task-is-captured--done)), so a capture-only sync now skips every test task other than `test`, saying why; a plain build still runs them.
 The figures above predate this skip.
 
 ### Regression targets
