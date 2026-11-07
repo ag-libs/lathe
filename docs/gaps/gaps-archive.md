@@ -11004,6 +11004,57 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
+## TE-16 — A capture-only sync runs every test class, and on Gradle other test tasks, to capture one launch — done
+
+**Status: done.**
+
+**Value: medium — Size: S**
+
+**Affects: the editor's sync with tests and the first build, on Maven and Gradle, most on large modules, builds that fork several test JVMs, and Gradle builds whose test task depends on other test tasks.**
+
+Found while checking the Gradle plugin on the public Gradle projects (2026-11-06): the capture-only `latheSync` of Hibernate ORM ran 17 test JVMs at once and saturated a 16-core machine.
+
+### Observed behaviour
+
+A capture-only run captures the launch the moment JUnit's session opens in the test JVM, then lets the test task do all its usual work.
+The build starts every test JVM its fork settings ask for (Hibernate ORM's `maxParallelForks`, a Surefire `forkCount`) and hands them every test class; JUnit discovers each, dry run reports each test as skipped, and the build writes its reports.
+In Hibernate ORM's `hibernate-core` that was 94 s, 4,953 classes, 16,043 skipped tests, 25 MB of XML results and a 121 MB HTML report, which replaced the last real report.
+Each test JVM wrote the same `test-launch.json`.
+
+### Fix direction
+
+Give a capture-only run one test class: the launch is the same whichever classes run, and any class starts the test JVM, one without tests too.
+Both tools filter by class name before they start a test JVM, and start one only for a class they hand out, so one class means one JVM, one discovery and a one-class report.
+
+### Resolution
+
+On Gradle, the capture-only test task filters itself, as it starts, to the first top-level class in name order among those it scans (`Test.getCandidateClassFiles()`, so the task's own includes and excludes keep none out), replacing the build's own test filter and not failing for matching no tests.
+On Maven, the extension sets each module's `test` property to the simple name of the first top-level Java test source, and `surefire.failIfNoSpecifiedTests` to `false`; nothing is compiled when it runs, hence the sources.
+A `-Dtest` the user passes, or a `test` property the module sets, is kept; a module without Java test sources keeps running every class.
+
+Measured with the plugin built into Lathe 0.3.1, compiles up to date, the recorded `test-launch.json` identical before and after:
+
+| Capture-only sync | Before | After |
+|---|---|---|
+| Hibernate ORM, whole `latheSync` | 114.7 s | 76.7 s |
+| Hibernate ORM, `hibernate-core`'s test task | 94 s, 4,953 report files | no report file |
+| Micronaut, whole `latheSync` | stopped after more than 3½ minutes | 131.9 s |
+| Dropwizard `dropwizard-jersey` (Maven, `-Dtest` by hand) | 4.6 s, 23.6 s CPU, 55 report files | 3.9 s, 18.8 s CPU, none |
+
+On Maven the class picked can be abstract (`AbstractJerseyTest`), and Surefire still starts the JVM; on a JUnit `@Suite` the suite's members are still discovered and skipped.
+
+Most of Hibernate ORM's remaining time was test tasks other than `test` that its `test` depends on (`jakartaDataTest`, `legacyTest` and two integration-test tasks, about 70 s), which ran their tests in full, since only `test` gets the capture-only treatment.
+Their launches are not captured ([TE-12](gaps.md#te-12--on-gradle-only-each-projects-test-task-is-captured)), so a capture-only sync now skips every test task other than `test`, saying why; a plain build still runs them.
+The figures above predate this skip.
+
+### Regression targets
+
+`LatheSyncTaskFunctionalTest.captureOnlySync_manyTestClassesAndForks_runsOneClassInOneTestJvm`,
+`LatheModelInjectorTest.injectCaptureClass_testSourcesInSeveralRoots_selectsTheFirstClassOnly`,
+`LatheModelInjectorTest.injectCaptureClass_noJavaSourcesOrOwnSelection_leavesTheSelection`.
+
+---
+
 ## TE-7 — A captured launch naming files the build deleted replays into a class-loading failure — done
 
 **Status: done.**
