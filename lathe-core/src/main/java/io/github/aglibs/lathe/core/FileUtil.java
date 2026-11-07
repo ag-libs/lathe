@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -85,7 +86,7 @@ public final class FileUtil {
       return List.of();
     }
 
-    try (final var list = Files.list(dir)) {
+    try (final Stream<Path> list = Files.list(dir)) {
       return list.filter(Files::isRegularFile).filter(keep).sorted().toList();
     }
   }

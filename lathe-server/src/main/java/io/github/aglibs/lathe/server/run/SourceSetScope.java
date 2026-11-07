@@ -33,7 +33,6 @@ public final class SourceSetScope {
         .map(
             tree ->
                 "%s is only in the %s classes, whose launch Lathe does not capture yet: run it with the build"
-                    .formatted(
-                        className, tree.substring(LatheLayout.SOURCE_SET_TREE_PREFIX.length())));
+                    .formatted(className, LatheLayout.sourceSetName(tree)));
   }
 }

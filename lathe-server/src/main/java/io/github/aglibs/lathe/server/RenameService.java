@@ -87,7 +87,7 @@ final class RenameService {
               // Refuse a type whose declaring file must move when the client cannot apply the file
               // rename, rather than returning a half-rename that leaves a public type in a
               // mismatched file.
-              if (!fileRenameSupported && renameDeclaringFile(target).isPresent()) {
+              if (!fileRenameSupported && renameDeclaringFile(target, uri).isPresent()) {
                 return null;
               }
 
@@ -245,7 +245,7 @@ final class RenameService {
     // A type whose file the rename moves is attributed under its new file name, which a public
     // type must match; its text is still read from where it is.
     final Map<String, String> moved =
-        renameDeclaringFile(target)
+        renameDeclaringFile(target, cursorUri)
             .map(
                 file ->
                     Map.of(LatheUri.fromPath(file), LatheUri.fromPath(movedFile(file, newName))))
@@ -313,8 +313,11 @@ final class RenameService {
   private static List<RenameBindingCheck.CheckedFile> visibleEdits(
       final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig,
       final ModuleSourceConfig config) {
+    final Set<Path> seen = config.compiledAgainst();
     return byConfig.entrySet().stream()
-        .filter(entry -> entry.getKey().equals(config) || config.sees(entry.getKey()))
+        .filter(
+            entry ->
+                entry.getKey().equals(config) || seen.contains(entry.getKey().latheClassesDir()))
         .flatMap(entry -> entry.getValue().stream())
         .filter(RenameBindingCheck.CheckedFile::edited)
         .toList();
@@ -334,14 +337,15 @@ final class RenameService {
 
   // The source file to rename when the target is the file-defining type for its file (so `Foo.java`
   // must become `Bar.java`); empty for members, nested types, and secondary top-level types that
-  // stay in place.
-  private Optional<Path> renameDeclaringFile(final ReferenceTarget target) {
+  // stay in place. Looked up from the file the rename starts in, so a type two trees declare is the
+  // one that file compiles against.
+  private Optional<Path> renameDeclaringFile(final ReferenceTarget target, final String fromUri) {
     if (!(target.kind().isClass() || target.kind().isInterface())) {
       return Optional.empty();
     }
 
     return TypeSourceLocator.findSourceFile(
-            target.qualifiedName(), state.registry().allSourceRoots())
+            target.qualifiedName(), state.registry().sourceRootsFor(LatheUri.toPath(fromUri)))
         .filter(file -> file.getFileName().toString().equals(target.simpleName() + ".java"));
   }
 
@@ -353,6 +357,7 @@ final class RenameService {
       final ReferenceTarget target,
       final List<Location> occurrences,
       final String newName,
+      final String fromUri,
       final boolean fileRenameSupported) {
     // Generated sources are left alone: their processors regenerate them from the renamed sources,
     // and an edited copy written alongside would collide with the regenerated one.
@@ -364,7 +369,7 @@ final class RenameService {
       return null;
     }
 
-    final Optional<Path> declaringFile = renameDeclaringFile(target);
+    final Optional<Path> declaringFile = renameDeclaringFile(target, fromUri);
     if (declaringFile.isEmpty()) {
       return RenameProvider.toWorkspaceEdit(editable, newName);
     }
@@ -469,6 +474,7 @@ final class RenameService {
                                                       searchTarget,
                                                       ReferenceSearch.toLocations(matches),
                                                       newName,
+                                                      uri,
                                                       fileRenameSupported))));
             })
         .whenComplete((edit, failure) -> logRefusal("rename", uri, t, failure));

@@ -57,9 +57,12 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return testConfigs().stream().map(config -> moduleRel(config)).distinct().sorted().toList();
   }
 
+  // A source set's own tree is left out, as from the context: a type created in one of its
+  // packages would land in another source set.
   List<PackageEntry> packages(final String moduleRel) {
     return configs.stream()
         .filter(config -> moduleRel(config).equals(moduleRel))
+        .filter(config -> !isSourceSetTree(config))
         .flatMap(SourceLayout::packageEntries)
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
@@ -70,7 +73,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   // context: one created from it would land in another source set.
   ContextInfo resolveContext(final Path path) {
     return configs.stream()
-        .filter(config -> !config.sourceTree().startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX))
+        .filter(config -> !isSourceSetTree(config))
         .flatMap(config -> contextIn(config, path).stream())
         .findFirst()
         .orElse(null);
@@ -155,14 +158,18 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
         .toList();
   }
 
-  // The package of a file in any tree, from the source root that holds it; empty outside them.
+  // The package of a file in any tree, from the deepest source root that holds it; empty outside
+  // them.
   String filePackage(final Path file) {
     return configs.stream()
-        .flatMap(config -> config.sourceRoots().stream())
-        .filter(file::startsWith)
-        .findFirst()
+        .flatMap(config -> config.sourceRootOf(file).stream())
+        .max(Comparator.comparingInt(Path::getNameCount))
         .map(root -> packageOf(root, file.getParent()))
         .orElse("");
+  }
+
+  private static boolean isSourceSetTree(final ModuleSourceConfig config) {
+    return config.sourceTree().startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX);
   }
 
   // Every package of the module's test tree, in one launch: its captured test launch runs no other

@@ -292,8 +292,7 @@ public final class LatheLayout {
   // set's by its name.
   public static String generatedSourcesDir(final String sourceTree) {
     if (sourceTree.startsWith(SOURCE_SET_TREE_PREFIX)) {
-      return "generated-%s-sources"
-          .formatted(sourceTree.substring(SOURCE_SET_TREE_PREFIX.length()));
+      return "generated-%s-sources".formatted(sourceSetName(sourceTree));
     }
 
     return TEST_CLASSES_DIR.equals(sourceTree) ? GENERATED_TEST_SOURCES : GENERATED_SOURCES;
@@ -303,6 +302,11 @@ public final class LatheLayout {
   // path, so a bare source-set name could be a subproject's dir.
   public static String sourceSetTree(final String sourceSet) {
     return SOURCE_SET_TREE_PREFIX + sourceSet;
+  }
+
+  // The source set a classes-<name> tree is named after.
+  public static String sourceSetName(final String sourceSetTree) {
+    return sourceSetTree.substring(SOURCE_SET_TREE_PREFIX.length());
   }
 
   public static boolean isParamsFile(final Path path) {

@@ -148,11 +148,7 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     }
 
     // Remapped once per request, not per tree: this runs for every hover and completion.
-    final Set<Path> seen =
-        Stream.concat(
-                asking.get().remappedClasspath().stream(),
-                asking.get().remappedModulepath().stream())
-            .collect(Collectors.toUnmodifiableSet());
+    final Set<Path> seen = asking.get().compiledAgainst();
     final Map<Integer, List<Path>> byRank =
         moduleSources.stream()
             .collect(

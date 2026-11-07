@@ -191,8 +191,7 @@ public final class CompletenessGate {
   // "test classes", "classes", or a Gradle source set's: "integrationTest classes".
   private static String treeLabel(final String sourceTree) {
     if (sourceTree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX)) {
-      return "%s classes"
-          .formatted(sourceTree.substring(LatheLayout.SOURCE_SET_TREE_PREFIX.length()));
+      return "%s classes".formatted(LatheLayout.sourceSetName(sourceTree));
     }
 
     return LatheLayout.TEST_CLASSES_DIR.equals(sourceTree) ? "test classes" : "classes";

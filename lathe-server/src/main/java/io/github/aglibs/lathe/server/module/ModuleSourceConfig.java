@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public record ModuleSourceConfig(
@@ -95,8 +97,14 @@ public record ModuleSourceConfig(
   // Whether this tree compiles against the other: its mirror on this tree's class or module path,
   // as a test tree holds its own main tree, and a Gradle source set the trees its classpath names.
   public boolean sees(final ModuleSourceConfig other) {
-    return remappedClasspath().contains(other.latheClassesDir())
-        || remappedModulepath().contains(other.latheClassesDir());
+    return compiledAgainst().contains(other.latheClassesDir());
+  }
+
+  // Every entry of this tree's class and module path, mirrors standing in for build outputs: a set,
+  // for a caller asking about many trees at once to compute once.
+  public Set<Path> compiledAgainst() {
+    return Stream.concat(remappedClasspath().stream(), remappedModulepath().stream())
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   public boolean isTestTree() {

@@ -57,8 +57,9 @@ class SourceLayoutTest {
   }
 
   // A Gradle integrationTest source set is test code, but its tests have no captured launch: a
-  // module run takes test's packages only, a dir inside it runs nothing, and a file there gives no
-  // create-type context (a type created from it would land in test's folder). Its package is still
+  // module run takes test's packages only, a dir inside it runs nothing, and neither a file there
+  // nor its packages are offered to create a type (one would land in test's folder). Its package is
+  // still
   // its own.
   @Test
   void dirRunAndContext_gradleTestSourceSet_leftOutOfRunsAndNewTypes() throws Exception {
@@ -80,6 +81,10 @@ class SourceLayoutTest {
         .containsExactly("com.verify");
     assertThat(layout.dirRun(integrationFile.getParent()).selections()).isEmpty();
     assertThat(layout.resolveContext(integrationFile)).isNull();
+    assertThat(layout.packages("module"))
+        .extracting(PackageEntry::pkg)
+        .contains("com.verify")
+        .doesNotContain("com.example.it");
     assertThat(layout.filePackage(integrationFile)).isEqualTo("com.example.it");
   }
 

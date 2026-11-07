@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.install.ServerInstaller;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -359,16 +360,16 @@ public class LatheProjectPlugin implements Plugin<Project> {
             .map("true"::equals)
             .getOrElse(false),
         crossProjectAllowed());
-    registerLibraries(project, facts, main, test, others);
+    registerLibraries(project, facts, main, test, syncing ? others : List.of());
     final TaskProvider<LatheMainLaunchTask> mainLaunch = registerMainLaunch(project, main);
     facts.configure(task -> task.dependsOn(mainLaunch));
   }
 
   // A source set beyond main and test, as the build script adds it (after the java plugin applies):
   // a tree of its own, captured as main's and test's are, with its own classpath, whenever its
-  // compile runs. Only a sync compiles it for that: the facts finalize the test compile, so making
-  // them depend on it would compile every source set (jmh, integration tests) on a plain test
-  // build.
+  // compile runs. Only a sync compiles it for that, and resolves its libraries and their sources:
+  // the facts finalize the test compile, so a plain test build would otherwise compile and resolve
+  // every source set (jmh, integration tests).
   private static void registerSourceSet(
       final Project project,
       final TaskProvider<LatheFactsTask> facts,
@@ -390,12 +391,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final ArtifactCollection libraries = external(compileClasspath(project, sourceSet));
     facts.configure(
         task -> {
+          task.getSourceSets().add(sources);
           if (syncing) {
             task.dependsOn(capture);
+            addLibraries(task, libraries);
           }
-
-          task.getSourceSets().add(sources);
-          addLibraries(task, libraries);
         });
   }
 
@@ -458,8 +458,9 @@ public class LatheProjectPlugin implements Plugin<Project> {
             });
   }
 
-  // The external libraries, from the test compile classpath, which holds main's too, and every
-  // other source set's (registerSourceSet), and a -sources dependency for each: the classifier, as
+  // The external libraries, from the test compile classpath, which holds main's too, and in a sync
+  // every other source set's (registerSourceSet), and a -sources dependency for each: the
+  // classifier, as
   // on Maven, not Gradle's documentation variant, which libraries such as Guava do not declare.
   // Resolved leniently: a library without sources is not an error.
   private static void registerLibraries(
@@ -467,7 +468,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
       final TaskProvider<LatheFactsTask> facts,
       final SourceSet main,
       final SourceSet test,
-      final NamedDomainObjectSet<SourceSet> others) {
+      final Collection<SourceSet> others) {
     final ArtifactCollection libraries = external(compileClasspath(project, test));
     final ArtifactCollection mainLibraries =
         external(
