@@ -4,20 +4,30 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 final class LaunchCaptureTest {
 
   // A Gradle test task of a source set beyond test names its tree; without one, or with an empty
-  // value, the launch is the module's test launch.
+  // value, the launch is the module's test launch. A named tree the module lacks (inherited by a
+  // nested build, or a source set without Java) gets no launch at all.
   @Test
-  void launchFile_treeNamedOrNot_namedTreesOwnFileElseTheTestLaunch() {
-    assertThat(LaunchCapture.launchFile("classes-integrationTest"))
-        .isEqualTo("test-launch-classes-integrationTest.json");
-    assertThat(LaunchCapture.launchFile(null)).isEqualTo("test-launch.json");
-    assertThat(LaunchCapture.launchFile(" ")).isEqualTo("test-launch.json");
+  void launchFile_treeNamedOrNot_namedTreesOwnFileElseTheTestLaunch(@TempDir final Path moduleDir)
+      throws IOException {
+    Files.writeString(moduleDir.resolve("lsp-params-classes-integrationTest.json"), "{}");
+    Files.writeString(moduleDir.resolve("lsp-params-test-classes.json"), "{}");
+
+    assertThat(LaunchCapture.launchFile(moduleDir, "classes-integrationTest"))
+        .contains("test-launch-classes-integrationTest.json");
+    assertThat(LaunchCapture.launchFile(moduleDir, "test-classes")).contains("test-launch.json");
+    assertThat(LaunchCapture.launchFile(moduleDir, null)).contains("test-launch.json");
+    assertThat(LaunchCapture.launchFile(moduleDir, " ")).contains("test-launch.json");
+    assertThat(LaunchCapture.launchFile(moduleDir, "classes-functionalTest")).isEmpty();
   }
 
   @Test

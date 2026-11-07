@@ -119,9 +119,10 @@ in `gradle.properties`.
 - **Every Java source set is a tree of its own.**
   A source set beyond `main` and `test` (test fixtures, a JVM test suite, an `integrationTest`, `jmh`) is compiled
   against its own classpath, so diagnostics, navigation and references there match the build; a sync compiles it.
-  The test task that runs its classes captures its launch, so its tests run and debug from the editor too;
-  package, folder and module runs there are not offered yet, and a test task of no source set Lathe captures (a
-  second task on `test`'s classes) is skipped by a capture-only sync; see
+  The test task that runs its classes captures its launch whenever it runs (without running its tests:
+  `./gradlew integrationTest -Plathe.capture.only=true`), so its tests run and debug from the editor too;
+  the editor's sync does not start that task, package, folder and module runs there are not offered yet, and a
+  test task of no source set Lathe captures (a second task on `test`'s classes) is skipped by a capture-only build; see
   [Test capture](test-capture.md#requirements-and-current-limits).
 - **Tests on a JDK older than 17** (a test toolchain, or `java.toolchain` below 17) still run, but are not
   captured, so they can't be run or debugged from the editor; a capture-only build (the editor's sync with tests)

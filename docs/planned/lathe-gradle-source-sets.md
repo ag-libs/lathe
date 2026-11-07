@@ -179,11 +179,13 @@ Step 1 refused a run of a test or main method only a source set's tree holds, ra
 
 Step 2 gives each tree a launch of its own, `test-launch-<tree>.json` (`test` keeping `test-launch.json`).
 Build scripts register their test tasks after the plugin applies, so once a script has run, each `Test` task is matched to the source set whose classes it runs (`testClassesDirs` against the source set's class folders):
-a match loads `lathe-junit` as `test` does, with its tree named in the task's environment (`LATHE_CAPTURE_TREE`, no task input, so cache keys stay the build's), and in a capture-only sync runs as `test` does (after the facts, which pull it in, on one class, dry);
-a task of no captured source set (a second task on `test`'s classes) stays skipped by a capture-only sync.
+a match loads `lathe-junit` as `test` does, with its tree named in the task's environment (`LATHE_CAPTURE_TREE`, no task input, so cache keys stay the build's), so every run of it refreshes the tree's launch, dry in a capture-only build (`./gradlew integrationTest -Plathe.capture.only=true`).
+The editor's sync does not pull these tasks in, as their dependencies (a database they start, say) would run on every sync; a build whose `test` depends on them (Hibernate ORM) runs them dry in its sync.
+A task of no captured source set (a second task on `test`'s classes) stays skipped by a capture-only build.
+`lathe-junit` writes a named tree's launch only when the module has that tree, so a name a nested build inherits from its parent's environment captures nothing, and `test` names its own tree.
 Two tasks of one source set both capture, and the last to run wins.
 
-The server reads the launch of the tree a run's classes are in (`SourceSetScope.treeOf`): a class or method run, and a `main` in a source set's tree, replay from it; classes of two source sets in one run are refused; before the task has captured, the run names the source set and the capture-only sync.
+The server reads the launch of the tree a run's classes are in (`SourceSetScope.treeOf`): a class or method run, and a `main` in a source set's tree, replay from it; a run of classes from two trees (two source sets, or `test` and one) is refused; before the task has captured, the run names the source set and how its test task captures it.
 Package, directory and module runs, and test discovery, stay with the `test` tree.
 Replay uses the test runner and JUnit launcher resolved from `test`'s classpath.
 

@@ -11114,7 +11114,7 @@ Step 2 of [Gradle Source Sets](../planned/lathe-gradle-source-sets.md#49-runs): 
 
 Once a build script has run, each `Test` task is matched to the source set whose classes it runs.
 A match loads `lathe-junit` as `test` does, with its tree named in its environment (`LATHE_CAPTURE_TREE`), so it writes `test-launch-<tree>.json`;
-in a capture-only sync it runs as `test` does, after the facts and on one class, dry, where it was skipped before.
+run capture-only (`-Plathe.capture.only=true`) it runs as `test` does, on one class, dry, where it was skipped before; the editor's sync does not pull it in, as its dependencies could start a database on every sync.
 A class or method run, and a `main` in such a tree, replay from that tree's launch; package, directory and module runs stay with the `test` tree.
 
 On Hibernate ORM a capture-only sync captures `jakartaData`, `integrationTest`, `dataIntegrationTest` and `legacyTest`, and a test of `integrationTest` run through the server passes.
@@ -11122,7 +11122,8 @@ Many of Hibernate ORM's processor tests still fail when replayed, `test`'s too, 
 
 ### Regression targets
 
-`LatheSyncTaskFunctionalTest.captureOnlySync_sourceSetTestTask_capturesItsTreesOwnLaunch`,
+`LatheSyncTaskFunctionalTest.sourceSetTestTask_anyRun_capturesItsTreesOwnLaunch`,
+`LatheTextDocumentServiceTest.runFutures_classOfASourceSetTree_replayFromItsOwnLaunch`,
 `LatheTextDocumentServiceTest.runTestFuture_classesOfSourceSetTrees_blockedNamingTheSourceSet`,
 `LaunchReaderTest.read_presentLaunchFiles_returnsData`,
 `SourceSetScopeTest.treeOf_classOnlyInASourceSetTree_namesThatTree`,

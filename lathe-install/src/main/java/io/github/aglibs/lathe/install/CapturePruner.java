@@ -52,12 +52,14 @@ public final class CapturePruner {
         .forEach(dir -> IOUtil.unchecked(() -> FileUtil.deleteDir(moduleDir.resolve(dir))));
     final List<String> files =
         Stream.concat(
-                Stream.of(
-                        params.getFileName().toString(),
-                        LatheLayout.compiledStampsFileName(tree),
-                        LatheLayout.testLaunchFile(tree))
-                    // The module's test launch goes only with the module.
-                    .filter(file -> !file.equals(LatheLayout.TEST_LAUNCH_FILE)),
+                Stream.concat(
+                    Stream.of(
+                        params.getFileName().toString(), LatheLayout.compiledStampsFileName(tree)),
+                    // A source set's tree has a test launch of its own; the module's test launch
+                    // goes only with the module.
+                    tree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX)
+                        ? Stream.of(LatheLayout.testLaunchFile(tree))
+                        : Stream.empty()),
                 moduleRemoved
                     ? Stream.of(
                         LatheLayout.MAIN_LAUNCH_FILE,

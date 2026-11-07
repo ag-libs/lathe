@@ -9,9 +9,8 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 // The tree of its own a class is compiled into (classes-<name>: a Gradle source set, or a Maven
-// compile writing to such a directory), when the module's main and test trees lack it: its tests
-// and
-// main methods replay from that tree's launch, not the module's.
+// compile writing to such a directory) when the module's main and test trees lack it: the class's
+// tests and main methods replay from that tree's launch, not the module's.
 public final class SourceSetScope {
 
   private SourceSetScope() {}

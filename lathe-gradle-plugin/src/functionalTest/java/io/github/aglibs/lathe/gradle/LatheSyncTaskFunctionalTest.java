@@ -648,10 +648,10 @@ class LatheSyncTaskFunctionalTest {
   }
 
   // A test task of a source set beyond test captures that source set's launch, into its tree's own
-  // file: a capture-only sync runs it dry, as it runs test, and a plain run of it captures too.
-  // test's launch stays test's own.
+  // file, whenever it runs: dry when run capture-only, as test runs in the editor's sync. That sync
+  // does not pull it in (its dependencies could start a database), and test's launch stays test's.
   @Test
-  void captureOnlySync_sourceSetTestTask_capturesItsTreesOwnLaunch() throws Exception {
+  void sourceSetTestTask_anyRun_capturesItsTreesOwnLaunch() throws Exception {
     final var fixture =
         multiProject()
             .file(
@@ -693,12 +693,10 @@ class LatheSyncTaskFunctionalTest {
         dir.resolve(".lathe/app")
             .resolve(LatheLayout.testLaunchFile(LatheLayout.sourceSetTree("integrationTest")));
 
-    final var capture = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+    final var sync = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
 
-    assertThat(capture.task(":app:integrationTest").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
-    assertThat(dir.resolve("app/AppIT.ran")).doesNotExist();
-    assertThat(Json.read(integrationLaunch, TestLaunchData.class).classPath())
-        .contains(fixture.path("app/build/classes/java/integrationTest"));
+    assertThat(sync.task(":app:integrationTest")).isNull();
+    assertThat(integrationLaunch).doesNotExist();
     assertThat(
             Json.read(
                     dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE),
@@ -706,6 +704,12 @@ class LatheSyncTaskFunctionalTest {
                 .classPath())
         .contains(fixture.path("app/build/classes/java/test"))
         .doesNotContain(fixture.path("app/build/classes/java/integrationTest"));
+
+    fixture.runner(":app:integrationTest", "-Plathe.capture.only=true").build();
+
+    assertThat(dir.resolve("app/AppIT.ran")).doesNotExist();
+    assertThat(Json.read(integrationLaunch, TestLaunchData.class).classPath())
+        .contains(fixture.path("app/build/classes/java/integrationTest"));
 
     Files.delete(integrationLaunch);
     fixture.runner(":app:integrationTest").build();

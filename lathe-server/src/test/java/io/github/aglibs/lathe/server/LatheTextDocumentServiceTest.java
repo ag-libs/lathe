@@ -20,8 +20,10 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
+import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
@@ -619,8 +621,8 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   }
 
   // A class only a Gradle source set's tree holds replays from that tree's launch: before its test
-  // task has captured one, the run names the source set and the capture; classes of two source
-  // sets in one run are refused.
+  // task has captured one, the run names the source set and how its task captures it (the editor's
+  // sync never does); classes of two source sets in one run are refused.
   @Test
   void runTestFuture_classesOfSourceSetTrees_blockedNamingTheSourceSet() throws Exception {
     writeManifest();
@@ -629,13 +631,56 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
     host.initialize(tmp);
 
     assertThat(blockedReasons("com.example.BookIT#finds()"))
-        .containsExactly(
-            "no captured launch of the integrationTest tests of app; run `%s` to capture it"
-                .formatted(LatheLayout.captureTestsCommand("app")));
+        .singleElement()
+        .asString()
+        .startsWith("no captured launch of the integrationTest tests of app:")
+        .contains("-Plathe.capture.only=true")
+        .doesNotContain(LatheLayout.captureTestsCommand("app"));
     assertThat(blockedReasons("com.example.BookIT", "com.example.DataTest"))
         .singleElement()
         .asString()
         .contains("more than one source set of app", "integrationTest", "jakartaData");
+  }
+
+  // With its launch captured, a source set's class replays from it, a test and a main alike: here
+  // the launch names a jar that is gone, which the gate reports, so no JVM starts. A run of a test
+  // class and a source set's together is refused.
+  @Test
+  void runFutures_classOfASourceSetTree_replayFromItsOwnLaunch() throws Exception {
+    writeManifest();
+    sourceSetTree("integrationTest", "com.example.BookIT");
+    final Path gone = tmp.resolve("gone/lib.jar");
+    Json.write(
+        new TestLaunchData(
+            "junit-platform",
+            LaunchMode.CLASSPATH,
+            "/jdk",
+            "",
+            List.of(),
+            List.of(gone.toString()),
+            Map.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            List.of(),
+            ""),
+        tmp.resolve(LatheLayout.LATHE_DIR)
+            .resolve("app")
+            .resolve(LatheLayout.testLaunchFile(LatheLayout.sourceSetTree("integrationTest"))));
+    host.initialize(tmp);
+
+    assertThat(blockedReasons("com.example.BookIT"))
+        .anyMatch(reason -> reason.contains(gone.toString()));
+    final var main =
+        host.onLoopFuture(session -> session.runs().runMainFuture("app", "com.example.BookIT", ""))
+            .get(TIMEOUT_S, TimeUnit.SECONDS);
+    assertThat(main.launched()).isFalse();
+    assertThat(main.blockedReasons()).anyMatch(reason -> reason.contains(gone.toString()));
+    assertThat(blockedReasons("com.example.BookIT", "com.example.FooTest"))
+        .singleElement()
+        .asString()
+        .contains("more than one source set of app", "test", "integrationTest");
   }
 
   // A source set's tree of module app as a sync leaves it: its params and one compiled class.
