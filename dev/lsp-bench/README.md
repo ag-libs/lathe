@@ -94,4 +94,7 @@ Then every row with its raw results and the command that reproduces it, the rows
 
 ## Amendments
 
-None yet.
+- **2026-11-07, after spring-petclinic's first run (its queries are java-index's, which no rule picks):**
+  the rules under [Queries](#queries) name "the main module" without saying which; each project's is now named in `projects.py` before its first run:
+  the module its other modules build on (`dropwizard-core`, Helidon's `webserver/webserver`, `hibernate-core`, `fineract-core`, `openmetadata-service`).
+  How the rules are applied by text search, and the base class for the kinds without a rule of their own, are in `pick.py`'s description.

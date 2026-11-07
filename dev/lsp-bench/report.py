@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""Writes report.md for one results directory of bench.py: medians per server, latency and
+correctness per query, and every set-valued answer compared between the servers.
+
+    python3 dev/lsp-bench/report.py dev/lsp-bench/results/<run>
+"""
+import json
+import statistics
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import queries as Q  # noqa: E402
+
+SET_METHODS = ("textDocument/references", "textDocument/implementation", "textDocument/documentHighlight",
+               "typeHierarchy/supertypes", "typeHierarchy/subtypes", "callHierarchy/incomingCalls",
+               "callHierarchy/outgoingCalls")
+EXAMPLES = 10
+
+
+def load(out_dir):
+    runs = {}
+    for path in sorted(out_dir.glob("*.json")):
+        if path.name == "environment.json":
+            continue
+        result = json.loads(path.read_text())
+        runs.setdefault(result["server"], []).append(result)
+    return runs
+
+
+def median(values):
+    present = [v for v in values if v is not None]
+    return statistics.median(present) if present else None
+
+
+def fmt(value, unit="", scale=1.0, digits=0):
+    if value is None:
+        return "-"
+    return "%.*f%s" % (digits, value / scale, unit)
+
+
+def server_table(runs):
+    rows = ["| Server | Mode | Runs | Build | Import | Ready | Startup peak | Query peak | Idle | CPU | Failed |",
+            "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for server, results in runs.items():
+        for mode in ("cold", "warm"):
+            done = [r for r in results if r["mode"] == mode]
+            ok = [r for r in done if not r.get("error")]
+            rows.append("| %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %d |" % (
+                server, mode, len(done),
+                fmt(median([r.get("build_ms") for r in ok]), " s", 1000, 1),
+                fmt(median([r.get("import_ms") for r in ok]), " s", 1000, 1),
+                fmt(median([r.get("ready_ms") for r in ok]), " s", 1000, 1),
+                fmt(median([r.get("startup_peak_mb") for r in ok]), " MB"),
+                fmt(median([r.get("query_peak_mb") for r in ok]), " MB"),
+                fmt(median([r.get("idle_mb") for r in ok]), " MB"),
+                fmt(median([r.get("cpu_s") for r in ok]), " s", 1, 1),
+                len(done) - len(ok)))
+    return rows
+
+
+def case_names(runs):
+    names = []
+    for results in runs.values():
+        for result in results:
+            names += [n for n in result["cases"] if n not in names]
+    return names
+
+
+def query_table(runs):
+    servers = list(runs)
+    header = "| Query | " + " | ".join("%s first / median / p95 | %s correct" % (s, s) for s in servers) + " |"
+    rows = [header, "|---|" + "---|---|" * len(servers)]
+    for name in case_names(runs):
+        cells = []
+        for server in servers:
+            warm = [r["cases"].get(name) for r in runs[server] if r["mode"] == "warm" and not r.get("error")]
+            warm = [c for c in warm if c]
+            if warm and not any(c.get("supported") for c in warm):
+                cells += ["unsupported", "-"]
+                continue
+            supported = [c for c in warm if c.get("supported")]
+            cells.append("%s / %s / %s" % (fmt(median([c["first_ms"] for c in supported]), " ms"),
+                                           fmt(median([c["median_ms"] for c in supported]), " ms"),
+                                           fmt(median([c["p95_ms"] for c in supported]), " ms")))
+            cells.append("%d/%d" % (sum(1 for c in supported if c["correct"]), len(supported)))
+        rows.append("| %s | %s |" % (name, " | ".join(cells)))
+    return rows
+
+
+def answer_of(results, name):
+    """The first warm run's answer to a query, else the first run's that has one."""
+    ordered = sorted(results, key=lambda r: r["mode"] != "warm")
+    for result in ordered:
+        case = result["cases"].get(name)
+        if case and case.get("supported") and case.get("answer") is not None:
+            return case["answer"]
+    return None
+
+
+def method_of(runs, name):
+    return next((r["cases"][name].get("method") for results in runs.values() for r in results
+                 if name in r["cases"]), None)
+
+
+def keys(answer):
+    locations = Q.location_keys(answer)
+    # jdtls labels a call hierarchy item with its signature, Lathe with its name only.
+    return locations if locations else sorted({n.split("(")[0].strip() for n in answer["names"]})
+
+
+def diff_section(runs):
+    if not {"lathe", "jdtls"} <= set(runs):
+        return []
+    lines = ["## Set-valued answers, Lathe against jdtls", ""]
+    for name in case_names(runs):
+        if method_of(runs, name) not in SET_METHODS:
+            continue
+        lathe, jdtls = answer_of(runs["lathe"], name), answer_of(runs["jdtls"], name)
+        if lathe is None or jdtls is None:
+            continue
+        a, b = set(keys(lathe)), set(keys(jdtls))
+        only_lathe, only_jdtls = sorted(a - b), sorted(b - a)
+        verdict = "same %d" % len(a) if not (only_lathe or only_jdtls) else \
+            "%d shared, %d only Lathe, %d only jdtls" % (len(a & b), len(only_lathe), len(only_jdtls))
+        lines.append("- **%s:** %s" % (name, verdict))
+        for label, items in (("only Lathe", only_lathe), ("only jdtls", only_jdtls)):
+            if items:
+                shown = ", ".join("`%s`" % i for i in items[:EXAMPLES])
+                more = " and %d more" % (len(items) - EXAMPLES) if len(items) > EXAMPLES else ""
+                lines.append("  - %s: %s%s" % (label, shown, more))
+    lines += ["", "A difference is settled by the build: what javac compiles is the truth (README.md, Metrics)."]
+    return lines
+
+
+def failures(runs):
+    lines = []
+    for server, results in runs.items():
+        for result in results:
+            if result.get("error"):
+                lines.append("- %s %s run: %s" % (server, result["mode"], result["error"]))
+            for name, case in result["cases"].items():
+                if case.get("supported") and not case.get("correct"):
+                    lines.append("- %s %s run, %s: %s" % (server, result["mode"], name,
+                                                         case.get("error") or "wrong answer"))
+    return ["## Failures", ""] + sorted(set(lines)) if lines else []
+
+
+def main():
+    out_dir = Path(sys.argv[1])
+    env = json.loads((out_dir / "environment.json").read_text())
+    runs = load(out_dir)
+    m = env["machine"]
+    lines = [
+        "# %s, %s" % (env["project"], env["date"]),
+        "",
+        "Project commit `%s`; Lathe %s; jdtls %s; build JDK %s; jdtls JDK %s%s." % (
+            env["project_commit"][:10], env["versions"]["lathe"], env["versions"]["jdtls"],
+            env["versions"]["build_jdk"], env["versions"]["jdtls_jdk"],
+            "; every server at -Xmx%s" % env["heap"] if env.get("heap") else ""),
+        "%s, %d cores, %s GB, %s. Command: `%s`." % (m["cpu"], m["cores"], m["memory_gb"], m["os"], env["command"]),
+        "",
+        "## Servers (medians; memory is the summed RSS of the server's processes)",
+        "",
+    ] + server_table(runs) + [
+        "",
+        "Build is Lathe's build with its capture, on cold runs; import is jdtls's own project import, "
+        "inside its ready time. Ready runs from the server's start to the first right answer to the probe query.",
+        "",
+        "## Queries (warm runs, medians)",
+        "",
+    ] + query_table(runs) + [""] + diff_section(runs) + [""] + failures(runs)
+    (out_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("report:", out_dir / "report.md")
+
+
+if __name__ == "__main__":
+    main()
