@@ -42,6 +42,17 @@ class LatheLayoutTest {
         .isFalse();
   }
 
+  // Maven's two trees keep their names; a Gradle source set's tree and generated sources are its
+  // own.
+  @Test
+  void generatedSourcesDir_eachTree_namesItsOwnMirror() {
+    assertThat(LatheLayout.generatedSourcesDir("classes")).isEqualTo("generated-sources");
+    assertThat(LatheLayout.generatedSourcesDir("test-classes")).isEqualTo("generated-test-sources");
+    assertThat(LatheLayout.sourceSetTree("integrationTest")).isEqualTo("classes-integrationTest");
+    assertThat(LatheLayout.generatedSourcesDir(LatheLayout.sourceSetTree("integrationTest")))
+        .isEqualTo("generated-integrationTest-sources");
+  }
+
   @Test
   void syncRemediations_syncedWorkspaceNamesScript_firstSyncNamesBuildCommand() {
     assertThat(LatheLayout.scopedSyncCommand(List.of("app", "core")))

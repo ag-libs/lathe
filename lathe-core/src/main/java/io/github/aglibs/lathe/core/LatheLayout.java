@@ -82,6 +82,7 @@ public final class LatheLayout {
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
   public static final String TEST_CLASSES_DIR = "test-classes";
+  public static final String SOURCE_SET_TREE_PREFIX = "classes-";
   public static final String PARAMS_FILE_PREFIX = "lsp-params-";
   public static final String STAMPS_FILE_PREFIX = "lsp-stamps-";
   private static final String JSON_SUFFIX = ".json";
@@ -408,10 +409,22 @@ public final class LatheLayout {
     return "%s%s%s".formatted(STAMPS_FILE_PREFIX, sourceTree, JSON_SUFFIX);
   }
 
-  // The main and test compile each mirror their annotation-processor output to a scope-specific dir
-  // (like classes/test-classes) so the test compile does not clobber the main compile's sources.
+  // Each compile mirrors its annotation-processor output to a dir of its own, as its classes are,
+  // so no compile clobbers another's sources: main's and test's by Maven's names, a Gradle source
+  // set's by its name.
   public static String generatedSourcesDir(final String sourceTree) {
+    if (sourceTree.startsWith(SOURCE_SET_TREE_PREFIX)) {
+      return "generated-%s-sources"
+          .formatted(sourceTree.substring(SOURCE_SET_TREE_PREFIX.length()));
+    }
+
     return TEST_CLASSES_DIR.equals(sourceTree) ? GENERATED_TEST_SOURCES : GENERATED_SOURCES;
+  }
+
+  // The tree of a Gradle source set other than main and test. Prefixed: module dirs nest by project
+  // path, so a bare source-set name could be a subproject's dir.
+  public static String sourceSetTree(final String sourceSet) {
+    return SOURCE_SET_TREE_PREFIX + sourceSet;
   }
 
   public static boolean isParamsFile(final Path path) {

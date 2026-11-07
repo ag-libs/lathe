@@ -113,7 +113,8 @@ public final class OpenJdkSync {
             null,
             parsed.compilerArgs(),
             AnalysisMode.MODULE_SYSTEM,
-            true);
+            true,
+            false);
     final List<Path> sources = readFilelist(batchFile(cmdlineFile, ".filelist"));
     writeConfig(latheDir(workspaceRoot).resolve(module), config, sources, sourceRoots);
     return sourceRoots;
@@ -159,7 +160,8 @@ public final class OpenJdkSync {
               null,
               parsed.compilerArgs(),
               AnalysisMode.CLASSPATH,
-              true);
+              true,
+              false);
       writeConfig(
           latheDir(workspaceRoot).resolve(batchName(cmdline)), config, sources, sourceRoots);
       synced.add(cmdline);

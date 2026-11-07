@@ -333,6 +333,7 @@ public final class TestCompiler {
             null,
             compilerArgs,
             null,
+            false,
             false);
     final Path paramsFile = latheModuleDir.resolve(LatheLayout.paramsFileName("classes"));
     Json.write(config, paramsFile);

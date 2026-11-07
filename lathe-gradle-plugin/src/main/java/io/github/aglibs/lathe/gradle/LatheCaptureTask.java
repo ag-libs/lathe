@@ -46,6 +46,10 @@ public abstract class LatheCaptureTask extends DefaultTask {
   @Input
   public abstract Property<String> getSourceTree();
 
+  // Whether the source set is test code, by Gradle's own convention (LatheProjectPlugin).
+  @Input
+  public abstract Property<Boolean> getTestCode();
+
   @Internal
   public abstract DirectoryProperty getModuleDir();
 
@@ -168,7 +172,8 @@ public abstract class LatheCaptureTask extends DefaultTask {
             ? Stream.concat(compilerArgs.stream(), Stream.of(PROC + PROC_NONE)).toList()
             : compilerArgs,
         AnalysisMode.CLASSPATH,
-        false);
+        false,
+        getTestCode().get());
   }
 
   private boolean isModular(final List<String> sourceRoots) {

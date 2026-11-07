@@ -302,9 +302,11 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
     final SourceSet test = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME);
     final TaskProvider<LatheCaptureTask> mainCapture =
-        registerCapture(project, main, "latheCaptureMain", LatheLayout.CLASSES_DIR, moduleDir);
+        registerCapture(
+            project, main, "latheCaptureMain", LatheLayout.CLASSES_DIR, false, moduleDir);
     final TaskProvider<LatheCaptureTask> testCapture =
-        registerCapture(project, test, "latheCaptureTest", LatheLayout.TEST_CLASSES_DIR, moduleDir);
+        registerCapture(
+            project, test, "latheCaptureTest", LatheLayout.TEST_CLASSES_DIR, true, moduleDir);
     facts.configure(
         task -> {
           task.dependsOn(mainCapture, testCapture);
@@ -543,6 +545,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
       final SourceSet sourceSet,
       final String name,
       final String sourceTree,
+      final boolean testCode,
       final Path moduleDir) {
     final TaskProvider<JavaCompile> compile =
         project.getTasks().named(sourceSet.getCompileJavaTaskName(), JavaCompile.class);
@@ -557,6 +560,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.dependsOn(compile, sourceSet.getProcessResourcesTaskName());
                   useBuildLock(project, task, task.getBuildLock());
                   task.getSourceTree().set(sourceTree);
+                  task.getTestCode().set(testCode);
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());
