@@ -309,6 +309,14 @@ public final class LatheLayout {
     return sourceSetTree.substring(SOURCE_SET_TREE_PREFIX.length());
   }
 
+  // The test launch a tree's tests replay from: the module's test-launch.json for its test tree, a
+  // file of its own for a Gradle source set's (whose test task captures it).
+  public static String testLaunchFile(final String sourceTree) {
+    return TEST_CLASSES_DIR.equals(sourceTree)
+        ? TEST_LAUNCH_FILE
+        : "test-launch-%s.json".formatted(sourceTree);
+  }
+
   public static boolean isParamsFile(final Path path) {
     final var name = path.getFileName().toString();
     return name.startsWith(PARAMS_FILE_PREFIX) && name.endsWith(JSON_SUFFIX);

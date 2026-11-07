@@ -2,9 +2,8 @@
 
 ## Status
 
-**Step 1 implemented (2026-11-07):** every Java source set a tree of its own, with editor features; runs there refused.
-Step 2 (runs, [TE-12](../gaps/gaps.md)) not started.
-Gradle only: Maven needs nothing (§2.3).
+**Implemented.** Step 1 (2026-11-07): every Java source set a tree of its own, with editor features.
+Step 2 (2026-11-08): each source set's test task captures that tree's launch, and its tests and main methods run and debug from it (§4.9).
 
 ## 1. Problem
 
@@ -174,13 +173,23 @@ A file belongs to the tree whose source roots hold it.
 Two source sets can share folders (a JVM test suite pointed at `src/test/java`): the server loads a module's trees in a fixed order, main, test, then the rest by name, and the first owns the file, so `test` keeps a folder a suite shares with it.
 Generated files belong to the tree whose generated-sources mirror holds them, now one per tree (`WorkspaceModuleRegistry.moduleSourceFor` stops matching main's mirror for every tree).
 
-### 4.9 Runs — step 1 refuses, step 2 captures
+### 4.9 Runs
 
-Until a tree has a launch of its own, running or debugging a test or main method declared in it is refused with a reason
-("`integrationTest`'s tests are not captured yet; run them with Gradle"), not routed to the module's `test` or main launch, where the class is missing or the class path is wrong.
-`MainClassScope` and `CompletenessGate` learn any tree name instead of the two.
+Step 1 refused a run of a test or main method only a source set's tree holds, rather than send it to the module's `test` or main launch, where the class is missing or the classpath is wrong.
 
-Step 2 (TE-12): a launch file per test task (`test-launch-<task>.json`, `test` keeping `test-launch.json`), each test task getting the capture agent, the one-class filter and dry run in a capture-only sync instead of being skipped, and run routing by the file's tree to the task that runs it.
+Step 2 gives each tree a launch of its own, `test-launch-<tree>.json` (`test` keeping `test-launch.json`).
+Build scripts register their test tasks after the plugin applies, so once a script has run, each `Test` task is matched to the source set whose classes it runs (`testClassesDirs` against the source set's class folders):
+a match loads `lathe-junit` as `test` does, with its tree named in the task's environment (`LATHE_CAPTURE_TREE`, no task input, so cache keys stay the build's), so every run of it refreshes the tree's launch, dry in a capture-only build (`./gradlew integrationTest -Plathe.capture.only=true`).
+The editor's sync does not pull these tasks in, as their dependencies (a database they start, say) would run on every sync; a build whose `test` depends on them (Hibernate ORM) runs them dry in its sync.
+A task of no captured source set (a second task on `test`'s classes) stays skipped by a capture-only build.
+`lathe-junit` writes a named tree's launch only when the module has that tree, so a name a nested build inherits from its parent's environment captures nothing, and `test` names its own tree.
+Two tasks of one source set both capture, and the last to run wins.
+
+The server reads the launch of the tree a run's classes are in (`SourceSetScope.treeOf`): a class or method run, and a `main` in a source set's tree, replay from it; a run of classes from two trees (two source sets, or `test` and one) is refused; before the task has captured, the run names the source set and how its test task captures it.
+Package, directory and module runs, and test discovery, stay with the `test` tree.
+Replay uses the test runner and JUnit launcher resolved from `test`'s classpath.
+
+Checked on Hibernate ORM: a capture-only sync captures `jakartaData`, `integrationTest`, `dataIntegrationTest` and `legacyTest`, each dry, and a test of `integrationTest` run through the server passes on its own launch.
 
 ## 5. Changes by module (step 1)
 
@@ -245,7 +254,7 @@ Run with `dev/explore.py` against a server stamped `0.3.99-spike`.
 
 ## 9. Open questions
 
-- Memory: is the +400–600 MB peak of a wide reference search held afterwards, and does releasing idle compile state bring it back? Measure on Caffeine before step 1 ships.
+- ~~Memory: is the +400–600 MB peak of a wide reference search held afterwards?~~ No, it was garbage. Measured on Caffeine (2026-11-08), heap in use after a full GC, 18 trees against 2: 262 MB against 168 MB right after a references search that finds 603 references instead of 288, and 170 MB against 128 MB after 5½ idle minutes.
 
 - ~~Does `jakartaData`, whose class path holds main's and test's output, remap both and compile cleanly?~~ Yes (§8).
 - `codeGen`-style source sets whose program generates another source set's sources: captured as a tree like any other, or skipped? (spike)

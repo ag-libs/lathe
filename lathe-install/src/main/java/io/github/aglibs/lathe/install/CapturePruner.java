@@ -43,8 +43,8 @@ public final class CapturePruner {
     return latheDir.relativize(params.getParent());
   }
 
-  // The tree's params, stamps and mirrors; for a removed module, its launch captures and test
-  // files too.
+  // The tree's params, stamps, mirrors and its own test launch (a Gradle source set's); for a
+  // removed module, its launch captures and test files too.
   private static void delete(final Path params, final boolean moduleRemoved) {
     final Path moduleDir = params.getParent();
     final String tree = LatheLayout.paramsSourceTree(params);
@@ -52,8 +52,14 @@ public final class CapturePruner {
         .forEach(dir -> IOUtil.unchecked(() -> FileUtil.deleteDir(moduleDir.resolve(dir))));
     final List<String> files =
         Stream.concat(
-                Stream.of(
-                    params.getFileName().toString(), LatheLayout.compiledStampsFileName(tree)),
+                Stream.concat(
+                    Stream.of(
+                        params.getFileName().toString(), LatheLayout.compiledStampsFileName(tree)),
+                    // A source set's tree has a test launch of its own; the module's test launch
+                    // goes only with the module.
+                    tree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX)
+                        ? Stream.of(LatheLayout.testLaunchFile(tree))
+                        : Stream.empty()),
                 moduleRemoved
                     ? Stream.of(
                         LatheLayout.MAIN_LAUNCH_FILE,

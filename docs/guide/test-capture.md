@@ -71,8 +71,10 @@ mvn test -Dlathe.capture.only=true                    # Maven
 - **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
   up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
   too (`./gradlew test -Plathe.capture.only=true`).
-  Lathe captures each project's `test` task only, so a capture-only run skips the project's other test tasks,
-  which would otherwise run their tests in full when `test` depends on them.
+  The test task of another source set (an `integrationTest`, a JVM test suite) captures into a launch of its own
+  whenever it runs, and runs the same way when run capture-only (`./gradlew integrationTest -Plathe.capture.only=true`);
+  the editor's sync with tests does not start it, as its dependencies (a database it starts, say) would run on every
+  sync. A capture-only run skips a test task of no source set Lathe captures (a second task on `test`'s classes).
 
 ## Resources
 
@@ -120,8 +122,11 @@ On Maven:
 
 On Gradle:
 
-- **Only each project's `test` task is captured.** Other test tasks, such as an `integrationTest` task, are not:
-  their source sets get editor features, but running one of their tests is refused with the reason.
+- **A source set's tests run class by class, once its test task has run.** The test task of each source set captures
+  that source set's launch when it runs (`./gradlew integrationTest -Plathe.capture.only=true` runs none of its tests),
+  so a test class or method there runs from the editor; a package, folder or module run takes `test`'s tests only.
+  A test that finds its own sources from where its class file lies (Hibernate ORM's processor tests) fails when run
+  from the editor, as Lathe loads classes from its own copy under `.lathe/`.
 - **A package or module run from the editor runs every test class it discovers.** On Maven such a run follows
   Surefire's include and exclude patterns; the `test` task's `include`, `exclude` and `filter` settings are not
   recorded, so a class the build leaves out runs too. A run of a class or method runs exactly that.

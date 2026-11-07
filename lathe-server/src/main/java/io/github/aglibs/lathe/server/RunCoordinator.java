@@ -448,8 +448,25 @@ final class RunCoordinator {
       return Replay.blocked(List.of("no lathe-test-runner jar recorded — run a build first"));
     }
 
+    final List<String> trees = selectionTrees(inputs.root(), moduleRel, selections);
+    if (trees.size() > 1) {
+      return Replay.blocked(
+          List.of(
+              "the selected tests are in more than one source set of %s (%s): run each on its own"
+                  .formatted(
+                      moduleRel,
+                      trees.stream()
+                          .map(RunCoordinator::sourceSetLabel)
+                          .collect(Collectors.joining(", ")))));
+    }
+
     final CheckedTestLaunch captured =
-        checkedTestLaunch(inputs.root(), inputs.reactorRewrite(), moduleRel, selections);
+        checkedTestLaunch(
+            inputs.root(),
+            inputs.reactorRewrite(),
+            moduleRel,
+            selections,
+            trees.isEmpty() ? LatheLayout.TEST_CLASSES_DIR : trees.get(0));
     if (!captured.gate().complete()) {
       return Replay.blocked(captured.gate().reasons());
     }
@@ -484,14 +501,16 @@ final class RunCoordinator {
       throws IOException {
     final Path root = inputs.root();
     final ReactorRewrite reactorRewrite = inputs.reactorRewrite();
-    final Optional<String> uncaptured = SourceSetScope.uncapturedReason(root, moduleRel, mainClass);
-    if (uncaptured.isPresent()) {
-      return Replay.blocked(List.of(uncaptured.get()));
-    }
-
-    if (MainClassScope.isTestScope(root, moduleRel, mainClass)) {
+    // A main in test sources, or in a source set's own tree, runs on that tree's test launch.
+    final Optional<String> sourceSetTree = SourceSetScope.treeOf(root, moduleRel, mainClass);
+    if (sourceSetTree.isPresent() || MainClassScope.isTestScope(root, moduleRel, mainClass)) {
       final CheckedTestLaunch captured =
-          checkedTestLaunch(root, reactorRewrite, moduleRel, List.of());
+          checkedTestLaunch(
+              root,
+              reactorRewrite,
+              moduleRel,
+              List.of(),
+              sourceSetTree.orElse(LatheLayout.TEST_CLASSES_DIR));
       if (!captured.gate().complete()) {
         return Replay.blocked(captured.gate().reasons());
       }
@@ -624,36 +643,47 @@ final class RunCoordinator {
     return new DebugStartResult(host.port(), jdwpPort);
   }
 
-  // The module's captured test launch, checked by the completeness gate. A module with no capture
-  // gets an incomplete gate whose reason says how to capture one, and no template.
+  // The trees a run's selections are in: a class's own (a source set's, else test's); a package or
+  // module run, test's. Class-name filters select nothing of their own.
+  private static List<String> selectionTrees(
+      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections) {
+    return selections.stream()
+        .filter(
+            selection ->
+                selection.kind() != TestSelectionKind.CLASS_NAME_INCLUDE
+                    && selection.kind() != TestSelectionKind.CLASS_NAME_EXCLUDE)
+        .map(
+            selection ->
+                selection.kind() == TestSelectionKind.CLASS
+                        || selection.kind() == TestSelectionKind.METHOD
+                    ? SourceSetScope.treeOf(
+                            workspaceRoot, moduleRel, selection.value().split("#", 2)[0])
+                        .orElse(LatheLayout.TEST_CLASSES_DIR)
+                    : LatheLayout.TEST_CLASSES_DIR)
+        .distinct()
+        .toList();
+  }
+
+  // "test", or the source set a tree is named after.
+  private static String sourceSetLabel(final String tree) {
+    return LatheLayout.TEST_CLASSES_DIR.equals(tree) ? "test" : LatheLayout.sourceSetName(tree);
+  }
+
+  // A tree's captured test launch, checked by the completeness gate. A tree with no capture gets an
+  // incomplete gate whose reason says how to capture one, and no template.
   private static CheckedTestLaunch checkedTestLaunch(
       final Path workspaceRoot,
       final ReactorRewrite reactorRewrite,
       final String moduleRel,
-      final List<TestSelection> selections)
+      final List<TestSelection> selections,
+      final String tree)
       throws IOException {
-    final List<String> uncaptured =
-        selections.stream()
-            .filter(
-                selection ->
-                    selection.kind() == TestSelectionKind.CLASS
-                        || selection.kind() == TestSelectionKind.METHOD)
-            .map(selection -> selection.value().split("#", 2)[0])
-            .flatMap(
-                className ->
-                    SourceSetScope.uncapturedReason(workspaceRoot, moduleRel, className).stream())
-            .distinct()
-            .toList();
-    if (!uncaptured.isEmpty()) {
-      return new CheckedTestLaunch(null, CompletenessResult.blocked(uncaptured));
-    }
-
-    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
+    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel, tree);
     if (template.isEmpty()) {
       return new CheckedTestLaunch(
           null,
           CompletenessResult.blocked(
-              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
+              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections, tree))));
     }
 
     return new CheckedTestLaunch(
@@ -880,7 +910,16 @@ final class RunCoordinator {
   // the build's test filter leaves out (an integration test, say) is never captured, so naming a
   // sync for it would send the reader round in circles.
   private static String noCapturedLaunch(
-      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections) {
+      final Path workspaceRoot,
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String tree) {
+    // The editor's sync does not run a source set's test task, so it is never the remedy.
+    if (!LatheLayout.TEST_CLASSES_DIR.equals(tree)) {
+      return "no captured launch of the %s tests of %s: the test task that runs them captures it whenever it runs (without running the tests with -Plathe.capture.only=true); a source set no test task runs (jmh, say) runs with the build"
+          .formatted(LatheLayout.sourceSetName(tree), moduleRel);
+    }
+
     final boolean classesOnly =
         !selections.isEmpty()
             && selections.stream()

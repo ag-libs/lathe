@@ -278,7 +278,7 @@ reused):
   through `lathe-junit` loaded as an agent (the build's cache keys untouched), `latheSync` as the editor's sync,
   Gradle's own module placement rule, polyglot Maven-orchestrated build. No formatter detection (a committed
   `lathe-style.json`); Lathe artifacts from a reactor-filled repository, never `~/.m2`. User guide: [Gradle](guide/gradle.md).
-- [Gradle Source Sets Beyond `main` and `test`](planned/lathe-gradle-source-sets.md) — **step 1 implemented (2026-11-07); step 2 (runs) planned.**
+- [Gradle Source Sets Beyond `main` and `test`](planned/lathe-gradle-source-sets.md) — **implemented (2026-11-07, runs 2026-11-08).**
   A tree per source set (`classes-<name>`), each compiled against its own class path, a `testCode` flag in `lsp-params`
   set by Gradle's own test convention, visibility between trees by class path; compares jdtls's folding (Buildship's Eclipse model).
   Step 1 editor features, step 2 runs (TE-12).

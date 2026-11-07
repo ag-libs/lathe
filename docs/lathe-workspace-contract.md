@@ -63,6 +63,7 @@ On Maven a tree is current when its compile source roots hold Java, or its outpu
 | `java-home` | plain text | recommended |
 | `<moduleRel>/generated-sources/`, `<moduleRel>/generated-test-sources/` | sources mirror | optional |
 | `<moduleRel>/test-launch.json` | `TestLaunchData` | optional (test run/debug) |
+| `<moduleRel>/test-launch-<tree>.json` | `TestLaunchData` | optional (test run/debug of a Gradle source set's tree) |
 | `<moduleRel>/main-launch.json` | `MainLaunchData` | optional (main run/debug) |
 | `<moduleRel>/test-filter.json` | `TestFilterData` | optional (package/module test runs and discovery) |
 | `<moduleRel>/test-discovery.json` | server-written discovery cache | optional (written by the server) |
@@ -222,6 +223,10 @@ Without it the module's tests cannot be run or debugged from the editor.
 
 Maven captures it with a JUnit Platform `LauncherSessionListener` (`lathe-junit`) that the extension adds to the test classpath;
 any test run writes it, and `lathe-sync.sh --tests` writes it without running tests.
+
+A Gradle source set beyond `test` has a launch of its own, `test-launch-<tree>.json` (`test-launch-classes-integrationTest.json`), captured by the test task that runs its classes:
+the plugin names the tree in that task's environment (`LATHE_CAPTURE_TREE`), and `lathe-junit` writes the named tree's file.
+A class or method run, and a `main` in such a tree, replay from the launch of the tree the class is in; package, directory and module runs from the test tree's.
 
 ### `<moduleRel>/main-launch.json`
 

@@ -19,8 +19,10 @@ public final class LaunchReader {
     this.workspaceRoot = workspaceRoot;
   }
 
-  public Optional<TestLaunchData> test(final String moduleRel) throws IOException {
-    return read(moduleRel, LatheLayout.TEST_LAUNCH_FILE, TestLaunchData.class);
+  // The test launch of one of the module's trees: its test tree's, or a Gradle source set's.
+  public Optional<TestLaunchData> test(final String moduleRel, final String sourceTree)
+      throws IOException {
+    return read(moduleRel, LatheLayout.testLaunchFile(sourceTree), TestLaunchData.class);
   }
 
   public Optional<MainLaunchData> main(final String moduleRel) throws IOException {

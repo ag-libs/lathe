@@ -353,6 +353,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
         project,
         facts,
         test,
+        others,
         moduleDir,
         project
             .getProviders()

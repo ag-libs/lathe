@@ -54,9 +54,32 @@ final class LaunchCapture {
             ManagementFactory.getRuntimeMXBean().getInputArguments(),
             ownJarLocation().orElse(null),
             FileUtil.slashed(moduleRel));
+    final Optional<String> launchFile =
+        launchFile(moduleDir, System.getenv(LatheFlags.CAPTURE_TREE_ENV));
+    if (launchFile.isEmpty()) {
+      return;
+    }
+
     Files.createDirectories(moduleDir);
-    final Path target = moduleDir.resolve(LatheLayout.TEST_LAUNCH_FILE);
-    FileUtil.writeAtomically(moduleDir, target, Json.toJson(data), false);
+    FileUtil.writeAtomically(
+        moduleDir, moduleDir.resolve(launchFile.get()), Json.toJson(data), false);
+  }
+
+  // The launch of the tree the build names (a Gradle test task of a source set beyond test), else
+  // the module's test launch. A named tree the module does not have (a source set without Java
+  // sources, or a name a nested build inherited from its parent's environment) gets none, rather
+  // than the test launch another task's classpath would overwrite.
+  static Optional<String> launchFile(final Path moduleDir, final String captureTree) {
+    // The test tree's launch needs no params: a test tree of Groovy or Kotlin sources has none.
+    if (captureTree == null
+        || captureTree.isBlank()
+        || LatheLayout.TEST_CLASSES_DIR.equals(captureTree)) {
+      return Optional.of(LatheLayout.TEST_LAUNCH_FILE);
+    }
+
+    return Files.exists(moduleDir.resolve(LatheLayout.paramsFileName(captureTree)))
+        ? Optional.of(LatheLayout.testLaunchFile(captureTree))
+        : Optional.empty();
   }
 
   private static Optional<Path> ownJarLocation() throws URISyntaxException {
