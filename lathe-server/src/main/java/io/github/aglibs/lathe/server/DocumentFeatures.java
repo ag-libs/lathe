@@ -300,23 +300,26 @@ final class DocumentFeatures {
     final var indexSnapshot = reactorIndex.current();
     final var route = router.routeCompiler(uri);
     final LearnedStaticImports staticImports = router.learnedStaticImports(route);
-    final List<String> moduleNames = completionModuleNames(route, uri);
     return router.openDocFeature(
         "completion",
         uri,
         CompletionOutcome.of(List.of()),
-        (worker, doc) ->
-            worker.submit(
-                session ->
-                    session.complete(
-                        uri,
-                        doc.content(),
-                        doc.version(),
-                        pos,
-                        context,
-                        indexSnapshot,
-                        moduleNames,
-                        staticImports)));
+        (worker, doc) -> {
+          // On the loop, and only for an open, routed document: a module-info's names scan the
+          // module path.
+          final List<String> moduleNames = completionModuleNames(route, uri);
+          return worker.submit(
+              session ->
+                  session.complete(
+                      uri,
+                      doc.content(),
+                      doc.version(),
+                      pos,
+                      context,
+                      indexSnapshot,
+                      moduleNames,
+                      staticImports));
+        });
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(
