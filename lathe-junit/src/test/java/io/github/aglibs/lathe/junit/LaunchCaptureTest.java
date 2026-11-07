@@ -19,8 +19,8 @@ final class LaunchCaptureTest {
   @Test
   void launchFile_treeNamedOrNot_namedTreesOwnFileElseTheTestLaunch(@TempDir final Path moduleDir)
       throws IOException {
+    // The test tree's own params are absent, as for a module of Spock tests: its launch still is.
     Files.writeString(moduleDir.resolve("lsp-params-classes-integrationTest.json"), "{}");
-    Files.writeString(moduleDir.resolve("lsp-params-test-classes.json"), "{}");
 
     assertThat(LaunchCapture.launchFile(moduleDir, "classes-integrationTest"))
         .contains("test-launch-classes-integrationTest.json");

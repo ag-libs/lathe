@@ -70,7 +70,10 @@ final class LaunchCapture {
   // sources, or a name a nested build inherited from its parent's environment) gets none, rather
   // than the test launch another task's classpath would overwrite.
   static Optional<String> launchFile(final Path moduleDir, final String captureTree) {
-    if (captureTree == null || captureTree.isBlank()) {
+    // The test tree's launch needs no params: a test tree of Groovy or Kotlin sources has none.
+    if (captureTree == null
+        || captureTree.isBlank()
+        || LatheLayout.TEST_CLASSES_DIR.equals(captureTree)) {
       return Optional.of(LatheLayout.TEST_LAUNCH_FILE);
     }
 
