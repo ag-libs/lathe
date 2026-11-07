@@ -25,7 +25,6 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 
 public final class MethodImplementationLocator extends TreePathScanner<Void, Void> {
@@ -289,11 +288,7 @@ public final class MethodImplementationLocator extends TreePathScanner<Void, Voi
       final TreePath path, final CompilationUnitTree tree, final String name) {
     try {
       return SourceLocator.declarationNamePosition(analysis.trees(), tree, path, name)
-          .map(
-              start -> {
-                final var end = new Position(start.getLine(), start.getCharacter() + name.length());
-                return new Location(uri, new Range(start, end));
-              });
+          .map(start -> new Location(uri, SourceLocator.nameRange(start, name)));
     } catch (final IOException e) {
       throw new UncheckedIOException(e);
     }

@@ -158,8 +158,7 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
   }
 
   private Range rangeFor(final long startOff, final String name) {
-    final var start = SourceLocator.offsetToPosition(cu, startOff);
-    return new Range(start, new Position(start.getLine(), start.getCharacter() + name.length()));
+    return SourceLocator.nameRange(SourceLocator.offsetToPosition(cu, startOff), name);
   }
 
   private List<CallHierarchyIncomingCall> buildResults(final String fileUri) {

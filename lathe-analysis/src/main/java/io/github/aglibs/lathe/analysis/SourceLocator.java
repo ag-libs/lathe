@@ -69,6 +69,11 @@ public final class SourceLocator {
     }
   }
 
+  // The range of a name that starts at start and fits on its line.
+  public static Range nameRange(final Position start, final String name) {
+    return new Range(start, new Position(start.getLine(), start.getCharacter() + name.length()));
+  }
+
   public static Range range(final Trees trees, final CompilationUnitTree cu, final Tree node) {
     final var positions = trees.getSourcePositions();
     final long start = positions.getStartPosition(cu, node);
