@@ -7,6 +7,7 @@ import io.github.aglibs.validcheck.ValidCheck;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 /**
  * A replayed test run: whether it launched (else why not), what it ran, the pass/fail/skip counts,
@@ -67,7 +68,17 @@ public record LatheTestRun(
         failures,
         outcome.exitCode(),
         results.isEmpty() ? lastLines(outcome.output(), line -> true) : List.of(),
-        outcome.notes());
+        Stream.concat(outcome.notes().stream(), launchNotes(outcome.output())).toList());
+  }
+
+  // The launch's own notes, which the editor shows among the command lines.
+  private static Stream<String> launchNotes(final List<TranscriptLine> output) {
+    return output.stream()
+        .filter(
+            line ->
+                line.stream() == TranscriptLine.Stream.COMMAND
+                    && line.text().startsWith(TranscriptLine.NOTE_PREFIX))
+        .map(line -> line.text().substring(TranscriptLine.NOTE_PREFIX.length()));
   }
 
   // A class's own failure (its @BeforeAll broke) has no method, so it is named by the class alone.

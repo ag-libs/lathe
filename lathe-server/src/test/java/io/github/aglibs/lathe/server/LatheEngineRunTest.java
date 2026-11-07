@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.Test;
@@ -202,9 +203,19 @@ class LatheEngineRunTest extends LatheEngineTestBase {
     assertThat(run.blockedReasons()).containsExactly("no runner jar");
     assertThat(run.total()).isZero();
 
+    // The launch's own note, among the command lines the editor shows, reaches the agent as a note.
     final List<TranscriptLine> printed =
-        IntStream.range(0, 45)
-            .mapToObj(i -> new TranscriptLine(TranscriptLine.Stream.STDERR, "line %d".formatted(i)))
+        Stream.concat(
+                Stream.of(
+                    new TranscriptLine(TranscriptLine.Stream.COMMAND, "java -cp a"),
+                    new TranscriptLine(
+                        TranscriptLine.Stream.COMMAND,
+                        TranscriptLine.NOTE_PREFIX + "JAVA_TOOL_OPTIONS not applied")),
+                IntStream.range(0, 45)
+                    .mapToObj(
+                        i ->
+                            new TranscriptLine(
+                                TranscriptLine.Stream.STDERR, "line %d".formatted(i))))
             .toList();
     final LatheTestRun nothing =
         LatheTestRun.from(LaunchOutcome.completed(1, printed, List.of()), List.of("a.FooTest"));
@@ -212,5 +223,6 @@ class LatheEngineRunTest extends LatheEngineTestBase {
     assertThat(nothing.total()).isZero();
     assertThat(nothing.exitCode()).isEqualTo(1);
     assertThat(nothing.output()).hasSize(40).startsWith("line 5").endsWith("line 44");
+    assertThat(nothing.notes()).containsExactly("JAVA_TOOL_OPTIONS not applied");
   }
 }

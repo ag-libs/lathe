@@ -25,8 +25,10 @@ That launch includes the options the test JVM took from `JAVA_TOOL_OPTIONS`, `JD
 `_JAVA_OPTIONS`, so a replay does not inherit those variables from the editor's environment: each option
 applies once, as in the build.
 Main-class runs are built from the build's paths, not a captured JVM, so they still inherit them.
-To give a replay one the build did not have, set the variable in the
-[run configuration's `env`](run-configuration.md).
+When a variable carries an option the build's test JVM ran without (set for the editor only, or since the
+last build), the run's output starts with a note naming it, and so does MCP `run_test`'s answer.
+To give a replay such an option, set the variable in the
+[run configuration's `env`](run-configuration.md), or re-run the build.
 
 ## On Maven
 

@@ -8,14 +8,18 @@ import io.github.aglibs.validcheck.ValidCheck;
  * and merged in arrival order, so ordering is exact within a stream and best-effort across the two.
  *
  * <p>{@code COMMAND} is not process output: it carries the replay launch command, emitted once
- * before the process starts so the client can show what ran the tests. It is appended to the enum
- * so the {@code STDOUT}/{@code STDERR} ordinals the client relies on stay stable.
+ * before the process starts so the client can show what ran the tests, and the launch's notes. It
+ * is appended to the enum so the {@code STDOUT}/{@code STDERR} ordinals the client relies on stay
+ * stable.
  *
  * <p>{@code positionId} is the test that was running when the line arrived, or null for a line
  * outside any single test (setup, teardown, several tests at once). On stdout it is exact; on
  * stderr best-effort, like the ordering.
  */
 public record TranscriptLine(Stream stream, String text, String positionId) {
+
+  // A COMMAND line that is a note about the launch rather than the command; MCP answers carry it.
+  public static final String NOTE_PREFIX = "note: ";
 
   public enum Stream {
     STDOUT,
