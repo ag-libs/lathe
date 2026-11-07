@@ -286,14 +286,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String content,
       final int version,
       final CancelChecker cancelChecker) {
-    final var existing = currentCache(uri, content);
-    if (existing == null || existing.analysis().tree() == null) {
-      compile(uri, content, version, CompileMode.OPEN, cancelChecker);
-    }
-
-    cancelChecker.checkCanceled();
-    final CachedFileAnalysis cached = cache.get(uri);
-    return cached != null ? cached.analysis() : null;
+    return cachedOrCompiled(uri, content, version, false, cancelChecker);
   }
 
   // The open file's attributed analysis for exactly this version: a cached analysis of the same
@@ -301,14 +294,28 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // runnables) is for the version the client asked about. Null when the file does not attribute.
   public AttributedFileAnalysis analysisAtVersion(
       final String uri, final String content, final int expectedVersion) {
+    return cachedOrCompiled(uri, content, expectedVersion, true, () -> {});
+  }
+
+  // The cached analysis when it has this content (and, when versionExact, this version) and a
+  // tree; otherwise a fresh compile, cached.
+  private AttributedFileAnalysis cachedOrCompiled(
+      final String uri,
+      final String content,
+      final int version,
+      final boolean versionExact,
+      final CancelChecker cancelChecker) {
     final CachedFileAnalysis current = cache.get(uri);
-    if (current != null
-        && current.version() == expectedVersion
-        && current.content().equals(content)) {
-      return current.analysis();
+    final boolean usable =
+        current != null
+            && current.content().equals(content)
+            && (!versionExact || current.version() == version)
+            && current.analysis().tree() != null;
+    if (!usable) {
+      compile(uri, content, version, CompileMode.OPEN, cancelChecker);
     }
 
-    compile(uri, content, expectedVersion, CompileMode.OPEN);
+    cancelChecker.checkCanceled();
     final CachedFileAnalysis cached = cache.get(uri);
     return cached != null ? cached.analysis() : null;
   }
@@ -346,11 +353,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
     cache.clear();
     parser.close();
     compiler.close();
-  }
-
-  private CachedFileAnalysis currentCache(final String uri, final String content) {
-    final CachedFileAnalysis cached = cache.get(uri);
-    return cached != null && cached.content().equals(content) ? cached : null;
   }
 
   // The cursor's position in the request's file, attributed (the cached analysis when current);
