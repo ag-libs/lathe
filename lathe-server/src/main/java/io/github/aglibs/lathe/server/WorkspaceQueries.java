@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 // The workspace commands that are not about a document: the reactor's and dependencies' resources,
@@ -17,6 +18,13 @@ final class WorkspaceQueries {
 
   WorkspaceQueries(final WorkspaceState state) {
     this.state = state;
+  }
+
+  // The stack frames among a run's output lines, resolved to their sources. The roots are read on
+  // the loop and the files looked up on the common pool: a long trace stats many of them.
+  CompletableFuture<List<StackFrames.Resolved>> resolveStack(final List<String> lines) {
+    final List<Path> sourceRoots = state.typeSourceDirs();
+    return CompletableFuture.supplyAsync(() -> StackFrames.resolve(lines, sourceRoots));
   }
 
   CreateTypeResult createType(final CreateTypeArgs args) {

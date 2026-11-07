@@ -111,6 +111,7 @@ final class LatheWorkspaceService implements WorkspaceService {
       case LatheCommands.WORKSPACE_CONTEXT -> resolveContext(params);
       case LatheCommands.IMPORTS_MISSING -> missingImports(params);
       case LatheCommands.IMPORTS_EDITS -> importEdits(params);
+      case LatheCommands.STACK_RESOLVE -> stackResolve(params);
       default -> CompletableFuture.completedFuture(null);
     };
   }
@@ -273,6 +274,13 @@ final class LatheWorkspaceService implements WorkspaceService {
   private CompletableFuture<?> packages(final ExecuteCommandParams params) {
     final String moduleRel = moduleRelArgument(params);
     return host.onLoop(session -> session.layout().packages(moduleRel));
+  }
+
+  private CompletableFuture<?> stackResolve(final ExecuteCommandParams params) {
+    final var json = (JsonObject) params.getArguments().get(0);
+    final List<String> lines =
+        json.getAsJsonArray("lines").asList().stream().map(JsonElement::getAsString).toList();
+    return host.onLoopFuture(session -> session.queries().resolveStack(lines));
   }
 
   private CompletableFuture<?> resolveContext(final ExecuteCommandParams params) {

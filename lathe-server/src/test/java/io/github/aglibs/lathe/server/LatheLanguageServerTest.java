@@ -98,33 +98,8 @@ class LatheLanguageServerTest {
     final var capabilities = LatheLanguageServer.createCapabilities(null);
 
     assertThat(capabilities.getExecuteCommandProvider().getCommands())
-        .containsExactlyInAnyOrder(
-            LatheCommands.RUN_TEST,
-            LatheCommands.RUN_MAIN,
-            LatheCommands.RUN_NAMED,
-            LatheCommands.DEBUG_TEST,
-            LatheCommands.DEBUG_MAIN,
-            LatheCommands.DEBUG_NAMED,
-            LatheCommands.RUN_CONFIGS_LIST,
-            LatheCommands.RUN_CONFIGS_SAVE,
-            LatheCommands.RUN_CANCEL,
-            LatheCommands.RUNNABLES_FILE,
-            LatheCommands.RUNNABLES_DIR,
-            LatheCommands.TESTS_SOURCES,
-            LatheCommands.TESTS_COUNTERPARTS,
-            LatheCommands.TESTS_MODULES,
-            LatheCommands.TESTS_DISCOVER,
-            LatheCommands.RESOURCES_LIST,
-            LatheCommands.RESOURCES_OPEN,
-            LatheCommands.RESOURCES_REFRESH,
-            LatheCommands.TYPES_INSTANTIATIONS,
-            LatheCommands.TYPES_HIERARCHY,
-            LatheCommands.TYPES_CREATE,
-            LatheCommands.WORKSPACE_MODULES,
-            LatheCommands.WORKSPACE_PACKAGES,
-            LatheCommands.WORKSPACE_CONTEXT,
-            LatheCommands.IMPORTS_MISSING,
-            LatheCommands.IMPORTS_EDITS);
+        .containsExactlyElementsOf(LatheCommands.ALL)
+        .contains(LatheCommands.RUN_TEST, LatheCommands.STACK_RESOLVE);
   }
 
   @Test

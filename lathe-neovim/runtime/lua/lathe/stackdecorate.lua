@@ -1,15 +1,16 @@
 -- Stack-trace navigation for the shared live-output buffer
--- (docs/done/lathe-test-output-streaming.md). Resolution works from the frame text alone (§4) --
--- no server-side command and no metadata recorded when the transcript streamed. decorate_live_output()
--- drives it once a run finishes, so it applies identically to both run paths: tests (lathe.neotest)
--- and `main` classes (lathe.run), which share one output buffer via lathe.output.
+-- (docs/done/lathe-test-output-streaming.md). The server reads the frames and resolves each to its
+-- class's source (lathe.stack.resolve); this links them. decorate_live_output() drives it once a run
+-- finishes, so it applies identically to both run paths: tests (lathe.neotest) and `main` classes
+-- (lathe.run), which share one output buffer via lathe.output.
 --
--- Uses only core vim.lsp/vim.api (no neotest/nio), like lathe.output and lathe.stacktrace, so it
--- loads headlessly and from the main-run path, which is deliberately neotest/nio-free.
+-- Uses only core vim.lsp/vim.api (no neotest/nio), like lathe.output, so it loads headlessly and
+-- from the main-run path, which is deliberately neotest/nio-free.
 
--- Safe to require at load: both use only core Neovim APIs.
+-- Safe to require at load: they use only core Neovim APIs.
 local output = require("lathe.output")
-local stacktrace = require("lathe.stacktrace")
+local util = require("lathe.util")
+local commands = require("lathe.commands")
 
 local M = {}
 
@@ -30,7 +31,7 @@ local jump_keymaps_set = {}
 -- replacing the output window's own buffer.
 local last_java_win
 
-local lathe_client = require("lathe.util").client
+local lathe_client = util.client
 
 vim.api.nvim_create_autocmd("BufEnter", {
   group = STACKTRACE_AUGROUP,
@@ -74,100 +75,39 @@ local function ensure_jump_keymaps(bufnr)
   end
 end
 
---- Underlines the `File.java:line` span of a resolved frame so the clickable
---- target reads as a link. `entry` is one frames_in_buffer() record: `text` is
---- the buffer row and `row` its 1-based index. Marks only the file:line span,
---- not the whole frame. Returns whether an extmark was placed.
-local function highlight_frame_span(bufnr, entry)
-  local span = ("%s:%d"):format(entry.frame.file, entry.frame.line)
-  local start = entry.text:find(span, 1, true)
-  if not start then
-    return false
-  end
-
-  local span_start = start - 1
-  pcall(vim.api.nvim_buf_set_extmark, bufnr, STACKTRACE_NS, entry.row - 1, span_start, {
-    end_col = span_start + #span,
+--- Underlines a resolved frame's `File.java:line` span, the link to its source. `frame` is one
+--- lathe.stack.resolve entry; its columns are UTF-16 (LSP), the extmark's are bytes.
+local function highlight_frame_span(bufnr, row, text, frame)
+  local start_col = vim.str_byteindex(text, "utf-16", frame.startColumn, false)
+  local end_col = vim.str_byteindex(text, "utf-16", frame.endColumn, false)
+  pcall(vim.api.nvim_buf_set_extmark, bufnr, STACKTRACE_NS, row - 1, start_col, {
+    end_col = end_col,
     hl_group = STACKTRACE_HL,
   })
-  return true
 end
 
 -- Decoration runs once a run finishes, when the live buffer already holds the streamed
--- lines, so the first scan normally finds them. The bounded re-scan is kept as a cheap
+-- lines, so the first read normally finds them. The bounded re-read is kept as a cheap
 -- guard against being called a tick early.
 local DECORATE_MAX_ATTEMPTS = 12
 local DECORATE_RETRY_MS = 50
 
---- Collects the stack frames in the output buffer. The live buffer holds one
---- logical line per row (we append transcript lines directly -- no terminal
---- hard-wrap to undo), so each frame maps to a single row. Returns a list of
---- { frame = <parse_frame result>, row = <1-based buffer row>, text = <row text> }.
-local function frames_in_buffer(bufnr)
-  local raw = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  local frames = {}
-  for i, text in ipairs(raw) do
-    local frame = stacktrace.parse_frame(text)
-    if frame then
-      frames[#frames + 1] = { frame = frame, row = i, text = text }
-    end
-  end
-
-  return frames
+local function is_empty(lines)
+  return #lines == 0 or (#lines == 1 and lines[1] == "")
 end
 
---- Identity of a frame's class for resolution caching: the simple name alone
---- would collide for same-named classes in different packages, which
---- pick_candidate distinguishes by package.
-local function frame_key(frame)
-  return frame.simple_name .. "#" .. frame.package
-end
-
---- Resolves the source location of each distinct class in `frames` via workspace/symbol, then
---- invokes `done(resolved)` with a frame_key -> location (or false) map. Fires one core-async
---- request per distinct class and counts completions -- no nio, so the main-run path can drive it.
-local function resolve_frames(client, bufnr, frames, done)
-  local by_key = {}
-  local order = {}
-  for _, entry in ipairs(frames) do
-    local key = frame_key(entry.frame)
-    if by_key[key] == nil then
-      by_key[key] = entry.frame
-      order[#order + 1] = key
-    end
-  end
-
-  local resolved = {}
-  local pending = #order
-  if pending == 0 then
-    done(resolved)
-    return
-  end
-
-  for _, key in ipairs(order) do
-    local frame = by_key[key]
-    client:request("workspace/symbol", { query = frame.simple_name }, function(_err, symbols)
-      local candidate = stacktrace.pick_candidate(frame, symbols)
-      resolved[key] = candidate and candidate.location or false
-      pending = pending - 1
-      if pending == 0 then
-        done(resolved)
-      end
-    end, bufnr)
-  end
-end
-
---- Scans the output buffer for stack frames and resolves each via the standard
---- workspace/symbol request -- no new server-side command, no metadata recorded when the
---- transcript streamed; resolution works from the frame text alone (§4).
+--- Sends the output buffer's lines to the server, which answers the frames among them that it
+--- resolved to a source, then underlines each and binds the jump to its line. The buffer only
+--- grows while a run streams, so an answered row still holds the line that was sent; one that
+--- does not is skipped.
 local function decorate_stack_frames(bufnr, attempt)
   attempt = attempt or 1
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
-  local frames = frames_in_buffer(bufnr)
-  if #frames == 0 then
+  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if is_empty(lines) then
     if attempt < DECORATE_MAX_ATTEMPTS then
       vim.defer_fn(function()
         decorate_stack_frames(bufnr, attempt + 1)
@@ -182,9 +122,7 @@ local function decorate_stack_frames(bufnr, attempt)
     return
   end
 
-  resolve_frames(client, bufnr, frames, function(resolved)
-    -- Re-scan after the async resolution: more lines may have streamed in while the LSP request
-    -- was in flight, so highlight against a fresh read rather than the pre-resolution frames.
+  util.exec(client, nil, commands.STACK_RESOLVE, { { lines = lines } }, function(frames)
     vim.schedule(function()
       if not vim.api.nvim_buf_is_valid(bufnr) then
         return
@@ -192,20 +130,18 @@ local function decorate_stack_frames(bufnr, attempt)
 
       local locations = {}
       frame_locations[bufnr] = locations
-      for _, entry in ipairs(frames_in_buffer(bufnr)) do
-        local location = resolved[frame_key(entry.frame)]
-        if location then
-          highlight_frame_span(bufnr, entry)
-          -- Jump to the frame's own line in the resolved file. workspace/symbol only locates the
-          -- class (its declaration), so location.range points at the class, not the failing line --
-          -- pair the resolved uri with the frame's parsed line instead.
-          locations[entry.row] = { uri = location.uri, line = entry.frame.line }
+      for _, frame in ipairs(frames or {}) do
+        local row = frame.index + 1
+        local text = lines[row]
+        if text and vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] == text then
+          highlight_frame_span(bufnr, row, text, frame)
+          locations[row] = { uri = frame.uri, line = frame.line }
         end
       end
 
       ensure_jump_keymaps(bufnr)
     end)
-  end)
+  end, { silent = true })
 end
 
 local live_decorate_pending = false

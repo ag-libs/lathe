@@ -28,4 +28,5 @@ return {
   TYPES_INSTANTIATIONS = "lathe.types.instantiations",
   IMPORTS_MISSING = "lathe.imports.missing",
   IMPORTS_EDITS = "lathe.imports.edits",
+  STACK_RESOLVE = "lathe.stack.resolve",
 }

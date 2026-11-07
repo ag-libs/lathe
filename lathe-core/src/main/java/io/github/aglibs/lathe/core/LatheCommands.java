@@ -33,6 +33,7 @@ public final class LatheCommands {
   public static final String TYPES_INSTANTIATIONS = "lathe.types.instantiations";
   public static final String IMPORTS_MISSING = "lathe.imports.missing";
   public static final String IMPORTS_EDITS = "lathe.imports.edits";
+  public static final String STACK_RESOLVE = "lathe.stack.resolve";
 
   // Every command, as the server advertises them.
   public static final List<String> ALL =
@@ -62,7 +63,8 @@ public final class LatheCommands {
           TYPES_HIERARCHY,
           TYPES_INSTANTIATIONS,
           IMPORTS_MISSING,
-          IMPORTS_EDITS);
+          IMPORTS_EDITS,
+          STACK_RESOLVE);
 
   private LatheCommands() {}
 }

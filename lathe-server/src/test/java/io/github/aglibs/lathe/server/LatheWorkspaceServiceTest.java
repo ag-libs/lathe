@@ -2,6 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
@@ -17,6 +18,7 @@ import io.github.aglibs.lathe.analysis.RunnableKind;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.LatheCommands;
+import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.run.LaunchOutcome;
 import io.github.aglibs.lathe.server.run.RunConfigInfo;
 import io.github.aglibs.lathe.server.run.RunConfigWriter;
@@ -238,6 +240,16 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
             command(LatheCommands.TESTS_COUNTERPARTS, json("uri", shop.shop().toUri().toString())))
         .as("a main file with no test yet")
         .isEqualTo(new TestCounterparts(false, List.of()));
+    final var frames = new JsonArray();
+    frames.add("\tat com.example.Shop.total(Shop.java:3)");
+    frames.add("\tat com.example.Gone.call(Gone.java:1)");
+    final var trace = new JsonObject();
+    trace.add("lines", frames);
+    assertThat(command(LatheCommands.STACK_RESOLVE, trace))
+        .as("a frame of the module's class resolves to its source; one of no class does not")
+        .asInstanceOf(InstanceOfAssertFactories.list(StackFrames.Resolved.class))
+        .extracting(StackFrames.Resolved::index, StackFrames.Resolved::uri)
+        .containsExactly(tuple(0, LatheUri.fromPath(shop.shop())));
 
     assertThat(command(LatheCommands.RESOURCES_LIST)).isEqualTo(List.of());
     final var manifest =

@@ -1,16 +1,14 @@
 -- Verifies lathe.stackdecorate: the shared, nio-free stack-frame decoration that both run paths
--- (lathe.neotest tests and lathe.run mains) drive over the shared lathe.output buffer. Asserts the
--- orchestration only -- frame parsing shapes and candidate selection are covered by
--- stacktrace_spec.lua and are deliberately not re-tested here.
---
--- Fixture: two frames of one resolvable class (App, at different lines), one frame of an
--- unresolvable class (Unknown), and a non-frame log line. This exercises, in one pass:
---   * every occurrence of a resolved class is underlined (App appears twice)
---   * unresolved classes and non-frame lines are left alone
---   * workspace/symbol is requested once per distinct class, not once per frame (resolve cache)
+-- (lathe.neotest tests and lathe.run mains) drive over the shared lathe.output buffer. The server
+-- reads and resolves the frames (lathe.stack.resolve, covered by StackFramesTest); this asserts the
+-- client's part:
+--   * the buffer's lines go to the server in one request
+--   * each answered frame's span is underlined, converting its UTF-16 columns to bytes (the third
+--     line carries a non-ASCII prefix)
+--   * lines the server did not answer are left alone
 --   * the jump keymap is bound on the output buffer
 --
--- Self-contained: stubs vim.lsp.get_clients with a fake client answering workspace/symbol, so no
+-- Self-contained: stubs vim.lsp.get_clients with a fake client answering lathe.stack.resolve, so no
 -- live LSP is needed. lathe.stackdecorate uses only core Neovim APIs (no neotest/nio).
 --
 -- Run headless from the repo root (or via run-specs.sh):
@@ -24,25 +22,36 @@ local spec = require("spec_helper").new()
 local output = require("lathe.output")
 local stackdecorate = require("lathe.stackdecorate")
 
--- Fake lathe client: resolves only "App" (one candidate), returns nothing for anything else.
--- client:request is a method call, so the first parameter is the client itself. Every query is
--- recorded so the spec can assert the resolve cache issues one request per distinct class.
-local queried = {}
+local LINES = {
+  "\tat com.example.App.main(App.java:42)",
+  "some non-frame log line",
+  "»» \tat com.example.App.handle(App.java:99)",
+  "\tat com.example.Unknown.run(Unknown.java:7)",
+}
+
+-- The server's answer: the two App frames (indexes 0 and 2), each with the UTF-16 columns of its
+-- File.java:line span; the Unknown frame resolves to nothing.
+local function span(index, text, file_line)
+  local start = text:find(file_line, 1, true) - 1
+  local utf16_start = vim.str_utfindex(text, "utf-16", start, false)
+  return {
+    index = index,
+    uri = "file:///ws/App.java",
+    line = tonumber(file_line:match(":(%d+)$")),
+    startColumn = utf16_start,
+    endColumn = utf16_start + #file_line,
+  }
+end
+
+local requests = {}
 local fake_client = {
+  name = "lathe",
   request = function(_self, method, params, handler, _bufnr)
-    queried[#queried + 1] = params and params.query
-    if method == "workspace/symbol" and params.query == "App" then
-      handler(nil, {
-        {
-          containerName = "com.example",
-          location = {
-            uri = "file:///ws/App.java",
-            range = { start = { line = 5, character = 0 }, ["end"] = { line = 5, character = 3 } },
-          },
-        },
-      })
+    requests[#requests + 1] = params
+    if method == "workspace/executeCommand" and params.command == "lathe.stack.resolve" then
+      handler(nil, { span(0, LINES[1], "App.java:42"), span(2, LINES[3], "App.java:99") })
     else
-      handler(nil, {})
+      handler(nil, nil)
     end
   end,
 }
@@ -53,17 +62,12 @@ end
 output.reset()
 local buf = output.current_bufnr()
 local stream = vim.lsp.handlers["lathe/testOutput"]
-for _, text in ipairs({
-  "\tat com.example.App.main(App.java:42)",
-  "some non-frame log line",
-  "\tat com.example.Unknown.run(Unknown.java:7)",
-  "\tat com.example.App.handle(App.java:99)",
-}) do
+for _, text in ipairs(LINES) do
   stream(nil, { line = { stream = 0, text = text } })
 end
 vim.wait(200)
 
--- Drive decoration and wait for the async workspace/symbol round-trip + highlight pass to land.
+-- Drive decoration and wait for the async lathe.stack.resolve round-trip + highlight pass to land.
 stackdecorate.decorate_live_output()
 local ns = vim.api.nvim_get_namespaces()["lathe_stacktrace"]
 vim.wait(2000, function()
@@ -82,23 +86,26 @@ for _, m in ipairs(marks) do
   end
 end
 
--- Rows 0 and 3 are the two App frames (0-based); the Unknown frame (row 2) and the log line (row 1)
--- are absent -- so this single assertion proves both "resolved class underlined at every
--- occurrence" and "unresolved / non-frame lines skipped".
-spec.check(
-  "resolved class underlined at every occurrence, others skipped",
-  table.concat(rows, ","),
-  "0,3"
-)
+-- Rows 0 and 2 are the two answered App frames (0-based); the log line and the Unknown frame,
+-- which the server did not answer, are absent.
+spec.check("answered frames underlined, others skipped", table.concat(rows, ","), "0,2")
 spec.check("underline uses the stack-frame highlight", hl_ok, true)
--- The mark starts past the frame's leading text: it underlines the File.java:line span only, not
--- the whole line (highlight_frame_span's substring offset).
 spec.check(
   "underline marks only the File.java:line span",
   marks[1] and marks[1][3],
   ("\tat com.example.App.main("):len()
 )
-spec.check("one workspace/symbol request per distinct class (resolve cache)", #queried, 2)
+spec.check(
+  "a non-ASCII prefix shifts the underline by its bytes, not its UTF-16 units",
+  marks[2] and marks[2][3],
+  LINES[3]:find("App.java:99", 1, true) - 1
+)
+spec.check("one request carries every line", #requests, 1)
+spec.check(
+  "the request sends the buffer's lines",
+  requests[1] and #requests[1].arguments[1].lines,
+  #LINES
+)
 
 local has_jump = false
 for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, "n")) do
