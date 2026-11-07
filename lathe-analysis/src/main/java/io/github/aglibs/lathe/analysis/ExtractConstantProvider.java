@@ -53,7 +53,7 @@ final class ExtractConstantProvider {
       return List.of();
     }
 
-    final TreePath classPath = CodeActionSupport.enclosingClass(exprPath);
+    final TreePath classPath = TreePaths.enclosingClass(exprPath);
     if (classPath == null || !holdsStaticFinal(((ClassTree) classPath.getLeaf()))) {
       return List.of();
     }

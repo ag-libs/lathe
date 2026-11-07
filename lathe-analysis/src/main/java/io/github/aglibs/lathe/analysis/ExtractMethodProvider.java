@@ -594,7 +594,7 @@ final class ExtractMethodProvider {
     final Trees trees = analysis.trees();
     final TypeMirror type = trees.getTypeMirror(exprPath);
     return ExtractionSupport.occurrences(classPath, exprPath, trees).stream()
-        .filter(copy -> CodeActionSupport.enclosingClass(copy).getLeaf() == classPath.getLeaf())
+        .filter(copy -> TreePaths.enclosingClass(copy).getLeaf() == classPath.getLeaf())
         .filter(copy -> replaceableByCall(copy, trees))
         .filter(copy -> analysis.types().isSameType(trees.getTypeMirror(copy), type))
         .toList();

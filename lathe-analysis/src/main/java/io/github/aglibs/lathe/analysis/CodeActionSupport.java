@@ -4,8 +4,6 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
-import com.sun.source.tree.MethodTree;
-import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
@@ -79,18 +77,6 @@ final class CodeActionSupport {
     return SourceLocator.pathAt(analysis.trees(), cu, offset);
   }
 
-  static TreePath enclosingMethod(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof MethodTree) {
-        return current;
-      }
-
-      current = current.getParentPath();
-    }
-    return null;
-  }
-
   // A type as code written at `path` names it, and the imports that name needs.
   record SourceType(String text, List<TextEdit> imports) {
 
@@ -102,22 +88,10 @@ final class CodeActionSupport {
 
   static SourceType sourceType(
       final AttributedFileAnalysis analysis, final TreePath path, final TypeMirror type) {
-    final var target = (TypeElement) analysis.trees().getElement(enclosingClass(path));
+    final var target = (TypeElement) analysis.trees().getElement(TreePaths.enclosingClass(path));
     return new SourceType(
         sourceTypeFormatter(analysis, target).format(type),
         importEditsFor(analysis, target, Stream.of(type)));
-  }
-
-  static TreePath enclosingClass(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof ClassTree) {
-        return current;
-      }
-
-      current = current.getParentPath();
-    }
-    return null;
   }
 
   // Import edits for every type the given types mention, each needed import once.
@@ -245,24 +219,6 @@ final class CodeActionSupport {
     return Stream.concat(Stream.of(type), nested.flatMap(CodeActionSupport::typesIn));
   }
 
-  // The variable declaration enclosing the cursor, bounded at the method/class boundary so a caret
-  // in a method body never climbs to a field. Null when no declaration encloses the path.
-  static TreePath enclosingVariable(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof VariableTree) {
-        return current;
-      }
-
-      if (current.getLeaf() instanceof MethodTree || current.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-
-      current = current.getParentPath();
-    }
-    return null;
-  }
-
   // The source offset of a local declaration's `var` keyword, or -1 when it is not a `var` local.
   // Read from source, not the type tree: attribution replaces the `var` node with the inferred type
   // and whether that node keeps a source position varies by JDK (none through 26, positioned from
@@ -298,7 +254,8 @@ final class CodeActionSupport {
   static boolean isInsideClosure(final TreePath path) {
     TreePath current = path;
     while (current != null) {
-      if (current.getLeaf() instanceof LambdaExpressionTree || isAnonymousClass(current)) {
+      if (current.getLeaf() instanceof LambdaExpressionTree
+          || TreePaths.isAnonymousClass(current)) {
         return true;
       }
 
@@ -315,31 +272,8 @@ final class CodeActionSupport {
         statement = current;
       }
 
-      if (current.getLeaf() instanceof LambdaExpressionTree
-          || isAnonymousClass(current)
-          || current.getLeaf() instanceof MethodTree) {
+      if (TreePaths.isBodyBoundary(current)) {
         return statement;
-      }
-
-      current = current.getParentPath();
-    }
-    return null;
-  }
-
-  // The innermost enclosing StatementTree, bounded at a method / lambda / anonymous-class boundary
-  // (an expression that reaches such a boundary before any statement cannot receive a preceding
-  // declaration, e.g. an expression-bodied lambda). Null when no statement encloses the path.
-  static TreePath nearestEnclosingStatement(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof StatementTree) {
-        return current;
-      }
-
-      if (current.getLeaf() instanceof LambdaExpressionTree
-          || isAnonymousClass(current)
-          || current.getLeaf() instanceof MethodTree) {
-        return null;
       }
 
       current = current.getParentPath();
@@ -553,12 +487,5 @@ final class CodeActionSupport {
   private static boolean isAnonymous(final DeclaredType type) {
     return type.asElement() instanceof final TypeElement te
         && te.getNestingKind() == NestingKind.ANONYMOUS;
-  }
-
-  private static boolean isAnonymousClass(final TreePath path) {
-    if (!(path.getLeaf() instanceof NewClassTree newClassTree)) {
-      return false;
-    }
-    return newClassTree.getClassBody() != null;
   }
 }

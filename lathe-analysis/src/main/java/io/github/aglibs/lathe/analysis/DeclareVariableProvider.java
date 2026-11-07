@@ -1,11 +1,9 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.AssignmentTree;
-import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.IdentifierTree;
-import com.sun.source.tree.MethodTree;
 import com.sun.source.util.TreePath;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,7 +45,7 @@ final class DeclareVariableProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final TreePath stmtPath = findEnclosingStatement(path);
+    final TreePath stmtPath = TreePaths.enclosingExpressionStatement(path);
     if (stmtPath == null) {
       return List.of();
     }
@@ -97,19 +95,5 @@ final class DeclareVariableProvider implements CodeActionProvider {
 
     LOG.fine(() -> "[codeAction:declare] %s %s".formatted(written.text(), varName));
     return List.of(Either.forRight(action));
-  }
-
-  private static TreePath findEnclosingStatement(final TreePath path) {
-    TreePath current = path;
-    while (current != null) {
-      if (current.getLeaf() instanceof ExpressionStatementTree) {
-        return current;
-      }
-      if (current.getLeaf() instanceof MethodTree || current.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      current = current.getParentPath();
-    }
-    return null;
   }
 }

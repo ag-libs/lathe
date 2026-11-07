@@ -153,18 +153,8 @@ final class CallHierarchyIncomingLocator extends SourceTreeLocator {
     callerRanges.computeIfAbsent(callerElement, k -> new ArrayList<>()).add(callSite);
   }
 
-  private static TreePath enclosingMethod(TreePath path) {
-    path = path.getParentPath();
-    while (path != null) {
-      if (path.getLeaf() instanceof MethodTree) {
-        return path;
-      }
-      if (path.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      path = path.getParentPath();
-    }
-    return null;
+  private static TreePath enclosingMethod(final TreePath path) {
+    return TreePaths.nearest(path.getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
   }
 
   private Range rangeFor(final long startOff, final String name) {

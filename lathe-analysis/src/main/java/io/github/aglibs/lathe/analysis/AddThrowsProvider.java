@@ -47,7 +47,7 @@ final class AddThrowsProvider implements CodeActionProvider {
       return List.of();
     }
 
-    final TreePath methodPath = CodeActionSupport.enclosingMethod(path);
+    final TreePath methodPath = TreePaths.enclosingMethod(path);
     if (methodPath == null) {
       return List.of();
     }

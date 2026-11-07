@@ -68,8 +68,7 @@ final class ExtractVariableProvider {
 
     // Where no declaration can precede the expression's statement, its body becomes a block.
     final TreePath body = bodyNeedingBlock(exprPath);
-    final TreePath stmtPath =
-        body != null ? body : CodeActionSupport.nearestEnclosingStatement(exprPath);
+    final TreePath stmtPath = body != null ? body : TreePaths.nearestEnclosingStatement(exprPath);
     final TreePath anchorPath =
         body != null ? body : stmtPath != null ? declarationAnchor(stmtPath) : null;
     if (anchorPath == null
@@ -305,7 +304,7 @@ final class ExtractVariableProvider {
       final String declaration,
       final String name,
       final List<TextEdit> imports) {
-    final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
+    final TreePath methodPath = TreePaths.enclosingMethod(exprPath);
     if (methodPath == null) {
       return null;
     }
@@ -442,7 +441,7 @@ final class ExtractVariableProvider {
   // ── name derivation ────────────────────────────────────────────────────────────────────────
 
   private static Set<String> takenNames(final TreePath exprPath) {
-    final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
+    final TreePath methodPath = TreePaths.enclosingMethod(exprPath);
     return methodPath != null ? localAndParamNames(methodPath) : Set.of();
   }
 

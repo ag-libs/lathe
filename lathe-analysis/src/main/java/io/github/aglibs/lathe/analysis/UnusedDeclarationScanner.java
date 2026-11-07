@@ -262,20 +262,17 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   }
 
   private Element enclosingPrivateMethod() {
-    TreePath path = getCurrentPath().getParentPath();
-    while (path != null) {
-      if (path.getLeaf() instanceof MethodTree) {
-        // Only a tracked private method is an edge source; anything else, a constructor too, is a
-        // root that reaches its callees directly -- an edge from it would never be followed.
-        final var element = trees.getElement(path);
-        return privateMethods.containsKey(element) ? element : null;
-      }
-      if (path.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      path = path.getParentPath();
+    final TreePath method =
+        TreePaths.nearest(
+            getCurrentPath().getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
+    if (method == null) {
+      return null;
     }
-    return null;
+
+    // Only a tracked private method is an edge source; anything else, a constructor too, is a root
+    // that reaches its callees directly -- an edge from it would never be followed.
+    final var element = trees.getElement(method);
+    return privateMethods.containsKey(element) ? element : null;
   }
 
   private List<Diagnostic> buildDiagnostics() {

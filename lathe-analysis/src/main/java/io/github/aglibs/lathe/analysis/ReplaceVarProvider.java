@@ -34,8 +34,7 @@ final class ReplaceVarProvider {
     final var trees = analysis.trees();
     final long offset =
         SourceLocator.toOffset(cu, range.getStart().getLine(), range.getStart().getCharacter());
-    final TreePath varPath =
-        CodeActionSupport.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
+    final TreePath varPath = TreePaths.enclosingVariable(SourceLocator.pathAt(trees, cu, offset));
     if (varPath == null) {
       return List.of();
     }

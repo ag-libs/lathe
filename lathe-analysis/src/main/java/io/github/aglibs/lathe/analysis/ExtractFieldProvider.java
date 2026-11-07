@@ -52,7 +52,7 @@ final class ExtractFieldProvider {
     // When the selection is the whole expression of an expression-statement, replacing that
     // expression with a reference would leave the illegal statement `name;`. Decline, mirroring
     // ExtractVariableProvider.
-    final TreePath stmtPath = CodeActionSupport.nearestEnclosingStatement(exprPath);
+    final TreePath stmtPath = TreePaths.nearestEnclosingStatement(exprPath);
     if (stmtPath != null
         && stmtPath.getLeaf() instanceof final ExpressionStatementTree exprStmt
         && exprStmt.getExpression() == expr) {
@@ -64,7 +64,7 @@ final class ExtractFieldProvider {
       return List.of();
     }
 
-    final TreePath methodPath = CodeActionSupport.enclosingMethod(exprPath);
+    final TreePath methodPath = TreePaths.enclosingMethod(exprPath);
     if (methodPath == null || isStatic(methodPath, trees)) {
       return List.of();
     }
@@ -74,7 +74,7 @@ final class ExtractFieldProvider {
       return List.of();
     }
 
-    final TreePath classPath = CodeActionSupport.enclosingClass(exprPath);
+    final TreePath classPath = TreePaths.enclosingClass(exprPath);
     if (classPath == null || !holdsInstanceField(((ClassTree) classPath.getLeaf()))) {
       return List.of();
     }

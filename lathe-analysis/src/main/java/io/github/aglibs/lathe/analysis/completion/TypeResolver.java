@@ -26,6 +26,7 @@ import com.sun.source.util.TreePathScanner;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.FunctionalInterfaces;
 import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -255,14 +256,11 @@ final class TypeResolver {
 
   private static TypeElement enclosingClass(
       final TreePath path, final AttributedFileAnalysis snapshot) {
-    for (TreePath current = path; current != null; current = current.getParentPath()) {
-      if (current.getLeaf() instanceof ClassTree) {
-        final var el = snapshot.trees().getElement(current);
-        return el instanceof final TypeElement typeElement ? typeElement : null;
-      }
-    }
-
-    return null;
+    final TreePath classPath = TreePaths.enclosingClass(path);
+    return classPath != null
+            && snapshot.trees().getElement(classPath) instanceof final TypeElement type
+        ? type
+        : null;
   }
 
   static ResolvedReceiver resolveReceiver(

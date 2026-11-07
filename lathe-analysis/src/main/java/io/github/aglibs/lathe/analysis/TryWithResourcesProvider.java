@@ -50,7 +50,7 @@ final class TryWithResourcesProvider {
     }
 
     final TreePath stmtPath =
-        CodeActionSupport.nearestEnclosingStatement(SourceLocator.pathAt(trees, cu, startOffset));
+        TreePaths.nearestEnclosingStatement(SourceLocator.pathAt(trees, cu, startOffset));
     if (stmtPath == null
         || !(stmtPath.getLeaf() instanceof final VariableTree decl)
         || decl.getInitializer() == null

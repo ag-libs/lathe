@@ -55,7 +55,7 @@ final class AddConstructorParameterProvider {
 
     final var trees = analysis.trees();
     final TreePath fieldPath =
-        CodeActionSupport.enclosingVariable(
+        TreePaths.enclosingVariable(
             CodeActionSupport.pathAt(
                 analysis, range.getStart().getLine(), range.getStart().getCharacter()));
     if (fieldPath == null) {
@@ -77,7 +77,7 @@ final class AddConstructorParameterProvider {
       return List.of();
     }
 
-    final TreePath classPath = CodeActionSupport.enclosingClass(fieldPath);
+    final TreePath classPath = TreePaths.enclosingClass(fieldPath);
     if (classPath == null) {
       return List.of();
     }
