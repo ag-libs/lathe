@@ -73,6 +73,7 @@ public final class LatheLayout {
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String PACKAGE_INFO_JAVA = "package-info.java";
+  public static final String PACKAGE_INFO_CLASS = "package-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
