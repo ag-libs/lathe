@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.Tree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.completion.CompletionEngine;
 import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
@@ -411,11 +410,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return null;
     }
 
+    final Cursor cur = at.get();
     final long offset =
         SourceLocator.toOffset(
             cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
@@ -426,18 +426,22 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // Whether the request's position is on a name, not on a word of a comment or a literal; true
   // when the file has no analysis to check against.
   public boolean onName(final SourceFeatureRequest request) {
-    final CursorContext cur = resolve(request);
-    return cur == null
-        || IOUtil.unchecked(() -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset()));
+    return cursor(request)
+        .map(
+            cur ->
+                IOUtil.unchecked(
+                    () -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset())))
+        .orElse(true);
   }
 
   public Hover hover(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
-    final CursorContext cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return null;
     }
 
+    final Cursor cur = at.get();
     final VariableElement param =
         SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
     if (param != null) {
@@ -456,7 +460,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
     }
 
-    final Element element = elementOrJavadocReference(cur);
+    final Element element = cur.elementOrJavadocReference();
     final TypeMirror type =
         cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
     final List<Path> allRoots = allRoots(request);
@@ -488,8 +492,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // The accessors Lombok generated from the field at the cursor, as reference targets: their calls
   // use the field. None for anything else.
   public List<ReferenceTarget> generatedAccessorTargets(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : elementOrJavadocReference(cur);
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
+      return List.of();
+    }
+
+    final Cursor cur = at.get();
+    final Element element = cur.elementOrJavadocReference();
     if (element == null) {
       return List.of();
     }
@@ -504,14 +513,15 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return null;
     }
 
+    final Cursor cur = at.get();
     final var trees = cur.analysis().trees();
     final var constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
-    final var element = constructor != null ? constructor : elementOrJavadocReference(cur);
+    final var element = constructor != null ? constructor : cur.elementOrJavadocReference();
     if (element == null) {
       return null;
     }
@@ -522,8 +532,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // A constructor rename redirects to its enclosing type. Null when the cursor does not name a
   // renameable element (the file move a public top-level type needs is gated in WorkspaceSession).
   public ReferenceTarget resolveRenameTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : renameElement(request, cur);
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
+      return null;
+    }
+
+    final Cursor cur = at.get();
+    final Element element = renameElement(request, cur);
     return element == null
         ? null
         : ReferenceTarget.from(
@@ -532,8 +547,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   // Why renaming the symbol at the cursor to newName would collide with an existing declaration.
   public Optional<String> renameConflict(final SourceFeatureRequest request, final String newName) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : renameElement(request, cur);
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
+      return Optional.empty();
+    }
+
+    final Cursor cur = at.get();
+    final Element element = renameElement(request, cur);
     return element == null
         ? Optional.empty()
         : RenameConflicts.find(element, newName, cur.analysis());
@@ -561,11 +581,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return conflict;
   }
 
-  private static Element renameElement(
-      final SourceFeatureRequest request, final CursorContext cur) {
+  private static Element renameElement(final SourceFeatureRequest request, final Cursor cur) {
     final Element constructor =
         SourceLocator.constructorAtNewClassType(cur.analysis().trees(), cur.path());
-    final Element named = constructor != null ? constructor : elementOrJavadocReference(cur);
+    final Element named = constructor != null ? constructor : cur.elementOrJavadocReference();
     if (named == null) {
       return null;
     }
@@ -601,11 +620,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
    * new XXX(...)} sites. Empty when the cursor is not on a type (or a constructor of one).
    */
   public List<ReferenceTarget> instantiationTargets(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return List.of();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     final var type = instantiableTypeOf(element);
     if (type == null) {
@@ -632,11 +652,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public ReferenceTarget resolveContractTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return null;
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return null;
@@ -669,8 +690,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final boolean includeDeclaration,
       final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
-    final AttributedFileAnalysis analysis =
-        ensureAttributedAnalysis(uri, content, version, cancelChecker);
+    final AttributedFileAnalysis analysis = analysis(uri, content, version, cancelChecker);
     cancelChecker.checkCanceled();
     return new SearchHits<>(
         locateReferences(uri, target, includeDeclaration, analysis),
@@ -684,10 +704,8 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final Set<String> exposureFamily,
       final IntConsumer progressPerFile,
       final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
+    final List<TransientAnalysis> analyses = transientAnalyses(sources, cancelChecker);
     cancelChecker.checkCanceled();
-    LOG.fine(() -> "[references:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
     final var results = new ArrayList<SearchHits<ReferenceMatch>>();
     for (final var analysis : analyses) {
       cancelChecker.checkCanceled();
@@ -708,8 +726,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final ReferenceTarget target,
       final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
-    final AttributedFileAnalysis analysis =
-        ensureAttributedAnalysis(uri, content, version, cancelChecker);
+    final AttributedFileAnalysis analysis = analysis(uri, content, version, cancelChecker);
     cancelChecker.checkCanceled();
     return new SearchHits<>(
         locateIncomingCalls(uri, target, analysis),
@@ -722,16 +739,11 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final ReferenceTarget target,
       final Set<String> exposureFamily,
       final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
+    final AttributedFileAnalysis analysis = transientAnalysis(uri, content, cancelChecker);
     cancelChecker.checkCanceled();
-    LOG.info(
-        () ->
-            "[compile:fast] %s %dms diags=%d"
-                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
     return new SearchHits<>(
-        locateIncomingCalls(uri, target, run.fileAnalysis()),
-        FamilyExposure.exposures(run.fileAnalysis(), exposureFamily));
+        locateIncomingCalls(uri, target, analysis),
+        FamilyExposure.exposures(analysis, exposureFamily));
   }
 
   private List<CallHierarchyIncomingCall> locateIncomingCalls(
@@ -776,7 +788,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String content,
       final int version,
       final Function<AttributedFileAnalysis, List<T>> query) {
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    final var analysis = analysis(uri, content, version, () -> {});
     return analysis != null ? query.apply(analysis) : List.of();
   }
 
@@ -784,11 +796,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // is; empty otherwise. Lets the workspace widen an implementation search to the lambdas and
   // method references that implement it.
   public Optional<String> functionalInterfaceName(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return Optional.empty();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return Optional.empty();
@@ -812,17 +825,11 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final String uri,
       final String content,
       final Function<AttributedFileAnalysis, List<T>> query) {
-    final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, () -> {});
-    LOG.info(
-        () ->
-            "[compile:fast] %s %dms diags=%d"
-                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return query.apply(run.fileAnalysis());
+    return query.apply(transientAnalysis(uri, content, () -> {}));
   }
 
   private Optional<Location> findDefinitionLocation(
-      final SourceFeatureRequest request, final CursorContext cur, final Element element) {
+      final SourceFeatureRequest request, final Cursor cur, final Element element) {
     Optional<Location> result =
         definitionLocator.locate(
             element, cur.analysis().trees(), request.sourceRoots(), request.uri());
@@ -847,12 +854,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public Optional<Location> definition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return Optional.empty();
     }
 
-    final var element = elementOrJavadocReference(cur);
+    final Cursor cur = at.get();
+    final var element = cur.elementOrJavadocReference();
     final var result = findDefinitionLocation(request, cur, element);
 
     LOG.fine(
@@ -871,12 +879,13 @@ public final class SourceAnalysisSession implements AutoCloseable {
   // declared type. Nothing for a primitive or void.
   public Optional<Location> typeDefinition(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return Optional.empty();
     }
 
-    final var element = elementOrJavadocReference(cur);
+    final Cursor cur = at.get();
+    final var element = cur.elementOrJavadocReference();
     final Optional<Location> result =
         typeOf(element, cur.analysis().types())
             .flatMap(type -> findDefinitionLocation(request, cur, type));
@@ -914,11 +923,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public Optional<Location> declaration(final SourceFeatureRequest request) {
     final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return Optional.empty();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (element != null) {
       final var contractOpt =
@@ -955,11 +965,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
   public List<Location> typeImplementations(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
     final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return List.of();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (!(element instanceof final TypeElement typeElement)) {
       return List.of();
@@ -980,11 +991,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public List<TypeHierarchyItem> prepareTypeHierarchy(
       final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return List.of();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (!(element instanceof final TypeElement typeElement)) {
       return List.of();
@@ -995,11 +1007,12 @@ public final class SourceAnalysisSession implements AutoCloseable {
   }
 
   public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
+    final Optional<Cursor> at = cursor(request);
+    if (at.isEmpty()) {
       return List.of();
     }
 
+    final Cursor cur = at.get();
     final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
     if (element == null) {
       return List.of();
@@ -1073,7 +1086,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
       return List.of();
     }
 
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    final var analysis = analysis(uri, content, version, () -> {});
     if (analysis == null) {
       return List.of();
     }
@@ -1166,7 +1179,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final var t = Stopwatch.start();
     LOG.fine(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
 
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    final var analysis = analysis(uri, content, version, () -> {});
     if (analysis == null) {
       return List.of();
     }
@@ -1237,9 +1250,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
       final LearnedStaticImports staticImports) {
     final var t = Stopwatch.start();
     // Compile first: it yields the unresolved-type diagnostics and refreshes the analysis cache, so
-    // the subsequent ensureAttributedAnalysis is a cache hit (no second compile).
+    // the subsequent analysis() is a cache hit (no second compile).
     final List<Diagnostic> diags = compile(uri, content, version, CompileMode.OPEN, () -> {});
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
+    final var analysis = analysis(uri, content, version, () -> {});
     if (analysis == null || analysis.tree() == null) {
       return MissingImportsResult.empty();
     }
@@ -1310,12 +1323,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
   }
 
-  private AttributedFileAnalysis ensureAttributedAnalysis(
-      final String uri, final String content, final int version) {
-    return ensureAttributedAnalysis(uri, content, version, () -> {});
-  }
-
-  private AttributedFileAnalysis ensureAttributedAnalysis(
+  // The open file's attributed analysis: the cached one when it has this content, else a fresh
+  // compile, cached. Null when the file does not attribute.
+  public AttributedFileAnalysis analysis(
       final String uri,
       final String content,
       final int version,
@@ -1330,28 +1340,32 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cached != null ? cached.analysis() : null;
   }
 
+  // A file attributed once, uncached: a file that is not open, or content that must not displace
+  // the open file's cached analysis.
+  public AttributedFileAnalysis transientAnalysis(
+      final String uri, final String content, final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
+    LOG.info(
+        () ->
+            "[compile:fast] %s %dms diags=%d"
+                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
+    return run.fileAnalysis();
+  }
+
+  // Many files attributed together, uncached.
+  public List<TransientAnalysis> transientAnalyses(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
+    LOG.fine(() -> "[analyze:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
+    return analyses;
+  }
+
   public void close() {
     cache.clear();
     parser.close();
     compiler.close();
-  }
-
-  private record CursorContext(AttributedFileAnalysis analysis, TreePath path, long offset) {}
-
-  // The element at the cursor, or the Javadoc reference tag ({@link} / @see / @throws) under it.
-  // A member's Javadoc lies outside the member's tree, so its path ends at the enclosing class (or
-  // the compilation unit), which elementAt would resolve to: consult the Javadoc there first.
-  // Shared by hover, definition, references, and rename.
-  private static Element elementOrJavadocReference(final CursorContext cur) {
-    final Tree leaf = cur.path() != null ? cur.path().getLeaf() : null;
-    if (leaf == null || leaf instanceof ClassTree || leaf instanceof CompilationUnitTree) {
-      final Element reference = JavadocReferenceResolver.referenceAt(cur.analysis(), cur.offset());
-      if (reference != null) {
-        return reference;
-      }
-    }
-
-    return SourceLocator.elementAt(cur.analysis().trees(), cur.path());
   }
 
   // A rename edits the identifier at the cursor, so the target must be what that identifier names;
@@ -1369,17 +1383,19 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cached != null && cached.content().equals(content) ? cached : null;
   }
 
-  private CursorContext resolve(final SourceFeatureRequest request) {
-    final var analysis =
-        ensureAttributedAnalysis(request.uri(), request.content(), request.version());
+  // The cursor's position in the request's file, attributed (the cached analysis when current);
+  // empty when the file has no tree.
+  public Optional<Cursor> cursor(final SourceFeatureRequest request) {
+    final var analysis = analysis(request.uri(), request.content(), request.version(), () -> {});
     if (analysis == null || analysis.tree() == null) {
-      return null;
+      return Optional.empty();
     }
 
     final long offset =
         SourceLocator.toOffset(
             analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
-    return new CursorContext(
-        analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset), offset);
+    return Optional.of(
+        new Cursor(
+            analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset), offset));
   }
 }
