@@ -29,7 +29,7 @@ final class GradleFixture {
   // A sync installs the server and extracts the JDK sources into Lathe's cache: one for every
   // fixture build of this checkout, not the user's.
   private static final String LATHE_CACHE =
-      "-Dlathe.cache=%s".formatted(System.getProperty("lathe.gradle.fixturesCache"));
+      "-Dlathe.cache=%s".formatted(System.getProperty(LatheFlags.CACHE_ROOT));
 
   // The fixture JDK, and a short idle timeout: on Windows a daemon inherits the outer build's
   // output pipe, so one idling after the tests keeps Maven waiting on it.

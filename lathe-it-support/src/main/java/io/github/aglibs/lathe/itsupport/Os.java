@@ -15,8 +15,7 @@ public final class Os {
   }
 
   // A launcher the server under test installed (lathe-launcher, lathe-mcp-launcher), in the
-  // fixture's
-  // Lathe cache.
+  // Lathe cache the build under test used (lathe.cache).
   public static Path launcher(final String base) {
     return Path.of(System.getProperty("lathe.cache"))
         .resolve("servers")

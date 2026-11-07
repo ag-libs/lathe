@@ -15,7 +15,9 @@ import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.Location;
+import org.eclipse.lsp4j.LocationLink;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -115,8 +117,8 @@ class LatheLspSmokeFunctionalTest {
     try {
       final String appUri = app.toUri().toString();
       session.openDoc(appUri, APP);
-      assertThat(session.nextDiagnostics(appUri)).as("a clean file").isEmpty();
-      final var definition =
+      session.awaitDiagnostics(appUri, List::isEmpty);
+      final Either<List<? extends Location>, List<? extends LocationLink>> definition =
           session
               .server
               .getTextDocumentService()
@@ -133,17 +135,16 @@ class LatheLspSmokeFunctionalTest {
           .endsWith("lib/src/main/java/com/example/lib/Lib.java");
 
       session.saveDoc(appUri, APP.replace("Lib.greet", "Lib.greeet"));
-      assertThat(session.nextDiagnostics(appUri))
-          .extracting(LatheLspSmokeFunctionalTest::message)
-          .anyMatch(message -> message.contains("greeet"));
+      session.awaitDiagnostics(appUri, diagnostics -> mentions(diagnostics, "greeet"));
       session.saveDoc(appUri, APP);
+      session.awaitDiagnostics(appUri, List::isEmpty);
 
       final String itUri = appIt.toUri().toString();
       session.openDoc(
           itUri, "package com.example.app; class AppIT { App app; AppTest notVisible; }\n");
-      assertThat(session.nextDiagnostics(itUri))
+      assertThat(session.awaitDiagnostics(itUri, diagnostics -> mentions(diagnostics, "AppTest")))
           .as("main's classes are on integrationTest's classpath, test's are not")
-          .extracting(LatheLspSmokeFunctionalTest::message)
+          .extracting(LspSession::message)
           .singleElement()
           .asString()
           .contains("AppTest");
@@ -175,10 +176,10 @@ class LatheLspSmokeFunctionalTest {
     }
   }
 
-  private static String message(final Diagnostic diagnostic) {
-    return diagnostic.getMessage().isLeft()
-        ? diagnostic.getMessage().getLeft()
-        : diagnostic.getMessage().getRight().getValue();
+  private static boolean mentions(final List<Diagnostic> diagnostics, final String text) {
+    return diagnostics.stream()
+        .map(LspSession::message)
+        .anyMatch(message -> message.contains(text));
   }
 
   private static List<JsonObject> results(final JsonObject outcome) {

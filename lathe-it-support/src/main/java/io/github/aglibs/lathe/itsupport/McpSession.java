@@ -12,8 +12,7 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 // The real MCP server, started from the fixture's MCP launcher as an agent's client starts it,
-// driven
-// over stdio with newline-delimited JSON-RPC.
+// driven over stdio with newline-delimited JSON-RPC.
 public final class McpSession {
 
   public final String initResponse;

@@ -134,10 +134,10 @@ val functionalTestTask =
       // checkout, since each sync installs that checkout's own SNAPSHOT server into it.
       systemProperty(
           "lathe.gradle.testKitDir", gradle.gradleUserHomeDir.resolve("lathe-testkit").path)
-      val fixturesCache = layout.projectDirectory.dir(".gradle/lathe-cache").asFile.path
-      systemProperty("lathe.gradle.fixturesCache", fixturesCache)
-      // Where lathe-it-support finds the server a fixture's sync installed.
-      systemProperty("lathe.cache", fixturesCache)
+      // The fixture builds' Lathe cache, which GradleFixture hands to each build; lathe-it-support
+      // finds the server a fixture's sync installed there.
+      systemProperty(
+          "lathe.cache", layout.projectDirectory.dir(".gradle/lathe-cache").asFile.path)
       enabled = !flag("skipTests")
       systemProperty(
           "lathe.gradle.fixturesHome",

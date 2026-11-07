@@ -12,11 +12,13 @@ import java.io.InputStreamReader;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Predicate;
 import org.eclipse.lsp4j.ClientCapabilities;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DidOpenTextDocumentParams;
@@ -120,17 +122,45 @@ public final class LspSession {
     server.getTextDocumentService().didSave(params);
   }
 
-  // The next diagnostics published for the file, matched by its name: the server canonicalizes a
-  // URI (macOS resolves /var to /private/var), so the URI the test sent may not be the one it gets.
-  public List<Diagnostic> nextDiagnostics(final String uri) throws InterruptedException {
-    final String fileName = uri.substring(uri.lastIndexOf('/'));
+  // The next diagnostics published for the file. The server canonicalizes a URI (macOS resolves
+  // /var to /private/var), so the file is compared, not the URI the test sent.
+  public List<Diagnostic> nextDiagnostics(final String uri) throws Exception {
     while (true) {
       final PublishDiagnosticsParams published = client.diagnostics.poll(60, SECONDS);
       assertThat(published).as("diagnostics for %s within 60 s", uri).isNotNull();
-      if (published.getUri().endsWith(fileName)) {
+      if (sameFile(published.getUri(), uri)) {
         return published.getDiagnostics();
       }
     }
+  }
+
+  // The file's diagnostics once they satisfy done: a file may be published more than once as its
+  // module compiles, and a test waits for the answer it expects, not the first.
+  public List<Diagnostic> awaitDiagnostics(final String uri, final Predicate<List<Diagnostic>> done)
+      throws Exception {
+    final Instant deadline = Instant.now().plusSeconds(60);
+    List<Diagnostic> last = nextDiagnostics(uri);
+    while (!done.test(last)) {
+      assertThat(Instant.now())
+          .as("diagnostics for %s as expected within 60 s; last: %s", uri, last)
+          .isBefore(deadline);
+      last = nextDiagnostics(uri);
+    }
+
+    return last;
+  }
+
+  // A diagnostic's text, whether the server sent it plain or as markup.
+  public static String message(final Diagnostic diagnostic) {
+    return diagnostic.getMessage().isLeft()
+        ? diagnostic.getMessage().getLeft()
+        : diagnostic.getMessage().getRight().getValue();
+  }
+
+  private static boolean sameFile(final String uri, final String other) throws IOException {
+    final Path path = Path.of(URI.create(uri));
+    final Path otherPath = Path.of(URI.create(other));
+    return Files.exists(path) && Files.exists(otherPath) && Files.isSameFile(path, otherPath);
   }
 
   // The position of token on the first line containing linePattern, at or after the pattern.

@@ -113,12 +113,16 @@ class LombokTest {
     try {
       session.client.diagnostics.clear();
       session.openDoc(uri, original);
-      assertThat(session.nextDiagnostics(uri)).as("on open").noneMatch(LombokTest::isMissingGetName);
+      assertThat(session.nextDiagnostics(uri))
+          .as("on open")
+          .noneMatch(LombokTest::isMissingGetName);
 
       session.client.diagnostics.clear();
       session.saveDoc(uri, withEmail);
       awaitInPersonClass("getEmail");
-      assertThat(session.nextDiagnostics(uri)).as("after the save").noneMatch(LombokTest::isMissingGetName);
+      assertThat(session.nextDiagnostics(uri))
+          .as("after the save")
+          .noneMatch(LombokTest::isMissingGetName);
     } finally {
       session.saveDoc(uri, original);
     }
@@ -182,11 +186,9 @@ class LombokTest {
   }
 
   private static boolean isMissingGetName(final Diagnostic diagnostic) {
-    final var message = diagnostic.getMessage();
-    final String text = message.isLeft() ? message.getLeft() : message.getRight().getValue();
+    final String text = LspSession.message(diagnostic);
     return text.contains("cannot find symbol") && text.contains("getName()");
   }
-
 
   // The class file's constant pool names each method, so a generated getter shows as its name.
   private static void awaitInPersonClass(final String member) throws Exception {
