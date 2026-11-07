@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BlockTree;

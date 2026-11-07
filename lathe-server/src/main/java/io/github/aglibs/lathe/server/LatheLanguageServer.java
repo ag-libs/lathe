@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -129,7 +129,7 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     codeActionKinds.add(CodeActionKind.Refactor);
     codeActionKinds.add(CodeActionKind.RefactorExtract);
     codeActionKinds.add(CodeActionKind.RefactorRewrite);
-    codeActionKinds.addAll(ExtractionSupport.KINDS);
+    codeActionKinds.addAll(ExtractKinds.KINDS);
     final var codeActionOptions = new CodeActionOptions(codeActionKinds);
     codeActionOptions.setResolveProvider(true);
     capabilities.setCodeActionProvider(codeActionOptions);

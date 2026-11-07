@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ArrayAccessTree;
 import com.sun.source.tree.AssertTree;
@@ -36,6 +36,8 @@ import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -67,17 +69,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 public final class ExtractionSupport {
 
   private static final Logger LOG = Logger.getLogger(ExtractionSupport.class.getName());
-
-  // CodeActionKind sub-kinds for the three extract refactors. Distinct sub-kinds let an editor bind
-  // each refactor to its own shortcut (an `only` filter that matches one kind). Advertised by the
-  // server capabilities and set on every action these providers emit — declared here so both sides
-  // share one source of truth.
-  public static final String VARIABLE_KIND = "refactor.extract.variable";
-  public static final String CONSTANT_KIND = "refactor.extract.constant";
-  public static final String FIELD_KIND = "refactor.extract.field";
-  public static final String METHOD_KIND = "refactor.extract.method";
-  public static final List<String> KINDS =
-      List.of(VARIABLE_KIND, CONSTANT_KIND, FIELD_KIND, METHOD_KIND);
 
   private ExtractionSupport() {}
 

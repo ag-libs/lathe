@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -10,6 +10,11 @@ import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,13 +38,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // toggles either direction. Offered only for a block-level local whose initializer gives `var` a
 // well-defined type; a diamond initializer is expanded (`new ArrayList<>()` -> `new
 // ArrayList<String>()`) so `var` never silently infers `Object`.
-final class ConvertToVarProvider {
+public final class ConvertToVarProvider {
 
   private static final Logger LOG = Logger.getLogger(ConvertToVarProvider.class.getName());
 
   private static final String VAR = "var";
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {

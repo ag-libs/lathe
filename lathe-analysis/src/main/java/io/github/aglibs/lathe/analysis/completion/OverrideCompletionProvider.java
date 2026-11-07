@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.analysis.MethodStubRenderer;
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;

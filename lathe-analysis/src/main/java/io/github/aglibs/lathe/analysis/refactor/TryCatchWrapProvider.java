@@ -1,7 +1,11 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -14,11 +18,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class TryCatchWrapProvider {
+public final class TryCatchWrapProvider {
 
   private static final Logger LOG = Logger.getLogger(TryCatchWrapProvider.class.getName());
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {

@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.CatchTree;
 import com.sun.source.tree.ClassTree;
@@ -11,6 +11,7 @@ import com.sun.source.tree.TryTree;
 import com.sun.source.tree.UnionTypeTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;

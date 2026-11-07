@@ -1,9 +1,10 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.testing.SampleFixture;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import java.io.IOException;

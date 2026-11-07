@@ -1,5 +1,12 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.ImportAnalyzer;
+import io.github.aglibs.lathe.analysis.ImportLayout;
+import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.StaticImportCandidates;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -11,9 +18,9 @@ import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class ImportQuickFixProvider {
+public final class ImportQuickFixProvider {
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
@@ -30,7 +37,7 @@ final class ImportQuickFixProvider {
   }
 
   // An unresolved member the file's scope statically imports elsewhere: one action per owner.
-  static List<Either<Command, CodeAction>> staticImportActions(
+  public static List<Either<Command, CodeAction>> staticImportActions(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final LearnedStaticImports learned) {

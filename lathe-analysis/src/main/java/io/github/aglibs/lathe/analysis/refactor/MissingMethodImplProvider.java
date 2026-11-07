@@ -1,9 +1,15 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CodeActionRequest;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
+import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,11 +32,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class MissingMethodImplProvider {
+public final class MissingMethodImplProvider {
 
   private static final Logger LOG = Logger.getLogger(MissingMethodImplProvider.class.getName());
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {

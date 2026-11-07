@@ -2,7 +2,7 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.net.URI;
@@ -136,7 +136,7 @@ class LspRoutesTest extends ServiceTestBase {
         .anyMatch(title -> title.startsWith("Extract variable"));
     final CodeAction unresolved =
         refactors.stream()
-            .filter(action -> ExtractionSupport.METHOD_KIND.equals(action.getKind()))
+            .filter(action -> ExtractKinds.METHOD_KIND.equals(action.getKind()))
             .findFirst()
             .orElseThrow();
     assertThat(unresolved.getEdit()).isNull();

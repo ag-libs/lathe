@@ -81,6 +81,9 @@ layout and property-file helpers.
 - `lathe-analysis` never reaches into `lathe-server`; the compiler enforces it. Shared test helpers
   (`TestJavac`, `TempSourceCompiler`, `JavacCrashFixtures`, `LoggingConfig`) live in its
   `io.github.aglibs.lathe.analysis.testing` package, which its test-jar carries to `lathe-server`'s tests.
+- `lathe-analysis` exports only its root package, the API the server calls. `completion` and `refactor` (the
+  code-action providers) are not exported, and `internal` holds what more than one of them shares, so a
+  helper they need is public there without widening the API.
 - Repo root: this directory
 
 ---

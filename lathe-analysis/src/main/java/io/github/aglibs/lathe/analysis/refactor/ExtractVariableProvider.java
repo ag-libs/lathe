@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.CaseTree;
@@ -19,6 +19,12 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.FunctionalInterfaces;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -43,11 +49,11 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // expression with a reference to it. Sibling of ReplaceVarProvider, invoked from the code-action
 // range rather than a diagnostic. Offers a base single-occurrence action and, when the same
 // expression recurs safely in scope, a second replace-all-occurrences action.
-final class ExtractVariableProvider {
+public final class ExtractVariableProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractVariableProvider.class.getName());
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {
@@ -134,7 +140,7 @@ final class ExtractVariableProvider {
     final var actions = new ArrayList<Either<Command, CodeAction>>();
     actions.add(
         ExtractionSupport.action(
-            uri, "Extract variable '%s'".formatted(name), ExtractionSupport.VARIABLE_KIND, edits));
+            uri, "Extract variable '%s'".formatted(name), ExtractKinds.VARIABLE_KIND, edits));
 
     final Either<Command, CodeAction> replaceAll =
         body != null || wholeStatement
@@ -365,7 +371,7 @@ final class ExtractVariableProvider {
     return ExtractionSupport.action(
         uri,
         "Extract variable '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
-        ExtractionSupport.VARIABLE_KIND,
+        ExtractKinds.VARIABLE_KIND,
         ExtractionSupport.editList(
             insertDecl(cu, source, anchorStart, declaration), replaces, imports));
   }

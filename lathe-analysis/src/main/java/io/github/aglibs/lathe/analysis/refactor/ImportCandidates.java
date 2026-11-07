@@ -1,7 +1,11 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.Scope;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import java.util.List;
 import java.util.Set;
 import org.eclipse.lsp4j.Position;
@@ -9,11 +13,11 @@ import org.eclipse.lsp4j.Position;
 // Resolves an unresolved simple type name to the fully-qualified names that are valid imports at a
 // source position: in a real package, accessible from that scope, and not already imported. Shared
 // by the single-name import quick fix and the "add missing imports" command.
-final class ImportCandidates {
+public final class ImportCandidates {
 
   private ImportCandidates() {}
 
-  static List<String> resolve(
+  public static List<String> resolve(
       final String simpleName,
       final Position at,
       final AttributedFileAnalysis analysis,

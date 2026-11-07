@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BlockTree;
@@ -16,6 +16,9 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import java.util.Comparator;
 import java.util.List;
@@ -41,12 +44,12 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // constructor
 // that already assigns the field is left untouched. The parameter reuses the field's declared-type
 // source text, which is already resolvable in the file, so no import is ever needed.
-final class AddConstructorParameterProvider {
+public final class AddConstructorParameterProvider {
 
   private static final Logger LOG =
       Logger.getLogger(AddConstructorParameterProvider.class.getName());
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {

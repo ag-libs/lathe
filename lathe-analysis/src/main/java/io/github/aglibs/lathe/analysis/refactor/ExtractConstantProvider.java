@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -8,6 +8,10 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.Strings;
+import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -26,13 +30,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // constant expression and replace the occurrence(s) with a reference to it. Sibling of
 // ExtractVariableProvider; the eligible set (literals, operations over them, references to other
 // constants) makes the extracted field a legal static initializer and replace-all trivially safe.
-final class ExtractConstantProvider {
+public final class ExtractConstantProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractConstantProvider.class.getName());
 
   private static final String DEFAULT_NAME = "CONSTANT";
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {
@@ -91,7 +95,7 @@ final class ExtractConstantProvider {
         ExtractionSupport.action(
             uri,
             "Extract constant '%s'".formatted(name),
-            ExtractionSupport.CONSTANT_KIND,
+            ExtractKinds.CONSTANT_KIND,
             ExtractionSupport.editList(
                 insert,
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
@@ -114,7 +118,7 @@ final class ExtractConstantProvider {
               uri,
               "Extract constant '%s' (replace all %d occurrences)"
                   .formatted(name, occurrences.size()),
-              ExtractionSupport.CONSTANT_KIND,
+              ExtractKinds.CONSTANT_KIND,
               ExtractionSupport.editList(insert, replaces, written.imports())));
     }
 

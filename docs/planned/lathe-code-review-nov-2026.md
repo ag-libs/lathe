@@ -268,11 +268,15 @@ catches with tests before replacing it.
 
 ### C5. Packages and exports
 
-**Done in part**: `DeclarationLocator`, `HoverFormatter` and `RenameConflicts` are package-private, and `completion` is no
-longer exported (`CompletionOutcome`, the one type the server used, moved to the API package). The `refactor/` and
-`navigation/` subpackages are not done: those classes use package-private helpers of the root package, so moving them
-would make those helpers public in the exported package and widen, not narrow, the API. Worth doing only with an
-unexported `internal` package for the shared helpers.
+**Done**: `DeclarationLocator`, `HoverFormatter` and `RenameConflicts` are package-private, and `completion` is no
+longer exported (`CompletionOutcome`, the one type the server used, moved to the API package).
+The code-action providers, with `ExtractionSupport`, `CodeActionSupport`, `RegionFlow`, `UncaughtExceptions` and
+`ImportCandidates`, are in an unexported `refactor` package; the extract kinds the server advertises are in `ExtractKinds`.
+`MethodStubRenderer` and `VariableNameSuggester`, which completion and refactor share, are in an unexported `internal`.
+No member of the exported package became public.
+`navigation/` stays undone, by measurement: its locators call package-private members of exported types the server
+uses (`ReferenceTarget`, `DeclarationNames`, `CallHierarchyItemData`, `SourceParser`), so moving them would make those
+members public API.
 
 The root package holds 91 files, all exported. Five public types are used by no other package or module
 (`DeclarationLocator`, `HoverFormatter`, `JavadocLocator`, `RenameConflicts`, `TypeHierarchyItemData`):

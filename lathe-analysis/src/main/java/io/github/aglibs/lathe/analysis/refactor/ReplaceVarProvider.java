@@ -1,8 +1,12 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
@@ -18,13 +22,13 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 // Request-driven (non-diagnostic) refactor: replace a `var` local declaration with its inferred
 // explicit type. Invoked from the code-action range rather than a diagnostic.
-final class ReplaceVarProvider {
+public final class ReplaceVarProvider {
 
   private static final Logger LOG = Logger.getLogger(ReplaceVarProvider.class.getName());
 
   private static final String VAR = "var";
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {

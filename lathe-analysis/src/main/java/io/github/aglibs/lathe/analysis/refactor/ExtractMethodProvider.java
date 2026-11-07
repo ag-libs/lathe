@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
@@ -17,7 +17,11 @@ import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.analysis.ExtractionSupport.Site;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
+import io.github.aglibs.lathe.analysis.refactor.ExtractionSupport.Site;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.ArrayDeque;
@@ -58,7 +62,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // (`T x = extracted(…);` or `x = extracted(…);`), the method's value when every path returns one
 // (`return extracted(…);`), or nothing. RegionFlow decides the parameters and refuses what would
 // not keep behaviour.
-final class ExtractMethodProvider {
+public final class ExtractMethodProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractMethodProvider.class.getName());
   private static final String BASE_NAME = "extracted";
@@ -71,7 +75,7 @@ final class ExtractMethodProvider {
           Tree.Kind.SWITCH_EXPRESSION,
           Tree.Kind.SYNCHRONIZED);
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {
@@ -277,8 +281,7 @@ final class ExtractMethodProvider {
 
     Either<Command, CodeAction> action(
         final String uri, final String title, final List<Site> sites, final boolean isStatic) {
-      return ExtractionSupport.action(
-          uri, title, ExtractionSupport.METHOD_KIND, edits(sites, isStatic));
+      return ExtractionSupport.action(uri, title, ExtractKinds.METHOD_KIND, edits(sites, isStatic));
     }
 
     private boolean expressionForm() {

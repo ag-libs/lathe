@@ -1,9 +1,10 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.internal;
 
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
+import io.github.aglibs.lathe.analysis.Strings;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -201,7 +202,7 @@ public final class VariableNameSuggester {
     return List.copyOf(result);
   }
 
-  static String uniquify(final String base, final Set<String> used) {
+  public static String uniquify(final String base, final Set<String> used) {
     if (!used.contains(base)) {
       return base;
     }

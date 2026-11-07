@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -9,6 +9,11 @@ import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -30,11 +35,11 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
 // ExtractVariableProvider; eligibility requires the expression to read no locals or parameters (so
 // it is a legal field initializer) inside a non-static context of a class or enum (a record cannot
 // declare an instance field beyond its components).
-final class ExtractFieldProvider {
+public final class ExtractFieldProvider {
 
   private static final Logger LOG = Logger.getLogger(ExtractFieldProvider.class.getName());
 
-  List<Either<Command, CodeAction>> provide(
+  public List<Either<Command, CodeAction>> provide(
       final String uri, final Range range, final AttributedFileAnalysis analysis) {
     final CompilationUnitTree cu = analysis.tree();
     if (cu == null) {
@@ -106,7 +111,7 @@ final class ExtractFieldProvider {
         ExtractionSupport.action(
             uri,
             "Extract field '%s'".formatted(name),
-            ExtractionSupport.FIELD_KIND,
+            ExtractKinds.FIELD_KIND,
             ExtractionSupport.editList(
                 insert,
                 List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
@@ -170,7 +175,7 @@ final class ExtractFieldProvider {
     return ExtractionSupport.action(
         uri,
         "Extract field '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
-        ExtractionSupport.FIELD_KIND,
+        ExtractKinds.FIELD_KIND,
         ExtractionSupport.editList(insert, replaces, imports));
   }
 

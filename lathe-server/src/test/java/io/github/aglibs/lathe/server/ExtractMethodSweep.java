@@ -14,7 +14,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -73,7 +73,7 @@ public final class ExtractMethodSweep {
   private static final long TIMEOUT_SECONDS = Long.getLong("sweep.timeout", 300);
   // Held strongly: JUL keeps loggers weakly, and a collected one would take its level with it.
   private static final Logger PROVIDER_LOG =
-      Logger.getLogger("io.github.aglibs.lathe.analysis.ExtractMethodProvider");
+      Logger.getLogger("io.github.aglibs.lathe.analysis.refactor.ExtractMethodProvider");
   private static final Pattern REFUSED =
       Pattern.compile("^\\[codeAction:extractMethod\\] refused: \\[(.*)\\]$");
 
@@ -246,7 +246,7 @@ public final class ExtractMethodSweep {
         actions.stream()
             .filter(Either::isRight)
             .map(Either::getRight)
-            .filter(a -> ExtractionSupport.METHOD_KIND.equals(a.getKind()))
+            .filter(a -> ExtractKinds.METHOD_KIND.equals(a.getKind()))
             .toList();
     if (offered.isEmpty()) {
       final List<String> reasons =

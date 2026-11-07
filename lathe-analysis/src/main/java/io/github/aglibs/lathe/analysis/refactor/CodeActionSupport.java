@@ -1,4 +1,4 @@
-package io.github.aglibs.lathe.analysis;
+package io.github.aglibs.lathe.analysis.refactor;
 
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -10,6 +10,13 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.DeclarationNames;
+import io.github.aglibs.lathe.analysis.ImportAnalyzer;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
 import java.util.Comparator;
@@ -35,7 +42,7 @@ import javax.lang.model.type.WildcardType;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextEdit;
 
-final class CodeActionSupport {
+public final class CodeActionSupport {
 
   private static final Logger LOG = Logger.getLogger(CodeActionSupport.class.getName());
 
@@ -70,7 +77,7 @@ final class CodeActionSupport {
     };
   }
 
-  static TreePath pathAt(
+  public static TreePath pathAt(
       final AttributedFileAnalysis analysis, final int line, final int character) {
     final CompilationUnitTree cu = analysis.tree();
     final long offset = Positions.toOffset(cu, line, character);

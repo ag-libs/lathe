@@ -6,6 +6,7 @@ import com.sun.source.tree.ImportTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
+import io.github.aglibs.lathe.analysis.refactor.CodeActionSupport;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
