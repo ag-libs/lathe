@@ -87,13 +87,19 @@ class LauncherTest {
     assertThat(environment).containsOnly(entry("JAVA_TOOL_OPTIONS", "-Dx=1"));
   }
 
-  // Options the capture already has stay quiet; one the build's test JVM ran without is named, and
-  // a variable the run configuration sets, or one the launch inherits, gets no note.
+  // Options the capture already has stay quiet, "--add-opens=x" against the replay's two-argument
+  // form included; one the build's test JVM ran without is named; and a variable the run
+  // configuration sets, or one the launch inherits, gets no note.
   @Test
   void unappliedOptionNotes_optionsTheBuildRanWithout_namedOnce() {
     final var launch =
         new ResolvedLaunch(
-            List.of("java", "-javaagent:a.jar", "-Dcaptured=1"),
+            List.of(
+                "java",
+                "-javaagent:a.jar",
+                "-Dcaptured=1",
+                "--add-opens",
+                "java.base/java.lang=ALL-UNNAMED"),
             Map.of("JDK_JAVA_OPTIONS", "-Dconfigured=1"),
             LatheLayout.JVM_OPTIONS_VARIABLES,
             null);
@@ -102,7 +108,7 @@ class LauncherTest {
             Launcher.unappliedOptionNotes(
                 Map.of(
                     "JAVA_TOOL_OPTIONS", " -javaagent:a.jar  -Dproxy=x ",
-                    "_JAVA_OPTIONS", "-Dcaptured=1",
+                    "_JAVA_OPTIONS", "-Dcaptured=1 --add-opens=java.base/java.lang=ALL-UNNAMED",
                     "JDK_JAVA_OPTIONS", "-Dother=1"),
                 launch))
         .containsExactly(
