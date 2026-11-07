@@ -72,6 +72,25 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertInvalidParams(createTypeError("bogus", "class", "Foo"), "unknown source scope");
   }
 
+  // A command whose argument lacks a field, or has one of the wrong kind, answers InvalidParams
+  // naming the command; one it reads well enough does not.
+  @Test
+  void executeCommand_malformedArguments_invalidParamsNamingTheCommand() throws Exception {
+    openShop();
+
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.PACKAGES_COMMAND, json("module", "x")),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.PACKAGES_COMMAND));
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.RUN_TEST_COMMAND, json("moduleRel", "module")),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.RUN_TEST_COMMAND));
+    assertInvalidParams(
+        commandError(LatheWorkspaceService.MISSING_IMPORTS_COMMAND, "not an object"),
+        "invalid arguments for %s".formatted(LatheWorkspaceService.MISSING_IMPORTS_COMMAND));
+    assertThat(command(LatheWorkspaceService.PACKAGES_COMMAND, json("moduleRel", "module")))
+        .isNotNull();
+  }
+
   private static void assertInvalidParams(final ResponseError error, final String reason) {
     assertThat(error.getCode()).isEqualTo(ResponseErrorCode.InvalidParams.getValue());
     assertThat(error.getMessage()).contains(reason);
