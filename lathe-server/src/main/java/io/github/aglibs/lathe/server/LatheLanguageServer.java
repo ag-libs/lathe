@@ -71,7 +71,8 @@ final class LatheLanguageServer implements LanguageServer, LanguageClientAware {
     host.setWorkDoneProgressSupported(workDoneProgressSupported(params));
     textDocumentService.setFileRenameSupported(fileRenameSupported(params));
     textDocumentService.setCodeActionResolveSupported(codeActionResolveSupported(params));
-    host.execute(session -> session.formats().use(formatEngine));
+    // An editor's formatting answers no edits without a formatter; only the agent asks why.
+    host.execute(session -> session.formats().use(formatEngine, false));
     workspaceRoot = rootPath;
     if (rootPath == null) {
       LOG.warning(() -> "[initialize] no rootUri — module registry not available");

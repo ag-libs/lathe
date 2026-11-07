@@ -16,6 +16,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.engine.LatheCall;
 import io.github.aglibs.lathe.server.engine.LatheCallHierarchy;
 import io.github.aglibs.lathe.server.engine.LatheChangeImpact;
@@ -34,6 +35,8 @@ import io.github.aglibs.lathe.server.engine.LatheRename;
 import io.github.aglibs.lathe.server.engine.LatheSymbol;
 import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
+import io.github.aglibs.lathe.server.format.FormatEngine;
+import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.Serial;
 import java.lang.module.ModuleDescriptor;
@@ -184,7 +187,11 @@ public final class LatheEngine {
     host.setInteractive(false);
     // Every query scans first, so between them the scan only costs CPU.
     host.setIdleScanPause(IDLE_SCAN_PAUSE_MS);
-    host.execute(session -> session.formats().useWorkspaceFormatter(workspaceRoot));
+    // Resolved here, off the loop: it reads the style file and builds the formatter.
+    final FormatterSpec formatterSpec = FormatEngines.workspaceSpec(workspaceRoot);
+    final FormatEngine formatter =
+        formatterSpec == null ? null : FormatEngines.forSpec(formatterSpec, workspaceRoot);
+    host.execute(session -> session.formats().use(formatter, formatterSpec != null));
     host.initialize(workspaceRoot);
   }
 

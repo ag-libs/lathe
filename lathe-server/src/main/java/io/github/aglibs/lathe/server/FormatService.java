@@ -4,9 +4,7 @@ import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
-import io.github.aglibs.lathe.core.schema.FormatterSpec;
 import io.github.aglibs.lathe.server.format.FormatEngine;
-import io.github.aglibs.lathe.server.format.FormatEngines;
 import io.github.aglibs.lathe.server.format.FormatTarget;
 import io.github.aglibs.lathe.server.format.JavaFormatter;
 import java.nio.file.Path;
@@ -63,18 +61,13 @@ final class FormatService {
     this.onFormatted = onFormatted;
   }
 
-  // The formatter the client's settings or the workspace style file name, before the first format.
-  void use(final FormatEngine engine) {
+  // The formatter the client's settings or the workspace style file name, resolved off the loop,
+  // before the first format; pinned when the project names one (whose jars a sync may not have
+  // resolved yet, so engine is null).
+  void use(final FormatEngine engine, final boolean pinned) {
     eventLoop.checkOnLoop();
     this.engine = engine;
-  }
-
-  // The formatter the workspace style file pins, for a client that sends no settings (the agent).
-  void useWorkspaceFormatter(final Path root) {
-    eventLoop.checkOnLoop();
-    final FormatterSpec spec = FormatEngines.workspaceSpec(root);
-    pinned = spec != null;
-    engine = spec == null ? null : FormatEngines.forSpec(spec, root);
+    this.pinned = pinned;
   }
 
   void close() {
