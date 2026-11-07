@@ -230,7 +230,10 @@ A design choice: the typed wrappers document the worker's surface; the generic o
 
 **Done** (`refactor/session-components`): the session keeps compile, cache and completion (371 lines) and exposes
 `Cursor`, `analysis`, `analysisAtVersion`, `cachedAnalysis` and the transient analyses; `NavigationFeatures`,
-`ReferenceFeatures`, `HierarchyFeatures` and `FileFeatures` hold the features; the cached/transient search twins are gone.
+`ReferenceFeatures`, `HierarchyFeatures` and `FileFeatures` hold the features; the cached/transient search and
+query twins are gone. Not merged, on purpose: `complete`/`completeTransient` (one reads and writes the open file's cache,
+the other completes spliced debug-console text against an uncached baseline), and the debugger's expression attribution,
+which compiles uncached without `transientAnalysis`'s per-call `[compile:fast]` INFO line.
 
 The session keeps compile, cache and cursor resolution (`CursorContext`);
 navigation, call hierarchy, rename targets and code-action dispatch move to stateless feature classes.
