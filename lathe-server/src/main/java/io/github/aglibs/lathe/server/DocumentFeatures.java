@@ -2,12 +2,12 @@ package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.CodeActionRequest;
 import io.github.aglibs.lathe.analysis.DiagnosticPayload;
+import io.github.aglibs.lathe.analysis.HierarchyFeatures;
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
 import io.github.aglibs.lathe.analysis.MissingImportsResult;
 import io.github.aglibs.lathe.analysis.NavigationFeatures;
 import io.github.aglibs.lathe.analysis.RunTarget;
 import io.github.aglibs.lathe.analysis.SemanticToken;
-import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.analysis.TokenScanner;
 import io.github.aglibs.lathe.analysis.TypeHierarchyExplorerResult;
@@ -205,7 +205,7 @@ final class DocumentFeatures {
             (worker, doc) -> {
               final var request = router.featureRequest(doc, pos);
               return worker.<List<TypeHierarchyItem>>submit(
-                  session -> session.prepareTypeHierarchy(request, indexSnapshot));
+                  session -> session.hierarchy().prepareTypeHierarchy(request, indexSnapshot));
             })
         .thenApply(FeatureAnswers.logged(LOG, "typeHierarchy:prepare", uri, t, "items"));
   }
@@ -213,13 +213,13 @@ final class DocumentFeatures {
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySupertypesFuture(
       final TypeHierarchyItem item) {
     return typeHierarchyLevel(
-        "typeHierarchy:supertypes", item, SourceAnalysisSession::typeHierarchySupertypes);
+        "typeHierarchy:supertypes", item, HierarchyFeatures::typeHierarchySupertypes);
   }
 
   CompletableFuture<List<TypeHierarchyItem>> typeHierarchySubtypesFuture(
       final TypeHierarchyItem item) {
     return typeHierarchyLevel(
-        "typeHierarchy:subtypes", item, SourceAnalysisSession::typeHierarchySubtypes);
+        "typeHierarchy:subtypes", item, HierarchyFeatures::typeHierarchySubtypes);
   }
 
   // One level of a type's hierarchy, answered by the worker of the module that holds it.
@@ -240,14 +240,14 @@ final class DocumentFeatures {
             List.of(),
             worker ->
                 worker.<List<TypeHierarchyItem>>submit(
-                    session -> step.apply(session, item, indexSnapshot, sourceDirs)))
+                    session -> step.apply(session.hierarchy(), item, indexSnapshot, sourceDirs)))
         .thenApply(FeatureAnswers.logged(LOG, operation, data.binaryName(), t, "items"));
   }
 
   @FunctionalInterface
   private interface TypeHierarchyStep {
     List<TypeHierarchyItem> apply(
-        SourceAnalysisSession session,
+        HierarchyFeatures hierarchy,
         TypeHierarchyItem item,
         WorkspaceTypeIndex index,
         List<Path> sourceDirs);
@@ -274,8 +274,10 @@ final class DocumentFeatures {
                   worker ->
                       worker.submit(
                           session ->
-                              session.typeHierarchyExplore(
-                                  self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP)));
+                              session
+                                  .hierarchy()
+                                  .typeHierarchyExplore(
+                                      self, indexSnapshot, sourceDirs, TYPE_HIERARCHY_NODE_CAP)));
             })
         .thenApply(
             result -> {

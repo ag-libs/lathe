@@ -9,8 +9,6 @@ import io.github.aglibs.lathe.analysis.completion.CompletionRequest;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,15 +18,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.TypeElement;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
@@ -38,7 +32,6 @@ import org.eclipse.lsp4j.DocumentSymbol;
 import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -58,6 +51,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final TypeHierarchyResolver typeHierarchyResolver;
   private final NavigationFeatures navigation;
   private final ReferenceFeatures references;
+  private final HierarchyFeatures hierarchy;
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -70,6 +64,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
         new NavigationFeatures(
             this, compiler, parser, definitionLocator, javadocLocator, typeHierarchyResolver);
     this.references = new ReferenceFeatures(this, compiler);
+    this.hierarchy = new HierarchyFeatures(this, definitionLocator, typeHierarchyResolver);
   }
 
   public NavigationFeatures navigation() {
@@ -78,6 +73,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
   public ReferenceFeatures references() {
     return references;
+  }
+
+  public HierarchyFeatures hierarchy() {
+    return hierarchy;
   }
 
   public List<Diagnostic> compile(
@@ -406,150 +405,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
 
     compile(uri, content, expectedVersion, CompileMode.OPEN);
     return cache.get(uri);
-  }
-
-  public List<TypeHierarchyItem> prepareTypeHierarchy(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return List.of();
-    }
-
-    final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final TypeElement typeElement)) {
-      return List.of();
-    }
-
-    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    return typeHierarchyResolver.prepare(binaryName, typeIndex, request.typeSourceRoots());
-  }
-
-  public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
-    final Optional<Cursor> at = cursor(request);
-    if (at.isEmpty()) {
-      return List.of();
-    }
-
-    final Cursor cur = at.get();
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element == null) {
-      return List.of();
-    }
-
-    final var kind = element.getKind();
-    if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
-      return List.of();
-    }
-
-    final var displayName = SourceLocator.declarationName(element).toString();
-
-    final TreePath methodPath = cur.analysis().trees().getPath(element);
-    if (methodPath != null) {
-      final var cu = cur.analysis().tree();
-      final var positions = cur.analysis().trees().getSourcePositions();
-      final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
-      final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
-      final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
-      final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
-      final var range = new Range(rangeStart, rangeEnd);
-      Position selStart;
-      try {
-        selStart =
-            SourceLocator.declarationNamePosition(
-                    cur.analysis().trees(), cu, methodPath, displayName)
-                .orElse(rangeStart);
-      } catch (final IOException e) {
-        selStart = rangeStart;
-      }
-      final var selEnd =
-          new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
-      final var selectionRange = new Range(selStart, selEnd);
-      return List.of(
-          CallHierarchyItemDataCodec.buildItem(
-              element,
-              request.uri(),
-              range,
-              selectionRange,
-              cur.analysis().types(),
-              cur.analysis().elements()));
-    }
-
-    return DefinitionLocator.findSourceFile(element, request.allSourceRoots())
-        .map(
-            file -> {
-              final var pos =
-                  definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
-              final var pointRange = new Range(pos, pos);
-              final var uri = file.toUri().toString();
-              return CallHierarchyItemDataCodec.buildItem(
-                  element,
-                  uri,
-                  pointRange,
-                  pointRange,
-                  cur.analysis().types(),
-                  cur.analysis().elements());
-            })
-        .map(List::of)
-        .orElseGet(List::of);
-  }
-
-  public List<CallHierarchyOutgoingCall> outgoingCalls(
-      final CallHierarchyItem item,
-      final String uri,
-      final String content,
-      final int version,
-      final List<Path> sourceRoots) {
-    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
-      return List.of();
-    }
-
-    final var analysis = analysis(uri, content, version, () -> {});
-    if (analysis == null) {
-      return List.of();
-    }
-
-    final var target =
-        new ReferenceTarget(
-            data.kind(),
-            data.ownerBinaryName(),
-            data.methodName(),
-            data.erasedDescriptor(),
-            data.scope(),
-            List.of(),
-            false,
-            data.staticMember(),
-            -1);
-    try {
-      return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING, e, () -> "[outgoingCalls] failed to read source for %s".formatted(uri));
-      return List.of();
-    }
-  }
-
-  public List<TypeHierarchyItem> typeHierarchySupertypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return typeHierarchyResolver.supertypes(item, typeIndex, sourceRoots);
-  }
-
-  public List<TypeHierarchyItem> typeHierarchySubtypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return typeHierarchyResolver.subtypes(item, typeIndex, sourceRoots);
-  }
-
-  public TypeHierarchyExplorerResult typeHierarchyExplore(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots,
-      final int nodeCap) {
-    return typeHierarchyResolver.explore(item, typeIndex, sourceRoots, nodeCap);
   }
 
   public List<TypeIndexEntry> cachedTypeEntries(final Set<String> neededSimpleNames) {

@@ -32,7 +32,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("run");
 
@@ -71,7 +71,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("Box");
 
@@ -110,7 +110,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(targetRequest.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(targetRequest);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(targetRequest);
       assertThat(items).hasSize(1);
 
       final List<CallHierarchyIncomingCall> calls =
@@ -143,7 +143,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
       assertThat(items.get(0).getName()).isEqualTo("setup");
 
@@ -179,7 +179,7 @@ class CallHierarchyIncomingLocatorTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       // u.setup() targets Unrelated.setup(), which neither overrides nor is overridden by

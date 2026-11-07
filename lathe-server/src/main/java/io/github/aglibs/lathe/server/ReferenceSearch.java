@@ -1033,8 +1033,10 @@ final class ReferenceSearch {
             (worker, doc) ->
                 worker.<List<CallHierarchyOutgoingCall>>submit(
                     session ->
-                        session.outgoingCalls(
-                            item, doc.uri(), doc.content(), doc.version(), sourceDirs)))
+                        session
+                            .hierarchy()
+                            .outgoingCalls(
+                                item, doc.uri(), doc.content(), doc.version(), sourceDirs)))
         .thenApply(
             FeatureAnswers.logged(LOG, "callHierarchy:outgoing", data.routingUri(), t, "calls"));
   }
@@ -1181,7 +1183,7 @@ final class ReferenceSearch {
             (worker, doc) -> {
               final var request = router.featureRequest(doc, pos);
               return worker.<List<CallHierarchyItem>>submit(
-                  session -> session.prepareCallHierarchy(request));
+                  session -> session.hierarchy().prepareCallHierarchy(request));
             })
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }
