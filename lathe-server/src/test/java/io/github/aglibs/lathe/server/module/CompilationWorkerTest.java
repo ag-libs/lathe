@@ -21,8 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DocumentSymbol;
-import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -157,30 +155,6 @@ class CompilationWorkerTest {
   }
 
   @Test
-  void documentSymbol_request_delegatesToContext() {
-    final String uri = "file:///A.java";
-    final String content = "class A {}";
-    final var symbol = new DocumentSymbol();
-    when(context.documentSymbol(uri, content)).thenReturn(List.of(symbol));
-
-    final var result = worker.submit(session -> session.documentSymbol(uri, content)).join();
-
-    assertThat(result).containsExactly(symbol);
-  }
-
-  @Test
-  void foldingRange_request_delegatesToContext() {
-    final String uri = "file:///A.java";
-    final String content = "class A {}";
-    final var range = new FoldingRange(0, 1);
-    when(context.foldingRange(uri, content)).thenReturn(List.of(range));
-
-    final var result = worker.submit(session -> session.foldingRange(uri, content)).join();
-
-    assertThat(result).containsExactly(range);
-  }
-
-  @Test
   void close_initializedContext_closesContext() {
     final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
     when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
@@ -201,9 +175,9 @@ class CompilationWorkerTest {
     final var second = mock(SourceAnalysisSession.class);
     final String uri = "file:///A.java";
     final String content = "class A {}";
-    final var symbol = new DocumentSymbol();
-    when(first.documentSymbol(uri, content)).thenReturn(List.of(symbol));
-    when(second.documentSymbol(uri, content)).thenReturn(List.of(symbol));
+    final var diagnostic = new Diagnostic();
+    when(first.diagnosticsTransient(uri, content)).thenReturn(List.of(diagnostic));
+    when(second.diagnosticsTransient(uri, content)).thenReturn(List.of(diagnostic));
     final var releasing =
         new CompilationWorker(
             "lathe-module-release",
@@ -213,15 +187,15 @@ class CompilationWorkerTest {
     try {
       assertThat(releasing.idleFor(0)).as("no session before a request").isFalse();
 
-      final var queued = releasing.submit(session -> session.documentSymbol(uri, content));
+      final var queued = releasing.submit(session -> session.diagnosticsTransient(uri, content));
       assertThat(releasing.idleFor(0)).isTrue();
       assertThat(releasing.idleFor(60_000)).as("just asked").isFalse();
       releasing.releaseSession();
 
-      assertThat(queued.join()).containsExactly(symbol);
+      assertThat(queued.join()).containsExactly(diagnostic);
       assertThat(releasing.idleFor(0)).as("released").isFalse();
-      assertThat(releasing.submit(session -> session.documentSymbol(uri, content)).join())
-          .containsExactly(symbol);
+      assertThat(releasing.submit(session -> session.diagnosticsTransient(uri, content)).join())
+          .containsExactly(diagnostic);
       verify(first).close();
       verify(second, never()).close();
       assertThat(sessions).hasValue(2);
@@ -319,7 +293,7 @@ class CompilationWorkerTest {
 
       assertThatThrownBy(future::join).hasCause(failure);
       failingWorker
-          .submit(session -> session.documentSymbol(request.uri(), request.content()))
+          .submit(session -> session.diagnosticsTransient(request.uri(), request.content()))
           .join();
       assertThat(status).hasValue(expectedStatus);
     } finally {

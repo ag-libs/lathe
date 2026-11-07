@@ -136,14 +136,16 @@ abstract class CodeActionTestBase {
       final int endChar) {
     session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var range = new Range(new Position(startLine, startChar), new Position(endLine, endChar));
-    return session.codeAction(
-        TempSourceCompiler.TEST_URI,
-        source,
-        1,
-        range,
-        List.of(),
-        typeIndex,
-        LearnedStaticImports.empty());
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            range,
+            List.of(),
+            typeIndex,
+            LearnedStaticImports.empty());
   }
 
   protected static List<TextEdit> editsOfActionStartingWith(
@@ -168,14 +170,16 @@ abstract class CodeActionTestBase {
 
   protected List<Either<Command, CodeAction>> diagnosticActions(
       final String source, final List<Diagnostic> diags) {
-    return session.codeAction(
-        TempSourceCompiler.TEST_URI,
-        source,
-        1,
-        rangeAt(0, 0),
-        toRequests(diags),
-        typeIndex,
-        LearnedStaticImports.empty());
+    return session
+        .files()
+        .codeAction(
+            TempSourceCompiler.TEST_URI,
+            source,
+            1,
+            rangeAt(0, 0),
+            toRequests(diags),
+            typeIndex,
+            LearnedStaticImports.empty());
   }
 
   protected static Range rangeAt(final int line, final int character) {

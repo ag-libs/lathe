@@ -120,7 +120,7 @@ class WorkspaceModuleRegistryTest {
           config ->
               registry
                   .workerFor(config)
-                  .submit(session -> session.documentSymbol("file:///A.java", "class A {}"))
+                  .submit(session -> session.files().documentSymbol("file:///A.java", "class A {}"))
                   .join());
 
       assertThat(registry.releaseSessions(Set.of(), 60_000)).as("not idle long enough").isZero();

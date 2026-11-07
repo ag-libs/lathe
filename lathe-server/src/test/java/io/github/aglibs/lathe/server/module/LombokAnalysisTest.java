@@ -104,7 +104,7 @@ class LombokAnalysisTest {
       session.compile(uri(), SOURCE, 1, CompileMode.OPEN);
       final Position field = position(SOURCE, "private String name", "name");
 
-      final List<SemanticToken> tokens = session.semanticTokens(uri(), SOURCE, 1);
+      final List<SemanticToken> tokens = session.files().semanticTokens(uri(), SOURCE, 1);
 
       assertThat(tokens)
           .as("one token on the field's name: the field's, not its generated getter's")

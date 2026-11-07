@@ -377,7 +377,7 @@ class RunnableScannerTest {
     try (var session =
         new SourceAnalysisSession(new TempSourceCompiler(TestJavac.JUNIT_CLASSPATH))) {
       session.compile(URI, source, 1, CompileMode.OPEN);
-      return session.runnables(URI, source, 1, moduleRel);
+      return session.files().runnables(URI, source, 1, moduleRel);
     }
   }
 }

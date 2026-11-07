@@ -111,8 +111,10 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 worker ->
                     worker.submit(
                         session ->
-                            session.attributeReceiverExpression(
-                                LatheUri.fromPath(file), receiverType, RECEIVER, expression)))
+                            session
+                                .files()
+                                .attributeReceiverExpression(
+                                    LatheUri.fromPath(file), receiverType, RECEIVER, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
@@ -295,8 +297,10 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
                 worker ->
                     worker.submit(
                         session ->
-                            session.attributeExpression(
-                                LatheUri.fromPath(file), content, line, expression)))
+                            session
+                                .files()
+                                .attributeExpression(
+                                    LatheUri.fromPath(file), content, line, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));

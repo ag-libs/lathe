@@ -110,7 +110,7 @@ public final class LatheSourceLookUpProvider implements ISourceLookUpProvider {
     return frames
         .onWorker(
             LatheUri.toPath(uri),
-            worker -> worker.submit(session -> session.enclosingBinaryName(uri, line)))
+            worker -> worker.submit(session -> session.files().enclosingBinaryName(uri, line)))
         .join()
         .flatMap(name -> name);
   }

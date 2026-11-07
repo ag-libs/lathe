@@ -194,6 +194,8 @@ taken by both LSP services and `LatheEngine` leaves the document service a pure 
 
 ### B3. `CompilationWorker` pass-through layer
 
+**Done** (`refactor/session-components`): one public `submit`; the 41 wrappers are gone.
+
 45 one-line `submit(ctx -> ctx.x(...))` wrappers, so a new feature touches four classes.
 Expose `<T> submit(Function<SourceAnalysisSession, T>)` (and a cancel-aware overload);
 keep only the wrappers with logic (`compile`, `compileOpenBatch`).
@@ -225,6 +227,10 @@ A design choice: the typed wrappers document the worker's surface; the generic o
   another signature; all fifteen are stateless and built per request. Remove the interface.
 
 ### C2. Split `SourceAnalysisSession` (1,385 lines, about 45 public methods)
+
+**Done** (`refactor/session-components`): the session keeps compile, cache and completion (371 lines) and exposes
+`Cursor`, `analysis`, `analysisAtVersion`, `cachedAnalysis` and the transient analyses; `NavigationFeatures`,
+`ReferenceFeatures`, `HierarchyFeatures` and `FileFeatures` hold the features; the cached/transient search twins are gone.
 
 The session keeps compile, cache and cursor resolution (`CursorContext`);
 navigation, call hierarchy, rename targets and code-action dispatch move to stateless feature classes.

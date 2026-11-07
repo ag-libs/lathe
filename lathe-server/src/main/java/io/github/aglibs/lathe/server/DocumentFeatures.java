@@ -102,7 +102,8 @@ final class DocumentFeatures {
       final String moduleRel = state.layout().moduleRel(module.config());
       return module
           .worker()
-          .submit(session -> session.runnables(uri, doc.content(), doc.version(), moduleRel))
+          .submit(
+              session -> session.files().runnables(uri, doc.content(), doc.version(), moduleRel))
           .thenApply(FeatureAnswers.logged(LOG, "runnables", uri, t, "targets"));
     }
 
@@ -357,14 +358,16 @@ final class DocumentFeatures {
                     enriched ->
                         moduleWorker.submit(
                             session ->
-                                session.codeAction(
-                                    uri,
-                                    openFile.content(),
-                                    openFile.version(),
-                                    range,
-                                    requests,
-                                    enriched,
-                                    staticImports)))
+                                session
+                                    .files()
+                                    .codeAction(
+                                        uri,
+                                        openFile.content(),
+                                        openFile.version(),
+                                        range,
+                                        requests,
+                                        enriched,
+                                        staticImports)))
                 .thenApply(
                     actions ->
                         resolveSupported
@@ -394,12 +397,14 @@ final class DocumentFeatures {
         moduleWorker ->
             moduleWorker.submit(
                 session ->
-                    session.missingImports(
-                        uri,
-                        openFile.content(),
-                        openFile.version(),
-                        indexSnapshot,
-                        staticImports)));
+                    session
+                        .files()
+                        .missingImports(
+                            uri,
+                            openFile.content(),
+                            openFile.version(),
+                            indexSnapshot,
+                            staticImports)));
   }
 
   private static CodeActionRequest toCodeActionRequest(final String uri, final Diagnostic diag) {
@@ -414,7 +419,8 @@ final class DocumentFeatures {
         null,
         (worker, doc) ->
             worker
-                .submit(session -> session.semanticTokens(uri, doc.content(), doc.version()))
+                .submit(
+                    session -> session.files().semanticTokens(uri, doc.content(), doc.version()))
                 .thenApply(DocumentFeatures::encodeTokensOrNull));
   }
 
@@ -423,7 +429,8 @@ final class DocumentFeatures {
         "documentSymbol",
         uri,
         List.of(),
-        (worker, doc) -> worker.submit(session -> session.documentSymbol(uri, doc.content())));
+        (worker, doc) ->
+            worker.submit(session -> session.files().documentSymbol(uri, doc.content())));
   }
 
   CompletableFuture<List<FoldingRange>> foldingRangeFuture(final String uri) {
@@ -437,7 +444,7 @@ final class DocumentFeatures {
         "foldingRange",
         uri,
         List.of(),
-        worker -> worker.submit(session -> session.foldingRange(uri, doc.content())));
+        worker -> worker.submit(session -> session.files().foldingRange(uri, doc.content())));
   }
 
   List<SymbolInformation> workspaceSymbol(final String query, final boolean reactorOnly) {
