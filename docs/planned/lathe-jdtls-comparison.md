@@ -78,8 +78,20 @@ A pre-registration committed before any result, in the style of `dev/bench/READM
 - Ground truth: compile each project with Maven or Gradle and collect javac's errors and warnings per file.
 - Compare each server's diagnostics against them, both ways (errors the build does not report, errors the build reports and the server misses), extending `dev/jdtls_diff.py`.
 - Targeted public fixtures for where the two compilers or models can differ: annotation processors (MapStruct, Immutables, AutoValue, Helidon builders), Lombok, JPMS (`opens`, `--patch-module`), `--release` below the JDK with newer APIs, compiler arguments (`-parameters`, `-Werror`, Error Prone), and generic-inference cases where ECJ and javac are known to differ.
+- Gradle source sets beyond `main` and `test`, where the two models differ by design (Lathe compiles each against its own classpath; jdtls, through Buildship's Eclipse model, folds them into two visibility levels per project), each a case the build rejects:
+  an `integrationTest` source set using a class of `test`, which its classpath lacks;
+  `main` code using a `jmh` class, or a library only `jmh` depends on;
+  a project consuming `testFixtures(project(":x"))` and using one of `x`'s ordinary test classes;
+  two source sets built against different versions of one library, each using an API only its version has.
+  By the design ([Gradle Source Sets](lathe-gradle-source-sets.md)), Lathe reports what Gradle reports and jdtls none; stated only once run here.
 - Output: a catalogue of disagreements with reproduction steps.
   Lathe's own become gaps to fix; jdtls's become evidence.
+
+Found so far, before stage 2 started, by the stage 0 setup checks (all Lathe's, all fixed):
+- **WS-31:** on OpenMetadata, 98 false errors in a file that compiles against a sibling module's shaded jar, and a sync that could not compile it; fixed in #116 (a shaded jar stays on the classpath, and `lathe.sync.phase` lets the project's sync reach `package`).
+- **WS-32:** on Apache Fineract, Lathe's Gradle sync failed: `compileTestJava` writes into the generated-sources directory the main capture reads, and Gradle refuses the undeclared order; fixed in #119.
+- **TE-16:** a capture-only sync ran every test class in dry run (in Hibernate ORM's `hibernate-core`, 94 s and 4,953 classes, saturating 16 cores) to capture one launch; fixed in #124.
+- **WS-33 and TE-12:** Gradle source sets beyond `main` and `test` had no editor features and their tests no launch; fixed in #127 and #131.
 
 ## Stage 3 — Fix wherever Lathe loses
 
