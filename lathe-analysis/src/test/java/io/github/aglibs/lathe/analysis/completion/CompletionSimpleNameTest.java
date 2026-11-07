@@ -63,7 +63,7 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
 
   @Test
   void simpleName_overwrittenConstructorCloseBrace_recoversEnclosingScope() {
-    // CQ-0035: typing over the compact constructor's closing brace leaves the block unclosed. The
+    // Typing over the compact constructor's closing brace leaves the block unclosed. The
     // parser must still recover the enclosing constructor scope; a hard failure here returned zero
     // items (class=null method=null). The record component 'name' is in scope and must be offered.
     final var items =
@@ -732,7 +732,6 @@ class CompletionSimpleNameTest extends CompletionTestSupport {
         .isEmpty();
   }
 
-  // CQ-0021
   @Test
   void simpleName_switchCaseLabel_typePatternSubject_suggestsTypes() {
     final var items =

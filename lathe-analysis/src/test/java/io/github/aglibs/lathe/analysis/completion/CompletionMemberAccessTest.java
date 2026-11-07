@@ -207,7 +207,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
   @Test
   void memberAccess_arrayReceiver_offersLengthCloneAndObjectMembers() {
     // An array-typed receiver offers its JLS members: the synthetic `length` field and `clone()`,
-    // plus the inherited Object methods (CQ-0053). The element receiver `arr[0].` is covered by the
+    // plus the inherited Object methods. The element receiver `arr[0].` is covered by the
     // arrayElementReceiver case above.
     final List<String> labels =
         labels(
@@ -908,7 +908,7 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .anyMatch(l -> l.startsWith("toLowerCase"));
   }
 
-  // CQ-0051: faithful to the live race — completion fires ~8ms after the dot is typed, so the cache
+  // Faithful to the live race — completion fires ~8ms after the dot is typed, so the cache
   // still holds the content from BEFORE the dot (receiver `Thread` present, dot absent). The
   // current
   // cursor offset (past the dot) then maps, in the stale tree, into the boolean argument of f(...),
@@ -1045,7 +1045,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(items).contains("ComponentLoggingListener");
   }
 
-  // CQ-0020
   @Test
   void memberAccess_staticReceiverInArgumentPosition_rankedByOuterArgumentExpectedType() {
     final var items =
@@ -1089,7 +1088,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(items).contains("toList", "groupingBy", "joining");
   }
 
-  // CQ-0027
   @Test
   void memberAccess_collectorsReceiverInsideReturnCollect_rankedByReturnType() {
     final var stringItems = completeCollectorsInReturn("", "String", "String");
@@ -1131,7 +1129,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .doesNotContain("instanceField", "instanceMethod");
   }
 
-  // CQ-0040
   @Test
   void memberAccess_typeVariableReturn_usesCapturedBound() {
     assertThat(
@@ -1152,7 +1149,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .contains("named", "in", "to");
   }
 
-  // CQ-0042
   @Test
   void memberAccess_typeErrorReceiver_fallsBackToElementReturnType() {
     assertThat(
@@ -1194,7 +1190,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
     assertThat(outcome.freshAnalysis()).isNull();
   }
 
-  // CQ-0029
   @Test
   void memberAccess_wildcardExtendsCollectionElement_usesUpperBound() {
     assertThat(
@@ -1255,7 +1250,6 @@ class CompletionMemberAccessTest extends CompletionTestSupport {
         .contains("toString", "getClass");
   }
 
-  // CQ-0030
   @Test
   void memberAccess_classTypeVariable_usesDeclaredBound() {
     assertThat(

@@ -355,7 +355,7 @@ class ModuleSourceCompilerTest {
             td.resolve("target/classes"),
             sourceRoot,
             td.resolve("target/generated-sources/annotations"));
-    // EG-052: an opened generated file lives under the .lathe mirror, not Maven's target/ copy.
+    // An opened generated file lives under the .lathe mirror, not Maven's target/ copy.
     final Path genFile = config.generatedSourcesDir().resolve("gen/GenBuilder.java");
     Files.createDirectories(genFile.getParent());
 

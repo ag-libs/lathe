@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 class CompletionTypeRankingTest extends CompletionTestSupport {
 
-  // EG-021: reactor-local types should outrank dependency/JDK types for an equal prefix match, as a
+  // Reactor-local types should outrank dependency/JDK types for an equal prefix match, as a
   // tiebreaker beneath match quality (mirrors IntelliJ's sdkOrLibrary/sameModule proximity
   // weighers).
 

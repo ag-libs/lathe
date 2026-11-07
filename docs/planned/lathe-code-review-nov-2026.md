@@ -360,6 +360,9 @@ changing this means relaxing them to "the lowest module that uses it". Needs a d
 
 ### F1. Neovim holds logic VS Code will need (editor-neutral first)
 
+**Deferred, deliberately**: it changes the client protocol, and the working-tree Neovim client runs against the
+published server, so it ships with a server release; do it before the VS Code features that need it.
+
 - New type: destination ranking and package derivation (`new.lua`), and a save-on-attach workaround for the
   server's staleness check on a type it just created.
 - Stack traces: Java frames parsed with Lua patterns, then resolved by a `workspace/symbol` guess on the simple name.
@@ -369,11 +372,16 @@ VS Code features copy them. Needs a design of its own.
 
 ### F2. Command names and calls
 
+**Deferred**, with F1 and for the same reason: renaming the commands breaks the published server and its clients.
+
 The 26 commands mix `lathe.run.test`, `lathe.resourceOpen` and `runconfig`/`runconfigs`;
 about eighteen Neovim call sites bypass `util.exec`. Pick one scheme (no external adopters, so a clean rename),
 one Lua table of names. `lathe.tests.modules` has no client yet (built ahead for VS Code): note it in `status.md`.
 
 ### F3. Tests
+
+**Done in part**: `LatheMcpToolsTest` split (`McpTextTest`), `ExtractMethodSweep` already says it is a tool, gap IDs gone
+from test comments. The Gradle LSP smoke test needs a new shared test module: deferred.
 
 - No Gradle LSP smoke test: the session helpers live in `lathe-maven-plugin/src/it/setup-support`.
   Sharing them needs a new test artifact (a new module or dependency: ask first).

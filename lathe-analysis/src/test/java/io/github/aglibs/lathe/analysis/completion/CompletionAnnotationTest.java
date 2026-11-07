@@ -31,7 +31,7 @@ class CompletionAnnotationTest extends CompletionTestSupport {
 
   @Test
   void annotationValue_memberAccessOnNonEnumType_offersConstants() {
-    // CQ-0050: member access on a non-enum type inside a String-valued annotation element must not
+    // Member access on a non-enum type inside a String-valued annotation element must not
     // crash the ranker; it should offer the receiver type's constants like member access anywhere.
     assertThat(
             labels(
@@ -47,7 +47,7 @@ class CompletionAnnotationTest extends CompletionTestSupport {
 
   @Test
   void annotationValue_classTypedElement_offersTypeCandidates() {
-    // EG-038: a Class-typed annotation value element (like @ExtendWith's Class<? extends Extension>
+    // A Class-typed annotation value element (like @ExtendWith's Class<? extends Extension>
     // value) should offer type candidates in value position. Currently only keywords are offered.
     assertThat(
             labels(

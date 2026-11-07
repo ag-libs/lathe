@@ -231,7 +231,7 @@ class ReferenceCandidateIndexTest {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(
         src.resolve("Entity.java"), "class Entity { String requestId() { return null; } }");
-    // EG-052: the generated companion lives under the .lathe mirror (the searched, fresh copy);
+    // The generated companion lives under the .lathe mirror (the searched, fresh copy);
     // originalGenSourcesDir points at Maven's target/ copy only to flag "has generated sources".
     final var config = withGeneratedSources(src);
     final var gen = Files.createDirectories(config.generatedSourcesDir());

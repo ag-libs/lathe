@@ -29,7 +29,7 @@ class WorkspaceModuleRegistryTest {
 
   @Test
   void allSourceRoots_withGeneratedSources_includesLatheMirrorNotMavenTarget() throws Exception {
-    // EG-052: the searched generated root is the fresh .lathe mirror, not the stale Maven target/.
+    // The searched generated root is the fresh .lathe mirror, not the stale Maven target/.
     final var src = tmp.resolve("module-a/src/main/java");
     final var mavenTarget = tmp.resolve("module-a/target/generated-sources/annotations");
     TestCompiler.writeModuleParams(tmp, "module-a", src, mavenTarget);

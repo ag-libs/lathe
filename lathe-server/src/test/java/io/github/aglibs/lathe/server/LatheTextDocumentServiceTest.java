@@ -144,7 +144,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
   void foldingRange_nonFileUri_returnsEmptyWithoutThrowing() throws Exception {
     // A virtual-scheme buffer (e.g. Neovim diffview) whose didOpen we drop can still receive
     // requests; the request handler must short-circuit before routing into LatheUri.toPath, which
-    // throws FileSystemNotFoundException for a non-file scheme (EG-050).
+    // throws FileSystemNotFoundException for a non-file scheme.
     host.initialize(tmp);
     final var params = new FoldingRangeRequestParams();
     params.setTextDocument(new TextDocumentIdentifier("diffview:///workspace/.git/:0:/Foo.java"));
@@ -682,7 +682,7 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
 
   @Test
   void typeHierarchySubtypes_declarationFileNotOpen_stillResolvesSubtypes() throws Exception {
-    // EG-043: type-hierarchy relations must not require the type's declaration file to be open.
+    // Type-hierarchy relations must not require the type's declaration file to be open.
     final Path sourceRoot = tmp.resolve("module/src/main/java");
     final Path pkg = sourceRoot.resolve("com/example");
     Files.createDirectories(pkg);

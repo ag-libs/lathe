@@ -119,13 +119,13 @@ class ReferenceCandidatePlannerTest {
   private static ReferenceTarget constructor(
       final String ownerBinaryName, final String descriptor) {
     // javac reports a constructor's simple name as "<init>"; ReferenceTarget.from carries that
-    // through verbatim — exactly what the planner must not key its candidate lookup on (FR-013).
+    // through verbatim — exactly what the planner must not key its candidate lookup on.
     return target(ElementKind.CONSTRUCTOR, ownerBinaryName, "<init>", descriptor, List.of());
   }
 
   private Path gen() throws IOException {
     // The .lathe generated-sources mirror of configWithGen's module — the fresh copy searched for
-    // generated companions (EG-052), matching config.generatedSourcesDir().
+    // generated companions, matching config.generatedSourcesDir().
     return Files.createDirectories(
         root.resolve(".lathe/module").resolve(LatheLayout.GENERATED_SOURCES));
   }
@@ -260,7 +260,7 @@ class ReferenceCandidatePlannerTest {
 
   @Test
   void planCandidates_methodInvokedOnUnspelledReceiver_includesCallSite() throws IOException {
-    // FR-011: a method is invoked on a receiver whose type is inferred and never spelled in the
+    // A method is invoked on a receiver whose type is inferred and never spelled in the
     // calling file (a var bound from a getter chain). Method candidates are the broad simple-name
     // set with no override-family narrowing, so the call site is reached even though the file never
     // writes the declaring type's name.
@@ -651,7 +651,7 @@ class ReferenceCandidatePlannerTest {
   @Test
   void planCandidates_typeUsedInSamePackageGeneratedSource_includesGeneratedFile()
       throws IOException {
-    // FR-012: the generated builder is in the record's package but under the generated-sources
+    // The generated builder is in the record's package but under the generated-sources
     // root, and names the record without importing it. It is indexed, so the same-package filter
     // must consult the generated root (not just sourceRoots) to keep it.
     write(
@@ -706,7 +706,7 @@ class ReferenceCandidatePlannerTest {
 
   @Test
   void planCandidates_constructorInvokedViaNew_includesCallSite() throws IOException {
-    // FR-013: the constructor target is keyed on javac's "<init>" name, which no source spells, so
+    // The constructor target is keyed on javac's "<init>" name, which no source spells, so
     // planning returns nothing. The caller constructs Config but is dropped before the type-name
     // narrowing even runs.
     write(

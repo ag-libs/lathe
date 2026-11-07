@@ -293,8 +293,8 @@ class DefinitionLocatorTest extends SampleFixture {
   void locate_syntheticMember_sourceFileButNoDeclaration_returnsEmpty(@TempDir final Path tempDir)
       throws IOException {
     // A generated member (a record's synthetic toString) resolves to a source file but has no
-    // declaration site in it; definition must return no result rather than a file-top (0,0) jump
-    // (EG-049). toString is used rather than an accessor, which EG-047 redirects to its component.
+    // declaration site in it; definition must return no result rather than a file-top (0,0) jump.
+    // toString is used rather than an accessor, which definition redirects to its component.
     final var location =
         locateExternalMember(tempDir, "public record Point(int x, int y) {}", "Point", "toString");
 
@@ -405,7 +405,7 @@ class DefinitionLocatorTest extends SampleFixture {
   void locate_recordAccessor_externalFile_redirectsToComponent(@TempDir final Path tempDir)
       throws IOException {
     // A synthetic record accessor has no declaration site of its own; go-to-definition redirects it
-    // to the component in the record header rather than returning no result (EG-047).
+    // to the component in the record header rather than returning no result.
     final var location =
         locateExternalElement(
             tempDir,
@@ -423,9 +423,9 @@ class DefinitionLocatorTest extends SampleFixture {
   @Test
   void locate_explicitRecordAccessor_externalFile_returnsAccessorNotComponent(
       @TempDir final Path tempDir) throws IOException {
-    // A user-written accessor body has its own declaration site and resolves there; the EG-047
-    // redirect only fires for synthetic accessors (whose direct resolution is empty). The explicit
-    // "x()" is on line 1, distinct from the header component on line 0.
+    // A user-written accessor body has its own declaration site and resolves there; the
+    // record-accessor redirect only fires for synthetic accessors (whose direct resolution is
+    // empty). The explicit "x()" is on line 1, distinct from the header component on line 0.
     final var source =
         """
         public record Point(int x, int y) {

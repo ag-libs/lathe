@@ -260,7 +260,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
     // Mirrors the method-call argument path, which already offers the boolean member. The
     // constructor-arg path falls through to the constructed/declared type as the expected value
     // (ExpectedValueResolver.resolveArgumentValueByPosition handles MethodInvocationTree but not
-    // NewClassTree), and the asymmetric boolean-only filter (CQ-0043) then deletes the candidate.
+    // NewClassTree), and the asymmetric boolean-only filter then deletes the candidate.
     final var items =
         labels(
             fixture.complete(
@@ -582,7 +582,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
     assertThat(strItem.getSortText()).isLessThan(intItem.getSortText());
   }
 
-  // ── enum argument slot: propose the expected enum's constants (CQ-0058) ────────
+  // ── enum argument slot: propose the expected enum's constants ────────
 
   @Test
   void argumentPosition_enumParam_offersQualifiedConstantsByNameOrValue() {

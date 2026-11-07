@@ -1139,7 +1139,7 @@ class ReferenceLocatorTest {
     assertThat(target.scope()).isEqualTo(ReferenceTarget.SearchScope.REACTOR_MODULES);
   }
 
-  // --- EG-027: out-of-range positions ---
+  // --- out-of-range positions ---
 
   @Test
   void references_outOfRangePosition_returnsEmpty() {
@@ -1158,7 +1158,7 @@ class ReferenceLocatorTest {
     }
   }
 
-  // --- constructors at new-class sites (FR-015) ---
+  // --- constructors at new-class sites ---
 
   private static final String NEW_CLASS_SOURCE =
       """
@@ -1245,7 +1245,7 @@ class ReferenceLocatorTest {
     return ReferenceTarget.from(constructor, analysis.types(), analysis.elements());
   }
 
-  // --- instantiation sites of a type (FR-016) ---
+  // --- instantiation sites of a type ---
 
   /**
    * The `new XXX(...)` sites found for the type at {@code context}/{@code token} in {@code source}.

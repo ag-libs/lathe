@@ -206,11 +206,11 @@ class HoverTest extends SampleFixture {
     assertThat(md.get()).contains("List");
   }
 
-  // --- argument param-hint (EG-045, EG-046) ---
+  // --- argument param-hint ---
 
   @Test
   void hover_recordComponentInCompactConstructor_resolvesComponentNotCalleeParameter() {
-    // EG-045: hovering the bare component reference inside the compact constructor must show the
+    // Hovering the bare component reference inside the compact constructor must show the
     // component itself, not the callee's parameter (`Object value`). Mirrors the FIELD-read case.
     final var source =
         """
@@ -249,7 +249,7 @@ class HoverTest extends SampleFixture {
   @Test
   void hover_classFileDependencyArgument_showsSourceParameterName(@TempDir final Path tmpDir)
       throws Exception {
-    // EG-046: hovering an argument whose callee is a class-file dependency compiled without
+    // Hovering an argument whose callee is a class-file dependency compiled without
     // -parameters must show the resolved source name, not the synthetic `arg0`.
     try (final var fixture = new ClassFileFixture(tmpDir)) {
       final var source =
