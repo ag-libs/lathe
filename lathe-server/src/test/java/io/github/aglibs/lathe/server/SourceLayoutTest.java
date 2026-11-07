@@ -116,6 +116,42 @@ class SourceLayoutTest {
     Files.writeString(file, "class X {}");
   }
 
+  // A Gradle integrationTest source set is test code, but its tests have no captured launch: a
+  // module run takes test's packages only, a dir inside it runs nothing, and neither a file there
+  // nor its packages are offered to create a type (one would land in test's folder). Its package is
+  // still
+  // its own.
+  @Test
+  void dirRunAndContext_gradleTestSourceSet_leftOutOfRunsAndNewTypes() throws Exception {
+    final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");
+    final var integrationCfg =
+        TestCompiler.sourceSetTreeConfig(tmp, "module", "integrationTest", true);
+    final Path integrationFile =
+        tmp.resolve("module/src/integrationTest/java/com/example/it/AppIT.java");
+    Files.createDirectories(integrationFile.getParent());
+    Files.writeString(integrationFile, "package com.example.it; class AppIT {}");
+    Files.createDirectories(tmp.resolve("module/src/test/java/com/verify"));
+    Files.writeString(
+        tmp.resolve("module/src/test/java/com/verify/VerifyTest.java"),
+        "package com.verify; class VerifyTest {}");
+    final var layout = new SourceLayout(List.of(config, testCfg, integrationCfg), tmp);
+
+    assertThat(layout.dirRun(tmp.resolve("module")).selections())
+        .extracting(DirRun.Selector::selectorValue)
+        .containsExactly("com.verify");
+    assertThat(layout.dirRun(integrationFile.getParent()).selections()).isEmpty();
+    assertThat(layout.resolveContext(integrationFile)).isNull();
+    assertThat(layout.packages("module"))
+        .extracting(PackageEntry::pkg)
+        .contains("com.verify")
+        .doesNotContain("com.example.it");
+    assertThat(layout.destinations(null, TypeKind.CLASS, ""))
+        .extracting(TypeDestination::pkg)
+        .contains("com.verify")
+        .doesNotContain("com.example.it");
+    assertThat(layout.filePackage(integrationFile)).isEqualTo("com.example.it");
+  }
+
   @Test
   void modules_distinctSortedModuleRels() {
     final var testCfg = TestCompiler.testTreeConfig(tmp, "module", "src/test/java");

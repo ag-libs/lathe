@@ -11,8 +11,10 @@ import io.github.aglibs.lathe.install.ServerInstaller;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -21,6 +23,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import javax.inject.Inject;
 import org.gradle.api.GradleException;
+import org.gradle.api.NamedDomainObjectSet;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
@@ -40,15 +43,18 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.initialization.IncludedBuild;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.plugins.jvm.JvmTestSuite;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
+import org.gradle.api.tasks.TaskContainer;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.tasks.Jar;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaToolchainService;
+import org.gradle.testing.base.TestingExtension;
 import org.gradle.util.GradleVersion;
 
 // Applied to every project by LatheSettingsPlugin. A Java project gets a capture task per main and
@@ -71,6 +77,8 @@ public class LatheProjectPlugin implements Plugin<Project> {
   private static final String BUILD_LOCK_SERVICE = "latheBuildLock";
   static final String ROOT_PATH = ":";
   private static final String LIBRARY_SOURCES = "latheLibrarySources";
+  private static final String CAPTURE_VERB = "latheCapture";
+  private static final String TEST_NAME = "test";
 
   // Gradle 8.x under Isolated Projects rejects a project naming another's task, so there only the
   // root's own lifecycle tasks trigger the workspace write: a whole-build run refreshes it, a
@@ -303,13 +311,31 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME);
     final SourceSet test = sourceSets.getByName(SourceSet.TEST_SOURCE_SET_NAME);
     final TaskProvider<LatheCaptureTask> mainCapture =
-        registerCapture(project, main, "latheCaptureMain", LatheLayout.CLASSES_DIR, moduleDir);
+        registerCapture(
+            project,
+            main,
+            "latheCaptureMain",
+            LatheLayout.CLASSES_DIR,
+            project.provider(() -> false),
+            moduleDir);
     final TaskProvider<LatheCaptureTask> testCapture =
-        registerCapture(project, test, "latheCaptureTest", LatheLayout.TEST_CLASSES_DIR, moduleDir);
+        registerCapture(
+            project,
+            test,
+            "latheCaptureTest",
+            LatheLayout.TEST_CLASSES_DIR,
+            project.provider(() -> true),
+            moduleDir);
+    final NamedDomainObjectSet<SourceSet> others =
+        sourceSets.matching(sourceSet -> sourceSet != main && sourceSet != test);
+    final boolean syncing = syncRequested(project);
+    others.configureEach(
+        sourceSet -> registerSourceSet(project, facts, sourceSet, moduleDir, syncing));
     facts.configure(
         task -> {
           task.dependsOn(mainCapture, testCapture);
-          task.getFacts().set(project.provider(() -> Json.toJson(javaFacts(project, main, test))));
+          task.getFacts()
+              .set(project.provider(() -> Json.toJson(javaFacts(project, main, test, others))));
           task.getMainSources().from(main.getJava());
           task.getTestSources().from(test.getJava());
         });
@@ -334,9 +360,65 @@ public class LatheProjectPlugin implements Plugin<Project> {
             .map("true"::equals)
             .getOrElse(false),
         crossProjectAllowed());
-    registerLibraries(project, facts, main, test);
+    registerLibraries(project, facts, main, test, syncing ? others : List.of());
     final TaskProvider<LatheMainLaunchTask> mainLaunch = registerMainLaunch(project, main);
     facts.configure(task -> task.dependsOn(mainLaunch));
+  }
+
+  // A source set beyond main and test, as the build script adds it (after the java plugin applies):
+  // a tree of its own, captured as main's and test's are, with its own classpath, whenever its
+  // compile runs. Only a sync compiles it for that, and resolves its libraries and their sources:
+  // the facts finalize the test compile, so a plain test build would otherwise compile and resolve
+  // every source set (jmh, integration tests).
+  private static void registerSourceSet(
+      final Project project,
+      final TaskProvider<LatheFactsTask> facts,
+      final SourceSet sourceSet,
+      final Path moduleDir,
+      final boolean syncing) {
+    final String tree = LatheLayout.sourceSetTree(sourceSet.getName());
+    final TaskProvider<LatheCaptureTask> capture =
+        registerCapture(
+            project,
+            sourceSet,
+            sourceSet.getTaskName(CAPTURE_VERB, null),
+            tree,
+            project.provider(() -> isTestCode(project, sourceSet)),
+            moduleDir);
+    final SourceSetSources sources = project.getObjects().newInstance(SourceSetSources.class);
+    sources.getTree().set(tree);
+    sources.getSources().from(sourceSet.getJava());
+    final ArtifactCollection libraries = external(compileClasspath(project, sourceSet));
+    facts.configure(
+        task -> {
+          task.getSourceSets().add(sources);
+          if (syncing) {
+            task.dependsOn(capture);
+            addLibraries(task, libraries);
+          }
+        });
+  }
+
+  // The build asked for latheSync, by name or path, as the editor's sync script does.
+  private static boolean syncRequested(final Project project) {
+    return project.getGradle().getStartParameter().getTaskNames().stream()
+        .anyMatch(
+            name ->
+                name.equals(LatheLayout.Gradle.SYNC_TASK)
+                    || name.endsWith(":%s".formatted(LatheLayout.Gradle.SYNC_TASK)));
+  }
+
+  // Gradle's own rule, the one its Eclipse model gives the IDEs: a JVM test suite's source set, or
+  // one whose name contains "test" (test fixtures among them).
+  static boolean isTestCode(final Project project, final SourceSet sourceSet) {
+    if (sourceSet.getName().toLowerCase(Locale.ROOT).contains(TEST_NAME)) {
+      return true;
+    }
+
+    final TestingExtension testing = project.getExtensions().findByType(TestingExtension.class);
+    return testing != null
+        && testing.getSuites().withType(JvmTestSuite.class).stream()
+            .anyMatch(suite -> suite.getSources().equals(sourceSet));
   }
 
   private static TaskProvider<LatheMainLaunchTask> registerMainLaunch(
@@ -376,18 +458,18 @@ public class LatheProjectPlugin implements Plugin<Project> {
             });
   }
 
-  // The external libraries, from the test compile classpath, which holds main's too, and a
-  // -sources dependency for each: the classifier, as on Maven, not Gradle's documentation variant,
-  // which libraries such as Guava do not declare. Resolved leniently: a library without sources is
-  // not an error.
+  // The external libraries, from the test compile classpath, which holds main's too, and in a sync
+  // every other source set's (registerSourceSet), and a -sources dependency for each: the
+  // classifier, as
+  // on Maven, not Gradle's documentation variant, which libraries such as Guava do not declare.
+  // Resolved leniently: a library without sources is not an error.
   private static void registerLibraries(
       final Project project,
       final TaskProvider<LatheFactsTask> facts,
       final SourceSet main,
-      final SourceSet test) {
-    final Configuration testClasspath =
-        project.getConfigurations().getByName(test.getCompileClasspathConfigurationName());
-    final ArtifactCollection libraries = external(testClasspath);
+      final SourceSet test,
+      final Collection<SourceSet> others) {
+    final ArtifactCollection libraries = external(compileClasspath(project, test));
     final ArtifactCollection mainLibraries =
         external(
             project.getConfigurations().getByName(main.getCompileClasspathConfigurationName()));
@@ -398,23 +480,41 @@ public class LatheProjectPlugin implements Plugin<Project> {
     // configured, when the script may yet change it.
     final DependencyFactory dependencies = project.getDependencyFactory();
     sources.withDependencies(
-        added ->
+        added -> {
+          for (final SourceSet sourceSet :
+              Stream.concat(Stream.of(test), others.stream()).toList()) {
             added.addAll(
                 sourcesOf(
                     dependencies,
-                    testClasspath.getIncoming().getResolutionResult().getRootComponent().get())));
+                    compileClasspath(project, sourceSet)
+                        .getIncoming()
+                        .getResolutionResult()
+                        .getRootComponent()
+                        .get()));
+          }
+        });
     final ArtifactCollection librarySources =
         sources.getIncoming().artifactView(view -> view.lenient(true)).getArtifacts();
     facts.configure(
         task -> {
-          task.getLibraries()
-              .set(libraries.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
-          task.getLibraryFiles()
-              .from(libraries.getArtifactFiles().filter(file -> FileUtil.isJarFile(file.toPath())));
+          addLibraries(task, libraries);
           task.getLibrarySources()
               .set(librarySources.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
           task.getLibraryClasspath().from(mainLibraries.getArtifactFiles());
         });
+  }
+
+  // Put, never set: a source set added before the libraries are registered (test fixtures) has
+  // added its own.
+  private static void addLibraries(final LatheFactsTask task, final ArtifactCollection libraries) {
+    task.getLibraries()
+        .putAll(libraries.getResolvedArtifacts().map(LatheProjectPlugin::byCoordinates));
+    task.getLibraryFiles()
+        .from(libraries.getArtifactFiles().filter(file -> FileUtil.isJarFile(file.toPath())));
+  }
+
+  private static Configuration compileClasspath(final Project project, final SourceSet sourceSet) {
+    return project.getConfigurations().getByName(sourceSet.getCompileClasspathConfigurationName());
   }
 
   private static ArtifactCollection external(final Configuration configuration) {
@@ -477,7 +577,10 @@ public class LatheProjectPlugin implements Plugin<Project> {
   // Every shape a sibling takes on another project's classpath, its classes and resources
   // directories and its jar, maps to the mirror, which holds both.
   private static ProjectFacts javaFacts(
-      final Project project, final SourceSet main, final SourceSet test) {
+      final Project project,
+      final SourceSet main,
+      final SourceSet test,
+      final NamedDomainObjectSet<SourceSet> others) {
     final var tasks = project.getTasks();
     final JavaCompile mainCompile =
         tasks.named(main.getCompileJavaTaskName(), JavaCompile.class).get();
@@ -487,22 +590,26 @@ public class LatheProjectPlugin implements Plugin<Project> {
     final String module = module(project);
     final Path root = project.getRootDir().toPath();
     final List<OutputData> outputs =
-        Stream.of(
-                Map.entry(
-                    mainCompile.getDestinationDirectory().get().getAsFile(),
-                    LatheLayout.CLASSES_DIR),
-                Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR),
-                Map.entry(main.getOutput().getResourcesDir(), LatheLayout.CLASSES_DIR),
-                Map.entry(
-                    testCompile.getDestinationDirectory().get().getAsFile(),
-                    LatheLayout.TEST_CLASSES_DIR),
-                Map.entry(test.getOutput().getResourcesDir(), LatheLayout.TEST_CLASSES_DIR))
+        Stream.concat(
+                Stream.of(
+                    Map.entry(
+                        mainCompile.getDestinationDirectory().get().getAsFile(),
+                        LatheLayout.CLASSES_DIR),
+                    Map.entry(jar.getArchiveFile().get().getAsFile(), LatheLayout.CLASSES_DIR),
+                    Map.entry(main.getOutput().getResourcesDir(), LatheLayout.CLASSES_DIR),
+                    Map.entry(
+                        testCompile.getDestinationDirectory().get().getAsFile(),
+                        LatheLayout.TEST_CLASSES_DIR),
+                    Map.entry(test.getOutput().getResourcesDir(), LatheLayout.TEST_CLASSES_DIR)),
+                others.stream().flatMap(sourceSet -> sourceSetOutputs(tasks, sourceSet)))
             .map(
                 output ->
                     new OutputData(relative(root, output.getKey()), module, output.getValue()))
             .toList();
     final List<ResourceRootData> resourceRoots =
-        Stream.of(main, test).flatMap(sourceSet -> resourceRoots(root, module, sourceSet)).toList();
+        Stream.concat(Stream.of(main, test), others.stream())
+            .flatMap(sourceSet -> resourceRoots(root, module, sourceSet))
+            .toList();
     final JavaInstallationMetadata jdk = mainCompile.getJavaCompiler().get().getMetadata();
     return new ProjectFacts(
         module,
@@ -511,13 +618,40 @@ public class LatheProjectPlugin implements Plugin<Project> {
         jdk.getInstallationPath().getAsFile().getPath(),
         jdk.getLanguageVersion().asInt(),
         JvmArgsWriter.accessFlags(
-            Stream.of(mainCompile, testCompile)
+            Stream.concat(
+                    Stream.of(mainCompile, testCompile),
+                    others.stream()
+                        .map(
+                            sourceSet ->
+                                tasks
+                                    .named(sourceSet.getCompileJavaTaskName(), JavaCompile.class)
+                                    .get()))
                 .flatMap(javac -> javac.getOptions().getForkOptions().getAllJvmArgs().stream())
                 .toList()),
         List.of(),
         List.of(),
         List.of(),
         List.of());
+  }
+
+  // A source set's classes and resources, and its jar when it has one (test fixtures do): each a
+  // shape another project's classpath may hold it in.
+  private static Stream<Map.Entry<File, String>> sourceSetOutputs(
+      final TaskContainer tasks, final SourceSet sourceSet) {
+    final String tree = LatheLayout.sourceSetTree(sourceSet.getName());
+    final JavaCompile compile =
+        tasks.named(sourceSet.getCompileJavaTaskName(), JavaCompile.class).get();
+    final Stream<File> jar =
+        tasks.getNames().contains(sourceSet.getJarTaskName())
+                && tasks.named(sourceSet.getJarTaskName()).get() instanceof Jar sourceSetJar
+            ? Stream.of(sourceSetJar.getArchiveFile().get().getAsFile())
+            : Stream.empty();
+    return Stream.concat(
+            Stream.of(
+                compile.getDestinationDirectory().get().getAsFile(),
+                sourceSet.getOutput().getResourcesDir()),
+            jar)
+        .map(file -> Map.entry(file, tree));
   }
 
   private static Stream<ResourceRootData> resourceRoots(
@@ -544,6 +678,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
       final SourceSet sourceSet,
       final String name,
       final String sourceTree,
+      final Provider<Boolean> testCode,
       final Path moduleDir) {
     final TaskProvider<JavaCompile> compile =
         project.getTasks().named(sourceSet.getCompileJavaTaskName(), JavaCompile.class);
@@ -558,6 +693,7 @@ public class LatheProjectPlugin implements Plugin<Project> {
                   task.dependsOn(compile, sourceSet.getProcessResourcesTaskName());
                   useBuildLock(project, task, task.getBuildLock());
                   task.getSourceTree().set(sourceTree);
+                  task.getTestCode().set(testCode);
                   task.getModuleDir().set(moduleDir.toFile());
                   task.getSources().from(sourceSet.getJava());
                   task.getSourceRoots().from(sourceSet.getJava().getSourceDirectories());

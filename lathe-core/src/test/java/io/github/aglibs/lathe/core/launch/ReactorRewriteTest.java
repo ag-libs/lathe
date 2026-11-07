@@ -24,7 +24,10 @@ final class ReactorRewriteTest {
               new OutputData("app/target/app-1.0-tests.jar", "app", "test-classes"),
               new OutputData("target/classes", "", "classes"),
               new OutputData("lib/build/classes/java/main", "lib", "classes"),
-              new OutputData("lib/build/libs/lib.jar", "lib", "classes")));
+              new OutputData("lib/build/libs/lib.jar", "lib", "classes"),
+              new OutputData("lib/build/classes/java/testFixtures", "lib", "classes-testFixtures"),
+              new OutputData(
+                  "lib/build/libs/lib-test-fixtures.jar", "lib", "classes-testFixtures")));
 
   @Test
   void toLathe_listedOutputs_rewriteToTheirMirror() {
@@ -42,6 +45,12 @@ final class ReactorRewriteTest {
         .isEqualTo(os("/workspace/.lathe/lib/classes"));
     assertThat(REWRITE.toLathe(Path.of("/workspace/lib/build/libs/lib.jar")))
         .isEqualTo(Path.of("/workspace/.lathe/lib/classes"));
+    // A Gradle source set's own tree: its classes and its jar, as another project's classpath
+    // holds them.
+    assertThat(REWRITE.toLathe(os("/workspace/lib/build/classes/java/testFixtures")))
+        .isEqualTo(os("/workspace/.lathe/lib/classes-testFixtures"));
+    assertThat(REWRITE.toLathe(os("/workspace/lib/build/libs/lib-test-fixtures.jar")))
+        .isEqualTo(os("/workspace/.lathe/lib/classes-testFixtures"));
   }
 
   @Test

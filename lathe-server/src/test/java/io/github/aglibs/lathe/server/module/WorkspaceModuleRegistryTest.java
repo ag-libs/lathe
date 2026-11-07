@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server.module;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.server.TestCompiler;
 import io.github.aglibs.lathe.server.workspace.WorkspaceManifest;
 import java.nio.file.Files;
@@ -82,6 +84,73 @@ class WorkspaceModuleRegistryTest {
 
     assertThat(registry.moduleSourceFor(latheGenerated.resolve("com/example/FooBuilder.java")))
         .isPresent();
+  }
+
+  // Gradle source sets as trees of one module: integrationTest and dataIntegrationTest both
+  // declare com.example.Book (as Hibernate ORM's do), and integrationTest compiles against main
+  // only. A lookup from integrationTest searches its own roots first, then main's, so Book is its
+  // own. A suite sharing test's folder leaves the file to test. Each tree is test code as its
+  // params
+  // say; an old params file without the flag, by its name.
+  @Test
+  void scan_sourceSetTrees_lookupPrefersTheAskingTreeAndOwnershipIsStable() throws Exception {
+    final Path app = tmp.resolve(LatheLayout.LATHE_DIR).resolve("app");
+    final Path main = tmp.resolve("app/src/main/java");
+    final Path test = tmp.resolve("app/src/test/java");
+    final Path integration = tmp.resolve("app/src/integrationTest/java");
+    final Path dataIntegration = tmp.resolve("app/src/dataIntegrationTest/java");
+    writeTree(LatheLayout.CLASSES_DIR, main, List.of(), false);
+    writeTree(LatheLayout.TEST_CLASSES_DIR, test, List.of(app.resolve("classes")), null);
+    writeTree("classes-integrationTest", integration, List.of(app.resolve("classes")), true);
+    writeTree("classes-dataIntegrationTest", dataIntegration, List.of(), true);
+    writeTree("classes-suite", test, List.of(), true);
+    writeTree("classes-jmh", tmp.resolve("app/src/jmh/java"), List.of(), false);
+
+    final var registry =
+        WorkspaceModuleRegistry.scan(tmp, WorkspaceManifest.empty(), Runnable::run);
+
+    assertThat(registry.sourceRootsFor(integration.resolve("com/example/BookTest.java")))
+        .startsWith(integration, main)
+        .contains(dataIntegration);
+    assertThat(registry.allSourceRoots().indexOf(dataIntegration))
+        .isLessThan(registry.allSourceRoots().indexOf(integration));
+    assertThat(registry.moduleSourceFor(test.resolve("com/example/AppTest.java")))
+        .map(ModuleSourceConfig::sourceTree)
+        .contains(LatheLayout.TEST_CLASSES_DIR);
+    assertThat(registry.allConfigs())
+        .filteredOn(ModuleSourceConfig::isTestTree)
+        .extracting(ModuleSourceConfig::sourceTree)
+        .containsExactlyInAnyOrder(
+            LatheLayout.TEST_CLASSES_DIR,
+            "classes-dataIntegrationTest",
+            "classes-integrationTest",
+            "classes-suite");
+  }
+
+  private void writeTree(
+      final String tree, final Path sourceRoot, final List<Path> classpath, final Boolean testCode)
+      throws Exception {
+    Json.write(
+        new ModuleConfigData(
+            tree,
+            tmp.resolve("app/build").resolve(tree).toString(),
+            null,
+            List.of(sourceRoot.toString()),
+            classpath.stream().map(Path::toString).toList(),
+            List.of(),
+            List.of(),
+            null,
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            false,
+            testCode),
+        tmp.resolve(LatheLayout.LATHE_DIR)
+            .resolve("app")
+            .resolve(LatheLayout.paramsFileName(tree)));
   }
 
   @Test

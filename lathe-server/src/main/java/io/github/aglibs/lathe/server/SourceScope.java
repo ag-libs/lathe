@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.util.Arrays;
 import java.util.function.Predicate;
 
@@ -21,10 +22,9 @@ enum SourceScope {
   }
 
   // A module can compile more trees than main and test (a multi-release jar's versions/21, an extra
-  // execution's output), each named after its output dir; like the rest of Lathe, any tree but the
-  // test one is main code.
-  static SourceScope ofSourceTree(final String sourceTree) {
-    return TEST.sourceTree.equals(sourceTree) ? TEST : MAIN;
+  // execution's output, a Gradle source set); its params say which are test code.
+  static SourceScope of(final ModuleSourceConfig config) {
+    return config.isTestTree() ? TEST : MAIN;
   }
 
   private static SourceScope find(final Predicate<SourceScope> match, final String error) {

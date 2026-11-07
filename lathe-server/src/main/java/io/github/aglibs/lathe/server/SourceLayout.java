@@ -58,9 +58,12 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return testConfigs().stream().map(config -> moduleRel(config)).distinct().sorted().toList();
   }
 
+  // A source set's own tree is left out, as from the context: a type created in one of its
+  // packages would land in another source set.
   List<PackageEntry> packages(final String moduleRel) {
     return configs.stream()
         .filter(config -> moduleRel(config).equals(moduleRel))
+        .filter(config -> !isSourceSetTree(config))
         .flatMap(SourceLayout::packageEntries)
         .distinct()
         .sorted(Comparator.comparing(PackageEntry::pkg).thenComparing(PackageEntry::scope))
@@ -70,8 +73,9 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   // Where a new type of the kind may go: each package of each module, once per scope it exists in,
   // ranked for the file the user is in -- its own package, then the rest of its module, then the
   // scope the kind targets (a test lands in the test root) -- then by module, package and scope.
-  // With a package, only that package's destinations, best first. The context may be null. It walks
-  // every module's source trees, so it is not for the event loop.
+  // With a package, only that package's destinations, best first. The context may be null. A
+  // source set's own tree is left out, as from packages(). It walks every module's source trees, so
+  // it is not for the event loop.
   List<TypeDestination> destinations(
       final ContextInfo context, final TypeKind kind, final String pkg) {
     final String scope = (kind == TypeKind.TEST ? SourceScope.TEST : SourceScope.MAIN).wire;
@@ -88,6 +92,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
                     (TypeDestination destination) -> -preference(destination, context, scope))
                 .thenComparing(order);
     return configs.stream()
+        .filter(config -> !isSourceSetTree(config))
         .flatMap(
             config ->
                 packageEntries(config)
@@ -145,8 +150,11 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return String.join(".", Arrays.asList(a).subList(0, shared));
   }
 
+  // A source set's own tree has no place in the create-type scopes yet, so a file there has no
+  // context: one created from it would land in another source set.
   ContextInfo resolveContext(final Path path) {
     return configs.stream()
+        .filter(config -> !isSourceSetTree(config))
         .flatMap(config -> contextIn(config, path).stream())
         .findFirst()
         .orElse(null);
@@ -224,17 +232,34 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
     return matching;
   }
 
+  // The tree whose tests a module's captured test launch runs.
   private List<ModuleSourceConfig> testConfigs() {
     return configs.stream()
-        .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
+        .filter(config -> LatheLayout.TEST_CLASSES_DIR.equals(config.sourceTree()))
         .toList();
   }
 
-  // Every test package of the module, in one launch.
+  // The package of a file in any tree, from the deepest source root that holds it; empty outside
+  // them.
+  String filePackage(final Path file) {
+    return configs.stream()
+        .flatMap(config -> config.sourceRootOf(file).stream())
+        .max(Comparator.comparingInt(Path::getNameCount))
+        .map(root -> packageOf(root, file.getParent()))
+        .orElse("");
+  }
+
+  private static boolean isSourceSetTree(final ModuleSourceConfig config) {
+    return config.sourceTree().startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX);
+  }
+
+  // Every package of the module's test tree, in one launch: its captured test launch runs no other
+  // tree's tests.
   DirRun moduleRun(final String moduleRel) {
     final List<DirRun.Selector> selectors =
-        packages(moduleRel).stream()
-            .filter(entry -> entry.scope().equals(SourceScope.TEST.wire))
+        testConfigs().stream()
+            .filter(config -> moduleRel(config).equals(moduleRel))
+            .flatMap(SourceLayout::packageEntries)
             .map(PackageEntry::pkg)
             .filter(pkg -> !pkg.isEmpty())
             .distinct()
@@ -281,7 +306,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   }
 
   private static String scopeWire(final ModuleSourceConfig config) {
-    return SourceScope.ofSourceTree(config.sourceTree()).wire;
+    return SourceScope.of(config).wire;
   }
 
   // A package is a directory that holds Java sources (the parent of each `.java`).

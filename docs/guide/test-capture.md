@@ -120,8 +120,8 @@ On Maven:
 
 On Gradle:
 
-- **Only each project's `test` task is captured.** Other test tasks, such as an `integrationTest` task, and
-  source sets other than `main` and `test` are not.
+- **Only each project's `test` task is captured.** Other test tasks, such as an `integrationTest` task, are not:
+  their source sets get editor features, but running one of their tests is refused with the reason.
 - **A package or module run from the editor runs every test class it discovers.** On Maven such a run follows
   Surefire's include and exclude patterns; the `test` task's `include`, `exclude` and `filter` settings are not
   recorded, so a class the build leaves out runs too. A run of a class or method runs exactly that.

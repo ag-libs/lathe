@@ -47,7 +47,7 @@ final class FeatureRouter {
         doc.content(),
         doc.version(),
         pos,
-        state.registry().allSourceRoots(),
+        state.registry().sourceRootsFor(LatheUri.toPath(doc.uri())),
         state.manifest().libraries());
   }
 

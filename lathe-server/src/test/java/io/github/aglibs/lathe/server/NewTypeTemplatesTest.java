@@ -3,7 +3,6 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -119,18 +118,28 @@ class NewTypeTemplatesTest {
   }
 
   @Test
-  void enums_fromWireAndSourceTree_mapKnownTokensRejectUnknownWireAndTakeExtraTreesAsMain() {
+  void enums_fromWireAndTree_mapKnownTokensRejectUnknownWireAndFollowTheTestFlag() {
     assertThat(TypeKind.fromWire("record")).isEqualTo(TypeKind.RECORD);
     assertThat(TypeKind.fromWire("test")).isEqualTo(TypeKind.TEST);
     assertThat(TypeKind.fromWire("package-info")).isEqualTo(TypeKind.PACKAGE_INFO);
     assertThat(TypeKind.fromWire("module-info")).isEqualTo(TypeKind.MODULE_INFO);
     assertThat(SourceScope.fromWire("test")).isEqualTo(SourceScope.TEST);
-    assertThat(SourceScope.ofSourceTree(LatheLayout.TEST_CLASSES_DIR)).isEqualTo(SourceScope.TEST);
-    assertThat(SourceScope.ofSourceTree(LatheLayout.CLASSES_DIR)).isEqualTo(SourceScope.MAIN);
+    assertThat(SourceScope.of(TestCompiler.testTreeConfig(Path.of("/ws"), "app", "src/test/java")))
+        .isEqualTo(SourceScope.TEST);
+    assertThat(SourceScope.of(TestCompiler.mainTreeConfig(Path.of("/ws"), "app")))
+        .isEqualTo(SourceScope.MAIN);
     assertThatThrownBy(() -> TypeKind.fromWire("annotation"))
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> SourceScope.fromWire("prod"))
         .isInstanceOf(IllegalArgumentException.class);
-    assertThat(SourceScope.ofSourceTree("21")).isEqualTo(SourceScope.MAIN);
+    // A tree beyond main and test is test code when its params say so, as a Gradle integrationTest
+    // source set's do and a jmh source set's don't.
+    assertThat(
+            SourceScope.of(
+                TestCompiler.sourceSetTreeConfig(Path.of("/ws"), "app", "integrationTest", true)))
+        .isEqualTo(SourceScope.TEST);
+    assertThat(
+            SourceScope.of(TestCompiler.sourceSetTreeConfig(Path.of("/ws"), "app", "jmh", false)))
+        .isEqualTo(SourceScope.MAIN);
   }
 }

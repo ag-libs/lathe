@@ -15,12 +15,16 @@ class CapturePrunerTest {
   @TempDir Path root;
 
   // Module a keeps its main tree but lost its tests; a/b nests inside it and is current; gone left
-  // the build. Only what the build no longer has goes, file by file.
+  // the build. Only what the build no longer has goes, file by file; a Gradle source set's tree
+  // takes
+  // its own generated sources with it, never main's.
   @Test
   void prune_removedModuleAndTree_deletesOnlyThoseCaptures() throws Exception {
     capture("", LatheLayout.CLASSES_DIR);
     capture("a", LatheLayout.CLASSES_DIR);
     capture("a", LatheLayout.TEST_CLASSES_DIR);
+    capture("a", LatheLayout.sourceSetTree("integrationTest"));
+    capture("a", LatheLayout.sourceSetTree("jmh"));
     capture("a/b", LatheLayout.CLASSES_DIR);
     capture("gone", LatheLayout.CLASSES_DIR);
     write(".lathe/a/" + LatheLayout.TEST_LAUNCH_FILE);
@@ -32,13 +36,18 @@ class CapturePrunerTest {
     CapturePruner.prune(
         root,
         Map.of(
-            Path.of(""), Set.of(LatheLayout.CLASSES_DIR),
-            Path.of("a"), Set.of(LatheLayout.CLASSES_DIR),
-            Path.of("a/b"), Set.of(LatheLayout.CLASSES_DIR)));
+            Path.of(""),
+            Set.of(LatheLayout.CLASSES_DIR),
+            Path.of("a"),
+            Set.of(LatheLayout.CLASSES_DIR, LatheLayout.sourceSetTree("integrationTest")),
+            Path.of("a/b"),
+            Set.of(LatheLayout.CLASSES_DIR)));
 
     assertCaptured("", LatheLayout.CLASSES_DIR, true);
     assertCaptured("a", LatheLayout.CLASSES_DIR, true);
     assertCaptured("a", LatheLayout.TEST_CLASSES_DIR, false);
+    assertCaptured("a", LatheLayout.sourceSetTree("integrationTest"), true);
+    assertCaptured("a", LatheLayout.sourceSetTree("jmh"), false);
     assertCaptured("a/b", LatheLayout.CLASSES_DIR, true);
     assertCaptured("gone", LatheLayout.CLASSES_DIR, false);
     assertThat(lathe("a").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();

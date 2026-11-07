@@ -166,13 +166,13 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
                 facts.stream().flatMap(fact -> fact.accessFlags().stream()),
                 Stream.of(getDaemonJvmArgs().getOrElse("").split("\\s+")))
             .toList());
-    CapturePruner.prune(root, currentTrees(facts));
+    CapturePruner.prune(root, currentTrees(root, facts));
   }
 
-  // What the build has: each project's trees from its facts, and both trees for a project not built
-  // since it joined the build, so its captures stay until its facts say otherwise. A project gone
-  // from the settings is pruned.
-  private Map<Path, Set<String>> currentTrees(final List<ProjectFacts> facts) {
+  // What the build has: each project's trees from its facts, and, for a project not built since it
+  // joined the build, the trees it already has, so its captures stay until its facts say otherwise.
+  // A project gone from the settings is pruned.
+  private Map<Path, Set<String>> currentTrees(final Path root, final List<ProjectFacts> facts) {
     final Map<String, Set<String>> known =
         facts.stream()
             .collect(
@@ -183,8 +183,15 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
             Collectors.toUnmodifiableMap(
                 Path::of,
                 module ->
-                    known.getOrDefault(
-                        module, Set.of(LatheLayout.CLASSES_DIR, LatheLayout.TEST_CLASSES_DIR))));
+                    known.containsKey(module)
+                        ? known.get(module)
+                        : capturedTrees(root.resolve(LatheLayout.moduleDir(module)))));
+  }
+
+  private static Set<String> capturedTrees(final Path moduleDir) {
+    return IOUtil.unchecked(() -> FileUtil.filesIn(moduleDir, LatheLayout::isParamsFile)).stream()
+        .map(LatheLayout::paramsSourceTree)
+        .collect(Collectors.toUnmodifiableSet());
   }
 
   static Path factsFile(final Path root, final String module) {

@@ -46,6 +46,7 @@ public final class LombokFixtures {
         base.compilerArgs(),
         base.analysisMode(),
         base.externalOutput(),
+        null,
         base.reactorRewrite());
   }
 }

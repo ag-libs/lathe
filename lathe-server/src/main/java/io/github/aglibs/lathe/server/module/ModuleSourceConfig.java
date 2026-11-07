@@ -9,7 +9,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public record ModuleSourceConfig(
@@ -31,6 +34,9 @@ public record ModuleSourceConfig(
     // True when outputDir is the build's own compiled output read directly (OpenJDK), not a .lathe
     // mirror (Maven). Drives raw-classpath resolution and the type-index base.
     boolean externalOutput,
+    // Whether the tree is test code, as its params say; absent (a test's hand-built config), the
+    // test-classes tree is.
+    Boolean testCode,
     // Maps sibling modules' build outputs on the paths above to their .lathe/ mirrors.
     ReactorRewrite reactorRewrite) {
 
@@ -51,6 +57,8 @@ public record ModuleSourceConfig(
     compilerArgs = compilerArgs != null ? List.copyOf(compilerArgs) : List.of();
     analysisMode = analysisMode != null ? analysisMode : AnalysisMode.CLASSPATH;
     reactorRewrite = reactorRewrite != null ? reactorRewrite : ReactorRewrite.none();
+    testCode =
+        Objects.requireNonNullElse(testCode, LatheLayout.TEST_CLASSES_DIR.equals(sourceTree));
   }
 
   public Path latheClassesDir() {
@@ -86,8 +94,21 @@ public record ModuleSourceConfig(
     return Stream.concat(sourceRoots.stream(), Stream.of(generatedSourcesDir())).toList();
   }
 
+  // Whether this tree compiles against the other: its mirror on this tree's class or module path,
+  // as a test tree holds its own main tree, and a Gradle source set the trees its classpath names.
+  public boolean sees(final ModuleSourceConfig other) {
+    return compiledAgainst().contains(other.latheClassesDir());
+  }
+
+  // Every entry of this tree's class and module path, mirrors standing in for build outputs: a set,
+  // for a caller asking about many trees at once to compute once.
+  public Set<Path> compiledAgainst() {
+    return Stream.concat(remappedClasspath().stream(), remappedModulepath().stream())
+        .collect(Collectors.toUnmodifiableSet());
+  }
+
   public boolean isTestTree() {
-    return LatheLayout.TEST_CLASSES_DIR.equals(sourceTree);
+    return testCode;
   }
 
   public List<Path> remappedClasspath() {
@@ -127,6 +148,7 @@ public record ModuleSourceConfig(
         config.compilerArgs(),
         config.analysisMode(),
         config.externalOutput(),
+        config.testCode(),
         reactorRewrite);
   }
 

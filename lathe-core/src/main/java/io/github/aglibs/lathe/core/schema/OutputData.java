@@ -1,6 +1,5 @@
 package io.github.aglibs.lathe.core.schema;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.util.Objects;
 
@@ -12,11 +11,6 @@ public record OutputData(String path, String module, String tree) {
 
   public OutputData {
     module = Objects.requireNonNullElse(module, "");
-    ValidCheck.check()
-        .notBlank(path, "path")
-        .assertTrue(
-            LatheLayout.CLASSES_DIR.equals(tree) || LatheLayout.TEST_CLASSES_DIR.equals(tree),
-            "tree")
-        .validate();
+    ValidCheck.check().notBlank(path, "path").notBlank(tree, "tree").validate();
   }
 }
