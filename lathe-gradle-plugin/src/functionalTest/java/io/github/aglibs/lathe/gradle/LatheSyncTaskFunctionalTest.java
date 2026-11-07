@@ -431,7 +431,7 @@ class LatheSyncTaskFunctionalTest {
             .buildAndFail();
 
     assertThat(result.getOutput()).contains("every test was skipped");
-    assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.Gradle.FACTS_FILE)).exists();
+    assertThat(dir.resolve(".lathe/app").resolve("lathe-facts.json")).exists();
     assertThat(dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE)).exists();
   }
 

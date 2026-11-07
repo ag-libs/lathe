@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.Platform;
 import io.github.aglibs.lathe.install.SyncException;
 import io.github.aglibs.lathe.install.SyncScript;
@@ -25,7 +24,7 @@ class MavenSyncScriptTest {
     assertThat(plain.javaHome()).isEqualTo(absolute("/opt/jdk"));
     assertThat(plain.fixedArgs())
         .containsExactly("--no-transfer-progress", "-Dmaven.build.cache.enabled=false");
-    assertThat(plain.goals()).containsExactly(LatheLayout.Maven.SYNC_PHASE);
+    assertThat(plain.goals()).containsExactly(MavenSyncScript.SYNC_PHASE);
     assertThat(plain.testsGoals())
         .containsExactly("test", "-Dlathe.capture.only=true", "-DfailIfNoTests=false");
     assertThat(plain.moduleArgs()).containsExactly("-pl", "{module}");
@@ -48,7 +47,7 @@ class MavenSyncScriptTest {
     build.setProperty(LatheFlags.SYNC_PHASE, "install");
 
     assertThat(MavenSyncScript.phase(new Properties(), new Properties()))
-        .isEqualTo(LatheLayout.Maven.SYNC_PHASE);
+        .isEqualTo(MavenSyncScript.SYNC_PHASE);
     assertThat(MavenSyncScript.phase(new Properties(), pom)).isEqualTo("package");
     assertThat(MavenSyncScript.phase(build, pom)).isEqualTo("install");
     final var padded = new Properties();
@@ -91,7 +90,7 @@ class MavenSyncScriptTest {
       properties.setProperty("mvnd.home", absolute(mvndHome).toString());
     }
 
-    return MavenSyncScript.of(properties, LatheLayout.Maven.SYNC_PHASE);
+    return MavenSyncScript.of(properties, MavenSyncScript.SYNC_PHASE);
   }
 
   // On Windows a path from '/' has no drive, so it is not absolute until it gains the current one.

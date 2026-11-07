@@ -22,6 +22,9 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 // runs in the reactor root, before any child module compiles.
 final class MavenJvmArgs {
 
+  static final String MVN_DIR = ".mvn";
+  static final String MVN_JVM_CONFIG_FILE = "jvm.config";
+
   private static final String COMPILER_PLUGIN_KEY =
       Plugin.constructKey(
           LatheLayout.Maven.MAVEN_COMPILER_PLUGIN_GROUP_ID,
@@ -104,10 +107,7 @@ final class MavenJvmArgs {
   }
 
   private static List<String> jvmConfigTokens(final Path workspaceRoot) {
-    final var jvmConfig =
-        workspaceRoot
-            .resolve(LatheLayout.Maven.MVN_DIR)
-            .resolve(LatheLayout.Maven.MVN_JVM_CONFIG_FILE);
+    final var jvmConfig = workspaceRoot.resolve(MVN_DIR).resolve(MVN_JVM_CONFIG_FILE);
     if (!Files.isReadable(jvmConfig)) {
       return List.of();
     }

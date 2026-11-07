@@ -13,19 +13,26 @@ import java.util.stream.Stream;
 // flags every build needs belong in gradle.properties.
 final class GradleSyncScript {
 
+  // The editor's sync with tests goes on past a failed task: Gradle starts no new task after a
+  // failure, so a build that rejects skipped tests would capture only its first test task.
+  private static final String CONTINUE_ARG = "--continue";
+
   private GradleSyncScript() {}
 
   static SyncScript of(final Path gradleHome, final Path javaHome, final List<String> initScripts) {
     return new SyncScript(
-        LatheLayout.Gradle.runningTool(gradleHome, Platform.WINDOWS),
+        runningTool(gradleHome, Platform.WINDOWS),
         javaHome,
         initScripts.stream().flatMap(script -> Stream.of("--init-script", script)).toList(),
         List.of(LatheLayout.Gradle.SYNC_TASK),
-        List.of(
-            LatheLayout.Gradle.SYNC_TASK,
-            LatheLayout.Gradle.CAPTURE_ONLY_ARG,
-            LatheLayout.Gradle.CONTINUE_ARG),
+        List.of(LatheLayout.Gradle.SYNC_TASK, LatheLayout.Gradle.CAPTURE_ONLY_ARG, CONTINUE_ARG),
         List.of("--" + LatheSyncTask.MODULE_OPTION, LatheFlags.SYNC_MODULE_TOKEN),
         List.of());
+  }
+
+  // The launcher of the Gradle distribution that ran the build (gradle.gradleHomeDir), not the
+  // wrapper: the same version, with no download step.
+  private static Path runningTool(final Path gradleHome, final boolean windows) {
+    return gradleHome.resolve(LatheLayout.BIN_DIR).resolve(windows ? "gradle.bat" : "gradle");
   }
 }

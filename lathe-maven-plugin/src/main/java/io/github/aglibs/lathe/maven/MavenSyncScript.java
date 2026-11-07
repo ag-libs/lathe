@@ -14,6 +14,27 @@ import java.util.Properties;
 // this build, and prints the exact command first so the user sees what runs.
 final class MavenSyncScript {
 
+  static final String SYNC_PHASE = "process-test-classes";
+  private static final String TEST_PHASE = "test";
+  static final String PACKAGE_PHASE = "package";
+  // The phases a project may have its sync build to (LatheFlags.SYNC_PHASE), in lifecycle order:
+  // from SYNC_PHASE, which .lathe/ needs, to install; never deploy, which would publish.
+  static final List<String> SYNC_PHASES =
+      List.of(
+          SYNC_PHASE,
+          TEST_PHASE,
+          "prepare-package",
+          PACKAGE_PHASE,
+          "pre-integration-test",
+          "integration-test",
+          "post-integration-test",
+          "verify",
+          "install");
+  private static final String SKIP_TESTS_ARG = "-DskipTests";
+  // Failsafe's own switch: a capture-only sync past the test phase captures Surefire's tests
+  // only.
+  private static final String SKIP_ITS_ARG = "-DskipITs";
+
   private MavenSyncScript() {}
 
   // The phase the project chose (LatheFlags.SYNC_PHASE): a -D on the build or in
@@ -24,13 +45,12 @@ final class MavenSyncScript {
         userProperties
             .getProperty(
                 LatheFlags.SYNC_PHASE,
-                rootProjectProperties.getProperty(
-                    LatheFlags.SYNC_PHASE, LatheLayout.Maven.SYNC_PHASE))
+                rootProjectProperties.getProperty(LatheFlags.SYNC_PHASE, SYNC_PHASE))
             .trim();
-    if (!LatheLayout.Maven.SYNC_PHASES.contains(phase)) {
+    if (!SYNC_PHASES.contains(phase)) {
       throw new SyncException(
           "%s=%s: Lathe's sync builds to one of %s"
-              .formatted(LatheFlags.SYNC_PHASE, phase, LatheLayout.Maven.SYNC_PHASES));
+              .formatted(LatheFlags.SYNC_PHASE, phase, SYNC_PHASES));
     }
 
     return phase;
@@ -45,25 +65,17 @@ final class MavenSyncScript {
   // to resolve a module outside the scope; callers that need dependents name them. The build cache
   // stays off, since a cache hit skips javac and the test fork, where Lathe captures.
   static SyncScript of(final Properties systemProperties, final String phase) {
-    final int position = LatheLayout.Maven.SYNC_PHASES.indexOf(phase);
-    final int testPosition = LatheLayout.Maven.SYNC_PHASES.indexOf(LatheLayout.Maven.TEST_PHASE);
+    final int position = SYNC_PHASES.indexOf(phase);
+    final int testPosition = SYNC_PHASES.indexOf(TEST_PHASE);
     return new SyncScript(
         LatheLayout.Maven.runningTool(systemProperties, Platform.WINDOWS),
         Path.of(systemProperties.getProperty(LatheLayout.JAVA_HOME_PROPERTY)),
         List.of(LatheLayout.Maven.NO_TRANSFER_PROGRESS, "-Dmaven.build.cache.enabled=false"),
-        position >= testPosition
-            ? List.of(phase, LatheLayout.Maven.SKIP_TESTS_ARG)
-            : List.of(phase),
+        position >= testPosition ? List.of(phase, SKIP_TESTS_ARG) : List.of(phase),
         position > testPosition
             ? List.of(
-                phase,
-                LatheLayout.Maven.CAPTURE_ONLY_ARG,
-                "-DfailIfNoTests=false",
-                LatheLayout.Maven.SKIP_ITS_ARG)
-            : List.of(
-                LatheLayout.Maven.TEST_PHASE,
-                LatheLayout.Maven.CAPTURE_ONLY_ARG,
-                "-DfailIfNoTests=false"),
+                phase, LatheLayout.Maven.CAPTURE_ONLY_ARG, "-DfailIfNoTests=false", SKIP_ITS_ARG)
+            : List.of(TEST_PHASE, LatheLayout.Maven.CAPTURE_ONLY_ARG, "-DfailIfNoTests=false"),
         List.of("-pl", LatheFlags.SYNC_MODULE_TOKEN),
         List.of("-am"));
   }

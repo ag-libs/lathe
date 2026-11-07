@@ -344,8 +344,10 @@ The capture-under-lock sequence (`LatheCompiler`, `LatheCaptureTask`, OpenJDK) b
 **Done** (decided: relax the rules): `LaunchPlan`, `LaunchOverlay`, `JdwpOptions`, `RunKind` and `PortUtil` moved to
 `server.run`, `WorkspaceStyle` to `server.format`, `SourceTypeScanner` to the server, `ZipCache` to `lathe-install`, each
 with its tests. `ClassSourceFile` stays: it shares a package-private class-file reader with `lathe-install`'s scanner.
-`AGENTS.md` now says a constant or file helper one module owns lives in that module. The server-only `FileUtil`
-methods and single-module `LatheLayout` constants move when next touched, under that rule.
+`AGENTS.md` now says a constant or file helper one module owns lives in that module.
+Under that rule, the server-only `FileUtil` methods moved to `server.files.ServerFiles` (`deleteAllButLast` to
+`LatheMcpServer`), and the `LatheLayout.Maven` / `.Gradle` names one module uses moved into the class that uses them.
+`LatheLayout` keeps the names several modules share and those its setup message gives.
 
 `LaunchPlan`, `LaunchOverlay`, `JdwpOptions`, `RunKind`, `PortUtil`, `WorkspaceStyle`, `SourceTypeScanner`,
 `ClassSourceFile` and about thirteen `FileUtil` methods are used only by the server, yet `lathe-core` is shaded

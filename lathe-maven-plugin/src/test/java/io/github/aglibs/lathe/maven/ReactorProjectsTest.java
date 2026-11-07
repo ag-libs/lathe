@@ -138,7 +138,7 @@ class ReactorProjectsTest {
     final MavenProject app = projectWithOutput("com.example", "app", "2", tmp.resolve("app"));
     final MavenProject parent =
         projectWithOutput("com.example", "parent", "1", tmp.resolve("parent"));
-    parent.setPackaging(LatheLayout.Maven.POM_PACKAGING);
+    parent.setPackaging(ReactorProjects.POM_PACKAGING);
 
     final List<OutputData> outputs = ReactorProjects.outputs(tmp, List.of(root, app, parent));
 
@@ -321,7 +321,7 @@ class ReactorProjectsTest {
     return project
         .getBuild()
         .getPluginsAsMap()
-        .get(LatheLayout.Maven.SHADE_PLUGIN_KEY)
+        .get(ReactorProjects.SHADE_PLUGIN_KEY)
         .getExecutions()
         .get(0);
   }

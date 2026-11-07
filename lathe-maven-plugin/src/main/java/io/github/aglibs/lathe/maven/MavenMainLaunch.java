@@ -32,7 +32,7 @@ final class MavenMainLaunch {
   }
 
   void write(final Path workspaceRoot, final MavenProject project) {
-    if (LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging())) {
+    if (ReactorProjects.POM_PACKAGING.equals(project.getPackaging())) {
       return;
     }
 

@@ -50,6 +50,23 @@ import org.gradle.api.tasks.UntrackedTask;
 @UntrackedTask(because = "It refreshes the workspace files and the server install every run.")
 public abstract class LatheWorkspaceTask extends DefaultTask {
 
+  // The build files a sync fingerprints, so the server notices a changed build: the settings
+  // file, gradle.properties and the version catalogs at the root, each project's build file, and
+  // the build logic in buildSrc/ and included builds, where Gradle builds keep their compiler
+  // settings.
+  private static final List<String> ROOT_BUILD_FILES =
+      List.of("settings.gradle", "settings.gradle.kts", "gradle.properties");
+  private static final List<String> PROJECT_BUILD_FILES =
+      List.of("build.gradle", "build.gradle.kts");
+  private static final String CATALOG_DIR = "gradle";
+  private static final String CATALOG_SUFFIX = ".toml";
+  private static final List<String> BUILD_LOGIC_SUFFIXES =
+      List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
+  // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
+  private static final String FACTS_FILE = "lathe-facts.json";
+  // Output and state directories inside a build-logic build, never part of it.
+  private static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");
+
   private static final String SOURCES_CLASSIFIER = "sources";
 
   // Every project's directory, relative to the root ("" for the root project), from the settings.
@@ -171,7 +188,7 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   }
 
   static Path factsFile(final Path root, final String module) {
-    return root.resolve(LatheLayout.moduleDir(module)).resolve(LatheLayout.Gradle.FACTS_FILE);
+    return root.resolve(LatheLayout.moduleDir(module)).resolve(FACTS_FILE);
   }
 
   // Each external library once, with the classpath of the first project that compiles against it,
@@ -279,20 +296,18 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   }
 
   private List<String> buildFiles(final Path root) {
-    final Stream<Path> rootFiles = LatheLayout.Gradle.ROOT_BUILD_FILES.stream().map(root::resolve);
+    final Stream<Path> rootFiles = ROOT_BUILD_FILES.stream().map(root::resolve);
     final Stream<Path> catalogs =
         IOUtil.unchecked(
             () ->
                 FileUtil.walkFiles(
-                    root.resolve(LatheLayout.Gradle.CATALOG_DIR),
-                    path -> path.toString().endsWith(LatheLayout.Gradle.CATALOG_SUFFIX)))
+                    root.resolve(CATALOG_DIR), path -> path.toString().endsWith(CATALOG_SUFFIX)))
             .stream();
     final Stream<Path> projectFiles =
         getModuleDirs().get().stream()
             .flatMap(
                 module ->
-                    LatheLayout.Gradle.PROJECT_BUILD_FILES.stream()
-                        .map(name -> root.resolve(module).resolve(name)));
+                    PROJECT_BUILD_FILES.stream().map(name -> root.resolve(module).resolve(name)));
     final Stream<Path> logic =
         getBuildLogicDirs().get().stream()
             .map(Path::of)
@@ -314,10 +329,9 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
   // Any build/ or .gradle/ on the way down is output, also a nested project's.
   private static boolean isBuildLogicFile(final Path dir, final Path file) {
     final var name = file.getFileName().toString();
-    return LatheLayout.Gradle.BUILD_LOGIC_SUFFIXES.stream().anyMatch(name::endsWith)
+    return BUILD_LOGIC_SUFFIXES.stream().anyMatch(name::endsWith)
         && StreamSupport.stream(dir.relativize(file).spliterator(), false)
-            .noneMatch(
-                part -> LatheLayout.Gradle.BUILD_LOGIC_SKIPPED_DIRS.contains(part.toString()));
+            .noneMatch(part -> BUILD_LOGIC_SKIPPED_DIRS.contains(part.toString()));
   }
 
   private static List<Path> paths(final FileCollection files) {

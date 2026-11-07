@@ -29,6 +29,9 @@ import org.slf4j.LoggerFactory;
 // would skip the participant without a word.
 public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
+  // The system property Maven sets to its own version.
+  private static final String MAVEN_VERSION_PROPERTY = "maven.version";
+
   private static final Logger LOG = LoggerFactory.getLogger(LatheLifecycleParticipant.class);
 
   // Single-session-per-JVM state: a Maven session takes the lock in afterProjectsRead and releases
@@ -45,7 +48,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
     final List<String> unmet =
         LatheRequirements.unmet(
-            session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_VERSION_PROPERTY),
+            session.getSystemProperties().getProperty(MAVEN_VERSION_PROPERTY),
             session.getProjects());
     if (!unmet.isEmpty()) {
       throw new MavenExecutionException(
@@ -56,7 +59,7 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
     session.getProjects().forEach(injector::injectProject);
     // A -Dtest the user passed is theirs to keep.
     if (LatheFlags.isCaptureOnly()
-        && !session.getUserProperties().containsKey(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY)) {
+        && !session.getUserProperties().containsKey(LatheModelInjector.SUREFIRE_TEST_PROPERTY)) {
       session.getProjects().forEach(injector::injectCaptureClass);
     }
 
