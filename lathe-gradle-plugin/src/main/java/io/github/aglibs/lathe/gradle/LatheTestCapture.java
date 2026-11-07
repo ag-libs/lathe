@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,6 +23,7 @@ import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.FileTree;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.Sync;
 import org.gradle.api.tasks.TaskProvider;
@@ -42,6 +44,9 @@ final class LatheTestCapture {
   private static final String TEST_RUNNER = "latheTestRunner";
   private static final String JUNIT_LAUNCHER = "org.junit.platform:junit-platform-launcher";
   private static final GradleVersion FAIL_ON_NO_TESTS = GradleVersion.version("9.0");
+  private static final String CLASS_SUFFIX = ".class";
+  private static final String UNCAPTURED_TEST_TASK =
+      "a capture-only sync captures the test task only";
   private static final String TEST_ACCELERATION =
       """
       A plugin that runs the tests in a JVM of its own, as Develocity's Predictive Test Selection \
@@ -120,6 +125,14 @@ final class LatheTestCapture {
                         .flatMap(Test::getJavaLauncher)
                         .map(launcher -> launcher.getMetadata().getLanguageVersion().asInt()));
           });
+      // Their launches are not captured, so a capture-only run would run their tests in full for
+      // nothing: a build may make the test task depend on them (Hibernate ORM's Jakarta Data and
+      // integration tests).
+      project
+          .getTasks()
+          .withType(Test.class)
+          .matching(task -> !TEST_TASK.equals(task.getName()))
+          .configureEach(task -> task.onlyIf(UNCAPTURED_TEST_TASK, ignored -> false));
     }
 
     // A plain Callable provider carries no task dependencies, so the paths are read, never built.
@@ -143,12 +156,52 @@ final class LatheTestCapture {
     final var marker = new File(moduleDir, LatheLayout.Gradle.CAPTURE_MARKER);
     final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
+    task.doFirst(LatheTestCapture::runOneClass);
     task.doLast(test -> warnIfNotCaptured(test, marker, launch, rootDir, userHome));
     task.getOutputs().upToDateWhen(ignored -> false);
     task.getOutputs().cacheIf(ignored -> false);
     if (GradleVersion.current().getBaseVersion().compareTo(FAIL_ON_NO_TESTS) >= 0) {
       task.getFailOnNoDiscoveredTests().set(false);
     }
+  }
+
+  // The launch is the same whichever classes run, and one class starts the test JVM, a class
+  // without tests too; every class would cost a JVM per fork and a discovery of each (minutes on
+  // Hibernate ORM's core). The class is one the task scans, so a build's own selection keeps none
+  // out.
+  private static void runOneClass(final Task task) {
+    final var test = (Test) task;
+    firstTopLevelClass(test.getCandidateClassFiles())
+        .ifPresent(
+            name -> {
+              test.getFilter().setIncludePatterns(name);
+              test.getFilter().setExcludePatterns();
+              test.getFilter().setFailOnNoMatchingTests(false);
+            });
+  }
+
+  // The first in name order, so every sync picks the same.
+  private static Optional<String> firstTopLevelClass(final FileTree classFiles) {
+    final var paths = new ArrayList<String>();
+    classFiles.visit(
+        file -> {
+          if (!file.isDirectory()) {
+            paths.add(file.getRelativePath().getPathString());
+          }
+        });
+    return paths.stream()
+        .filter(LatheTestCapture::isTopLevelClass)
+        .sorted()
+        .findFirst()
+        .map(path -> path.substring(0, path.length() - CLASS_SUFFIX.length()).replace('/', '.'));
+  }
+
+  private static boolean isTopLevelClass(final String path) {
+    final String name = path.substring(path.lastIndexOf('/') + 1);
+    return name.endsWith(CLASS_SUFFIX)
+        && !name.contains("$")
+        && !name.equals(LatheLayout.MODULE_INFO_CLASS)
+        && !name.equals(LatheLayout.PACKAGE_INFO_CLASS);
   }
 
   private static void markCaptureStart(final File marker) throws IOException {

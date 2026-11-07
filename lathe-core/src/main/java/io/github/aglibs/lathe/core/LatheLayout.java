@@ -73,6 +73,7 @@ public final class LatheLayout {
   public static final String MODULE_INFO_JAVA = "module-info.java";
   public static final String MODULE_INFO_CLASS = "module-info.class";
   public static final String PACKAGE_INFO_JAVA = "package-info.java";
+  public static final String PACKAGE_INFO_CLASS = "package-info.class";
   public static final String GENERATED_SOURCES = "generated-sources";
   public static final String GENERATED_TEST_SOURCES = "generated-test-sources";
   public static final String CLASSES_DIR = "classes";
@@ -179,6 +180,11 @@ public final class LatheLayout {
     public static final List<String> SUREFIRE_DEFAULT_INCLUDES =
         List.of("**/Test*.java", "**/*Test.java", "**/*Tests.java", "**/*TestCase.java");
     public static final List<String> SUREFIRE_DEFAULT_EXCLUDES = List.of("**/*$*");
+    // Surefire's test selection, which replaces its includes and excludes, and the switch that lets
+    // a module with no class matching it pass.
+    public static final String SUREFIRE_TEST_PROPERTY = "test";
+    public static final String SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY =
+        "surefire.failIfNoSpecifiedTests";
     // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
     // says why. maven.version is the system property Maven sets to its own version.
     public static final String MIN_MAVEN_VERSION = "3.6.3";

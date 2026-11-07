@@ -54,6 +54,12 @@ public final class LatheLifecycleParticipant extends AbstractMavenLifecycleParti
 
     final var injector = new LatheModelInjector(ExtensionProps.version());
     session.getProjects().forEach(injector::injectProject);
+    // A -Dtest the user passed is theirs to keep.
+    if (LatheFlags.isCaptureOnly()
+        && !session.getUserProperties().containsKey(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY)) {
+      session.getProjects().forEach(injector::injectCaptureClass);
+    }
+
     injector.injectRootExecutions(session.getTopLevelProject());
     startReactorLock(latheDir);
   }

@@ -41,8 +41,12 @@ JVM as real arguments, so they are captured too.
 
 To refresh the launch templates without paying for a test run, set `lathe.capture.only`: each module still
 starts its test JVM and writes its `test-launch.json`, but no test runs.
-On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the tests are discovered as usual
-(a `@Suite` included) and reported as skipped.
+The launch is the same whichever tests run, so Lathe gives the run a single test class, the first in name order,
+and each module starts one test JVM that discovers that class only, instead of a JVM per fork discovering every class.
+On Maven the class comes from the test sources, and a `-Dtest` you pass is kept;
+a module whose test sources are not Java (or are all generated) runs every class, as before.
+On JUnit 5.10 or newer, Lathe turns on JUnit's dry-run mode: the class's tests are discovered as usual
+(a `@Suite`'s included) and reported as skipped.
 On older JUnit, a post-discovery filter excludes every test instead.
 
 ```bash
@@ -58,6 +62,8 @@ mvn test -Dlathe.capture.only=true                    # Maven
 - **Gradle:** a capture-only run always starts the test JVM, never serving the task from the build cache or as
   up to date, and does not fail for running no tests. `-Plathe.capture.only=true` works on a plain test run
   too (`./gradlew test -Plathe.capture.only=true`).
+  Lathe captures each project's `test` task only, so a capture-only run skips the project's other test tasks,
+  which would otherwise run their tests in full when `test` depends on them.
 
 ## Resources
 
