@@ -58,6 +58,8 @@ final class SyncCoordinator {
             externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
     final List<ResolvedJar> externalJars =
         externalArtifacts.values().stream().map(ReactorProjects::resolvedJar).toList();
+    final WorkspaceSync.Caches caches =
+        WorkspaceSync.prepareCaches(dependencySources, externalJars, JdkSourceResolver.resolve());
     final var serverInstaller =
         new ServerInstaller(
             new MavenArtifactResolver(
@@ -84,9 +86,7 @@ final class SyncCoordinator {
       WorkspaceSync.write(
           new WorkspaceSync.Inputs(
               workspaceRoot,
-              dependencySources,
-              externalJars,
-              JdkSourceResolver.resolve(),
+              caches,
               PluginProps.version(),
               runnerClasspath,
               buildFiles,

@@ -296,8 +296,9 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cachedOrCompiled(uri, content, expectedVersion, true, () -> {});
   }
 
-  // The cached analysis when it has this content (and, when versionExact, this version) and a
-  // tree; otherwise a fresh compile, cached.
+  // The cached analysis when it has this content and, when versionExact, this version, else a tree;
+  // otherwise a fresh compile, cached. A version-exact read keeps a treeless analysis: recompiling
+  // the same text would give none either.
   private AttributedFileAnalysis cachedOrCompiled(
       final String uri,
       final String content,
@@ -308,8 +309,7 @@ public final class SourceAnalysisSession implements AutoCloseable {
     final boolean usable =
         current != null
             && current.content().equals(content)
-            && (!versionExact || current.version() == version)
-            && current.analysis().tree() != null;
+            && (versionExact ? current.version() == version : current.analysis().tree() != null);
     if (!usable) {
       compile(uri, content, version, CompileMode.OPEN, cancelChecker);
     }

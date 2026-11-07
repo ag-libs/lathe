@@ -15,11 +15,8 @@ import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncScript;
 import io.github.aglibs.lathe.install.WorkspaceSync;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
-import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
 import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
-import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
-import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -129,9 +126,10 @@ public abstract class LatheWorkspaceTask extends DefaultTask {
     WorkspaceSync.write(
         new WorkspaceSync.Inputs(
             root,
-            libraries.stream().map(LatheWorkspaceTask::source).toList(),
-            libraries.stream().map(library -> jar(library.getKey())).toList(),
-            jdk,
+            WorkspaceSync.prepareCaches(
+                libraries.stream().map(LatheWorkspaceTask::source).toList(),
+                libraries.stream().map(library -> jar(library.getKey())).toList(),
+                jdk),
             PluginProps.version(),
             runnerClasspath(
                 facts,

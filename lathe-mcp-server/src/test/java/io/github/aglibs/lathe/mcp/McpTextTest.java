@@ -28,7 +28,6 @@ import io.github.aglibs.lathe.server.engine.LatheTestRun;
 import io.github.aglibs.lathe.server.engine.LatheVerifyChange;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.IntStream;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
@@ -517,14 +516,14 @@ class McpTextTest {
     assertThat(
             text(
                 McpText.formatResult(
-                    file, Optional.of(new LatheFormat("app/Shop.java", 5, 7)), McpText.NO_NOTES)))
+                    file, new LatheFormat("app/Shop.java", 5, 7), McpText.NO_NOTES)))
         .isEqualTo("Formatted app/Shop.java: lines 6–8 changed.");
     assertThat(
             text(
                 McpText.formatResult(
-                    file, Optional.of(new LatheFormat("app/Shop.java", 0, 0)), McpText.NO_NOTES)))
+                    file, new LatheFormat("app/Shop.java", 0, 0), McpText.NO_NOTES)))
         .isEqualTo("Formatted app/Shop.java: line 1 changed.");
-    assertThat(text(McpText.formatResult(file, Optional.empty(), McpText.NO_NOTES)))
+    assertThat(text(McpText.formatResult(file, null, McpText.NO_NOTES)))
         .isEqualTo("Shop.java was already formatted.");
   }
 

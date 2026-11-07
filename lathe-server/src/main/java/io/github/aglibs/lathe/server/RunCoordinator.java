@@ -213,12 +213,22 @@ final class RunCoordinator {
       final String token,
       final RunItem overlay,
       final IOUtil.IOSupplier<Replay> prepare) {
+    requireFreeToken(token);
     final var t = Stopwatch.start();
     return spawn(moduleRel, label, token, overlay, streamConsumer(token), prepare)
         .thenCompose(this::outcome)
         .whenComplete(
             (outcome, error) ->
                 endRun(moduleRel, label, overlay.configLabel(), token, t, outcome, error));
+  }
+
+  // Before the launch's end is chained: that end drops the token's slot, which here is another
+  // launch's, and with it the way to cancel that one.
+  private void requireFreeToken(final String token) {
+    if (activeRuns.containsKey(token)) {
+      throw new IllegalArgumentException(
+          "a launch under token %s is still running".formatted(token));
+    }
   }
 
   private CompletableFuture<LaunchOutcome> outcome(final Spawned spawned) {
@@ -265,6 +275,7 @@ final class RunCoordinator {
       final RunItem overlay,
       final JdwpOptions jdwp,
       final IOUtil.IOSupplier<Replay> prepare) {
+    requireFreeToken(token);
     final var jdwpReady = new CompletableFuture<Void>();
     return spawn(
             moduleRel,

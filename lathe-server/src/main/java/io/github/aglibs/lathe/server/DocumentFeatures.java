@@ -285,22 +285,19 @@ final class DocumentFeatures {
         "completion",
         uri,
         CompletionOutcome.of(List.of()),
-        (worker, doc) -> {
-          // On the loop, and only for an open, routed document: a module-info's names scan the
-          // module path.
-          final List<String> moduleNames = completionModuleNames(route, uri);
-          return worker.submit(
-              session ->
-                  session.complete(
-                      uri,
-                      doc.content(),
-                      doc.version(),
-                      pos,
-                      context,
-                      indexSnapshot,
-                      moduleNames,
-                      staticImports));
-        });
+        (worker, doc) ->
+            // A module-info's names scan the module path, so on the worker: the route is a value.
+            worker.submit(
+                session ->
+                    session.complete(
+                        uri,
+                        doc.content(),
+                        doc.version(),
+                        pos,
+                        context,
+                        indexSnapshot,
+                        completionModuleNames(route, uri),
+                        staticImports)));
   }
 
   CompletableFuture<List<Either<Command, CodeAction>>> codeActionFuture(

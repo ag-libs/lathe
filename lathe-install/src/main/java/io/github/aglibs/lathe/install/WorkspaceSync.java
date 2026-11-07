@@ -12,18 +12,25 @@ import java.nio.file.Path;
 import java.util.List;
 
 // The steps every build front-end's sync shares, in one order: the dependencies' sources and type
-// indexes, the JDK's sources and type index, the workspace manifest, and the sync script. A
+// indexes, the JDK's sources and type index, then the workspace manifest and the sync script. A
 // front-end gathers the inputs from its build and adds what is its own around this.
 public final class WorkspaceSync {
 
   private WorkspaceSync() {}
 
-  // What a front-end gathers from its build for the shared steps.
+  // The cached sources and type indexes the manifest names, each source enriched with them.
+  public record Caches(List<DependencySource> dependencySources, JdkSource jdk) {
+
+    public Caches {
+      ValidCheck.check().notNull(jdk, "jdk").validate();
+      dependencySources = List.copyOf(dependencySources);
+    }
+  }
+
+  // What a front-end gathers from its build for the manifest.
   public record Inputs(
       Path workspaceRoot,
-      List<DependencySource> dependencySources,
-      List<ResolvedJar> externalJars,
-      JdkSource jdk,
+      Caches caches,
       String serverVersion,
       List<String> runnerClasspath,
       List<String> buildFiles,
@@ -34,12 +41,10 @@ public final class WorkspaceSync {
     public Inputs {
       ValidCheck.check()
           .notNull(workspaceRoot, "workspaceRoot")
-          .notNull(jdk, "jdk")
+          .notNull(caches, "caches")
           .notNull(serverVersion, "serverVersion")
           .notNull(syncScript, "syncScript")
           .validate();
-      dependencySources = List.copyOf(dependencySources);
-      externalJars = List.copyOf(externalJars);
       runnerClasspath = List.copyOf(runnerClasspath);
       buildFiles = List.copyOf(buildFiles);
       resourceRoots = List.copyOf(resourceRoots);
@@ -47,15 +52,22 @@ public final class WorkspaceSync {
     }
   }
 
+  // Runs on every sync, also one that writes no manifest (Maven's -pl), so the caches are filled.
+  public static Caches prepareCaches(
+      final List<DependencySource> dependencySources,
+      final List<ResolvedJar> externalJars,
+      final JdkSource jdk) {
+    final List<DependencySource> prepared =
+        DependencySourceSync.prepare(dependencySources, externalJars);
+    JdkSourceSync.extract(jdk);
+    return new Caches(prepared, JdkTypeIndexSync.index(jdk));
+  }
+
   public static void write(final Inputs inputs) {
-    final List<DependencySource> dependencySources =
-        DependencySourceSync.prepare(inputs.dependencySources(), inputs.externalJars());
-    JdkSourceSync.extract(inputs.jdk());
-    final JdkSource indexedJdk = JdkTypeIndexSync.index(inputs.jdk());
     WorkspaceManifestWriter.write(
         inputs.workspaceRoot(),
-        dependencySources,
-        indexedJdk,
+        inputs.caches().dependencySources(),
+        inputs.caches().jdk(),
         inputs.serverVersion(),
         inputs.runnerClasspath(),
         inputs.buildFiles(),

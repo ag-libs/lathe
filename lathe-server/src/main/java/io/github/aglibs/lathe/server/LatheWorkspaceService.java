@@ -11,6 +11,7 @@ import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.server.run.RunKind;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.eclipse.lsp4j.DidChangeConfigurationParams;
@@ -57,6 +58,9 @@ final class LatheWorkspaceService implements WorkspaceService {
 
   private static final Gson GSON = new Gson();
 
+  private static final Set<String> VALIDATING_COMMANDS =
+      Set.of(RUN_NAMED_COMMAND, DEBUG_NAMED_COMMAND, SAVE_RUN_CONFIG_COMMAND, CREATE_TYPE_COMMAND);
+
   private final SessionHost host;
 
   LatheWorkspaceService(final SessionHost host) {
@@ -80,9 +84,9 @@ final class LatheWorkspaceService implements WorkspaceService {
   @Override
   public void didChangeWatchedFiles(final DidChangeWatchedFilesParams params) {}
 
-  // Every command answers the same way: arguments it cannot read, and a value its work rejects
-  // (an IllegalArgumentException), are InvalidParams with the reason, not lsp4j's generic
-  // "Internal error".
+  // Arguments a command cannot read are InvalidParams with the reason, not lsp4j's generic
+  // "Internal error"; so is a value the work of a command that validates its input rejects (an
+  // IllegalArgumentException). Elsewhere such an exception is a server bug, and answers as one.
   @Override
   public CompletableFuture<Object> executeCommand(final ExecuteCommandParams params) {
     final CompletableFuture<?> answer;
@@ -92,9 +96,12 @@ final class LatheWorkspaceService implements WorkspaceService {
       return CompletableFuture.failedFuture(invalidParams(params.getCommand(), e));
     }
 
-    return answer
-        .<Object>thenApply(result -> result)
-        .exceptionally(LatheWorkspaceService::rethrowInvalidParams);
+    final CompletableFuture<Object> result = answer.thenApply(value -> value);
+    if (!VALIDATING_COMMANDS.contains(params.getCommand())) {
+      return result;
+    }
+
+    return result.exceptionally(LatheWorkspaceService::rethrowInvalidParams);
   }
 
   private CompletableFuture<?> dispatch(final ExecuteCommandParams params) {

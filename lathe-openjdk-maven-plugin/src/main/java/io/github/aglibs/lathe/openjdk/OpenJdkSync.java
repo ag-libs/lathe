@@ -88,15 +88,20 @@ public final class OpenJdkSync {
 
   // Runs the whole sync, the server install included, under .lathe/'s build lock, heartbeated so
   // a long sync never looks crashed: an editor's server never reconciles a half-written .lathe/.
-  // The first sync creates .lathe/ to hold it.
+  // The first sync creates .lathe/ to hold it, and a lock it cannot take fails the sync.
   public static void underBuildLock(final Path workspaceRoot, final IOUtil.IORunnable sync)
       throws IOException {
     final Path latheDir = Files.createDirectories(latheDir(workspaceRoot));
-    final Optional<BuildLock> lock = BuildLock.hold(latheDir);
+    final BuildLock lock =
+        BuildLock.hold(latheDir)
+            .orElseThrow(
+                () ->
+                    new IOException(
+                        "cannot take %s".formatted(LatheLayout.reactorLockFile(latheDir))));
     try {
       sync.run();
     } finally {
-      lock.ifPresent(BuildLock::close);
+      lock.close();
     }
   }
 

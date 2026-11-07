@@ -126,11 +126,14 @@ final class McpText {
         .formatted(rename.mentionCount(), more, locationLines(rename.mentions()));
   }
 
+  // A null format: the file was already formatted.
   static CallToolResult formatResult(
-      final Path file, final Optional<LatheFormat> format, final LatheNotes notes) {
-    return format
-        .map(f -> result("Formatted %s: %s changed.".formatted(f.path(), lineSpan(f)), notes))
-        .orElseGet(() -> result("%s was already formatted.".formatted(file.getFileName()), notes));
+      final Path file, final LatheFormat format, final LatheNotes notes) {
+    if (format == null) {
+      return result("%s was already formatted.".formatted(file.getFileName()), notes);
+    }
+
+    return result("Formatted %s: %s changed.".formatted(format.path(), lineSpan(format)), notes);
   }
 
   // The path once in the header: each line carries only its line number and declaration.

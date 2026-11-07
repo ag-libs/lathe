@@ -537,7 +537,9 @@ final class LatheMcpTools {
     return atFile(
         tool,
         request,
-        file -> McpText.formatResult(file, engine.format(file), engine.notes(List.of(file))));
+        file ->
+            McpText.formatResult(
+                file, engine.format(file).orElse(null), engine.notes(List.of(file))));
   }
 
   private static CallToolResult handleFixImports(
