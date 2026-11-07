@@ -101,12 +101,6 @@ On every build:
   `useTestNG()`, are not captured.
 - A module whose tests are skipped or absent produces no `test-launch.json`, so its tests are not
   runnable from the editor until a build actually runs them.
-- **A run loads the tested classes from the build's output while it is current.** A test that finds its own
-  sources from where its class file lies (Hibernate ORM's processor tests) needs the build's folder layout, so while
-  no source of the run's tree has changed since the build, a run loads that tree's classes from the build's output.
-  Once you save a change there, a run loads Lathe's own copy under `.lathe/`, which has your change, and such a
-  test fails until the next build. On Maven the build's test output holds the resources too, so a resource edited
-  since the build is not seen while the sources are unchanged.
 
 On Maven:
 
@@ -131,6 +125,8 @@ On Gradle:
 - **A source set's tests run class by class, once its test task has run.** The test task of each source set captures
   that source set's launch when it runs (`./gradlew integrationTest -Plathe.capture.only=true` runs none of its tests),
   so a test class or method there runs from the editor; a package, folder or module run takes `test`'s tests only.
+  A test that finds its own sources from where its class file lies (Hibernate ORM's processor tests) fails when run
+  from the editor, as Lathe loads classes from its own copy under `.lathe/`.
 - **A package or module run from the editor runs every test class it discovers.** On Maven such a run follows
   Surefire's include and exclude patterns; the `test` task's `include`, `exclude` and `filter` settings are not
   recorded, so a class the build leaves out runs too. A run of a class or method runs exactly that.

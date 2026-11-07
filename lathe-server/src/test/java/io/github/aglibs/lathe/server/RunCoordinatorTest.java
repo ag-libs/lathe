@@ -7,19 +7,13 @@ import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
-import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
-import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
-import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
-import io.github.aglibs.lathe.core.schema.ModuleConfigData;
-import io.github.aglibs.lathe.core.schema.OutputData;
-import io.github.aglibs.lathe.core.schema.SourceStamp;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.server.debug.DebugStartResult;
 import io.github.aglibs.lathe.server.run.DiscoveredTest;
@@ -47,71 +41,6 @@ class RunCoordinatorTest extends ServiceTestBase {
   // that the agent misread as a failed handshake. Covered here at the consumer, so no suspended JVM
   // or socket is needed; a probe-based test would exercise only the removed
   // PortUtil.awaitAccepting.
-  // A test that finds its sources from where its class file lies needs the build's layout: the
-  // run's tree loads from the build's output while that is what the sources compile to, from
-  // .lathe/'s copy once the server compiles a change, or when the output is gone.
-  @Test
-  void replayRewrite_buildOutputCurrentOrNot_keptOnlyWhileCurrent(@TempDir final Path root)
-      throws Exception {
-    final Path output = Files.createDirectories(root.resolve("app/target/test-classes"));
-    final Path moduleDir = Files.createDirectories(root.resolve(".lathe/app"));
-    final Path mirror = moduleDir.resolve(LatheLayout.TEST_CLASSES_DIR);
-    Json.write(
-        new ModuleConfigData(
-            LatheLayout.TEST_CLASSES_DIR,
-            output.toString(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            null,
-            null,
-            false,
-            false,
-            null,
-            null,
-            null,
-            false,
-            true),
-        moduleDir.resolve(LatheLayout.paramsFileName(LatheLayout.TEST_CLASSES_DIR)));
-    final Path source = Path.of("com", "example", "FooTest.java");
-    final var built = new ContentFingerprint(1, 1);
-    CompiledStamps.writeAll(
-        moduleDir,
-        LatheLayout.TEST_CLASSES_DIR,
-        Map.of(source, new SourceStamp(10L, built)),
-        Map.of(source, built));
-    final ReactorRewrite rewrite =
-        ReactorRewrite.of(
-            root,
-            List.of(
-                new OutputData("app/target/test-classes", "app", LatheLayout.TEST_CLASSES_DIR)));
-
-    assertThat(
-            RunCoordinator.replayRewrite(root, rewrite, "app", LatheLayout.TEST_CLASSES_DIR)
-                .toLathe(output))
-        .isEqualTo(output);
-
-    CompiledStamps.record(
-        moduleDir,
-        LatheLayout.TEST_CLASSES_DIR,
-        Map.of(source, new SourceStamp(20L, new ContentFingerprint(2, 2))));
-    assertThat(
-            RunCoordinator.replayRewrite(root, rewrite, "app", LatheLayout.TEST_CLASSES_DIR)
-                .toLathe(output))
-        .isEqualTo(mirror);
-
-    CompiledStamps.record(
-        moduleDir, LatheLayout.TEST_CLASSES_DIR, Map.of(source, new SourceStamp(30L, built)));
-    Files.delete(output);
-    assertThat(
-            RunCoordinator.replayRewrite(root, rewrite, "app", LatheLayout.TEST_CLASSES_DIR)
-                .toLathe(output))
-        .as("the build's output is gone")
-        .isEqualTo(mirror);
-  }
-
   @Test
   void jdwpReadyConsumer_listeningBanner_completesReadyAndForwards() {
     final var ready = new CompletableFuture<Void>();

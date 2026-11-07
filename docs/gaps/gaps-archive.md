@@ -11090,44 +11090,6 @@ module + stale/dirty, and javac resolves the hierarchy inside the batch.
 
 # Test Execution (TE) — resolved
 
-## TE-17 — A test that locates its sources from its own class file fails when replayed — done
-
-**Status: done.**
-
-**Value: low — Size: M**
-
-**Affects: run and debug of such tests from the editor and MCP, on Maven and Gradle.**
-
-Found while checking the replay of Gradle source sets' tests on Hibernate ORM (2026-11-08).
-
-### Observed behaviour
-
-Hibernate ORM's annotation-processor tests (`TestUtil.getSourceBaseDir`, through `@CompilationTest`) find the sources they compile by walking up from the test's own class file: the folder they climb to must be named after the source set, as in the build's `build/classes/java/<sourceSet>`.
-A replay loads the classes from Lathe's mirror, `.lathe/<module>/<tree>/`, so the test derives `src/test-classes/java` (or `src/classes-jakartaData/java`), finds no source there, and fails before its first assertion; it also creates that empty folder under the workspace.
-This holds for the `test` tree and a source set's tree alike, so it predates source-set launches.
-
-### Fix direction
-
-Replay from the build's own output where it is current (the stamps say when), or keep the build's folder names under the mirror; either changes what the mirror stands for, so it needs a design of its own.
-Until then, such tests run with the build.
-
-### Resolution
-
-While the build's output of the run's own tree is what its sources compile to, the replay loads that tree from it, and only that tree; every other entry still maps to its copy under `.lathe/`.
-The compile stamps tell (`CompiledStamps.builtCurrent`): every source as the build compiled it, none compiled by the server since, added or deleted, and the output folder still there.
-Once a source changes, the run loads the copy, which has the change, and such a test fails as before until the next build.
-On Maven the build's test output holds the resources too, so a resource edited since the build is not seen by such a run while the sources are unchanged.
-
-On Hibernate ORM, `Jpa4MetamodelTest` (`test`) and `NamedQueryTest` (`jakartaData`) pass from the editor after a sync; after an edit saved in the editor, `NamedQueryTest` loads the copy and fails as before.
-
-### Regression targets
-
-`RunCoordinatorTest.replayRewrite_buildOutputCurrentOrNot_keptOnlyWhileCurrent`,
-`CompiledStampsTest.builtCurrent_buildThenEdits_currentOnlyUntilASourceChanges`,
-`ReactorRewriteTest.keeping_oneOutput_leavesItAndRewritesTheRest`.
-
----
-
 ## TE-12 — On Gradle, only each project's `test` task is captured — done
 
 **Status: done.**
@@ -11156,7 +11118,7 @@ run capture-only (`-Plathe.capture.only=true`) it runs as `test` does, on one cl
 A class or method run, and a `main` in such a tree, replay from that tree's launch; package, directory and module runs stay with the `test` tree.
 
 On Hibernate ORM a capture-only sync captures `jakartaData`, `integrationTest`, `dataIntegrationTest` and `legacyTest`, and a test of `integrationTest` run through the server passes.
-Hibernate ORM's processor tests failed when replayed, `test`'s too, for a reason of their own, fixed since: [TE-17](#te-17--a-test-that-locates-its-sources-from-its-own-class-file-fails-when-replayed--done).
+Many of Hibernate ORM's processor tests still fail when replayed, `test`'s too, for a reason of their own: [TE-17](gaps.md#te-17--a-test-that-locates-its-sources-from-its-own-class-file-fails-when-replayed).
 
 ### Regression targets
 

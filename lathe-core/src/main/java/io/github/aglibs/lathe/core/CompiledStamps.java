@@ -29,19 +29,6 @@ public final class CompiledStamps {
     return byPath(read(moduleDir, sourceTree).built());
   }
 
-  // Whether the build's output of the tree is still what replay would load: every source as the
-  // build compiled it, none compiled since (the server's save), added or deleted. A front-end that
-  // does not record what it compiled never says so.
-  public static boolean builtCurrent(final Path moduleDir, final String sourceTree) {
-    final CompiledStampsData data = read(moduleDir, sourceTree);
-    final Map<Path, ContentFingerprint> built = byPath(data.built());
-    final Map<Path, SourceStamp> stamps = byPath(data.stamps());
-    return !built.isEmpty()
-        && stamps.keySet().equals(built.keySet())
-        && stamps.entrySet().stream()
-            .allMatch(entry -> built.get(entry.getKey()).equals(entry.getValue().content()));
-  }
-
   // A build's stamps: every source as compiled, and the content it compiled (empty from a front-end
   // that does not record it).
   public static void writeAll(

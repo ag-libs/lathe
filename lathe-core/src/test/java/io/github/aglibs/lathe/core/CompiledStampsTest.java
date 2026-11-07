@@ -58,33 +58,6 @@ final class CompiledStampsTest {
         .containsExactly(Map.entry(FOO, BUILT));
   }
 
-  // Current while every source is as the build compiled it; not once the server compiles a change,
-  // or a source is added or deleted since; never without a record of what the build compiled.
-  @Test
-  void builtCurrent_buildThenEdits_currentOnlyUntilASourceChanges() throws IOException {
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes")).isFalse();
-    final Map<Path, SourceStamp> built =
-        Map.of(FOO, new SourceStamp(100L, BUILT), BAR, new SourceStamp(100L, EDITED));
-    CompiledStamps.writeAll(moduleDir, "test-classes", built, Map.of(FOO, BUILT, BAR, EDITED));
-
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes")).isTrue();
-    CompiledStamps.record(moduleDir, "test-classes", Map.of(FOO, new SourceStamp(150L, BUILT)));
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes"))
-        .as("a save that changed nothing")
-        .isTrue();
-
-    CompiledStamps.record(moduleDir, "test-classes", Map.of(FOO, new SourceStamp(160L, EDITED)));
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes")).isFalse();
-
-    CompiledStamps.writeAll(moduleDir, "test-classes", built, Map.of(FOO, BUILT, BAR, EDITED));
-    CompiledStamps.record(moduleDir, "test-classes", Map.of(GONE, new SourceStamp(170L, BUILT)));
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes")).as("added").isFalse();
-
-    CompiledStamps.writeAll(moduleDir, "test-classes", built, Map.of(FOO, BUILT, BAR, EDITED));
-    CompiledStamps.prune(moduleDir, "test-classes", Set.of(BAR));
-    assertThat(CompiledStamps.builtCurrent(moduleDir, "test-classes")).as("deleted").isFalse();
-  }
-
   @Test
   void prune_dropsNamedStampsKeepsWhatTheBuildCompiledAndIgnoresUnknownKeys() throws IOException {
     CompiledStamps.writeAll(

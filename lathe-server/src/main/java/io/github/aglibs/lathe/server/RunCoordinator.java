@@ -1,9 +1,7 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.ExceptionUtil;
 import io.github.aglibs.lathe.core.IOUtil;
-import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -12,7 +10,6 @@ import io.github.aglibs.lathe.core.launch.ReactorRewrite;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
-import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.TestLaunchData;
 import io.github.aglibs.lathe.server.debug.DapHost;
@@ -479,7 +476,7 @@ final class RunCoordinator {
         RunOverlay.applyToTest(
             captured.template(),
             inputs.root(),
-            captured.rewrite(),
+            inputs.reactorRewrite(),
             inputs.runnerClasspath(),
             withTestFilter(inputs.root(), moduleRel, selections),
             resultsSink,
@@ -520,7 +517,7 @@ final class RunCoordinator {
 
       return Replay.ready(
           RunOverlay.applyToTestMain(
-              captured.template(), root, captured.rewrite(), mainClass, overlay, jdwp),
+              captured.template(), root, reactorRewrite, mainClass, overlay, jdwp),
           null,
           captured.gate().notes());
     }
@@ -686,45 +683,17 @@ final class RunCoordinator {
       return new CheckedTestLaunch(
           null,
           CompletenessResult.blocked(
-              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections, tree))),
-          reactorRewrite);
+              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections, tree))));
     }
 
-    final ReactorRewrite rewrite = replayRewrite(workspaceRoot, reactorRewrite, moduleRel, tree);
     return new CheckedTestLaunch(
-        template.get(), CompletenessGate.verify(template.get(), workspaceRoot, rewrite), rewrite);
+        template.get(), CompletenessGate.verify(template.get(), workspaceRoot, reactorRewrite));
   }
 
-  // The tree's own classes load from the build's output, not .lathe/'s copy, while that output is
-  // what the sources compile to (no save compiled since, nothing added or deleted): a test that
-  // finds its sources from where its class file lies needs the build's layout around it. Once a
-  // source changes, the copy, which has the change.
-  static ReactorRewrite replayRewrite(
-      final Path workspaceRoot,
-      final ReactorRewrite reactorRewrite,
-      final String moduleRel,
-      final String tree)
-      throws IOException {
-    final Path moduleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
-    final Path params = moduleDir.resolve(LatheLayout.paramsFileName(tree));
-    if (!Files.exists(params) || !CompiledStamps.builtCurrent(moduleDir, tree)) {
-      LOG.fine(
-          () ->
-              "[launch] %s %s replays from .lathe: changed since the build"
-                  .formatted(moduleRel, tree));
-      return reactorRewrite;
-    }
-
-    final Path output = Path.of(Json.read(params, ModuleConfigData.class).outputDir());
-    return Files.isDirectory(output) ? reactorRewrite.keeping(output) : reactorRewrite;
-  }
-
-  // template is null when the gate is incomplete because nothing was captured; rewrite is the one
-  // the gate checked, which the launch uses too.
-  private record CheckedTestLaunch(
-      TestLaunchData template, CompletenessResult gate, ReactorRewrite rewrite) {
+  // template is null when the gate is incomplete because nothing was captured.
+  private record CheckedTestLaunch(TestLaunchData template, CompletenessResult gate) {
     CheckedTestLaunch {
-      ValidCheck.check().notNull(gate, "gate").notNull(rewrite, "rewrite").validate();
+      ValidCheck.check().notNull(gate, "gate").validate();
     }
   }
 

@@ -8,9 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * Turns a reactor module's build output (a directory or packaged jar the front-end listed in {@code
@@ -18,14 +16,12 @@ import java.util.stream.Stream;
  */
 public final class ReactorRewrite {
 
-  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of(), Set.of());
+  private static final ReactorRewrite NONE = new ReactorRewrite(Map.of());
 
   private final Map<Path, Path> mirrors;
-  private final Set<Path> kept;
 
-  private ReactorRewrite(final Map<Path, Path> mirrors, final Set<Path> kept) {
+  private ReactorRewrite(final Map<Path, Path> mirrors) {
     this.mirrors = mirrors;
-    this.kept = kept;
   }
 
   public static ReactorRewrite of(final Path workspaceRoot, final List<OutputData> outputs) {
@@ -37,8 +33,7 @@ public final class ReactorRewrite {
                 Collectors.toUnmodifiableMap(
                     output -> root.resolve(output.path()).normalize(),
                     output -> latheDir.resolve(output.module()).resolve(output.tree()).normalize(),
-                    (first, ignored) -> first)),
-        Set.of());
+                    (first, ignored) -> first)));
   }
 
   public static ReactorRewrite none() {
@@ -48,22 +43,6 @@ public final class ReactorRewrite {
   // Each reactor build output with the mirror it stands for.
   public Map<Path, Path> mirrors() {
     return mirrors;
-  }
-
-  // The same, but for one build output, which stays as the build wrote it: a test that finds its
-  // sources from where its class file lies needs the build's layout around it.
-  public ReactorRewrite keeping(final Path buildOutput) {
-    final Path kept = buildOutput.normalize();
-    return new ReactorRewrite(
-        mirrors.entrySet().stream()
-            .filter(entry -> !entry.getKey().equals(kept))
-            .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue)),
-        Stream.concat(this.kept.stream(), Stream.of(kept)).collect(Collectors.toUnmodifiableSet()));
-  }
-
-  // The build outputs left as the build wrote them (keeping), as a run means to load them.
-  public Set<Path> kept() {
-    return kept;
   }
 
   public Path toLathe(final Path path) {
