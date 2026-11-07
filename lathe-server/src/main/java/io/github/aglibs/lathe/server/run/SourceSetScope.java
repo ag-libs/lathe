@@ -8,15 +8,15 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.stream.Stream;
 
-// A class compiled into a tree of its own (classes-<name>: a Gradle source set, or a Maven compile
-// writing to such a directory), and not into the module's main or test tree, has no captured launch
-// yet: running it is refused, with the reason, rather than sent to the module's test or main
-// launch, where the class is missing or the classpath is another tree's.
+// The tree of its own a class is compiled into (classes-<name>: a Gradle source set, or a Maven
+// compile writing to such a directory), when the module's main and test trees lack it: its tests
+// and
+// main methods replay from that tree's launch, not the module's.
 public final class SourceSetScope {
 
   private SourceSetScope() {}
 
-  public static Optional<String> uncapturedReason(
+  public static Optional<String> treeOf(
       final Path workspaceRoot, final String moduleRel, final String className) {
     final Path moduleDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR).resolve(moduleRel);
     final String classFile = "%s.class".formatted(className.replace('.', '/'));
@@ -29,10 +29,6 @@ public final class SourceSetScope {
         .map(LatheLayout::paramsSourceTree)
         .filter(tree -> tree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX))
         .filter(tree -> Files.exists(moduleDir.resolve(tree).resolve(classFile)))
-        .findFirst()
-        .map(
-            tree ->
-                "%s is only in the %s classes, whose launch Lathe does not capture yet: run it with the build"
-                    .formatted(className, LatheLayout.sourceSetName(tree)));
+        .findFirst();
   }
 }

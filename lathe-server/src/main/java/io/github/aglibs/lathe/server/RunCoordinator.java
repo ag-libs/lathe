@@ -484,14 +484,19 @@ final class RunCoordinator {
       throws IOException {
     final Path root = inputs.root();
     final ReactorRewrite reactorRewrite = inputs.reactorRewrite();
-    final Optional<String> uncaptured = SourceSetScope.uncapturedReason(root, moduleRel, mainClass);
-    if (uncaptured.isPresent()) {
-      return Replay.blocked(List.of(uncaptured.get()));
-    }
-
-    if (MainClassScope.isTestScope(root, moduleRel, mainClass)) {
+    // A main in test sources, or in a source set's own tree, runs on that tree's test launch; the
+    // class picks a source set's (the test filter, which the class would meet otherwise, is about
+    // tests).
+    final boolean inSourceSet = SourceSetScope.treeOf(root, moduleRel, mainClass).isPresent();
+    if (inSourceSet || MainClassScope.isTestScope(root, moduleRel, mainClass)) {
       final CheckedTestLaunch captured =
-          checkedTestLaunch(root, reactorRewrite, moduleRel, List.of());
+          checkedTestLaunch(
+              root,
+              reactorRewrite,
+              moduleRel,
+              inSourceSet
+                  ? List.of(new TestSelection(TestSelectionKind.CLASS, mainClass))
+                  : List.of());
       if (!captured.gate().complete()) {
         return Replay.blocked(captured.gate().reasons());
       }
@@ -632,7 +637,8 @@ final class RunCoordinator {
       final String moduleRel,
       final List<TestSelection> selections)
       throws IOException {
-    final List<String> uncaptured =
+    // The tree the selected classes are in: a source set's own tree replays from its own launch.
+    final List<String> sourceSetTrees =
         selections.stream()
             .filter(
                 selection ->
@@ -640,20 +646,30 @@ final class RunCoordinator {
                         || selection.kind() == TestSelectionKind.METHOD)
             .map(selection -> selection.value().split("#", 2)[0])
             .flatMap(
-                className ->
-                    SourceSetScope.uncapturedReason(workspaceRoot, moduleRel, className).stream())
+                className -> SourceSetScope.treeOf(workspaceRoot, moduleRel, className).stream())
             .distinct()
             .toList();
-    if (!uncaptured.isEmpty()) {
-      return new CheckedTestLaunch(null, CompletenessResult.blocked(uncaptured));
+    if (sourceSetTrees.size() > 1) {
+      return new CheckedTestLaunch(
+          null,
+          CompletenessResult.blocked(
+              List.of(
+                  "the selected tests are in more than one source set of %s (%s): run each on its own"
+                      .formatted(
+                          moduleRel,
+                          sourceSetTrees.stream()
+                              .map(LatheLayout::sourceSetName)
+                              .collect(Collectors.joining(", "))))));
     }
 
-    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel);
+    final String tree =
+        sourceSetTrees.isEmpty() ? LatheLayout.TEST_CLASSES_DIR : sourceSetTrees.get(0);
+    final Optional<TestLaunchData> template = new LaunchReader(workspaceRoot).test(moduleRel, tree);
     if (template.isEmpty()) {
       return new CheckedTestLaunch(
           null,
           CompletenessResult.blocked(
-              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections))));
+              List.of(noCapturedLaunch(workspaceRoot, moduleRel, selections, tree))));
     }
 
     return new CheckedTestLaunch(
@@ -880,7 +896,18 @@ final class RunCoordinator {
   // the build's test filter leaves out (an integration test, say) is never captured, so naming a
   // sync for it would send the reader round in circles.
   private static String noCapturedLaunch(
-      final Path workspaceRoot, final String moduleRel, final List<TestSelection> selections) {
+      final Path workspaceRoot,
+      final String moduleRel,
+      final List<TestSelection> selections,
+      final String tree) {
+    if (!LatheLayout.TEST_CLASSES_DIR.equals(tree)) {
+      return "no captured launch of the %s tests of %s; run `%s` to capture it"
+          .formatted(
+              LatheLayout.sourceSetName(tree),
+              moduleRel,
+              LatheLayout.captureTestsCommand(moduleRel));
+    }
+
     final boolean classesOnly =
         !selections.isEmpty()
             && selections.stream()

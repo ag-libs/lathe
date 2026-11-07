@@ -20,12 +20,14 @@ import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.launch.TestSelection;
 import io.github.aglibs.lathe.core.launch.TestSelectionKind;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.TestFilterData;
 import io.github.aglibs.lathe.core.schema.WorkspaceManifestData;
 import io.github.aglibs.lathe.server.format.ExternalCommandFormatEngine;
 import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -616,6 +618,54 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
         .contains(LatheLayout.captureTestsCommand("app"));
   }
 
+  // A class only a Gradle source set's tree holds replays from that tree's launch: before its test
+  // task has captured one, the run names the source set and the capture; classes of two source
+  // sets in one run are refused.
+  @Test
+  void runTestFuture_classesOfSourceSetTrees_blockedNamingTheSourceSet() throws Exception {
+    writeManifest();
+    sourceSetTree("integrationTest", "com.example.BookIT");
+    sourceSetTree("jakartaData", "com.example.DataTest");
+    host.initialize(tmp);
+
+    assertThat(blockedReasons("com.example.BookIT#finds()"))
+        .containsExactly(
+            "no captured launch of the integrationTest tests of app; run `%s` to capture it"
+                .formatted(LatheLayout.captureTestsCommand("app")));
+    assertThat(blockedReasons("com.example.BookIT", "com.example.DataTest"))
+        .singleElement()
+        .asString()
+        .contains("more than one source set of app", "integrationTest", "jakartaData");
+  }
+
+  // A source set's tree of module app as a sync leaves it: its params and one compiled class.
+  private void sourceSetTree(final String sourceSet, final String className) throws Exception {
+    final String tree = LatheLayout.sourceSetTree(sourceSet);
+    final Path moduleDir = tmp.resolve(LatheLayout.LATHE_DIR).resolve("app");
+    final Path classFile = moduleDir.resolve(tree).resolve(className.replace('.', '/') + ".class");
+    Files.createDirectories(classFile.getParent());
+    Files.writeString(classFile, "");
+    Json.write(
+        new ModuleConfigData(
+            tree,
+            tmp.resolve("app/build/classes/java").resolve(sourceSet).toString(),
+            null,
+            List.of(tmp.resolve("app/src").resolve(sourceSet).resolve("java").toString()),
+            List.of(),
+            List.of(),
+            List.of(),
+            null,
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            false,
+            true),
+        moduleDir.resolve(LatheLayout.paramsFileName(tree)));
+  }
+
   // The agent's notes share the problem text without the prefix; the editor's message keeps it.
   @Test
   void initialize_latheFromAnotherVersion_warnsWithThePrefixedRemedy() throws Exception {
@@ -652,15 +702,17 @@ class LatheTextDocumentServiceTest extends ServiceTestBase {
             .resolve(LatheLayout.WORKSPACE_JSON));
   }
 
-  private List<String> blockedReasons(final String selected) throws Exception {
-    final TestSelectionKind kind =
-        selected.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS;
+  private List<String> blockedReasons(final String... selected) throws Exception {
+    final List<TestSelection> selections =
+        Arrays.stream(selected)
+            .map(
+                value ->
+                    new TestSelection(
+                        value.contains("#") ? TestSelectionKind.METHOD : TestSelectionKind.CLASS,
+                        value))
+            .toList();
     final var outcome =
-        host.onLoopFuture(
-                session ->
-                    session
-                        .runs()
-                        .runTestFuture("app", List.of(new TestSelection(kind, selected)), ""))
+        host.onLoopFuture(session -> session.runs().runTestFuture("app", selections, ""))
             .get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(outcome.launched()).isFalse();
     return outcome.blockedReasons();

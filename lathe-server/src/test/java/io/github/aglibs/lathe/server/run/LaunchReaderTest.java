@@ -23,7 +23,7 @@ final class LaunchReaderTest {
   void read_missingLaunchFiles_returnsEmpty() throws IOException {
     final var reader = new LaunchReader(workspaceRoot);
 
-    assertThat(reader.test("app")).isEmpty();
+    assertThat(reader.test("app", LatheLayout.TEST_CLASSES_DIR)).isEmpty();
     assertThat(reader.main("app")).isEmpty();
   }
 
@@ -59,11 +59,16 @@ final class LaunchReaderTest {
             "");
     writeLaunch("app", LatheLayout.TEST_LAUNCH_FILE, testLaunch);
     writeLaunch("jpms", LatheLayout.MAIN_LAUNCH_FILE, mainLaunch);
+    final String integrationTree = LatheLayout.sourceSetTree("integrationTest");
+    writeLaunch("gradle", LatheLayout.testLaunchFile(integrationTree), testLaunch);
 
     final var reader = new LaunchReader(workspaceRoot);
 
-    assertThat(reader.test("app")).contains(testLaunch);
+    assertThat(reader.test("app", LatheLayout.TEST_CLASSES_DIR)).contains(testLaunch);
     assertThat(reader.main("jpms")).contains(mainLaunch);
+    // A Gradle source set's tests replay from its tree's own launch, not the module's.
+    assertThat(reader.test("gradle", integrationTree)).contains(testLaunch);
+    assertThat(reader.test("gradle", LatheLayout.TEST_CLASSES_DIR)).isEmpty();
   }
 
   private void writeLaunch(final String moduleRel, final String fileName, final Object data)
