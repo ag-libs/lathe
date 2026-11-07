@@ -301,20 +301,14 @@ final class RenameService {
         .thenApply(conflicts -> conflicts.stream().findFirst());
   }
 
-  // The edited files a module's compile sees: its own, and its main dependencies' (a test tree's
-  // files are seen by nothing else), so the renamed declarations are what its files see.
-  private List<RenameBindingCheck.CheckedFile> visibleEdits(
+  // The edited files a tree's compile sees: its own, and those of the trees on its class or module
+  // path (test fixtures another project compiles against among them), so the renamed declarations
+  // are what its files see.
+  private static List<RenameBindingCheck.CheckedFile> visibleEdits(
       final Map<ModuleSourceConfig, List<RenameBindingCheck.CheckedFile>> byConfig,
       final ModuleSourceConfig config) {
     return byConfig.entrySet().stream()
-        .filter(
-            entry ->
-                entry.getKey().equals(config)
-                    || !entry.getKey().isTestTree()
-                        && state
-                            .moduleGraph()
-                            .downstreamModuleDirs(entry.getKey().moduleDir())
-                            .contains(config.moduleDir()))
+        .filter(entry -> entry.getKey().equals(config) || config.sees(entry.getKey()))
         .flatMap(entry -> entry.getValue().stream())
         .filter(RenameBindingCheck.CheckedFile::edited)
         .toList();

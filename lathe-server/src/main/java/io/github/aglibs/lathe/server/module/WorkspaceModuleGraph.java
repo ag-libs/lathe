@@ -132,7 +132,7 @@ public final class WorkspaceModuleGraph {
       levelOf.put(
           tree,
           levelOf.entrySet().stream()
-              .filter(earlier -> dependsOn(tree, earlier.getKey()))
+              .filter(earlier -> tree.sees(earlier.getKey()))
               .mapToInt(earlier -> earlier.getValue() + 1)
               .max()
               .orElse(0));
@@ -144,11 +144,6 @@ public final class WorkspaceModuleGraph {
         .stream()
         .map(List::copyOf)
         .toList();
-  }
-
-  private static boolean dependsOn(final ModuleSourceConfig tree, final ModuleSourceConfig other) {
-    return tree.remappedClasspath().contains(other.latheClassesDir())
-        || tree.remappedModulepath().contains(other.latheClassesDir());
   }
 
   private static Set<Path> transitiveDownstream(

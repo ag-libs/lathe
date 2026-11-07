@@ -73,6 +73,7 @@ class ModuleNameDiscoveryTest {
         List.of(),
         null,
         false,
+        null,
         TestCompiler.targetRewrite(tmp, "reactor"));
   }
 

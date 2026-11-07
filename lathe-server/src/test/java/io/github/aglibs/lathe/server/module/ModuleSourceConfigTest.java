@@ -114,6 +114,7 @@ class ModuleSourceConfigTest {
             List.of(),
             null,
             false,
+            null,
             rewrite);
 
     assertThat(config.remappedClasspath())

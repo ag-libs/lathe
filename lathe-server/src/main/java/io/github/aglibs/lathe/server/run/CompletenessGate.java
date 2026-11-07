@@ -123,7 +123,7 @@ public final class CompletenessGate {
             "%s %s are not compiled into .lathe yet — run %s"
                 .formatted(
                     moduleRel,
-                    LatheLayout.TEST_CLASSES_DIR.equals(sourceTree) ? "test classes" : "classes",
+                    treeLabel(sourceTree),
                     LatheLayout.scopedSyncCommand(List.of(moduleRel))));
       }
     }
@@ -183,6 +183,18 @@ public final class CompletenessGate {
   }
 
   private static boolean isSourceTreeDir(final String name) {
-    return LatheLayout.CLASSES_DIR.equals(name) || LatheLayout.TEST_CLASSES_DIR.equals(name);
+    return LatheLayout.CLASSES_DIR.equals(name)
+        || LatheLayout.TEST_CLASSES_DIR.equals(name)
+        || name.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX);
+  }
+
+  // "test classes", "classes", or a Gradle source set's: "integrationTest classes".
+  private static String treeLabel(final String sourceTree) {
+    if (sourceTree.startsWith(LatheLayout.SOURCE_SET_TREE_PREFIX)) {
+      return "%s classes"
+          .formatted(sourceTree.substring(LatheLayout.SOURCE_SET_TREE_PREFIX.length()));
+    }
+
+    return LatheLayout.TEST_CLASSES_DIR.equals(sourceTree) ? "test classes" : "classes";
   }
 }

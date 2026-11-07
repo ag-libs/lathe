@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,6 +46,22 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
     return new WorkspaceModuleRegistry(List.of(), WorkspaceManifest.empty(), delivery);
   }
 
+  // Module by module, main, then test, then any other tree by name: a file two trees' roots hold (a
+  // Gradle test suite sharing test's folder) belongs to the first, the same on every scan.
+  private static final Comparator<Path> TREE_ORDER =
+      Comparator.comparing(Path::getParent)
+          .thenComparingInt(WorkspaceModuleRegistry::treeRank)
+          .thenComparing(Path::getFileName);
+
+  private static int treeRank(final Path paramsFile) {
+    final String tree = LatheLayout.paramsSourceTree(paramsFile);
+    if (LatheLayout.CLASSES_DIR.equals(tree)) {
+      return 0;
+    }
+
+    return LatheLayout.TEST_CLASSES_DIR.equals(tree) ? 1 : 2;
+  }
+
   public static WorkspaceModuleRegistry scan(
       final Path workspaceRoot, final WorkspaceManifest manifest, final Executor delivery) {
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
@@ -55,7 +72,8 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
     final var moduleSources = new ArrayList<ModuleSourceConfig>();
     try (final Stream<Path> stream = Files.walk(latheDir)) {
-      for (final var paramsFile : stream.filter(LatheLayout::isParamsFile).toList()) {
+      for (final var paramsFile :
+          stream.filter(LatheLayout::isParamsFile).sorted(TREE_ORDER).toList()) {
         final Path moduleRel = latheDir.relativize(paramsFile.getParent());
         if (isNestedWorkspace(workspaceRoot, moduleRel)) {
           LOG.fine(() -> "[workspace] %s ignored — nested workspace".formatted(moduleRel));
@@ -117,6 +135,29 @@ public final class WorkspaceModuleRegistry implements AutoCloseable {
 
   public List<Path> allSourceRoots() {
     return moduleSources.stream().flatMap(m -> m.searchRoots().stream()).toList();
+  }
+
+  // Every tree's search roots, the file's own tree first, then the trees it compiles against: a
+  // source lookup takes the first root holding a class, so a class two trees declare (two Gradle
+  // source sets of one module can) resolves to the one the file's compile sees.
+  public List<Path> sourceRootsFor(final Path filePath) {
+    final Optional<ModuleSourceConfig> asking = moduleSourceFor(filePath);
+    if (asking.isEmpty()) {
+      return allSourceRoots();
+    }
+
+    return moduleSources.stream()
+        .sorted(Comparator.comparingInt(config -> lookupRank(asking.get(), config)))
+        .flatMap(config -> config.searchRoots().stream())
+        .toList();
+  }
+
+  private static int lookupRank(final ModuleSourceConfig asking, final ModuleSourceConfig config) {
+    if (config.equals(asking)) {
+      return 0;
+    }
+
+    return asking.sees(config) ? 1 : 2;
   }
 
   public CompilationWorker workerFor(final ModuleSourceConfig config) {

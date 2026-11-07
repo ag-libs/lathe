@@ -62,6 +62,41 @@ public final class TestCompiler {
         LatheLayout.TEST_CLASSES_DIR);
   }
 
+  // A Gradle source set's tree beyond main and test: <root>/<module>/src/<name>/java, compiled to
+  // build/classes/java/<name>, test code or not as its params say.
+  public static ModuleSourceConfig sourceSetTreeConfig(
+      final Path workspaceRoot,
+      final String module,
+      final String sourceSet,
+      final boolean testCode) {
+    final ModuleSourceConfig config =
+        moduleConfig(
+            workspaceRoot.resolve(".lathe/%s".formatted(module)),
+            workspaceRoot.resolve("%s/build/classes/java/%s".formatted(module, sourceSet)),
+            workspaceRoot.resolve("%s/src/%s/java".formatted(module, sourceSet)),
+            null,
+            LatheLayout.sourceSetTree(sourceSet));
+    return new ModuleSourceConfig(
+        config.moduleDir(),
+        config.sourceTree(),
+        config.outputDir(),
+        config.originalGenSourcesDir(),
+        config.sourceRoots(),
+        config.classpath(),
+        config.modulepath(),
+        config.processorPath(),
+        config.release(),
+        config.encoding(),
+        config.parameters(),
+        config.enablePreview(),
+        config.proc(),
+        config.compilerArgs(),
+        config.analysisMode(),
+        config.externalOutput(),
+        testCode,
+        config.reactorRewrite());
+  }
+
   public static ModuleSourceConfig moduleConfig(
       final Path moduleDir, final Path outputDir, final Path sourceRoot) {
     return moduleConfig(moduleDir, outputDir, sourceRoot, null);
@@ -99,6 +134,7 @@ public final class TestCompiler {
         List.of(),
         null,
         false,
+        null,
         ReactorRewrite.none());
   }
 
@@ -124,6 +160,7 @@ public final class TestCompiler {
         List.of("--patch-module", "%s=.".formatted(patchedModule)),
         AnalysisMode.MODULE_SYSTEM,
         true,
+        null,
         ReactorRewrite.none());
   }
 

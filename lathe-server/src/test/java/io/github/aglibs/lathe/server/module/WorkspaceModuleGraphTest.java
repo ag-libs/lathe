@@ -36,6 +36,7 @@ class WorkspaceModuleGraphTest {
         List.of(),
         null,
         false,
+        null,
         REWRITE);
   }
 

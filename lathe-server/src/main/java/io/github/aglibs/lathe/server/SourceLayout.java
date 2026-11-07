@@ -145,9 +145,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   }
 
   private List<ModuleSourceConfig> testConfigs() {
-    return configs.stream()
-        .filter(config -> SourceScope.ofSourceTree(config.sourceTree()) == SourceScope.TEST)
-        .toList();
+    return configs.stream().filter(config -> config.isTestTree()).toList();
   }
 
   // Every test package of the module, in one launch.
@@ -201,7 +199,7 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   }
 
   private static String scopeWire(final ModuleSourceConfig config) {
-    return SourceScope.ofSourceTree(config.sourceTree()).wire;
+    return SourceScope.of(config).wire;
   }
 
   // A package is a directory that holds Java sources (the parent of each `.java`).
