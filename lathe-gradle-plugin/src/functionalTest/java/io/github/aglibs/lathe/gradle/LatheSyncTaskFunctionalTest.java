@@ -647,6 +647,73 @@ class LatheSyncTaskFunctionalTest {
     assertThat(dir.resolve("app/DTest.ran")).exists();
   }
 
+  // A test task of a source set beyond test captures that source set's launch, into its tree's own
+  // file: a capture-only sync runs it dry, as it runs test, and a plain run of it captures too.
+  // test's launch stays test's own.
+  @Test
+  void captureOnlySync_sourceSetTestTask_capturesItsTreesOwnLaunch() throws Exception {
+    final var fixture =
+        multiProject()
+            .file(
+                "app/build.gradle",
+                appTests("")
+                    + """
+                    testing {
+                      suites {
+                        integrationTest(JvmTestSuite) {
+                          useJUnitJupiter('5.11.4')
+                          dependencies { implementation project() }
+                        }
+                      }
+                    }
+                    """)
+            .file(
+                "app/src/test/java/com/example/app/AppTest.java",
+                """
+                package com.example.app;
+
+                class AppTest {
+                  @org.junit.jupiter.api.Test
+                  void runs() {}
+                }
+                """)
+            .file(
+                "app/src/integrationTest/java/com/example/app/AppIT.java",
+                """
+                package com.example.app;
+
+                class AppIT {
+                  @org.junit.jupiter.api.Test
+                  void runs() throws Exception {
+                    java.nio.file.Files.writeString(java.nio.file.Path.of("AppIT.ran"), "ran");
+                  }
+                }
+                """);
+    final Path integrationLaunch =
+        dir.resolve(".lathe/app")
+            .resolve(LatheLayout.testLaunchFile(LatheLayout.sourceSetTree("integrationTest")));
+
+    final var capture = fixture.runner("latheSync", "-Plathe.capture.only=true").build();
+
+    assertThat(capture.task(":app:integrationTest").getOutcome()).isEqualTo(TaskOutcome.SUCCESS);
+    assertThat(dir.resolve("app/AppIT.ran")).doesNotExist();
+    assertThat(Json.read(integrationLaunch, TestLaunchData.class).classPath())
+        .contains(fixture.path("app/build/classes/java/integrationTest"));
+    assertThat(
+            Json.read(
+                    dir.resolve(".lathe/app").resolve(LatheLayout.TEST_LAUNCH_FILE),
+                    TestLaunchData.class)
+                .classPath())
+        .contains(fixture.path("app/build/classes/java/test"))
+        .doesNotContain(fixture.path("app/build/classes/java/integrationTest"));
+
+    Files.delete(integrationLaunch);
+    fixture.runner(":app:integrationTest").build();
+
+    assertThat(dir.resolve("app/AppIT.ran")).exists();
+    assertThat(integrationLaunch).exists();
+  }
+
   private static String appTests(final String testConfiguration) {
     return """
         plugins { id 'java' }

@@ -14,11 +14,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.gradle.api.NamedDomainObjectSet;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
@@ -26,6 +30,7 @@ import org.gradle.api.file.FileCollection;
 import org.gradle.api.file.FileTree;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.Sync;
+import org.gradle.api.tasks.TaskCollection;
 import org.gradle.api.tasks.TaskProvider;
 import org.gradle.api.tasks.testing.Test;
 import org.gradle.util.GradleVersion;
@@ -56,7 +61,7 @@ final class LatheTestCapture {
   private static final GradleVersion FAIL_ON_NO_TESTS = GradleVersion.version("9.0");
   private static final String CLASS_SUFFIX = ".class";
   private static final String UNCAPTURED_TEST_TASK =
-      "a capture-only sync captures the test task only";
+      "a capture-only sync captures the test tasks of captured source sets only";
   private static final String TEST_ACCELERATION =
       """
       A plugin that runs the tests in a JVM of its own, as Develocity's Predictive Test Selection \
@@ -69,6 +74,7 @@ final class LatheTestCapture {
       final Project project,
       final TaskProvider<LatheFactsTask> facts,
       final SourceSet test,
+      final NamedDomainObjectSet<SourceSet> others,
       final Path moduleDir,
       final boolean captureOnly,
       final boolean crossProject) {
@@ -96,19 +102,15 @@ final class LatheTestCapture {
                 TEST_TASK,
                 Test.class,
                 task -> {
-                  task.dependsOn(agent);
-                  task.environment(
-                      JDK_JAVA_OPTIONS,
-                      new AgentOption(
-                          Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""),
-                          agentJar));
+                  loadAgent(task, agent, agentJar);
                   if (captureOnly) {
                     captureOnly(
                         task,
                         agentJar,
                         moduleDir.toFile(),
                         project.getRootDir(),
-                        project.getGradle().getGradleUserHomeDir());
+                        project.getGradle().getGradleUserHomeDir(),
+                        LatheLayout.TEST_CLASSES_DIR);
                   }
                 });
     // Every project's facts and the workspace come first and the tests follow, as on Maven, where
@@ -135,20 +137,88 @@ final class LatheTestCapture {
                         .flatMap(Test::getJavaLauncher)
                         .map(launcher -> launcher.getMetadata().getLanguageVersion().asInt()));
           });
-      // Their launches are not captured, so a capture-only run would run their tests in full for
-      // nothing: a build may make the test task depend on them (Hibernate ORM's Jakarta Data and
-      // integration tests).
-      project
-          .getTasks()
-          .withType(Test.class)
-          .matching(task -> !TEST_TASK.equals(task.getName()))
-          .configureEach(task -> task.onlyIf(UNCAPTURED_TEST_TASK, ignored -> false));
     }
+
+    // A build script registers its other test tasks after the plugin applies: each is matched to
+    // the
+    // source set whose classes it runs once the script has run.
+    project.afterEvaluate(
+        evaluated ->
+            registerSourceSetTests(
+                evaluated, facts, others, agent, agentJar, moduleDir, captureOnly, crossProject));
 
     // A plain Callable provider carries no task dependencies, so the paths are read, never built.
     final FileCollection runner = runnerClasspath(project, test);
     facts.configure(
         task -> task.getRunnerClasspath().set(project.provider(() -> GradleFiles.paths(runner))));
+  }
+
+  // A test task of a source set beyond test captures that source set's launch, into its tree's own
+  // file (lathe-junit reads the tree from the environment). In a capture-only sync it runs as the
+  // test task does, after the facts, one class, dry; a test task of no captured source set (another
+  // task on test's classes, say) is skipped there, as its tests would run in full for nothing.
+  private static void registerSourceSetTests(
+      final Project project,
+      final TaskProvider<LatheFactsTask> facts,
+      final NamedDomainObjectSet<SourceSet> others,
+      final TaskProvider<Sync> agent,
+      final File agentJar,
+      final Path moduleDir,
+      final boolean captureOnly,
+      final boolean crossProject) {
+    final Map<Set<File>, String> trees = new HashMap<>();
+    for (final SourceSet sourceSet : others) {
+      trees.put(
+          sourceSet.getOutput().getClassesDirs().getFiles(),
+          LatheLayout.sourceSetTree(sourceSet.getName()));
+    }
+
+    final TaskCollection<Test> otherTests =
+        project.getTasks().withType(Test.class).matching(task -> !TEST_TASK.equals(task.getName()));
+    otherTests.configureEach(
+        task -> {
+          final String tree = trees.get(task.getTestClassesDirs().getFiles());
+          if (tree == null) {
+            if (captureOnly) {
+              task.onlyIf(UNCAPTURED_TEST_TASK, ignored -> false);
+            }
+
+            return;
+          }
+
+          loadAgent(task, agent, agentJar);
+          task.environment(LatheFlags.CAPTURE_TREE_ENV, tree);
+          if (captureOnly) {
+            captureOnly(
+                task,
+                agentJar,
+                moduleDir.toFile(),
+                project.getRootDir(),
+                project.getGradle().getGradleUserHomeDir(),
+                tree);
+            task.mustRunAfter(facts);
+            if (crossProject) {
+              task.mustRunAfter(LatheProjectPlugin.ROOT_PATH + LatheProjectPlugin.WORKSPACE_TASK);
+            }
+          }
+        });
+    if (captureOnly) {
+      facts.configure(
+          task ->
+              task.finalizedBy(
+                  otherTests.matching(
+                      test -> trees.containsKey(test.getTestClassesDirs().getFiles()))));
+    }
+  }
+
+  // lathe-junit, as an agent the test JVM reads from the task's environment.
+  private static void loadAgent(
+      final Test task, final TaskProvider<Sync> agent, final File agentJar) {
+    task.dependsOn(agent);
+    task.environment(
+        JDK_JAVA_OPTIONS,
+        new AgentOption(
+            Objects.toString(task.getEnvironment().get(JDK_JAVA_OPTIONS), ""), agentJar));
   }
 
   // The editor's capture-only sync: the filter in lathe-junit skips every test, and the run always
@@ -160,11 +230,12 @@ final class LatheTestCapture {
       final File agentJar,
       final File moduleDir,
       final File rootDir,
-      final File userHome) {
+      final File userHome,
+      final String tree) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
-    final var marker = new File(moduleDir, CAPTURE_MARKER);
-    final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
+    final var marker = new File(moduleDir, captureMarker(tree));
+    final var launch = new File(moduleDir, LatheLayout.testLaunchFile(tree));
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
     task.doFirst(LatheTestCapture::runOneClass);
     task.doLast(test -> warnIfNotCaptured(test, marker, launch, rootDir, userHome));
@@ -212,6 +283,13 @@ final class LatheTestCapture {
         && !name.contains("$")
         && !name.equals(LatheLayout.MODULE_INFO_CLASS)
         && !name.equals(LatheLayout.PACKAGE_INFO_CLASS);
+  }
+
+  // One per test task, so two capture-only test tasks of one module do not share it.
+  private static String captureMarker(final String tree) {
+    return LatheLayout.TEST_CLASSES_DIR.equals(tree)
+        ? CAPTURE_MARKER
+        : "%s-%s".formatted(CAPTURE_MARKER, tree);
   }
 
   private static void markCaptureStart(final File marker) throws IOException {
