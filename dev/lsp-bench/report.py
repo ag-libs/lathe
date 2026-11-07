@@ -160,6 +160,8 @@ def main():
             env["project_commit"][:10], env["versions"]["lathe"], env["versions"]["jdtls"],
             env["versions"]["build_jdk"], env["versions"]["jdtls_jdk"],
             "; every server at -Xmx%s" % env["heap"] if env.get("heap") else ""),
+        "**Variant:** jdtls with %s changed from vscode-java's defaults." % ", ".join(
+            "`%s=%s`" % kv for kv in env["jdtls_settings"].items()) if env.get("jdtls_settings") else "",
         "%s, %d cores, %s GB, %s. Command: `%s`." % (m["cpu"], m["cores"], m["memory_gb"], m["os"], env["command"]),
         "",
         "## Servers (medians; memory is the summed RSS of the server's processes)",

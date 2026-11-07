@@ -184,7 +184,7 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     before = set(M.processes())
     result = {"server": server, "mode": mode, "cases": {}}
     result["build_ms"] = S.SERVERS_BY_NAME[server]["prepare"](name, project, mode, state, log)
-    spec = S.SERVERS_BY_NAME[server]["spec"](name, project, state, args.heap)
+    spec = S.SERVERS_BY_NAME[server]["spec"](name, project, state, args.heap, jdtls_overrides(args))
     if server == "lathe":
         result["server_version"] = S.lathe_server_version(repo)
         if result["server_version"] != S.LATHE_VERSION:
@@ -236,6 +236,15 @@ def run_server(server, name, project, cases, mode, args, out_dir, label):
     return result
 
 
+def jdtls_overrides(args):
+    """--jdtls-setting key=value pairs: a labelled variant of jdtls's settings."""
+    overrides = {}
+    for pair in args.jdtls_setting:
+        key, _, value = pair.partition("=")
+        overrides[key] = json.loads(value) if value in ("true", "false") or value.isdigit() else value
+    return overrides
+
+
 def overloaded():
     return os.getloadavg()[0] > os.cpu_count()
 
@@ -263,6 +272,7 @@ def environment(name, project, args):
         "machine": machine(),
         "load_before": os.getloadavg(),
         "heap": args.heap,
+        "jdtls_settings": jdtls_overrides(args),
         "versions": S.versions(project),
         "command": " ".join([Path(sys.argv[0]).name] + sys.argv[1:]),
     }
@@ -300,6 +310,8 @@ def main():
     parser.add_argument("--heap", help="the same -Xmx for every server, e.g. 2G")
     parser.add_argument("--ready-timeout", type=int, default=1800, help="seconds")
     parser.add_argument("--request-timeout", type=int, default=300, help="seconds")
+    parser.add_argument("--jdtls-setting", action="append", default=[], metavar="KEY=VALUE",
+                        help="a jdtls setting changed from vscode-java's defaults: a labelled variant")
     parser.add_argument("--prime", action="store_true",
                         help="one cold run per server, only to download dependencies; not a measurement")
     args = parser.parse_args()
@@ -311,6 +323,8 @@ def main():
         raise SystemExit("no clone of %s: run setup.sh first" % name)
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     suffix = "-prime" if args.prime else "-heap" + args.heap if args.heap else ""
+    if args.jdtls_setting:
+        suffix += "-variant"
     out_dir = RESULTS / ("%s-%s%s" % (stamp, name, suffix))
     out_dir.mkdir(parents=True)
     (out_dir / "environment.json").write_text(json.dumps(environment(name, project, args), indent=2))
