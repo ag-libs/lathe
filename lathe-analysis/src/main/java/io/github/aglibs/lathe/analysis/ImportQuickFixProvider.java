@@ -11,10 +11,9 @@ import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class ImportQuickFixProvider implements CodeActionProvider {
+final class ImportQuickFixProvider {
 
-  @Override
-  public List<Either<Command, CodeAction>> provide(
+  List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {

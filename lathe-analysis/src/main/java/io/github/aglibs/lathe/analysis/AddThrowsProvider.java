@@ -20,12 +20,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class AddThrowsProvider implements CodeActionProvider {
+final class AddThrowsProvider {
 
   private static final Logger LOG = Logger.getLogger(AddThrowsProvider.class.getName());
 
-  @Override
-  public List<Either<Command, CodeAction>> provide(
+  List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {

@@ -26,12 +26,11 @@ import org.eclipse.lsp4j.TextEdit;
 import org.eclipse.lsp4j.WorkspaceEdit;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
-final class MissingMethodImplProvider implements CodeActionProvider {
+final class MissingMethodImplProvider {
 
   private static final Logger LOG = Logger.getLogger(MissingMethodImplProvider.class.getName());
 
-  @Override
-  public List<Either<Command, CodeAction>> provide(
+  List<Either<Command, CodeAction>> provide(
       final CodeActionRequest request,
       final AttributedFileAnalysis analysis,
       final WorkspaceTypeIndex typeIndex) {
