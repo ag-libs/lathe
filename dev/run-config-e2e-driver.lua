@@ -44,7 +44,7 @@ local function exec(command, args)
 end
 
 -- 1. Save the main under the module as a named config -> writes .lathe/run.json only.
-local saved = exec("lathe.runconfig.save", {
+local saved = exec("lathe.runConfigs.save", {
   name = "dev",
   moduleRel = "jpms",
   kind = "MAIN",
@@ -55,7 +55,7 @@ spec.check("save returns the name", saved and saved.name, "dev")
 spec.check("save wrote .lathe/run.json", vim.fn.filereadable(run_json), 1)
 
 -- 2. List configs -> the saved one is selectable.
-local configs = exec("lathe.runconfigs.list", {})
+local configs = exec("lathe.runConfigs.list", {})
 local listed
 for _, c in ipairs(configs or {}) do
   if c.name == "dev" then
@@ -75,7 +75,7 @@ spec.check("completion offers the config name", run.complete_config("d")[1], "de
 
 -- 4. Refusing to overwrite without the bang.
 local res = client:request_sync("workspace/executeCommand", {
-  command = "lathe.runconfig.save",
+  command = "lathe.runConfigs.save",
   arguments = { { name = "dev", moduleRel = "jpms", kind = "MAIN", mainClass = "com.example.jpms.HelloMain" } },
 }, 30000, 0)
 spec.check("save without bang refuses an existing name", res.err ~= nil, true)

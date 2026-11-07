@@ -2,7 +2,7 @@
 -- (lathe.neotest tests and lathe.run mains) drive over the shared lathe.output buffer. The server
 -- reads and resolves the frames (lathe.stack.resolve, covered by StackFramesTest); this asserts the
 -- client's part:
---   * the buffer's lines go to the server in one request
+--   * the buffer's lines naming a .java file go to the server in one request, mapped back to rows
 --   * each answered frame's span is underlined, converting its UTF-16 columns to bytes (the third
 --     line carries a non-ASCII prefix)
 --   * lines the server did not answer are left alone
@@ -29,9 +29,10 @@ local LINES = {
   "\tat com.example.Unknown.run(Unknown.java:7)",
 }
 
--- The server's answer: the two App frames (indexes 0 and 2), each with the UTF-16 columns of its
--- File.java:line span; the Unknown frame resolves to nothing.
-local function span(index, text, file_line)
+-- The server's answer for the lines it was sent: each App frame, by its index in the request, with
+-- the UTF-16 columns of its File.java:line span; the Unknown frame resolves to nothing.
+local function span(index, text)
+  local file_line = text:match("(App%.java:%d+)")
   local start = text:find(file_line, 1, true) - 1
   local utf16_start = vim.str_utfindex(text, "utf-16", start, false)
   return {
@@ -43,13 +44,23 @@ local function span(index, text, file_line)
   }
 end
 
+local function answer(lines)
+  local frames = {}
+  for i, text in ipairs(lines) do
+    if text:find("App.java", 1, true) then
+      frames[#frames + 1] = span(i - 1, text)
+    end
+  end
+  return frames
+end
+
 local requests = {}
 local fake_client = {
   name = "lathe",
   request = function(_self, method, params, handler, _bufnr)
     requests[#requests + 1] = params
     if method == "workspace/executeCommand" and params.command == "lathe.stack.resolve" then
-      handler(nil, { span(0, LINES[1], "App.java:42"), span(2, LINES[3], "App.java:99") })
+      handler(nil, answer(params.arguments[1].lines))
     else
       handler(nil, nil)
     end
@@ -100,11 +111,11 @@ spec.check(
   marks[2] and marks[2][3],
   LINES[3]:find("App.java:99", 1, true) - 1
 )
-spec.check("one request carries every line", #requests, 1)
+spec.check("one request carries every candidate line", #requests, 1)
 spec.check(
-  "the request sends the buffer's lines",
+  "only lines naming a .java file are sent",
   requests[1] and #requests[1].arguments[1].lines,
-  #LINES
+  3
 )
 
 local has_jump = false

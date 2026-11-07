@@ -34,21 +34,21 @@ final class WorkspaceQueries {
     return CompletableFuture.supplyAsync(() -> StackFrames.resolve(lines, sourceRoots));
   }
 
-  // Writes the new type's file and has the write pass compile it, as an editor save does, so the
-  // type has its classes in .lathe/ before the editor opens it and never reads as unbuilt. An
-  // existing file is never overwritten: the answer says so and the editor just opens it.
-  CompletableFuture<CreatedType> createType(final CreateTypeArgs args) {
+  // Writes the new type's file and reports it to the write pass, as an editor save does, so the
+  // pass compiles it and the type never reads as unbuilt. The answer does not wait for that pass:
+  // it may queue behind a running one or another server's write lock, and the editor opens the
+  // file now. An existing file is never overwritten: the answer says so and the editor opens it.
+  CreatedType createType(final CreateTypeArgs args) {
     final NewTypeSource source = renderType(args);
     final Path path = Path.of(source.path());
     final String uri = LatheUri.fromPath(path);
     if (Files.exists(path)) {
-      return CompletableFuture.completedFuture(new CreatedType(uri, null, true));
+      return new CreatedType(uri, null, true);
     }
 
     IOUtil.unchecked(() -> write(path, source.content()));
-    return writePass
-        .writeReported(Set.of(path))
-        .thenApply(written -> new CreatedType(uri, source.caret(), false));
+    writePass.writeReported(Set.of(path));
+    return new CreatedType(uri, source.caret(), false);
   }
 
   // CREATE_NEW: a file that appeared since the check is not overwritten either.
@@ -87,9 +87,13 @@ final class WorkspaceQueries {
   }
 
   // Ranked for the file the user is in; a null file (no buffer) ranks by the kind's scope alone.
-  List<TypeDestination> destinations(final Path file, final TypeKind kind, final String pkg) {
+  // The layout and the context are read on the loop and the trees walked on the common pool: a big
+  // reactor has hundreds of them.
+  CompletableFuture<List<TypeDestination>> destinations(
+      final Path file, final TypeKind kind, final String pkg) {
     final SourceLayout layout = state.layout();
-    return layout.destinations(file == null ? null : layout.resolveContext(file), kind, pkg);
+    final ContextInfo context = file == null ? null : layout.resolveContext(file);
+    return CompletableFuture.supplyAsync(() -> layout.destinations(context, kind, pkg));
   }
 
   List<ResourceEntry> resources() {

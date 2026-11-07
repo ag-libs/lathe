@@ -47,6 +47,11 @@ class StackFramesTest {
               assertThat(frame.binaryName()).isEqualTo("com.example.app.rules.WrapperTest");
               assertThat(frame.packageName()).isEqualTo("com.example.app.rules");
             });
+    assertThat(StackFrames.parse("\tat com.foo.loader//com.foo.bar.App.run(App.java:12)"))
+        .as("a named class loader's prefix")
+        .hasValueSatisfying(frame -> assertThat(frame.binaryName()).isEqualTo("com.foo.bar.App"));
+    assertThat(StackFrames.parse("\tat loader/mod@1.0/com.foo.Main.run(Main.java:5)"))
+        .hasValueSatisfying(frame -> assertThat(frame.binaryName()).isEqualTo("com.foo.Main"));
     assertThat(
             StackFrames.parse("\tat com.example.FooTest.fails(FooTest.java:42) ~[test-classes/:?]"))
         .hasValueSatisfying(frame -> assertThat(frame.line()).isEqualTo(42));

@@ -96,8 +96,8 @@ local function is_empty(lines)
   return #lines == 0 or (#lines == 1 and lines[1] == "")
 end
 
---- Sends the output buffer's lines to the server, which answers the frames among them that it
---- resolved to a source, then underlines each and binds the jump to its line. The buffer only
+--- Sends the output buffer's candidate lines to the server, which answers the frames among them
+--- that it resolved to a source, then underlines each and binds the jump to its line. The buffer only
 --- grows while a run streams, so an answered row still holds the line that was sent; one that
 --- does not is skipped.
 local function decorate_stack_frames(bufnr, attempt)
@@ -122,7 +122,21 @@ local function decorate_stack_frames(bufnr, attempt)
     return
   end
 
-  util.exec(client, nil, commands.STACK_RESOLVE, { { lines = lines } }, function(frames)
+  -- Only a line naming a .java file can be a frame: a run's output may be long and hold few, so
+  -- only those are sent, each with its buffer row.
+  local sent, rows = {}, {}
+  for row, text in ipairs(lines) do
+    if text:find(".java:", 1, true) then
+      sent[#sent + 1] = text
+      rows[#rows + 1] = row
+    end
+  end
+
+  if #sent == 0 then
+    return
+  end
+
+  util.exec(client, nil, commands.STACK_RESOLVE, { { lines = sent } }, function(frames)
     vim.schedule(function()
       if not vim.api.nvim_buf_is_valid(bufnr) then
         return
@@ -131,8 +145,8 @@ local function decorate_stack_frames(bufnr, attempt)
       local locations = {}
       frame_locations[bufnr] = locations
       for _, frame in ipairs(frames or {}) do
-        local row = frame.index + 1
-        local text = lines[row]
+        local row = rows[frame.index + 1]
+        local text = row and lines[row]
         if text and vim.api.nvim_buf_get_lines(bufnr, row - 1, row, false)[1] == text then
           highlight_frame_span(bufnr, row, text, frame)
           locations[row] = { uri = frame.uri, line = frame.line }

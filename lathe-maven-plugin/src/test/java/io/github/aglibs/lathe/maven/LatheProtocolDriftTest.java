@@ -13,9 +13,8 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 // Guards that the client's wire protocol stays in lockstep with the server's: the protocol integer
-// (version.lua, LatheFlags.LATHE_PROTOCOL) and the command names (commands.lua, LatheCommands). The
-// guard reads the Lua files from the sibling lathe-neovim module (Lua-only, no test runner) by
-// path.
+// (version.lua, LatheFlags.LATHE_PROTOCOL) and the command names (commands.lua, LatheCommands).
+// It reads the Lua files from the sibling lathe-neovim module (Lua only, no test runner) by path.
 class LatheProtocolDriftTest {
 
   private static final Path VERSION_LUA = Path.of("../lathe-neovim/runtime/lua/lathe/version.lua");

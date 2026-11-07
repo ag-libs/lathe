@@ -13,13 +13,13 @@ import java.util.regex.Pattern;
 
 // The stack frames in a run's output, each resolved to the source file of its class. The frames
 // are program output, not Java source, so a pattern reads them:
-// "at [module/]pkg.Cls.method(File.java:N)", with whatever indentation and trailing "~[jar]" the
-// JVM printed.
+// "at [loader/][module/]pkg.Cls.method(File.java:N)", with whatever indentation and trailing
+// "~[jar]" the JVM printed (a named class loader's prefix may be "loader//").
 final class StackFrames {
 
   private static final Pattern FRAME =
       Pattern.compile(
-          "^\\s*at\\s+(?:[^\\s/(]+/)?([\\w$.]+)\\.[\\w$<>]+\\(([\\w$]+\\.java):(\\d+)\\)");
+          "^\\s*at\\s+(?:[^\\s/(]*/)*([\\w$.]+)\\.[\\w$<>]+\\(([\\w$]+\\.java):(\\d+)\\)");
 
   private StackFrames() {}
 
@@ -39,6 +39,12 @@ final class StackFrames {
     String packageName() {
       final int lastDot = binaryName.lastIndexOf('.');
       return lastDot >= 0 ? binaryName.substring(0, lastDot) : "";
+    }
+
+    String topLevelName() {
+      final String simple = binaryName.substring(binaryName.lastIndexOf('.') + 1);
+      final int nested = simple.indexOf('$');
+      return nested >= 0 ? simple.substring(0, nested) : simple;
     }
   }
 
@@ -98,9 +104,14 @@ final class StackFrames {
     return List.copyOf(resolved);
   }
 
+  // The fallback is skipped when the frame names its class's own file: the first lookup was it.
   private static Optional<Path> sourceOf(final Frame frame, final List<Path> sourceRoots) {
-    return TypeSourceLocator.findSourceFile(frame.binaryName(), sourceRoots)
-        .or(() -> namedFile(frame, sourceRoots));
+    final Optional<Path> own = TypeSourceLocator.findSourceFile(frame.binaryName(), sourceRoots);
+    if (own.isPresent() || frame.fileName().equals("%s.java".formatted(frame.topLevelName()))) {
+      return own;
+    }
+
+    return namedFile(frame, sourceRoots);
   }
 
   private static Optional<Path> namedFile(final Frame frame, final List<Path> sourceRoots) {

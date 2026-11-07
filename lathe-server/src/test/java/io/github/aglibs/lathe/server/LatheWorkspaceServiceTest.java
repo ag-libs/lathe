@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import org.assertj.core.api.InstanceOfAssertFactories;
@@ -228,8 +229,9 @@ class LatheWorkspaceServiceTest extends ServiceTestBase {
     assertThat(cart.uri()).isEqualTo(LatheUri.fromPath(cartFile));
     assertThat(cart.existed()).isFalse();
     assertThat(Files.readString(cartFile)).contains("class Cart");
+    writeReported(Set.of()).get(TIMEOUT_S, TimeUnit.SECONDS);
     assertThat(tmp.resolve(".lathe/module/classes/com/example/Cart.class"))
-        .as("compiled before the answer, so it never reads as unbuilt")
+        .as("reported to the write pass, which compiles it, so it never reads as unbuilt")
         .exists();
     assertThat(
             command(

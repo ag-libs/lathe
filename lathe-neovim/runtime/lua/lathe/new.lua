@@ -261,6 +261,9 @@ open_where = function(client, bufnr, kind, dests)
   })
 end
 
+-- The JSON-RPC code of the server's refusal of a request it cannot serve as sent.
+local INVALID_PARAMS = vim.lsp.protocol.ErrorCodes.InvalidParams
+
 -- module-info takes no package, scope, or type name — only the module. Sent without a name, the
 -- server names it after the module's base package and puts it at the main source root, so there is
 -- no prompt; a module with no package yet has none to give, and the server's refusal asks for it.
@@ -273,7 +276,12 @@ create_module_info = function(client, bufnr, module)
     { create_request("module-info", dest, "main", "") },
     M._open,
     {
-      on_error = function()
+      on_error = function(err)
+        if err.code ~= INVALID_PARAMS then
+          warn(err.message)
+          return
+        end
+
         input_nonempty({ prompt = "Module name: " }, function(entered)
           submit(client, bufnr, "module-info", dest, "main", entered)
         end)

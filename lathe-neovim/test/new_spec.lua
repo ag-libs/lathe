@@ -453,6 +453,33 @@ do -- module-info: the server refuses a module with no package to name it after;
   spec.check("module-info fallback: prompted name is used", args.name, "com.manual")
 end
 
+do -- module-info: any other failure is shown, not mistaken for a missing name
+  stub_server({
+    ["lathe.workspace.context"] = { moduleRel = "core", scope = "main", pkg = "" },
+    ["lathe.types.create"] = function()
+      return nil, { code = -32603, message = "core has no main source root" }
+    end,
+  })
+  local prompted, warned = false, nil
+  pick.pick = function(_) end
+  vim.ui.input = function(_, cb)
+    prompted = true
+    cb("com.manual")
+  end
+  vim.notify = function(message, _, _)
+    warned = message
+  end
+
+  new.create("module-info")
+
+  spec.check("module-info other error: no name prompt", prompted, false)
+  spec.check(
+    "module-info other error: its message is shown",
+    warned and warned:match("no main source root") ~= nil,
+    true
+  )
+end
+
 do -- kind passed as an argument skips the kind picker
   local requests = stub_server({
     ["lathe.workspace.context"] = { moduleRel = "core", scope = "main", pkg = "com.example" },

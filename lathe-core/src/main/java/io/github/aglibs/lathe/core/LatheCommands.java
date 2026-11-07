@@ -2,9 +2,9 @@ package io.github.aglibs.lathe.core;
 
 import java.util.List;
 
-// The server's workspace/executeCommand names, the client protocol: lathe.<area>.<action>. The
-// Neovim client keeps the same table in lua/lathe/commands.lua; renaming one is a protocol change
-// (LatheFlags.LATHE_PROTOCOL).
+// The server's workspace/executeCommand names, the client protocol: lathe.<area>.<action>.
+// The Neovim client keeps the same table in lua/lathe/commands.lua, and renaming one is a protocol
+// change (LatheFlags.LATHE_PROTOCOL).
 public final class LatheCommands {
 
   public static final String RUN_TEST = "lathe.run.test";

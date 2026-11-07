@@ -70,7 +70,8 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
   // Where a new type of the kind may go: each package of each module, once per scope it exists in,
   // ranked for the file the user is in -- its own package, then the rest of its module, then the
   // scope the kind targets (a test lands in the test root) -- then by module, package and scope.
-  // With a package, only that package's destinations, best first. The context may be null.
+  // With a package, only that package's destinations, best first. The context may be null. It walks
+  // every module's source trees, so it is not for the event loop.
   List<TypeDestination> destinations(
       final ContextInfo context, final TypeKind kind, final String pkg) {
     final String scope = (kind == TypeKind.TEST ? SourceScope.TEST : SourceScope.MAIN).wire;
@@ -86,13 +87,16 @@ record SourceLayout(List<ModuleSourceConfig> configs, Path workspaceRoot) {
             : Comparator.comparingInt(
                     (TypeDestination destination) -> -preference(destination, context, scope))
                 .thenComparing(order);
-    return modules().stream()
+    return configs.stream()
         .flatMap(
-            module ->
-                packages(module).stream()
+            config ->
+                packageEntries(config)
                     .filter(entry -> !entry.pkg().isEmpty())
-                    .map(entry -> new TypeDestination(module, entry.scope(), entry.pkg())))
+                    .map(
+                        entry ->
+                            new TypeDestination(moduleRel(config), entry.scope(), entry.pkg())))
         .filter(destination -> pkg.isEmpty() || destination.pkg().equals(pkg))
+        .distinct()
         .sorted(ranked)
         .toList();
   }

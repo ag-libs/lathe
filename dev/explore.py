@@ -161,7 +161,7 @@ run <index> [expect-exit <n>]
 
 refresh <resource-path>
     Verify resource refresh: edit <resource-path> with a unique marker, send
-    lathe.resource.refresh, and confirm the server copied it into .lathe/
+    lathe.resources.refresh, and confirm the server copied it into .lathe/
     (reading back the destination it reports), then restore the original.
     Fails the probe if the file maps to no resource root or the copy is stale.
 
@@ -258,6 +258,7 @@ import re
 import shlex
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 
 try:
@@ -1746,10 +1747,10 @@ class ExploreShell:
             resource.write_bytes(original)
 
     def _cmd_create(self, args: list[str]) -> None:
-        """Probe lathe.createType end to end: create <type> <module>:<scope>:<pkg> [name].
-        <type> is class/interface/record/enum/test/package-info/module-info. Prints the server's
-        returned {path, content, caret} without writing anything (the client writes; this only checks
-        the server round-trip)."""
+        """Probe lathe.types.create end to end: create <type> <module>:<scope>:<pkg> [name].
+        <type> is class/interface/record/enum/test/package-info/module-info. The server writes (and
+        compiles) the file, never overwriting one; prints its {uri, caret, existed} answer and the
+        file. A module-info's name may be omitted: the server names it after the base package."""
         if len(args) < 2:
             print("  usage: create <type> <module>:<scope>:<pkg> [name]")
             return
@@ -1761,10 +1762,10 @@ class ExploreShell:
             module, scope, pkg = loc[0], "main", loc[1]
         else:
             module, scope, pkg = loc[0], "main", ""
-        default = module if typ == "module-info" else ("package-info" if typ == "package-info" else "Probe")
+        default = "" if typ == "module-info" else ("package-info" if typ == "package-info" else "Probe")
         name = args[2] if len(args) > 2 else default
         try:
-            result = self._client.execute_command("lathe.createType", [{
+            result = self._client.execute_command("lathe.types.create", [{
                 "moduleRel": module, "kind": scope, "pkg": pkg, "type": typ, "name": name,
             }])
         except Exception as exc:
@@ -1775,18 +1776,19 @@ class ExploreShell:
             print("  \u2717 no result")
             self.any_failure = True
             return
-        print(f"  \u2713 path  = {result['path']}")
-        print(f"    caret = {result['caret']}")
-        for ln in result["content"].split("\n"):
+        path = Path(urllib.parse.unquote(urllib.parse.urlparse(result["uri"]).path))
+        print(f"  \u2713 uri   = {result['uri']}")
+        print(f"    caret = {result.get('caret')}  existed = {result['existed']}")
+        for ln in path.read_text(encoding="utf-8").split("\n"):
             print(f"    | {ln}")
 
     def _cmd_missing_imports(self, args: list[str]) -> None:
-        """Probe lathe.missingImports on the open file: prints each unresolved type with its
+        """Probe lathe.imports.missing on the open file: prints each unresolved type with its
         importable candidates, tagged auto (1 candidate) / ambiguous (>1) / UNRESOLVED (0), plus the
         insertion line. Reflects the live buffer, so `inject` edits before this are picked up."""
         uri = self._file.resolve().as_uri()
         try:
-            result = self._client.execute_command("lathe.missingImports", [{"uri": uri}])
+            result = self._client.execute_command("lathe.imports.missing", [{"uri": uri}])
         except Exception as exc:
             print(f"  ✗ {exc}")
             self.any_failure = True
