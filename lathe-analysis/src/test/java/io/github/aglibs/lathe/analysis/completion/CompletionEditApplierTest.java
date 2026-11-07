@@ -16,7 +16,7 @@ class CompletionEditApplierTest {
   @Test
   void absorbFollowingSpaceAfterKeyword_spaceFollowsToken_extendsEditOverSpace() {
     // "int§ x;" -- a space already separates the keyword from the next token, so the edit grows to
-    // overwrite it and the inserted "int " keeps a single space instead of doubling it (CQ-0054).
+    // overwrite it and the inserted "int " keeps a single space instead of doubling it.
     final var item = keywordItem("int ", 24, 27);
 
     CompletionEditApplier.absorbFollowingSpaceAfterKeyword(

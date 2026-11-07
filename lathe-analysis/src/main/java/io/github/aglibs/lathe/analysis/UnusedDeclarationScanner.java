@@ -111,7 +111,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   // by its generated getter is used.
   @Override
   public Void scan(final Tree tree, final Void v) {
-    return declarationPhase && SourceLocator.isGenerated(tree) ? null : super.scan(tree, v);
+    return declarationPhase && GeneratedCode.isGenerated(tree) ? null : super.scan(tree, v);
   }
 
   @Override
@@ -158,7 +158,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
    * #localVars} bucket, so the hint labels each by its JLS §4.12.3 kind: a {@code CatchTree} child
    * is an exception parameter, a {@code LambdaExpressionTree} child is a (lambda) parameter, and
    * everything else — a block local, enhanced-for variable, or pattern binding — is a local
-   * variable (EG-039).
+   * variable.
    */
   private static Kind localVariableKind(final Tree parent) {
     if (parent instanceof CatchTree) {
@@ -228,7 +228,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
       return super.visitMemberSelect(node, v);
     }
     scan(node.getExpression(), null);
-    markReference(SourceLocator.elementAt(trees, getCurrentPath()));
+    markReference(CursorElements.elementAt(trees, getCurrentPath()));
     return null;
   }
 
@@ -262,20 +262,17 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
   }
 
   private Element enclosingPrivateMethod() {
-    TreePath path = getCurrentPath().getParentPath();
-    while (path != null) {
-      if (path.getLeaf() instanceof MethodTree) {
-        // Only a tracked private method is an edge source; anything else, a constructor too, is a
-        // root that reaches its callees directly -- an edge from it would never be followed.
-        final var element = trees.getElement(path);
-        return privateMethods.containsKey(element) ? element : null;
-      }
-      if (path.getLeaf() instanceof ClassTree) {
-        return null;
-      }
-      path = path.getParentPath();
+    final TreePath method =
+        TreePaths.nearest(
+            getCurrentPath().getParentPath(), MethodTree.class, TreePaths::isMemberBoundary);
+    if (method == null) {
+      return null;
     }
-    return null;
+
+    // Only a tracked private method is an edge source; anything else, a constructor too, is a root
+    // that reaches its callees directly -- an edge from it would never be followed.
+    final var element = trees.getElement(method);
+    return privateMethods.containsKey(element) ? element : null;
   }
 
   private List<Diagnostic> buildDiagnostics() {
@@ -321,7 +318,7 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
     if (candidate.nameOffset() < 0) {
       return Optional.empty();
     }
-    final var start = SourceLocator.offsetToPosition(cu, candidate.nameOffset());
+    final var start = Positions.offsetToPosition(cu, candidate.nameOffset());
     final var end = new Position(start.getLine(), start.getCharacter() + candidate.name().length());
     final String message =
         assignedButNeverRead
@@ -336,6 +333,6 @@ final class UnusedDeclarationScanner extends TreePathScanner<Void, Void> {
 
   private Candidate candidateFor(final Tree node, final String name, final Kind kind) {
     return new Candidate(
-        name, SourceLocator.declarationNameOffset(content, positions, cu, node, name), kind);
+        name, DeclarationNames.declarationNameOffset(content, positions, cu, node, name), kind);
   }
 }

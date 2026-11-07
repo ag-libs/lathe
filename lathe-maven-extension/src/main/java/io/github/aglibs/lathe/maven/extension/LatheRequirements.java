@@ -4,7 +4,6 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 import static java.util.stream.Collectors.toList;
 
-import io.github.aglibs.lathe.core.LatheLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,14 +16,19 @@ import org.apache.maven.project.MavenProject;
 /** What Lathe needs from a build: each unmet requirement, worded as what is wrong and the fix. */
 final class LatheRequirements {
 
+  // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
+  // says why.
+  private static final String MIN_MAVEN_VERSION = "3.6.3";
+  private static final String MIN_COMPILER_PLUGIN_VERSION = "3.6.2";
+
   private LatheRequirements() {}
 
   static List<String> unmet(final String mavenVersion, final List<MavenProject> projects) {
     final var unmet = new ArrayList<String>();
-    if (mavenVersion != null && isOlder(mavenVersion, LatheLayout.Maven.MIN_MAVEN_VERSION)) {
+    if (mavenVersion != null && isOlder(mavenVersion, MIN_MAVEN_VERSION)) {
       unmet.add(
           "Maven %s is older than %s, the oldest Lathe supports: upgrade Maven, or the project's wrapper (mvn wrapper:wrapper -Dmaven=3.9.11)"
-              .formatted(mavenVersion, LatheLayout.Maven.MIN_MAVEN_VERSION));
+              .formatted(mavenVersion, MIN_MAVEN_VERSION));
     }
 
     final Map<String, List<String>> modulesByOldCompiler =
@@ -40,17 +44,14 @@ final class LatheRequirements {
         (version, modules) ->
             unmet.add(
                 "maven-compiler-plugin %s (%s) is older than %s: pin a newer version in <pluginManagement>, for example 3.13.0"
-                    .formatted(
-                        version,
-                        String.join(", ", modules),
-                        LatheLayout.Maven.MIN_COMPILER_PLUGIN_VERSION)));
+                    .formatted(version, String.join(", ", modules), MIN_COMPILER_PLUGIN_VERSION)));
     return List.copyOf(unmet);
   }
 
   private static Optional<String> oldCompilerVersion(final MavenProject project) {
     return LatheModelInjector.compilerPlugin(project)
         .map(Plugin::getVersion)
-        .filter(version -> isOlder(version, LatheLayout.Maven.MIN_COMPILER_PLUGIN_VERSION));
+        .filter(version -> isOlder(version, MIN_COMPILER_PLUGIN_VERSION));
   }
 
   private static boolean isOlder(final String version, final String minimum) {

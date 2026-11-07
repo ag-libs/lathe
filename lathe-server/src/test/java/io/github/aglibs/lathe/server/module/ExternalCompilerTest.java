@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.CompileMode;
 import io.github.aglibs.lathe.analysis.LibrarySources;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.analysis.testing.TestJavac;
 import io.github.aglibs.lathe.core.Json;
 import io.github.aglibs.lathe.core.LatheLayout;
@@ -55,12 +55,18 @@ class ExternalCompilerTest {
       final List<org.eclipse.lsp4j.Diagnostic> diagnostics =
           ctx.compile(usesSource.toUri().toString(), usesContent, 0, CompileMode.OPEN);
       final Position helperPos =
-          SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
+          Positions.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
       final var definition =
-          ctx.definition(
-              new SourceFeatureRequest(
-                  usesSource.toUri().toString(), usesContent, 0, helperPos, List.of(), libraries));
+          ctx.navigation()
+              .definition(
+                  new SourceFeatureRequest(
+                      usesSource.toUri().toString(),
+                      usesContent,
+                      0,
+                      helperPos,
+                      List.of(),
+                      libraries));
 
       assertThat(diagnostics).isEmpty();
       assertThat(definition).isPresent();
@@ -92,7 +98,7 @@ class ExternalCompilerTest {
     final LibrarySources libraries = WorkspaceManifest.load(tmp).libraries();
     final var usesUri = usesSource.toUri().toString();
     final Position helperPos =
-        SourceLocator.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
+        Positions.offsetToPosition(usesContent, usesContent.indexOf("Helper"));
 
     try (final var ctx =
         new SourceAnalysisSession(new ExternalCompiler(libraries, new CompilationAdmission(1)))) {
@@ -101,11 +107,15 @@ class ExternalCompilerTest {
       // Hover over Helper: JavadocLocator finds helperSource via libraries.externalSourceDirs()
       // and calls parser.parse(helperSource). In the broken state this resets the compilation
       // FM's CLASS_PATH, causing the subsequent definition lookup to return empty.
-      ctx.hover(new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
+      ctx.navigation()
+          .hover(
+              new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
 
       final var definition =
-          ctx.definition(
-              new SourceFeatureRequest(usesUri, usesContent, 0, helperPos, List.of(), libraries));
+          ctx.navigation()
+              .definition(
+                  new SourceFeatureRequest(
+                      usesUri, usesContent, 0, helperPos, List.of(), libraries));
 
       assertThat(definition).isPresent();
       assertThat(definition.get().getUri()).isEqualTo(helperSource.toUri().toString());

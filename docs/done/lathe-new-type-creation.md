@@ -5,7 +5,7 @@
 > (v4)](../done/lathe-new-type-ergonomics.md). Decided not to pursue this editor-agnostic alternative;
 > retained as a rejected-design record.
 
-Proposed M2 completion enhancement.
+Was proposed as an M2 completion enhancement.
 Builds on the completion engine in `lathe-design.md`.
 
 ## Motivation

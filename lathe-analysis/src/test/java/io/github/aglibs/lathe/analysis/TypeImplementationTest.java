@@ -39,7 +39,7 @@ class TypeImplementationTest {
       session.compile(uri, content, 1, CompileMode.OPEN);
 
       final List<Location> locations =
-          session.typeImplementations(request(content, new Position(0, 12)), index);
+          session.navigation().typeImplementations(request(content, new Position(0, 12)), index);
 
       assertThat(locations)
           .extracting(location -> Path.of(URI.create(location.getUri())).getFileName().toString())
@@ -56,8 +56,10 @@ class TypeImplementationTest {
       session.compile(uri, content, 1, CompileMode.OPEN);
 
       final List<Location> locations =
-          session.typeImplementations(
-              request(content, new Position(0, 22)), WorkspaceTypeIndex.empty());
+          session
+              .navigation()
+              .typeImplementations(
+                  request(content, new Position(0, 22)), WorkspaceTypeIndex.empty());
 
       assertThat(locations).isEmpty();
     }

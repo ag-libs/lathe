@@ -147,7 +147,7 @@ public final class WorkspaceSymbolResolver {
             (trees, cu) -> {
               final var path = classPath(cu, simpleName);
               try {
-                return SourceLocator.declarationNamePosition(trees, cu, path, simpleName)
+                return DeclarationNames.declarationNamePosition(trees, cu, path, simpleName)
                     .map(pos -> new Range(pos, pos))
                     .orElse(FILE_START);
               } catch (final IOException e) {

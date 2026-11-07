@@ -26,7 +26,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
 
   @Test
   void keyword_requiresFollowingConstruct_insertsTrailingSpace() {
-    // CQ-0054: a keyword that must be followed by a further construct inserts a trailing space, so
+    // A keyword that must be followed by a further construct inserts a trailing space, so
     // the developer keeps typing the mandatory next token without pressing space first.
     final List<CompletionItem> classBody = fixture.complete("class Test { § }");
     assertThat(insertTextOf(classBody, "class")).isEqualTo("class ");
@@ -40,7 +40,7 @@ class CompletionKeywordAndNoSlotTest extends CompletionTestSupport {
 
   @Test
   void keyword_standaloneValue_insertsNoTrailingSpace() {
-    // CQ-0054: value/standalone keywords can precede punctuation (`.`/`(`/`;`) and stay bare -- an
+    // Value/standalone keywords can precede punctuation (`.`/`(`/`;`) and stay bare -- an
     // editor never wants `null ;`.
     final List<CompletionItem> items = fixture.complete("class Test { void m() { throw § } }");
     assertThat(insertTextOf(items, "null")).isEqualTo("null");

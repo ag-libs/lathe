@@ -3,7 +3,8 @@ package io.github.aglibs.lathe.analysis.testing;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.CursorElements;
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.core.IOUtil;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -42,16 +43,16 @@ public abstract class SampleFixture {
   }
 
   public Element elementAt(final int line, final int character) {
-    return SourceLocator.elementAt(compiled.trees(), pathAt(line, character));
+    return CursorElements.elementAt(compiled.trees(), pathAt(line, character));
   }
 
   public VariableElement parameterAt(final int line, final int character) {
-    return SourceLocator.parameterElementAt(compiled.trees(), pathAt(line, character));
+    return CursorElements.parameterElementAt(compiled.trees(), pathAt(line, character));
   }
 
   public TreePath pathAt(final int line, final int character) {
-    final var offset = SourceLocator.toOffset(compiled.cu(), line, character);
-    return SourceLocator.pathAt(compiled.trees(), compiled.cu(), offset);
+    final var offset = Positions.toOffset(compiled.cu(), line, character);
+    return CursorElements.pathAt(compiled.trees(), compiled.cu(), offset);
   }
 
   public TreePath pathAt(final String expression, final String token) {
@@ -66,7 +67,7 @@ public abstract class SampleFixture {
     final String source = sourceContent(cu);
     final int expressionOffset = source.indexOf(expression);
     final int offset = source.indexOf(token, expressionOffset);
-    return SourceLocator.pathAt(trees, cu, offset);
+    return CursorElements.pathAt(trees, cu, offset);
   }
 
   public static String sourceContent(final CompilationUnitTree cu) {
@@ -81,6 +82,6 @@ public abstract class SampleFixture {
   public static Position posOf(final String source, final String context, final String token) {
     final int from = source.indexOf(context);
     final int offset = source.indexOf(token, from);
-    return SourceLocator.offsetToPosition(source, offset);
+    return Positions.offsetToPosition(source, offset);
   }
 }

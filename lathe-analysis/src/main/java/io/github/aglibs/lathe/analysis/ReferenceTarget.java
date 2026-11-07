@@ -87,7 +87,7 @@ public record ReferenceTarget(
     final var scope = scopeFor(element);
     final long declarationOffset =
         isLocalScopeKind(kind) && trees != null
-            ? SourceLocator.declarationStartOffset(trees, element)
+            ? DeclarationNames.declarationStartOffset(trees, element)
             : -1;
 
     return switch (kind) {

@@ -41,8 +41,8 @@ public final class DefinitionLocator {
     }
 
     // A member Lombok generated has no declaration of its own: go to the code it comes from.
-    if (SourceLocator.isGenerated(element)) {
-      return locateElement(SourceLocator.generatedSource(element), trees, sourceRoots, sourceUri);
+    if (GeneratedCode.isGenerated(element)) {
+      return locateElement(GeneratedCode.generatedSource(element), trees, sourceRoots, sourceUri);
     }
 
     final var direct = locateElement(element, trees, sourceRoots, sourceUri);
@@ -75,8 +75,8 @@ public final class DefinitionLocator {
               .orElseGet(() -> cu.getSourceFile().toUri().toString());
       try {
         final Optional<Position> position =
-            SourceLocator.declarationNamePosition(
-                trees, cu, path, SourceLocator.declarationName(element).toString());
+            DeclarationNames.declarationNamePosition(
+                trees, cu, path, DeclarationNames.declarationName(element).toString());
         if (position.isPresent()) {
           final var lspPos = position.get();
           LOG.fine(
@@ -132,15 +132,15 @@ public final class DefinitionLocator {
     }
 
     final long start = trees.getSourcePositions().getStartPosition(cu, module.getName());
-    final var pos = start >= 0L ? SourceLocator.offsetToPosition(cu, start) : new Position(0, 0);
+    final var pos = start >= 0L ? Positions.offsetToPosition(cu, start) : new Position(0, 0);
     return new Location(file.toUri().toString(), new Range(pos, pos));
   }
 
   /**
    * A synthetic record accessor has no declaration site, so it resolves to nothing; redirect it to
-   * the component's backing field, whose declaration is the component name in the record header
-   * (EG-047). Returns null unless {@code element} is a record's canonical accessor — an explicit
-   * accessor with a body resolves directly and never reaches this fallback.
+   * the component's backing field, whose declaration is the component name in the record header.
+   * Returns null unless {@code element} is a record's canonical accessor — an explicit accessor
+   * with a body resolves directly and never reaches this fallback.
    */
   private static Element recordComponentField(final Element element) {
     if (!(element instanceof final ExecutableElement accessor)
@@ -222,11 +222,11 @@ public final class DefinitionLocator {
   private static Position parseDeclarationPosition(
       final Trees trees, final CompilationUnitTree cu, final Element element) {
     try {
-      return SourceLocator.declarationNamePosition(
+      return DeclarationNames.declarationNamePosition(
               trees,
               cu,
-              SourceLocator.declarationPath(cu, element),
-              SourceLocator.declarationName(element).toString())
+              SourceParser.declarationPath(cu, element),
+              DeclarationNames.declarationName(element).toString())
           .orElse(null);
     } catch (final IOException e) {
       throw new UncheckedIOException(e);

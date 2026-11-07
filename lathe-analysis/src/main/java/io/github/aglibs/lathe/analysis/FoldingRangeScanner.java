@@ -115,8 +115,8 @@ final class FoldingRangeScanner extends WrittenSourceScanner {
   }
 
   private void add(final long startOffset, final long endOffset, final String kind) {
-    final var start = SourceLocator.offsetToPosition(compilationUnit, startOffset);
-    final var end = SourceLocator.offsetToPosition(compilationUnit, endOffset);
+    final var start = Positions.offsetToPosition(compilationUnit, startOffset);
+    final var end = Positions.offsetToPosition(compilationUnit, endOffset);
     if (end.getLine() <= start.getLine()) {
       return;
     }

@@ -14,6 +14,7 @@ import com.sun.jdi.StackFrame;
 import com.sun.jdi.ThreadReference;
 import com.sun.jdi.Value;
 import io.github.aglibs.lathe.analysis.AttributedExpression;
+import io.github.aglibs.lathe.core.LatheUri;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -108,8 +109,12 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .onWorker(
                 file,
                 worker ->
-                    worker.attributeReceiverExpression(
-                        file.toUri().toString(), receiverType, RECEIVER, expression))
+                    worker.submit(
+                        session ->
+                            session
+                                .files()
+                                .attributeReceiverExpression(
+                                    LatheUri.fromPath(file), receiverType, RECEIVER, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));
@@ -284,13 +289,18 @@ final class LatheEvaluationProvider implements IEvaluationProvider {
             .fileFor(location)
             .orElseThrow(() -> new EvaluationException("source not found for " + location));
     final String content = Files.readString(file);
+    final int line = location.lineNumber();
     final AttributedExpression attributed =
         frames
             .onWorker(
                 file,
                 worker ->
-                    worker.attributeExpression(
-                        file.toUri().toString(), content, location.lineNumber(), expression))
+                    worker.submit(
+                        session ->
+                            session
+                                .files()
+                                .attributeExpression(
+                                    LatheUri.fromPath(file), content, line, expression)))
             .join()
             .orElseThrow(() -> new EvaluationException("no module worker for " + file))
             .orElseThrow(() -> new EvaluationException("could not attribute: " + expression));

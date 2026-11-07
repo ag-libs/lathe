@@ -19,6 +19,20 @@ import org.apache.maven.project.MavenProject;
  */
 final class LatheModelInjector {
 
+  private static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
+  private static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
+  private static final String JUNIT_ARTIFACT_ID = "lathe-junit";
+  private static final String COMPILER_ID = "lathe";
+  private static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
+  // Surefire's test selection, which replaces its includes and excludes, and the switch that lets
+  // a module with no class matching it pass.
+  static final String SUREFIRE_TEST_PROPERTY = "test";
+  private static final String SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY =
+      "surefire.failIfNoSpecifiedTests";
+  private static final String INIT_GOAL = "init";
+  private static final String INIT_EXECUTION_ID = "lathe-init";
+  private static final String SYNC_EXECUTION_ID = "lathe-sync";
+
   private final String version;
 
   LatheModelInjector(final String version) {
@@ -47,13 +61,11 @@ final class LatheModelInjector {
   }
 
   void injectCompilerShim(final MavenProject project, final Plugin compiler) {
-    putLatheDependency(compiler.getDependencies(), LatheLayout.Maven.COMPILER_ARTIFACT_ID, null);
+    putLatheDependency(compiler.getDependencies(), COMPILER_ARTIFACT_ID, null);
     // The compiler is selected via the property, not a <compilerId> config node: a node added in
     // afterProjectsRead does not reach the default compile executions (lathe-maven-extension.md
     // §9).
-    project
-        .getProperties()
-        .setProperty(LatheLayout.Maven.MAVEN_COMPILER_ID_PROPERTY, LatheLayout.Maven.COMPILER_ID);
+    project.getProperties().setProperty(MAVEN_COMPILER_ID_PROPERTY, COMPILER_ID);
   }
 
   // The shim names a .lathe/ tree by scope, not by the output directory's leaf: tell it which
@@ -68,7 +80,7 @@ final class LatheModelInjector {
   }
 
   void injectCaptureDependency(final MavenProject project) {
-    putLatheDependency(project.getDependencies(), LatheLayout.Maven.JUNIT_ARTIFACT_ID, "test");
+    putLatheDependency(project.getDependencies(), JUNIT_ARTIFACT_ID, "test");
   }
 
   // A capture-only run needs one test JVM to start, not every test class: the launch is the same
@@ -79,7 +91,7 @@ final class LatheModelInjector {
   // Java keeps running them all.
   void injectCaptureClass(final MavenProject project) {
     final Properties properties = project.getProperties();
-    if (properties.containsKey(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY)) {
+    if (properties.containsKey(SUREFIRE_TEST_PROPERTY)) {
       return;
     }
 
@@ -94,9 +106,8 @@ final class LatheModelInjector {
         .findFirst()
         .ifPresent(
             name -> {
-              properties.setProperty(LatheLayout.Maven.SUREFIRE_TEST_PROPERTY, name);
-              properties.setProperty(
-                  LatheLayout.Maven.SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
+              properties.setProperty(SUREFIRE_TEST_PROPERTY, name);
+              properties.setProperty(SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY, "false");
             });
   }
 
@@ -113,13 +124,10 @@ final class LatheModelInjector {
    */
   void injectRootExecutions(final MavenProject topLevelProject) {
     final Plugin plugin =
-        findOrCreatePlugin(
-            topLevelProject,
-            LatheLayout.Maven.LATHE_GROUP_ID,
-            LatheLayout.Maven.PLUGIN_ARTIFACT_ID);
+        findOrCreatePlugin(topLevelProject, LatheLayout.Maven.LATHE_GROUP_ID, PLUGIN_ARTIFACT_ID);
     plugin.setVersion(version);
-    bindGoal(plugin, LatheLayout.Maven.INIT_EXECUTION_ID, LatheLayout.Maven.INIT_GOAL);
-    bindGoal(plugin, LatheLayout.Maven.SYNC_EXECUTION_ID, LatheLayout.Maven.SYNC_GOAL);
+    bindGoal(plugin, INIT_EXECUTION_ID, INIT_GOAL);
+    bindGoal(plugin, SYNC_EXECUTION_ID, LatheLayout.Maven.SYNC_GOAL);
   }
 
   private static Optional<Plugin> findPlugin(

@@ -14,7 +14,7 @@ import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.TreeScanner;
 import com.sun.source.util.Trees;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
@@ -57,7 +57,6 @@ import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.eclipse.lsp4j.TextDocumentIdentifier;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
-import org.eclipse.lsp4j.services.LanguageClient;
 
 // Dev tool, not a test: runs extract method over every candidate selection of a real repo through
 // the editor's own path (open, codeAction, codeAction/resolve) and reports crashes, false offers
@@ -74,7 +73,7 @@ public final class ExtractMethodSweep {
   private static final long TIMEOUT_SECONDS = Long.getLong("sweep.timeout", 300);
   // Held strongly: JUL keeps loggers weakly, and a collected one would take its level with it.
   private static final Logger PROVIDER_LOG =
-      Logger.getLogger("io.github.aglibs.lathe.analysis.ExtractMethodProvider");
+      Logger.getLogger("io.github.aglibs.lathe.analysis.refactor.ExtractMethodProvider");
   private static final Pattern REFUSED =
       Pattern.compile("^\\[codeAction:extractMethod\\] refused: \\[(.*)\\]$");
 
@@ -82,7 +81,8 @@ public final class ExtractMethodSweep {
   private final Path out;
   private final double resolveFraction;
   private final Random random;
-  private final LatheTextDocumentService service = new LatheTextDocumentService();
+  private final SessionHost host = new SessionHost();
+  private final LatheTextDocumentService service = new LatheTextDocumentService(host);
   private final ConcurrentLinkedQueue<LogRecord> records = new ConcurrentLinkedQueue<>();
   private final Map<String, Integer> outcomes = new TreeMap<>();
   private final Map<String, Integer> refusals = new TreeMap<>();
@@ -124,7 +124,7 @@ public final class ExtractMethodSweep {
               .filter(name -> !name.isBlank())
               .toList());
     } finally {
-      sweep.service.close();
+      sweep.host.close();
     }
 
     System.exit(0);
@@ -132,12 +132,12 @@ public final class ExtractMethodSweep {
 
   private void run(final int maxFiles, final List<String> only) throws Exception {
     captureLogs();
-    service.connect(noopClient());
-    service.setDocumentsFollowDisk(true);
+    host.connect(noopClient());
+    host.setDocumentsFollowDisk(true);
     service.setCodeActionResolveSupported(true);
-    service.initialize(repo);
+    host.initialize(repo);
     // As LatheEngine does before its first compile: bring the mirror up to date.
-    service.reconcileForVerify().get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    host.onLoopFuture(WorkspaceSession::reconcileForVerify).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
     final List<Path> files =
         new ArrayList<>(FileUtil.walkFiles(repo, ExtractMethodSweep::isSource));
@@ -197,7 +197,7 @@ public final class ExtractMethodSweep {
     final String uri = LatheUri.fromPath(file);
     // A file that does not compile as it is makes every compile check fail: counted apart.
     fileHasErrors =
-        service
+        host
             .onLoopFuture(session -> session.diagnosticsFuture(uri, content, 1))
             .get(TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .stream()
@@ -246,7 +246,7 @@ public final class ExtractMethodSweep {
         actions.stream()
             .filter(Either::isRight)
             .map(Either::getRight)
-            .filter(a -> ExtractionSupport.METHOD_KIND.equals(a.getKind()))
+            .filter(a -> ExtractKinds.METHOD_KIND.equals(a.getKind()))
             .toList();
     if (offered.isEmpty()) {
       final List<String> reasons =
@@ -471,10 +471,10 @@ public final class ExtractMethodSweep {
   }
 
   // A client that accepts every notification and answers every request with nothing.
-  private static LanguageClient noopClient() {
-    return (LanguageClient)
+  private static LatheLanguageClient noopClient() {
+    return (LatheLanguageClient)
         Proxy.newProxyInstance(
-            LanguageClient.class.getClassLoader(),
+            LatheLanguageClient.class.getClassLoader(),
             new Class<?>[] {LatheLanguageClient.class},
             (proxy, method, args) ->
                 method.getReturnType() == CompletableFuture.class

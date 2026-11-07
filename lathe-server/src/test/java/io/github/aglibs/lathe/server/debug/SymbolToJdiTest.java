@@ -33,6 +33,7 @@ final class SymbolToJdiTest {
   private static AttributedExpression attribute(
       final SourceAnalysisSession session, final String expression) {
     return session
+        .files()
         .attributeExpression(TempSourceCompiler.TEST_URI, SAMPLE, LINE, expression)
         .orElseThrow();
   }

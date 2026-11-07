@@ -1,7 +1,7 @@
 -- Handles the server's `lathe/sync` notification (and the `:LatheSync` command) by running the
 -- workspace's `.lathe/lathe-sync.sh`, which the build wrote, so the `.lathe/` mirror and captured
 -- launch templates refresh. Neither the server nor this client knows the build tool: the script does.
--- `captureTests` passes `--tests` (re-capture test-launch.json for neotest); `modules` scope it.
+-- `captureTests` passes `--tests` (re-capture test-launch.json for neotest).
 --
 -- Presentation: while the build runs, a transient "syncing… Ns" toast (carrying the command) is
 -- refreshed every couple of seconds; on completion it becomes a one-line success summary. Both
@@ -238,7 +238,7 @@ end
 function M.setup()
   vim.lsp.handlers["lathe/sync"] = function(_err, result)
     if result then
-      M.run(result.workspaceRoot, result.captureTests, result.modules)
+      M.run(result.workspaceRoot, result.captureTests)
     end
   end
 

@@ -27,7 +27,7 @@ class CallHierarchyPrepareTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       final CallHierarchyItem item = items.get(0);
@@ -54,7 +54,7 @@ class CallHierarchyPrepareTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<CallHierarchyItem> items = session.prepareCallHierarchy(request);
+      final List<CallHierarchyItem> items = session.hierarchy().prepareCallHierarchy(request);
       assertThat(items).hasSize(1);
 
       final CallHierarchyItem item = items.get(0);
@@ -77,7 +77,7 @@ class CallHierarchyPrepareTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      assertThat(session.prepareCallHierarchy(request)).isEmpty();
+      assertThat(session.hierarchy().prepareCallHierarchy(request)).isEmpty();
     }
   }
 
@@ -88,7 +88,7 @@ class CallHierarchyPrepareTest {
     final var request = request(content, new Position(9999, 0));
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      assertThat(session.prepareCallHierarchy(request)).isEmpty();
+      assertThat(session.hierarchy().prepareCallHierarchy(request)).isEmpty();
     }
   }
 

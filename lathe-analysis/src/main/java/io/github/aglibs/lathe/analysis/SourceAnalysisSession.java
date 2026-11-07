@@ -1,62 +1,23 @@
 package io.github.aglibs.lathe.analysis;
 
 import com.sun.source.tree.ClassTree;
-import com.sun.source.tree.CompilationUnitTree;
-import com.sun.source.tree.Tree;
-import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.completion.CompletionEngine;
-import io.github.aglibs.lathe.analysis.completion.CompletionOutcome;
 import io.github.aglibs.lathe.analysis.completion.CompletionRequest;
-import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
 import io.github.aglibs.lathe.core.typeindex.TypeKind;
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.IntConsumer;
-import java.util.function.Predicate;
-import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.ExecutableElement;
-import javax.lang.model.element.TypeElement;
-import javax.lang.model.element.VariableElement;
-import javax.lang.model.type.ArrayType;
-import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.ElementFilter;
-import javax.lang.model.util.Types;
-import org.eclipse.lsp4j.CallHierarchyIncomingCall;
-import org.eclipse.lsp4j.CallHierarchyItem;
-import org.eclipse.lsp4j.CallHierarchyOutgoingCall;
-import org.eclipse.lsp4j.CodeAction;
-import org.eclipse.lsp4j.Command;
 import org.eclipse.lsp4j.CompletionContext;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.DiagnosticSeverity;
-import org.eclipse.lsp4j.DocumentSymbol;
-import org.eclipse.lsp4j.FoldingRange;
-import org.eclipse.lsp4j.Hover;
-import org.eclipse.lsp4j.Location;
-import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
-import org.eclipse.lsp4j.Range;
-import org.eclipse.lsp4j.SignatureHelp;
-import org.eclipse.lsp4j.TypeHierarchyItem;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
-import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
 public final class SourceAnalysisSession implements AutoCloseable {
 
@@ -72,6 +33,10 @@ public final class SourceAnalysisSession implements AutoCloseable {
   private final Map<String, String> cleanParses = new HashMap<>();
   private final SourceParser parser;
   private final TypeHierarchyResolver typeHierarchyResolver;
+  private final NavigationFeatures navigation;
+  private final ReferenceFeatures references;
+  private final HierarchyFeatures hierarchy;
+  private final FileFeatures files;
 
   public SourceAnalysisSession(final JavaSourceCompiler compiler) {
     this.compiler = compiler;
@@ -80,6 +45,28 @@ public final class SourceAnalysisSession implements AutoCloseable {
     this.definitionLocator = new DefinitionLocator(parser);
     this.javadocLocator = new JavadocLocator(parser);
     this.typeHierarchyResolver = new TypeHierarchyResolver(parser);
+    this.navigation =
+        new NavigationFeatures(
+            this, compiler, parser, definitionLocator, javadocLocator, typeHierarchyResolver);
+    this.references = new ReferenceFeatures(this, compiler);
+    this.hierarchy = new HierarchyFeatures(this, definitionLocator, typeHierarchyResolver);
+    this.files = new FileFeatures(this, compiler, parser);
+  }
+
+  public NavigationFeatures navigation() {
+    return navigation;
+  }
+
+  public ReferenceFeatures references() {
+    return references;
+  }
+
+  public HierarchyFeatures hierarchy() {
+    return hierarchy;
+  }
+
+  public FileFeatures files() {
+    return files;
   }
 
   public List<Diagnostic> compile(
@@ -265,870 +252,6 @@ public final class SourceAnalysisSession implements AutoCloseable {
     }
   }
 
-  public List<DocumentSymbol> documentSymbol(final String uri, final String content) {
-    final var t = Stopwatch.start();
-    final var symbols =
-        parser
-            .parseContent(
-                uri, content, (trees, tree) -> DocumentSymbolScanner.scan(trees, tree, content))
-            .orElseGet(List::of);
-    LOG.fine(
-        () -> "[documentSymbol] %s %dms symbols=%d".formatted(uri, t.elapsedMs(), symbols.size()));
-    return symbols;
-  }
-
-  public List<RunTarget> runnables(
-      final String uri, final String content, final int expectedVersion, final String moduleRel) {
-    final var t = Stopwatch.start();
-    final CachedFileAnalysis cached = attributedAnalysis(uri, content, expectedVersion);
-    if (cached == null || cached.analysis() == null || cached.analysis().tree() == null) {
-      return List.of();
-    }
-
-    final var runnables = RunnableScanner.scan(cached.analysis(), uri, moduleRel);
-    LOG.fine(
-        () -> "[runnables] %s %dms targets=%d".formatted(uri, t.elapsedMs(), runnables.size()));
-    return runnables;
-  }
-
-  /**
-   * The binary name (e.g. {@code com.example.Outer$Inner}) of the class enclosing a 1-based line,
-   * from the already-attributed analysis of an open file — the mapping the debug adapter's
-   * source-lookup provider needs to arm a JDI breakpoint. Empty when the file is not
-   * open/attributed or the line is outside any class.
-   */
-  public Optional<String> enclosingBinaryName(final String uri, final int oneBasedLine) {
-    final CachedFileAnalysis cached = cache.get(uri);
-    if (cached == null || cached.analysis() == null || cached.analysis().tree() == null) {
-      return Optional.empty();
-    }
-
-    final AttributedFileAnalysis analysis = cached.analysis();
-    final CompilationUnitTree cu = analysis.tree();
-    final long offset = SourceLocator.toOffset(cu, oneBasedLine - 1, 0);
-    if (offset == javax.tools.Diagnostic.NOPOS) {
-      return Optional.empty();
-    }
-
-    for (TreePath p = SourceLocator.pathAt(analysis.trees(), cu, offset);
-        p != null;
-        p = p.getParentPath()) {
-      if (p.getLeaf() instanceof ClassTree) {
-        final Element element = analysis.trees().getElement(p);
-        if (element instanceof final TypeElement type) {
-          return Optional.of(analysis.elements().getBinaryName(type).toString());
-        }
-      }
-    }
-
-    return Optional.empty();
-  }
-
-  /**
-   * Attributes a debugger expression in the scope of a suspended frame (Stage 1 of expression
-   * evaluation): splices {@code var __LATHE_EVAL__ = (expression);} into {@code content} at {@code
-   * oneBasedLine}, attributes the whole unit, and lifts the attributed initializer subtree. Uses a
-   * transient FAST compile that does not touch the open-document cache. Empty when the unit cannot
-   * be attributed or the spliced statement did not land in a resolvable scope.
-   */
-  public Optional<AttributedExpression> attributeExpression(
-      final String uri, final String content, final int oneBasedLine, final String expression) {
-    final var t = Stopwatch.start();
-    final String spliced = ExpressionSplice.at(content, oneBasedLine, expression);
-    final AttributedFileAnalysis analysis =
-        compiler.compile(uri, spliced, CompileMode.FAST).fileAnalysis();
-    final Optional<AttributedExpression> result =
-        ExpressionSplice.locate(analysis)
-            .map(
-                path ->
-                    new AttributedExpression(
-                        path, analysis.trees(), analysis.elements(), analysis.types()));
-    LOG.fine(
-        () ->
-            "[eval:attribute] %s line=%d %dms resolved=%s"
-                .formatted(uri, oneBasedLine, t.elapsedMs(), result.isPresent()));
-    return result;
-  }
-
-  /**
-   * Attributes an expression evaluated against an object of {@code receiverType} rather than a
-   * stack frame (the debugger's object-scoped evaluation, used by logical collection/map views):
-   * the expression is spliced as {@code receiver.EXPR} inside a synthetic static method that takes
-   * {@code receiver} of that type, so javac resolves the members against the object's type. The
-   * interpreter then binds {@code receiver} to the actual object. {@code receiverType} is a source
-   * type name (nested types written with {@code .}).
-   */
-  public Optional<AttributedExpression> attributeReceiverExpression(
-      final String uri, final String receiverType, final String receiver, final String expression) {
-    final var t = Stopwatch.start();
-    final String content =
-        "final class __LATHE_OBJ__ { static void __e(%s %s) { var %s = (%s.%s); } }"
-            .formatted(receiverType, receiver, ExpressionSplice.SENTINEL, receiver, expression);
-    final AttributedFileAnalysis analysis =
-        compiler.compile(uri, content, CompileMode.FAST).fileAnalysis();
-    final Optional<AttributedExpression> result =
-        ExpressionSplice.locate(analysis)
-            .map(
-                path ->
-                    new AttributedExpression(
-                        path, analysis.trees(), analysis.elements(), analysis.types()));
-    LOG.fine(
-        () ->
-            "[eval:attribute-receiver] %s type=%s %dms resolved=%s"
-                .formatted(uri, receiverType, t.elapsedMs(), result.isPresent()));
-    return result;
-  }
-
-  public List<FoldingRange> foldingRange(final String uri, final String content) {
-    final var t = Stopwatch.start();
-    final var ranges =
-        parser.parseContent(uri, content, FoldingRangeScanner::scan).orElseGet(List::of);
-    LOG.fine(() -> "[foldingRange] %s %dms ranges=%d".formatted(uri, t.elapsedMs(), ranges.size()));
-    return ranges;
-  }
-
-  public List<SemanticToken> semanticTokens(
-      final String uri, final String content, final int expectedVersion) {
-    final CachedFileAnalysis cached = attributedAnalysis(uri, content, expectedVersion);
-    return cached != null ? cached.analysis().semanticTokens() : null;
-  }
-
-  /**
-   * Returns the cached attributed analysis when it already matches {@code content}/{@code
-   * expectedVersion} (the common case -- compile-on-open/change/save already attributes for
-   * diagnostics, so this is normally free), otherwise forces one fresh compile and returns whatever
-   * lands in the cache afterward (possibly null, if compilation could not attribute at all).
-   */
-  private CachedFileAnalysis attributedAnalysis(
-      final String uri, final String content, final int expectedVersion) {
-    final CachedFileAnalysis ctx = cache.get(uri);
-    if (ctx != null && ctx.version() == expectedVersion && ctx.content().equals(content)) {
-      return ctx;
-    }
-
-    compile(uri, content, expectedVersion, CompileMode.OPEN);
-    return cache.get(uri);
-  }
-
-  public SignatureHelp signatureHelp(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return null;
-    }
-
-    final long offset =
-        SourceLocator.toOffset(
-            cur.analysis().tree(), request.pos().getLine(), request.pos().getCharacter());
-    return SignatureHelpResolver.resolve(
-        cur.analysis(), cur.path(), offset, parser, allRoots(request), javadocLocator);
-  }
-
-  // Whether the request's position is on a name, not on a word of a comment or a literal; true
-  // when the file has no analysis to check against.
-  public boolean onName(final SourceFeatureRequest request) {
-    final CursorContext cur = resolve(request);
-    return cur == null
-        || IOUtil.unchecked(() -> SourceLocator.onName(cur.analysis(), cur.path(), cur.offset()));
-  }
-
-  public Hover hover(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final CursorContext cur = resolve(request);
-    if (cur == null) {
-      return null;
-    }
-
-    final VariableElement param =
-        SourceLocator.parameterElementAt(cur.analysis().trees(), cur.path());
-    if (param != null) {
-      final var callee = (ExecutableElement) param.getEnclosingElement();
-      final int index = callee.getParameters().indexOf(param);
-      final List<String> paramNames = parser.resolveParamNames(callee, allRoots(request));
-      final var fmt = new TypeDisplayFormatter(cur.analysis().types());
-      final String label =
-          HoverFormatter.formatParam(
-              param,
-              fmt,
-              paramNames,
-              index,
-              callee.isVarArgs() && index == callee.getParameters().size() - 1);
-      LOG.fine(() -> "[hover] param=%s %dms".formatted(param, t.elapsedMs()));
-      return new Hover(new MarkupContent("markdown", "```java\n%s\n```".formatted(label)));
-    }
-
-    final Element element = elementOrJavadocReference(cur);
-    final TypeMirror type =
-        cur.path() != null ? cur.analysis().trees().getTypeMirror(cur.path()) : null;
-    final List<Path> allRoots = allRoots(request);
-    final var javadoc =
-        javadocLocator
-            .locate(element, cur.analysis().trees(), allRoots)
-            .map(JavadocMarkdownPrinter::format)
-            .orElse(null);
-    final var origin =
-        request.libraries().originLabel(element, compiler.fileManager()).orElse(null);
-    final var fmt = new TypeDisplayFormatter(cur.analysis().types());
-    final List<String> sourceParamNames =
-        element instanceof ExecutableElement exe ? parser.resolveParamNames(exe, allRoots) : null;
-    LOG.fine(
-        () ->
-            "[hover] %dms element=%s type=%s doc=%s origin=%s"
-                .formatted(t.elapsedMs(), element, type, javadoc != null, origin));
-    return HoverFormatter.format(element, type, javadoc, origin, fmt, sourceParamNames)
-        .map(md -> new Hover(new MarkupContent("markdown", md)))
-        .orElse(null);
-  }
-
-  private static List<Path> allRoots(final SourceFeatureRequest request) {
-    return Stream.concat(
-            request.sourceRoots().stream(), request.libraries().externalSourceDirs().stream())
-        .toList();
-  }
-
-  // The accessors Lombok generated from the field at the cursor, as reference targets: their calls
-  // use the field. None for anything else.
-  public List<ReferenceTarget> generatedAccessorTargets(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : elementOrJavadocReference(cur);
-    if (element == null) {
-      return List.of();
-    }
-
-    final var analysis = cur.analysis();
-    return SourceLocator.generatedAccessors(element).stream()
-        .map(
-            accessor ->
-                ReferenceTarget.from(
-                    accessor, analysis.trees(), analysis.types(), analysis.elements()))
-        .toList();
-  }
-
-  public ReferenceTarget resolveTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return null;
-    }
-
-    final var trees = cur.analysis().trees();
-    final var constructor = SourceLocator.constructorAtNewClassType(trees, cur.path());
-    final var element = constructor != null ? constructor : elementOrJavadocReference(cur);
-    if (element == null) {
-      return null;
-    }
-
-    return ReferenceTarget.from(element, trees, cur.analysis().types(), cur.analysis().elements());
-  }
-
-  // A constructor rename redirects to its enclosing type. Null when the cursor does not name a
-  // renameable element (the file move a public top-level type needs is gated in WorkspaceSession).
-  public ReferenceTarget resolveRenameTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : renameElement(request, cur);
-    return element == null
-        ? null
-        : ReferenceTarget.from(
-            element, cur.analysis().trees(), cur.analysis().types(), cur.analysis().elements());
-  }
-
-  // Why renaming the symbol at the cursor to newName would collide with an existing declaration.
-  public Optional<String> renameConflict(final SourceFeatureRequest request, final String newName) {
-    final var cur = resolve(request);
-    final Element element = cur == null ? null : renameElement(request, cur);
-    return element == null
-        ? Optional.empty()
-        : RenameConflicts.find(element, newName, cur.analysis());
-  }
-
-  // Whether renaming keeps what every name in this module's checked files means, attributing them
-  // as the rename leaves them; the reason to refuse when it does not.
-  public Optional<String> renameBindingConflict(
-      final RenameBindingCheck.RenameCheck check,
-      final List<RenameBindingCheck.CheckedFile> visibleEdits,
-      final List<RenameBindingCheck.CheckedFile> checked,
-      final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final Optional<String> conflict =
-        RenameBindingCheck.find(compiler, check, visibleEdits, checked, cancelChecker);
-    LOG.fine(
-        () ->
-            "[rename:check] %s edited=%d checked=%d %dms conflict=%s"
-                .formatted(
-                    check.newName(),
-                    visibleEdits.size(),
-                    checked.size(),
-                    t.elapsedMs(),
-                    conflict.isPresent()));
-    return conflict;
-  }
-
-  private static Element renameElement(
-      final SourceFeatureRequest request, final CursorContext cur) {
-    final Element constructor =
-        SourceLocator.constructorAtNewClassType(cur.analysis().trees(), cur.path());
-    final Element named = constructor != null ? constructor : elementOrJavadocReference(cur);
-    if (named == null) {
-      return null;
-    }
-
-    final Element element =
-        named.getKind() == ElementKind.CONSTRUCTOR ? named.getEnclosingElement() : named;
-    return isRenameable(element) && cursorNames(request.content(), cur.offset(), element)
-        ? element
-        : null;
-  }
-
-  private static boolean isRenameable(final Element element) {
-    return switch (element.getKind()) {
-      case LOCAL_VARIABLE,
-          PARAMETER,
-          EXCEPTION_PARAMETER,
-          RESOURCE_VARIABLE,
-          BINDING_VARIABLE,
-          TYPE_PARAMETER,
-          FIELD,
-          ENUM_CONSTANT,
-          METHOD,
-          RECORD_COMPONENT ->
-          true;
-      case CLASS, INTERFACE, ENUM, RECORD, ANNOTATION_TYPE -> true;
-      default -> false;
-    };
-  }
-
-  /**
-   * The instantiation-search targets for the type at the cursor: one {@link ReferenceTarget} per
-   * constructor (including the synthesized default), so a reference search yields the type's {@code
-   * new XXX(...)} sites. Empty when the cursor is not on a type (or a constructor of one).
-   */
-  public List<ReferenceTarget> instantiationTargets(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return List.of();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    final var type = instantiableTypeOf(element);
-    if (type == null) {
-      return List.of();
-    }
-
-    final var types = cur.analysis().types();
-    final var elements = cur.analysis().elements();
-    return ElementFilter.constructorsIn(type.getEnclosedElements()).stream()
-        .map(constructor -> ReferenceTarget.from(constructor, types, elements))
-        .toList();
-  }
-
-  private static TypeElement instantiableTypeOf(final Element element) {
-    if (element instanceof final TypeElement type) {
-      return type;
-    }
-
-    if (element != null && element.getKind() == ElementKind.CONSTRUCTOR) {
-      return (TypeElement) element.getEnclosingElement();
-    }
-
-    return null;
-  }
-
-  public ReferenceTarget resolveContractTarget(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return null;
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element == null) {
-      return null;
-    }
-
-    return DeclarationLocator.findContract(
-            element, cur.analysis().types(), cur.analysis().elements())
-        .map(
-            contract ->
-                ReferenceTarget.from(contract, cur.analysis().types(), cur.analysis().elements()))
-        .orElse(null);
-  }
-
-  public SearchHits<ReferenceMatch> searchReferences(
-      final String uri,
-      final String content,
-      final int version,
-      final ReferenceTarget target,
-      final boolean includeDeclaration) {
-    return searchReferences(uri, content, version, target, includeDeclaration, Set.of(), () -> {});
-  }
-
-  // exposureFamily: the family whose exposure to unnamed files to report (FamilyExposure), empty
-  // for none.
-  public SearchHits<ReferenceMatch> searchReferences(
-      final String uri,
-      final String content,
-      final int version,
-      final ReferenceTarget target,
-      final boolean includeDeclaration,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    final AttributedFileAnalysis analysis =
-        ensureAttributedAnalysis(uri, content, version, cancelChecker);
-    cancelChecker.checkCanceled();
-    return new SearchHits<>(
-        locateReferences(uri, target, includeDeclaration, analysis),
-        FamilyExposure.exposures(analysis, exposureFamily));
-  }
-
-  public SearchHits<ReferenceMatch> searchReferencesTransient(
-      final List<TransientSource> sources,
-      final ReferenceTarget target,
-      final boolean includeDeclaration,
-      final Set<String> exposureFamily,
-      final IntConsumer progressPerFile,
-      final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
-    cancelChecker.checkCanceled();
-    LOG.fine(() -> "[references:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
-    final var results = new ArrayList<SearchHits<ReferenceMatch>>();
-    for (final var analysis : analyses) {
-      cancelChecker.checkCanceled();
-      final List<ReferenceMatch> matches =
-          locateReferences(analysis.uri(), target, includeDeclaration, analysis.analysis());
-      results.add(
-          new SearchHits<>(matches, FamilyExposure.exposures(analysis.analysis(), exposureFamily)));
-      progressPerFile.accept(matches.size());
-    }
-
-    return SearchHits.merge(results);
-  }
-
-  public SearchHits<CallHierarchyIncomingCall> searchIncomingCalls(
-      final String uri,
-      final String content,
-      final int version,
-      final ReferenceTarget target,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    final AttributedFileAnalysis analysis =
-        ensureAttributedAnalysis(uri, content, version, cancelChecker);
-    cancelChecker.checkCanceled();
-    return new SearchHits<>(
-        locateIncomingCalls(uri, target, analysis),
-        FamilyExposure.exposures(analysis, exposureFamily));
-  }
-
-  public SearchHits<CallHierarchyIncomingCall> searchIncomingCallsTransient(
-      final String uri,
-      final String content,
-      final ReferenceTarget target,
-      final Set<String> exposureFamily,
-      final CancelChecker cancelChecker) {
-    final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
-    cancelChecker.checkCanceled();
-    LOG.info(
-        () ->
-            "[compile:fast] %s %dms diags=%d"
-                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return new SearchHits<>(
-        locateIncomingCalls(uri, target, run.fileAnalysis()),
-        FamilyExposure.exposures(run.fileAnalysis(), exposureFamily));
-  }
-
-  private List<CallHierarchyIncomingCall> locateIncomingCalls(
-      final String uri, final ReferenceTarget target, final AttributedFileAnalysis analysis) {
-    if (analysis == null || analysis.tree() == null) {
-      return List.of();
-    }
-    try {
-      return CallHierarchyIncomingLocator.scan(analysis, target, uri);
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING, e, () -> "[incomingCalls] failed to read source for %s".formatted(uri));
-      return List.of();
-    }
-  }
-
-  private List<ReferenceMatch> locateReferences(
-      final String uri,
-      final ReferenceTarget target,
-      final boolean includeDeclaration,
-      final AttributedFileAnalysis analysis) {
-    if (analysis == null || analysis.tree() == null) {
-      return List.of();
-    }
-
-    try {
-      final List<ReferenceMatch> results =
-          ReferenceLocator.references(analysis, target, uri, includeDeclaration);
-      LOG.fine(
-          () ->
-              "[references:file] uri=%s element=%s hits=%d"
-                  .formatted(uri, target.simpleName(), results.size()));
-      return results;
-    } catch (final IOException e) {
-      throw new UncheckedIOException("cannot read the source of %s".formatted(uri), e);
-    }
-  }
-
-  // A query over an open file's attributed analysis, the cached one when it is current.
-  public <T> List<T> queryFile(
-      final String uri,
-      final String content,
-      final int version,
-      final Function<AttributedFileAnalysis, List<T>> query) {
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
-    return analysis != null ? query.apply(analysis) : List.of();
-  }
-
-  // The simple name of the functional interface under the cursor, or whose single abstract method
-  // is; empty otherwise. Lets the workspace widen an implementation search to the lambdas and
-  // method references that implement it.
-  public Optional<String> functionalInterfaceName(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return Optional.empty();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element == null) {
-      return Optional.empty();
-    }
-
-    final var owner =
-        element instanceof final TypeElement type ? type : element.getEnclosingElement();
-    if (!(owner instanceof final TypeElement ownerType)
-        || ownerType.getKind() != ElementKind.INTERFACE) {
-      return Optional.empty();
-    }
-
-    final var sam = FunctionalInterfaces.singleAbstractMethod(ownerType, cur.analysis().elements());
-    return sam != null && (element == ownerType || sam.equals(element))
-        ? Optional.of(ownerType.getSimpleName().toString())
-        : Optional.empty();
-  }
-
-  // A query over a file that is not open, attributed once and not cached.
-  public <T> List<T> queryFileTransient(
-      final String uri,
-      final String content,
-      final Function<AttributedFileAnalysis, List<T>> query) {
-    final var t = Stopwatch.start();
-    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, () -> {});
-    LOG.info(
-        () ->
-            "[compile:fast] %s %dms diags=%d"
-                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
-    return query.apply(run.fileAnalysis());
-  }
-
-  private Optional<Location> findDefinitionLocation(
-      final SourceFeatureRequest request, final CursorContext cur, final Element element) {
-    Optional<Location> result =
-        definitionLocator.locate(
-            element, cur.analysis().trees(), request.sourceRoots(), request.uri());
-    if (result.isEmpty()) {
-      result =
-          request
-              .libraries()
-              .externalSourceRoot(element, compiler.fileManager())
-              .flatMap(root -> DefinitionLocator.findSourceFile(element, List.of(root)))
-              .flatMap(
-                  file ->
-                      definitionLocator
-                          .parsePosition(file, element)
-                          .map(
-                              lspPos ->
-                                  new Location(
-                                      file.toUri().toString(), new Range(lspPos, lspPos))));
-    }
-
-    return result;
-  }
-
-  public Optional<Location> definition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
-      return Optional.empty();
-    }
-
-    final var element = elementOrJavadocReference(cur);
-    final var result = findDefinitionLocation(request, cur, element);
-
-    LOG.fine(
-        () ->
-            "[definition] %dms element=%s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    result.map(SourceAnalysisSession::where).orElse("not found")));
-    return result;
-  }
-
-  // The declaration of the type of the symbol at the cursor: a variable's or field's type, a
-  // method's return type, a constructor's class, a type itself; an array's element type, a
-  // generic's
-  // declared type. Nothing for a primitive or void.
-  public Optional<Location> typeDefinition(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
-      return Optional.empty();
-    }
-
-    final var element = elementOrJavadocReference(cur);
-    final Optional<Location> result =
-        typeOf(element, cur.analysis().types())
-            .flatMap(type -> findDefinitionLocation(request, cur, type));
-    LOG.fine(
-        () ->
-            "[typeDefinition] %dms element=%s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    result.map(SourceAnalysisSession::where).orElse("not found")));
-    return result;
-  }
-
-  private static Optional<Element> typeOf(final Element element, final Types types) {
-    if (element == null || element instanceof TypeElement) {
-      return Optional.ofNullable(element);
-    }
-
-    TypeMirror type =
-        element instanceof final ExecutableElement method
-            ? method.getKind() == ElementKind.CONSTRUCTOR
-                ? method.getEnclosingElement().asType()
-                : method.getReturnType()
-            : element.asType();
-    while (type instanceof final ArrayType array) {
-      type = array.getComponentType();
-    }
-
-    return Optional.ofNullable(types.asElement(type));
-  }
-
-  private static String where(final Location location) {
-    return "%s:%d".formatted(location.getUri(), location.getRange().getStart().getLine());
-  }
-
-  public Optional<Location> declaration(final SourceFeatureRequest request) {
-    final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
-      return Optional.empty();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element != null) {
-      final var contractOpt =
-          DeclarationLocator.findContract(
-              element, cur.analysis().types(), cur.analysis().elements());
-      if (contractOpt.isPresent()) {
-        final var contract = contractOpt.get();
-        final var result = findDefinitionLocation(request, cur, contract);
-
-        LOG.fine(
-            () ->
-                "[declaration] %dms element=%s contract=%s → %s"
-                    .formatted(
-                        t.elapsedMs(),
-                        element,
-                        contract,
-                        result.map(SourceAnalysisSession::where).orElse("not found")));
-        return result;
-      }
-    }
-
-    final var fallback = findDefinitionLocation(request, cur, element);
-
-    LOG.fine(
-        () ->
-            "[declaration] %dms fallback to definition %s → %s"
-                .formatted(
-                    t.elapsedMs(),
-                    element,
-                    fallback.map(SourceAnalysisSession::where).orElse("not found")));
-    return fallback;
-  }
-
-  public List<Location> typeImplementations(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final var t = Stopwatch.start();
-    final var cur = resolve(request);
-    if (cur == null) {
-      return List.of();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final TypeElement typeElement)) {
-      return List.of();
-    }
-
-    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    final List<Path> sourceRoots = typeSourceRoots(request);
-    final List<Location> results =
-        typeIndex.transitiveSubtypes(binaryName).stream()
-            .flatMap(entry -> typeHierarchyResolver.locateSource(entry, sourceRoots).stream())
-            .toList();
-    LOG.fine(
-        () ->
-            "[implementation:type] %s %dms hits=%d"
-                .formatted(request.uri(), t.elapsedMs(), results.size()));
-    return results;
-  }
-
-  public List<TypeHierarchyItem> prepareTypeHierarchy(
-      final SourceFeatureRequest request, final WorkspaceTypeIndex typeIndex) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return List.of();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (!(element instanceof final TypeElement typeElement)) {
-      return List.of();
-    }
-
-    final var binaryName = cur.analysis().elements().getBinaryName(typeElement).toString();
-    return typeHierarchyResolver.prepare(binaryName, typeIndex, typeSourceRoots(request));
-  }
-
-  public List<CallHierarchyItem> prepareCallHierarchy(final SourceFeatureRequest request) {
-    final var cur = resolve(request);
-    if (cur == null) {
-      return List.of();
-    }
-
-    final var element = SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-    if (element == null) {
-      return List.of();
-    }
-
-    final var kind = element.getKind();
-    if (kind != ElementKind.METHOD && kind != ElementKind.CONSTRUCTOR) {
-      return List.of();
-    }
-
-    final var displayName = SourceLocator.declarationName(element).toString();
-
-    final TreePath methodPath = cur.analysis().trees().getPath(element);
-    if (methodPath != null) {
-      final var cu = cur.analysis().tree();
-      final var positions = cur.analysis().trees().getSourcePositions();
-      final long startOff = positions.getStartPosition(cu, methodPath.getLeaf());
-      final long endOff = positions.getEndPosition(cu, methodPath.getLeaf());
-      final var rangeStart = SourceLocator.offsetToPosition(cu, startOff);
-      final var rangeEnd = SourceLocator.offsetToPosition(cu, endOff);
-      final var range = new Range(rangeStart, rangeEnd);
-      Position selStart;
-      try {
-        selStart =
-            SourceLocator.declarationNamePosition(
-                    cur.analysis().trees(), cu, methodPath, displayName)
-                .orElse(rangeStart);
-      } catch (final IOException e) {
-        selStart = rangeStart;
-      }
-      final var selEnd =
-          new Position(selStart.getLine(), selStart.getCharacter() + displayName.length());
-      final var selectionRange = new Range(selStart, selEnd);
-      return List.of(
-          CallHierarchyItemDataCodec.buildItem(
-              element,
-              request.uri(),
-              range,
-              selectionRange,
-              cur.analysis().types(),
-              cur.analysis().elements()));
-    }
-
-    return DefinitionLocator.findSourceFile(element, allRoots(request))
-        .map(
-            file -> {
-              final var pos =
-                  definitionLocator.parsePosition(file, element).orElse(new Position(0, 0));
-              final var pointRange = new Range(pos, pos);
-              final var uri = file.toUri().toString();
-              return CallHierarchyItemDataCodec.buildItem(
-                  element,
-                  uri,
-                  pointRange,
-                  pointRange,
-                  cur.analysis().types(),
-                  cur.analysis().elements());
-            })
-        .map(List::of)
-        .orElseGet(List::of);
-  }
-
-  public List<CallHierarchyOutgoingCall> outgoingCalls(
-      final CallHierarchyItem item,
-      final String uri,
-      final String content,
-      final int version,
-      final List<Path> sourceRoots) {
-    final CallHierarchyItemData data = CallHierarchyItemDataCodec.decode(item.getData());
-    if (data == null) {
-      return List.of();
-    }
-
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
-    if (analysis == null) {
-      return List.of();
-    }
-
-    final var target =
-        new ReferenceTarget(
-            data.kind(),
-            data.ownerBinaryName(),
-            data.methodName(),
-            data.erasedDescriptor(),
-            data.scope(),
-            List.of(),
-            false,
-            data.staticMember(),
-            -1);
-    try {
-      return CallHierarchyOutgoingLocator.scan(analysis, target, sourceRoots, definitionLocator);
-    } catch (final IOException e) {
-      LOG.log(
-          Level.WARNING, e, () -> "[outgoingCalls] failed to read source for %s".formatted(uri));
-      return List.of();
-    }
-  }
-
-  public List<TypeHierarchyItem> typeHierarchySupertypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return typeHierarchyResolver.supertypes(item, typeIndex, sourceRoots);
-  }
-
-  public List<TypeHierarchyItem> typeHierarchySubtypes(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots) {
-    return typeHierarchyResolver.subtypes(item, typeIndex, sourceRoots);
-  }
-
-  public TypeHierarchyExplorerResult typeHierarchyExplore(
-      final TypeHierarchyItem item,
-      final WorkspaceTypeIndex typeIndex,
-      final List<Path> sourceRoots,
-      final int nodeCap) {
-    return typeHierarchyResolver.explore(item, typeIndex, sourceRoots, nodeCap);
-  }
-
-  private static List<Path> typeSourceRoots(final SourceFeatureRequest request) {
-    return Stream.of(
-            request.sourceRoots().stream(),
-            request.libraries().dependencySourceDirs().stream(),
-            request.libraries().jdkModuleSourceDirs().stream())
-        .flatMap(stream -> stream)
-        .toList();
-  }
-
   public List<TypeIndexEntry> cachedTypeEntries(final Set<String> neededSimpleNames) {
     if (neededSimpleNames.isEmpty()) {
       return List.of();
@@ -1155,173 +278,39 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return new TypeIndexEntry(simpleName, fqName, pkg, TypeKind.CLASS, true, List.of());
   }
 
-  public List<Either<Command, CodeAction>> codeAction(
-      final String uri,
-      final String content,
-      final int version,
-      final Range range,
-      final List<CodeActionRequest> requests,
-      final WorkspaceTypeIndex typeIndex,
-      final LearnedStaticImports staticImports) {
-    final var t = Stopwatch.start();
-    LOG.fine(() -> "[codeAction] %s diags=%d".formatted(uri, requests.size()));
-
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
-    if (analysis == null) {
-      return List.of();
-    }
-
-    final var importProvider = new ImportQuickFixProvider();
-    final var addThrowsProvider = new AddThrowsProvider();
-    final var tryCatchProvider = new TryCatchWrapProvider();
-    final var declareProvider = new DeclareVariableProvider();
-    final var missingImplProvider = new MissingMethodImplProvider();
-    final var seen = new HashSet<String>();
-    final var actions = new ArrayList<Either<Command, CodeAction>>();
-
-    for (final CodeActionRequest request : requests) {
-      final DiagnosticPayload payload = request.payload();
-      LOG.fine(() -> "[codeAction:diag] kind=%s name=%s".formatted(payload.kind(), payload.name()));
-
-      final List<Either<Command, CodeAction>> provided =
-          switch (payload.kind()) {
-            case TYPE_REF -> importProvider.provide(request, analysis, typeIndex);
-            case UNREPORTED_EXCEPTION ->
-                Stream.concat(
-                        addThrowsProvider.provide(request, analysis, typeIndex).stream(),
-                        tryCatchProvider.provide(request, analysis, typeIndex).stream())
-                    .toList();
-            case VARIABLE_REF ->
-                Stream.concat(
-                        ImportQuickFixProvider.staticImportActions(request, analysis, staticImports)
-                            .stream(),
-                        declareProvider.provide(request, analysis, typeIndex).stream())
-                    .toList();
-            case QUALIFIER_REF ->
-                Stream.concat(
-                        importProvider.provide(request, analysis, typeIndex).stream(),
-                        ImportQuickFixProvider.staticImportActions(request, analysis, staticImports)
-                            .stream())
-                    .toList();
-            case MISSING_METHOD_IMPL -> missingImplProvider.provide(request, analysis, typeIndex);
-          };
-
-      addUnique(actions, seen, provided);
-    }
-
-    if (requests.stream().anyMatch(r -> r.payload().kind().offersTypeImport())) {
-      actions.add(
-          Either.forLeft(
-              new Command(
-                  "Add missing imports…", "lathe.missingImports", List.of(Map.of("uri", uri)))));
-    }
-
-    addUnique(actions, seen, new ReplaceVarProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new ConvertToVarProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new ExtractVariableProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new ExtractConstantProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new ExtractFieldProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new ExtractMethodProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new TryWithResourcesProvider().provide(uri, range, analysis));
-    addUnique(actions, seen, new AddConstructorParameterProvider().provide(uri, range, analysis));
-
-    LOG.fine(() -> "[codeAction] %s %dms actions=%d".formatted(uri, t.elapsedMs(), actions.size()));
-    return actions;
-  }
-
-  public MissingImportsResult missingImports(
-      final String uri,
-      final String content,
-      final int version,
-      final WorkspaceTypeIndex typeIndex,
-      final LearnedStaticImports staticImports) {
-    final var t = Stopwatch.start();
-    // Compile first: it yields the unresolved-type diagnostics and refreshes the analysis cache, so
-    // the subsequent ensureAttributedAnalysis is a cache hit (no second compile).
-    final List<Diagnostic> diags = compile(uri, content, version, CompileMode.OPEN, () -> {});
-    final var analysis = ensureAttributedAnalysis(uri, content, version);
-    if (analysis == null || analysis.tree() == null) {
-      return MissingImportsResult.empty();
-    }
-
-    final var importAnalyzer = new ImportAnalyzer(analysis);
-    final Optional<ImportLayout> layout = importAnalyzer.layout();
-    if (layout.isEmpty()) {
-      return MissingImportsResult.empty();
-    }
-
-    final Set<String> alreadyImported = importAnalyzer.importedQualifiedNames();
-    final Map<String, Position> typeNames =
-        unresolvedNames(diags, DiagnosticPayload.Kind::offersTypeImport);
-    final Map<String, Position> memberNames =
-        unresolvedNames(diags, DiagnosticPayload.Kind::offersStaticImport);
-    final Set<String> plainTypeNames =
-        unresolvedNames(diags, kind -> kind == DiagnosticPayload.Kind.TYPE_REF).keySet();
-    // A qualifier (Objects in Objects.requireNonNull) may be either, so it gets both kinds of
-    // candidate. A name with none is listed only as a plain type, to say nothing matched it; any
-    // other such name is a typo, not an import to add.
-    final List<MissingImportsResult.MissingImport> items =
-        Stream.concat(typeNames.keySet().stream(), memberNames.keySet().stream())
-            .distinct()
-            .map(
-                name -> {
-                  final List<String> types =
-                      typeNames.containsKey(name)
-                          ? ImportCandidates.resolve(
-                              name, typeNames.get(name), analysis, typeIndex, alreadyImported)
-                          : List.of();
-                  final List<String> statics =
-                      memberNames.containsKey(name)
-                          ? StaticImportCandidates.importSpellings(staticImports, analysis, name)
-                          : List.of();
-                  return new MissingImportsResult.MissingImport(
-                      name, Stream.concat(types.stream(), statics.stream()).toList());
-                })
-            .filter(item -> !item.candidates().isEmpty() || plainTypeNames.contains(item.name()))
-            .toList();
-
-    LOG.fine(() -> "[missingImports] %s %dms names=%d".formatted(uri, t.elapsedMs(), items.size()));
-    return new MissingImportsResult(layout.get(), items);
-  }
-
-  // Distinct unresolved names of the matching kinds in encounter order, each mapped to the first
-  // diagnostic position that reported it (used to compute the accessibility scope for candidate
-  // resolution).
-  private static Map<String, Position> unresolvedNames(
-      final List<Diagnostic> diags, final Predicate<DiagnosticPayload.Kind> kinds) {
-    return diags.stream()
-        .filter(d -> d.getData() instanceof DiagnosticPayload p && kinds.test(p.kind()))
-        .collect(
-            Collectors.toMap(
-                d -> ((DiagnosticPayload) d.getData()).name(),
-                d -> d.getRange().getStart(),
-                (first, later) -> first,
-                LinkedHashMap::new));
-  }
-
-  private static void addUnique(
-      final List<Either<Command, CodeAction>> actions,
-      final HashSet<String> seen,
-      final List<Either<Command, CodeAction>> provided) {
-    for (final var action : provided) {
-      if (action.isRight() && seen.add(action.getRight().getTitle())) {
-        actions.add(action);
-      }
-    }
-  }
-
-  private AttributedFileAnalysis ensureAttributedAnalysis(
-      final String uri, final String content, final int version) {
-    return ensureAttributedAnalysis(uri, content, version, () -> {});
-  }
-
-  private AttributedFileAnalysis ensureAttributedAnalysis(
+  // The open file's attributed analysis: the cached one when it has this content, else a fresh
+  // compile, cached. Null when the file does not attribute.
+  public AttributedFileAnalysis analysis(
       final String uri,
       final String content,
       final int version,
       final CancelChecker cancelChecker) {
-    final var existing = currentCache(uri, content);
-    if (existing == null || existing.analysis().tree() == null) {
+    return cachedOrCompiled(uri, content, version, false, cancelChecker);
+  }
+
+  // The open file's attributed analysis for exactly this version: a cached analysis of the same
+  // text under another version is recompiled, so a version-keyed answer (semantic tokens,
+  // runnables) is for the version the client asked about. Null when the file does not attribute.
+  public AttributedFileAnalysis analysisAtVersion(
+      final String uri, final String content, final int expectedVersion) {
+    return cachedOrCompiled(uri, content, expectedVersion, true, () -> {});
+  }
+
+  // The cached analysis when it has this content and, when versionExact, this version, else a tree;
+  // otherwise a fresh compile, cached. A version-exact read keeps a treeless analysis: recompiling
+  // the same text would give none either.
+  private AttributedFileAnalysis cachedOrCompiled(
+      final String uri,
+      final String content,
+      final int version,
+      final boolean versionExact,
+      final CancelChecker cancelChecker) {
+    final CachedFileAnalysis current = cache.get(uri);
+    final boolean usable =
+        current != null
+            && current.content().equals(content)
+            && (versionExact ? current.version() == version : current.analysis().tree() != null);
+    if (!usable) {
       compile(uri, content, version, CompileMode.OPEN, cancelChecker);
     }
 
@@ -1330,56 +319,53 @@ public final class SourceAnalysisSession implements AutoCloseable {
     return cached != null ? cached.analysis() : null;
   }
 
+  // The open file's cached analysis, whatever content it was compiled from; empty when none is
+  // cached. Never compiles.
+  public Optional<AttributedFileAnalysis> cachedAnalysis(final String uri) {
+    final CachedFileAnalysis cached = cache.get(uri);
+    return cached != null ? Optional.ofNullable(cached.analysis()) : Optional.empty();
+  }
+
+  // A file attributed once, uncached: a file that is not open, or content that must not displace
+  // the open file's cached analysis.
+  public AttributedFileAnalysis transientAnalysis(
+      final String uri, final String content, final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final CompilerResult run = compiler.compile(uri, content, CompileMode.FAST, cancelChecker);
+    LOG.info(
+        () ->
+            "[compile:fast] %s %dms diags=%d"
+                .formatted(uri, t.elapsedMs(), run.diagnostics().size()));
+    return run.fileAnalysis();
+  }
+
+  // Many files attributed together, uncached.
+  public List<TransientAnalysis> transientAnalyses(
+      final List<TransientSource> sources, final CancelChecker cancelChecker) {
+    final var t = Stopwatch.start();
+    final List<TransientAnalysis> analyses = compiler.analyzeBatch(sources, cancelChecker);
+    LOG.fine(() -> "[analyze:batch] size=%d %dms".formatted(sources.size(), t.elapsedMs()));
+    return analyses;
+  }
+
   public void close() {
     cache.clear();
     parser.close();
     compiler.close();
   }
 
-  private record CursorContext(AttributedFileAnalysis analysis, TreePath path, long offset) {}
-
-  // The element at the cursor, or the Javadoc reference tag ({@link} / @see / @throws) under it.
-  // A member's Javadoc lies outside the member's tree, so its path ends at the enclosing class (or
-  // the compilation unit), which elementAt would resolve to: consult the Javadoc there first.
-  // Shared by hover, definition, references, and rename.
-  private static Element elementOrJavadocReference(final CursorContext cur) {
-    final Tree leaf = cur.path() != null ? cur.path().getLeaf() : null;
-    if (leaf == null || leaf instanceof ClassTree || leaf instanceof CompilationUnitTree) {
-      final Element reference = JavadocReferenceResolver.referenceAt(cur.analysis(), cur.offset());
-      if (reference != null) {
-        return reference;
-      }
-    }
-
-    return SourceLocator.elementAt(cur.analysis().trees(), cur.path());
-  }
-
-  // A rename edits the identifier at the cursor, so the target must be what that identifier names;
-  // otherwise Javadoc prose, a comment, or a keyword inside a class body would rename the
-  // enclosing class.
-  private static boolean cursorNames(
-      final String content, final long offset, final Element target) {
-    final int start = SourceLocator.identifierStart(content, (int) offset);
-    final int end = SourceLocator.identifierEnd(content, (int) offset);
-    return target.getSimpleName().contentEquals(content.substring(start, end));
-  }
-
-  private CachedFileAnalysis currentCache(final String uri, final String content) {
-    final CachedFileAnalysis cached = cache.get(uri);
-    return cached != null && cached.content().equals(content) ? cached : null;
-  }
-
-  private CursorContext resolve(final SourceFeatureRequest request) {
-    final var analysis =
-        ensureAttributedAnalysis(request.uri(), request.content(), request.version());
+  // The cursor's position in the request's file, attributed (the cached analysis when current);
+  // empty when the file has no tree.
+  public Optional<Cursor> cursor(final SourceFeatureRequest request) {
+    final var analysis = analysis(request.uri(), request.content(), request.version(), () -> {});
     if (analysis == null || analysis.tree() == null) {
-      return null;
+      return Optional.empty();
     }
 
     final long offset =
-        SourceLocator.toOffset(
-            analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
-    return new CursorContext(
-        analysis, SourceLocator.pathAt(analysis.trees(), analysis.tree(), offset), offset);
+        Positions.toOffset(analysis.tree(), request.pos().getLine(), request.pos().getCharacter());
+    return Optional.of(
+        new Cursor(
+            analysis, CursorElements.pathAt(analysis.trees(), analysis.tree(), offset), offset));
   }
 }

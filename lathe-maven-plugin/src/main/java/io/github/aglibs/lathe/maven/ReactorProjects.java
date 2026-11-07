@@ -32,6 +32,20 @@ import org.eclipse.aether.repository.RemoteRepository;
 
 public final class ReactorProjects {
 
+  private static final String POM_XML = "pom.xml";
+  static final String POM_PACKAGING = "pom";
+  private static final String TEST_JAR_CLASSIFIER = "tests";
+  // The phase that switches off an inherited plugin execution.
+  private static final String NO_PHASE = "none";
+  // maven-shade-plugin's shade goal replaces the module's main jar with the shaded one unless it
+  // attaches the shaded jar under a classifier, writes it to its own outputFile, or names it with
+  // a finalName of its own.
+  static final String SHADE_PLUGIN_KEY = "org.apache.maven.plugins:maven-shade-plugin";
+  private static final String SHADE_GOAL = "shade";
+  private static final String SHADE_ATTACHED_PARAM = "shadedArtifactAttached";
+  private static final String SHADE_OUTPUT_FILE_PARAM = "outputFile";
+  private static final String SHADE_FINAL_NAME_PARAM = "finalName";
+
   private ReactorProjects() {}
 
   public static List<MavenProject> sorted(final MavenSession session, final Path workspaceRoot) {
@@ -80,7 +94,7 @@ public final class ReactorProjects {
   // *under*
   // a module (e.g. an IT fixture under lathe-maven-plugin/target) is not itself that module.
   private static boolean aggregates(final Path dir, final Path candidate) {
-    final var pom = dir.resolve(LatheLayout.Maven.POM_XML);
+    final var pom = dir.resolve(POM_XML);
     if (!Files.isRegularFile(pom)) {
       return false;
     }
@@ -188,7 +202,7 @@ public final class ReactorProjects {
 
   // A project with Java sources, main or test, to compile.
   static boolean compilesJava(final MavenProject project) {
-    return !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging())
+    return !POM_PACKAGING.equals(project.getPackaging())
         && Stream.concat(
                 project.getCompileSourceRoots().stream(),
                 project.getTestCompileSourceRoots().stream())
@@ -205,7 +219,7 @@ public final class ReactorProjects {
   private static Stream<MavenProject> captured(
       final Path workspaceRoot, final List<MavenProject> projects) {
     return projects.stream()
-        .filter(project -> !LatheLayout.Maven.POM_PACKAGING.equals(project.getPackaging()))
+        .filter(project -> !POM_PACKAGING.equals(project.getPackaging()))
         .filter(project -> !escapesReactorRoot(workspaceRoot, project));
   }
 
@@ -229,8 +243,7 @@ public final class ReactorProjects {
             mainJar,
             Stream.of(
                 Map.entry(
-                    buildDir.resolve(
-                        "%s-%s.jar".formatted(finalName, LatheLayout.Maven.TEST_JAR_CLASSIFIER)),
+                    buildDir.resolve("%s-%s.jar".formatted(finalName, TEST_JAR_CLASSIFIER)),
                     LatheLayout.TEST_CLASSES_DIR)))
         .flatMap(entries -> entries)
         .map(
@@ -250,15 +263,15 @@ public final class ReactorProjects {
     final Plugin shade =
         project.getBuild() == null
             ? null
-            : project.getBuild().getPluginsAsMap().get(LatheLayout.Maven.SHADE_PLUGIN_KEY);
+            : project.getBuild().getPluginsAsMap().get(SHADE_PLUGIN_KEY);
     if (shade == null) {
       return false;
     }
 
     final String finalName = project.getBuild().getFinalName();
     return shade.getExecutions().stream()
-        .filter(execution -> execution.getGoals().contains(LatheLayout.Maven.SHADE_GOAL))
-        .filter(execution -> !LatheLayout.Maven.NO_PHASE.equals(execution.getPhase()))
+        .filter(execution -> execution.getGoals().contains(SHADE_GOAL))
+        .filter(execution -> !NO_PHASE.equals(execution.getPhase()))
         .map(execution -> mergedConfiguration(execution, shade))
         .anyMatch(configuration -> replacesMainJar(configuration, finalName));
   }
@@ -274,13 +287,9 @@ public final class ReactorProjects {
       return true;
     }
 
-    return !parameter(configuration, LatheLayout.Maven.SHADE_ATTACHED_PARAM)
-            .map(Boolean::parseBoolean)
-            .orElse(false)
-        && parameter(configuration, LatheLayout.Maven.SHADE_OUTPUT_FILE_PARAM).isEmpty()
-        && parameter(configuration, LatheLayout.Maven.SHADE_FINAL_NAME_PARAM)
-            .map(finalName::equals)
-            .orElse(true);
+    return !parameter(configuration, SHADE_ATTACHED_PARAM).map(Boolean::parseBoolean).orElse(false)
+        && parameter(configuration, SHADE_OUTPUT_FILE_PARAM).isEmpty()
+        && parameter(configuration, SHADE_FINAL_NAME_PARAM).map(finalName::equals).orElse(true);
   }
 
   private static Optional<String> parameter(final Xpp3Dom configuration, final String name) {

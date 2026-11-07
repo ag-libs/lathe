@@ -40,16 +40,15 @@ public final class RenameProvider {
   // The identifier token under the cursor — the range prepareRename returns for the client to
   // pre-fill and highlight. Null when the cursor is not on an identifier.
   public static Range identifierRange(final String content, final Position pos) {
-    final int offset = SourceLocator.toOffset(content, pos.getLine(), pos.getCharacter());
-    final int start = SourceLocator.identifierStart(content, offset);
-    final int end = SourceLocator.identifierEnd(content, offset);
+    final int offset = Positions.toOffset(content, pos.getLine(), pos.getCharacter());
+    final int start = DeclarationNames.identifierStart(content, offset);
+    final int end = DeclarationNames.identifierEnd(content, offset);
     if (start >= end) {
       return null;
     }
 
     return new Range(
-        SourceLocator.offsetToPosition(content, start),
-        SourceLocator.offsetToPosition(content, end));
+        Positions.offsetToPosition(content, start), Positions.offsetToPosition(content, end));
   }
 
   public static WorkspaceEdit toWorkspaceEdit(

@@ -120,7 +120,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     scan(node.getQualifierExpression(), null);
     final var element = trees.getElement(getCurrentPath());
     if (target.matchesFamily(element, types, elements, targetMethod)) {
-      addMatchAtIdentifier(node, SourceLocator.referenceName(node), ReferenceRole.INVOCATION);
+      addMatchAtIdentifier(node, DeclarationNames.referenceName(node), ReferenceRole.INVOCATION);
     }
     return null;
   }
@@ -149,7 +149,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     // members outside the target's family must stay as it is.
     final List<Element> imported =
         node.isStatic()
-            ? SourceLocator.staticImportMembers(trees, getCurrentPath(), node)
+            ? CursorElements.staticImportMembers(trees, getCurrentPath(), node)
             : Stream.ofNullable(trees.getElement(qualIdPath)).toList();
     final long inFamily =
         imported.stream()
@@ -168,7 +168,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     // A nested-type or static-member import spells its enclosing type as the qualifier of the
     // imported member (`import pkg.Outer.Inner`); match that enclosing type so a reference to it
     // is found there, not just when it is the imported leaf itself. Resolve the qualifier exactly
-    // (not via SourceLocator's walk-up) so package segments do not over-match the enclosing type.
+    // (not via CursorElements' walk-up) so package segments do not over-match the enclosing type.
     if (qualId instanceof final MemberSelectTree mst
         && mst.getExpression() instanceof final MemberSelectTree qualifier) {
       final var qualifierPath = new TreePath(new TreePath(getCurrentPath(), qualId), qualifier);
@@ -184,7 +184,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   @Override
   public Void visitMemberSelect(final MemberSelectTree node, final Void ignored) {
     scan(node.getExpression(), null);
-    final var element = SourceLocator.elementAt(trees, getCurrentPath());
+    final var element = CursorElements.elementAt(trees, getCurrentPath());
     if (target.matchesFamily(element, types, elements, targetMethod)) {
       addMatchAtIdentifier(node, node.getIdentifier().toString(), roleForMemberSelect(element));
     }
@@ -196,7 +196,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     if (includeDeclaration) {
       final var element = matchedElement();
       if (element != null) {
-        addDeclarationMatch(node, SourceLocator.declarationName(element).toString());
+        addDeclarationMatch(node, DeclarationNames.declarationName(element).toString());
       } else {
         addConstructorDeclarationForTypeTarget(node);
       }
@@ -279,7 +279,7 @@ final class ReferenceLocator extends SourceTreeLocator {
 
           final String name = target.simpleName();
           final long nameStart =
-              SourceLocator.findIdentifierFrom(content, reference.startOffset(), name);
+              DeclarationNames.findIdentifierFrom(content, reference.startOffset(), name);
           if (nameStart >= 0 && nameStart < reference.endOffset()) {
             addMatch(nameStart, name.length(), roleForElement(reference.element()));
           }
@@ -304,7 +304,7 @@ final class ReferenceLocator extends SourceTreeLocator {
     // walks the whole file, so compare against the target's own element, found once.
     return targetLocal != null
         ? element == targetLocal
-        : SourceLocator.declarationStartOffset(trees, element) == target.declarationOffset();
+        : DeclarationNames.declarationStartOffset(trees, element) == target.declarationOffset();
   }
 
   private static Element declaredLocal(
@@ -415,14 +415,14 @@ final class ReferenceLocator extends SourceTreeLocator {
   private void addMatchAtIdentifier(final Tree node, final String name, final ReferenceRole role) {
     // Locate the selector by text from a reliable anchor instead of end-minus-name.length(): a
     // node's end position can be approximate in generated sources, slicing the range onto a
-    // neighbouring identifier (FR-010). Anchoring on the receiver end also avoids matching an
+    // neighbouring identifier. Anchoring on the receiver end also avoids matching an
     // earlier occurrence of the name inside the receiver (e.g. `amount.amount`).
     final long anchor = identifierAnchor(node);
     if (anchor < 0) {
       return;
     }
 
-    final long nameStart = SourceLocator.findIdentifierFrom(content, anchor, name);
+    final long nameStart = DeclarationNames.findIdentifierFrom(content, anchor, name);
     if (nameStart >= 0) {
       addMatch(nameStart, name.length(), role);
     }
@@ -441,7 +441,7 @@ final class ReferenceLocator extends SourceTreeLocator {
   }
 
   private void addDeclarationMatch(final Tree node, final String name) {
-    final long namePos = SourceLocator.declarationNameOffset(content, positions, cu, node, name);
+    final long namePos = DeclarationNames.declarationNameOffset(content, positions, cu, node, name);
     if (namePos >= 0) {
       addMatch(namePos, name.length(), ReferenceRole.DECLARATION);
     }
@@ -452,7 +452,7 @@ final class ReferenceLocator extends SourceTreeLocator {
       return;
     }
 
-    final var start = SourceLocator.offsetToPosition(cu, startOffset);
+    final var start = Positions.offsetToPosition(cu, startOffset);
     final var range =
         new Range(start, new Position(start.getLine(), start.getCharacter() + nameLength));
 

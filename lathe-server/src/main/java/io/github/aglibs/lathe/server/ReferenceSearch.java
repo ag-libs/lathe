@@ -9,20 +9,23 @@ import io.github.aglibs.lathe.analysis.MethodImplementationLocator;
 import io.github.aglibs.lathe.analysis.ReferenceMatch;
 import io.github.aglibs.lathe.analysis.ReferenceTarget;
 import io.github.aglibs.lathe.analysis.SearchHits;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import io.github.aglibs.lathe.analysis.TypeSourceLocator;
 import io.github.aglibs.lathe.analysis.WorkspaceTypeIndex;
 import io.github.aglibs.lathe.core.CollectionUtil;
 import io.github.aglibs.lathe.core.ExceptionUtil;
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.Stopwatch;
 import io.github.aglibs.lathe.core.typeindex.TypeIndexEntry;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -99,7 +103,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
     final var targetName = new AtomicReference<String>();
     return cursorWorker
-        .resolveTarget(request, cancelChecker)
+        .submit(session -> session.references().resolveTarget(request), cancelChecker)
         .thenCompose(
             target -> {
               cancelChecker.checkCanceled();
@@ -177,7 +181,7 @@ final class ReferenceSearch {
     final var t = Stopwatch.start();
 
     return cursorWorker
-        .instantiationTargets(request, cancelChecker)
+        .submit(session -> session.references().instantiationTargets(request), cancelChecker)
         .thenCompose(
             targets -> {
               cancelChecker.checkCanceled();
@@ -227,7 +231,7 @@ final class ReferenceSearch {
     }
 
     return cursorWorker
-        .resolveContractTarget(request, cancelChecker)
+        .submit(session -> session.references().resolveContractTarget(request), cancelChecker)
         .thenApply(contract -> contract != null ? contract : target);
   }
 
@@ -242,7 +246,7 @@ final class ReferenceSearch {
       final CancelChecker cancelChecker,
       final ProgressReporter.Task progress) {
     return cursorWorker
-        .generatedAccessorTargets(request)
+        .submit(session -> session.references().generatedAccessorTargets(request))
         .thenCompose(
             accessors -> {
               CompletableFuture<List<ReferenceMatch>> all =
@@ -496,13 +500,15 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     router.touchAnalysisCache(doc.uri());
     return worker
-        .searchReferences(
-            doc.uri(),
-            doc.content(),
-            doc.version(),
-            target,
-            includeDeclaration,
-            exposureFamily,
+        .submit(
+            session -> {
+              final AttributedFileAnalysis analysis =
+                  session.analysis(doc.uri(), doc.content(), doc.version(), cancelChecker);
+              cancelChecker.checkCanceled();
+              return session
+                  .references()
+                  .references(analysis, doc.uri(), target, includeDeclaration, exposureFamily);
+            },
             cancelChecker)
         .whenComplete(advancing(progress, false));
   }
@@ -518,13 +524,44 @@ final class ReferenceSearch {
     cancelChecker.checkCanceled();
     final List<TransientSource> sources =
         chunk.stream().map(d -> new TransientSource(d.uri(), d.content())).toList();
-    return worker.searchReferencesTransient(
-        sources,
-        target,
-        includeDeclaration,
-        exposureFamily,
-        hits -> progress.advance(true, hits),
+    return worker.submit(
+        session ->
+            searchBatch(
+                session,
+                sources,
+                target,
+                includeDeclaration,
+                exposureFamily,
+                hits -> progress.advance(true, hits),
+                cancelChecker),
         cancelChecker);
+  }
+
+  // Attributes the files together, then searches each, reporting each file's hit count; on the
+  // module's worker.
+  static SearchHits<ReferenceMatch> searchBatch(
+      final SourceAnalysisSession session,
+      final List<TransientSource> sources,
+      final ReferenceTarget target,
+      final boolean includeDeclaration,
+      final Set<String> exposureFamily,
+      final IntConsumer hitsPerFile,
+      final CancelChecker cancelChecker) {
+    final List<TransientAnalysis> analyses = session.transientAnalyses(sources, cancelChecker);
+    cancelChecker.checkCanceled();
+    final var results = new ArrayList<SearchHits<ReferenceMatch>>();
+    for (final TransientAnalysis analysis : analyses) {
+      cancelChecker.checkCanceled();
+      final SearchHits<ReferenceMatch> found =
+          session
+              .references()
+              .references(
+                  analysis.analysis(), analysis.uri(), target, includeDeclaration, exposureFamily);
+      results.add(found);
+      hitsPerFile.accept(found.hits().size());
+    }
+
+    return SearchHits.merge(results);
   }
 
   List<ModuleSourceConfig> planSearchScope(
@@ -585,7 +622,7 @@ final class ReferenceSearch {
           final var request = router.featureRequest(doc, pos);
           final var t = Stopwatch.start();
           return worker
-              .resolveTarget(request)
+              .submit(session -> session.references().resolveTarget(request))
               .thenCompose(target -> documentHighlightsForTarget(worker, doc, target))
               .thenApply(FeatureAnswers.logged(LOG, "documentHighlight", uri, t, "hits"));
         });
@@ -598,7 +635,16 @@ final class ReferenceSearch {
     }
 
     return worker
-        .searchReferences(doc.uri(), doc.content(), doc.version(), target, true, Set.of(), () -> {})
+        .submit(
+            session ->
+                session
+                    .references()
+                    .references(
+                        session.analysis(doc.uri(), doc.content(), doc.version(), () -> {}),
+                        doc.uri(),
+                        target,
+                        true,
+                        Set.of()))
         .thenApply(found -> toHighlights(found.hits()));
   }
 
@@ -638,7 +684,7 @@ final class ReferenceSearch {
   }
 
   private static Optional<DiskCandidate> readDiskCandidate(final String uri) {
-    return FileUtil.readIfPresent(LatheUri.toPath(uri))
+    return ServerFiles.readIfPresent(LatheUri.toPath(uri))
         .map(content -> new DiskCandidate(uri, content));
   }
 
@@ -699,7 +745,7 @@ final class ReferenceSearch {
       final ModuleSourceConfig config, final ReferenceTarget target, final Path packageRel) {
     // Include the generated-sources root so a module's annotation-processor output (a record's
     // @Builder) is in scope; it references the record by simple name and never lives under a
-    // regular source root (FR-012/FR-013).
+    // regular source root.
     final List<Path> searchRoots = config.searchRoots();
     final var planner =
         new ReferenceCandidatePlanner(state.candidateIndex(), reactorIndex.current());
@@ -749,7 +795,7 @@ final class ReferenceSearch {
 
     final var t = Stopwatch.start();
     return cursorWorker
-        .resolveTarget(request)
+        .submit(session -> session.references().resolveTarget(request))
         .thenCompose(
             target ->
                 implementationForTarget(
@@ -781,7 +827,7 @@ final class ReferenceSearch {
     // Only an interface, or its method, can be implemented by lambdas.
     final CompletableFuture<Optional<String>> samInterface =
         target.kind().isInterface() || target.kind() == ElementKind.METHOD
-            ? cursorWorker.functionalInterfaceName(request)
+            ? cursorWorker.submit(session -> session.navigation().functionalInterfaceName(request))
             : CompletableFuture.completedFuture(Optional.empty());
     // Reading the workspace to plan the search runs on the event loop: the worker delivers there.
     return samInterface.thenCompose(
@@ -806,7 +852,8 @@ final class ReferenceSearch {
       final Map<String, List<String>> lambdaSnapshot) {
     return FeatureAnswers.concatAll(
         Stream.of(
-            cursorWorker.typeImplementations(request, indexSnapshot),
+            cursorWorker.submit(
+                session -> session.navigation().typeImplementations(request, indexSnapshot)),
             implementationsIn(
                     target,
                     samInterface,
@@ -942,7 +989,14 @@ final class ReferenceSearch {
     final OpenDocument openFile = docs.get(uri);
     if (openFile != null) {
       router.touchAnalysisCache(openFile.uri());
-      return worker.get().queryFile(uri, openFile.content(), openFile.version(), query);
+      return worker
+          .get()
+          .submit(
+              session -> {
+                final AttributedFileAnalysis analysis =
+                    session.analysis(uri, openFile.content(), openFile.version(), () -> {});
+                return analysis != null ? query.apply(analysis) : List.of();
+              });
     }
 
     return eventLoop
@@ -954,7 +1008,13 @@ final class ReferenceSearch {
                             state
                                 .registry()
                                 .moduleWorkerFor(sourceFile)
-                                .map(w -> w.queryFileTransient(uri, file.content(), query)))
+                                .map(
+                                    w ->
+                                        w.submit(
+                                            session ->
+                                                query.apply(
+                                                    session.transientAnalysis(
+                                                        uri, file.content(), () -> {})))))
                     .orElseGet(() -> CompletableFuture.completedFuture(List.of())));
   }
 
@@ -966,14 +1026,19 @@ final class ReferenceSearch {
     }
 
     final var t = Stopwatch.start();
+    final List<Path> sourceDirs = state.typeSourceDirs();
     return router
         .openDocFeature(
             "callHierarchy:outgoing",
             data.routingUri(),
             List.of(),
             (worker, doc) ->
-                worker.outgoingCalls(
-                    item, doc.uri(), doc.content(), doc.version(), state.typeSourceDirs()))
+                worker.<List<CallHierarchyOutgoingCall>>submit(
+                    session ->
+                        session
+                            .hierarchy()
+                            .outgoingCalls(
+                                item, doc.uri(), doc.content(), doc.version(), sourceDirs)))
         .thenApply(
             FeatureAnswers.logged(LOG, "callHierarchy:outgoing", data.routingUri(), t, "calls"));
   }
@@ -1077,8 +1142,17 @@ final class ReferenceSearch {
                   cancelChecker.checkCanceled();
                   router.touchAnalysisCache(doc.uri());
                   return worker
-                      .searchIncomingCalls(
-                          doc.uri(), doc.content(), doc.version(), target, family, cancelChecker)
+                      .submit(
+                          session -> {
+                            final AttributedFileAnalysis analysis =
+                                session.analysis(
+                                    doc.uri(), doc.content(), doc.version(), cancelChecker);
+                            cancelChecker.checkCanceled();
+                            return session
+                                .references()
+                                .incomingCalls(analysis, doc.uri(), target, family);
+                          },
+                          cancelChecker)
                       .whenComplete(advancing(progress, false));
                 }),
         inputs.diskCandidates().stream()
@@ -1086,8 +1160,16 @@ final class ReferenceSearch {
                 d -> {
                   cancelChecker.checkCanceled();
                   return worker
-                      .searchIncomingCallsTransient(
-                          d.uri(), d.content(), target, family, cancelChecker)
+                      .submit(
+                          session -> {
+                            final AttributedFileAnalysis analysis =
+                                session.transientAnalysis(d.uri(), d.content(), cancelChecker);
+                            cancelChecker.checkCanceled();
+                            return session
+                                .references()
+                                .incomingCalls(analysis, d.uri(), target, family);
+                          },
+                          cancelChecker)
                       .whenComplete(advancing(progress, true));
                 }));
   }
@@ -1096,14 +1178,12 @@ final class ReferenceSearch {
       final String uri, final Position pos) {
     final var t = Stopwatch.start();
     return router
-        .openDocFeature(
+        .positionFeature(
             "callHierarchy:prepare",
             uri,
-            List.of(),
-            (worker, doc) -> {
-              final var request = router.featureRequest(doc, pos);
-              return worker.prepareCallHierarchy(request);
-            })
+            pos,
+            List.<CallHierarchyItem>of(),
+            (session, request) -> session.hierarchy().prepareCallHierarchy(request))
         .thenApply(FeatureAnswers.logged(LOG, "callHierarchy:prepare", uri, t, "items"));
   }
 }

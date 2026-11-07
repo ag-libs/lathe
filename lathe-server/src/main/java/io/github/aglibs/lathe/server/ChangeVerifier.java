@@ -8,6 +8,7 @@ import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
 import io.github.aglibs.lathe.server.engine.LatheModuleSummary;
 import io.github.aglibs.lathe.server.engine.LatheNotes;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.lathe.server.module.WorkspaceModuleGraph;
 import io.github.aglibs.lathe.server.run.LaunchReader;
@@ -130,7 +131,7 @@ final class ChangeVerifier {
     }
 
     final ContentFingerprint compiled = built.get(root.relativize(file));
-    return Files.notExists(file) ? compiled == null : FileUtil.hasContent(file, compiled);
+    return Files.notExists(file) ? compiled == null : ServerFiles.hasContent(file, compiled);
   }
 
   // Files to diagnose for verify_change, by module: each changed file, then the files that mention

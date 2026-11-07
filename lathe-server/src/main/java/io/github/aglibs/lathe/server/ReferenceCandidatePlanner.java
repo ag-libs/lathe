@@ -39,7 +39,7 @@ final class ReferenceCandidatePlanner {
   CandidatePlan planCandidates(final ModuleSourceConfig config, final ReferenceTarget target) {
     final var kind = target.kind();
     // A constructor's simple name is javac's "<init>", which no source file ever spells; key
-    // candidate discovery on the declaring type's simple name instead (FR-013).
+    // candidate discovery on the declaring type's simple name instead.
     final var lookupName =
         kind == ElementKind.CONSTRUCTOR
             ? simpleNameOf(target.qualifiedName())
@@ -73,7 +73,7 @@ final class ReferenceCandidatePlanner {
     // Instance methods, fields and enum constants (and any other unhandled kind) use the broad
     // simple-name candidate set. A use through an expression whose type the file never names
     // escapes any narrowing by type: a var bound from a getter chain, a chained call or a generic
-    // type variable as receiver (FR-011), a field read as holder.owner().name, an enum constant as
+    // type variable as receiver, a field read as holder.owner().name, an enum constant as
     // the label `case ALPHA` of a switch over one. Some declaration hands out such a type for most
     // of them, so searching every file that spells the name is both exact and the cheaper plan; the
     // reference locator rejects the non-matches.

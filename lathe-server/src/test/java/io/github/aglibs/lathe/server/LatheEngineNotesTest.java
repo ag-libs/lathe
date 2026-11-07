@@ -26,23 +26,22 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
         TestCompiler.writeModuleSource(
             tmp, "com/example/Sample.java", "package com.example; class Sample { int n = 1; }");
     engine = new LatheEngine(tmp);
-    engine.diagnostics(source);
-    assertThat(engine.notes(List.of(source)))
+    // Each answer carries the notes its own request read, after its compile.
+    assertThat(engine.diagnostics(source).notes())
         .isEqualTo(new LatheNotes(List.of(), List.of(), List.of(), false));
 
     Files.writeString(source, "package com.example; class Sample { Missing m; }");
-    engine.diagnostics(source);
-    final LatheNotes broken = engine.notes(List.of(source));
+    final LatheNotes broken = engine.diagnostics(source).notes();
     assertThat(broken.notCompiled())
         .singleElement()
         .asString()
         .startsWith("%s:1: ".formatted(Path.of("module/src/main/java/com/example/Sample.java")))
         .contains("cannot find symbol");
     assertThat(broken.syncRequired()).as("code to fix, not a sync").isEmpty();
+    assertThat(engine.notes(List.of(source))).as("a later read agrees").isEqualTo(broken);
 
     Files.writeString(source, "package com.example; class Sample { int m; }");
-    engine.diagnostics(source);
-    assertThat(engine.notes(List.of(source)).notCompiled()).isEmpty();
+    assertThat(engine.outline(source).notes().notCompiled()).isEmpty();
   }
 
   // A sync cannot add a file outside a synced module's source roots, nor one in a module the
@@ -158,24 +157,25 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     final Path pom = TestCompiler.writeAt(tmp.resolve("module/pom.xml"), "<project/>", 1_000L);
     TestCompiler.recordBuildFiles(tmp, List.of(pom));
     engine = new LatheEngine(tmp);
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
     assertThat(engine.notes(List.of()).syncRequired()).isEmpty();
 
     Files.writeString(pom, "<project><!-- edited --></project>");
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
     assertThat(engine.notes(List.of()).syncRequired())
         .as("seen by the query itself, not on the next tick")
         .containsExactly(BUILD_FILES_NOTE);
 
     writeNewer(fx.callee(), "package com.example; class Callee { void welcome() {} }");
-    assertThat(engine.diagnostics(fx.caller()))
+    assertThat(engine.diagnostics(fx.caller()).value())
         .as("the agent's edits are still compiled while the sync is pending")
-        .anyMatch(d -> d.getMessage().getLeft().contains("greet"));
+        .anyMatch(d -> d.message().contains("greet"));
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
-    assertThat(engine.verifyChange(List.of()).deferral()).isEqualTo("BUILD_FILES_PENDING");
+    assertThat(engine.verifyChange(List.of()).deferral())
+        .isEqualTo(ReconcileOutcome.DeferReason.BUILD_FILES_PENDING);
 
     Files.writeString(pom, "<project/>");
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
     assertThat(engine.notes(List.of()).syncRequired())
         .as("the POM is back to what the sync saw")
         .isEmpty();
@@ -189,13 +189,13 @@ class LatheEngineNotesTest extends LatheEngineTestBase {
     TestCompiler.recordBuildFiles(tmp, List.of(pom));
     TestCompiler.writeAt(pom, "<project/>", 99_000_000_000L);
     engine = new LatheEngine(tmp);
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
     assertThat(engine.notes(List.of()).syncRequired()).as("only touched").isEmpty();
     engine.close();
 
     Files.writeString(pom, "<project><!-- edited --></project>");
     engine = new LatheEngine(tmp);
-    engine.diagnostics(fx.caller());
+    engine.diagnostics(fx.caller()).value();
 
     assertThat(engine.notes(List.of()).syncRequired()).containsExactly(BUILD_FILES_NOTE);
   }

@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed.** Lathe today derives its whole model from a **Maven** build (the
+**Shipped (slices 0–4, 2026-10-25); Plugin Portal release wiring remains.** Lathe derived its whole model from a **Maven** build (the
 [Maven extension](lathe-maven-extension.md) injects the compiler shim, `init`/`sync` goals, and
 the test-capture dependency; [Run, Test, and Debug](lathe-run-test-debug.md) captures and
 replays from `.lathe/`). This document designs an equivalent **Gradle** front-end that produces the

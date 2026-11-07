@@ -14,6 +14,7 @@ import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.core.schema.AnalysisMode;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -303,7 +304,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
   // Where a document's text is written for javac.
   private Path tempFileOf(final String uri) {
     final var filePath = LatheUri.toPath(uri);
-    return FileUtil.tempSourceFile(
+    return ServerFiles.tempSourceFile(
         tempDir,
         ownSourceRoot(filePath)
             .orElseThrow(() -> new IllegalStateException("no source root for %s".formatted(uri))),
@@ -339,7 +340,7 @@ public final class ModuleSourceCompiler implements JavaSourceCompiler, AutoClose
     final Set<Path> mirroredDirs = new HashSet<>();
     final var merged = new StringBuilder();
     for (final Path lombokConfig :
-        FileUtil.ancestorFiles(sourceDir, LatheLayout.LOMBOK_CONFIG_FILE)) {
+        ServerFiles.ancestorFiles(sourceDir, LatheLayout.LOMBOK_CONFIG_FILE)) {
       final Path dir = lombokConfig.getParent();
       final String settings = Files.readString(lombokConfig, StandardCharsets.UTF_8);
       if (dir.startsWith(sourceRoot) && !dir.equals(sourceRoot)) {

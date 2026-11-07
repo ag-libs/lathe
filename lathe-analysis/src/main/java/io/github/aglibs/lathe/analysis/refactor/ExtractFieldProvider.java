@@ -1,0 +1,266 @@
+package io.github.aglibs.lathe.analysis.refactor;
+
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.tree.ExpressionStatementTree;
+import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.VariableTree;
+import com.sun.source.util.SourcePositions;
+import com.sun.source.util.TreePath;
+import com.sun.source.util.TreePathScanner;
+import com.sun.source.util.Trees;
+import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.analysis.Positions;
+import io.github.aglibs.lathe.analysis.TreePaths;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.logging.Logger;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
+import org.eclipse.lsp4j.CodeAction;
+import org.eclipse.lsp4j.Command;
+import org.eclipse.lsp4j.Range;
+import org.eclipse.lsp4j.TextEdit;
+import org.eclipse.lsp4j.jsonrpc.messages.Either;
+
+// Request-driven refactor: introduce a `private final` instance field initialized from the selected
+// expression and replace the occurrence(s) with a reference to it. Sibling of
+// ExtractVariableProvider; eligibility requires the expression to read no locals or parameters (so
+// it is a legal field initializer) inside a non-static context of a class or enum (a record cannot
+// declare an instance field beyond its components).
+public final class ExtractFieldProvider {
+
+  private static final Logger LOG = Logger.getLogger(ExtractFieldProvider.class.getName());
+
+  public List<Either<Command, CodeAction>> provide(
+      final String uri, final Range range, final AttributedFileAnalysis analysis) {
+    final CompilationUnitTree cu = analysis.tree();
+    if (cu == null) {
+      return List.of();
+    }
+
+    final var trees = analysis.trees();
+    final TreePath exprPath = ExtractionSupport.selectedExpression(trees, cu, range);
+    if (exprPath == null) {
+      return List.of();
+    }
+
+    final var expr = (ExpressionTree) exprPath.getLeaf();
+
+    // When the selection is the whole expression of an expression-statement, replacing that
+    // expression with a reference would leave the illegal statement `name;`. Decline, mirroring
+    // ExtractVariableProvider.
+    final TreePath stmtPath = TreePaths.nearestEnclosingStatement(exprPath);
+    if (stmtPath != null
+        && stmtPath.getLeaf() instanceof final ExpressionStatementTree exprStmt
+        && exprStmt.getExpression() == expr) {
+      return List.of();
+    }
+
+    final TypeMirror type = trees.getTypeMirror(exprPath);
+    if (type == null || !CodeActionSupport.isDenotable(type)) {
+      return List.of();
+    }
+
+    final TreePath methodPath = TreePaths.enclosingMethod(exprPath);
+    if (methodPath == null || isStatic(methodPath, trees)) {
+      return List.of();
+    }
+
+    final Set<Element> reads = ExtractionSupport.readVariables(exprPath, trees);
+    if (reads.stream().anyMatch(read -> read.getKind() != ElementKind.FIELD)) {
+      return List.of();
+    }
+
+    final TreePath classPath = TreePaths.enclosingClass(exprPath);
+    if (classPath == null || !holdsInstanceField(((ClassTree) classPath.getLeaf()))) {
+      return List.of();
+    }
+
+    final var positions = trees.getSourcePositions();
+    final long exprStart = positions.getStartPosition(cu, expr);
+    final long exprEnd = positions.getEndPosition(cu, expr);
+    if (exprStart < 0 || exprEnd < 0) {
+      return List.of();
+    }
+
+    final String source = CodeActionSupport.source(cu).orElse(null);
+    if (source == null) {
+      return List.of();
+    }
+
+    final var cls = (ClassTree) classPath.getLeaf();
+    final String exprSource = source.substring((int) exprStart, (int) exprEnd);
+    final var written = CodeActionSupport.sourceType(analysis, exprPath, type);
+    final String name = fieldName(type, expr, cls, methodPath);
+    final TextEdit insert =
+        insertFieldEdit(cls, cu, positions, source, written.text(), name, exprSource);
+    if (insert == null) {
+      return List.of();
+    }
+
+    final var actions = new ArrayList<Either<Command, CodeAction>>();
+    actions.add(
+        ExtractionSupport.action(
+            uri,
+            "Extract field '%s'".formatted(name),
+            ExtractKinds.FIELD_KIND,
+            ExtractionSupport.editList(
+                insert,
+                List.of(ExtractionSupport.replaceEdit(cu, exprStart, exprEnd, name)),
+                written.imports())));
+
+    final Either<Command, CodeAction> replaceAll =
+        replaceAllAction(
+            uri, cu, trees, classPath, exprPath, reads, name, insert, written.imports());
+    if (replaceAll != null) {
+      actions.add(replaceAll);
+    }
+
+    LOG.fine(() -> "[codeAction:extractField] %s actions=%d".formatted(name, actions.size()));
+    return actions;
+  }
+
+  private static Either<Command, CodeAction> replaceAllAction(
+      final String uri,
+      final CompilationUnitTree cu,
+      final Trees trees,
+      final TreePath classPath,
+      final TreePath exprPath,
+      final Set<Element> reads,
+      final String name,
+      final TextEdit insert,
+      final List<TextEdit> imports) {
+    final List<TreePath> occurrences = ExtractionSupport.occurrences(classPath, exprPath, trees);
+    if (occurrences.size() < 2) {
+      return null;
+    }
+
+    final var positions = trees.getSourcePositions();
+    final long firstStart =
+        occurrences.stream()
+            .mapToLong(o -> positions.getStartPosition(cu, o.getLeaf()))
+            .min()
+            .orElseThrow();
+    final long lastEnd =
+        occurrences.stream()
+            .mapToLong(o -> positions.getEndPosition(cu, o.getLeaf()))
+            .max()
+            .orElseThrow();
+
+    // A field initializer runs once at construction. Collapsing repeated evaluations is safe only
+    // when no field the expression reads is reassigned across the occurrence span.
+    if (ExtractionSupport.reassignsAny(classPath, reads, trees, cu, firstStart, lastEnd)) {
+      return null;
+    }
+
+    final List<TextEdit> replaces =
+        occurrences.stream()
+            .map(
+                o ->
+                    ExtractionSupport.replaceEdit(
+                        cu,
+                        positions.getStartPosition(cu, o.getLeaf()),
+                        positions.getEndPosition(cu, o.getLeaf()),
+                        name))
+            .toList();
+
+    return ExtractionSupport.action(
+        uri,
+        "Extract field '%s' (replace all %d occurrences)".formatted(name, occurrences.size()),
+        ExtractKinds.FIELD_KIND,
+        ExtractionSupport.editList(insert, replaces, imports));
+  }
+
+  private static boolean isStatic(final TreePath methodPath, final Trees trees) {
+    final Element method = trees.getElement(methodPath);
+    return method == null || method.getModifiers().contains(Modifier.STATIC);
+  }
+
+  // A record's instance state is exactly its components; interface/annotation fields are implicitly
+  // static — so only a class or enum can hold a `private final` instance field.
+  private static boolean holdsInstanceField(final ClassTree cls) {
+    return switch (cls.getKind()) {
+      case CLASS, ENUM -> true;
+      default -> false;
+    };
+  }
+
+  // Places the field after the last existing field, so it joins the field block, else before the
+  // first member. Null when the body cannot be located.
+  private static TextEdit insertFieldEdit(
+      final ClassTree cls,
+      final CompilationUnitTree cu,
+      final SourcePositions positions,
+      final String source,
+      final String typeText,
+      final String name,
+      final String exprSource) {
+    final int brace = CodeActionSupport.classBodyBrace(cls, cu, positions, source);
+    if (brace < 0) {
+      return null;
+    }
+
+    final String decl = "private final %s %s = %s;".formatted(typeText, name, exprSource);
+    final VariableTree lastField = CodeActionSupport.lastField(cls, cu, positions, brace);
+    if (lastField == null) {
+      return CodeActionSupport.insertBeforeFirstMember(cls, cu, positions, source, brace, decl);
+    }
+
+    final var pos = Positions.offsetToPosition(cu, positions.getEndPosition(cu, lastField));
+    final String indent =
+        CodeActionSupport.lineIndent(source, (int) positions.getStartPosition(cu, lastField));
+    return new TextEdit(new Range(pos, pos), "\n%s%s".formatted(indent, decl));
+  }
+
+  // ── name derivation (camelCase) ──────────────────────────────────────────────────────────────
+
+  private static String fieldName(
+      final TypeMirror type,
+      final ExpressionTree expr,
+      final ClassTree cls,
+      final TreePath methodPath) {
+    return VariableNameSuggester.suggest(
+            CodeActionSupport.typeSimpleName(type),
+            elementTypeName(type),
+            expr,
+            takenNames(cls, methodPath))
+        .get(0);
+  }
+
+  // The simple name of the last type argument (Map<String, User> -> User), or null when the type is
+  // not generic — the element name the suggester pluralizes for collections.
+  private static String elementTypeName(final TypeMirror type) {
+    if (type instanceof final DeclaredType declared && !declared.getTypeArguments().isEmpty()) {
+      final List<? extends TypeMirror> args = declared.getTypeArguments();
+      return CodeActionSupport.typeSimpleName(args.get(args.size() - 1));
+    }
+
+    return null;
+  }
+
+  // Existing field names plus the enclosing method's locals/params, so the new field neither
+  // collides with a sibling field nor is shadowed at the replacement site.
+  private static Set<String> takenNames(final ClassTree cls, final TreePath methodPath) {
+    final var names = new HashSet<String>();
+    new TreePathScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(final VariableTree tree, final Void unused) {
+        names.add(tree.getName().toString());
+        return super.visitVariable(tree, unused);
+      }
+    }.scan(methodPath, null);
+    cls.getMembers().stream()
+        .filter(VariableTree.class::isInstance)
+        .map(member -> ((VariableTree) member).getName().toString())
+        .forEach(names::add);
+    return names;
+  }
+}

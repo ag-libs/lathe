@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.core;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.core.testing.ZipFixture;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.file.FileSystemException;
@@ -29,29 +29,6 @@ import org.junit.jupiter.api.io.TempDir;
 final class FileUtilTest {
 
   @TempDir private Path tempDir;
-
-  @Test
-  void readIfPresent_fileMissingOrADirectory_emptyOtherwiseItsText() throws IOException {
-    final Path file = Files.writeString(tempDir.resolve("A.java"), "class A {}");
-
-    assertThat(FileUtil.readIfPresent(file)).hasValue("class A {}");
-    assertThat(FileUtil.readIfPresent(tempDir.resolve("Missing.java"))).isEmpty();
-    assertThat(FileUtil.readIfPresent(tempDir)).isEmpty();
-  }
-
-  @Test
-  void listEntries_predicate_keepsMatchesSkipsDirsAndFiltered() throws IOException {
-    final Path jar =
-        ZipFixture.create(
-            tempDir.resolve("lib.jar"),
-            Map.of(
-                "com/x/schema.graphqls", "type Query", "com/x/App.class", "bytecode", "dir/", ""));
-
-    final List<String> names = FileUtil.listEntries(jar, name -> !name.endsWith(".class"));
-
-    // .class filtered by the predicate, "dir/" skipped as a directory
-    assertThat(names).containsExactly("com/x/schema.graphqls");
-  }
 
   @Test
   void copyMissing_keptFilesDestLacks_copiedExistingAndFilteredLeftAlone() throws IOException {
@@ -216,43 +193,6 @@ final class FileUtilTest {
   }
 
   @Test
-  void classBinaryName_classFilesBelowRoot_dottedWithNestedAndDefaultPackage() {
-    final Path root = tempDir.resolve("classes");
-
-    assertThat(FileUtil.classBinaryName(root, root.resolve("com/example/Foo$Inner.class")))
-        .isEqualTo("com.example.Foo$Inner");
-    assertThat(FileUtil.classBinaryName(root, root.resolve("module-info.class")))
-        .isEqualTo("module-info");
-  }
-
-  // MCP session logs are named for their start time, so the last in name order are the newest.
-  @Test
-  void deleteAllButLast_sessionLogs_keepsTheNewestAndLeavesOtherFilesAlone() throws IOException {
-    for (final String name :
-        List.of(
-            "mcp-20261001-090000-11.log",
-            "mcp-20261002-090000-12.log",
-            "mcp-20261003-090000-13.log",
-            "lsp.log",
-            "mcp-notes.txt")) {
-      Files.writeString(tempDir.resolve(name), "x");
-    }
-
-    FileUtil.deleteAllButLast(tempDir, LatheLayout::isMcpSessionLog, 2);
-
-    try (final var left = Files.list(tempDir)) {
-      assertThat(left.map(path -> path.getFileName().toString()))
-          .containsExactlyInAnyOrder(
-              "mcp-20261002-090000-12.log",
-              "mcp-20261003-090000-13.log",
-              "lsp.log",
-              "mcp-notes.txt");
-    }
-
-    FileUtil.deleteAllButLast(tempDir.resolve("absent"), LatheLayout::isMcpSessionLog, 2);
-  }
-
-  @Test
   void touch_existingFile_bumpsMtimeKeepsContent_missingFileThrows() throws IOException {
     final Path file = Files.writeString(tempDir.resolve("workspace.json"), "{}");
     Files.setLastModifiedTime(file, FileTime.fromMillis(1_000L));
@@ -263,19 +203,6 @@ final class FileUtilTest {
     assertThat(Files.readString(file)).isEqualTo("{}");
     assertThatThrownBy(() -> FileUtil.touch(tempDir.resolve("missing.json")))
         .isInstanceOf(IOException.class);
-  }
-
-  @Test
-  void hasContent_sameChangedMissingOrNoRecord_trueOnlyForTheSameContent() throws IOException {
-    final Path file = Files.writeString(tempDir.resolve("Foo.java"), "class Foo {}");
-    final ContentFingerprint recorded = FileUtil.fingerprint(file);
-
-    assertThat(FileUtil.hasContent(file, recorded)).as("same content").isTrue();
-    assertThat(FileUtil.hasContent(file, null)).as("no record").isFalse();
-    Files.writeString(file, "class Foo { int changed; }");
-    assertThat(FileUtil.hasContent(file, recorded)).as("changed content").isFalse();
-    Files.delete(file);
-    assertThat(FileUtil.hasContent(file, recorded)).as("missing file").isFalse();
   }
 
   @Test
@@ -482,22 +409,5 @@ final class FileUtilTest {
   private static void writeEmpty(final Path file) throws IOException {
     Files.createDirectories(file.getParent());
     Files.writeString(file, "");
-  }
-
-  @Test
-  void fileMtimes_regularFilesKeptByTheFilter_withTheirMtimes_emptyForMissingRoot()
-      throws Exception {
-    final Path root = tempDir.resolve("src");
-    final Path java = root.resolve("com/example/A.java");
-    final Path text = root.resolve("com/example/notes.txt");
-    Files.createDirectories(java.getParent());
-    Files.writeString(java, "class A {}");
-    Files.writeString(text, "notes");
-    Files.setLastModifiedTime(java, FileTime.fromMillis(5_000L));
-
-    assertThat(FileUtil.fileMtimes(root, FileUtil::isJavaFile))
-        .as("only the kept regular files, each with its mtime; directories never")
-        .isEqualTo(Map.of(java, 5_000L));
-    assertThat(FileUtil.fileMtimes(tempDir.resolve("missing"), path -> true)).isEmpty();
   }
 }

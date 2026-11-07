@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.core.FileUtil;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -49,7 +50,7 @@ final class ResourceFinder {
 
   private static List<ResourceEntry> jarResources(final Path jar, final String gav) {
     try {
-      return FileUtil.listEntries(jar, ResourceFinder::isResource).stream()
+      return ServerFiles.listEntries(jar, ResourceFinder::isResource).stream()
           .map(entry -> ResourceEntry.dependency(gav, jar.toString(), entry))
           .toList();
     } catch (final IOException e) {

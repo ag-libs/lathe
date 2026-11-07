@@ -7,8 +7,9 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
+import io.github.aglibs.lathe.analysis.CursorElements;
 import io.github.aglibs.lathe.analysis.ImportAnalyzer;
-import io.github.aglibs.lathe.analysis.SourceLocator;
+import io.github.aglibs.lathe.analysis.Positions;
 import java.util.List;
 import java.util.stream.Stream;
 import org.eclipse.lsp4j.CompletionItem;
@@ -33,7 +34,7 @@ final class CompletionEditApplier {
         .forEach(CompletionEditApplier::replaceWithMethodNameOnly);
   }
 
-  // A keyword's trailing space (CQ-0054) would double a space that already follows the token
+  // A keyword's trailing space would double a space that already follows the token
   // (`new§ ArrayList` -> `new  ArrayList`). When exactly one space follows, grow the edit to
   // overwrite it, keeping a single space with the caret after it. Absorbing (not stripping) stays
   // correct at an empty slot (`cla§ }`, where the name is still to be typed); only a literal space
@@ -85,7 +86,8 @@ final class CompletionEditApplier {
       return;
     }
 
-    final TreePath cursorPath = SourceLocator.pathAt(analysis.trees(), analysis.tree(), tokenStart);
+    final TreePath cursorPath =
+        CursorElements.pathAt(analysis.trees(), analysis.tree(), tokenStart);
     if (cursorPath == null) {
       return;
     }
@@ -145,7 +147,7 @@ final class CompletionEditApplier {
 
     final CompilationUnitTree cu = analysis.tree();
     final long replacementEnd =
-        SourceLocator.toOffset(
+        Positions.toOffset(
             cu,
             site.replacementRange().getEnd().getLine(),
             site.replacementRange().getEnd().getCharacter());
@@ -241,7 +243,7 @@ final class CompletionEditApplier {
         }
       }
     } else {
-      final var pos = SourceLocator.offsetToPosition(cu, exprEnd);
+      final var pos = Positions.offsetToPosition(cu, exprEnd);
       final var range = new Range(pos, pos);
       final var semicolonEdit = new TextEdit(range, ";");
       final List<TextEdit> edits =

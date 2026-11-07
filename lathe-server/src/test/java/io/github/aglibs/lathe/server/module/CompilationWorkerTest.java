@@ -8,13 +8,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import io.github.aglibs.lathe.analysis.CompileMode;
-import io.github.aglibs.lathe.analysis.ReferenceMatch;
-import io.github.aglibs.lathe.analysis.ReferenceTarget;
-import io.github.aglibs.lathe.analysis.SearchHits;
 import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
+import io.github.aglibs.lathe.analysis.TransientAnalysis;
 import io.github.aglibs.lathe.analysis.TransientSource;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -23,10 +20,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.IntConsumer;
 import org.eclipse.lsp4j.Diagnostic;
-import org.eclipse.lsp4j.DocumentSymbol;
-import org.eclipse.lsp4j.FoldingRange;
 import org.eclipse.lsp4j.jsonrpc.CancelChecker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -161,30 +155,6 @@ class CompilationWorkerTest {
   }
 
   @Test
-  void documentSymbol_request_delegatesToContext() {
-    final String uri = "file:///A.java";
-    final String content = "class A {}";
-    final var symbol = new DocumentSymbol();
-    when(context.documentSymbol(uri, content)).thenReturn(List.of(symbol));
-
-    final var result = worker.documentSymbol(uri, content).join();
-
-    assertThat(result).containsExactly(symbol);
-  }
-
-  @Test
-  void foldingRange_request_delegatesToContext() {
-    final String uri = "file:///A.java";
-    final String content = "class A {}";
-    final var range = new FoldingRange(0, 1);
-    when(context.foldingRange(uri, content)).thenReturn(List.of(range));
-
-    final var result = worker.foldingRange(uri, content).join();
-
-    assertThat(result).containsExactly(range);
-  }
-
-  @Test
   void close_initializedContext_closesContext() {
     final var request = new CompileRequest("file:///A.java", "class A {}", 1, 1L, CompileMode.OPEN);
     when(context.compile(request.uri(), request.content(), request.version(), request.mode()))
@@ -205,9 +175,9 @@ class CompilationWorkerTest {
     final var second = mock(SourceAnalysisSession.class);
     final String uri = "file:///A.java";
     final String content = "class A {}";
-    final var symbol = new DocumentSymbol();
-    when(first.documentSymbol(uri, content)).thenReturn(List.of(symbol));
-    when(second.documentSymbol(uri, content)).thenReturn(List.of(symbol));
+    final var diagnostic = new Diagnostic();
+    when(first.diagnosticsTransient(uri, content)).thenReturn(List.of(diagnostic));
+    when(second.diagnosticsTransient(uri, content)).thenReturn(List.of(diagnostic));
     final var releasing =
         new CompilationWorker(
             "lathe-module-release",
@@ -217,14 +187,15 @@ class CompilationWorkerTest {
     try {
       assertThat(releasing.idleFor(0)).as("no session before a request").isFalse();
 
-      final var queued = releasing.documentSymbol(uri, content);
+      final var queued = releasing.submit(session -> session.diagnosticsTransient(uri, content));
       assertThat(releasing.idleFor(0)).isTrue();
       assertThat(releasing.idleFor(60_000)).as("just asked").isFalse();
       releasing.releaseSession();
 
-      assertThat(queued.join()).containsExactly(symbol);
+      assertThat(queued.join()).containsExactly(diagnostic);
       assertThat(releasing.idleFor(0)).as("released").isFalse();
-      assertThat(releasing.documentSymbol(uri, content).join()).containsExactly(symbol);
+      assertThat(releasing.submit(session -> session.diagnosticsTransient(uri, content)).join())
+          .containsExactly(diagnostic);
       verify(first).close();
       verify(second, never()).close();
       assertThat(sessions).hasValue(2);
@@ -249,36 +220,30 @@ class CompilationWorkerTest {
   }
 
   @Test
-  void searchReferencesTransient_activeRequest_delegatesToContext() {
+  void submit_activeRequest_runsAgainstTheSession() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
     final List<TransientSource> sources = List.of(new TransientSource(uri, content));
-    final ReferenceTarget target = mock(ReferenceTarget.class);
-    final ReferenceMatch match = mock(ReferenceMatch.class);
-    final IntConsumer progress = hits -> {};
+    final TransientAnalysis analysis = mock(TransientAnalysis.class);
     final CancelChecker cancelChecker = () -> {};
-    when(context.searchReferencesTransient(
-            sources, target, false, Set.of(), progress, cancelChecker))
-        .thenReturn(new SearchHits<>(List.of(match), List.of()));
+    when(context.transientAnalyses(sources, cancelChecker)).thenReturn(List.of(analysis));
 
-    final var result =
+    final List<TransientAnalysis> result =
         worker
-            .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker)
+            .submit(session -> session.transientAnalyses(sources, cancelChecker), cancelChecker)
             .join();
 
-    assertThat(result.hits()).containsExactly(match);
+    assertThat(result).containsExactly(analysis);
   }
 
   @Test
-  void searchReferencesTransient_cancelledWhileQueued_skipsContext() {
+  void submit_cancelledWhileQueued_skipsTheSession() {
     final String uri = "file:///A.java";
     final String content = "class A {}";
     final List<TransientSource> sources = List.of(new TransientSource(uri, content));
-    final IntConsumer progress = hits -> {};
     final var entered = new CountDownLatch(1);
     final var release = new CountDownLatch(1);
     final var cancelled = new AtomicBoolean();
-    final ReferenceTarget target = mock(ReferenceTarget.class);
     final CancelChecker cancelChecker =
         () -> {
           if (cancelled.get()) {
@@ -296,8 +261,8 @@ class CompilationWorkerTest {
 
     final CompletableFuture<CompileResponse> blocker = worker.compile(request);
     await(entered);
-    final CompletableFuture<SearchHits<ReferenceMatch>> cancelledFuture =
-        worker.searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
+    final CompletableFuture<List<TransientAnalysis>> cancelledFuture =
+        worker.submit(session -> session.transientAnalyses(sources, cancelChecker), cancelChecker);
     cancelled.set(true);
     release.countDown();
 
@@ -309,8 +274,7 @@ class CompilationWorkerTest {
         .satisfiesAnyOf(
             thrown -> assertThat(thrown).isInstanceOf(CancellationException.class),
             thrown -> assertThat(thrown).hasCauseInstanceOf(CancellationException.class));
-    verify(context, never())
-        .searchReferencesTransient(sources, target, false, Set.of(), progress, cancelChecker);
+    verify(context, never()).transientAnalyses(sources, cancelChecker);
   }
 
   private void assertTermination(final Throwable failure, final int expectedStatus) {
@@ -328,7 +292,9 @@ class CompilationWorkerTest {
       final CompletableFuture<CompileResponse> future = failingWorker.compile(request);
 
       assertThatThrownBy(future::join).hasCause(failure);
-      failingWorker.documentSymbol(request.uri(), request.content()).join();
+      failingWorker
+          .submit(session -> session.diagnosticsTransient(request.uri(), request.content()))
+          .join();
       assertThat(status).hasValue(expectedStatus);
     } finally {
       failingWorker.close();

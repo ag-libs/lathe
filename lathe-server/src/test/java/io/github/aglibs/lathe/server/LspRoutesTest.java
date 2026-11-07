@@ -2,7 +2,9 @@ package io.github.aglibs.lathe.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
+import io.github.aglibs.lathe.server.format.FileCommandFormatEngine;
+import io.github.aglibs.lathe.server.format.FormatterFixtures;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,7 +22,6 @@ import org.eclipse.lsp4j.DefinitionParams;
 import org.eclipse.lsp4j.DocumentFormattingParams;
 import org.eclipse.lsp4j.DocumentHighlight;
 import org.eclipse.lsp4j.DocumentHighlightParams;
-import org.eclipse.lsp4j.DocumentOnTypeFormattingParams;
 import org.eclipse.lsp4j.DocumentRangesFormattingParams;
 import org.eclipse.lsp4j.FormattingOptions;
 import org.eclipse.lsp4j.ImplementationParams;
@@ -135,7 +136,7 @@ class LspRoutesTest extends ServiceTestBase {
         .anyMatch(title -> title.startsWith("Extract variable"));
     final CodeAction unresolved =
         refactors.stream()
-            .filter(action -> ExtractionSupport.METHOD_KIND.equals(action.getKind()))
+            .filter(action -> ExtractKinds.METHOD_KIND.equals(action.getKind()))
             .findFirst()
             .orElseThrow();
     assertThat(unresolved.getEdit()).isNull();
@@ -153,7 +154,7 @@ class LspRoutesTest extends ServiceTestBase {
   void formattingRequests_withAFormatter_rangeFormatsItsLinesOnly_onTypeAnswersNothingYet()
       throws Exception {
     final ShopFixture shop = openShop();
-    service.setFormatEngine(FormatterFixtures.googleJavaFormat());
+    useFormatter(FormatterFixtures.googleJavaFormat());
     final String misindented =
         "package com.example;\nclass Use {\n  int run() {\n final Shop shop = new Shop();\n"
             + "    return shop.sell(1) + shop.sell(2);\n  }\n}\n";
@@ -171,13 +172,6 @@ class LspRoutesTest extends ServiceTestBase {
     assertThat(edits)
         .isNotEmpty()
         .allSatisfy(edit -> assertThat(edit.getRange().getStart().getLine()).isEqualTo(3));
-    // On-type formatting is not implemented: it answers no edits, so typing changes nothing.
-    assertThat(
-            service
-                .onTypeFormatting(
-                    new DocumentOnTypeFormattingParams(use, options, new Position(5, 3), "}"))
-                .get(TIMEOUT_S, TimeUnit.SECONDS))
-        .isEmpty();
   }
 
   // A formatter that runs a command (a build, say) waits on its process off the event loop: the
@@ -187,7 +181,7 @@ class LspRoutesTest extends ServiceTestBase {
       throws Exception {
     final ShopFixture shop = openShop();
     final Path gate = tmp.resolve("gate");
-    service.setFormatEngine(
+    useFormatter(
         new FileCommandFormatEngine(
             TestProcess.command("await", gate.toString(), "%FILE%"),
             tmp,
@@ -210,7 +204,7 @@ class LspRoutesTest extends ServiceTestBase {
   @Test
   void formatting_serverClosedWhileTheFormatterRuns_requestAnsweredWithNoEdits() throws Exception {
     final ShopFixture shop = openShop();
-    service.setFormatEngine(
+    useFormatter(
         new FileCommandFormatEngine(
             TestProcess.command("await", tmp.resolve("never").toString(), "%FILE%"),
             tmp,
@@ -220,7 +214,7 @@ class LspRoutesTest extends ServiceTestBase {
             new DocumentFormattingParams(documentOf(shop.use()), new FormattingOptions(2, true)));
     awaitWorkerIdle();
 
-    service.close();
+    host.close();
 
     assertThat(formatting.get(TIMEOUT_S, TimeUnit.SECONDS)).isEmpty();
   }

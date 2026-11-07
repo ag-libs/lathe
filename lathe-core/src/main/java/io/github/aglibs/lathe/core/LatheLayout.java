@@ -34,9 +34,6 @@ public final class LatheLayout {
   // use the per-workspace launcher instead.
   public static final String LATEST_DIR = "latest";
 
-  // Removed discovery pointer; kept only so sync can delete a leftover `current` and make an
-  // un-upgraded client fail loudly instead of silently running a stale server.
-  public static final String LEGACY_CURRENT_LINK = "current";
   // Generated scripts are in the host's dialect only: cmd batch files on Windows, POSIX sh
   // elsewhere.
   private static final String SYNC_SCRIPT_BASE = "lathe-sync";
@@ -151,92 +148,22 @@ public final class LatheLayout {
 
   private LatheLayout() {}
 
-  // Names only the Maven front-end uses (lathe-compiler, lathe-maven-extension, lathe-maven-plugin,
-  // lathe-install, lathe-openjdk-maven-plugin). Build-neutral modules must not reference them;
-  // LatheLayoutTest guards that.
+  // Names more than one Maven front-end module uses (lathe-compiler, lathe-maven-extension,
+  // lathe-maven-plugin, lathe-openjdk-maven-plugin); a name one module uses lives in that module.
+  // Build-neutral modules must not reference them; LatheLayoutTest guards that.
   public static final class Maven {
 
-    public static final String POM_XML = "pom.xml";
-    public static final String POM_PACKAGING = "pom";
-    public static final String TEST_JAR_CLASSIFIER = "tests";
-    public static final String MVN_DIR = ".mvn";
-    public static final String MVN_JVM_CONFIG_FILE = "jvm.config";
-    // MAVEN_OPTS as the build sees it: Maven exposes the environment as env.* session properties,
-    // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
-    // daemon JVM), so this reads the same under mvn and mvnd.
-    public static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
-
-    // Coordinates and keys for the in-memory model injection performed by lathe-maven-extension.
     public static final String LATHE_GROUP_ID = "io.github.ag-libs";
-    public static final String COMPILER_ARTIFACT_ID = "lathe-compiler";
-    public static final String PLUGIN_ARTIFACT_ID = "lathe-maven-plugin";
     public static final String OPENJDK_PLUGIN_ARTIFACT_ID = "lathe-openjdk-maven-plugin";
-    public static final String JUNIT_ARTIFACT_ID = "lathe-junit";
-    public static final String COMPILER_ID = "lathe";
-    public static final String MAVEN_COMPILER_ID_PROPERTY = "maven.compiler.compilerId";
     public static final String MAVEN_COMPILER_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
     public static final String MAVEN_COMPILER_PLUGIN_ARTIFACT_ID = "maven-compiler-plugin";
-    public static final String MAVEN_SUREFIRE_PLUGIN_GROUP_ID = "org.apache.maven.plugins";
-    public static final String MAVEN_SUREFIRE_PLUGIN_ARTIFACT_ID = "maven-surefire-plugin";
-    // The execution `mvn test` runs, whose configuration overrides the plugin-level one.
-    public static final String SUREFIRE_TEST_EXECUTION_ID = "default-test";
-    // Surefire's class-file patterns when a module configures none.
-    public static final List<String> SUREFIRE_DEFAULT_INCLUDES =
-        List.of("**/Test*.java", "**/*Test.java", "**/*Tests.java", "**/*TestCase.java");
-    public static final List<String> SUREFIRE_DEFAULT_EXCLUDES = List.of("**/*$*");
-    // Surefire's test selection, which replaces its includes and excludes, and the switch that lets
-    // a module with no class matching it pass.
-    public static final String SUREFIRE_TEST_PROPERTY = "test";
-    public static final String SUREFIRE_FAIL_IF_NO_SPECIFIED_TESTS_PROPERTY =
-        "surefire.failIfNoSpecifiedTests";
-    // The oldest Maven and maven-compiler-plugin Lathe supports: an older one stops the build and
-    // says why. maven.version is the system property Maven sets to its own version.
-    public static final String MIN_MAVEN_VERSION = "3.6.3";
-    public static final String MIN_COMPILER_PLUGIN_VERSION = "3.6.2";
-    public static final String MAVEN_VERSION_PROPERTY = "maven.version";
-    public static final String INIT_GOAL = "init";
     public static final String SYNC_GOAL = "sync";
-    public static final String INIT_EXECUTION_ID = "lathe-init";
-    public static final String SYNC_EXECUTION_ID = "lathe-sync";
 
-    // The phase that runs lathe:sync (bound via LifecyclePhase.PROCESS_TEST_CLASSES), and the build
-    // command for the first sync, before the build has written the sync script.
     static final String MVN = "mvn";
-    public static final String SYNC_PHASE = "process-test-classes";
-    public static final String SYNC_COMMAND = "%s %s".formatted(MVN, SYNC_PHASE);
-    public static final String TEST_PHASE = "test";
-    public static final String PACKAGE_PHASE = "package";
-    // The phases a project may have its sync build to (LatheFlags.SYNC_PHASE), in lifecycle order:
-    // from SYNC_PHASE, which .lathe/ needs, to install; never deploy, which would publish.
-    public static final List<String> SYNC_PHASES =
-        List.of(
-            SYNC_PHASE,
-            TEST_PHASE,
-            "prepare-package",
-            PACKAGE_PHASE,
-            "pre-integration-test",
-            "integration-test",
-            "post-integration-test",
-            "verify",
-            "install");
-    public static final String SKIP_TESTS_ARG = "-DskipTests";
-    // Failsafe's own switch: a capture-only sync past the test phase captures Surefire's tests
-    // only.
-    public static final String SKIP_ITS_ARG = "-DskipITs";
-    // The phase that switches off an inherited plugin execution.
-    public static final String NO_PHASE = "none";
-    // maven-shade-plugin's shade goal replaces the module's main jar with the shaded one unless it
-    // attaches the shaded jar under a classifier, writes it to its own outputFile, or names it with
-    // a finalName of its own.
-    public static final String SHADE_PLUGIN_KEY = "org.apache.maven.plugins:maven-shade-plugin";
-    public static final String SHADE_GOAL = "shade";
-    public static final String SHADE_ATTACHED_PARAM = "shadedArtifactAttached";
-    public static final String SHADE_OUTPUT_FILE_PARAM = "outputFile";
-    public static final String SHADE_FINAL_NAME_PARAM = "finalName";
     // A test run that captures the tests without running them.
     public static final String CAPTURE_ONLY_ARG = "-D%s=true".formatted(LatheFlags.CAPTURE_ONLY);
     // A project's first build: clean, so every module compiles through Lathe, and a capture-only
-    // test run. SYNC_COMMAND refreshes after that.
+    // test run. A sync refreshes after that.
     public static final String FIRST_BUILD_COMMAND =
         "%s clean test %s".formatted(MVN, CAPTURE_ONLY_ARG);
     static final String MVND = "mvnd";
@@ -269,61 +196,16 @@ public final class LatheLayout {
     private Maven() {}
   }
 
+  // The names the setup message gives for Gradle; the plugin keeps its own.
   public static final class Gradle {
 
-    // The oldest Gradle Lathe supports: the first with gradle.lifecycle.beforeProject, which
-    // applies Lathe to each project without cross-project configuration (Isolated Projects).
-    public static final String MIN_GRADLE_VERSION = "8.8";
     public static final String PLUGIN_ID = "io.github.ag-libs.lathe";
     // The task the sync script runs, and its argument that captures the tests without running them.
     public static final String SYNC_TASK = "latheSync";
     public static final String CAPTURE_ONLY_ARG = "-P%s=true".formatted(LatheFlags.CAPTURE_ONLY);
-    // The editor's sync with tests goes on past a failed task: Gradle starts no new task after a
-    // failure, so a build that rejects skipped tests would capture only its first test task.
-    public static final String CONTINUE_ARG = "--continue";
     // A project's first run, for the setup message: it writes .lathe/ without running the tests.
     public static final String FIRST_BUILD_COMMAND =
         "./gradlew %s %s".formatted(SYNC_TASK, CAPTURE_ONLY_ARG);
-
-    // The build files a sync fingerprints, so the server notices a changed build: the settings
-    // file, gradle.properties and the version catalogs at the root, each project's build file, and
-    // the build logic in buildSrc/ and included builds, where Gradle builds keep their compiler
-    // settings.
-    public static final List<String> ROOT_BUILD_FILES =
-        List.of("settings.gradle", "settings.gradle.kts", "gradle.properties");
-    public static final List<String> PROJECT_BUILD_FILES =
-        List.of("build.gradle", "build.gradle.kts");
-    public static final String CATALOG_DIR = "gradle";
-    public static final String CATALOG_SUFFIX = ".toml";
-    public static final String BUILD_SRC_DIR = "buildSrc";
-    public static final List<String> BUILD_LOGIC_SUFFIXES =
-        List.of(".gradle", ".gradle.kts", ".java", ".kt", ".groovy", ".toml", ".properties");
-    // The daemon's JVM options; module-access flags there reach a compile that runs in the daemon.
-    public static final String DAEMON_JVM_ARGS_PROPERTY = "org.gradle.jvmargs";
-    // What Gradle's test worker adds to a test JVM's launch, not the build: its own jar (on the
-    // class or module path), its -D properties, and, on a modular run, itself as the main module.
-    public static final String TEST_WORKER_JAR = "gradle-worker.jar";
-    public static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
-    public static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
-    // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/.agent/, a
-    // path known as the plugin applies, before a build script can move the build directory. Hidden,
-    // since .lathe/<module>/<child> is also the module directory of a child project in <child>/,
-    // which the copy into this directory would empty.
-    public static final String AGENT_DIR = ".agent";
-    public static final String AGENT_JAR = "lathe-junit.jar";
-    // Written as a capture-only test task starts, in its module's directory (the agent directory
-    // is a Sync target, which deletes what it did not copy): an older launch was not captured.
-    public static final String CAPTURE_MARKER = ".capture-started";
-    // Each project's facts for the root's workspace write to merge, in .lathe/<module>/.
-    public static final String FACTS_FILE = "lathe-facts.json";
-    // Output and state directories inside a build-logic build, never part of it.
-    public static final List<String> BUILD_LOGIC_SKIPPED_DIRS = List.of("build", ".gradle");
-
-    // The launcher of the Gradle distribution that ran the build (gradle.gradleHomeDir), not the
-    // wrapper: the same version, with no download step.
-    public static Path runningTool(final Path gradleHome, final boolean windows) {
-      return gradleHome.resolve(BIN_DIR).resolve(windows ? "gradle.bat" : "gradle");
-    }
 
     private Gradle() {}
   }
@@ -354,10 +236,6 @@ public final class LatheLayout {
 
   public static Path latestDir() {
     return userCacheRoot().resolve(LATEST_DIR);
-  }
-
-  public static Path legacyCurrentLink() {
-    return userCacheRoot().resolve(LEGACY_CURRENT_LINK);
   }
 
   public static Path logsDir() {

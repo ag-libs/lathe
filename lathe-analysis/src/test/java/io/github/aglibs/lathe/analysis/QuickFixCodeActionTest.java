@@ -1,6 +1,6 @@
 package io.github.aglibs.lathe.analysis;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.applyEdits;
+import static io.github.aglibs.lathe.analysis.Positions.applyEdits;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.analysis.testing.TempSourceCompiler;
@@ -95,14 +95,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
 
     final List<CodeAction> learned =
         codeActions(
-            session.codeAction(
-                TempSourceCompiler.TEST_URI,
-                UNRESOLVED_MEMBERS,
-                1,
-                rangeAt(0, 0),
-                toRequests(diags),
-                typeIndex,
-                LEARNED));
+            session
+                .files()
+                .codeAction(
+                    TempSourceCompiler.TEST_URI,
+                    UNRESOLVED_MEMBERS,
+                    1,
+                    rangeAt(0, 0),
+                    toRequests(diags),
+                    typeIndex,
+                    LEARNED));
     assertThat(learned)
         .extracting(CodeAction::getTitle)
         .contains(
@@ -126,8 +128,9 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
   @Test
   void missingImports_unresolvedLearnedMember_listedWithStaticCandidate() {
     final var result =
-        session.missingImports(
-            TempSourceCompiler.TEST_URI, UNRESOLVED_MEMBERS, 1, typeIndex, LEARNED);
+        session
+            .files()
+            .missingImports(TempSourceCompiler.TEST_URI, UNRESOLVED_MEMBERS, 1, typeIndex, LEARNED);
 
     assertThat(result.items())
         .containsExactlyInAnyOrder(
@@ -220,14 +223,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         session.compile(TempSourceCompiler.TEST_URI, UNRESOLVED_QUALIFIERS, 1, CompileMode.OPEN);
 
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            UNRESOLVED_QUALIFIERS,
-            1,
-            rangeAt(0, 0),
-            toRequests(diags),
-            qualifierIndex(),
-            LEARNED_FIELD);
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                UNRESOLVED_QUALIFIERS,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                qualifierIndex(),
+                LEARNED_FIELD);
 
     assertThat(codeActions(actions))
         .extracting(CodeAction::getTitle)
@@ -259,12 +264,14 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     // The project references javax.xml.datatype.Duration, so it leads its alphabetically-earlier
     // namesake.
     final var result =
-        session.missingImports(
-            TempSourceCompiler.TEST_URI,
-            UNRESOLVED_QUALIFIERS,
-            1,
-            qualifierIndex().withUsageCounts(Map.of("javax.xml.datatype.Duration", 3)),
-            LEARNED_FIELD);
+        session
+            .files()
+            .missingImports(
+                TempSourceCompiler.TEST_URI,
+                UNRESOLVED_QUALIFIERS,
+                1,
+                qualifierIndex().withUsageCounts(Map.of("javax.xml.datatype.Duration", 3)),
+                LEARNED_FIELD);
 
     assertThat(candidatesOf(result, "Objects")).containsExactly("java.util.Objects");
     assertThat(candidatesOf(result, "Duration"))
@@ -309,6 +316,7 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
                     applyEdits(
                         source,
                         session
+                            .files()
                             .missingImports(
                                 TempSourceCompiler.TEST_URI,
                                 source,
@@ -421,14 +429,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            source,
-            1,
-            rangeAt(0, 0),
-            toRequests(diags),
-            listIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                source,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                listIndex,
+                LearnedStaticImports.empty());
 
     assertThat(codeActions(actions))
         .extracting(CodeAction::getTitle)
@@ -475,28 +485,32 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         class Test { ArrayList list; }
         """;
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            sourceWithImport,
-            2,
-            rangeAt(0, 0),
-            toRequests(diags),
-            typeIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                sourceWithImport,
+                2,
+                rangeAt(0, 0),
+                toRequests(diags),
+                typeIndex,
+                LearnedStaticImports.empty());
     assertThat(codeActions(actions)).isEmpty();
   }
 
   @Test
   void codeAction_noDiagnostics_returnsEmpty() {
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            "",
-            1,
-            rangeAt(0, 0),
-            List.of(),
-            typeIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                "",
+                1,
+                rangeAt(0, 0),
+                List.of(),
+                typeIndex,
+                LearnedStaticImports.empty());
     assertThat(actions).isEmpty();
   }
 
@@ -551,14 +565,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            source,
-            1,
-            rangeAt(0, 0),
-            toRequests(diags),
-            customTypeIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                source,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                customTypeIndex,
+                LearnedStaticImports.empty());
 
     assertThat(codeActions(actions)).hasSize(1);
     assertThat(codeActions(actions).get(0).getTitle()).isEqualTo("Import 'com.other.PublicClass'");
@@ -589,14 +605,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
     final List<Diagnostic> diags =
         session.compile(TempSourceCompiler.TEST_URI, source, 1, CompileMode.OPEN);
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            source,
-            1,
-            rangeAt(0, 0),
-            toRequests(diags),
-            reactorIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                source,
+                1,
+                rangeAt(0, 0),
+                toRequests(diags),
+                reactorIndex,
+                LearnedStaticImports.empty());
 
     assertThat(codeActions(actions)).hasSize(1);
     assertThat(codeActions(actions).get(0).getTitle())
@@ -626,8 +644,10 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         """;
 
     final var result =
-        session.missingImports(
-            TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
+        session
+            .files()
+            .missingImports(
+                TempSourceCompiler.TEST_URI, source, 1, index, LearnedStaticImports.empty());
 
     // Insertion goes right after the package clause (no imports yet).
     assertThat(result.layout().edit("java.util.ArrayList").getRange().getStart().getLine())
@@ -653,8 +673,10 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
         """;
 
     final var result =
-        session.missingImports(
-            TempSourceCompiler.TEST_URI, source, 1, typeIndex, LearnedStaticImports.empty());
+        session
+            .files()
+            .missingImports(
+                TempSourceCompiler.TEST_URI, source, 1, typeIndex, LearnedStaticImports.empty());
 
     assertThat(result.items()).isEmpty();
   }
@@ -720,14 +742,16 @@ class QuickFixCodeActionTest extends CodeActionTestBase {
             .filter(r -> r.payload().name().equals("java.sql.SQLException"))
             .toList();
     final var actions =
-        session.codeAction(
-            TempSourceCompiler.TEST_URI,
-            source,
-            1,
-            rangeAt(0, 0),
-            sqlOnly,
-            typeIndex,
-            LearnedStaticImports.empty());
+        session
+            .files()
+            .codeAction(
+                TempSourceCompiler.TEST_URI,
+                source,
+                1,
+                rangeAt(0, 0),
+                sqlOnly,
+                typeIndex,
+                LearnedStaticImports.empty());
 
     assertThat(actions).hasSize(2);
     final var throwsAction = findThrowsAction(actions);

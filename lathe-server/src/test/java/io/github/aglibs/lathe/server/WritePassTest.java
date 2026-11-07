@@ -39,7 +39,6 @@ import org.eclipse.lsp4j.MessageParams;
 import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.ProgressParams;
 import org.eclipse.lsp4j.WorkDoneProgressBegin;
-import org.eclipse.lsp4j.services.LanguageClient;
 import org.junit.jupiter.api.Test;
 
 // The write pass: external changes, startup catch-up, reported files, failures, deletions and
@@ -53,9 +52,9 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void initialize_sourceUpToDateWithItsClass_doesNotPrompt() throws Exception {
     writeStaleModule(5_000L, 5_000L); // the stamp is the mtime compiled, so equal → fresh
-    service.setWorkDoneProgressSupported(true);
+    host.setWorkDoneProgressSupported(true);
 
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     verify(client, after(500).never()).showMessageRequest(any());
     // Nothing is stale, so no in-process recompile progress is reported (only workspace indexing).
@@ -77,8 +76,8 @@ class WritePassTest extends ServiceTestBase {
                             5_000L)));
     TestCompiler.writeModuleParams(tmp, "module", sourceRoot, null);
 
-    service.initialize(tmp);
-    service.reconcileNow(true).get(30, TimeUnit.SECONDS); // runs after the startup pass
+    host.initialize(tmp);
+    reconcileNow(true).get(30, TimeUnit.SECONDS); // runs after the startup pass
 
     assertThat(moduleStamps())
         .as("every changed source compiled and stamped")
@@ -97,7 +96,7 @@ class WritePassTest extends ServiceTestBase {
     sources.put("com/example/Broken.java", "package com.example; class Broken {}");
     final List<Path> files =
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     // Both change on disk; Broken no longer compiles. javac writes nothing for a task with an
@@ -108,15 +107,14 @@ class WritePassTest extends ServiceTestBase {
         files.get(1),
         "package com.example; class Broken { int b() { return missing(); } }",
         5_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     assertThat(moduleStamps())
         .as("stamps: the good file written, the broken one left stale")
         .containsEntry(Path.of("com/example/Good.java"), 5_000L)
         .containsEntry(Path.of("com/example/Broken.java"), 1_000L);
     assertThat(
-            service
-                .onLoop(session -> session.notes(List.of()))
+            host.onLoop(session -> session.notes(List.of()))
                 .get(TIMEOUT_S, TimeUnit.SECONDS)
                 .notCompiled())
         .as("the broken file stays recorded though the rest of its tree was written after it")
@@ -133,7 +131,7 @@ class WritePassTest extends ServiceTestBase {
     sources.put("com/example/B.java", "package com.example; class B { int b() { return 2; } }");
     final List<Path> files =
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     // A changes first and needs B's new method, so it fails alone.
@@ -141,13 +139,13 @@ class WritePassTest extends ServiceTestBase {
         files.get(0),
         "package com.example; class A { int a() { return new B().newB(); } int newA() { return 3; } }",
         5_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
     // B changes next and needs A's new method: alone it would fail too, leaving both stuck.
     TestCompiler.writeAt(
         files.get(1),
         "package com.example; class B { int b() { return 2; } int newB() { return new A().newA(); } }",
         6_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     assertThat(moduleStamps())
         .as("both written together once B's write takes the failed A along")
@@ -177,11 +175,11 @@ class WritePassTest extends ServiceTestBase {
                 List.of("core"),
                 1_000L)
             .get(0);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     // C fails in an earlier pass and is recorded.
     TestCompiler.writeAt(user, "package com.example.app; class C { Missing m; }", 5_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     // A breaks; B needs the X only A's new version declares, so the batch fails on A and its retry
     // without A fails on B: javac writes nothing.
@@ -191,10 +189,10 @@ class WritePassTest extends ServiceTestBase {
         6_000L);
     TestCompiler.writeAt(
         core.resolve("B.java"), "package com.example; public class B { A.X x; }", 6_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     try (final var compiles = new CompileLog(tmp)) {
-      service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+      reconcileNow(true).get(10, TimeUnit.SECONDS);
       assertThat(writes(compiles))
           .as("nothing changed and nothing was written, so no failure is retried")
           .isEmpty();
@@ -221,18 +219,18 @@ class WritePassTest extends ServiceTestBase {
                 List.of("core"),
                 1_000L)
             .get(0);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     // An agent writes the use first: C fails, D does not exist yet.
     TestCompiler.writeAt(user, "package com.example.app; class C { com.example.D d; }", 5_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
     assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
         .containsEntry(Path.of("com/example/app/C.java"), 1_000L);
 
     TestCompiler.writeAt(core.resolve("D.java"), "package com.example; public class D {}", 6_000L);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
     // Not eager: only a settled source is written, as by the change scan.
-    service.reconcileNow(false).get(10, TimeUnit.SECONDS);
+    reconcileNow(false).get(10, TimeUnit.SECONDS);
 
     assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/app"), "classes"))
         .as("C sat unchanged since it failed, so it is written as soon as D lands")
@@ -257,11 +255,11 @@ class WritePassTest extends ServiceTestBase {
                 .resolve("com/example/UserBuilder.java"),
             "package com.example; class UserBuilder {}",
             5_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     try (final var compiles = new CompileLog(tmp)) {
-      service.writeReported(Set.of(generated)).get(10, TimeUnit.SECONDS);
+      writeReported(Set.of(generated)).get(10, TimeUnit.SECONDS);
       assertThat(writes(compiles))
           .as("a processor's output is never an input of a write")
           .isEmpty();
@@ -277,7 +275,7 @@ class WritePassTest extends ServiceTestBase {
     sources.put("com/example/C.java", "package com.example; class C {}");
     final List<Path> files =
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final Path lock = LatheLayout.reactorLockFile(tmp.resolve(LatheLayout.LATHE_DIR));
     LatheLock.acquire(lock);
@@ -288,7 +286,7 @@ class WritePassTest extends ServiceTestBase {
     TestCompiler.writeAt(files.get(0), "package com.example; class A { int addedA; }", 5_000L);
     TestCompiler.writeAt(files.get(1), "package com.example; class B { int addedB; }", 1_000L);
     TestCompiler.writeAt(files.get(2), "package com.example; class C { int addedC; }", 5_000L);
-    service.writeReported(Set.of(files.get(0), files.get(1))).get(10, TimeUnit.SECONDS);
+    writeReported(Set.of(files.get(0), files.get(1))).get(10, TimeUnit.SECONDS);
 
     final Path classes = tmp.resolve(".lathe/module/classes/com/example");
     assertThat(Files.readString(classes.resolve("B.class"), StandardCharsets.ISO_8859_1))
@@ -301,7 +299,7 @@ class WritePassTest extends ServiceTestBase {
     verify(client, never()).notifyProgress(argThat(WritePassTest::isRecompileBegin));
 
     LatheLock.release(lock);
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
     assertThat(moduleStamps())
         .as("after the build, the external change catches up")
         .containsEntry(Path.of("com/example/C.java"), 5_000L);
@@ -310,12 +308,12 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void reconcileNow_eager_recompilesStaleSourceInOnePass() throws Exception {
     writeStaleModule(1_000L, 1_000L); // fresh at init (mtime == stamp) → startup eager is a no-op
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup(); // let startup reconciliation finish before mutating the source
     writeFoo(CHANGED_FOO, 5_000L); // changed since its stamp → stale
 
     // A single eager pass compiles it (no two-tick wait), advancing the stamp to the source mtime.
-    service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
   }
@@ -327,7 +325,7 @@ class WritePassTest extends ServiceTestBase {
     final Path square = shape.resolveSibling("Square.java");
     final Path classesDir = tmp.resolve(".lathe/module/classes");
 
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     // The edit lands on disk: Shape permits a new Square, and Square is created -- both stale. A
@@ -336,7 +334,7 @@ class WritePassTest extends ServiceTestBase {
         shape, "package shapes; sealed interface Shape permits Circle, Square {}", 5_000L);
     TestCompiler.writeAt(square, "package shapes; final class Square implements Shape {}", 5_000L);
 
-    service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(classesDir.resolve("shapes/Square.class")).exists();
     assertThat(moduleStamps())
@@ -370,7 +368,7 @@ class WritePassTest extends ServiceTestBase {
                 1_000L)
             .get(0);
 
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     // A rename lands on disk: a() becomes b() and its caller follows. App compiles only against
@@ -382,7 +380,7 @@ class WritePassTest extends ServiceTestBase {
         "package com.example.app; class App { int u() { return new com.example.api.Api().b(); } }",
         5_000L);
 
-    service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+    reconcileNow(true).get(10, TimeUnit.SECONDS);
 
     assertThat(TestCompiler.stampedMtimes(tmp.resolve(".lathe/api"), "classes"))
         .containsEntry(Path.of("com/example/api/Api.java"), 5_000L);
@@ -395,23 +393,25 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void reconcileNow_anotherServerCompiledTheChange_republishesOpenDependent() throws Exception {
     final DepFixture fx = depWithUsers(1);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final Path user = fx.users().get(0);
     openDoc(user, Files.readString(user));
     verify(client, timeout(5_000))
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
-    final var otherServer = new LatheTextDocumentService(DEBOUNCE_MS);
+    final var otherServer = new SessionHost(DEBOUNCE_MS);
     try {
-      otherServer.connect(mock(LanguageClient.class));
+      otherServer.connect(mock(LatheLanguageClient.class));
       otherServer.initialize(tmp);
 
       TestCompiler.writeAt(
           fx.dep(),
           "package com.example;\npublic class Dep { public int w() { return 1; } }\n",
           5_000L);
-      otherServer.reconcileNow(true).get(10, TimeUnit.SECONDS);
-      service.reconcileNow(true).get(10, TimeUnit.SECONDS);
+      otherServer
+          .onLoopFuture(session -> session.writePass().reconcileNow(true))
+          .get(10, TimeUnit.SECONDS);
+      reconcileNow(true).get(10, TimeUnit.SECONDS);
 
       verify(client, timeout(5_000))
           .publishDiagnostics(argThat(p -> isFor(p, user) && hasMessage(p, "cannot find symbol")));
@@ -423,14 +423,14 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void reconcileNow_deletedDependency_republishesOpenDependentWithError() throws Exception {
     final DepFixture fx = depWithUsers(1);
-    service.initialize(tmp);
+    host.initialize(tmp);
     final Path user = fx.users().get(0);
     openDoc(user, Files.readString(user));
     verify(client, timeout(5_000))
         .publishDiagnostics(argThat(p -> isFor(p, user) && p.getDiagnostics().isEmpty()));
 
     Files.delete(fx.dep());
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     verify(client, timeout(5_000))
         .publishDiagnostics(
@@ -445,14 +445,14 @@ class WritePassTest extends ServiceTestBase {
   void reconcileNow_closedSourceChangedExternally_recompilesInProcessWithoutPrompting()
       throws Exception {
     writeStaleModule(1_000L, 1_000L); // fresh at init → startup eager is a no-op
-    service.setWorkDoneProgressSupported(true);
-    service.initialize(tmp);
+    host.setWorkDoneProgressSupported(true);
+    host.initialize(tmp);
     awaitStartup();
     writeFoo(CHANGED_FOO, 5_000L); // now stale
 
     // First pass records the change as pending (two-tick stability); the second recompiles it.
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     // Recompiled in-process (its stamp advanced to the source's mtime) and not prompted for Maven.
     assertThat(moduleStamps()).containsEntry(Path.of("com/example/Foo.java"), 5_000L);
@@ -469,7 +469,7 @@ class WritePassTest extends ServiceTestBase {
   void reconcile_anotherServerHoldsTheWriteLock_passWaitsThenWrites_queryStopsWaiting()
       throws Exception {
     writeStaleModule(1_000L, 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     writeFoo(CHANGED_FOO, 5_000L);
     final Closeable otherServer =
@@ -477,12 +477,12 @@ class WritePassTest extends ServiceTestBase {
             .orElseThrow();
     final CompletableFuture<Void> pass;
     try {
-      pass = service.reconcileNow(true);
+      pass = reconcileNow(true);
 
       assertThatThrownBy(() -> pass.get(300, TimeUnit.MILLISECONDS))
           .as("waits while the other server writes")
           .isInstanceOf(TimeoutException.class);
-      assertThat(service.reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
+      assertThat(reconcileForVerify().get(TIMEOUT_S, TimeUnit.SECONDS).deferral())
           .as("a query answers after the grace, not after the other server's pass")
           .isEqualTo(ReconcileOutcome.DeferReason.OTHER_SERVER_WRITING);
       assertThat(pass).isNotDone();
@@ -493,7 +493,7 @@ class WritePassTest extends ServiceTestBase {
 
     pass.get(10, TimeUnit.SECONDS);
     assertThat(moduleStamps()).containsEntry(FOO_KEY, 5_000L);
-    assertThat(service.reconcileForVerify().get(10, TimeUnit.SECONDS).deferral())
+    assertThat(reconcileForVerify().get(10, TimeUnit.SECONDS).deferral())
         .as("with the lock free, a query waits for its pass as before")
         .isEqualTo(ReconcileOutcome.DeferReason.NONE);
   }
@@ -501,7 +501,7 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void reconcileNow_callersChangedExternally_referencesFollowDisk() throws Exception {
     final DepFixture fx = depWithUsers(1);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final String dep = Files.readString(fx.dep());
     openDoc(fx.dep(), dep);
@@ -516,7 +516,7 @@ class WritePassTest extends ServiceTestBase {
     Files.writeString(
         added,
         "package com.other;\nclass Added { int a() { return new com.example.Dep().v(); } }\n");
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(referencingFiles(fx.dep(), dep)).contains(added).doesNotContain(user);
   }
@@ -536,7 +536,7 @@ class WritePassTest extends ServiceTestBase {
   void reconcileNow_touchedSource_restampsWithoutCompiling_changedOrPutBackOneCompiles()
       throws Exception {
     writeStaleModule(1_000L, 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     writeFoo(FOO, 5_000L);
@@ -557,7 +557,7 @@ class WritePassTest extends ServiceTestBase {
         "classes",
         Map.of(FOO_KEY, new SourceStamp(1_000L, null)),
         Map.of());
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
 
     writeFoo(FOO, 5_000L);
@@ -567,7 +567,7 @@ class WritePassTest extends ServiceTestBase {
   private void assertPassCompiles(final boolean compiles, final long stampedMtime)
       throws Exception {
     try (final var compileLog = new CompileLog(tmp)) {
-      service.reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
+      reconcileNow(true).get(TIMEOUT_S, TimeUnit.SECONDS);
       assertThat(writes(compileLog)).as("compiled at %d", stampedMtime).hasSize(compiles ? 1 : 0);
     }
 
@@ -577,7 +577,7 @@ class WritePassTest extends ServiceTestBase {
   @Test
   void reconcileNow_compileFails_doesNotAdvanceStamp() throws Exception {
     writeStaleModule(1_000L, 1_000L);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     // A reference to a missing type: the compile emits no class for Foo.
     TestCompiler.writeAt(
@@ -585,8 +585,8 @@ class WritePassTest extends ServiceTestBase {
         "package com.example; class Foo { Missing field; }",
         5_000L);
 
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     // A failed compile must not stamp the source fresh: it stays stale so a later batch retries it
     // once its dependency lands, instead of leaving a stale mirror class marked up to date.
@@ -603,7 +603,7 @@ class WritePassTest extends ServiceTestBase {
     final Path freshDest = writeResourceDest("fresh.conf", "keep", 5_000L);
     writeResourceWorkspace("app/src/main/resources", "app/target/classes");
 
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitWorkerIdle();
 
     assertThat(Files.readString(staleDest)).isEqualTo("new"); // stale → copied
@@ -619,13 +619,13 @@ class WritePassTest extends ServiceTestBase {
     final Path generated =
         writeResourceDest("META-INF/services/com.example.Spi", "com.example.Impl", 1_000L);
     writeResourceWorkspace("app/src/main/resources", "app/target/classes");
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitWorkerIdle();
     final Path goneCopy = tmp.resolve(".lathe/app/classes/gone.conf");
     assertThat(goneCopy).exists();
 
     Files.delete(gone);
-    service.reconcileNow().get(TIMEOUT_S, TimeUnit.SECONDS);
+    reconcileNow(false).get(TIMEOUT_S, TimeUnit.SECONDS);
 
     assertThat(goneCopy).doesNotExist();
     assertThat(tmp.resolve(".lathe/app/classes/kept.conf")).hasContent("kept");

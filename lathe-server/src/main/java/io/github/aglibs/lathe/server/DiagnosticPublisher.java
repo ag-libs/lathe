@@ -41,7 +41,7 @@ final class DiagnosticPublisher {
   /**
    * Publishes an empty diagnostics list for a read-only external (JDK/dependency) source, so the
    * user sees no compiler diagnostics on a file they cannot edit, while keeping the same staleness
-   * gate and semantic-token refresh as {@link #publishIfCurrent} (EG-041).
+   * gate and semantic-token refresh as {@link #publishIfCurrent}.
    */
   boolean publishEmptyIfCurrent(final OpenDocument snapshot, final CompileResponse result) {
     return publish(snapshot, result, List.of());

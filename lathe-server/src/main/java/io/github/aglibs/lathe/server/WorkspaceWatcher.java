@@ -1,9 +1,9 @@
 package io.github.aglibs.lathe.server;
 
-import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.ContentFingerprint;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -108,7 +108,7 @@ final class WorkspaceWatcher {
   // A file watched by touch differs whenever it moved; one watched by content only when its
   // content is not what the sync saw (a touch, or an edit put back, is not a change).
   private boolean differsFromSync(final Path file) {
-    return !FileUtil.hasContent(file, syncedContent.get(file));
+    return !ServerFiles.hasContent(file, syncedContent.get(file));
   }
 
   // A file watched by touch is taken as changed before startup when it is newer than the manifest

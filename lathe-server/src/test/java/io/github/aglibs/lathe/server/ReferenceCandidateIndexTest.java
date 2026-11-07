@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheLayout;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -231,7 +232,7 @@ class ReferenceCandidateIndexTest {
     final var src = Files.createDirectories(root.resolve("src"));
     Files.writeString(
         src.resolve("Entity.java"), "class Entity { String requestId() { return null; } }");
-    // EG-052: the generated companion lives under the .lathe mirror (the searched, fresh copy);
+    // The generated companion lives under the .lathe mirror (the searched, fresh copy);
     // originalGenSourcesDir points at Maven's target/ copy only to flag "has generated sources".
     final var config = withGeneratedSources(src);
     final var gen = Files.createDirectories(config.generatedSourcesDir());
@@ -263,7 +264,7 @@ class ReferenceCandidateIndexTest {
     final var added =
         TestCompiler.writeAt(src.resolve("D.java"), "class D { void addedMethod() {} }", 2_000L);
     TestCompiler.writeAt(open, "class C { void otherDiskMethod() {} }", 2_000L);
-    index.syncFromDisk(FileUtil.fileMtimes(src, FileUtil::isJavaFile), uri(open)::equals);
+    index.syncFromDisk(ServerFiles.fileMtimes(src, FileUtil::isJavaFile), uri(open)::equals);
 
     assertThat(index.candidateUris("oldMethod")).isEmpty();
     assertThat(index.candidateUris("newMethod")).containsExactly(uri(changed));
@@ -286,7 +287,7 @@ class ReferenceCandidateIndexTest {
     // Same mtime: the content is not read again, so the rewrite stays invisible.
     TestCompiler.writeAt(file, "class A { void rewrittenMethod() {} }", 1_000L);
     // The pass scans only non-generated roots; a generated source missing from it is not deleted.
-    index.syncFromDisk(FileUtil.fileMtimes(src, FileUtil::isJavaFile), uri -> false);
+    index.syncFromDisk(ServerFiles.fileMtimes(src, FileUtil::isJavaFile), uri -> false);
 
     assertThat(index.candidateUris("indexedMethod")).containsExactly(uri(file));
     assertThat(index.candidateUris("rewrittenMethod")).isEmpty();

@@ -17,7 +17,7 @@ class ModuleSourceConfigTest {
 
   @Test
   void searchRoots_withGeneratedSources_usesLatheMirrorNotMavenTarget() {
-    // EG-052: definition/reference resolution must search the fresh .lathe generated-sources mirror
+    // Definition/reference resolution must search the fresh .lathe generated-sources mirror
     // Lathe keeps in sync, not the stale Maven target/generated-sources copy.
     final Path src = WORKSPACE.resolve("module/src/main/java");
     final Path mavenTarget = WORKSPACE.resolve("module/target/generated-sources/annotations");

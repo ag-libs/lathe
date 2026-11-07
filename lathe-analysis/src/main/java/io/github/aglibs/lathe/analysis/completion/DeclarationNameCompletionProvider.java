@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.analysis.completion;
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
 import io.github.aglibs.lathe.analysis.Strings;
-import io.github.aglibs.lathe.analysis.VariableNameSuggester;
+import io.github.aglibs.lathe.analysis.internal.VariableNameSuggester;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -98,7 +98,7 @@ final class DeclarationNameCompletionProvider {
     }
 
     return Stream.iterate(
-            TypeResolver.resolveScope(analysis, cursorOffset),
+            ReceiverResolver.resolveScope(analysis, cursorOffset),
             Objects::nonNull,
             Scope::getEnclosingScope)
         .flatMap(DeclarationNameCompletionProvider::variableNames)

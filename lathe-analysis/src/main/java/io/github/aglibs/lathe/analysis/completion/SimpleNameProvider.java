@@ -42,7 +42,7 @@ final class SimpleNameProvider {
   List<CompletionCandidate> collect() {
     final var methodPath =
         context.enclosingMethod() != null
-            ? TypeResolver.findMethodPath(
+            ? NameLookup.findMethodPath(
                 context.enclosingClass(),
                 context.enclosingMethod(),
                 context.cursorOffset(),

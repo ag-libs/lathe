@@ -43,7 +43,7 @@ Overall, the codebase is remarkably clean, conforming strictly to the rules defi
 ### 🔄 DRY (Don't Repeat Yourself) Opportunities
 
 #### 1. File Copy & Temp Writing in Compilers
-Both [ModuleSourceCompiler.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ModuleSourceCompiler.java) and [ExternalCompiler.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ExternalCompiler.java) replicate the logic of writing the document's current content to a temporary workspace directory structure so it can be compiled by standard `javac`.
+Both [ModuleSourceCompiler.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ModuleSourceCompiler.java) and [ExternalCompiler.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/module/ExternalCompiler.java) replicate the logic of writing the document's current content to a temporary workspace directory structure so it can be compiled by standard `javac`.
 
 * **Duplicate Pattern in `ModuleSourceCompiler`:**
   ```java
@@ -62,7 +62,7 @@ Both [ModuleSourceCompiler.java](file:///home/ag-libs/git/lathe/lathe-server/src
     Files.writeString(tempFile, content);
     ...
   ```
-* **Recommendation:** Extract a common helper method (e.g., `writeTempSourceFile(Path tempDir, Path sourceRoot, Path filePath, String content)`) in [JavaSourceCompiler.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/JavaSourceCompiler.java) or a shared core utility class.
+* **Recommendation:** Extract a common helper method (e.g., `writeTempSourceFile(Path tempDir, Path sourceRoot, Path filePath, String content)`) in [JavaSourceCompiler.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/JavaSourceCompiler.java) or a shared core utility class.
 
 #### 2. Redundant Classpath/Modulepath Path-to-File Mappings
 Across the compiler modules, lists of `Path` objects are frequently transformed to `File` objects before passing to `StandardJavaFileManager.setLocation()`.
@@ -73,7 +73,7 @@ fm.setLocation(StandardLocation.MODULE_PATH, modulepath.stream().map(Path::toFil
 * **Recommendation:** Define a helper method `fm.setLocation(Location, Collection<Path>)` or a utility helper `toFileList(List<Path>)` to reduce boilerplate.
 
 #### 3. Exact Duplicate Exception Handler Helper
-Both [CompilationWorker.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/module/CompilationWorker.java) and [ServerEventLoop.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/ServerEventLoop.java) declare an identical helper:
+Both [CompilationWorker.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/module/CompilationWorker.java) and [ServerEventLoop.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/ServerEventLoop.java) declare an identical helper:
 ```java
 private static void rethrowError(final Throwable t) {
   if (t instanceof final Error error) {
@@ -81,14 +81,14 @@ private static void rethrowError(final Throwable t) {
   }
 }
 ```
-* **Recommendation:** Move this to a central shared utility class like [IOUtil.java](file:///home/ag-libs/git/lathe/lathe-core/src/main/java/io/github/aglibs/lathe/core/IOUtil.java) or [FileUtil.java](file:///home/ag-libs/git/lathe/lathe-core/src/main/java/io/github/aglibs/lathe/core/FileUtil.java).
+* **Recommendation:** Move this to a central shared utility class like [IOUtil.java](../../lathe-core/src/main/java/io/github/aglibs/lathe/core/IOUtil.java) or [FileUtil.java](../../lathe-core/src/main/java/io/github/aglibs/lathe/core/FileUtil.java).
 
 ---
 
 ### 💡 KISS (Keep It Simple, Stupid) Improvements
 
 #### 1. Sentinel Insertion and AST Processing
-The [SentinelInjector.java](file:///home/ag-libs/git/lathe/lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/completion/SentinelInjector.java) parses characters backward and forward to insert the sentinel symbol (`__LATHE_SENTINEL__`).
+The [SentinelInjector.java](../../lathe-server/src/main/java/io/github/aglibs/lathe/server/analysis/completion/SentinelInjector.java) parses characters backward and forward to insert the sentinel symbol (`__LATHE_SENTINEL__`).
 While it is fast, the complexity of stateful manual scanning (`inLineComment`, `inBlockComment`, `inString`, etc.) is high. It handles quotes, escape sequences, parentheses depth, and comments manually.
 * **Critique:** While this manually crafted scanner is very fast, it introduces minor maintenance overhead as Java syntax additions arrive (e.g., raw string literals, newer switch formats). However, keeping it lightweight is preferable to parsing the entire file using a full parser. It strikes a good balance for KISS given the scope.
 

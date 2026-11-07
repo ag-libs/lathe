@@ -2,7 +2,6 @@ package io.github.aglibs.lathe.maven;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.LatheFlags;
-import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.WorkspaceStyleData;
 import io.github.aglibs.lathe.install.CapturePruner;
 import io.github.aglibs.lathe.install.LauncherCopier;
@@ -10,15 +9,10 @@ import io.github.aglibs.lathe.install.PluginProps;
 import io.github.aglibs.lathe.install.ResolvedJar;
 import io.github.aglibs.lathe.install.ServerInstaller;
 import io.github.aglibs.lathe.install.SyncException;
-import io.github.aglibs.lathe.install.SyncScript;
-import io.github.aglibs.lathe.install.WorkspaceManifestWriter;
+import io.github.aglibs.lathe.install.WorkspaceSync;
 import io.github.aglibs.lathe.install.dependency.DependencySource;
-import io.github.aglibs.lathe.install.dependency.DependencySourceSync;
-import io.github.aglibs.lathe.install.jdk.JdkSource;
 import io.github.aglibs.lathe.install.jdk.JdkSourceResolver;
-import io.github.aglibs.lathe.install.jdk.JdkSourceSync;
 import io.github.aglibs.lathe.install.maven.MavenArtifactResolver;
-import io.github.aglibs.lathe.install.typeindex.JdkTypeIndexSync;
 import io.github.aglibs.lathe.maven.dependency.DependencySourceResolver;
 import java.nio.file.Path;
 import java.util.List;
@@ -34,6 +28,11 @@ import org.eclipse.aether.RepositorySystem;
 import org.eclipse.aether.repository.RemoteRepository;
 
 final class SyncCoordinator {
+
+  // MAVEN_OPTS as the build sees it: Maven exposes the environment as env.* session properties,
+  // and mvnd forwards the client's environment per build (it never applies MAVEN_OPTS to its
+  // daemon JVM), so this reads the same under mvn and mvnd.
+  private static final String MAVEN_OPTS_PROPERTY = "env.MAVEN_OPTS";
 
   private final RepositorySystem repositorySystem;
   private final MavenSession session;
@@ -63,11 +62,8 @@ final class SyncCoordinator {
             externalArtifacts, ReactorProjects.artifactClasspaths(projects), remoteRepos);
     final List<ResolvedJar> externalJars =
         externalArtifacts.values().stream().map(ReactorProjects::resolvedJar).toList();
-    final List<DependencySource> enrichedSources =
-        DependencySourceSync.prepare(dependencySources, externalJars);
-    final JdkSource jdkSource = JdkSourceResolver.resolve();
-    JdkSourceSync.extract(jdkSource);
-    final JdkSource enrichedJdkSource = JdkTypeIndexSync.index(jdkSource);
+    final WorkspaceSync.Caches caches =
+        WorkspaceSync.prepareCaches(dependencySources, externalJars, JdkSourceResolver.resolve());
     final var serverInstaller =
         new ServerInstaller(
             new MavenArtifactResolver(
@@ -91,17 +87,16 @@ final class SyncCoordinator {
               .stream()
               .map(Path::toString)
               .toList();
-      final SyncScript syncScript = MavenSyncScript.of(session.getSystemProperties(), syncPhase);
-      WorkspaceManifestWriter.write(
-          workspaceRoot,
-          enrichedSources,
-          enrichedJdkSource,
-          PluginProps.version(),
-          runnerClasspath,
-          buildFiles,
-          ModuleResourcesReader.read(workspaceRoot, projects),
-          ReactorProjects.outputs(workspaceRoot, projects),
-          syncScript.tool());
+      WorkspaceSync.write(
+          new WorkspaceSync.Inputs(
+              workspaceRoot,
+              caches,
+              PluginProps.version(),
+              runnerClasspath,
+              buildFiles,
+              ModuleResourcesReader.read(workspaceRoot, projects),
+              ReactorProjects.outputs(workspaceRoot, projects),
+              MavenSyncScript.of(session.getSystemProperties(), syncPhase)));
       // The whole reactor only: a forced sync under -pl sees part of it.
       if (!isPartialReactor()) {
         CapturePruner.prune(workspaceRoot, ReactorProjects.sourceTrees(workspaceRoot, projects));
@@ -124,9 +119,8 @@ final class SyncCoordinator {
       MavenJvmArgs.write(
           workspaceRoot,
           projects,
-          session.getSystemProperties().getProperty(LatheLayout.Maven.MAVEN_OPTS_PROPERTY, ""),
+          session.getSystemProperties().getProperty(MAVEN_OPTS_PROPERTY, ""),
           style == null ? List.of() : FormatterResolver.javacGrants(style.formatter()));
-      syncScript.write(workspaceRoot);
     }
   }
 
@@ -155,8 +149,8 @@ final class SyncCoordinator {
   // the phase that makes the jar: name the shading modules and the setting that fixes it.
   private void warnShadedJarsUnbuilt(
       final Path workspaceRoot, final List<MavenProject> projects, final String syncPhase) {
-    final List<String> phases = LatheLayout.Maven.SYNC_PHASES;
-    if (phases.indexOf(syncPhase) >= phases.indexOf(LatheLayout.Maven.PACKAGE_PHASE)) {
+    final List<String> phases = MavenSyncScript.SYNC_PHASES;
+    if (phases.indexOf(syncPhase) >= phases.indexOf(MavenSyncScript.PACKAGE_PHASE)) {
       return;
     }
 
@@ -177,9 +171,9 @@ final class SyncCoordinator {
             .formatted(
                 String.join(", ", shaded.shadingModules()),
                 shaded.dependents(),
-                LatheLayout.Maven.PACKAGE_PHASE,
+                MavenSyncScript.PACKAGE_PHASE,
                 LatheFlags.SYNC_PHASE,
-                LatheLayout.Maven.PACKAGE_PHASE,
+                MavenSyncScript.PACKAGE_PHASE,
                 syncPhase));
   }
 

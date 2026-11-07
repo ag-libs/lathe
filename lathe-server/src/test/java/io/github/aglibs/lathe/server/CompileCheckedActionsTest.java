@@ -3,7 +3,7 @@ package io.github.aglibs.lathe.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.google.gson.Gson;
-import io.github.aglibs.lathe.analysis.ExtractionSupport;
+import io.github.aglibs.lathe.analysis.ExtractKinds;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -29,8 +29,8 @@ class CompileCheckedActionsTest {
 
   @Test
   void deferAndResolve_compilingEdit_attachedOnlyWhenResolved() {
-    final CodeAction method = action(ExtractionSupport.METHOD_KIND);
-    final CodeAction variable = action(ExtractionSupport.VARIABLE_KIND);
+    final CodeAction method = action(ExtractKinds.METHOD_KIND);
+    final CodeAction variable = action(ExtractKinds.VARIABLE_KIND);
     final List<Either<Command, CodeAction>> listed =
         CompileCheckedActions.defer(
             URI, 3, List.of(Either.forRight(method), Either.forRight(variable)));
@@ -58,7 +58,7 @@ class CompileCheckedActionsTest {
   void resolve_errorsChangedFileOrForeignAction_editOnlyWhenNoErrorIsAdded() {
     final CodeAction listed =
         CompileCheckedActions.defer(
-                URI, 3, List.of(Either.forRight(action(ExtractionSupport.METHOD_KIND))))
+                URI, 3, List.of(Either.forRight(action(ExtractKinds.METHOD_KIND))))
             .get(0)
             .getRight();
     final Diagnostic old = error("cannot find symbol");
@@ -93,7 +93,7 @@ class CompileCheckedActionsTest {
     assertThat(stale.getEdit()).isNull();
     assertThat(stale.getDisabled().getReason()).contains("changed");
 
-    final CodeAction foreign = action(ExtractionSupport.VARIABLE_KIND);
+    final CodeAction foreign = action(ExtractKinds.VARIABLE_KIND);
     assertThat(CompileCheckedActions.resolve(foreign, uri -> null, (uri, content) -> null).join())
         .isSameAs(foreign);
   }

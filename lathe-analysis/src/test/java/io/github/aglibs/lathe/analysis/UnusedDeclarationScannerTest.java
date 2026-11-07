@@ -44,7 +44,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("unused")));
   }
 
   // The hint marks the field's name, not the same word in its annotation before it.
@@ -61,7 +61,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("int flag") + 4));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("int flag") + 4));
   }
 
   @Test
@@ -175,7 +175,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("unused")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("unused")));
   }
 
   // --- Visibility: only private is flagged ---
@@ -286,7 +286,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("count")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("count")));
     assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("local variable 'count' is assigned but never read");
   }
@@ -344,7 +344,7 @@ class UnusedDeclarationScannerTest {
 
     assertThat(hints).hasSize(1);
     assertThat(hints.get(0).getRange().getStart())
-        .isEqualTo(SourceLocator.offsetToPosition(source, source.indexOf("cached")));
+        .isEqualTo(Positions.offsetToPosition(source, source.indexOf("cached")));
     assertThat(hints.get(0).getMessage().getLeft())
         .isEqualTo("private field 'cached' is assigned but never read");
   }
@@ -516,8 +516,7 @@ class UnusedDeclarationScannerTest {
 
   @Test
   void unused_exceptionParameter_messageUsesExceptionParameterKind() {
-    // An unused catch parameter is an exception parameter (JLS §4.12.3), not a local variable
-    // (EG-039).
+    // An unused catch parameter is an exception parameter (JLS §4.12.3), not a local variable.
     final List<Diagnostic> hints =
         unusedHintsFor(
             """
@@ -542,8 +541,7 @@ class UnusedDeclarationScannerTest {
 
   @Test
   void unused_lambdaParameter_messageUsesParameterKind() {
-    // An unused lambda parameter is a lambda parameter (JLS §4.12.3), not a local variable
-    // (EG-039).
+    // An unused lambda parameter is a lambda parameter (JLS §4.12.3), not a local variable.
     final List<Diagnostic> hints =
         unusedHintsFor(
             """
@@ -563,7 +561,7 @@ class UnusedDeclarationScannerTest {
   @Test
   void unused_enhancedForVariable_remainsLocalVariable() {
     // An enhanced-for variable is a local variable (JLS §14.14.2); its label is correct and the
-    // EG-039 fix must not reclassify it.
+    // parameter-kind labels must not reclassify it.
     final List<Diagnostic> hints =
         unusedHintsFor(
             """

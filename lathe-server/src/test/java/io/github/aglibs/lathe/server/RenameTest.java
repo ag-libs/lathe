@@ -1,14 +1,14 @@
 package io.github.aglibs.lathe.server;
 
-import static io.github.aglibs.lathe.analysis.SourceLocator.offsetToPosition;
+import static io.github.aglibs.lathe.analysis.Positions.offsetToPosition;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
+import io.github.aglibs.lathe.analysis.Positions;
 import io.github.aglibs.lathe.analysis.RenameProvider;
-import io.github.aglibs.lathe.analysis.SourceLocator;
 import io.github.aglibs.lathe.core.IOUtil;
 import io.github.aglibs.lathe.core.LatheUri;
 import java.nio.file.Files;
@@ -39,7 +39,7 @@ class RenameTest extends ServiceTestBase {
       throws Exception {
     final DepFixture fx = depWithUsers(3);
     service.setFileRenameSupported(true);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final String depSource = Files.readString(fx.dep());
     openDoc(fx.dep(), depSource);
@@ -76,7 +76,7 @@ class RenameTest extends ServiceTestBase {
               openDoc(file, content);
             }
 
-            final String next = SourceLocator.applyEdits(content, fileEdits);
+            final String next = Positions.applyEdits(content, fileEdits);
             service.didChange(
                 new DidChangeTextDocumentParams(
                     new VersionedTextDocumentIdentifier(uri, 2),
@@ -89,7 +89,7 @@ class RenameTest extends ServiceTestBase {
             service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(oldUri)));
             openDoc(LatheUri.toPath(newUri), edited.get(LatheUri.toPath(newUri)));
           });
-      service.reconcileNow(true).get(10, TimeUnit.SECONDS); // the move is seen before saving
+      reconcileNow(true).get(10, TimeUnit.SECONDS); // the move is seen before saving
       edited.forEach(
           (file, next) -> {
             IOUtil.unchecked(() -> Files.writeString(file, next));
@@ -118,7 +118,7 @@ class RenameTest extends ServiceTestBase {
   @Test
   void rename_refused_logsTheReasonAtInfo() throws Exception {
     final DepFixture fx = depWithUsers(1);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     final String depSource = Files.readString(fx.dep());
     openDoc(fx.dep(), depSource);

@@ -2,8 +2,8 @@ package io.github.aglibs.lathe.analysis.completion;
 
 import com.sun.source.tree.Scope;
 import io.github.aglibs.lathe.analysis.AttributedFileAnalysis;
-import io.github.aglibs.lathe.analysis.MethodStubRenderer;
 import io.github.aglibs.lathe.analysis.TypeDisplayFormatter;
+import io.github.aglibs.lathe.analysis.internal.MethodStubRenderer;
 import java.util.List;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -15,7 +15,7 @@ import javax.lang.model.util.Types;
 /**
  * Override/implement completion: at a class-body member-declaration slot, offers the inherited,
  * overridable methods of the enclosing type (supertypes plus {@code Object}) as {@code @Override}
- * stubs. Types render as simple names; automatic import of stub types is not yet done (EG-015 v1).
+ * stubs. Types render as simple names; automatic import of stub types is not yet done.
  */
 final class OverrideCompletionProvider {
 
@@ -23,7 +23,7 @@ final class OverrideCompletionProvider {
 
   static List<CompletionCandidate> propose(
       final AttributedFileAnalysis analysis, final int cursorOffset, final String prefix) {
-    final Scope scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final Scope scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     if (scope == null) {
       return List.of();
     }

@@ -3,6 +3,7 @@ package io.github.aglibs.lathe.server;
 import io.github.aglibs.lathe.core.CompiledStamps;
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.schema.SourceStamp;
+import io.github.aglibs.lathe.server.files.ServerFiles;
 import io.github.aglibs.lathe.server.module.ModuleSourceConfig;
 import io.github.aglibs.validcheck.ValidCheck;
 import java.io.IOException;
@@ -96,7 +97,7 @@ record TreeState(
     }
 
     boolean touched() {
-      return stamp != null && FileUtil.hasContent(file, stamp.content());
+      return stamp != null && ServerFiles.hasContent(file, stamp.content());
     }
 
     SourceStamp restamped() {
@@ -116,7 +117,7 @@ record TreeState(
 
   private static Map<Path, Long> javaSourceMtimes(final Path root) {
     try {
-      return FileUtil.fileMtimes(root, FileUtil::isJavaFile);
+      return ServerFiles.fileMtimes(root, FileUtil::isJavaFile);
     } catch (final IOException e) {
       LOG.log(Level.WARNING, e, () -> "[watcher] source scan failed under %s".formatted(root));
       return Map.of();

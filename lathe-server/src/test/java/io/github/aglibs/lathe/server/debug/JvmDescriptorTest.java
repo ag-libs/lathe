@@ -27,7 +27,10 @@ final class JvmDescriptorTest {
   private static void withModel(final BiConsumer<Types, Elements> body) {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       final AttributedExpression attr =
-          session.attributeExpression(TempSourceCompiler.TEST_URI, SRC, 3, "1").orElseThrow();
+          session
+              .files()
+              .attributeExpression(TempSourceCompiler.TEST_URI, SRC, 3, "1")
+              .orElseThrow();
       body.accept(attr.types(), attr.elements());
     }
   }

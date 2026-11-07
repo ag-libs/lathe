@@ -37,6 +37,16 @@ import org.gradle.util.GradleVersion;
 // executing them.
 final class LatheTestCapture {
 
+  // Where each module's test runs load lathe-junit from as an agent: .lathe/<module>/.agent/, a
+  // path known as the plugin applies, before a build script can move the build directory. Hidden,
+  // since .lathe/<module>/<child> is also the module directory of a child project in <child>/,
+  // which the copy into this directory would empty.
+  private static final String AGENT_DIR = ".agent";
+  private static final String AGENT_JAR = "lathe-junit.jar";
+  // Written as a capture-only test task starts, in its module's directory (the agent directory
+  // is a Sync target, which deletes what it did not copy): an older launch was not captured.
+  private static final String CAPTURE_MARKER = ".capture-started";
+
   private static final String TEST_TASK = "test";
   private static final String JDK_JAVA_OPTIONS = "JDK_JAVA_OPTIONS";
   private static final String LATHE_JUNIT = "latheJunit";
@@ -66,8 +76,8 @@ final class LatheTestCapture {
         LatheProjectPlugin.resolvable(
             project, LATHE_JUNIT, ServerInstaller.JUNIT_CAPTURE_COORDINATES);
     junit.setTransitive(false);
-    final Path agentDir = moduleDir.resolve(LatheLayout.Gradle.AGENT_DIR);
-    final File agentJar = agentDir.resolve(LatheLayout.Gradle.AGENT_JAR).toFile();
+    final Path agentDir = moduleDir.resolve(AGENT_DIR);
+    final File agentJar = agentDir.resolve(AGENT_JAR).toFile();
     final TaskProvider<Sync> agent =
         project
             .getTasks()
@@ -77,7 +87,7 @@ final class LatheTestCapture {
                 task -> {
                   task.from(LatheProjectPlugin.lenient(junit));
                   task.into(agentDir.toFile());
-                  task.rename(name -> LatheLayout.Gradle.AGENT_JAR);
+                  task.rename(name -> AGENT_JAR);
                 });
     final TaskProvider<Test> testTask =
         project
@@ -153,7 +163,7 @@ final class LatheTestCapture {
       final File userHome) {
     task.systemProperty(LatheFlags.CAPTURE_ONLY, "true");
     task.onlyIf("lathe-junit is in place", test -> agentInPlace(test, agentJar));
-    final var marker = new File(moduleDir, LatheLayout.Gradle.CAPTURE_MARKER);
+    final var marker = new File(moduleDir, CAPTURE_MARKER);
     final var launch = new File(moduleDir, LatheLayout.TEST_LAUNCH_FILE);
     task.doFirst(test -> IOUtil.unchecked(() -> markCaptureStart(marker)));
     task.doFirst(LatheTestCapture::runOneClass);

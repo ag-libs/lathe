@@ -1,6 +1,7 @@
 package io.github.aglibs.lathe.server;
 
 import io.github.aglibs.lathe.analysis.LearnedStaticImports;
+import io.github.aglibs.lathe.analysis.SourceAnalysisSession;
 import io.github.aglibs.lathe.analysis.SourceFeatureRequest;
 import io.github.aglibs.lathe.core.LatheUri;
 import io.github.aglibs.lathe.server.module.CompilationWorker;
@@ -106,6 +107,24 @@ final class FeatureRouter {
     OpenRoute {
       ValidCheck.check().notNull(doc, "doc").notNull(worker, "worker").validate();
     }
+  }
+
+  // A feature at a position of an open document, run on its module's worker. The request is built
+  // here, on the loop, so what runs on the worker reads none of the loop's state.
+  <T> CompletableFuture<T> positionFeature(
+      final String operation,
+      final String uri,
+      final Position pos,
+      final T fallback,
+      final BiFunction<SourceAnalysisSession, SourceFeatureRequest, T> feature) {
+    return openDocFeature(
+        operation,
+        uri,
+        fallback,
+        (worker, doc) -> {
+          final SourceFeatureRequest request = featureRequest(doc, pos);
+          return worker.submit(session -> feature.apply(session, request));
+        });
   }
 
   <T> CompletableFuture<T> openDocFeature(

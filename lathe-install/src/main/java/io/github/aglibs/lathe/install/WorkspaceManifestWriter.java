@@ -45,18 +45,25 @@ public final class WorkspaceManifestWriter {
             outputs,
             buildTool.toString());
     final var latheDir = workspaceRoot.resolve(LatheLayout.LATHE_DIR);
-    final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
-    final var newContent = Json.toJson(data);
     try {
-      writeJavaHome(latheDir, jdkSource);
-      if (!FileUtil.writeIfChanged(latheDir, manifestPath, newContent, false)) {
-        // Content is unchanged, but reactor classes may have been recompiled. Touch the mtime so
-        // the server's watcher re-scans the mirror even though the manifest itself did not change.
-        FileUtil.touch(manifestPath);
-        LOG.info("[sync] workspace unchanged — touched manifest for mirror refresh");
+      if (jdkSource.home() != null) {
+        writeJavaHome(latheDir, jdkSource.home());
       }
+
+      writeManifest(latheDir, data);
     } catch (final IOException e) {
       throw new SyncException("lathe:sync failed to write workspace manifest", e);
+    }
+  }
+
+  // The manifest, written only when its content changed; unchanged, it is touched, as reactor
+  // classes may have been recompiled and the server's watcher re-scans the mirror on its mtime.
+  public static void writeManifest(final Path latheDir, final WorkspaceManifestData data)
+      throws IOException {
+    final var manifestPath = latheDir.resolve(LatheLayout.WORKSPACE_JSON);
+    if (!FileUtil.writeIfChanged(latheDir, manifestPath, Json.toJson(data), false)) {
+      FileUtil.touch(manifestPath);
+      LOG.info("[sync] workspace unchanged — touched manifest for mirror refresh");
     }
   }
 
@@ -74,13 +81,8 @@ public final class WorkspaceManifestWriter {
 
   // The build JDK, as a plain path the launcher reads to run the server's javac at the project's
   // language level.
-  private static void writeJavaHome(final Path latheDir, final JdkSource jdkSource)
-      throws IOException {
-    if (jdkSource.home() == null) {
-      return;
-    }
-
+  public static void writeJavaHome(final Path latheDir, final Path javaHome) throws IOException {
     final var javaHomePath = latheDir.resolve(LatheLayout.JAVA_HOME_FILE);
-    FileUtil.writeIfChanged(latheDir, javaHomePath, jdkSource.home().toString(), false);
+    FileUtil.writeIfChanged(latheDir, javaHomePath, javaHome.toString(), false);
   }
 }

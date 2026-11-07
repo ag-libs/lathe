@@ -40,13 +40,14 @@ class TypeHierarchyTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      final List<TypeHierarchyItem> prepared = session.prepareTypeHierarchy(request, index);
+      final List<TypeHierarchyItem> prepared =
+          session.hierarchy().prepareTypeHierarchy(request, index);
       final var item = prepared.get(0);
       final var data = TypeHierarchyItemDataCodec.decode(item.getData());
       final List<TypeHierarchyItem> supertypes =
-          session.typeHierarchySupertypes(item, index, List.of(sourceRoot));
+          session.hierarchy().typeHierarchySupertypes(item, index, List.of(sourceRoot));
       final List<TypeHierarchyItem> subtypes =
-          session.typeHierarchySubtypes(item, index, List.of(sourceRoot));
+          session.hierarchy().typeHierarchySubtypes(item, index, List.of(sourceRoot));
 
       assertThat(item.getName()).isEqualTo("Service");
       assertThat(item.getSelectionRange().getStart()).isEqualTo(new Position(0, 10));
@@ -78,9 +79,10 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.prepareTypeHierarchy(request, index).get(0);
+      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
-      final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 2000);
+      final var result =
+          session.hierarchy().typeHierarchyExplore(item, index, List.of(sourceRoot), 2000);
 
       assertThat(result.self().getName()).isEqualTo("Service");
       assertThat(result.supertypes())
@@ -111,9 +113,10 @@ class TypeHierarchyTest {
 
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      final var item = session.prepareTypeHierarchy(request, index).get(0);
+      final var item = session.hierarchy().prepareTypeHierarchy(request, index).get(0);
 
-      final var result = session.typeHierarchyExplore(item, index, List.of(sourceRoot), 1);
+      final var result =
+          session.hierarchy().typeHierarchyExplore(item, index, List.of(sourceRoot), 1);
 
       assertThat(result.subtypes()).hasSize(1);
       assertThat(result.truncated()).isTrue();
@@ -128,7 +131,8 @@ class TypeHierarchyTest {
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
 
-      assertThat(session.prepareTypeHierarchy(request, WorkspaceTypeIndex.empty())).isEmpty();
+      assertThat(session.hierarchy().prepareTypeHierarchy(request, WorkspaceTypeIndex.empty()))
+          .isEmpty();
     }
   }
 
@@ -138,7 +142,8 @@ class TypeHierarchyTest {
     final var request = request(content, new Position(9999, 0));
     try (var session = new SourceAnalysisSession(new TempSourceCompiler())) {
       session.compile(request.uri(), content, 1, CompileMode.OPEN);
-      assertThat(session.prepareTypeHierarchy(request, WorkspaceTypeIndex.empty())).isEmpty();
+      assertThat(session.hierarchy().prepareTypeHierarchy(request, WorkspaceTypeIndex.empty()))
+          .isEmpty();
     }
   }
 

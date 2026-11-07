@@ -25,7 +25,7 @@ class LiveAnalysisTest extends ServiceTestBase {
   void didOpen_subtypeOfAnUnsavedSealedRoot_neverReportsTheStaleSealedClause() throws Exception {
     final Path shape = mirroredShapes();
     final Path square = shape.resolveSibling("Square.java");
-    service.initialize(tmp);
+    host.initialize(tmp);
 
     // Shape's buffer permits Square, unsaved (opened restored with changes, as after an editor
     // restart); Square is analyzed with it, not against the written Shape that does not permit it.
@@ -70,7 +70,7 @@ class LiveAnalysisTest extends ServiceTestBase {
         TestCompiler.writeMirroredModule(tmp, "module", sources, List.of(), 1_000L);
     final Path greeter = files.get(0);
     final Path user = files.get(1);
-    service.initialize(tmp);
+    host.initialize(tmp);
     awaitStartup();
     openDoc(greeter, Files.readString(greeter));
     openDoc(user, Files.readString(user));

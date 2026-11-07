@@ -76,7 +76,7 @@ final class RenameService {
     final var t = Stopwatch.start();
     return module
         .worker()
-        .resolveRenameTarget(request)
+        .submit(session -> session.references().resolveRenameTarget(request))
         .thenApply(
             target -> {
               if (target == null) {
@@ -288,16 +288,22 @@ final class RenameService {
     return FeatureAnswers.concatAll(
             byConfig.entrySet().stream()
                 .map(
-                    entry ->
-                        state
-                            .registry()
-                            .workerFor(entry.getKey())
-                            .renameBindingConflict(
-                                check,
-                                visibleEdits(byConfig, entry.getKey()),
-                                entry.getValue(),
-                                cancelChecker)
-                            .thenApply(conflict -> conflict.stream().toList())))
+                    entry -> {
+                      final List<RenameBindingCheck.CheckedFile> visible =
+                          visibleEdits(byConfig, entry.getKey());
+                      final List<RenameBindingCheck.CheckedFile> checked = entry.getValue();
+                      return state
+                          .registry()
+                          .workerFor(entry.getKey())
+                          .submit(
+                              session ->
+                                  session
+                                      .references()
+                                      .renameBindingConflict(
+                                          check, visible, checked, cancelChecker),
+                              cancelChecker)
+                          .thenApply(conflict -> conflict.stream().toList());
+                    }))
         .thenApply(conflicts -> conflicts.stream().findFirst());
   }
 
@@ -411,11 +417,12 @@ final class RenameService {
     final var request = router.featureRequest(openFile, pos);
     final ModuleSourceConfig cursorConfig = module.config();
     return cursorWorker
-        .renameConflict(request, newName)
+        .submit(session -> session.references().renameConflict(request, newName))
         .thenCompose(
             conflict -> {
               refuseIfPresent(conflict);
-              return cursorWorker.resolveRenameTarget(request);
+              return cursorWorker.submit(
+                  session -> session.references().resolveRenameTarget(request));
             })
         .thenCompose(
             target -> {
