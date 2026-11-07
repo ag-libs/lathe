@@ -6,9 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 
@@ -63,19 +65,33 @@ public final class Launcher {
   // for the editor only, or since the last build): say so, rather than drop them silently.
   static List<String> unappliedOptionNotes(
       final Map<String, String> inherited, final ResolvedLaunch launch) {
+    final Set<String> applied = appliedOptions(launch.argv());
     return launch.unsetEnv().stream()
         .filter(name -> inherited.containsKey(name) && !launch.env().containsKey(name))
-        .flatMap(name -> unappliedOptionNote(name, inherited.get(name), launch.argv()).stream())
+        .flatMap(name -> unappliedOptionNote(name, inherited.get(name), applied).stream())
         .toList();
+  }
+
+  // The launch's arguments, plus each "--option value" pair as "--option=value": a replay writes
+  // module options (--add-opens and the like) as two arguments, the variables often as one.
+  private static Set<String> appliedOptions(final List<String> argv) {
+    final var applied = new HashSet<>(argv);
+    for (int i = 0; i + 1 < argv.size(); i++) {
+      if (argv.get(i).startsWith("--")) {
+        applied.add("%s=%s".formatted(argv.get(i), argv.get(i + 1)));
+      }
+    }
+
+    return Set.copyOf(applied);
   }
 
   // Split on whitespace, which misreads a quoted option: so this only ever adds the note, never
   // decides what the launch gets.
   private static Optional<String> unappliedOptionNote(
-      final String name, final String value, final List<String> argv) {
+      final String name, final String value, final Set<String> applied) {
     final List<String> missing =
         Arrays.stream(value.trim().split("\\s+"))
-            .filter(option -> !option.isEmpty() && !argv.contains(option))
+            .filter(option -> !option.isEmpty() && !applied.contains(option))
             .toList();
     if (missing.isEmpty()) {
       return Optional.empty();
