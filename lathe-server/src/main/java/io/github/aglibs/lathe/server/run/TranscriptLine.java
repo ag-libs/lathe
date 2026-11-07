@@ -17,6 +17,9 @@ import io.github.aglibs.validcheck.ValidCheck;
  */
 public record TranscriptLine(Stream stream, String text, String positionId) {
 
+  // A COMMAND line that is a note about the launch rather than the command; MCP answers carry it.
+  public static final String NOTE_PREFIX = "note: ";
+
   public enum Stream {
     STDOUT,
     STDERR,

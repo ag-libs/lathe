@@ -11240,11 +11240,12 @@ A replay no longer inherits the variables, rather than the capture dropping thei
 A build can set them itself (a Gradle test task's `environment`, Surefire's `<environmentVariables>`; the Gradle plugin keeps the build's own `JDK_JAVA_OPTIONS` and appends `lathe-junit`), so dropping them at capture would lose build configuration.
 The captured launch already holds everything the build's test JVM ran with, so a launch built from it (test runs and debug, discovery, a test-source `main`, MCP `run_test`) does not inherit `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and `_JAVA_OPTIONS`: `RunOverlay` lists them in the `ResolvedLaunch`'s `unsetEnv`, and `Launcher` removes them before applying the run configuration's `env`, so a variable set there on purpose still applies.
 A main-class launch is built from the build's paths, not a captured JVM, so it keeps inheriting them.
+When a dropped variable carries an option the captured launch lacks (set for the editor only, or since the last build), the run's output starts with a note naming it, which MCP `run_test` passes on as a `Note:`; the note splits the value on whitespace, so it only ever informs and never decides what the launch gets.
 A launch captured with the JaCoCo agent in `JAVA_TOOL_OPTIONS`, replayed by MCP `run_test` with the same variable set, failed with exit 134 before and passes after.
 
 ### Regression targets
 
-`LauncherTest.environment_unsetVariables_inheritedDropped_setOnesKept`, `LauncherTest.environment_nothingUnset_keepsTheInheritedVariables`, `LauncherTest.launch_jvmOptionVariableInTheRunConfiguration_reachesTheProgram`, `RunOverlayTest.applyToTestMain_capturedLaunch_unsetsTheJvmOptionVariables`.
+`LauncherTest.environment_unsetVariables_inheritedDropped_setOnesKept`, `LauncherTest.environment_nothingUnset_keepsTheInheritedVariables`, `LauncherTest.launch_jvmOptionVariableInTheRunConfiguration_reachesTheProgram`, `RunOverlayTest.applyToTestMain_capturedLaunch_unsetsTheJvmOptionVariables`, `LauncherTest.unappliedOptionNotes_optionsTheBuildRanWithout_namedOnce`, `LaunchSessionTest.constructor_noteThenProcessOutput_streamsEachLineTaggedToConsumer`, `LatheEngineRunTest.latheTestRun_blockedOrNothingRan_carriesTheReasonOrTheLastOutput`.
 
 ---
 
