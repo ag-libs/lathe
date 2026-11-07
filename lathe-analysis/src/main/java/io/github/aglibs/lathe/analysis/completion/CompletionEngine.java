@@ -204,7 +204,7 @@ public final class CompletionEngine {
       return CompletionOutcome.of(List.of());
     }
 
-    final var scope = TypeResolver.resolveScope(analysis, req.cursorOffset());
+    final var scope = ReceiverResolver.resolveScope(analysis, req.cursorOffset());
     final var candidates =
         new ImportCompletionProvider(analysis, scope)
             .proposeCandidates(parsed.receiverText(), injected.prefix());
@@ -319,7 +319,7 @@ public final class CompletionEngine {
       return withTypes;
     }
 
-    final var scope = TypeResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
+    final var scope = ReceiverResolver.resolveScope(semanticContext.analysis(), req.cursorOffset());
     final var staticFitCandidates =
         staticMemberFitCandidates(injected.prefix(), semanticContext, req.typeIndex(), scope);
     if (staticFitCandidates.isEmpty()) {
@@ -415,7 +415,7 @@ public final class CompletionEngine {
     }
 
     final TypeMirror type =
-        TypeResolver.resolvePrecedingExpressionType(
+        ReceiverResolver.resolvePrecedingExpressionType(
             injected.tokenStart(), semanticContext.analysis());
     return isReferenceTypeForInstanceof(type)
         ? List.of(KeywordProvider.keywordCandidate(INSTANCEOF_KEYWORD))

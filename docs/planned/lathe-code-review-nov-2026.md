@@ -217,6 +217,8 @@ A design choice: the typed wrappers document the worker's surface; the generic o
 
 ### C1. DRY helpers (small, safe)
 
+**Done**: `TreePaths`, `nameRange`, the call-hierarchy item factories; `CodeActionProvider` removed.
+
 - `TreePaths.enclosing(path, Class<T>[, stopAt])`: the parent walk is hand-written about twelve times
   (`CodeActionSupport` ×4, `ExtractVariableProvider` ×5, `SignatureHelpResolver`, `TypeResolver`,
   `ExtractMethodProvider`, `CallHierarchyIncomingLocator`).
@@ -242,12 +244,21 @@ private transient-analysis step (no-twin-wrappers rule). Pairs naturally with B3
 
 ### C3. Split `SourceLocator` (694 lines, six concerns)
 
+**Done**: `Positions`, `CursorElements`, `DeclarationNames`, `GeneratedCode`; `declarationPath` in `SourceParser`, matching
+enclosing types and parameter type trees (element comparison is impossible on a parse-only tree).
+
 `Positions` (with `applyEdits`), `CursorElements`, `DeclarationNames`, `GeneratedCode`;
 `declarationPath` moves to `SourceParser`.
 `declarationPath` matches overloads with a regex over type `toString()` and classes by simple name, last match wins:
 ad hoc text matching under `AGENTS.md`, wrong for same-named nested classes. Replace with element comparison.
 
 ### C4. `TypeResolver`'s text fallback (riskiest)
+
+**Done** (`refactor/code-review-nov-2026`): split into `ExpectedValueResolver`, `ReceiverResolver` and `NameLookup`.
+The text fallback stays, as the narrowly scoped exception `AGENTS.md` allows: it serves a snapshot attributed
+before the dot, whose tree has no receiver at the completion's position, so javac's scope at the cursor cannot
+replace it. Its name lookups already go through javac; `ReceiverResolverTest` pins every receiver kind it reads
+and what it gives up on, and the code says why it exists.
 
 When the position-based lookup fails, receivers are resolved from `receiverText`, which `SentinelInjector`
 builds by scanning backwards with bracket counting, then decided by `indexOf('(')`, quotes and capitalisation.

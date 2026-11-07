@@ -259,7 +259,7 @@ class CompletionArgumentTest extends CompletionTestSupport {
   void constructorArgument_memberAccess_booleanReturn_offeredAtBooleanSlot() {
     // Mirrors the method-call argument path, which already offers the boolean member. The
     // constructor-arg path falls through to the constructed/declared type as the expected value
-    // (TypeResolver.resolveArgumentValueByPosition handles MethodInvocationTree but not
+    // (ExpectedValueResolver.resolveArgumentValueByPosition handles MethodInvocationTree but not
     // NewClassTree), and the asymmetric boolean-only filter (CQ-0043) then deletes the candidate.
     final var items =
         labels(

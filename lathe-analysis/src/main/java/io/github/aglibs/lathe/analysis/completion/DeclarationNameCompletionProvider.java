@@ -98,7 +98,7 @@ final class DeclarationNameCompletionProvider {
     }
 
     return Stream.iterate(
-            TypeResolver.resolveScope(analysis, cursorOffset),
+            ReceiverResolver.resolveScope(analysis, cursorOffset),
             Objects::nonNull,
             Scope::getEnclosingScope)
         .flatMap(DeclarationNameCompletionProvider::variableNames)

@@ -37,7 +37,7 @@ final class MemberAccessCompleter {
     final var initialSnapshot = req.cached() != null ? req.cached().analysis() : null;
     final var initialResolved =
         initialSnapshot != null
-            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), initialSnapshot)
+            ? ReceiverResolver.resolveReceiver(parsed, req.pos().getLine(), initialSnapshot)
             : null;
 
     if (parsed.sentinelContext() == SentinelContext.STATIC_IMPORT
@@ -46,7 +46,8 @@ final class MemberAccessCompleter {
         && parsed.receiverText() != null) {
       final var candidates =
           new ImportCompletionProvider(
-                  initialSnapshot, TypeResolver.resolveScope(initialSnapshot, req.cursorOffset()))
+                  initialSnapshot,
+                  ReceiverResolver.resolveScope(initialSnapshot, req.cursorOffset()))
               .proposeCandidates(parsed.receiverText(), injected.prefix());
       return new CompletionOutcome(
           candidates.stream().map(CompletionItemPresenter::present).toList(), null);
@@ -82,7 +83,7 @@ final class MemberAccessCompleter {
 
     final var reattributedResolved =
         reattributedAnalysis != null
-            ? TypeResolver.resolveReceiver(parsed, req.pos().getLine(), reattributedAnalysis)
+            ? ReceiverResolver.resolveReceiver(parsed, req.pos().getLine(), reattributedAnalysis)
             : null;
     final var resolved = hasMembers(reattributedResolved) ? reattributedResolved : initialResolved;
     final var snapshot =
@@ -147,8 +148,10 @@ final class MemberAccessCompleter {
     final boolean isStaticAccess =
         parsed.sentinelContext() == SentinelContext.STATIC_IMPORT || resolved.staticAccess();
     final int samArity =
-        memberReference ? TypeResolver.methodReferenceSamArity(req.cursorOffset(), snapshot) : -1;
-    final var scope = TypeResolver.resolveScope(snapshot, req.cursorOffset());
+        memberReference
+            ? ExpectedValueResolver.methodReferenceSamArity(req.cursorOffset(), snapshot)
+            : -1;
+    final var scope = ReceiverResolver.resolveScope(snapshot, req.cursorOffset());
     // Method references tolerate void targets and rank by SAM arity — skip the value context, which
     // would drop void members and rank by return type.
     final var semanticContext =
@@ -330,7 +333,7 @@ final class MemberAccessCompleter {
       return CompletionOutcome.of(List.of());
     }
 
-    final var scope = TypeResolver.resolveScope(snapshot, cursorOffset);
+    final var scope = ReceiverResolver.resolveScope(snapshot, cursorOffset);
 
     // An unimported simple name may match several classpath types (e.g. two `Objects`).
     // Offer members from every candidate, each carrying its own import edit, rather than returning
@@ -379,7 +382,7 @@ final class MemberAccessCompleter {
       final int cursorOffset,
       final String receiverText,
       final String prefix) {
-    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     return new ImportCompletionProvider(analysis, scope).proposeCandidates(receiverText, prefix);
   }
 
@@ -423,10 +426,10 @@ final class MemberAccessCompleter {
     final var base = SemanticCompletionContext.from(site, req, parsed, snapshot);
     final boolean lambdaContext =
         site.sentinelContext() == SentinelContext.LAMBDA_BODY
-            || TypeResolver.isInsideLambdaBody(site.cursorOffset(), snapshot);
+            || ExpectedValueResolver.isInsideLambdaBody(site.cursorOffset(), snapshot);
     if (base.expectedValue() instanceof final ExpectedValue.Type expectedType
         && lambdaContext
-        && TypeResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
+        && ExpectedValueResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
       return base.asStatementContext();
     }
 
@@ -434,18 +437,19 @@ final class MemberAccessCompleter {
       return base;
     }
 
-    final var outerValue = TypeResolver.resolveExpectedArgumentValue(site.cursorOffset(), snapshot);
+    final var outerValue =
+        ExpectedValueResolver.resolveExpectedArgumentValue(site.cursorOffset(), snapshot);
     if (outerValue instanceof ExpectedValue.Unknown) {
       return base;
     }
 
-    if (TypeResolver.isInsideVoidLambdaBody(site.cursorOffset(), snapshot)) {
+    if (ExpectedValueResolver.isInsideVoidLambdaBody(site.cursorOffset(), snapshot)) {
       return base.asStatementContext();
     }
 
     if (outerValue instanceof final ExpectedValue.Type expectedType
         && lambdaContext
-        && TypeResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
+        && ExpectedValueResolver.isVoidFunctionalInterface(expectedType.type(), snapshot)) {
       return base.asStatementContext();
     }
 

@@ -23,7 +23,7 @@ final class OverrideCompletionProvider {
 
   static List<CompletionCandidate> propose(
       final AttributedFileAnalysis analysis, final int cursorOffset, final String prefix) {
-    final Scope scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final Scope scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     if (scope == null) {
       return List.of();
     }

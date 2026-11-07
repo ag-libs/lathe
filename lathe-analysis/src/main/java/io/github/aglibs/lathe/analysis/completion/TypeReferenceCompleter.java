@@ -190,7 +190,7 @@ final class TypeReferenceCompleter {
             "[type-index] typeRef prefix=|%s| candidates=%d cached=%s"
                 .formatted(injected.prefix(), candidates.size(), analysis != null));
     final var scope =
-        analysis != null ? TypeResolver.resolveScope(analysis, req.cursorOffset()) : null;
+        analysis != null ? ReceiverResolver.resolveScope(analysis, req.cursorOffset()) : null;
     final var validator = new TypeIndexValidator(analysis, scope);
     final List<CompletionCandidate> typeCandidates =
         candidates.stream()
@@ -323,7 +323,7 @@ final class TypeReferenceCompleter {
       return List.of();
     }
 
-    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     return pkg.getEnclosedElements().stream()
         .filter(
             el ->
@@ -367,7 +367,7 @@ final class TypeReferenceCompleter {
       return List.of();
     }
 
-    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     final var result = new ArrayList<CompletionCandidate>();
     new TreePathScanner<Void, Void>() {
       @Override
@@ -398,7 +398,7 @@ final class TypeReferenceCompleter {
     final ExpectedValue expected =
         semanticContext != null && semanticContext.expectedValue() instanceof ExpectedValue.Type
             ? semanticContext.expectedValue()
-            : TypeResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
+            : ExpectedValueResolver.resolveExpectedArgumentValue(cursorOffset, analysis);
     if (!(expected instanceof final ExpectedValue.Type expectedType)) {
       return List.of();
     }
@@ -409,7 +409,7 @@ final class TypeReferenceCompleter {
       return List.of();
     }
 
-    final var scope = TypeResolver.resolveScope(analysis, cursorOffset);
+    final var scope = ReceiverResolver.resolveScope(analysis, cursorOffset);
     final List<CompletionCandidate> subtypeCandidates =
         instantiableSubtypeCandidates(prefix, expectedEl, analysis, typeIndex, scope);
     if (!(expectedEl.getSimpleName().toString().startsWith(prefix)
