@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -19,6 +20,7 @@ import org.gradle.api.tasks.IgnoreEmptyDirectories;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
+import org.gradle.api.tasks.Nested;
 import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
@@ -44,6 +46,14 @@ public abstract class LatheFactsTask extends DefaultTask {
   @IgnoreEmptyDirectories
   @PathSensitive(PathSensitivity.RELATIVE)
   public abstract ConfigurableFileCollection getTestSources();
+
+  // Filled as the build script adds source sets, so a plain list.
+  private final List<SourceSetSources> sourceSets = new ArrayList<>();
+
+  @Nested
+  public List<SourceSetSources> getSourceSets() {
+    return sourceSets;
+  }
 
   // The external libraries the project compiles against, main and test, and their -sources jars:
   // group:name:version to jar, resolved as the task runs. Plain values, which the configuration
@@ -100,9 +110,12 @@ public abstract class LatheFactsTask extends DefaultTask {
     }
 
     final List<String> trees =
-        Stream.of(
-                Map.entry(LatheLayout.CLASSES_DIR, getMainSources()),
-                Map.entry(LatheLayout.TEST_CLASSES_DIR, getTestSources()))
+        Stream.concat(
+                Stream.of(
+                    Map.entry(LatheLayout.CLASSES_DIR, getMainSources()),
+                    Map.entry(LatheLayout.TEST_CLASSES_DIR, getTestSources())),
+                sourceSets.stream()
+                    .map(sourceSet -> Map.entry(sourceSet.getTree().get(), sourceSet.getSources())))
             .filter(tree -> !tree.getValue().isEmpty())
             .map(Map.Entry::getKey)
             .toList();

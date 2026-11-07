@@ -343,6 +343,22 @@ final class FileUtilTest {
     assertThat(FileUtil.subdirectories(tempDir.resolve("nope"))).isEmpty();
   }
 
+  // Only the files directly in the dir: a module's params, not its child module's below it.
+  @Test
+  void filesIn_nestedDirs_returnsTheDirsOwnMatchingFilesOnly() throws IOException {
+    Files.createDirectories(tempDir.resolve("child"));
+    Files.writeString(tempDir.resolve("lsp-params-classes.json"), "");
+    Files.writeString(tempDir.resolve("lsp-params-classes-jmh.json"), "");
+    Files.writeString(tempDir.resolve("notes.txt"), "");
+    Files.writeString(tempDir.resolve("child/lsp-params-classes.json"), "");
+
+    assertThat(FileUtil.filesIn(tempDir, LatheLayout::isParamsFile))
+        .containsExactly(
+            tempDir.resolve("lsp-params-classes-jmh.json"),
+            tempDir.resolve("lsp-params-classes.json"));
+    assertThat(FileUtil.filesIn(tempDir.resolve("nope"), LatheLayout::isParamsFile)).isEmpty();
+  }
+
   @Test
   void packagesWithClasses_nestedPackagesWithClasses_returnsDottedPackages() throws IOException {
     writeEmpty(tempDir.resolve("com/example/app/Foo.class"));

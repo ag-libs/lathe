@@ -10,6 +10,7 @@ import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
 import io.github.aglibs.lathe.core.schema.LaunchMode;
 import io.github.aglibs.lathe.core.schema.MainLaunchData;
+import io.github.aglibs.lathe.core.schema.ModuleConfigData;
 import io.github.aglibs.lathe.core.schema.OutputData;
 import io.github.aglibs.lathe.core.schema.ResourceRootData;
 import io.github.aglibs.lathe.core.schema.SourceStatus;
@@ -108,6 +109,98 @@ class LatheSyncTaskFunctionalTest {
     final DependencyData withSources =
         libraries.stream().filter(library -> library.dir() != null).findFirst().orElseThrow();
     assertThat(Path.of(withSources.dir()).resolve("com/example/withsrc/Api.java")).exists();
+  }
+
+  // Every source set beyond main and test is a tree of its own, with its own classpath: here
+  // integrationTest sees main's classes and a library of its own, not test's. Test code by Gradle's
+  // convention (a name containing "test", test fixtures, a JVM test suite); bench is not. A source
+  // set without
+  // sources gets no tree. The fixtures' jar maps to their tree, and a source set the build drops
+  // is pruned at the next sync.
+  @Test
+  void sync_sourceSetsBeyondMainAndTest_eachCapturedAsATreeOfItsOwn() throws Exception {
+    final String sourceSets =
+        """
+        sourceSets {
+          integrationTest {
+            compileClasspath += sourceSets.main.output
+            runtimeClasspath += sourceSets.main.output
+          }
+          %s
+          empty {}
+        }
+        """;
+    final String app =
+        """
+        plugins { id 'java' }
+        repositories {
+          maven { url = uri("$rootDir/repo") }
+          mavenCentral()
+        }
+        %s
+        testing { suites { smoke(JvmTestSuite) } }
+        dependencies {
+          implementation project(':lib')
+          testImplementation testFixtures(project(':lib'))
+          integrationTestImplementation 'com.example:withsrc:1.0'
+        }
+        """;
+    final var fixture =
+        multiProject()
+            .mavenLibrary("repo", "withsrc", true)
+            .file("lib/build.gradle", "plugins { id 'java-library'; id 'java-test-fixtures' }\n")
+            .file(
+                "lib/src/testFixtures/java/com/example/lib/LibFixture.java",
+                "package com.example.lib; public class LibFixture { Lib lib; }\n")
+            .file(
+                "app/build.gradle",
+                app.formatted(
+                    sourceSets.formatted("bench { compileClasspath += sourceSets.main.output }")))
+            .file(
+                "app/src/integrationTest/java/com/example/app/AppIT.java",
+                "package com.example.app; class AppIT { App app; }\n")
+            .file(
+                "app/src/bench/java/com/example/app/AppBench.java",
+                "package com.example.app; class AppBench { App app; }\n")
+            .file(
+                "app/src/smoke/java/com/example/app/AppSmoke.java",
+                "package com.example.app; class AppSmoke {}\n");
+
+    fixture.runner("latheSync").build();
+
+    final ModuleConfigData integration = config("app", "classes-integrationTest");
+    assertThat(integration.testCode()).isTrue();
+    assertThat(integration.classpath())
+        .contains(fixture.path("app/build/classes/java/main"))
+        .doesNotContain(fixture.path("app/build/classes/java/test"))
+        .anyMatch(entry -> entry.endsWith("withsrc-1.0.jar"));
+    assertThat(config("app", "classes-bench").testCode()).isFalse();
+    assertThat(config("app", "classes-smoke").testCode()).isTrue();
+    assertThat(config("lib", "classes-testFixtures").testCode()).isTrue();
+    assertThat(config("app", LatheLayout.TEST_CLASSES_DIR).testCode()).isTrue();
+    assertThat(params("app", "classes-empty")).doesNotExist();
+    final var lathe = dir.resolve(LatheLayout.LATHE_DIR);
+    assertThat(lathe.resolve("app/classes-integrationTest/com/example/app/AppIT.class")).exists();
+    assertThat(workspace().outputs())
+        .contains(
+            new OutputData(
+                "app/build/classes/java/integrationTest", "app", "classes-integrationTest"),
+            new OutputData("lib/build/libs/lib-test-fixtures.jar", "lib", "classes-testFixtures"));
+    assertThat(workspace().dependencySources())
+        .extracting(DependencyData::gav, DependencyData::status)
+        .contains(tuple("com.example:withsrc:1.0", SourceStatus.PRESENT));
+
+    fixture
+        .file("app/build.gradle", app.formatted(sourceSets.formatted("")))
+        .runner("latheSync")
+        .build();
+
+    assertThat(params("app", "classes-bench")).doesNotExist();
+    assertThat(params("app", "classes-integrationTest")).exists();
+  }
+
+  private ModuleConfigData config(final String module, final String tree) throws IOException {
+    return Json.read(params(module, tree), ModuleConfigData.class);
   }
 
   // A one-module sync, like Maven's -pl, builds that module alone; the workspace files are written

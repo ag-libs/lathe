@@ -130,6 +130,18 @@ public final class FileUtil {
     }
   }
 
+  // The regular files directly in dir matching keep, sorted, not below it; empty when dir is not a
+  // directory.
+  public static List<Path> filesIn(final Path dir, final Predicate<Path> keep) throws IOException {
+    if (!Files.isDirectory(dir)) {
+      return List.of();
+    }
+
+    try (final var list = Files.list(dir)) {
+      return list.filter(Files::isRegularFile).filter(keep).sorted().toList();
+    }
+  }
+
   // Every regular file below root matching keep, sorted; empty when root is not a directory.
   public static List<Path> walkFiles(final Path root, final Predicate<Path> keep)
       throws IOException {
