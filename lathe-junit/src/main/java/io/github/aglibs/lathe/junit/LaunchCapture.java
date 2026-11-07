@@ -28,6 +28,8 @@ final class LaunchCapture {
   private static final String TEST_WORKER_PROPERTY_PREFIX = "-Dorg.gradle.";
   private static final String TEST_WORKER_MAIN_MODULE = "-Djdk.module.main=gradle.worker";
 
+  private static final String CAPTURE_ONLY_PROPERTY = "-D%s=".formatted(LatheFlags.CAPTURE_ONLY);
+
   private static final String KIND = "junit-platform";
   private static final String AGENT_OPTION = "-javaagent:";
 
@@ -212,10 +214,12 @@ final class LaunchCapture {
   }
 
   // An argument the build tool adds, not the build: Gradle's worker properties and main module,
-  // and this jar when the build loads it as an agent.
+  // this jar when the build loads it as an agent, and Lathe's capture-only switch, which a Gradle
+  // sync sets on the test task and so reaches the command line: a replay runs the tests.
   private static boolean isBuildToolArgument(final String arg, final Path ownJarLocation) {
     return arg.startsWith(TEST_WORKER_PROPERTY_PREFIX)
         || arg.equals(TEST_WORKER_MAIN_MODULE)
+        || arg.startsWith(CAPTURE_ONLY_PROPERTY)
         || (arg.startsWith(AGENT_OPTION) && samePath(agentJar(arg), ownJarLocation));
   }
 

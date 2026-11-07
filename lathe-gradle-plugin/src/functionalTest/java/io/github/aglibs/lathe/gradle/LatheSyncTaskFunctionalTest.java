@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import io.github.aglibs.lathe.core.FileUtil;
 import io.github.aglibs.lathe.core.Json;
+import io.github.aglibs.lathe.core.LatheFlags;
 import io.github.aglibs.lathe.core.LatheLayout;
 import io.github.aglibs.lathe.core.schema.BuildFileData;
 import io.github.aglibs.lathe.core.schema.DependencyData;
@@ -414,6 +415,9 @@ class LatheSyncTaskFunctionalTest {
         .asString()
         .contains("lathe-test-runner");
     assertThat(testLaunch).exists();
+    assertThat(Json.read(testLaunch, TestLaunchData.class).jvmArgs())
+        .as("the sync's capture-only switch is not part of the launch a replay runs")
+        .noneMatch(arg -> arg.contains(LatheFlags.CAPTURE_ONLY));
     assertThat(ran).doesNotExist();
     // The agent's copy into .lathe/app/ leaves the child project in app/agent/ alone.
     assertThat(dir.resolve(".lathe/app/.agent/lathe-junit.jar")).exists();

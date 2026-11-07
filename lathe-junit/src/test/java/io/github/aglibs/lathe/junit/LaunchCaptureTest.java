@@ -65,7 +65,8 @@ final class LaunchCaptureTest {
   }
 
   // A Gradle test worker's launch, with this jar loaded as an agent: the worker jar, the agent and
-  // Gradle's own properties go; what the build set stays, its doubled separators collapsed.
+  // Gradle's own properties go, and so does the capture-only switch a Lathe sync gives the test
+  // task (a replay runs the tests); what the build set stays, its doubled separators collapsed.
   @Test
   void toLaunchData_gradleWorkerWithAgent_keepsOnlyTheBuildsLaunch() {
     final Path ownJar = Path.of("/repo/lathe-junit.jar");
@@ -78,6 +79,7 @@ final class LaunchCaptureTest {
             List.of(
                 "-javaagent:/repo/lathe-junit.jar",
                 "-Dorg.gradle.internal.worker.tmpdir=/app/build/tmp/test/work",
+                "-Dlathe.capture.only=true",
                 "--module-path=%s%s/mods/opentest4j.jar".formatted(worker, File.pathSeparator),
                 "-Xmx512m",
                 "-ea",
